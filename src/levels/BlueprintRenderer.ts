@@ -1,18 +1,24 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
-import type { Blueprint, StaircaseEntry } from './blueprint';
+import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
 import { PALETTE } from '@/shaders/palette';
 
 // ── Visual constants ──────────────────────────────────────────────────────
 
 const WALL_COLOR = PALETTE.STONE_MID;
-const FLOOR_COLOR = PALETTE.STONE_DARK;
+const FLOOR_COLORS: Record<FloorType, number> = {
+  stone: PALETTE.STONE_DARK,
+  grass: 0x2a5a22,
+  dirt:  0x5a4020,
+  wood:  0x6b4a2a,
+};
 const DOOR_FRAME_COLOR = 0x5a5870;
 const INTERACTABLE_COLOR = PALETTE.WOOD_BROWN;
 const STAIR_COLOR = 0x4a4a62;          // slightly lighter stone for step faces
 const STAIR_UP_GLOW = 0xff9933;        // warm amber — climbing toward light
 const STAIR_DOWN_GLOW = 0x4488ff;      // cool blue — descending into depth
+const SPAWN_MARKER_COLOR = 0xff2255;   // editor-only spawn pin colour
 
 // How deep the door trigger box extends into the room (world units).
 const TRIGGER_DEPTH = 1.8;
@@ -30,6 +36,13 @@ export interface DoorTrigger {
   /** Half-extents of the trigger AABB (X and Z only). */
   readonly hx: number;
   readonly hz: number;
+}
+
+/** Options for renderBlueprint. */
+export interface RenderOptions {
+  /** When true, renders visible markers for spawn points and other
+   *  editor-only indicators that are invisible during normal gameplay. */
+  showEditorMarkers?: boolean;
 }
 
 export interface RenderedRoom {
@@ -165,7 +178,7 @@ function buildStaircase(
 /** Builds Three.js geometry and Rapier physics from a Blueprint.
  *  Add `room.group` to the scene.
  *  Call `room.dispose()` when unloading. */
-export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedRoom {
+export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: RenderOptions = {}): RenderedRoom {
   const group = new THREE.Group();
   const bodies: ReturnType<PhysicsWorld['createStaticBox']>[] = [];
   const geometries: THREE.BufferGeometry[] = [];
@@ -176,7 +189,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
 
   // ── Shared materials ──────────────────────────────────────────────────
   const wallMat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
-  const floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLOR });
+  const floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLORS[bp.floorType ?? 'stone'] });
   const frameMat = new THREE.MeshLambertMaterial({ color: DOOR_FRAME_COLOR });
   const itemMat = new THREE.MeshLambertMaterial({ color: INTERACTABLE_COLOR });
   materials.push(wallMat, floorMat, frameMat, itemMat);
@@ -213,6 +226,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
       geometries.push(geo);
       const mesh = new THREE.Mesh(geo, wallMat);
       mesh.position.set(wx, tH / 2, wz);
+      mesh.rotation.y = THREE.MathUtils.degToRad(tile.rotation ?? 0);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
@@ -289,30 +303,42 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
     const { x: ix, z: iz } = cellToWorld(item.x, item.z, bp);
 
     if (item.type === 'bookshelf') {
+      const rot = item.rotation ?? 0;
+      const rotRad = THREE.MathUtils.degToRad(rot);
+      const isRotated = rot === 90 || rot === 270;
       const shelfGeo = new THREE.BoxGeometry(cellSize * 0.75, wallHeight * 0.72, cellSize * 0.28);
       geometries.push(shelfGeo);
       const shelf = new THREE.Mesh(shelfGeo, itemMat);
       shelf.position.set(ix, wallHeight * 0.36, iz);
+      shelf.rotation.y = rotRad;
       shelf.castShadow = true;
       group.add(shelf);
       bodies.push(
         physics.createStaticBox(
           new THREE.Vector3(ix, wallHeight * 0.36, iz),
-          new THREE.Vector3(cellSize * 0.375, wallHeight * 0.36, cellSize * 0.14),
+          new THREE.Vector3(
+            isRotated ? cellSize * 0.14 : cellSize * 0.375,
+            wallHeight * 0.36,
+            isRotated ? cellSize * 0.375 : cellSize * 0.14,
+          ),
         ),
       );
     } else {
       // lectern
+      const rot = item.rotation ?? 0;
+      const rotRad = THREE.MathUtils.degToRad(rot);
       const baseGeo = new THREE.BoxGeometry(0.55, 1.05, 0.38);
       const topGeo = new THREE.BoxGeometry(0.48, 0.07, 0.48);
       geometries.push(baseGeo, topGeo);
 
       const base = new THREE.Mesh(baseGeo, itemMat);
       base.position.set(ix, 0.525, iz);
+      base.rotation.y = rotRad;
       base.castShadow = true;
 
       const top = new THREE.Mesh(topGeo, itemMat);
       top.position.set(ix, 1.09, iz);
+      top.rotation.y = rotRad;
       top.rotation.x = -0.38;
       top.castShadow = true;
 
@@ -329,6 +355,27 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
   // ── Staircases ────────────────────────────────────────────────────────
   for (const stair of bp.staircases) {
     buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies);
+  }
+
+  // ── Editor markers (spawn indicators, etc.) ───────────────────────────
+  if (opts.showEditorMarkers && bp.spawns.length > 0) {
+    const markerMat = new THREE.MeshBasicMaterial({ color: SPAWN_MARKER_COLOR });
+    materials.push(markerMat);
+    for (const spawn of bp.spawns) {
+      const { x: sx, z: sz } = cellToWorld(spawn.x, spawn.z, bp);
+      // Thin vertical pole
+      const poleGeo = new THREE.CylinderGeometry(0.045, 0.045, 1.8, 6);
+      geometries.push(poleGeo);
+      const pole = new THREE.Mesh(poleGeo, markerMat);
+      pole.position.set(sx, 0.9, sz);
+      group.add(pole);
+      // Diamond tip (octahedron)
+      const tipGeo = new THREE.OctahedronGeometry(0.22, 0);
+      geometries.push(tipGeo);
+      const tip = new THREE.Mesh(tipGeo, markerMat);
+      tip.position.set(sx, 1.9, sz);
+      group.add(tip);
+    }
   }
 
   return {

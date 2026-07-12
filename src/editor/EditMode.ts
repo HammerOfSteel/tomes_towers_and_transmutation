@@ -3,7 +3,7 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { SceneManager } from '@/levels/SceneManager';
 import { renderBlueprint, type RenderedRoom } from '@/levels/BlueprintRenderer';
 import { cellToWorld } from '@/levels/blueprint';
-import type { DoorFacing, StairDirection } from '@/levels/blueprint';
+import type { DoorFacing, StairDirection, FloorType, Rotation } from '@/levels/blueprint';
 import { EditorGrid, type PaletteKind } from './EditorGrid';
 
 // ── Visual constants ──────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ const HOTKEYS: Partial<Record<string, PaletteKind>> = {
 };
 
 const FACING_OPTIONS: DoorFacing[] = ['north', 'south', 'east', 'west'];
+const FLOOR_TYPE_OPTIONS: FloorType[] = ['stone', 'grass', 'dirt', 'wood'];
+const ROTATIONS: Rotation[] = [0, 90, 180, 270];
 
 // ── Style strings ─────────────────────────────────────────────────────────
 
@@ -80,6 +82,7 @@ export class EditMode {
 
   // Palette state
   private selectedKind: PaletteKind = 'wall';
+  private currentRotation: Rotation = 0;
   private doorFacing: DoorFacing = 'north';
   private doorTargetId = '';
   private stairFacing: DoorFacing = 'north';
@@ -187,7 +190,7 @@ export class EditMode {
       this.scene.remove(this.preview.group);
       this.preview.dispose();
     }
-    this.preview = renderBlueprint(this.grid.toBlueprint(), this.physics);
+    this.preview = renderBlueprint(this.grid.toBlueprint(), this.physics, { showEditorMarkers: true });
     this.scene.add(this.preview.group);
     this._updateValidation();
   }
@@ -196,6 +199,12 @@ export class EditMode {
 
   private _handleKey(e: KeyboardEvent): void {
     if (!this._active) return;
+    if (e.key === 'r' || e.key === 'R') {
+      const idx = ROTATIONS.indexOf(this.currentRotation);
+      this.currentRotation = ROTATIONS[(idx + 1) % ROTATIONS.length];
+      this._renderPanel();
+      return;
+    }
     const kind = HOTKEYS[e.key];
     if (kind) {
       this.selectedKind = kind;
@@ -258,6 +267,7 @@ export class EditMode {
               : undefined,
         direction: this.stairDirection,
         content: this.contentText,
+        rotation: this.currentRotation || undefined,
       });
     }
     this._rebuildPreview();
@@ -320,6 +330,9 @@ export class EditMode {
       <div style="margin-bottom:6px;">
         <label style="display:block;">ID <input id="ed-id" value="${bp.id}" style="${S_INPUT}"></label>
         <label style="display:block;margin-top:3px;">Floor <input id="ed-floor" type="number" value="${bp.floor}" style="${S_NUM}"></label>
+        <label style="display:block;margin-top:3px;">Floor type
+          <select id="ed-floortype" style="${S_SEL}">${FLOOR_TYPE_OPTIONS.map(f => `<option${f === bp.floorType ? ' selected' : ''}>${f}</option>`).join('')}</select>
+        </label>
         <label style="display:block;margin-top:3px;">Size
           <input id="ed-w" type="number" value="${bp.width}" min="3" max="24" style="${S_NUM}">
           × <input id="ed-d" type="number" value="${bp.depth}" min="3" max="24" style="${S_NUM}">
@@ -330,6 +343,11 @@ export class EditMode {
       <hr style="border:none;border-top:1px solid #333;margin:6px 0;">
       <div style="color:#888;margin-bottom:3px;font-size:11px;">TOOLS</div>
       ${paletteRows}
+      <div style="padding:2px 4px;margin-top:2px;display:flex;align-items:center;gap:6px;">
+        <span style="color:#888;font-size:11px;">Rotation:</span>
+        <strong style="color:#ff9933;">${this.currentRotation}°</strong>
+        <span style="color:#555;font-size:10px;">[R] cycle</span>
+      </div>
       ${extraFields}
 
       <hr style="border:none;border-top:1px solid #333;margin:8px 0 4px;">
@@ -339,11 +357,15 @@ export class EditMode {
         <button id="ed-import" style="${S_BTN}flex:1;">↑ Import</button>
       </div>
       <div id="ed-status" style="color:#555;font-size:10px;margin-top:6px;"></div>
-      <div style="color:#444;font-size:10px;margin-top:2px;">~ close  •  right-click erase</div>
+      <div style="color:#444;font-size:10px;margin-top:2px;">~ close  •  right-click erase  •  R rotate</div>
     `;
 
     // Bind inputs
     this._on('ed-id', 'input', (el) => { this.grid.id = (el as HTMLInputElement).value; });
+    this._on('ed-floortype', 'change', (el) => {
+      this.grid.floorType = (el as HTMLSelectElement).value as typeof FLOOR_TYPE_OPTIONS[number];
+      this._rebuildPreview();
+    });
     this._on('ed-floor', 'change', (el) => {
       this.grid.floor = Number((el as HTMLInputElement).value);
       this._rebuildPreview();
