@@ -200,9 +200,7 @@ export class EditMode {
   private _handleKey(e: KeyboardEvent): void {
     if (!this._active) return;
     if (e.key === 'r' || e.key === 'R') {
-      const idx = ROTATIONS.indexOf(this.currentRotation);
-      this.currentRotation = ROTATIONS[(idx + 1) % ROTATIONS.length];
-      this._renderPanel();
+      this._cycleOrientation();
       return;
     }
     const kind = HOTKEYS[e.key];
@@ -211,6 +209,24 @@ export class EditMode {
       this.hoverMat.color.setHex(KIND_COLOR[kind]);
       this._updatePanel();
     }
+  }
+
+  /** Cycle orientation for the current tool:
+   *  - door      → cycles doorFacing (north→east→south→west)
+   *  - staircase → cycles stairFacing
+   *  - others    → cycles numeric rotation (0→90→180→270) */
+  private _cycleOrientation(): void {
+    if (this.selectedKind === 'door') {
+      const idx = FACING_OPTIONS.indexOf(this.doorFacing);
+      this.doorFacing = FACING_OPTIONS[(idx + 1) % FACING_OPTIONS.length];
+    } else if (this.selectedKind === 'staircase') {
+      const idx = FACING_OPTIONS.indexOf(this.stairFacing);
+      this.stairFacing = FACING_OPTIONS[(idx + 1) % FACING_OPTIONS.length];
+    } else {
+      const idx = ROTATIONS.indexOf(this.currentRotation);
+      this.currentRotation = ROTATIONS[(idx + 1) % ROTATIONS.length];
+    }
+    this._renderPanel();
   }
 
   /** Convert a MouseEvent to grid cell coords, or null if outside the room. */
@@ -344,8 +360,12 @@ export class EditMode {
       <div style="color:#888;margin-bottom:3px;font-size:11px;">TOOLS</div>
       ${paletteRows}
       <div style="padding:2px 4px;margin-top:2px;display:flex;align-items:center;gap:6px;">
-        <span style="color:#888;font-size:11px;">Rotation:</span>
-        <strong style="color:#ff9933;">${this.currentRotation}°</strong>
+        <span style="color:#888;font-size:11px;">Orientation:</span>
+        <strong style="color:#ff9933;">${
+          this.selectedKind === 'door' ? this.doorFacing
+          : this.selectedKind === 'staircase' ? this.stairFacing
+          : `${this.currentRotation}°`
+        }</strong>
         <span style="color:#555;font-size:10px;">[R] cycle</span>
       </div>
       ${extraFields}
