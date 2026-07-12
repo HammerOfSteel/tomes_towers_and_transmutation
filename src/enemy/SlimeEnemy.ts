@@ -38,6 +38,7 @@ export class SlimeEnemy implements Damageable {
   readonly health: HealthComponent;
   private readonly body: RAPIER.RigidBody;
   private readonly collider: RAPIER.Collider;
+  private readonly kcc: RAPIER.KinematicCharacterController;
 
   private state: EnemyState = 'idle';
   private attackTimer = 0;
@@ -59,6 +60,11 @@ export class SlimeEnemy implements Damageable {
     );
     this.body = body;
     this.collider = collider;
+
+    this.kcc = physics.createCharacterController(0.01);
+    this.kcc.setSlideEnabled(true);
+    this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
+    this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
 
     this.health = new HealthComponent(
       SLIME_HP,
@@ -90,7 +96,7 @@ export class SlimeEnemy implements Damageable {
 
   // ── Update ────────────────────────────────────────────────────────────────
 
-  update(playerPos: THREE.Vector3, dt: number, physics: PhysicsWorld): void {
+  update(playerPos: THREE.Vector3, dt: number): void {
     if (this.state === 'dead') return;
 
     this.health.tick(dt);
@@ -152,18 +158,12 @@ export class SlimeEnemy implements Damageable {
       }
     }
 
-    // Gravity
-    const kcc = physics.createCharacterController(0.01);
-    kcc.setSlideEnabled(true);
-    kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
-
-    const isGrounded = kcc.computedGrounded();
-    this.verticalVelocity = isGrounded ? GROUND_PUSH : Math.max(this.verticalVelocity - 20 * dt, -20);
-
+    // Gravity — compute movement first, THEN check grounded
     const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
-    kcc.computeColliderMovement(this.collider, desired);
-    const actual = kcc.computedMovement();
-    physics.rapierWorld.removeCharacterController(kcc);
+    this.kcc.computeColliderMovement(this.collider, desired);
+    const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
+    this.verticalVelocity = isGrounded ? GROUND_PUSH : Math.max(this.verticalVelocity - 20 * dt, -20);
+    const actual = this.kcc.computedMovement();
 
     const cur = this.body.translation();
     this.body.setNextKinematicTranslation({

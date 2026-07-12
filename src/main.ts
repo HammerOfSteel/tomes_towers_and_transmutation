@@ -137,7 +137,7 @@ async function main() {
 
     // 6. Enemy AI
     const playerPos = player.group.position;
-    slimes.forEach((sl) => sl.update(playerPos, dt, physics));
+    slimes.forEach((sl) => sl.update(playerPos, dt));
 
     // 7. Combat tick (expire arcs / projectiles)
     combat.update(dt, scene);

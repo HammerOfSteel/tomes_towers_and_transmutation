@@ -45,11 +45,13 @@ class Projectile {
     const pulse = 0.6 + 0.4 * Math.sin(this.timer * 20);
     (this.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse;
 
-    // Hit test against each target
-    for (const target of this.targets) {
-      if (target.isDead || !target.worldPosition) continue;
-      const dist = this.pos.distanceTo(target.worldPosition);
-      if (dist < PROJECTILE_RADIUS + 0.45 /* enemy radius */) {
+      // Hit test — XZ-only distance so height difference doesn't cause misses
+      for (const target of this.targets) {
+        if (target.isDead || !target.worldPosition) continue;
+        const dx = this.pos.x - target.worldPosition.x;
+        const dz = this.pos.z - target.worldPosition.z;
+        const distXZ = Math.sqrt(dx * dx + dz * dz);
+        if (distXZ < PROJECTILE_RADIUS + 0.45) {
         const applied = target.takeDamage(PROJECTILE_DAMAGE);
         if (applied > 0) this.onHit?.(target, applied);
         this.hit = true;
