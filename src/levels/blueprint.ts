@@ -10,6 +10,9 @@ export type DoorFacing = 'north' | 'south' | 'east' | 'west';
 export type StairDirection = 'up' | 'down';
 export type SpawnType = 'slime';
 export type InteractableType = 'bookshelf' | 'lectern';
+export type FloorType = 'stone' | 'grass' | 'dirt' | 'wood';
+/** Clockwise rotation around the Y axis in degrees. */
+export type Rotation = 0 | 90 | 180 | 270;
 
 export interface TileEntry {
   /** Grid column — 0 is the west edge, increases east. */
@@ -19,6 +22,8 @@ export interface TileEntry {
   type: TileType;
   /** Wall height override in world units. Omit to use Blueprint.wallHeight. */
   h?: number;
+  /** Clockwise rotation around Y axis. Defaults to 0. */
+  rotation?: Rotation;
 }
 
 export interface DoorEntry {
@@ -42,6 +47,8 @@ export interface InteractableEntry {
   type: InteractableType;
   /** Text displayed when the player reads/examines this object. */
   content?: string;
+  /** Clockwise rotation around Y axis. Defaults to 0 (faces south into the room). */
+  rotation?: Rotation;
 }
 
 export interface StaircaseEntry {
@@ -75,6 +82,8 @@ export interface Blueprint {
   interactables: InteractableEntry[];
   /** Which floor this room is on (0 = ground, 1 = first floor up, etc.). */
   floor: number;
+  /** Floor material type. Defaults to 'stone'. Affects floor colour in the renderer. */
+  floorType?: FloorType;
 }
 
 // ── Validation ────────────────────────────────────────────────────────────
@@ -91,6 +100,8 @@ const VALID_FACINGS: DoorFacing[] = ['north', 'south', 'east', 'west'];
 const VALID_STAIR_DIRS: StairDirection[] = ['up', 'down'];
 const VALID_SPAWN_TYPES: SpawnType[] = ['slime'];
 const VALID_INTERACTABLE_TYPES: InteractableType[] = ['bookshelf', 'lectern'];
+const VALID_FLOOR_TYPES: FloorType[] = ['stone', 'grass', 'dirt', 'wood'];
+const VALID_ROTATIONS = new Set<number>([0, 90, 180, 270]);
 
 /** Validates a raw parsed value as a Blueprint, throwing BlueprintError on failure. */
 export function validateBlueprint(raw: unknown): Blueprint {
@@ -124,6 +135,8 @@ export function validateBlueprint(raw: unknown): Blueprint {
     throw new BlueprintError(id, 'interactables must be an array');
   if (typeof r.floor !== 'number' || !Number.isInteger(r.floor))
     throw new BlueprintError(id, 'floor must be an integer');
+  if (r.floorType !== undefined && !VALID_FLOOR_TYPES.includes(r.floorType as FloorType))
+    throw new BlueprintError(id, `invalid floorType "${String(r.floorType)}"`);
 
   for (const t of r.tiles as unknown[]) {
     const tile = t as Record<string, unknown>;
@@ -131,6 +144,8 @@ export function validateBlueprint(raw: unknown): Blueprint {
       throw new BlueprintError(id, `tile missing numeric x/z: ${JSON.stringify(t)}`);
     if (!VALID_TILE_TYPES.includes(tile.type as TileType))
       throw new BlueprintError(id, `unknown tile type "${String(tile.type)}"`);
+    if (tile.rotation !== undefined && !VALID_ROTATIONS.has(tile.rotation as number))
+      throw new BlueprintError(id, `invalid tile rotation "${String(tile.rotation)}"`);
   }
 
   for (const d of r.doors as unknown[]) {
@@ -169,6 +184,8 @@ export function validateBlueprint(raw: unknown): Blueprint {
       throw new BlueprintError(id, `interactable missing numeric x/z: ${JSON.stringify(i)}`);
     if (!VALID_INTERACTABLE_TYPES.includes(item.type as InteractableType))
       throw new BlueprintError(id, `unknown interactable type "${String(item.type)}"`);
+    if (item.rotation !== undefined && !VALID_ROTATIONS.has(item.rotation as number))
+      throw new BlueprintError(id, `invalid interactable rotation "${String(item.rotation)}"`);
   }
 
   return raw as Blueprint;

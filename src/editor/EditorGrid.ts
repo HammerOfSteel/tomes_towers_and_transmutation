@@ -7,6 +7,8 @@ import type {
   StaircaseEntry,
   DoorFacing,
   StairDirection,
+  FloorType,
+  Rotation,
 } from '@/levels/blueprint';
 import { validateBlueprint, serializeBlueprint, parseBlueprint } from '@/levels/blueprint';
 
@@ -27,6 +29,7 @@ export interface PlaceOptions {
   targetId?: string | null;
   direction?: StairDirection;
   content?: string;
+  rotation?: Rotation;
 }
 
 // ── EditorGrid ────────────────────────────────────────────────────────────
@@ -38,6 +41,7 @@ export class EditorGrid {
   private _width: number;
   private _depth: number;
   private _floor: number;
+  private _floorType: FloorType = 'stone';
 
   private readonly _tiles = new Map<string, TileEntry>();
   private readonly _doors = new Map<string, DoorEntry>();
@@ -58,6 +62,7 @@ export class EditorGrid {
   /** Populate a new EditorGrid from an existing validated Blueprint. */
   static fromBlueprint(bp: Blueprint): EditorGrid {
     const g = new EditorGrid(bp.id, bp.width, bp.depth, bp.floor);
+    g._floorType = bp.floorType ?? 'stone';
     // Replace auto-generated border walls with exactly what the blueprint says.
     g._tiles.clear();
     for (const t of bp.tiles) g._tiles.set(`${t.x},${t.z}`, { ...t });
@@ -82,9 +87,11 @@ export class EditorGrid {
   get width(): number { return this._width; }
   get depth(): number { return this._depth; }
   get floor(): number { return this._floor; }
+  get floorType(): FloorType { return this._floorType; }
 
   set id(v: string) { this._id = v; }
   set floor(v: number) { this._floor = Math.trunc(v); }
+  set floorType(v: FloorType) { this._floorType = v; }
 
   // ── Placement ─────────────────────────────────────────────────────────
 
@@ -97,9 +104,9 @@ export class EditorGrid {
     if (kind === 'erase') return;
 
     if (kind === 'wall') {
-      this._tiles.set(key, { x, z, type: 'wall' });
+      this._tiles.set(key, { x, z, type: 'wall', ...(opts.rotation ? { rotation: opts.rotation } : {}) });
     } else if (kind === 'pillar') {
-      this._tiles.set(key, { x, z, type: 'pillar' });
+      this._tiles.set(key, { x, z, type: 'pillar', ...(opts.rotation ? { rotation: opts.rotation } : {}) });
     } else if (kind === 'door') {
       this._doors.set(key, {
         x, z,
@@ -113,12 +120,14 @@ export class EditorGrid {
         x, z,
         type: 'bookshelf',
         content: opts.content ?? 'Empty page.',
+        ...(opts.rotation ? { rotation: opts.rotation } : {}),
       });
     } else if (kind === 'lectern') {
       this._interactables.set(key, {
         x, z,
         type: 'lectern',
         content: opts.content ?? 'Empty page.',
+        ...(opts.rotation ? { rotation: opts.rotation } : {}),
       });
     } else if (kind === 'staircase') {
       this._staircases.set(key, {
@@ -164,6 +173,7 @@ export class EditorGrid {
       cellSize: 2,
       wallHeight: 3,
       floor: this._floor,
+      floorType: this._floorType,
       tiles: [...this._tiles.values()],
       doors: [...this._doors.values()],
       spawns: [...this._spawns.values()],
