@@ -1,0 +1,20 @@
+# GDD: Captive Ascendant (Working Title)
+
+## 1. Core Concept
+A narrative-driven, isometric action-RPG that subverts the "princess in a tower" trope. A captive princess, forgotten by her busy wizard captor, discovers arcane textbooks in her cell. She learns magic, breaks out, claims the tower as her own, and explores the surrounding wilds to amass power, resources, and a monster army to exact overwhelming revenge.
+
+## 2. Gameplay Loop
+1. **Study & Learn:** Find "Arcane for Dummies" books and captor footnotes to unlock spells and tower blueprints.
+2. **Explore & Conquer:** Procedurally generated tower interiors and exterior wilds. 
+3. **Action Combat:** *A Link to the Past*-style real-time combat translated to isometric 3D. Emphasizes spacing, dodging, melee swings, and spell projectiles.
+4. **Recruit & Build:** Defeat monsters to recruit them. Gather resources to upgrade the tower (base-building/tower defense lite).
+5. **Progress to OP:** The player's power curve is exponential, intentionally trivializing the final boss for narrative payoff.
+
+## 3. Tech Stack (Code-First Approach)
+*   **Engine/Renderer:** Three.js (WebGL).
+*   **Physics:** Rapier3D (fast, modern WebAssembly physics for JS) for movement, hitboxes, and projectile collision.
+*   **Art Style (Phases 1-7):** Purely procedural. Primitive geometry (spheres, cubes, cylinders) utilizing custom WebGL shaders (glowing runes, noise textures, toon shading) to look stylized without external assets.
+*   **Level Design:** 
+    *   Procedural generation via seeded algorithms (cellular automata / BSP trees).
+    *   In-house modular level editor for bespoke rooms.
+*   **UI/Dialogue:** HTML/CSS overlaid on the canvas.
