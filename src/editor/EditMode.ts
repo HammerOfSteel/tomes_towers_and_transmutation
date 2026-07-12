@@ -195,10 +195,6 @@ export class EditMode {
   // ── Event handlers ────────────────────────────────────────────────────
 
   private _handleKey(e: KeyboardEvent): void {
-    if (e.key === '`' || e.key === '~') {
-      this.toggle();
-      return;
-    }
     if (!this._active) return;
     const kind = HOTKEYS[e.key];
     if (kind) {

@@ -8,6 +8,7 @@ import { CombatSystem } from '@/combat/CombatSystem';
 import { SpellSystem } from '@/combat/SpellSystem';
 import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
+import { PauseMenu } from '@/ui/PauseMenu';
 import { EditMode } from '@/editor/EditMode';
 
 async function main() {
@@ -65,7 +66,27 @@ async function main() {
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
 
-  // ── Combat systems ─────────────────────────────────────────────────────────
+  // ── Pause menu ───────────────────────────────────────────────────────────
+  const pauseMenu = new PauseMenu({
+    onOpenEditor: () => editMode.toggle(),
+  });
+
+  // ── Centralised key routing ──────────────────────────────────────────────
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (editMode.isActive) {
+        editMode.toggle();          // close editor → game
+      } else if (pauseMenu.isOpen) {
+        pauseMenu.close();          // close menu → game
+      } else {
+        pauseMenu.open();           // game → menu
+      }
+    } else if (e.key === '`' || e.key === '~') {
+      if (!pauseMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
+    }
+  });
+
+  // ── Combat systems ────────────────────────────────────────────────────────
   const combat = new CombatSystem();
   const spells = new SpellSystem();
 
@@ -96,8 +117,8 @@ async function main() {
     // 1. Physics
     physics.step(dt);
 
-    // 2-7. Game simulation — paused while the level editor is open
-    if (!editMode.isActive) {
+    // 2-7. Game simulation — paused while the level editor or pause menu is open
+    if (!editMode.isActive && !pauseMenu.isOpen) {
       // 2. Player movement
       player.update(input.state, dt);
 
