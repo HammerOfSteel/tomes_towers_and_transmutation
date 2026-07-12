@@ -15,6 +15,7 @@
     {"x":0,"z":1,"facing":"west","targetId":"library_small"},
     {"x":6,"z":1,"facing":"east","targetId":null}
   ],
+  "staircases": [],
   "spawns": [
     {"x":3,"z":1,"type":"slime"}
   ],
@@ -23,5 +24,6 @@
       "x":4,"z":0,"type":"bookshelf",
       "content":"Practical Containment — Margin note: 'The slimes in corridor 3 are NOT pets. Signed, myself, three weeks ago.'"
     }
-  ]
+  ],
+  "floor": 0
 }

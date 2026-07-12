@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
-import type { Blueprint, DoorEntry } from './blueprint';
+import type { Blueprint, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
 import { PALETTE } from '@/shaders/palette';
 
@@ -10,6 +10,9 @@ const WALL_COLOR = PALETTE.STONE_MID;
 const FLOOR_COLOR = PALETTE.STONE_DARK;
 const DOOR_FRAME_COLOR = 0x5a5870;
 const INTERACTABLE_COLOR = PALETTE.WOOD_BROWN;
+const STAIR_COLOR = 0x4a4a62;          // slightly lighter stone for step faces
+const STAIR_UP_GLOW = 0xff9933;        // warm amber — climbing toward light
+const STAIR_DOWN_GLOW = 0x4488ff;      // cool blue — descending into depth
 
 // How deep the door trigger box extends into the room (world units).
 const TRIGGER_DEPTH = 1.8;
@@ -17,11 +20,14 @@ const TRIGGER_DEPTH = 1.8;
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface DoorTrigger {
-  readonly entry: DoorEntry;
+  /** Blueprint ID of the connected room, or null for an exterior exit. */
+  readonly targetId: string | null;
+  /** Present for staircase triggers; absent for flat door triggers. */
+  readonly direction?: 'up' | 'down';
   /** World-space centre of the trigger AABB. */
   readonly cx: number;
   readonly cz: number;
-  /** Half-extents of the trigger AABB (X and Z only — Y is not checked). */
+  /** Half-extents of the trigger AABB (X and Z only). */
   readonly hx: number;
   readonly hz: number;
 }
@@ -30,6 +36,113 @@ export interface RenderedRoom {
   readonly group: THREE.Group;
   readonly doorTriggers: DoorTrigger[];
   dispose(): void;
+}
+
+// ── Staircase builder ─────────────────────────────────────────────────────
+
+/** Builds a 5-step procedural staircase and adds a trigger AABB.
+ *
+ *  'up'  stairs: steps rise from floor level; warm amber glow at the landing.
+ *  'down' stairs: steps descend below the floor; cool blue glow at floor level
+ *  plus a dark stone rim around the opening. */
+function buildStaircase(
+  stair: StaircaseEntry,
+  bp: Blueprint,
+  group: THREE.Group,
+  geometries: THREE.BufferGeometry[],
+  materials: THREE.Material[],
+  doorTriggers: DoorTrigger[],
+): void {
+  const { cellSize, wallHeight } = bp;
+  const { x: wx, z: wz } = cellToWorld(stair.x, stair.z, bp);
+  const STEPS = 5;
+  const stepH = Math.min(0.4, wallHeight * 0.13);
+  const stepD = cellSize / STEPS;
+  const stepW = cellSize * 0.82;
+
+  // Approach axis unit vector (direction toward wall / up the stairs)
+  let ax = 0, az = 0;
+  if (stair.facing === 'north') az = -1;
+  else if (stair.facing === 'south') az = 1;
+  else if (stair.facing === 'east') ax = 1;
+  else ax = -1;
+
+  const stepMat = new THREE.MeshLambertMaterial({ color: STAIR_COLOR });
+  materials.push(stepMat);
+
+  for (let i = 0; i < STEPS; i++) {
+    // Step i=0 is at the player approach side; i=STEPS-1 is at the wall.
+    const along = (STEPS / 2 - i - 0.5) * stepD; // + = approach side, - = wall side
+    const sx = wx - ax * along;
+    const sz = wz - az * along;
+    const sy = stair.direction === 'up' ? (i + 0.5) * stepH : -(i + 0.5) * stepH;
+
+    const geo = new THREE.BoxGeometry(
+      ax !== 0 ? stepD : stepW,
+      stepH,
+      az !== 0 ? stepD : stepW,
+    );
+    geometries.push(geo);
+    const mesh = new THREE.Mesh(geo, stepMat);
+    mesh.position.set(sx, sy, sz);
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+
+  // For 'down' stairs: dark stone rim at floor level around the opening
+  if (stair.direction === 'down') {
+    const rimMat = new THREE.MeshLambertMaterial({ color: PALETTE.STONE_DARK });
+    materials.push(rimMat);
+    const rimThick = 0.14;
+    const rimH = 0.12;
+    const half = cellSize / 2;
+
+    // Four rim pieces around the staircase opening
+    const rimDefs = [
+      [0,         rimH / 2, -(half + rimThick / 2), cellSize + rimThick * 2, rimH, rimThick],
+      [0,         rimH / 2,  (half + rimThick / 2), cellSize + rimThick * 2, rimH, rimThick],
+      [-(half + rimThick / 2), rimH / 2, 0, rimThick, rimH, cellSize],
+      [ (half + rimThick / 2), rimH / 2, 0, rimThick, rimH, cellSize],
+    ] as const;
+
+    for (const [rx, ry, rz, rw, rh, rd] of rimDefs) {
+      const rimGeo = new THREE.BoxGeometry(rw, rh, rd);
+      geometries.push(rimGeo);
+      const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+      rimMesh.position.set(wx + rx, ry, wz + rz);
+      group.add(rimMesh);
+    }
+  }
+
+  // Glowing directional indicator — a flat torus ring
+  const glowColor = stair.direction === 'up' ? STAIR_UP_GLOW : STAIR_DOWN_GLOW;
+  const glowY = stair.direction === 'up' ? (STEPS - 0.5) * stepH + 0.3 : 0.3;
+  // Position at the wall-side end of the staircase
+  const glowAlong = -(STEPS / 2 - 0.2) * stepD;
+  const glowX = wx - ax * glowAlong;
+  const glowZ = wz - az * glowAlong;
+
+  const glowGeo = new THREE.TorusGeometry(0.28, 0.055, 6, 14);
+  geometries.push(glowGeo);
+  const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, fog: false });
+  materials.push(glowMat);
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.position.set(glowX, glowY, glowZ);
+  glowMesh.rotation.x = Math.PI / 2; // lay flat (horizontal ring)
+  group.add(glowMesh);
+
+  // Trigger AABB at the player approach end of the staircase
+  const tHalf = TRIGGER_DEPTH / 2;
+  const wHalf = (cellSize * 0.75) / 2;
+  const isNS = az !== 0;
+  doorTriggers.push({
+    targetId: stair.targetId,
+    direction: stair.direction,
+    cx: wx,
+    cz: wz,
+    hx: isNS ? wHalf : tHalf,
+    hz: isNS ? tHalf : wHalf,
+  });
 }
 
 // ── Renderer ──────────────────────────────────────────────────────────────
@@ -148,7 +261,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
     const tHalf = TRIGGER_DEPTH / 2;
     const wHalf = (cellSize * 0.75) / 2;
     doorTriggers.push({
-      entry: door,
+      targetId: door.targetId,
       cx: dx,
       cz: dz,
       hx: isNS ? wHalf : tHalf,
@@ -196,6 +309,11 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
         ),
       );
     }
+  }
+
+  // ── Staircases ────────────────────────────────────────────────────────
+  for (const stair of bp.staircases) {
+    buildStaircase(stair, bp, group, geometries, materials, doorTriggers);
   }
 
   return {

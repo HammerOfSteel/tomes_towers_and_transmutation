@@ -8,6 +8,7 @@ export class HUD {
   private readonly hpFill: HTMLDivElement;
   private readonly hpText: HTMLSpanElement;
   private readonly killText: HTMLSpanElement;
+  private readonly floorText: HTMLSpanElement;
 
   constructor() {
     this.root = document.createElement('div');
@@ -66,15 +67,27 @@ export class HUD {
     this.killText.style.fontSize = '12px';
 
     this.root.append(hpRow, this.killText);
+
+    // ── Floor indicator ───────────────────────────────────────────────
+    this.floorText = document.createElement('div');
+    Object.assign(this.floorText.style, {
+      fontSize: '12px',
+      marginTop: '4px',
+      color: '#aabbcc',
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.root.appendChild(this.floorText);
+
     document.body.appendChild(this.root);
   }
 
-  update(hp: number, maxHp: number, kills: number, total: number): void {
+  update(hp: number, maxHp: number, kills: number, total: number, floor = 0): void {
     const pct = Math.max(0, (hp / maxHp) * 100);
     this.hpFill.style.width = `${pct}%`;
     this.hpFill.style.background = pct > 50 ? '#44ddff' : pct > 25 ? '#ffcc44' : '#ff4444';
     this.hpText.textContent = `${hp}/${maxHp}`;
     this.killText.textContent = `Enemies: ${kills}/${total}`;
+    const floorLabel = floor === 0 ? 'Ground' : floor > 0 ? `Floor ${floor}` : `Basement ${Math.abs(floor)}`;
+    this.floorText.textContent = `▲ ${floorLabel}`;
   }
 
   dispose(): void {
