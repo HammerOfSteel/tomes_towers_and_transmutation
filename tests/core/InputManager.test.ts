@@ -62,19 +62,14 @@ describe('InputManager', () => {
 
   // ── Action keys ───────────────────────────────────────────────────────────
 
-  it('sets jump when Space is pressed', () => {
+  it('sets attack when Space is pressed', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
-    expect(manager.state.jump).toBe(true);
+    expect(manager.state.attack).toBe(true);
   });
 
-  it('sets run when ShiftLeft is pressed', () => {
+  it('sets dodge when ShiftLeft is pressed', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
-    expect(manager.state.run).toBe(true);
-  });
-
-  it('sets run when ShiftRight is pressed', () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftRight' }));
-    expect(manager.state.run).toBe(true);
+    expect(manager.state.dodge).toBe(true);
   });
 
   it('sets interact when E is pressed', () => {
@@ -126,8 +121,6 @@ describe('InputManager', () => {
     expect(s.moveBackward).toBe(false);
     expect(s.moveLeft).toBe(false);
     expect(s.moveRight).toBe(false);
-    expect(s.jump).toBe(false);
-    expect(s.run).toBe(false);
     expect(s.attack).toBe(false);
     expect(s.dodge).toBe(false);
     expect(s.interact).toBe(false);
