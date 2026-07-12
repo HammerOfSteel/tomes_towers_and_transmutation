@@ -330,7 +330,7 @@ export class PlayerController {
     }
 
     // Glow pulses brighter when sprinting
-    const headMat = this.headMesh.material as THREE.MeshToonMaterial;
+    const headMat = this.headMesh.material as THREE.MeshLambertMaterial;
     const targetGlow = input.run && hSpeed > 1 ? 1.3 : 0.4;
     headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, targetGlow, 0.08);
 
@@ -380,12 +380,12 @@ export class PlayerController {
     const group = new THREE.Group();
 
     const bodyGeo = new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HALF_HEIGHT * 2, 8, 16);
-    const bodyMat = new THREE.MeshToonMaterial({ color: PALETTE.PLAYER_BODY });
+    const bodyMat = new THREE.MeshLambertMaterial({ color: PALETTE.PLAYER_BODY });
     const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
     bodyMesh.castShadow = true;
 
     const headGeo = new THREE.SphereGeometry(0.2, 16, 16);
-    const headMat = new THREE.MeshToonMaterial({
+    const headMat = new THREE.MeshLambertMaterial({
       color: PALETTE.PLAYER_BODY,
       emissive: new THREE.Color(PALETTE.PLAYER_GLOW),
       emissiveIntensity: 0.4,
