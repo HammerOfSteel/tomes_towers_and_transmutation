@@ -1,0 +1,51 @@
+{
+  "id": "library_large",
+  "version": 1,
+  "width": 9,
+  "depth": 9,
+  "cellSize": 2,
+  "wallHeight": 4,
+  "tiles": [
+    {"x":0,"z":0,"type":"wall"},{"x":1,"z":0,"type":"wall"},{"x":2,"z":0,"type":"wall"},
+    {"x":3,"z":0,"type":"wall"},{"x":4,"z":0,"type":"wall"},{"x":5,"z":0,"type":"wall"},
+    {"x":6,"z":0,"type":"wall"},{"x":7,"z":0,"type":"wall"},{"x":8,"z":0,"type":"wall"},
+    {"x":0,"z":1,"type":"wall"},{"x":8,"z":1,"type":"wall"},
+    {"x":0,"z":2,"type":"wall"},{"x":8,"z":2,"type":"wall"},
+    {"x":0,"z":3,"type":"wall"},{"x":8,"z":3,"type":"wall"},
+    {"x":0,"z":4,"type":"wall"},{"x":8,"z":4,"type":"wall"},
+    {"x":0,"z":5,"type":"wall"},{"x":8,"z":5,"type":"wall"},
+    {"x":0,"z":6,"type":"wall"},{"x":8,"z":6,"type":"wall"},
+    {"x":0,"z":7,"type":"wall"},{"x":8,"z":7,"type":"wall"},
+    {"x":0,"z":8,"type":"wall"},{"x":1,"z":8,"type":"wall"},{"x":2,"z":8,"type":"wall"},
+    {"x":3,"z":8,"type":"wall"},
+    {"x":5,"z":8,"type":"wall"},{"x":6,"z":8,"type":"wall"},
+    {"x":7,"z":8,"type":"wall"},{"x":8,"z":8,"type":"wall"},
+    {"x":2,"z":2,"type":"pillar"},{"x":6,"z":2,"type":"pillar"},
+    {"x":2,"z":6,"type":"pillar"},{"x":6,"z":6,"type":"pillar"}
+  ],
+  "doors": [
+    {"x":4,"z":8,"facing":"south","targetId":"library_small"}
+  ],
+  "spawns": [
+    {"x":3,"z":4,"type":"slime"},
+    {"x":5,"z":4,"type":"slime"}
+  ],
+  "interactables": [
+    {
+      "x":1,"z":1,"type":"bookshelf",
+      "content":"Advanced Transmutation — 'Note to self: the gold-to-lead formula works. The lead-to-gold formula also works but requires exactly 11.3 grams of patience, which I do not have.'"
+    },
+    {
+      "x":7,"z":1,"type":"bookshelf",
+      "content":"Monster Taxonomy Vol. III — 'Slimes: highly adhesive, mildly sapient, surprisingly forgiving. Do not make eye contact.'"
+    },
+    {
+      "x":1,"z":7,"type":"bookshelf",
+      "content":"On the Ethics of Captivity (marginalia edition) — Page 112 is heavily annotated. Someone has written: 'she is going to be SO angry when she gets out.'"
+    },
+    {
+      "x":4,"z":2,"type":"lectern",
+      "content":"The Grand Codex Arcanum lies open on the lectern. The pages hum faintly. A margin note reads: 'Do not read aloud unless you mean it. — W'"
+    }
+  ]
+}

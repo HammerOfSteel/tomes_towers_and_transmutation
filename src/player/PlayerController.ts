@@ -154,6 +154,16 @@ export class PlayerController {
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
 
+  /** Instantly reposition both the physics body and the visual mesh.
+   *  Use for room transitions only — not for gameplay movement. */
+  teleport(pos: THREE.Vector3): void {
+    this.body.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
+    this.group.position.copy(pos);
+    this._pos.copy(pos);
+    // Reset vertical velocity so the player lands cleanly in the new room
+    this.velocity.set(0, 0, 0);
+  }
+
   private readonly _pos = new THREE.Vector3();
 
   constructor(physicsWorld: PhysicsWorld, startPosition: THREE.Vector3) {

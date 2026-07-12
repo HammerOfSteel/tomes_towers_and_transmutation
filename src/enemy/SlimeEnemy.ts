@@ -254,6 +254,13 @@ export class SlimeEnemy implements Damageable {
     this.group.visible = false;
   }
 
+  /** Remove this enemy's physics bodies from the world.
+   *  Call when unloading the room — also remove `this.group` from the scene. */
+  dispose(physics: PhysicsWorld): void {
+    physics.rapierWorld.removeCharacterController(this.kcc);
+    physics.rapierWorld.removeRigidBody(this.body);
+  }
+
   private static buildMesh(): { group: THREE.Group; bodyMesh: THREE.Mesh } {
     const group = new THREE.Group();
     // Flattened sphere — scale Y down to make it look squishy

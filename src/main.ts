@@ -4,11 +4,9 @@ import { InputManager } from '@/core/InputManager';
 import { CameraRig } from '@/core/CameraRig';
 import { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PlayerController } from '@/player/PlayerController';
-import { createFloor } from '@/scene/createFloor';
-import { createObstacles } from '@/scene/createObstacles';
 import { CombatSystem } from '@/combat/CombatSystem';
 import { SpellSystem } from '@/combat/SpellSystem';
-import { SlimeEnemy, SLIME_SPAWN_POSITIONS } from '@/enemy/SlimeEnemy';
+import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 
 async function main() {
@@ -52,26 +50,16 @@ async function main() {
   scene.add(keyLight);
 
   // ── Floor ─────────────────────────────────────────────────────────────────
-  const { mesh: floorMesh } = createFloor(50, physics);
-  scene.add(floorMesh);
-
-  // ── Obstacles ─────────────────────────────────────────────────────────────
-  const obstacles = createObstacles(physics);
-  obstacles.forEach((m) => scene.add(m));
+  // Floor and room geometry are now managed by SceneManager / BlueprintRenderer.
 
   // ── Player ────────────────────────────────────────────────────────────────
   const player = new PlayerController(physics, new THREE.Vector3(0, 1.5, 0));
   scene.add(player.shadow);
   scene.add(player.group);
 
-  // ── Enemies ───────────────────────────────────────────────────────────────
-  const slimes = SLIME_SPAWN_POSITIONS.map((pos) => {
-    const s = new SlimeEnemy(pos, physics, (dmg) => {
-      player.health.takeDamage(dmg);
-    });
-    scene.add(s.group);
-    return s;
-  });
+  // ── Scene / room manager ──────────────────────────────────────────────────
+  const sceneManager = new SceneManager(scene, physics, player);
+  sceneManager.loadRoomImmediate('cell_start');
 
   // ── Combat systems ─────────────────────────────────────────────────────────
   const combat = new CombatSystem();
@@ -113,7 +101,11 @@ async function main() {
     raycaster.setFromCamera(mouseNDC, cameraRig.camera);
     raycaster.ray.intersectPlane(floorPlane, mouseWorld);
 
-    // 4. Melee attack (mouse button 0, 0.4s cooldown)
+    // 4. Room manager — enemy AI + door trigger checks
+    sceneManager.update(dt, player.group.position);
+    const enemies = sceneManager.getActiveEnemies();
+
+    // 5. Melee attack (mouse button 0, 0.4s cooldown)
     meleeCooldown = Math.max(0, meleeCooldown - dt);
     const attackJustPressed = s.attack && !lastAttackInput;
     lastAttackInput = s.attack;
@@ -123,21 +115,17 @@ async function main() {
         mouseWorld.x - player.group.position.x,
         mouseWorld.z - player.group.position.z,
       );
-      combat.triggerMelee(player.group.position, meleeAngle, slimes, scene);
+      combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
     }
 
-    // 5. Spell (right-click / 'E' remapped — here we use E key via interact)
+    // 6. Spell (right-click / 'E' remapped — here we use E key via interact)
     spellCooldown = Math.max(0, spellCooldown - dt);
     const spellJustPressed = s.interact && !lastSpellInput;
     lastSpellInput = s.interact;
     if (spellJustPressed && spellCooldown <= 0) {
       spellCooldown = 0.6;
-      spells.fire(player.group.position, mouseWorld, slimes, scene);
+      spells.fire(player.group.position, mouseWorld, enemies, scene);
     }
-
-    // 6. Enemy AI
-    const playerPos = player.group.position;
-    slimes.forEach((sl) => sl.update(playerPos, dt));
 
     // 7. Combat tick (expire arcs / projectiles)
     combat.update(dt, scene);
@@ -147,8 +135,7 @@ async function main() {
     cameraRig.follow(player.group.position);
 
     // 9. HUD
-    const kills = slimes.filter((sl) => sl.isDead).length;
-    hud.update(player.health.hp, player.health.maxHp, kills, slimes.length);
+    hud.update(player.health.hp, player.health.maxHp, sceneManager.killCount, sceneManager.totalEnemies);
 
     // 10. Render
     renderer.render(scene, cameraRig.camera);
