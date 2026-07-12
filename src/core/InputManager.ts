@@ -5,6 +5,10 @@ export interface InputState {
   moveBackward: boolean;
   moveLeft: boolean;
   moveRight: boolean;
+  /** Hold Shift to run */
+  run: boolean;
+  /** Space — jump */
+  jump: boolean;
   /** Actions */
   attack: boolean;
   dodge: boolean;
@@ -20,6 +24,7 @@ export interface InputState {
  */
 export class InputManager {
   private readonly heldKeys = new Set<string>();
+  private readonly heldMouseButtons = new Set<number>();
   private mouseX = 0;
   private mouseY = 0;
 
@@ -33,11 +38,19 @@ export class InputManager {
     this.mouseX = (e.clientX / window.innerWidth) * 2 - 1;
     this.mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
   };
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    this.heldMouseButtons.add(e.button);
+  };
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    this.heldMouseButtons.delete(e.button);
+  };
 
   constructor() {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
   }
 
   get state(): InputState {
@@ -46,8 +59,10 @@ export class InputManager {
       moveBackward: this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown'),
       moveLeft: this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft'),
       moveRight: this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight'),
-      attack: this.heldKeys.has('Space'),
-      dodge: this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight'),
+      run: this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight'),
+      jump: this.heldKeys.has('Space'),
+      attack: this.heldMouseButtons.has(0),
+      dodge: this.heldKeys.has('KeyF'),
       interact: this.heldKeys.has('KeyE'),
       mouseX: this.mouseX,
       mouseY: this.mouseY,
@@ -58,5 +73,7 @@ export class InputManager {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
   }
 }

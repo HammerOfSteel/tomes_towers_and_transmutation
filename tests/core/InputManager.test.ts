@@ -62,13 +62,34 @@ describe('InputManager', () => {
 
   // ── Action keys ───────────────────────────────────────────────────────────
 
-  it('sets attack when Space is pressed', () => {
+  it('sets jump when Space is pressed', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
+    expect(manager.state.jump).toBe(true);
+  });
+
+  it('sets run when ShiftLeft is pressed', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
+    expect(manager.state.run).toBe(true);
+  });
+
+  it('sets run when ShiftRight is pressed', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftRight' }));
+    expect(manager.state.run).toBe(true);
+  });
+
+  it('sets attack when mouse button 0 is pressed', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
     expect(manager.state.attack).toBe(true);
   });
 
-  it('sets dodge when ShiftLeft is pressed', () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
+  it('clears attack when mouse button 0 is released', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+    expect(manager.state.attack).toBe(false);
+  });
+
+  it('sets dodge when F is pressed', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF' }));
     expect(manager.state.dodge).toBe(true);
   });
 
@@ -121,6 +142,8 @@ describe('InputManager', () => {
     expect(s.moveBackward).toBe(false);
     expect(s.moveLeft).toBe(false);
     expect(s.moveRight).toBe(false);
+    expect(s.run).toBe(false);
+    expect(s.jump).toBe(false);
     expect(s.attack).toBe(false);
     expect(s.dodge).toBe(false);
     expect(s.interact).toBe(false);

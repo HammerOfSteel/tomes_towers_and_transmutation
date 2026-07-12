@@ -5,22 +5,57 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PALETTE } from '@/shaders/palette';
 import { rapierToThreeInto } from '@/physics/helpers';
 
-// ── Constants ──────────────────────────────────────────────────────────────
+// ── Capsule dimensions ─────────────────────────────────────────────────────
 
-/** Cylindrical portion half-height (the flat middle of the capsule). */
 const CAPSULE_HALF_HEIGHT = 0.5;
-/** End-hemisphere radius. Total height = 2*HALF + 2*RADIUS = 1.7 units. */
 const CAPSULE_RADIUS = 0.35;
-/** Skin offset: tiny gap between KCC and colliders to avoid tunnelling. */
 const KCC_OFFSET = 0.01;
-/** Horizontal movement speed in world units per second. */
-const MOVE_SPEED = 6;
-/** A small constant downward push so the KCC registers grounded each frame. */
-const GROUND_PUSH = -0.05;
+
+// ── Speed ─────────────────────────────────────────────────────────────────
+
+const WALK_SPEED = 5;
+const RUN_SPEED = 10;
+/** Snappy ground acceleration (units/s²). */
+const ACCEL_GROUND = 40;
+/** Ground friction when no input. */
+const DECEL_GROUND = 30;
+/** Air acceleration — less responsive than ground. */
+const ACCEL_AIR = 12;
+/** Air deceleration — almost zero, preserve momentum. */
+const DECEL_AIR = 4;
+
+// ── Jump ──────────────────────────────────────────────────────────────────
+
+const JUMP_VELOCITY = 11;
+/** Low gravity while holding Space on the way up → floaty rise. */
+const GRAVITY_RISE = 22;
+/** High gravity when Space released early → short hop. */
+const GRAVITY_RELEASE = 60;
+/** Snappier fall gravity — faster to land than to rise. */
+const GRAVITY_FALL = 40;
+const MAX_FALL_SPEED = 25;
+/** Tiny downward push every grounded frame keeps KCC contact detection happy. */
+const GROUND_PUSH = -2;
+
+/** Frames after walking off a ledge where jump is still accepted. */
+const COYOTE_TIME = 0.1;
+/** Frames before landing where a pre-pressed jump fires on contact. */
+const JUMP_BUFFER_TIME = 0.12;
+
+// ── Animation ─────────────────────────────────────────────────────────────
+
+const TURN_SPEED_GROUND = 16; // rad/s
+const TURN_SPEED_AIR = 8;
+/** Maximum forward tilt at full run speed (radians). */
+const MAX_LEAN = 0.15;
+/** Head-bob amplitude (world units). */
+const BOB_AMP = 0.05;
+/** Bob cycles per world unit. */
+const BOB_FREQ = 0.5;
 
 // ── Isometric movement directions (normalized) ─────────────────────────────
-// Camera faces from (+x, +y, +z) toward origin, 45° azimuth.
-// W/S/A/D are remapped to world-space diagonals to match the screen axes.
+// Camera looks from (+x,+y,+z) toward origin (45° azimuth).
+// WASD are remapped to world-space diagonals to match screen axes.
 
 export const ISO_FORWARD = new THREE.Vector3(-1, 0, -1).normalize();
 export const ISO_BACKWARD = new THREE.Vector3(1, 0, 1).normalize();
@@ -29,8 +64,8 @@ export const ISO_RIGHT = new THREE.Vector3(1, 0, -1).normalize();
 
 // ── Pure helpers (exported for unit tests) ─────────────────────────────────
 
-/** Compute the desired horizontal movement direction from input.
- *  Returns a normalized Vector3 (y=0), or zero-vector if no input. */
+/** Returns the desired horizontal direction from input as a normalized Vector3
+ *  (y=0). Returns zero-vector when no keys are pressed. */
 export function calculateMoveDirection(
   input: Pick<InputState, 'moveForward' | 'moveBackward' | 'moveLeft' | 'moveRight'>,
 ): THREE.Vector3 {
@@ -43,25 +78,53 @@ export function calculateMoveDirection(
   return dir;
 }
 
+// ── Internal math helpers ──────────────────────────────────────────────────
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * Math.min(1, Math.max(0, t));
+}
+
+function lerpAngle(current: number, target: number, t: number): number {
+  const raw = target - current;
+  const delta = ((raw % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+  return current + delta * Math.min(1, t);
+}
+
 // ── PlayerController ────────────────────────────────────────────────────────
 
-/** The player's physical representation and controller.
+/** The player's physics body, kinematic controller, and visual mesh.
  *
- * Owns: a Rapier kinematic capsule body, a KCC, and a Three.js Group (mesh).
- * Call `update()` each frame (after `physicsWorld.step()`).
+ *  Add both `player.group` and `player.shadow` to the scene.
+ *  Call `player.update(input, dt)` each frame after `physicsWorld.step(dt)`.
  */
 export class PlayerController {
-  /** Add this to the scene. Position is authoritative (synced from physics). */
+  /** Add to scene — the player's visual representation. */
   readonly group: THREE.Group;
+  /** Add to scene — blob shadow that tracks the player and scales with height. */
+  readonly shadow: THREE.Mesh;
 
   private readonly body: RAPIER.RigidBody;
   private readonly collider: RAPIER.Collider;
   private readonly kcc: RAPIER.KinematicCharacterController;
 
-  /** Accumulated vertical velocity (gravity / jump). */
-  private verticalVelocity = 0;
+  // Movement
+  private readonly velocity = new THREE.Vector3();
+  private facingAngle = 0;
+  private isGrounded = false;
 
-  /** Reusable vector — avoids per-frame allocation in the hot path. */
+  // Jump state
+  private coyoteTimer = 0;
+  private jumpBufferTimer = 0;
+  private lastJumpInput = false;
+  private jumpHeld = false;
+
+  // Animation
+  private bobTimer = 0;
+
+  // Direct sub-mesh references (squash/stretch applied here, NOT on group)
+  private readonly bodyMesh: THREE.Mesh;
+  private readonly headMesh: THREE.Mesh;
+
   private readonly _pos = new THREE.Vector3();
 
   constructor(physicsWorld: PhysicsWorld, startPosition: THREE.Vector3) {
@@ -78,34 +141,84 @@ export class PlayerController {
     this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
     this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
 
-    this.group = PlayerController.buildMesh();
+    const built = PlayerController.buildMesh();
+    this.group = built.group;
+    this.bodyMesh = built.bodyMesh;
+    this.headMesh = built.headMesh;
     this.group.position.copy(startPosition);
+
+    this.shadow = PlayerController.buildShadow();
   }
 
-  update(input: InputState): void {
-    // 1. Horizontal movement from input
-    const horizontal = calculateMoveDirection(input);
+  update(input: InputState, dt: number): void {
+    // ── 1. TIMERS ──────────────────────────────────────────────────────────
+    this.coyoteTimer -= dt;
+    this.jumpBufferTimer -= dt;
+    const wasGrounded = this.isGrounded;
 
-    // 2. Vertical: accumulate gravity, reset when grounded
-    const isGrounded = this.kcc.computedGrounded();
-    if (isGrounded) {
-      this.verticalVelocity = GROUND_PUSH;
-    } else {
-      this.verticalVelocity -= 9.81 * (1 / 60); // approximate; KCC controls actual dt
+    // ── 2. JUMP INPUT — rising-edge detect, buffer window ─────────────────
+    const jumpJustPressed = input.jump && !this.lastJumpInput;
+    this.lastJumpInput = input.jump;
+    if (jumpJustPressed) this.jumpBufferTimer = JUMP_BUFFER_TIME;
+    if (!input.jump) this.jumpHeld = false;
+
+    // ── 3. EXECUTE JUMP ────────────────────────────────────────────────────
+    const canJump = wasGrounded || this.coyoteTimer > 0;
+    let justJumped = false;
+
+    if (this.jumpBufferTimer > 0 && canJump) {
+      this.velocity.y = JUMP_VELOCITY;
+      this.coyoteTimer = 0;
+      this.jumpBufferTimer = 0;
+      this.jumpHeld = true;
+      justJumped = true;
+      this.squashStretchJump();
     }
 
-    // 3. Desired movement for this frame (KCC works in per-step absolute deltas)
+    // ── 4. GRAVITY ─────────────────────────────────────────────────────────
+    if (!wasGrounded || justJumped) {
+      let g: number;
+      if (this.velocity.y > 0) {
+        g = this.jumpHeld ? GRAVITY_RISE : GRAVITY_RELEASE;
+      } else {
+        g = GRAVITY_FALL;
+      }
+      this.velocity.y -= g * dt;
+      this.velocity.y = Math.max(this.velocity.y, -MAX_FALL_SPEED);
+    } else {
+      this.velocity.y = GROUND_PUSH;
+    }
+
+    // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────
+    const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
+    const moveDir = calculateMoveDirection(input);
+    const isMoving = moveDir.lengthSq() > 0.01;
+    const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
+    const decel = wasGrounded ? DECEL_GROUND : DECEL_AIR;
+
+    if (isMoving) {
+      this.velocity.x = lerp(this.velocity.x, moveDir.x * topSpeed, accel * dt);
+      this.velocity.z = lerp(this.velocity.z, moveDir.z * topSpeed, accel * dt);
+    } else {
+      this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
+      this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
+    }
+
+    // ── 6. KCC ─────────────────────────────────────────────────────────────
     const desired = {
-      x: horizontal.x * MOVE_SPEED * (1 / 60),
-      y: this.verticalVelocity * (1 / 60),
-      z: horizontal.z * MOVE_SPEED * (1 / 60),
+      x: this.velocity.x * dt,
+      y: this.velocity.y * dt,
+      z: this.velocity.z * dt,
     };
 
-    // 4. Let the KCC resolve collisions and wall-sliding
     this.kcc.computeColliderMovement(this.collider, desired);
+    this.isGrounded = this.kcc.computedGrounded() && this.velocity.y <= 0.1;
     const actual = this.kcc.computedMovement();
 
-    // 5. Apply resolved movement to the kinematic body
+    if (this.velocity.y > 0 && actual.y < desired.y * 0.5) {
+      this.velocity.y = 0; // hit ceiling
+    }
+
     const cur = this.body.translation();
     this.body.setNextKinematicTranslation({
       x: cur.x + actual.x,
@@ -113,32 +226,115 @@ export class PlayerController {
       z: cur.z + actual.z,
     });
 
-    // 6. Sync Three.js group to physics position (no allocation via reused _pos)
+    // ── 7. POST-STEP STATE ─────────────────────────────────────────────────
+    if (wasGrounded && !this.isGrounded && !justJumped) {
+      this.coyoteTimer = COYOTE_TIME; // walked off ledge
+    }
+    if (!wasGrounded && this.isGrounded) {
+      this.squashStretchLand(this.velocity.y);
+      this.velocity.y = GROUND_PUSH;
+    }
+
+    // ── 8. SYNC POSITION ───────────────────────────────────────────────────
     rapierToThreeInto(this.body.translation(), this._pos);
     this.group.position.copy(this._pos);
+
+    // ── 9. VISUALS ─────────────────────────────────────────────────────────
+    const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+
+    // Rotate group to face direction of travel
+    if (hSpeed > 0.4) {
+      const targetAngle = Math.atan2(this.velocity.x, this.velocity.z);
+      const turnRate = wasGrounded ? TURN_SPEED_GROUND : TURN_SPEED_AIR;
+      this.facingAngle = lerpAngle(this.facingAngle, targetAngle, turnRate * dt);
+      this.group.rotation.y = this.facingAngle;
+    }
+
+    // Forward lean on bodyMesh (not group — keeps shadow/head unaffected)
+    const speedFactor = Math.min(hSpeed / RUN_SPEED, 1);
+    this.bodyMesh.rotation.x = lerp(this.bodyMesh.rotation.x, -speedFactor * MAX_LEAN, 0.12);
+
+    // Head bob while running on ground
+    const headBaseY = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.25;
+    if (this.isGrounded && hSpeed > 0.3) {
+      this.bobTimer += hSpeed * dt * BOB_FREQ;
+      const bob = Math.abs(Math.sin(this.bobTimer * Math.PI * 2)) * BOB_AMP * speedFactor;
+      this.headMesh.position.y = lerp(this.headMesh.position.y, headBaseY + bob, 0.3);
+    } else {
+      this.headMesh.position.y = lerp(this.headMesh.position.y, headBaseY, 0.2);
+    }
+
+    // Head glow brighter when sprinting
+    const headMat = this.headMesh.material as THREE.MeshLambertMaterial;
+    const glowTarget = input.run && hSpeed > 1 ? 1.2 : 0.4;
+    headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, glowTarget, 0.08);
+
+    // Squash/stretch scale decays back to (1,1,1) on bodyMesh
+    this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
+    this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
+    this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+
+    // Shadow blob tracks position, shrinks with height
+    const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));
+    this.shadow.position.set(this._pos.x, 0.03, this._pos.z);
+    this.shadow.scale.setScalar(Math.max(0.05, 1 - height * 0.09));
+    (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(
+      0,
+      (1 - height * 0.11) * 0.5,
+    );
   }
 
-  private static buildMesh(): THREE.Group {
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  /** Jump take-off: vertical stretch on bodyMesh only. */
+  private squashStretchJump(): void {
+    this.bodyMesh.scale.set(0.75, 1.35, 0.75);
+  }
+
+  /** Landing splat proportional to fall speed, on bodyMesh only. */
+  private squashStretchLand(fallVelocity: number): void {
+    const t = Math.min(Math.abs(fallVelocity) / MAX_FALL_SPEED, 1);
+    const sy = Math.max(0.6, 1 - t * 0.4);
+    const sxz = 1 + t * 0.5;
+    this.bodyMesh.scale.set(sxz, sy, sxz);
+  }
+
+  // ── Static builders ────────────────────────────────────────────────────────
+
+  private static buildMesh(): { group: THREE.Group; bodyMesh: THREE.Mesh; headMesh: THREE.Mesh } {
     const group = new THREE.Group();
 
-    // Body capsule
     const bodyGeo = new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HALF_HEIGHT * 2, 8, 16);
-    const bodyMat = new THREE.MeshToonMaterial({ color: PALETTE.PLAYER_BODY });
+    const bodyMat = new THREE.MeshLambertMaterial({ color: PALETTE.PLAYER_BODY });
     const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
     bodyMesh.castShadow = true;
 
-    // Head sphere — floats slightly above the capsule top
     const headGeo = new THREE.SphereGeometry(0.2, 16, 16);
-    const headMat = new THREE.MeshToonMaterial({
+    const headMat = new THREE.MeshLambertMaterial({
       color: PALETTE.PLAYER_BODY,
       emissive: new THREE.Color(PALETTE.PLAYER_GLOW),
       emissiveIntensity: 0.4,
     });
     const headMesh = new THREE.Mesh(headGeo, headMat);
-    headMesh.position.y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.25; // above capsule top
+    headMesh.position.y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.25;
     headMesh.castShadow = true;
 
     group.add(bodyMesh, headMesh);
-    return group;
+    return { group, bodyMesh, headMesh };
+  }
+
+  private static buildShadow(): THREE.Mesh {
+    const geo = new THREE.CircleGeometry(0.45, 16);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = 1;
+    return mesh;
   }
 }
+
