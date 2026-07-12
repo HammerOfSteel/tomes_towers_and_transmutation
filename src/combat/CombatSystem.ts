@@ -25,7 +25,10 @@ const ARC_COLOR = 0x88ddff;
  *  When `arc.expired` is true, remove `arc.mesh` from the scene and discard.
  */
 export class MeleeArc {
-  readonly mesh: THREE.Mesh;
+  /** THREE.Object3D added to / removed from the scene. */
+  readonly mesh: THREE.Object3D;
+  private readonly mat: THREE.MeshBasicMaterial;
+  private readonly geo: THREE.TorusGeometry;
   private timer = SWEEP_LIFETIME;
 
   constructor(
@@ -34,11 +37,13 @@ export class MeleeArc {
     targets: Damageable[],
     onHit?: (target: Damageable, damage: number) => void,
   ) {
-    // Damage is applied immediately on creation
     this.applyDamage(originPos, facingAngle, targets, onHit);
-    this.mesh = MeleeArc.buildMesh(facingAngle);
+    const built = MeleeArc.buildMesh(facingAngle);
+    this.mesh = built.container;
+    this.mat = built.mat;
+    this.geo = built.geo;
     this.mesh.position.copy(originPos);
-    this.mesh.position.y = 0.5; // float at mid-body height
+    this.mesh.position.y = 0.5;
   }
 
   get expired(): boolean {
@@ -47,10 +52,14 @@ export class MeleeArc {
 
   update(dt: number): void {
     this.timer -= dt;
-    // Fade out as it expires
     const t = Math.max(0, this.timer / SWEEP_LIFETIME);
-    (this.mesh.material as THREE.MeshBasicMaterial).opacity = t * 0.55;
+    this.mat.opacity = t * 0.55;
     this.mesh.scale.setScalar(1 + (1 - t) * 0.25);
+  }
+
+  dispose(): void {
+    this.geo.dispose();
+    this.mat.dispose();
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -89,15 +98,22 @@ export class MeleeArc {
     }
   }
 
-  private static buildMesh(facingAngle: number): THREE.Mesh {
-    // Partial torus arc centred on the attacker's facing direction
-    const geo = new THREE.TorusGeometry(
-      SWEEP_RADIUS * 0.85,
-      0.12,
-      4,
-      16,
-      SWEEP_ANGLE,
-    );
+  private static buildMesh(facingAngle: number): {
+    container: THREE.Object3D;
+    mat: THREE.MeshBasicMaterial;
+    geo: THREE.TorusGeometry;
+  } {
+    // Three independent rotations in nested groups so they never interact via
+    // Euler composition:
+    //   outerGroup: rotates around world Y to face the target direction
+    //   midGroup:   rotates around X to lay the torus flat in the XZ plane
+    //   torus mesh: rotates around Z to centre the arc on the +X axis
+    //
+    // After all three, the arc centre points toward `facingAngle` in XZ.
+    const outerGroup = new THREE.Group();
+    const midGroup = new THREE.Group();
+
+    const geo = new THREE.TorusGeometry(SWEEP_RADIUS * 0.85, 0.12, 4, 16, SWEEP_ANGLE);
     const mat = new THREE.MeshBasicMaterial({
       color: ARC_COLOR,
       transparent: true,
@@ -105,17 +121,21 @@ export class MeleeArc {
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
+    const torus = new THREE.Mesh(geo, mat);
 
-    // Rotate the torus so it faces the attacker's direction
-    // Torus starts at +X; offset so it's centred on facingAngle
-    mesh.rotation.x = Math.PI / 2; // lay flat
-    mesh.rotation.z = -(facingAngle + Math.PI / 2) + SWEEP_ANGLE / 2;
+    // 1. Centre the arc on +X: arc spans [-SWEEP_ANGLE/2, +SWEEP_ANGLE/2] around +X
+    torus.rotation.z = -SWEEP_ANGLE / 2;
+    // 2. Lay flat: XY plane → XZ plane (+X stays +X under an X-axis rotation)
+    midGroup.rotation.x = Math.PI / 2;
+    // 3. Point at target: +X → facingAngle direction
+    //    Ry(θ) sends +X to (cos θ, 0, −sin θ) = direction atan2(cos θ, −sin θ).
+    //    Setting θ = facingAngle − π/2 gives atan2(sin fa, cos fa) = facingAngle. ✓
+    outerGroup.rotation.y = facingAngle - Math.PI / 2;
 
-    // Subtle emissive via a second pass would require MeshStandardMaterial;
-    // MeshBasicMaterial + bright colour is sufficient for a lightweight arc.
-    mesh.renderOrder = 2;
-    return mesh;
+    midGroup.add(torus);
+    outerGroup.add(midGroup);
+    outerGroup.renderOrder = 2;
+    return { container: outerGroup, mat, geo };
   }
 }
 
@@ -145,8 +165,7 @@ export class CombatSystem {
       arc.update(dt);
       if (arc.expired) {
         scene.remove(arc.mesh);
-        arc.mesh.geometry.dispose();
-        (arc.mesh.material as THREE.MeshBasicMaterial).dispose();
+        arc.dispose();
         this.arcs.splice(i, 1);
       }
     }
