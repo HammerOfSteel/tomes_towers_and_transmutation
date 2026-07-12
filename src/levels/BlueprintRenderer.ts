@@ -40,7 +40,7 @@ export interface RenderedRoom {
 
 // ── Staircase builder ─────────────────────────────────────────────────────
 
-/** Builds a 5-step procedural staircase and adds a trigger AABB.
+/** Builds a 7-step procedural staircase with per-step Rapier colliders and a trigger AABB.
  *
  *  'up'  stairs: steps rise from floor level; warm amber glow at the landing.
  *  'down' stairs: steps descend below the floor; cool blue glow at floor level
@@ -52,13 +52,15 @@ function buildStaircase(
   geometries: THREE.BufferGeometry[],
   materials: THREE.Material[],
   doorTriggers: DoorTrigger[],
+  physics: PhysicsWorld,
+  bodies: ReturnType<PhysicsWorld['createStaticBox']>[],
 ): void {
   const { cellSize, wallHeight } = bp;
   const { x: wx, z: wz } = cellToWorld(stair.x, stair.z, bp);
-  const STEPS = 5;
-  const stepH = Math.min(0.4, wallHeight * 0.13);
+  const STEPS = 7;
+  const stepH = Math.min(0.36, wallHeight * 0.11);
   const stepD = cellSize / STEPS;
-  const stepW = cellSize * 0.82;
+  const stepW = cellSize * 1.1;  // slightly wider than one cell for easier climbing
 
   // Approach axis unit vector (direction toward wall / up the stairs)
   let ax = 0, az = 0;
@@ -70,6 +72,9 @@ function buildStaircase(
   const stepMat = new THREE.MeshLambertMaterial({ color: STAIR_COLOR });
   materials.push(stepMat);
 
+  const stepHalfW = stepW / 2;
+  const stepHalfD = stepD / 2;
+
   for (let i = 0; i < STEPS; i++) {
     // Step i=0 is at the player approach side; i=STEPS-1 is at the wall.
     const along = (STEPS / 2 - i - 0.5) * stepD; // + = approach side, - = wall side
@@ -77,16 +82,26 @@ function buildStaircase(
     const sz = wz - az * along;
     const sy = stair.direction === 'up' ? (i + 0.5) * stepH : -(i + 0.5) * stepH;
 
-    const geo = new THREE.BoxGeometry(
-      ax !== 0 ? stepD : stepW,
-      stepH,
-      az !== 0 ? stepD : stepW,
-    );
+    const geoW = ax !== 0 ? stepD : stepW;
+    const geoD = az !== 0 ? stepD : stepW;
+    const geo = new THREE.BoxGeometry(geoW, stepH, geoD);
     geometries.push(geo);
     const mesh = new THREE.Mesh(geo, stepMat);
     mesh.position.set(sx, sy, sz);
     mesh.castShadow = true;
     group.add(mesh);
+
+    // Physics collider matching each step exactly
+    bodies.push(
+      physics.createStaticBox(
+        new THREE.Vector3(sx, sy, sz),
+        new THREE.Vector3(
+          ax !== 0 ? stepHalfD : stepHalfW,
+          stepH / 2,
+          az !== 0 ? stepHalfD : stepHalfW,
+        ),
+      ),
+    );
   }
 
   // For 'down' stairs: dark stone rim at floor level around the opening
@@ -313,7 +328,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld): RenderedR
 
   // ── Staircases ────────────────────────────────────────────────────────
   for (const stair of bp.staircases) {
-    buildStaircase(stair, bp, group, geometries, materials, doorTriggers);
+    buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies);
   }
 
   return {
