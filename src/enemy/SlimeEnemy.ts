@@ -17,6 +17,14 @@ const SLIME_ALERT_RANGE = 8;
 const SLIME_CHASE_DROP_RANGE = 12;
 const GROUND_PUSH = -2;
 
+// Bounce animation
+const BOUNCE_INTERVAL = 0.55;      // min seconds between chase hops
+const BOUNCE_VEL = 5.5;             // upward launch speed for chase hop
+const ATTACK_BOUNCE_VEL = 8.5;     // upward launch speed for attack lunge
+const ATTACK_LUNGE_SPEED = 5.5;    // forward burst speed on attack pounce
+const SCALE_LERP = 9;              // scale recovery speed (per second)
+const REST_SCALE_Y = 0.55;         // resting body Y scale (matches buildMesh)
+
 // Visual
 const SLIME_COLOR = 0x44bb55;
 const SLIME_HIT_COLOR = 0xffffff;
@@ -44,6 +52,10 @@ export class SlimeEnemy implements Damageable {
   private attackTimer = 0;
   private flashTimer = 0;
   private verticalVelocity = 0;
+  private bounceTimer = 0;
+  private wasGrounded = true;
+  private readonly lungeVel = new THREE.Vector3();
+  private readonly _moveDir = new THREE.Vector3();
   private readonly _pos = new THREE.Vector3();
   private readonly bodyMesh: THREE.Mesh;
 
@@ -152,17 +164,47 @@ export class SlimeEnemy implements Damageable {
     if (this.state === 'chase' || this.state === 'attack') {
       if (distToPlayer > 0.05) {
         const dir = flat.clone().normalize();
+        this._moveDir.copy(dir);
         vx = dir.x * SLIME_SPEED;
         vz = dir.z * SLIME_SPEED;
         this.group.rotation.y = Math.atan2(vx, vz);
       }
     }
 
-    // Gravity — compute movement first, THEN check grounded
+    // Apply and decay attack lunge burst
+    vx += this.lungeVel.x;
+    vz += this.lungeVel.z;
+    this.lungeVel.multiplyScalar(Math.max(0, 1 - 12 * dt));
+
+    // Physics — compute movement first, THEN read grounded state
     const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
     this.kcc.computeColliderMovement(this.collider, desired);
     const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
-    this.verticalVelocity = isGrounded ? GROUND_PUSH : Math.max(this.verticalVelocity - 20 * dt, -20);
+
+    // Landing splat: big flat squash when slime hits the ground
+    if (!this.wasGrounded && isGrounded) {
+      this.bodyMesh.scale.set(1.6, 0.22, 1.6);
+    }
+    this.wasGrounded = isGrounded;
+
+    // Chase bounce — hop rhythmically toward the player
+    if (this.state === 'chase') {
+      this.bounceTimer = Math.max(0, this.bounceTimer - dt);
+      if (this.bounceTimer === 0 && isGrounded) {
+        this.verticalVelocity = BOUNCE_VEL;
+        this.bounceTimer = BOUNCE_INTERVAL;
+        this.bodyMesh.scale.set(1.45, 0.28, 1.45);  // compress before launch
+      } else if (isGrounded) {
+        this.verticalVelocity = GROUND_PUSH;
+      } else {
+        this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+      }
+    } else if (isGrounded) {
+      this.verticalVelocity = GROUND_PUSH;
+    } else {
+      this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+    }
+
     const actual = this.kcc.computedMovement();
 
     const cur = this.body.translation();
@@ -175,9 +217,18 @@ export class SlimeEnemy implements Damageable {
     rapierToThreeInto(this.body.translation(), this._pos);
     this.group.position.copy(this._pos);
 
-    // Idle bounce animation
+    // Idle breathing pulse — gentle scale sine when at rest
     if (this.state === 'idle' || this.state === 'alert') {
-      this.group.position.y += Math.sin(Date.now() * 0.003) * 0.04;
+      const breath = Math.sin(Date.now() * 0.0022) * 0.06;
+      this.bodyMesh.scale.y = REST_SCALE_Y + breath;
+      this.bodyMesh.scale.x = 1.0 - breath * 0.55;
+      this.bodyMesh.scale.z = 1.0 - breath * 0.55;
+    } else {
+      // Lerp scale back toward resting values after any squash/stretch
+      const lerpT = Math.min(1, SCALE_LERP * dt);
+      this.bodyMesh.scale.x += (1.0 - this.bodyMesh.scale.x) * lerpT;
+      this.bodyMesh.scale.y += (REST_SCALE_Y - this.bodyMesh.scale.y) * lerpT;
+      this.bodyMesh.scale.z += (1.0 - this.bodyMesh.scale.z) * lerpT;
     }
   }
 
@@ -186,14 +237,15 @@ export class SlimeEnemy implements Damageable {
   private doAttack(): void {
     this.attackTimer = SLIME_ATTACK_COOLDOWN;
     this.onAttackPlayer?.(SLIME_ATTACK_DAMAGE);
-    // Lunge scale squash
-    this.bodyMesh.scale.set(1.3, 0.7, 1.3);
+    // Attack pounce — stretch tall then leap at the player
+    this.verticalVelocity = ATTACK_BOUNCE_VEL;
+    this.lungeVel.copy(this._moveDir).multiplyScalar(ATTACK_LUNGE_SPEED);
+    this.bodyMesh.scale.set(0.72, 0.92, 0.72);  // stretch tall before pounce
   }
 
   private onHit(): void {
     this.flashTimer = 0.12;
-    // Squash on hit
-    this.bodyMesh.scale.set(1.2, 0.8, 1.2);
+    this.bodyMesh.scale.set(1.35, 0.28, 1.35);  // splat flat on hit
     if (this.state === 'idle') this.state = 'alert';
   }
 
