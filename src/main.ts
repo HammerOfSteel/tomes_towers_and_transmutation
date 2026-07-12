@@ -8,6 +8,7 @@ import { CombatSystem } from '@/combat/CombatSystem';
 import { SpellSystem } from '@/combat/SpellSystem';
 import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
+import { EditMode } from '@/editor/EditMode';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -61,6 +62,9 @@ async function main() {
   const sceneManager = new SceneManager(scene, physics, player);
   sceneManager.loadRoomImmediate('cell_start');
 
+  // ── Level editor ──────────────────────────────────────────────────────────
+  const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
+
   // ── Combat systems ─────────────────────────────────────────────────────────
   const combat = new CombatSystem();
   const spells = new SpellSystem();
@@ -92,44 +96,47 @@ async function main() {
     // 1. Physics
     physics.step(dt);
 
-    // 2. Player movement
-    player.update(input.state, dt);
+    // 2-7. Game simulation — paused while the level editor is open
+    if (!editMode.isActive) {
+      // 2. Player movement
+      player.update(input.state, dt);
 
-    // 3. Update mouse world position for spell aim
-    const s = input.state;
-    mouseNDC.set(s.mouseX, s.mouseY);
-    raycaster.setFromCamera(mouseNDC, cameraRig.camera);
-    raycaster.ray.intersectPlane(floorPlane, mouseWorld);
+      // 3. Update mouse world position for spell aim
+      const s = input.state;
+      mouseNDC.set(s.mouseX, s.mouseY);
+      raycaster.setFromCamera(mouseNDC, cameraRig.camera);
+      raycaster.ray.intersectPlane(floorPlane, mouseWorld);
 
-    // 4. Room manager — enemy AI + door trigger checks
-    sceneManager.update(dt, player.group.position);
-    const enemies = sceneManager.getActiveEnemies();
+      // 4. Room manager — enemy AI + door trigger checks
+      sceneManager.update(dt, player.group.position);
+      const enemies = sceneManager.getActiveEnemies();
 
-    // 5. Melee attack (mouse button 0, 0.4s cooldown)
-    meleeCooldown = Math.max(0, meleeCooldown - dt);
-    const attackJustPressed = s.attack && !lastAttackInput;
-    lastAttackInput = s.attack;
-    if (attackJustPressed && meleeCooldown <= 0) {
-      meleeCooldown = 0.4;
-      const meleeAngle = Math.atan2(
-        mouseWorld.x - player.group.position.x,
-        mouseWorld.z - player.group.position.z,
-      );
-      combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
+      // 5. Melee attack (mouse button 0, 0.4s cooldown)
+      meleeCooldown = Math.max(0, meleeCooldown - dt);
+      const attackJustPressed = s.attack && !lastAttackInput;
+      lastAttackInput = s.attack;
+      if (attackJustPressed && meleeCooldown <= 0) {
+        meleeCooldown = 0.4;
+        const meleeAngle = Math.atan2(
+          mouseWorld.x - player.group.position.x,
+          mouseWorld.z - player.group.position.z,
+        );
+        combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
+      }
+
+      // 6. Spell (right-click / 'E' remapped — here we use E key via interact)
+      spellCooldown = Math.max(0, spellCooldown - dt);
+      const spellJustPressed = s.interact && !lastSpellInput;
+      lastSpellInput = s.interact;
+      if (spellJustPressed && spellCooldown <= 0) {
+        spellCooldown = 0.6;
+        spells.fire(player.group.position, mouseWorld, enemies, scene);
+      }
+
+      // 7. Combat tick (expire arcs / projectiles)
+      combat.update(dt, scene);
+      spells.update(dt, scene);
     }
-
-    // 6. Spell (right-click / 'E' remapped — here we use E key via interact)
-    spellCooldown = Math.max(0, spellCooldown - dt);
-    const spellJustPressed = s.interact && !lastSpellInput;
-    lastSpellInput = s.interact;
-    if (spellJustPressed && spellCooldown <= 0) {
-      spellCooldown = 0.6;
-      spells.fire(player.group.position, mouseWorld, enemies, scene);
-    }
-
-    // 7. Combat tick (expire arcs / projectiles)
-    combat.update(dt, scene);
-    spells.update(dt, scene);
 
     // 8. Camera
     cameraRig.follow(player.group.position);

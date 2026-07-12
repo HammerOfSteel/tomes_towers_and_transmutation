@@ -101,6 +101,11 @@ export class SceneManager {
     return this.activeEnemies;
   }
 
+  /** Show or hide the active room group (used by the level editor). */
+  setVisible(v: boolean): void {
+    if (this.currentRoom) this.currentRoom.group.visible = v;
+  }
+
   /** Called once per frame by the game loop.
    *  @param dt Frame delta time in seconds.
    *  @param playerPos Player world position (read-only).
