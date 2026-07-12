@@ -57,8 +57,7 @@ async function main() {
 
   // ── Player ────────────────────────────────────────────────────────────────
   // Start 1.5 units above the floor; gravity settles them onto it.
-  const player = new PlayerController(physics, new THREE.Vector3(0, 1.5, 0));
-  scene.add(player.group);
+  const player = new PlayerController(physics, new THREE.Vector3(0, 1.5, 0));  scene.add(player.shadow); // shadow first so it renders under the player  scene.add(player.group);
 
   // ── Resize ────────────────────────────────────────────────────────────────
   window.addEventListener('resize', () => {
@@ -72,7 +71,7 @@ async function main() {
     // 1. Step physics simulation (dynamic bodies)
     physics.step(dt);
     // 2. Move kinematic player (reads physics state, applies input)
-    player.update(input.state);
+    player.update(input.state, dt);
     // 3. Track camera behind player
     cameraRig.follow(player.group.position);
     // 4. Render
