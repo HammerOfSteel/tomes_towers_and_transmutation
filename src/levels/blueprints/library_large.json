@@ -17,14 +17,15 @@
     {"x":0,"z":6,"type":"wall"},{"x":8,"z":6,"type":"wall"},
     {"x":0,"z":7,"type":"wall"},{"x":8,"z":7,"type":"wall"},
     {"x":0,"z":8,"type":"wall"},{"x":1,"z":8,"type":"wall"},{"x":2,"z":8,"type":"wall"},
-    {"x":3,"z":8,"type":"wall"},
+    {"x":3,"z":8,"type":"wall"},{"x":4,"z":8,"type":"wall"},
     {"x":5,"z":8,"type":"wall"},{"x":6,"z":8,"type":"wall"},
     {"x":7,"z":8,"type":"wall"},{"x":8,"z":8,"type":"wall"},
     {"x":2,"z":2,"type":"pillar"},{"x":6,"z":2,"type":"pillar"},
     {"x":2,"z":6,"type":"pillar"},{"x":6,"z":6,"type":"pillar"}
   ],
-  "doors": [
-    {"x":4,"z":8,"facing":"south","targetId":"library_small"}
+  "doors": [],
+  "staircases": [
+    {"x":4,"z":6,"facing":"south","direction":"down","targetId":"library_small"}
   ],
   "spawns": [
     {"x":3,"z":4,"type":"slime"},
@@ -47,5 +48,6 @@
       "x":4,"z":2,"type":"lectern",
       "content":"The Grand Codex Arcanum lies open on the lectern. The pages hum faintly. A margin note reads: 'Do not read aloud unless you mean it. — W'"
     }
-  ]
+  ],
+  "floor": 1
 }

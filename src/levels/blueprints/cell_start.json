@@ -18,10 +18,12 @@
     {"x":2,"z":0,"facing":"north","targetId":"corridor_ns"}
   ],
   "spawns": [],
+  "staircases": [],
   "interactables": [
     {
       "x":3,"z":2,"type":"bookshelf",
       "content":"The Principles of Arcane Kinematics, Vol. I — 'Motion, at its core, is a polite lie we tell matter to make it cooperate. Master the lie and the matter follows.'"
     }
-  ]
+  ],
+  "floor": 0
 }

@@ -19,5 +19,7 @@
     {"x":1,"z":6,"facing":"south","targetId":"cell_start"}
   ],
   "spawns": [],
-  "interactables": []
+  "staircases": [],
+  "interactables": [],
+  "floor": 0
 }

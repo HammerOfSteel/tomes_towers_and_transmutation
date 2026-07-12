@@ -30,6 +30,7 @@ export class SceneManager {
   private currentBpId: string | null = null;
   private currentRoom: RenderedRoom | null = null;
   private activeEnemies: SlimeEnemy[] = [];
+  private _currentFloor = 0;
 
   // Transition state machine
   private transitionState: TransitionState = 'idle';
@@ -90,6 +91,11 @@ export class SceneManager {
     return this.activeEnemies.length;
   }
 
+  /** The floor number of the currently loaded room (0 = ground floor). */
+  get currentFloor(): number {
+    return this._currentFloor;
+  }
+
   /** Enemies the player can target with attacks this frame. */
   getActiveEnemies(): SlimeEnemy[] {
     return this.activeEnemies;
@@ -143,10 +149,10 @@ export class SceneManager {
           { x: trigger.hx, z: trigger.hz },
         )
       ) continue;
-      if (trigger.entry.targetId === null) break; // exterior — no destination yet
+      if (trigger.targetId === null) break; // exterior — no destination yet
 
       // Start the fade-out transition
-      this.pendingBpId = trigger.entry.targetId;
+      this.pendingBpId = trigger.targetId;
       this.pendingFromId = this.currentBpId;
       this.transitionState = 'fading_out';
       this.fadeTimer = 0;
@@ -180,6 +186,7 @@ export class SceneManager {
 
     this.currentRoom = renderBlueprint(bp, this.physics);
     this.currentBpId = newId;
+    this._currentFloor = bp.floor;
     this.scene.add(this.currentRoom.group);
 
     // ── Spawn enemies ─────────────────────────────────────────────────────

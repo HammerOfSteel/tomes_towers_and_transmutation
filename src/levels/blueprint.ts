@@ -7,6 +7,7 @@ export const BLUEPRINT_VERSION = 1 as const;
 
 export type TileType = 'wall' | 'pillar';
 export type DoorFacing = 'north' | 'south' | 'east' | 'west';
+export type StairDirection = 'up' | 'down';
 export type SpawnType = 'slime';
 export type InteractableType = 'bookshelf' | 'lectern';
 
@@ -43,6 +44,17 @@ export interface InteractableEntry {
   content?: string;
 }
 
+export interface StaircaseEntry {
+  x: number;
+  z: number;
+  /** Which wall the staircase is built against (the direction you exit). */
+  facing: DoorFacing;
+  /** Whether this staircase leads up or down one floor. */
+  direction: StairDirection;
+  /** Blueprint ID of the room at the other end of the staircase. */
+  targetId: string | null;
+}
+
 export interface Blueprint {
   id: string;
   version: typeof BLUEPRINT_VERSION;
@@ -57,8 +69,12 @@ export interface Blueprint {
   /** Wall and pillar placements. Floor is implicit for all unlisted cells. */
   tiles: TileEntry[];
   doors: DoorEntry[];
+  /** Staircases leading to rooms on adjacent floors. */
+  staircases: StaircaseEntry[];
   spawns: SpawnEntry[];
   interactables: InteractableEntry[];
+  /** Which floor this room is on (0 = ground, 1 = first floor up, etc.). */
+  floor: number;
 }
 
 // ── Validation ────────────────────────────────────────────────────────────
@@ -72,6 +88,7 @@ export class BlueprintError extends Error {
 
 const VALID_TILE_TYPES: TileType[] = ['wall', 'pillar'];
 const VALID_FACINGS: DoorFacing[] = ['north', 'south', 'east', 'west'];
+const VALID_STAIR_DIRS: StairDirection[] = ['up', 'down'];
 const VALID_SPAWN_TYPES: SpawnType[] = ['slime'];
 const VALID_INTERACTABLE_TYPES: InteractableType[] = ['bookshelf', 'lectern'];
 
@@ -99,10 +116,14 @@ export function validateBlueprint(raw: unknown): Blueprint {
     throw new BlueprintError(id, 'tiles must be an array');
   if (!Array.isArray(r.doors))
     throw new BlueprintError(id, 'doors must be an array');
+  if (!Array.isArray(r.staircases))
+    throw new BlueprintError(id, 'staircases must be an array');
   if (!Array.isArray(r.spawns))
     throw new BlueprintError(id, 'spawns must be an array');
   if (!Array.isArray(r.interactables))
     throw new BlueprintError(id, 'interactables must be an array');
+  if (typeof r.floor !== 'number' || !Number.isInteger(r.floor))
+    throw new BlueprintError(id, 'floor must be an integer');
 
   for (const t of r.tiles as unknown[]) {
     const tile = t as Record<string, unknown>;
@@ -120,6 +141,18 @@ export function validateBlueprint(raw: unknown): Blueprint {
       throw new BlueprintError(id, `invalid door facing "${String(door.facing)}"`);
     if (door.targetId !== null && typeof door.targetId !== 'string')
       throw new BlueprintError(id, 'door targetId must be a string or null');
+  }
+
+  for (const s of r.staircases as unknown[]) {
+    const stair = s as Record<string, unknown>;
+    if (typeof stair.x !== 'number' || typeof stair.z !== 'number')
+      throw new BlueprintError(id, `staircase missing numeric x/z: ${JSON.stringify(s)}`);
+    if (!VALID_FACINGS.includes(stair.facing as DoorFacing))
+      throw new BlueprintError(id, `invalid staircase facing "${String(stair.facing)}"`);
+    if (!VALID_STAIR_DIRS.includes(stair.direction as StairDirection))
+      throw new BlueprintError(id, `invalid staircase direction "${String(stair.direction)}"`);
+    if (stair.targetId !== null && typeof stair.targetId !== 'string')
+      throw new BlueprintError(id, 'staircase targetId must be a string or null');
   }
 
   for (const s of r.spawns as unknown[]) {
@@ -171,14 +204,18 @@ export function cellToWorld(
   };
 }
 
-/** Compute the world spawn position for a player entering through a given door.
- *  The player is placed `cellSize` units inward from the door cell. */
-export function doorSpawnPosition(door: DoorEntry, bp: Blueprint): { x: number; y: number; z: number } {
-  const { x: cx, z: cz } = cellToWorld(door.x, door.z, bp);
+/** Compute the world spawn position for a player entering through a given door
+ *  or staircase.  The player is placed `cellSize` units inward from the entry
+ *  cell along the facing direction. */
+export function doorSpawnPosition(
+  entry: DoorEntry | StaircaseEntry,
+  bp: Blueprint,
+): { x: number; y: number; z: number } {
+  const { x: cx, z: cz } = cellToWorld(entry.x, entry.z, bp);
   const inset = bp.cellSize;
   let ox = 0;
   let oz = 0;
-  switch (door.facing) {
+  switch (entry.facing) {
     case 'north': oz = +inset; break;  // enter from north → step south (increasing z)
     case 'south': oz = -inset; break;  // enter from south → step north (decreasing z)
     case 'east':  ox = -inset; break;  // enter from east  → step west

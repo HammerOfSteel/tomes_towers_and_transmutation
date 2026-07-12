@@ -7,7 +7,7 @@
   "wallHeight": 3,
   "tiles": [
     {"x":0,"z":0,"type":"wall"},{"x":1,"z":0,"type":"wall"},{"x":2,"z":0,"type":"wall"},
-    {"x":4,"z":0,"type":"wall"},{"x":5,"z":0,"type":"wall"},{"x":6,"z":0,"type":"wall"},
+    {"x":3,"z":0,"type":"wall"},{"x":4,"z":0,"type":"wall"},{"x":5,"z":0,"type":"wall"},{"x":6,"z":0,"type":"wall"},
     {"x":0,"z":1,"type":"wall"},{"x":6,"z":1,"type":"wall"},
     {"x":0,"z":2,"type":"wall"},{"x":6,"z":2,"type":"wall"},
     {"x":0,"z":3,"type":"wall"},
@@ -17,9 +17,11 @@
     {"x":4,"z":6,"type":"wall"},{"x":5,"z":6,"type":"wall"},{"x":6,"z":6,"type":"wall"}
   ],
   "doors": [
-    {"x":3,"z":0,"facing":"north","targetId":"library_large"},
     {"x":3,"z":6,"facing":"south","targetId":"corridor_ns"},
     {"x":6,"z":3,"facing":"east","targetId":"corridor_ew"}
+  ],
+  "staircases": [
+    {"x":3,"z":2,"facing":"north","direction":"up","targetId":"library_large"}
   ],
   "spawns": [
     {"x":2,"z":3,"type":"slime"}
@@ -33,5 +35,6 @@
       "x":5,"z":1,"type":"bookshelf",
       "content":"Defensive Wards, 4th Ed. — Margin note: 'Ward expires after 1.5 seconds. I keep forgetting this. DO NOT FORGET THIS.'"
     }
-  ]
+  ],
+  "floor": 0
 }

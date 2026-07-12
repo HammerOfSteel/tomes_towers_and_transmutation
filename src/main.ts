@@ -135,7 +135,7 @@ async function main() {
     cameraRig.follow(player.group.position);
 
     // 9. HUD
-    hud.update(player.health.hp, player.health.maxHp, sceneManager.killCount, sceneManager.totalEnemies);
+    hud.update(player.health.hp, player.health.maxHp, sceneManager.killCount, sceneManager.totalEnemies, sceneManager.currentFloor);
 
     // 10. Render
     renderer.render(scene, cameraRig.camera);

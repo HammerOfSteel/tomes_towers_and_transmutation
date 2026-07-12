@@ -21,6 +21,7 @@ const VALID_BP: Blueprint = {
   depth: 3,
   cellSize: 2,
   wallHeight: 3,
+  floor: 0,
   tiles: [
     { x: 0, z: 0, type: 'wall' },
     { x: 1, z: 0, type: 'wall' },
@@ -29,6 +30,7 @@ const VALID_BP: Blueprint = {
     { x: 2, z: 2, type: 'wall' },
   ],
   doors: [{ x: 1, z: 2, facing: 'south', targetId: 'other_room' }],
+  staircases: [],
   spawns: [{ x: 1, z: 1, type: 'slime' }],
   interactables: [{ x: 0, z: 1, type: 'bookshelf', content: 'Test book' }],
 };
@@ -104,6 +106,42 @@ describe('validateBlueprint', () => {
         interactables: [{ x: 0, z: 1, type: 'chest' }],
       }),
     ).toThrow(BlueprintError);
+  });
+
+  it('throws on non-integer floor', () => {
+    expect(() => validateBlueprint({ ...VALID_BP, floor: 1.5 })).toThrow(BlueprintError);
+    expect(() => validateBlueprint({ ...VALID_BP, floor: 'ground' })).toThrow(BlueprintError);
+  });
+
+  it('accepts negative floor numbers (basements)', () => {
+    expect(() => validateBlueprint({ ...VALID_BP, floor: -1 })).not.toThrow();
+  });
+
+  it('throws on invalid staircase facing', () => {
+    expect(() =>
+      validateBlueprint({
+        ...VALID_BP,
+        staircases: [{ x: 1, z: 1, facing: 'up', direction: 'up', targetId: null }],
+      }),
+    ).toThrow(BlueprintError);
+  });
+
+  it('throws on invalid staircase direction', () => {
+    expect(() =>
+      validateBlueprint({
+        ...VALID_BP,
+        staircases: [{ x: 1, z: 1, facing: 'north', direction: 'sideways', targetId: null }],
+      }),
+    ).toThrow(BlueprintError);
+  });
+
+  it('accepts a valid staircase entry', () => {
+    expect(() =>
+      validateBlueprint({
+        ...VALID_BP,
+        staircases: [{ x: 1, z: 0, facing: 'north', direction: 'up', targetId: 'floor_2' }],
+      }),
+    ).not.toThrow();
   });
 
   it('includes descriptive info in error message', () => {
