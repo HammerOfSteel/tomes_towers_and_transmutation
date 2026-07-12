@@ -168,8 +168,11 @@ export class EditMode {
     this._active = false;
     this.sceneManager.setVisible(true);
 
-    this.preview?.dispose();
-    this.preview = null;
+    if (this.preview) {
+      this.scene.remove(this.preview.group);
+      this.preview.dispose();
+      this.preview = null;
+    }
 
     this.scene.remove(this.hoverGroup);
     this.hoverMesh.visible = false;
