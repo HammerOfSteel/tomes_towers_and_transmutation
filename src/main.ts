@@ -119,12 +119,11 @@ async function main() {
     lastAttackInput = s.attack;
     if (attackJustPressed && meleeCooldown <= 0) {
       meleeCooldown = 0.4;
-      combat.triggerMelee(
-        player.group.position,
-        player.facingAngleRad,
-        slimes,
-        scene,
+      const meleeAngle = Math.atan2(
+        mouseWorld.x - player.group.position.x,
+        mouseWorld.z - player.group.position.z,
       );
+      combat.triggerMelee(player.group.position, meleeAngle, slimes, scene);
     }
 
     // 5. Spell (right-click / 'E' remapped — here we use E key via interact)
