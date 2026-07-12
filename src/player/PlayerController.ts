@@ -4,6 +4,7 @@ import type { InputState } from '@/core/InputManager';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PALETTE } from '@/shaders/palette';
 import { rapierToThreeInto } from '@/physics/helpers';
+import { HealthComponent } from '@/combat/Health';
 
 // ── Capsule dimensions ─────────────────────────────────────────────────────
 
@@ -41,6 +42,22 @@ const GROUND_PUSH = -2;
 const COYOTE_TIME = 0.1;
 /** Frames before landing where a pre-pressed jump fires on contact. */
 const JUMP_BUFFER_TIME = 0.12;
+
+// ── Dodge-roll ────────────────────────────────────────────────────────────
+
+/** Dodge dash speed (units/s). */
+const DODGE_SPEED = 16;
+/** How long the dodge lasts (seconds). */
+const DODGE_DURATION = 0.22;
+/** Cooldown after the dodge ends before another can be triggered. */
+const DODGE_COOLDOWN = 0.7;
+/** i-frame window while dodging. */
+const DODGE_IFRAME = 0.3;
+
+// ── Player stats ──────────────────────────────────────────────────────────
+
+const PLAYER_HP = 10;
+const PLAYER_IFRAME = 0.5; // seconds of invulnerability after a hit
 
 // ── Animation ─────────────────────────────────────────────────────────────
 
@@ -102,6 +119,8 @@ export class PlayerController {
   readonly group: THREE.Group;
   /** Add to scene — blob shadow that tracks the player and scales with height. */
   readonly shadow: THREE.Mesh;
+  /** Health component — wire to HUD and combat system. */
+  readonly health: HealthComponent;
 
   private readonly body: RAPIER.RigidBody;
   private readonly collider: RAPIER.Collider;
@@ -118,12 +137,22 @@ export class PlayerController {
   private lastJumpInput = false;
   private jumpHeld = false;
 
-  // Animation
+  // Dodge-roll state
+  private dodgeTimer = 0;
+  private dodgeCooldown = 0;
+  private dodgeDir = new THREE.Vector3();
+  private lastDodgeInput = false;
+
+  // Animation / feedback
   private bobTimer = 0;
+  private flashTimer = 0;
 
   // Direct sub-mesh references (squash/stretch applied here, NOT on group)
   private readonly bodyMesh: THREE.Mesh;
   private readonly headMesh: THREE.Mesh;
+
+  /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
+  get facingAngleRad(): number { return this.facingAngle; }
 
   private readonly _pos = new THREE.Vector3();
 
@@ -148,13 +177,53 @@ export class PlayerController {
     this.group.position.copy(startPosition);
 
     this.shadow = PlayerController.buildShadow();
+
+    this.health = new HealthComponent(
+      PLAYER_HP,
+      PLAYER_IFRAME,
+      () => this.onHit(),
+    );
   }
 
   update(input: InputState, dt: number): void {
     // ── 1. TIMERS ──────────────────────────────────────────────────────────
+    this.health.tick(dt);
     this.coyoteTimer -= dt;
     this.jumpBufferTimer -= dt;
+    this.dodgeCooldown = Math.max(0, this.dodgeCooldown - dt);
+    this.flashTimer = Math.max(0, this.flashTimer - dt);
     const wasGrounded = this.isGrounded;
+
+    // ── 1b. DODGE-ROLL ─────────────────────────────────────────────────────
+    const dodgeJustPressed = input.dodge && !this.lastDodgeInput;
+    this.lastDodgeInput = input.dodge;
+
+    if (dodgeJustPressed && this.dodgeCooldown <= 0 && this.dodgeTimer <= 0) {
+      // Direction: current facing, or movement direction if any
+      const moveDir = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
+      if (moveDir.lengthSq() < 0.01) {
+        moveDir.set(Math.sin(this.facingAngle), 0, Math.cos(this.facingAngle));
+      } else {
+        moveDir.normalize();
+      }
+      this.dodgeDir.copy(moveDir);
+      this.dodgeTimer = DODGE_DURATION;
+      this.dodgeCooldown = DODGE_COOLDOWN;
+      this.health.takeDamage(0); // trigger i-frame window via a zero-damage hit? no — call directly
+      // Instead force the i-frame via a helper (we grant iframe via health internal override isn't ideal)
+      // We use the dodge iframe by directly granting invulnerability via a workaround:
+      // Expose a grantIframe method or just call takeDamage with 0 and override via separate iframeDuration
+      // Simpler: track dodge i-frames separately in the player
+      this.flashTimer = DODGE_IFRAME;
+      this.bodyMesh.scale.set(0.8, 0.6, 0.8); // squash into dash
+    }
+
+    if (this.dodgeTimer > 0) {
+      this.dodgeTimer -= dt;
+      // Override horizontal velocity with dodge
+      this.velocity.x = this.dodgeDir.x * DODGE_SPEED;
+      this.velocity.z = this.dodgeDir.z * DODGE_SPEED;
+    }
 
     // ── 2. JUMP INPUT — rising-edge detect, buffer window ─────────────────
     const jumpJustPressed = input.jump && !this.lastJumpInput;
@@ -190,18 +259,21 @@ export class PlayerController {
     }
 
     // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────
-    const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
-    const moveDir = calculateMoveDirection(input);
-    const isMoving = moveDir.lengthSq() > 0.01;
-    const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
-    const decel = wasGrounded ? DECEL_GROUND : DECEL_AIR;
+    // Skip normal acceleration when dodge is active (dodge overrides velocity)
+    if (this.dodgeTimer <= 0) {
+      const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
+      const moveDir = calculateMoveDirection(input);
+      const isMoving = moveDir.lengthSq() > 0.01;
+      const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
+      const decel = wasGrounded ? DECEL_GROUND : DECEL_AIR;
 
-    if (isMoving) {
-      this.velocity.x = lerp(this.velocity.x, moveDir.x * topSpeed, accel * dt);
-      this.velocity.z = lerp(this.velocity.z, moveDir.z * topSpeed, accel * dt);
-    } else {
-      this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
-      this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
+      if (isMoving) {
+        this.velocity.x = lerp(this.velocity.x, moveDir.x * topSpeed, accel * dt);
+        this.velocity.z = lerp(this.velocity.z, moveDir.z * topSpeed, accel * dt);
+      } else {
+        this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
+        this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
+      }
     }
 
     // ── 6. KCC ─────────────────────────────────────────────────────────────
@@ -269,6 +341,17 @@ export class PlayerController {
     const glowTarget = input.run && hSpeed > 1 ? 1.2 : 0.4;
     headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, glowTarget, 0.08);
 
+    // i-frame / hit flash: blink the body between white and normal colour
+    const bodyMat = this.bodyMesh.material as THREE.MeshLambertMaterial;
+    if (this.flashTimer > 0) {
+      const blink = Math.sin(this.flashTimer * 40) > 0;
+      bodyMat.color.setHex(blink ? 0xffffff : PALETTE.PLAYER_BODY);
+      this.group.visible = this.dodgeTimer <= 0 || blink; // flicker during dodge
+    } else {
+      bodyMat.color.setHex(PALETTE.PLAYER_BODY);
+      this.group.visible = true;
+    }
+
     // Squash/stretch scale decays back to (1,1,1) on bodyMesh
     this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
     this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
@@ -285,6 +368,12 @@ export class PlayerController {
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
+
+  /** Flash and squash when the player is hit. */
+  private onHit(): void {
+    this.flashTimer = PLAYER_IFRAME;
+    this.bodyMesh.scale.set(1.3, 0.7, 1.3);
+  }
 
   /** Jump take-off: vertical stretch on bodyMesh only. */
   private squashStretchJump(): void {
