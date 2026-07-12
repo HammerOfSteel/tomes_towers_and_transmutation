@@ -1,0 +1,23 @@
+{
+  "id": "corridor_ns",
+  "version": 1,
+  "width": 3,
+  "depth": 7,
+  "cellSize": 2,
+  "wallHeight": 3,
+  "tiles": [
+    {"x":0,"z":0,"type":"wall"},{"x":2,"z":0,"type":"wall"},
+    {"x":0,"z":1,"type":"wall"},{"x":2,"z":1,"type":"wall"},
+    {"x":0,"z":2,"type":"wall"},{"x":2,"z":2,"type":"wall"},
+    {"x":0,"z":3,"type":"wall"},{"x":2,"z":3,"type":"wall"},
+    {"x":0,"z":4,"type":"wall"},{"x":2,"z":4,"type":"wall"},
+    {"x":0,"z":5,"type":"wall"},{"x":2,"z":5,"type":"wall"},
+    {"x":0,"z":6,"type":"wall"},{"x":2,"z":6,"type":"wall"}
+  ],
+  "doors": [
+    {"x":1,"z":0,"facing":"north","targetId":"library_small"},
+    {"x":1,"z":6,"facing":"south","targetId":"cell_start"}
+  ],
+  "spawns": [],
+  "interactables": []
+}

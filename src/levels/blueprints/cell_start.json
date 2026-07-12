@@ -1,0 +1,27 @@
+{
+  "id": "cell_start",
+  "version": 1,
+  "width": 5,
+  "depth": 5,
+  "cellSize": 2,
+  "wallHeight": 3,
+  "tiles": [
+    {"x":0,"z":0,"type":"wall"},{"x":1,"z":0,"type":"wall"},
+    {"x":3,"z":0,"type":"wall"},{"x":4,"z":0,"type":"wall"},
+    {"x":0,"z":1,"type":"wall"},{"x":4,"z":1,"type":"wall"},
+    {"x":0,"z":2,"type":"wall"},{"x":4,"z":2,"type":"wall"},
+    {"x":0,"z":3,"type":"wall"},{"x":4,"z":3,"type":"wall"},
+    {"x":0,"z":4,"type":"wall"},{"x":1,"z":4,"type":"wall"},
+    {"x":2,"z":4,"type":"wall"},{"x":3,"z":4,"type":"wall"},{"x":4,"z":4,"type":"wall"}
+  ],
+  "doors": [
+    {"x":2,"z":0,"facing":"north","targetId":"corridor_ns"}
+  ],
+  "spawns": [],
+  "interactables": [
+    {
+      "x":3,"z":2,"type":"bookshelf",
+      "content":"The Principles of Arcane Kinematics, Vol. I — 'Motion, at its core, is a polite lie we tell matter to make it cooperate. Master the lie and the matter follows.'"
+    }
+  ]
+}

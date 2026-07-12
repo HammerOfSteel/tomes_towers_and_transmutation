@@ -1,0 +1,37 @@
+{
+  "id": "library_small",
+  "version": 1,
+  "width": 7,
+  "depth": 7,
+  "cellSize": 2,
+  "wallHeight": 3,
+  "tiles": [
+    {"x":0,"z":0,"type":"wall"},{"x":1,"z":0,"type":"wall"},{"x":2,"z":0,"type":"wall"},
+    {"x":4,"z":0,"type":"wall"},{"x":5,"z":0,"type":"wall"},{"x":6,"z":0,"type":"wall"},
+    {"x":0,"z":1,"type":"wall"},{"x":6,"z":1,"type":"wall"},
+    {"x":0,"z":2,"type":"wall"},{"x":6,"z":2,"type":"wall"},
+    {"x":0,"z":3,"type":"wall"},
+    {"x":0,"z":4,"type":"wall"},{"x":6,"z":4,"type":"wall"},
+    {"x":0,"z":5,"type":"wall"},{"x":6,"z":5,"type":"wall"},
+    {"x":0,"z":6,"type":"wall"},{"x":1,"z":6,"type":"wall"},{"x":2,"z":6,"type":"wall"},
+    {"x":4,"z":6,"type":"wall"},{"x":5,"z":6,"type":"wall"},{"x":6,"z":6,"type":"wall"}
+  ],
+  "doors": [
+    {"x":3,"z":0,"facing":"north","targetId":"library_large"},
+    {"x":3,"z":6,"facing":"south","targetId":"corridor_ns"},
+    {"x":6,"z":3,"facing":"east","targetId":"corridor_ew"}
+  ],
+  "spawns": [
+    {"x":2,"z":3,"type":"slime"}
+  ],
+  "interactables": [
+    {
+      "x":1,"z":1,"type":"bookshelf",
+      "content":"Elemental Combustion for Beginners — 'Chapter 1: Do not start here. Chapter 2: Fine, you started here. Chapter 3: Put that down.'"
+    },
+    {
+      "x":5,"z":1,"type":"bookshelf",
+      "content":"Defensive Wards, 4th Ed. — Margin note: 'Ward expires after 1.5 seconds. I keep forgetting this. DO NOT FORGET THIS.'"
+    }
+  ]
+}
