@@ -85,6 +85,10 @@ export class SlimeEnemy implements Damageable {
     this.kcc.setSlideEnabled(true);
     this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
     this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
+    // Step up tile edges (same settings as the player KCC).
+    this.kcc.enableAutostep(0.7, 0.3, false);
+    // Snap back down to the floor after descending a tile step.
+    this.kcc.enableSnapToGround(0.7);
 
     this.health = new HealthComponent(
       SLIME_HP,
