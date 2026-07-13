@@ -1,14 +1,22 @@
 import * as THREE from 'three';
 import type { Damageable } from './Health';
 
-// ── Constants ─────────────────────────────────────────────────────────────
+// ── Spell definitions ─────────────────────────────────────────────────────
 
-const PROJECTILE_SPEED = 14;
-const PROJECTILE_RADIUS = 0.18;
-const PROJECTILE_DAMAGE = 3;
+interface SpellDef {
+  color: number;
+  emissive: number;
+  damage: number;
+  speed: number;
+  radius: number;
+}
+
+const SPELL_DEFS: Record<string, SpellDef> = {
+  magic_bolt: { color: 0x44ddff, emissive: 0x0088bb, damage: 3, speed: 14, radius: 0.18 },
+  flame_dart:  { color: 0xff6600, emissive: 0xcc2200, damage: 5, speed: 18, radius: 0.15 },
+};
+const FALLBACK_DEF = SPELL_DEFS.magic_bolt;
 const PROJECTILE_LIFETIME = 3.0;
-const PROJECTILE_COLOR = 0x44ddff;
-const PROJECTILE_EMISSIVE = 0x0088bb;
 
 // ── Projectile ────────────────────────────────────────────────────────────
 
@@ -22,9 +30,10 @@ class Projectile {
     private readonly pos: THREE.Vector3,
     private readonly dir: THREE.Vector3,
     private readonly targets: (Damageable & { worldPosition?: THREE.Vector3 })[],
+    private readonly def: SpellDef,
     private readonly onHit?: (target: Damageable, damage: number) => void,
   ) {
-    this.mesh = Projectile.buildMesh();
+    this.mesh = this._buildMesh();
     this.mesh.position.copy(pos);
   }
 
@@ -38,21 +47,21 @@ class Projectile {
     this.timer -= dt;
 
     // Move
-    this.pos.addScaledVector(this.dir, PROJECTILE_SPEED * dt);
+    this.pos.addScaledVector(this.dir, this.def.speed * dt);
     this.mesh.position.copy(this.pos);
 
     // Pulse emissive
     const pulse = 0.6 + 0.4 * Math.sin(this.timer * 20);
     (this.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse;
 
-      // Hit test — XZ-only distance so height difference doesn't cause misses
-      for (const target of this.targets) {
-        if (target.isDead || !target.worldPosition) continue;
-        const dx = this.pos.x - target.worldPosition.x;
-        const dz = this.pos.z - target.worldPosition.z;
-        const distXZ = Math.sqrt(dx * dx + dz * dz);
-        if (distXZ < PROJECTILE_RADIUS + 0.45) {
-        const applied = target.takeDamage(PROJECTILE_DAMAGE);
+    // Hit test — XZ-only distance so height difference doesn't cause misses
+    for (const target of this.targets) {
+      if (target.isDead || !target.worldPosition) continue;
+      const dx = this.pos.x - target.worldPosition.x;
+      const dz = this.pos.z - target.worldPosition.z;
+      const distXZ = Math.sqrt(dx * dx + dz * dz);
+      if (distXZ < this.def.radius + 0.45) {
+        const applied = target.takeDamage(this.def.damage);
         if (applied > 0) this.onHit?.(target, applied);
         this.hit = true;
         return;
@@ -60,11 +69,11 @@ class Projectile {
     }
   }
 
-  private static buildMesh(): THREE.Mesh {
-    const geo = new THREE.SphereGeometry(PROJECTILE_RADIUS, 8, 8);
+  private _buildMesh(): THREE.Mesh {
+    const geo = new THREE.SphereGeometry(this.def.radius, 8, 8);
     const mat = new THREE.MeshStandardMaterial({
-      color: PROJECTILE_COLOR,
-      emissive: new THREE.Color(PROJECTILE_EMISSIVE),
+      color: this.def.color,
+      emissive: new THREE.Color(this.def.emissive),
       emissiveIntensity: 1.0,
       roughness: 0.2,
       metalness: 0.0,
@@ -77,18 +86,22 @@ class Projectile {
 
 /** Manages active projectiles.
  *
- *  Call `fire(...)` on mouse click, `update(dt, scene)` each frame. */
+ *  Call `fire(...)` on right-click, `update(dt, scene)` each frame. */
 export class SpellSystem {
   private readonly projectiles: Projectile[] = [];
 
-  /** Fire a projectile from `origin` aimed at the mouse world position. */
+  /** Fire a projectile from `origin` aimed at the mouse world position.
+   *  @param spellId Spell key from SPELL_DEFS (defaults to 'magic_bolt'). */
   fire(
     origin: THREE.Vector3,
     aimTarget: THREE.Vector3,
     targets: (Damageable & { worldPosition?: THREE.Vector3 })[],
     scene: THREE.Scene,
     onHit?: (target: Damageable, damage: number) => void,
+    spellId = 'magic_bolt',
   ): void {
+    const def = SPELL_DEFS[spellId] ?? FALLBACK_DEF;
+
     const dir = new THREE.Vector3()
       .subVectors(aimTarget, origin)
       .setY(0)
@@ -97,7 +110,7 @@ export class SpellSystem {
     const spawnPos = origin.clone().addScaledVector(dir, 0.6); // slight offset ahead
     spawnPos.y = origin.y + 0.5; // chest height
 
-    const proj = new Projectile(spawnPos, dir, targets, onHit);
+    const proj = new Projectile(spawnPos, dir, targets, def, onHit);
     scene.add(proj.mesh);
     this.projectiles.push(proj);
   }
