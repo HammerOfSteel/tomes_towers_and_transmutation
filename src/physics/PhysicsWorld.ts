@@ -65,6 +65,18 @@ export class PhysicsWorld {
     return this.world.createCharacterController(offset);
   }
 
+  /**
+   * Create a large flat static plane centred at y = `elevation`.
+   * Used as the exterior ground surface so the player doesn't fall infinitely.
+   * The plane is 1000×1000 units — effectively infinite for our world sizes.
+   */
+  createGroundPlane(elevation = 0): RAPIER.RigidBody {
+    return this.createStaticBox(
+      new THREE.Vector3(0, elevation - 0.5, 0),
+      new THREE.Vector3(500, 0.5, 500),
+    );
+  }
+
   /** Raw Rapier world — use sparingly; prefer the factory helpers above. */
   get rapierWorld(): RAPIER.World {
     return this.world;

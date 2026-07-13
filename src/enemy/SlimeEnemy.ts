@@ -25,13 +25,21 @@ const ATTACK_LUNGE_SPEED = 5.5;    // forward burst speed on attack pounce
 const SCALE_LERP = 9;              // scale recovery speed (per second)
 const REST_SCALE_Y = 0.55;         // resting body Y scale (matches buildMesh)
 
+// Tame / recruit
+const FLEE_HP_FRACTION = 0.15;     // ≤ 15% HP → enter Flee state
+const FLEE_SPEED = 4.5;            // run-away speed in flee state
+const FOLLOW_DISTANCE = 4.0;       // desired distance from player when recruited
+const FOLLOW_SPEED = 3.5;          // following movement speed
+
 // Visual
-const SLIME_COLOR = 0x44bb55;
+const SLIME_COLOR     = 0x44bb55;
 const SLIME_HIT_COLOR = 0xffffff;
+const SLIME_FLEE_COLOR    = 0xffdd44; // yellow when fleeing
+const SLIME_RECRUIT_COLOR = 0x9955ff; // purple when recruited
 
-// ── FSM ───────────────────────────────────────────────────────────────────
+// ── FSM ────────────────────────────────────────────────────────────────
 
-export type EnemyState = 'idle' | 'alert' | 'chase' | 'attack' | 'dead';
+export type EnemyState = 'idle' | 'alert' | 'chase' | 'attack' | 'flee' | 'recruited' | 'dead';
 
 // ── SlimeEnemy ────────────────────────────────────────────────────────────
 
@@ -97,6 +105,22 @@ export class SlimeEnemy implements Damageable {
   get maxHp(): number { return this.health.maxHp; }
   get isDead(): boolean { return this.health.isDead; }
 
+  /** True when HP ≤ 15% and the enemy can be spared / recruited. */
+  get isRecruitable(): boolean { return this.state === 'flee'; }
+
+  /** True once the enemy has been recruited into the player's party. */
+  get isRecruited(): boolean { return this.state === 'recruited'; }
+
+  /**
+   * Recruit this enemy into the player's party.
+   * Changes colour to purple and sets the FSM to `'recruited'`.
+   * Should be called via `PartyManager.recruit(enemy)`, not directly.
+   */
+  recruit(): void {
+    this.state = 'recruited';
+    (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_RECRUIT_COLOR);
+  }
+
   takeDamage(amount: number): number {
     return this.health.takeDamage(amount);
   }
@@ -115,10 +139,12 @@ export class SlimeEnemy implements Damageable {
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
 
-    // Update mesh flash colour
+    // Update mesh flash colour (respect current state tint)
     const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
     if (this.flashTimer > 0) {
       mat.color.setHex(SLIME_HIT_COLOR);
+    } else if (this.state === 'flee') {
+      mat.color.setHex(SLIME_FLEE_COLOR);
     } else {
       mat.color.setHex(SLIME_COLOR);
     }
@@ -126,6 +152,13 @@ export class SlimeEnemy implements Damageable {
     // ── FSM transitions ────────────────────────────────────────────────────
     const flat = new THREE.Vector3(playerPos.x - this._pos.x, 0, playerPos.z - this._pos.z);
     const distToPlayer = flat.length();
+
+    // Low-HP flee threshold (check before normal FSM so it can interrupt any state)
+    if (this.state !== 'flee' && this.state !== 'recruited') {
+      if (this.health.hp / this.health.maxHp <= FLEE_HP_FRACTION) {
+        this.state = 'flee';
+      }
+    }
 
     switch (this.state) {
       case 'idle':
@@ -155,6 +188,8 @@ export class SlimeEnemy implements Damageable {
           this.doAttack();
         }
         break;
+
+      // 'flee', 'recruited', 'dead' — handled below / separately
     }
 
     // ── Movement ───────────────────────────────────────────────────────────
@@ -169,6 +204,12 @@ export class SlimeEnemy implements Damageable {
         vz = dir.z * SLIME_SPEED;
         this.group.rotation.y = Math.atan2(vx, vz);
       }
+    } else if (this.state === 'flee' && distToPlayer > 0.05) {
+      // Run directly away from the player
+      const dir = flat.clone().normalize().negate();
+      vx = dir.x * FLEE_SPEED;
+      vz = dir.z * FLEE_SPEED;
+      this.group.rotation.y = Math.atan2(vx, vz);
     }
 
     // Apply and decay attack lunge burst
@@ -230,6 +271,62 @@ export class SlimeEnemy implements Damageable {
       this.bodyMesh.scale.y += (REST_SCALE_Y - this.bodyMesh.scale.y) * lerpT;
       this.bodyMesh.scale.z += (1.0 - this.bodyMesh.scale.z) * lerpT;
     }
+  }
+
+  /**
+   * Update loop used when the slime has been recruited into the player's party.
+   * Simple follower behaviour: keep close to the player, basic idle at range.
+   * (Full combat AI for followers is Phase 7.)
+   *
+   * @param playerPos Target position to follow
+   * @param _enemies  Reserved for Phase 7 follower combat
+   * @param dt        Frame delta
+   */
+  updateAsFollower(playerPos: THREE.Vector3, _enemies: readonly unknown[], dt: number): void {
+    if (this.state !== 'recruited' || this.isDead) return;
+
+    this.health.tick(dt);
+
+    const dx = playerPos.x - this._pos.x;
+    const dz = playerPos.z - this._pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    let vx = 0, vz = 0;
+    if (dist > FOLLOW_DISTANCE) {
+      const speed = Math.min(FOLLOW_SPEED, (dist - FOLLOW_DISTANCE) * 4);
+      vx = (dx / dist) * speed;
+      vz = (dz / dist) * speed;
+      this.group.rotation.y = Math.atan2(vx, vz);
+    }
+
+    // Bounce toward player if far enough
+    this.bounceTimer = Math.max(0, this.bounceTimer - dt);
+    const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
+    this.kcc.computeColliderMovement(this.collider, desired);
+    const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
+    if (isGrounded) {
+      this.verticalVelocity = GROUND_PUSH;
+      if (dist > FOLLOW_DISTANCE + 2 && this.bounceTimer === 0) {
+        this.verticalVelocity = BOUNCE_VEL * 0.8;
+        this.bounceTimer = BOUNCE_INTERVAL;
+      }
+    } else {
+      this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+    }
+
+    const actual = this.kcc.computedMovement();
+    const cur = this.body.translation();
+    this.body.setNextKinematicTranslation({
+      x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
+    });
+    rapierToThreeInto(this.body.translation(), this._pos);
+    this.group.position.copy(this._pos);
+
+    // Follower idle breathing (purple tint held)
+    const breath = Math.sin(Date.now() * 0.0022) * 0.05;
+    this.bodyMesh.scale.y = REST_SCALE_Y + breath;
+    this.bodyMesh.scale.x = 1.0 - breath * 0.4;
+    this.bodyMesh.scale.z = 1.0 - breath * 0.4;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────

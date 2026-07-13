@@ -210,7 +210,7 @@ export class EditMode {
     if (kind) {
       this.selectedKind = kind;
       this.hoverMat.color.setHex(KIND_COLOR[kind]);
-      this._updatePanel();
+      this._renderPanel();
     }
   }
 
@@ -379,6 +379,11 @@ export class EditMode {
         <button id="ed-export" style="${S_BTN}flex:1;">↓ Export</button>
         <button id="ed-import" style="${S_BTN}flex:1;">↑ Import</button>
       </div>
+      <div style="margin-top:4px;">
+        <button id="ed-loadroom" style="${S_BTN}width:100%;background:#1e2830;border-color:#336655;color:#88ddaa;">
+          ⤓ Load Current Room
+        </button>
+      </div>
       <div id="ed-status" style="color:#555;font-size:10px;margin-top:6px;"></div>
       <div style="color:#444;font-size:10px;margin-top:2px;">~ close  •  right-click erase  •  R rotate</div>
     `;
@@ -415,6 +420,7 @@ export class EditMode {
     this._on('ed-content', 'input', (el) => { this.contentText = (el as HTMLTextAreaElement).value; });
     this._on('ed-export', 'click', () => this._exportBlueprint());
     this._on('ed-import', 'click', () => this._importBlueprint());
+    this._on('ed-loadroom', 'click', () => this._loadCurrentRoom());
 
     this.statusEl = this.panel.querySelector<HTMLElement>('#ed-status');
     this.validationEl = this.panel.querySelector<HTMLElement>('#ed-validation');
@@ -480,8 +486,19 @@ export class EditMode {
     input.click();
   }
 
-  // Expose panel re-render so callers can trigger it if needed
-  private _updatePanel(): void {
+  /**
+   * Load the currently active SceneManager blueprint into the editor.
+   * Lets you hand-tweak a generated room and export it back as JSON.
+   */
+  private _loadCurrentRoom(): void {
+    const bp = this.sceneManager.currentBlueprint;
+    if (!bp) {
+      alert('No room is currently loaded in the SceneManager.');
+      return;
+    }
+    this.grid = EditorGrid.fromBlueprint(bp);
+    this._rebuildPreview();
     this._renderPanel();
+    this._setStatus(`Loaded "${bp.id}" from game`);
   }
 }
