@@ -117,8 +117,8 @@ export class OverworldScene {
 
   /** Add geometry to scene and register physics colliders. */
   enter(): void {
-    // Flat ground plane — player KCC slides across this regardless of visual height
-    this._groundBody = this.physics.createGroundPlane(0);
+    // Heightfield collider — matches visual tile heights so the player walks on the terrain
+    this._groundBody = this._createTerrainHeightfield();
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
     this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
@@ -182,9 +182,11 @@ export class OverworldScene {
 
   // ── Trigger queries ───────────────────────────────────────────────────────
 
-  /** True when the player is close enough to the tower door to press E. */
+  /** True when the player is close enough to the tower door to press E.
+   *  Radius 6.5 — larger than the tower capsule (4.5) + player radius (0.35),
+   *  so the prompt fires as the player approaches the door, not after clipping in. */
   nearTowerEntrance(pos: THREE.Vector3): boolean {
-    return pos.x * pos.x + pos.z * pos.z < 4.5 * 4.5;
+    return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
   }
 
   /** Returns the nearest building entrance if the player is within range. */
@@ -200,6 +202,51 @@ export class OverworldScene {
   getActiveEnemies(): SlimeEnemy[] { return this._enemies; }
 
   // ── Private builders ──────────────────────────────────────────────────────
+
+  /**
+   * Build a Rapier heightfield collider that mirrors the visual tile grid.
+   *
+   * Rapier heightfield convention (verified from type definitions):
+   *   – heights are stored **column-major**: heights[col_j * (nrows+1) + row_i]
+   *   – rows span the X axis  (row_i  → world x)
+   *   – columns span the Z axis (col_j  → world z)
+   *   – the field is centred at the body's translation
+   *
+   * Our mapping:
+   *   row_i  = gridCol  (x-direction, 0..50)
+   *   col_j  = gridRow  (z-direction, 0..50)
+   *   heights[gridRow * (nrows+1) + gridCol] = grid[gridRow*GW + gridCol] * SH
+   *   scale  = { x: (GW-1)*T=100, y: 1.0, z: (GH-1)*T=100 }
+   *
+   * This gives world-space vertex positions:
+   *   x = -50 + gridCol*2 = (gridCol-25)*2  ✓
+   *   z = -50 + gridRow*2 = (gridRow-25)*2  ✓
+   */
+  private _createTerrainHeightfield(): RAPIER.RigidBody {
+    const nrows = GW - 1;  // 50  — rows span X (gridCol direction)
+    const ncols = GH - 1;  // 50  — cols span Z (gridRow direction)
+    const heights = new Float32Array((nrows + 1) * (ncols + 1));
+
+    for (let gridRow = 0; gridRow < GH; gridRow++) {
+      for (let gridCol = 0; gridCol < GW; gridCol++) {
+        // Column-major: col_j * (nrows+1) + row_i  → j=gridRow, i=gridCol
+        heights[gridRow * (nrows + 1) + gridCol] =
+          this._grid[gridRow * GW + gridCol] * SH;
+      }
+    }
+
+    const body = this.physics.rapierWorld.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
+    );
+    this.physics.rapierWorld.createCollider(
+      RAPIER.ColliderDesc.heightfield(
+        nrows, ncols, heights,
+        { x: (GW - 1) * T, y: 1.0, z: (GH - 1) * T },
+      ),
+      body,
+    );
+    return body;
+  }
 
   /** Create a fixed static rigid body with the given collider at (x, y, z). */
   private _addStaticBody(x: number, y: number, z: number, desc: RAPIER.ColliderDesc): void {

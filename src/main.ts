@@ -88,8 +88,8 @@ async function main() {
     }
     gameMode = 'exterior';
     overworld.enter();
-    // Spawn the player just in front of the tower entrance
-    player.teleport(new THREE.Vector3(0, 1.5, 4));
+    // Spawn just south of the tower door — outside the tower capsule collider (r=4.5)
+    player.teleport(new THREE.Vector3(0, 0.5, 8));
     // Widen fog for the open world
     scene.fog = new THREE.Fog(0x0a1408, 60, 180);
   }
