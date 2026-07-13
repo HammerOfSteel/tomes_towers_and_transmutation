@@ -184,6 +184,10 @@ export class PlayerController {
     this.kcc.setSlideEnabled(true);
     this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
     this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
+    // Allow the KCC to step up tile edges (heightfield transitions and box edges).
+    // maxHeight = 0.7 clears one full tile level (SH=0.55) plus margin.
+    // minWidth  = 0.3 avoids stepping over narrow slivers / geometry artefacts.
+    this.kcc.enableAutostep(0.7, 0.3, false);
 
     const built = PlayerController.buildMesh();
     this.group = built.group;

@@ -65,6 +65,15 @@ export async function isPlayerVisible(page: Page): Promise<boolean> {
   return page.evaluate(() => (window as any).__game.isPlayerVisible()) as Promise<boolean>;
 }
 
+export async function teleportPlayer(page: Page, x: number, y: number, z: number): Promise<void> {
+  await page.evaluate(([px, py, pz]) => (window as any).__game.teleportPlayer(px, py, pz), [x, y, z]);
+  await page.waitForTimeout(200); // one physics step settle
+}
+
+export async function isNearTower(page: Page): Promise<boolean> {
+  return page.evaluate(() => (window as any).__game.isNearTower()) as Promise<boolean>;
+}
+
 // ── Physics settle helper ─────────────────────────────────────────────────
 
 /**

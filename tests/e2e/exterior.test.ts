@@ -18,6 +18,8 @@ import {
   getGameMode,
   isPlayerVisible,
   waitForGrounded,
+  teleportPlayer,
+  isNearTower,
 } from './helpers';
 
 // ── Suite setup ─────────────────────────────────────────────────────────────
@@ -202,5 +204,72 @@ test.describe('Interior (dungeon) scene', () => {
     expect(visible).toBe(true);
     expect(groundY).toBeGreaterThan(0.5);
     console.log(`✓ Interior player Y: ${groundY}`);
+  });
+});
+
+// ── Tower entry ──────────────────────────────────────────────────────────────
+
+test.describe('Tower entry', () => {
+
+  test('isNearTower false at spawn (r=8), true when teleported close', async ({ page }) => {
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'tower-01-spawn');
+
+    // At spawn z=8, r=8 — should not trigger
+    const farResult = await isNearTower(page);
+    expect(farResult, 'Spawn is outside entrance zone').toBe(false);
+
+    // Teleport to z=5 (r=5 < 6.5) — should trigger
+    await teleportPlayer(page, 0, 1.5, 5);
+    await page.waitForTimeout(300);
+    const nearResult = await isNearTower(page);
+    await page.screenshot({ path: 'tests/e2e/screenshots/tower-02-near-door.png' });
+
+    expect(nearResult, 'z=5 should be inside entrance zone (r=5 < 6.5)').toBe(true);
+    console.log(`✓ nearTower false at spawn, true at z=5`);
+  });
+
+  test('[E] near tower switches to interior mode', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'tower-03-before-entry');
+
+    // Position player just inside the trigger zone
+    await teleportPlayer(page, 0, 1.5, 5.5);
+    await page.waitForTimeout(400);
+
+    // Simulate pressing E by calling switchToInterior via debug API
+    await page.evaluate(() => (window as any).__game.switchToInterior());
+    await page.waitForTimeout(500);
+
+    const mode = await getGameMode(page);
+    await page.screenshot({ path: 'tests/e2e/screenshots/tower-04-after-entry.png' });
+
+    expect(mode, 'Mode should be interior after entering tower').toBe('interior');
+    expect(errors, 'No JS errors during tower entry').toHaveLength(0);
+    console.log('✓ Tower entry: exterior → interior transition clean');
+  });
+
+  test('prompt element visible when near tower', async ({ page }) => {
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'tower-05-prompt-test');
+
+    // Teleport close to tower
+    await teleportPlayer(page, 0, 1.5, 5.5);
+    await page.waitForTimeout(500);
+
+    const promptVisible = await page.evaluate(() => {
+      const el = document.getElementById('exterior-prompt');
+      return el ? parseFloat(el.style.opacity) > 0.5 : false;
+    });
+    await page.screenshot({ path: 'tests/e2e/screenshots/tower-06-prompt-visible.png' });
+
+    expect(promptVisible, 'Exterior prompt should be visible near tower').toBe(true);
+    console.log('✓ Tower entrance prompt is visible when near door');
   });
 });
