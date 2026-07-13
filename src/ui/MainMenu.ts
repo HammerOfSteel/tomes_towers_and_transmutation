@@ -29,10 +29,11 @@ const CONCEPT_ART = [
 // ── Grid layout ───────────────────────────────────────────────────────────
 //
 //  Col:  1          2          3          4
-//  R1:  [tall]    [normal]   [tall]     [tall]
+//  R1:  [tall]    [normal]   [normal]   [tall]
 //  R2:  [tall]    [wide 2×1..........]  [tall]
 //  R3:  [normal]  [normal]   [wide 2×1..........]
 //
+// tile 2 is intentionally normal (not tall) to avoid overlapping tile 4 (wide cols 2-3 row 2).
 // 8 tiles; 11 images → 3 always in the pool for rotation.
 
 interface TilePos {
@@ -43,9 +44,9 @@ interface TilePos {
 const TILE_POSITIONS: TilePos[] = [
   { col: '1',          row: '1 / span 2' }, // 0 tall-left
   { col: '2',          row: '1'          }, // 1 normal
-  { col: '3',          row: '1 / span 2' }, // 2 tall-mid
+  { col: '3',          row: '1'          }, // 2 normal  ← not tall; avoids conflict with tile 4
   { col: '4',          row: '1 / span 2' }, // 3 tall-right
-  { col: '2 / span 2', row: '2'          }, // 4 wide-mid
+  { col: '2 / span 2', row: '2'          }, // 4 wide-mid (cols 2-3)
   { col: '1',          row: '3'          }, // 5 normal-bl
   { col: '2',          row: '3'          }, // 6 normal
   { col: '3 / span 2', row: '3'          }, // 7 wide-br
@@ -406,7 +407,9 @@ export class MainMenu {
           front.src           = back.src;
           front.style.opacity = '1';
           back.style.opacity  = '0';
-          back.src            = '';
+          // Do NOT clear back.src here — setting src='' triggers the broken-image
+          // placeholder while back is still fading to opacity:0.  The src will be
+          // overwritten on the next swap cycle, so leaving it is safe.
 
           this.timers[i] = setTimeout(
             () => this._swapTile(i),
