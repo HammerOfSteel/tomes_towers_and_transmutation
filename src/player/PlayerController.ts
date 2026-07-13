@@ -188,6 +188,11 @@ export class PlayerController {
     // maxHeight = 0.7 clears one full tile level (SH=0.55) plus margin.
     // minWidth  = 0.3 avoids stepping over narrow slivers / geometry artefacts.
     this.kcc.enableAutostep(0.7, 0.3, false);
+    // Snap the character back down to the floor when descending steps/tiles.
+    // Without this the player floats momentarily after walking off an elevated tile.
+    // Distance 0.7 is just above one tile-level height (SH=0.55) so any single-step
+    // descent is snapped in the same frame.
+    this.kcc.enableSnapToGround(0.7);
 
     const built = PlayerController.buildMesh();
     this.group = built.group;
@@ -378,7 +383,9 @@ export class PlayerController {
 
     // Shadow blob tracks position, shrinks with height
     const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));
-    this.shadow.position.set(this._pos.x, 0.03, this._pos.z);
+    // Y follows the player's actual floor height so the shadow stays on elevated tiles.
+    const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+    this.shadow.position.set(this._pos.x, floorY + 0.03, this._pos.z);
     this.shadow.scale.setScalar(Math.max(0.05, 1 - height * 0.09));
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(
       0,
