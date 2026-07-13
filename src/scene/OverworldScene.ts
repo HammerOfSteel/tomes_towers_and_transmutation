@@ -166,7 +166,12 @@ export class OverworldScene {
   update(dt: number): void {
     const pos = this.player.group.position;
     for (const en of this._enemies) {
-      if (!en.isDead) en.update(pos, dt);
+      if (en.isDead) continue;
+      if (en.isRecruited) {
+        en.updateAsFollower(pos, this._enemies, dt);
+      } else {
+        en.update(pos, dt);
+      }
     }
   }
 

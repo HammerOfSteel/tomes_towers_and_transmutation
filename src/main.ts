@@ -24,6 +24,8 @@ import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { PartyManager } from '@/combat/PartyManager';
+import { TamingGame } from '@/interactables/TamingGame';
+import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   const party = new PartyManager(5);
+  const tamingGame = new TamingGame();
 
   function switchToExterior(): void {
     // MUST unload dungeon first — onExitTrigger fires directly without
@@ -366,14 +369,15 @@ async function main() {
       } else if (overworld) {
         overworld.update(dt);
         party.pruneDead();
+        tamingGame.update(dt);
 
         // Update exterior interaction prompt
         const _pos = player.group.position;
         const _flee = overworld.getActiveEnemies().find(
-          e => !e.isDead && e.isRecruitable && e.worldPosition.distanceTo(_pos) < 2.5,
+          e => !e.isDead && e.isRecruitable && e.worldPosition.distanceTo(_pos) < 3.0,
         );
         if (_flee) {
-          _setExteriorPrompt(party.isFull ? 'Party full' : 'Recruit slime');
+          _setExteriorPrompt(party.isFull ? 'Party full' : '♪ Sing to it');
         } else if (overworld.nearTowerEntrance(_pos)) {
           _setExteriorPrompt('Enter Tower');
         } else {
@@ -408,31 +412,43 @@ async function main() {
       // 6a. E key — context-sensitive: interior = read book; exterior = enter/recruit
       const interactJustPressed = s.interact && !lastSpellInput;
       lastSpellInput = s.interact;
-      if (interactJustPressed && !bookReader.isOpen && !telescopeView.active) {
+      if (interactJustPressed && !bookReader.isOpen && !telescopeView.active && !tamingGame.active) {
         if (gameMode === 'interior') {
           interactables.tryRead();
         } else if (overworld) {
-          // Spare nearby fleeing enemy first
+          // Tame nearby fleeing enemy with the mini-game
           const nearFlee = overworld.getActiveEnemies().find(
             (en) => !en.isDead && en.isRecruitable
-              && en.worldPosition.distanceTo(player.group.position) < 2.5,
+              && en.worldPosition.distanceTo(player.group.position) < 3.0,
           );
           if (nearFlee) {
             if (!party.isFull) {
-              party.recruit(nearFlee);
+              tamingGame.begin(nearFlee);
+              tamingGame.onSuccess = (slime) => { party.recruit(slime); };
+              tamingGame.onFail = () => { /* slime bolts — flee state handles it */ };
             }
           } else if (overworld.nearTowerEntrance(player.group.position)) {
             switchToInterior();
           } else {
             const bld = overworld.nearBuilding(player.group.position);
             if (bld) {
-              // Load a separate dungeon for the building (XOR seed for variety)
-              const bldSeed = currentSeed ^ 0xCAFE_BABE;
-              const bldPlan = generateDungeon(bldSeed, 1);
-              overworld.exit();
-              gameMode = 'interior';
-              scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-              sceneManager.loadDungeon(bldPlan);
+              if (bld.type === 'greenhouse') {
+                // Load the greenhouse interior dungeon
+                const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                overworld.exit();
+                gameMode = 'interior';
+                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                sceneManager.loadDungeon(ghPlan);
+                player.teleport(new THREE.Vector3(0, 1.5, 8));
+              } else {
+                // Generic building — load a random dungeon floor
+                const bldSeed = currentSeed ^ 0xCAFE_BABE;
+                const bldPlan = generateDungeon(bldSeed, 1);
+                overworld.exit();
+                gameMode = 'interior';
+                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                sceneManager.loadDungeon(bldPlan);
+              }
             }
           }
         }

@@ -21,7 +21,7 @@ Shipping a phase without all three is not shipping.
 | 4 | Level Designer (Dev Tool) | ✅ Complete |
 | 4.5 | UI Suite (Main Menu + All Game Screens) | ✅ Complete |
 | 5 | Procedural Generation & Discovery | ✅ Complete |
-| 6 | Overworld & Monster Minions | 🔄 In Progress |
+| 6 | Overworld & Monster Minions | 🔄 In Progress (6d overworld-editor pending) |
 | 7 | The OP Power Fantasy | ⬜ Not started |
 | 8 | Asset Replacement & Final Boss | ⬜ Not started |
 
@@ -146,16 +146,24 @@ Shipping a phase without all three is not shipping.
        null door → exit to overworld; `[E]` near tower entrance → return to dungeon.
 - [x] `SceneManager.onExitTrigger`: callback fired when player hits a null-target door.
 
-### 6b — Tame & Recruit
+### 6b — Tame & Recruit ✅
 - [x] `SlimeEnemy`: `'flee'` FSM state (HP ≤ 15% → flee away from player).
 - [x] `SlimeEnemy.isRecruitable`: true when in flee state and in exterior scene.
 - [x] `SlimeEnemy.recruit()`: transitions to `'recruited'`; colour changes to signal allegiance.
 - [x] `PartyManager.ts`: tracks recruited minions, enforces Phase 6 cap (5).
+- [x] **"The Princess's Song"** taming mini-game (`src/interactables/TamingGame.ts`):
+  3-round word-picking overlay; each slime has a hidden personality (bold/gentle/curious/lonely)
+  derived from its spawn position hash; word scores trigger visual `tameReact()` animations
+  (colour flash + scale bounce); resonance bar fills toward 45-pt threshold; success → purple
+  recruit flash; failure → slime bolts. `[E]` near fleeing slime now opens the mini-game instead
+  of instant-recruiting. 8 unit tests pass.
 
-### 6c — Follower Behaviour ⬜
-- [ ] Recruited slimes follow player at a comfortable distance (simple steering, no NavMesh).
-- [ ] Followers automatically attack enemies within aggro range.
-- [ ] `PartyManager.pruneDead()` removes fallen followers.
+### 6c — Follower Behaviour ✅
+- [x] Recruited slimes follow player at FOLLOW_DISTANCE=4.0 (simple steering via `updateAsFollower()`).
+- [x] Followers automatically attack hostile enemies within FOLLOWER_AGGRO_RANGE=7.0 — scan for
+  nearest non-recruited slime, chase at FOLLOWER_ATTACK_SPEED=4.5, melee on cooldown.
+- [x] `OverworldScene.update()` dispatches `updateAsFollower()` for recruited enemies.
+- [x] `PartyManager.pruneDead()` removes fallen followers (called every frame in main.ts).
 
 ### 6d — Editor Improvements
 - [x] `EditMode`: "Load Room" button loads the active SceneManager blueprint into the editor
@@ -204,9 +212,12 @@ as fully procedural rooms — no JSON blueprint files needed. Two new source fil
 - [x] 25 TowerGenerator unit tests + 182 total passing; 0 tsc errors
 - [ ] **Manual playtest**: descend B→F9, clear each floor, confirm no enemy respawn, telescope works
 
-### 6f — Outdoor Location Interiors ⬜
-- [ ] Ruined Greenhouse blueprint: round floor plan, enemies only, once cleared = safe space.
-- [ ] Greenhouse uses a separate seed from the tower dungeon.
+### 6f — Outdoor Location Interiors ✅
+- [x] `src/levels/GreenhouseGenerator.ts`: 11×11 circular chamber (radius=4), `greenhouse_orb` at
+  centre, 2 lecterns with plant lore, 3 slime spawns, grass floorType, south exit door.
+  `[E]` near the Ruined Greenhouse building loads this interior via `generateGreenhouse(seed)`.
+- [x] Greenhouse uses seed `currentSeed ^ 0x67452341` — independent from tower dungeon.
+- [x] 12 unit tests for GreenhouseGenerator pass.
 
 **Tests (Phase 6):**
 - Poisson-disk: no two points closer than `minDist` across 50 seeds.
