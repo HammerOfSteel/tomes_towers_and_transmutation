@@ -4,7 +4,7 @@
 //  • Concept-art masonry gallery (8 tiles, staggered cross-fade, no duplicates)
 //  • Play modal with 3 localStorage save slots
 //  • Settings modal (volume, fullscreen)
-//  • Credits modal
+//  • Lore modal (4-page book — Wizard's journal + Princess's account)
 //  • Controls modal
 //
 // NOTE: Concept art images are served from /concept_art/ (project root).
@@ -71,6 +71,72 @@ interface SaveData {
   timestamp: number;
 }
 
+// ── Lore pages ───────────────────────────────────────────────────────────
+
+interface LorePage {
+  chapterLabel: string;
+  title: string;
+  byline: string;
+  body: string;        // HTML
+}
+
+const LORE_PAGES: LorePage[] = [
+  {
+    chapterLabel: 'Prologue',
+    title: 'Tomes and Towers',
+    byline: 'From the records of W., Wizard, Upper Order — suspended, pending review',
+    body: `
+      <p>Right. Where to begin.</p>
+      <p>Perhaps with a clarification: I am not, as certain colleagues implied at the last Grand Convocation, <em>"losing his faculties."</em> My faculties are in exceptional working order. I can name all fourteen subspecies of the Cascading Vortex Moth from memory, translate Elven treatises on temporal harmonics whilst boiling an egg, and I once predicted a solar eclipse to within four minutes — the remaining four being attributable to continental drift, not error.</p>
+      <p>The egg was fine, by the way. These things happen.</p>
+      <p>What I <em>am</em> is busy. Impressively, productively busy, in ways that the uninitiated might misread as absent-mindedness but are in fact simply the natural consequence of operating at a higher cognitive frequency than most of one's contemporaries.</p>
+      <p>I have a tower. A <em>good</em> tower — three generations of careful architectural decisions, seventeen wards, two basement levels (one of which is technically in a different dimension, but that's structural, not magical; there is a distinction), and a library that has been described, by those with sufficient vocabulary, as "formidable."</p>
+      <p>I mention all of this because events have occurred in my absence that have since, I am told, taken on the quality of a <em>story.</em></p>
+      <p>I do not write stories. I write <em>records.</em> What follows is a record of what happened when I left for what I was certain would be no more than a week, and returned to find my tower considerably more inhabited than I had left it.</p>
+      <p>The tower was still standing. I want to be clear about that.</p>`,
+  },
+  {
+    chapterLabel: 'Prologue, continued',
+    title: 'On the Thoroughness of Locks',
+    byline: 'From the records of W.',
+    body: `
+      <p>When I locked the tower, I locked it <em>thoroughly.</em></p>
+      <p>Seventeen wards on the main door alone. Enchanted window shutters. A Confundment Field over the library rated to give a fully-trained archivist a week-long headache measurable on standard diagnostics. The second staircase is a defensive illusion — has been since 1842. The corridor between floors two and three contains traps that are, I am still quite proud to say, tasteful.</p>
+      <p>In thirty-seven years of practice, not one person had successfully circumvented these measures. The Confundment Field specifically was designed to make the books feel <em>unreadable</em> — not illegible, but somehow beside the point, like trying to read a menu in a language you theoretically know but practically find tedious.</p>
+      <p>What I had not accounted for — what I maintain no <em>reasonable</em> person could have accounted for — was the possibility that someone might simply find all of this funny, and read the books anyway, on principle, out of what can only be described as <em>spite.</em></p>
+      <p>In my defence: the Field was rated for deterring adults with seven or more years of formal magical education. It was not rated for someone with nothing else to do and a high threshold for being told what not to think about.</p>
+      <p>These things happen.</p>
+      <p>I am still forming opinions about whether they should have.</p>`,
+  },
+  {
+    chapterLabel: 'Chapter I',
+    title: 'What I Understood About Towers (Before I Started Breaking Things)',
+    byline: 'The personal accounts of Z. — uninvited guest, floor one, cell three',
+    body: `
+      <p>When I found the books, I want to be perfectly clear: I was not <em>snooping.</em></p>
+      <p>I was <em>exploring.</em> There is an important distinction, and it is fundamentally dependent on whether the person who owns the things is present to object — which, as I had established over the course of several days, he very much was not.</p>
+      <p>The cell wasn't terrible. I use the word descriptively, not dramatically, though I acknowledge it carries a certain drama regardless. There was a window. There was a bed with strong opinions about lumbar support. There was a bookshelf that extended upward in three separate directions, which I initially assumed was a shelving error and later understood to be entirely intentional and, frankly, impressive.</p>
+      <p>The books had titles like: <em>On the Recursive Properties of Asymptotic Ward Fields,</em> and <em>A Catalogue of Observable Anomalies in Sub-Dimensional Space (Vol. XXIV),</em> and, memorably, <em>Why Everyone Else Is Wrong: A Corrective Analysis</em> — the author's initials embossed in gold on the spine, clearly by his own instruction, because he was quite pleased with it.</p>
+      <p>It took me approximately four hours to realise no one was coming.</p>
+      <p>Another four to understand this was, looked at correctly, rather good news.</p>`,
+  },
+  {
+    chapterLabel: 'Chapter I, continued',
+    title: 'Things I Now Know, and What I Intend to Do About Them',
+    byline: 'Z.',
+    body: `
+      <p>By the end of the first week, I had pieced together the following:</p>
+      <p>Towers, apparently, are a very <em>serious business</em> among Wizards.</p>
+      <p>Not the buildings — buildings don't care; they simply stand there and occasionally settle. It's what the towers <em>represent.</em> Having a tower means you have a territory. A <em>tall</em> tower means the territory matters. The number of wards, the obscurity of the location, the complexity of the interior, the volume of the library — these are, as best I can determine, the primary metrics by which very old men in very large hats measure themselves against each other at conferences.</p>
+      <p>By these measurements, my captor's tower is, conservatively, extraordinary. Which was somewhat alarming, since I had been operating on the comfortable assumption that I was dealing with a second-rate Wizard who had locked me up by accident and forgotten.</p>
+      <p>The accident part, I still believe. The forgetting, clearly true.</p>
+      <p>But the journal on the highest shelf — the one with the coffee stain on page forty-seven and the margin note reading <em>"do not let this fall into the wrong hands — W."</em> — suggested I had been significantly underestimating the situation.</p>
+      <p>I made tea. I found a better candle. I borrowed the blank journal from the third drawer of the writing desk, which appeared to have been left there for correspondence the Wizard intended to write <em>eventually.</em></p>
+      <p>I opened to the first page and wrote, at the top: <em>Things I Now Know About This Tower, and What I Intend to Do About Them.</em></p>
+      <p>Then I turned back to volume one, page one, and I read.</p>`,
+  },
+];
+
 export interface MainMenuOptions {
   /** Called when the player picks a save slot. */
   onPlay: (slotId: number) => void;
@@ -87,6 +153,9 @@ export class MainMenu {
   private pool: number[];
   private readonly timers: ReturnType<typeof setTimeout>[] = [];
   private _visible = true;
+  private _lorePage = 0;
+  private _prevBtn: HTMLButtonElement | null = null;
+  private _nextBtn: HTMLButtonElement | null = null;
 
   constructor(private readonly opts: MainMenuOptions) {
     this._ensureFonts();
@@ -137,7 +206,7 @@ export class MainMenu {
       mkBtn('Play',     'mm-btn', () => { this._renderSaveSlots(); this._openModal('mm-play'); }),
       mkBtn('Settings', 'mm-btn', () => this._openModal('mm-settings')),
       mkBtn('Controls', 'mm-btn', () => this._openModal('mm-controls')),
-      mkBtn('Credits',  'mm-btn', () => this._openModal('mm-credits')),
+      mkBtn('Lore',     'mm-btn', () => { this._setLorePage(0); this._openModal('mm-lore'); }),
     );
     header.append(subtitle, title, nav);
 
@@ -177,7 +246,7 @@ export class MainMenu {
       this._buildPlayModal(),
       this._buildSettingsModal(),
       this._buildControlsModal(),
-      this._buildCreditsModal(),
+      this._buildLoreModal(),
     );
     return ov;
   }
@@ -324,40 +393,84 @@ export class MainMenu {
     return modal;
   }
 
-  // ── Credits modal ─────────────────────────────────────────────────────
+  // ── Lore / book modal ──────────────────────────────────────────────────
 
-  private _buildCreditsModal(): HTMLElement {
-    const [modal, card] = mkModal('mm-credits', 'The Grimoire\'s Colophon', () => this._closeModal('mm-credits'));
+  private _buildLoreModal(): HTMLElement {
+    const modal = mkEl('div', 'mm-modal');
+    modal.id = 'mm-lore';
+    modal.addEventListener('click', (e) => { if (e.target === modal) this._closeModal('mm-lore'); });
 
-    card.insertAdjacentHTML('beforeend', `
-      <div class="mm-credits-body">
-        <p class="mm-credits-role">Design, Code &amp; World</p>
-        <p class="mm-credits-name">Terry Goleman</p>
+    const card = mkEl('div', 'mm-book-card');
+    card.addEventListener('click', (e) => e.stopPropagation());
 
-        <div class="mm-credits-div"></div>
+    // Close button (top-right of card)
+    const closeX = mkBtn('✕', 'mm-book-close', () => this._closeModal('mm-lore'));
+    card.appendChild(closeX);
 
-        <p class="mm-credits-role">Concept Art</p>
-        <p class="mm-credits-name">AI-assisted illustrations</p>
+    // Scrollable page content
+    const pageWrap = mkEl('div', 'mm-book-page-wrap');
+    const page = mkEl('div', 'mm-lore-page');
+    page.id = 'mm-lore-page';
+    pageWrap.appendChild(page);
 
-        <div class="mm-credits-div"></div>
+    // Navigation bar
+    const nav = mkEl('div', 'mm-book-nav');
+    this._prevBtn = mkBtn('◄ Previous', 'mm-book-nav-btn', () => this._flipLore(-1)) as HTMLButtonElement;
+    const pageNum = mkEl('span', 'mm-book-page-num') as HTMLSpanElement;
+    pageNum.id = 'mm-book-pnum';
+    this._nextBtn = mkBtn('Next ►', 'mm-book-nav-btn', () => this._flipLore(1)) as HTMLButtonElement;
+    nav.append(this._prevBtn, pageNum, this._nextBtn);
 
-        <p class="mm-credits-role">Built With</p>
-        <p class="mm-credits-small">Three.js &nbsp;·&nbsp; Rapier3D &nbsp;·&nbsp; Vite &nbsp;·&nbsp; TypeScript</p>
-
-        <div class="mm-credits-div"></div>
-
-        <p class="mm-credits-quote">
-          <em>"Do not read aloud unless you mean it."</em><br>
-          — W
-        </p>
-      </div>
-    `);
-
-    const footer = mkEl('div', 'mm-modal-footer');
-    footer.appendChild(mkBtn('Close', 'mm-slot-btn', () => this._closeModal('mm-credits')));
-    card.appendChild(footer);
+    card.append(pageWrap, nav);
     modal.appendChild(card);
+
+    // Render the first page now (DOM exists at this point)
+    this._setLorePage(0);
     return modal;
+  }
+
+  private _setLorePage(idx: number): void {
+    this._lorePage = Math.max(0, Math.min(idx, LORE_PAGES.length - 1));
+    const p    = LORE_PAGES[this._lorePage];
+    const page = document.getElementById('mm-lore-page');
+    const pnum = document.getElementById('mm-book-pnum');
+
+    if (page) {
+      page.innerHTML = `
+        <div class="mm-lore-chapter">${p.chapterLabel}</div>
+        <h2 class="mm-lore-title">${p.title}</h2>
+        <p class="mm-lore-byline">${p.byline}</p>
+        <div class="mm-lore-rule"></div>
+        <div class="mm-lore-body">${p.body}</div>
+      `;
+    }
+    if (pnum) pnum.textContent = `${this._lorePage + 1} \u2013 ${LORE_PAGES.length}`;
+    if (this._prevBtn) this._prevBtn.disabled = this._lorePage === 0;
+    if (this._nextBtn) this._nextBtn.disabled = this._lorePage === LORE_PAGES.length - 1;
+  }
+
+  /** Animate page turn in direction +1 (forward) or -1 (back). */
+  private _flipLore(dir: 1 | -1): void {
+    const next = this._lorePage + dir;
+    if (next < 0 || next >= LORE_PAGES.length) return;
+
+    const page = document.getElementById('mm-lore-page');
+    if (!page) return;
+
+    const exitCls  = dir > 0 ? 'mm-flip-out-fwd'  : 'mm-flip-out-back';
+    const enterCls = dir > 0 ? 'mm-flip-in-fwd'   : 'mm-flip-in-back';
+
+    page.classList.add(exitCls);
+    // Block nav during animation
+    if (this._prevBtn) this._prevBtn.disabled = true;
+    if (this._nextBtn) this._nextBtn.disabled = true;
+
+    setTimeout(() => {
+      page.classList.remove(exitCls);
+      this._setLorePage(next);
+      page.classList.add(enterCls);
+      setTimeout(() => page.classList.remove(enterCls), 300);
+    }, 260);
   }
 
   // ── Modal helpers ──────────────────────────────────────────────────────
@@ -785,27 +898,135 @@ const MM_CSS = `
   font-size: 14px; color: #e2d9c8;
 }
 
-/* ── Credits ─────────────────────────────────────────────────────────────── */
-.mm-credits-body {
-  text-align: center; display: flex; flex-direction: column;
-  gap: 4px; padding: 8px 0;
+/* ── Lore / Book modal ───────────────────────────────────────────────────── */
+
+/* Page-flip keyframes */
+@keyframes mm-flip-out-fwd {
+  from { opacity:1; transform: perspective(700px) rotateY(0deg)   translateX(0);    }
+  to   { opacity:0; transform: perspective(700px) rotateY(-22deg) translateX(-4%);  }
 }
-.mm-credits-role {
-  font-family: 'Cinzel', serif; font-size: 11px;
-  letter-spacing: 3px; text-transform: uppercase; color: #9d7cce;
-  margin-top: 10px;
+@keyframes mm-flip-in-fwd {
+  from { opacity:0; transform: perspective(700px) rotateY(22deg)  translateX(4%);   }
+  to   { opacity:1; transform: perspective(700px) rotateY(0deg)   translateX(0);    }
 }
-.mm-credits-name {
-  font-family: 'IM Fell English', Georgia, serif; font-size: 18px; color: #e2d9c8;
+@keyframes mm-flip-out-back {
+  from { opacity:1; transform: perspective(700px) rotateY(0deg)   translateX(0);   }
+  to   { opacity:0; transform: perspective(700px) rotateY(22deg)  translateX(4%);  }
 }
-.mm-credits-small { font-family: monospace; font-size: 12px; color: #7a6888; }
-.mm-credits-div {
-  width: 60%; margin: 10px auto 0;
-  height: 1px;
-  background: linear-gradient(to right, transparent, #4a4158, transparent);
+@keyframes mm-flip-in-back {
+  from { opacity:0; transform: perspective(700px) rotateY(-22deg) translateX(-4%); }
+  to   { opacity:1; transform: perspective(700px) rotateY(0deg)   translateX(0);   }
 }
-.mm-credits-quote {
-  font-family: 'IM Fell English', Georgia, serif; font-style: italic;
-  font-size: 14px; color: #7a6888; margin-top: 14px; line-height: 1.7;
+.mm-flip-out-fwd  { animation: mm-flip-out-fwd  .26s ease forwards; pointer-events:none; }
+.mm-flip-in-fwd   { animation: mm-flip-in-fwd   .28s ease forwards; }
+.mm-flip-out-back { animation: mm-flip-out-back .26s ease forwards; pointer-events:none; }
+.mm-flip-in-back  { animation: mm-flip-in-back  .28s ease forwards; }
+
+/* Book card — parchment look, intentionally different from dark modals */
+.mm-book-card {
+  position: relative;
+  /* Warm parchment with subtle horizontal ruling */
+  background: #f0e6ca;
+  background-image: repeating-linear-gradient(
+    transparent, transparent 27px, rgba(100,65,20,.07) 27px, rgba(100,65,20,.07) 28px
+  );
+  /* Left = spine (flat), right = page edge (slight curve) */
+  border: 2px solid #8b6030;
+  border-left: 8px solid #5a3010;
+  border-radius: 2px 10px 10px 2px;
+  padding: 40px 52px 28px 48px;
+  width: 90%; max-width: 720px;
+  box-shadow: -6px 0 18px rgba(0,0,0,.35), 6px 0 10px rgba(0,0,0,.15),
+              0 24px 60px rgba(0,0,0,.65);
+  transform: translateY(18px);
+  transition: transform .38s cubic-bezier(.175,.885,.32,1.28);
+  display: flex; flex-direction: column;
+  max-height: 88vh; overflow: hidden;
+}
+.mm-modal.mm-modal--open .mm-book-card { transform: translateY(0); }
+
+/* Close button (top-right, low-profile) */
+.mm-book-close {
+  position: absolute; top: 12px; right: 16px;
+  background: transparent; border: none; cursor: pointer;
+  color: #8b6030; font-size: 18px; line-height: 1;
+  opacity: .55; transition: opacity .2s;
+  padding: 4px 8px;
+}
+.mm-book-close:hover { opacity: 1; }
+
+/* Scrollable page area */
+.mm-book-page-wrap {
+  flex: 1; overflow-y: auto; min-height: 320px;
+  scrollbar-width: thin; scrollbar-color: #c8a878 transparent;
+  padding-right: 4px;
+}
+
+/* The animated page content div */
+.mm-lore-page { padding-bottom: 8px; }
+
+/* Chapter label (small-caps above title) */
+.mm-lore-chapter {
+  font-family: 'Cinzel', serif;
+  font-size: 10px; letter-spacing: 5px; text-transform: uppercase;
+  color: #8b4513; margin-bottom: 6px;
+}
+
+/* Page title */
+.mm-lore-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(17px, 2.4vw, 22px); font-weight: 700;
+  color: #2a1204; line-height: 1.25; margin-bottom: 6px;
+}
+
+/* Byline / attribution */
+.mm-lore-byline {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-style: italic; font-size: 12px; color: #7a5030;
+  margin-bottom: 10px;
+}
+
+/* Decorative rule */
+.mm-lore-rule {
+  height: 1px; margin: 10px 0 16px;
+  background: linear-gradient(to right, #8b6030, transparent);
+}
+
+/* Body text */
+.mm-lore-body { color: #1e1006; font-family: 'IM Fell English', Georgia, serif; }
+.mm-lore-body p { font-size: 15px; line-height: 1.85; margin-bottom: 12px; }
+.mm-lore-body p:last-child { margin-bottom: 0; }
+.mm-lore-body em { font-style: italic; }
+
+/* Drop cap on the first paragraph of each page */
+.mm-lore-body p:first-child::first-letter {
+  float: left;
+  font-family: 'Cinzel', serif; font-size: 3.8em; line-height: .82;
+  margin: .05em .14em 0 0;
+  color: #5a2d0c;
+}
+
+/* Navigation bar */
+.mm-book-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 16px; margin-top: 14px;
+  border-top: 1px solid rgba(100,65,20,.2);
+  flex-shrink: 0;
+}
+
+.mm-book-nav-btn {
+  background: transparent;
+  border: 1px solid #8b6030; border-radius: 3px;
+  color: #5a3010; font-family: 'Cinzel', serif;
+  font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 6px 18px; cursor: pointer;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.mm-book-nav-btn:hover:not(:disabled) { background: #8b6030; color: #f0e6ca; }
+.mm-book-nav-btn:disabled { opacity: .3; cursor: default; }
+
+.mm-book-page-num {
+  font-family: 'Cinzel', serif; font-size: 12px;
+  color: #8b6030; letter-spacing: 2px;
 }
 `;
