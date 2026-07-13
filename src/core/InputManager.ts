@@ -13,6 +13,10 @@ export interface InputState {
   attack: boolean;
   dodge: boolean;
   interact: boolean;
+  /** Right mouse button — cast the active equipped spell */
+  castSpell: boolean;
+  /** Currently selected spell slot (0-3), switched by keys 1–4 */
+  activeSlot: number;
   /** Mouse position normalized to [-1, 1] in both axes. */
   mouseX: number;
   mouseY: number;
@@ -27,9 +31,13 @@ export class InputManager {
   private readonly heldMouseButtons = new Set<number>();
   private mouseX = 0;
   private mouseY = 0;
+  private _activeSlot = 0;
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     this.heldKeys.add(e.code);
+    // Slot selection: 1–4 keys
+    const slot = ['Digit1','Digit2','Digit3','Digit4'].indexOf(e.code);
+    if (slot !== -1) this._activeSlot = slot;
   };
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.heldKeys.delete(e.code);
@@ -44,6 +52,10 @@ export class InputManager {
   private readonly onMouseUp = (e: MouseEvent): void => {
     this.heldMouseButtons.delete(e.button);
   };
+  /** Suppress browser context menu so right-click can be used in-game. */
+  private readonly onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
+  };
 
   constructor() {
     window.addEventListener('keydown', this.onKeyDown);
@@ -51,7 +63,11 @@ export class InputManager {
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('contextmenu', this.onContextMenu);
   }
+
+  /** Currently selected spell slot index (0–3). */
+  get activeSlot(): number { return this._activeSlot; }
 
   get state(): InputState {
     return {
@@ -64,6 +80,8 @@ export class InputManager {
       attack: this.heldMouseButtons.has(0),
       dodge: this.heldKeys.has('KeyF'),
       interact: this.heldKeys.has('KeyE'),
+      castSpell: this.heldMouseButtons.has(2),
+      activeSlot: this._activeSlot,
       mouseX: this.mouseX,
       mouseY: this.mouseY,
     };
@@ -75,5 +93,6 @@ export class InputManager {
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mousedown', this.onMouseDown);
     window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('contextmenu', this.onContextMenu);
   }
 }

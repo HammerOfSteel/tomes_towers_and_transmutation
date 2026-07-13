@@ -3,10 +3,10 @@
 //  In-game HTML overlay.  Injected once; call update() every frame.
 //
 //  Sections:
-//   • HP bar with colour-coded fill
-//   • Status row: dodge-cooldown pips [F] + sprint indicator [⇧]
-//   • Spell slots — always shows Magic Bolt; unlocked spells added below
-//   • Info row: foe count + floor label
+//   • HP bar with colour-coded fill                      (top-left)
+//   • Status row: dodge-cooldown pips [F] + sprint [⇧]  (top-left)
+//   • Info row: foe count + floor label                  (top-left)
+//   • Action bar: 4 spell slots, 1–4 select active       (bottom-centre)
 
 const HUD_CSS = `
 #hud {
@@ -75,24 +75,42 @@ const HUD_CSS = `
   text-shadow: 0 0 7px rgba(100,180,255,.4);
 }
 
-/* ── Spell slots ── */
-.hud-spells { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
-.hud-spell-slot {
-  display: flex; align-items: center; gap: 7px;
-  padding: 3px 10px 3px 6px;
-  background: rgba(0,0,0,.4);
-  border: 1px solid #1a1428;
-  border-left: 2px solid #6a4c9c;
-  border-radius: 2px;
-}
-.hud-spell-name {
-  font-family: 'IM Fell English', Georgia, serif;
-  font-size: 12px; color: #a880d8;
-}
-
 /* ── Info ── */
 .hud-info { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
 .hud-info-text { font-family: monospace; font-size: 10px; color: #2e3e4e; }
+
+/* ── Action bar (bottom-centre) ── */
+#hud-bar {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px;
+  z-index: 100; user-select: none; pointer-events: none;
+}
+
+.hud-slot {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 7px 16px 6px;
+  background: rgba(0,0,0,.52); border: 1px solid #1a1428;
+  border-radius: 3px; min-width: 96px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.hud-slot--active {
+  border-color: #9d7cce;
+  box-shadow: 0 0 12px rgba(157,124,206,.28);
+}
+
+.hud-slot-num {
+  font-family: monospace; font-size: 9px; color: #2e2240; letter-spacing: 1px;
+  transition: color .12s;
+}
+.hud-slot--active .hud-slot-num { color: #9d7cce; }
+
+.hud-slot-name {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 12px; color: #2e2440; white-space: nowrap;
+  transition: color .12s;
+}
+.hud-slot--active .hud-slot-name { color: #c9b8e8; }
+.hud-slot--empty  .hud-slot-name { font-style: italic; color: #1e1830; }
 `;
 
 // ── Spell display names ───────────────────────────────────────────────────
@@ -111,8 +129,11 @@ export class HUD {
   private readonly floorText: HTMLElement;
   private readonly dodgePips: HTMLElement[];
   private readonly runEl: HTMLElement;
-  private readonly spellsEl: HTMLElement;
-  private _lastSpellKey = '';
+  /** Bottom action-bar container */
+  private readonly barRoot: HTMLElement;
+  private readonly barSlots: HTMLElement[];
+  private _lastSlotKey = '';
+  private _lastActiveSlot = -1;
 
   constructor() {
     this._ensureStyles();
@@ -168,10 +189,6 @@ export class HUD {
 
     statusRow.append(dodgeEl, this.runEl);
 
-    // ── Spell slots ─────────────────────────────────────────────────────
-    this.spellsEl = document.createElement('div');
-    this.spellsEl.className = 'hud-spells';
-
     // ── Info row ────────────────────────────────────────────────────────
     const infoEl = document.createElement('div');
     infoEl.className = 'hud-info';
@@ -181,8 +198,29 @@ export class HUD {
     this.floorText.className = 'hud-info-text';
     infoEl.append(this.killText, this.floorText);
 
-    this.root.append(hpRow, statusRow, this.spellsEl, infoEl);
+    this.root.append(hpRow, statusRow, infoEl);
     document.body.appendChild(this.root);
+
+    // ── Action bar ──────────────────────────────────────────────────────
+    this.barRoot = document.createElement('div');
+    this.barRoot.id = 'hud-bar';
+    this.barSlots = Array.from({ length: 4 }, (_, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'hud-slot hud-slot--empty';
+
+      const num = document.createElement('span');
+      num.className = 'hud-slot-num';
+      num.textContent = String(i + 1);
+
+      const name = document.createElement('span');
+      name.className = 'hud-slot-name';
+      name.textContent = '— empty —';
+
+      slot.append(num, name);
+      this.barRoot.appendChild(slot);
+      return slot;
+    });
+    document.body.appendChild(this.barRoot);
   }
 
   update(
@@ -191,7 +229,8 @@ export class HUD {
     kills: number,
     total: number,
     floor = 0,
-    spells: string[] = [],
+    equippedSlots: (string | null)[] = [],
+    activeSlot = 0,
     dodgeReady = 1,
     isRunning = false,
   ): void {
@@ -208,34 +247,33 @@ export class HUD {
     // Sprint indicator
     this.runEl.classList.toggle('hud-run--active', isRunning);
 
-    // Spell slots — rebuild DOM only when the list changes
-    const allSpells = spells.includes('magic_bolt') ? spells : ['magic_bolt', ...spells];
-    const spellKey  = allSpells.join(',');
-    if (spellKey !== this._lastSpellKey) {
-      this._lastSpellKey = spellKey;
-      this.spellsEl.innerHTML = '';
-      for (const id of allSpells) {
-        const slot = document.createElement('div');
-        slot.className = 'hud-spell-slot';
-        const k = document.createElement('span');
-        k.className = 'hud-key';
-        k.textContent = 'E';
-        const n = document.createElement('span');
-        n.className = 'hud-spell-name';
-        n.textContent = SPELL_LABEL[id] ?? id;
-        slot.append(k, n);
-        this.spellsEl.appendChild(slot);
-      }
-    }
-
     // Info
     this.killText.textContent  = `${kills} / ${total} foes`;
     const fl = floor === 0 ? 'Ground' : floor > 0 ? `Floor ${floor}` : `B${Math.abs(floor)}`;
     this.floorText.textContent = `▲ ${fl}`;
+
+    // Action bar — rebuild slot labels only when equipped spells change
+    const slotKey = equippedSlots.join(',');
+    if (slotKey !== this._lastSlotKey) {
+      this._lastSlotKey = slotKey;
+      this._lastActiveSlot = -1; // force re-highlight pass
+      this.barSlots.forEach((slotEl, i) => {
+        const id    = equippedSlots[i] ?? null;
+        const nameEl = slotEl.querySelector('.hud-slot-name') as HTMLElement;
+        nameEl.textContent = id ? (SPELL_LABEL[id] ?? id) : '— empty —';
+        slotEl.classList.toggle('hud-slot--empty', id === null);
+      });
+    }
+    // Re-highlight active slot whenever it changes
+    if (activeSlot !== this._lastActiveSlot) {
+      this._lastActiveSlot = activeSlot;
+      this.barSlots.forEach((el, i) => el.classList.toggle('hud-slot--active', i === activeSlot));
+    }
   }
 
   dispose(): void {
     this.root.remove();
+    this.barRoot.remove();
   }
 
   private _ensureStyles(): void {
@@ -246,3 +284,4 @@ export class HUD {
     document.head.appendChild(s);
   }
 }
+

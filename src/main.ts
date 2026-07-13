@@ -16,6 +16,7 @@ import { EditMode } from '@/editor/EditMode';
 import { ProgressionSystem } from '@/progression/ProgressionSystem';
 import { BookReader } from '@/interactables/BookReader';
 import { InteractableSystem } from '@/interactables/InteractableSystem';
+import { SpellBook } from '@/ui/SpellBook';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -77,6 +78,9 @@ async function main() {
   const bookReader    = new BookReader();
   const interactables = new InteractableSystem(progression, bookReader);
 
+  // ── Spell book ──────────────────────────────────────────────────────────
+  const spellBook = new SpellBook(progression);
+
   // ── Pause menu ───────────────────────────────────────────────────────────
   const pauseMenu = new PauseMenu({
     onOpenEditor: () => editMode.toggle(),
@@ -94,6 +98,8 @@ async function main() {
     if (e.key === 'Escape') {
       if (bookReader.isOpen) {
         bookReader.close();         // close book → game
+      } else if (spellBook.isOpen) {
+        spellBook.close();          // close grimoire → game
       } else if (editMode.isActive) {
         editMode.toggle();          // close editor → game
       } else if (pauseMenu.isOpen) {
@@ -101,6 +107,8 @@ async function main() {
       } else {
         pauseMenu.open();           // game → menu
       }
+    } else if (e.key === 'k' || e.key === 'K') {
+      if (!pauseMenu.isOpen && !editMode.isActive) spellBook.toggle();
     } else if (e.key === '`' || e.key === '~') {
       if (!pauseMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
     }
@@ -121,6 +129,7 @@ async function main() {
   let spellCooldown = 0;
   let lastAttackInput = false;
   let lastSpellInput = false;
+  let lastCastInput = false;
 
   // ── HUD ───────────────────────────────────────────────────────────────────
   const hud = new HUD();
@@ -159,7 +168,7 @@ async function main() {
     physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
-    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible) {
+    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen) {
       // 2. Player movement
       player.update(input.state, dt);
 
@@ -189,16 +198,22 @@ async function main() {
         combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
       }
 
-      // 6. Spell / interact (E key — context-sensitive: read nearby item OR cast spell)
-      spellCooldown = Math.max(0, spellCooldown - dt);
-      const spellJustPressed = s.interact && !lastSpellInput;
+      // 6a. E key → interact with nearby interactable (read books etc.)
+      const interactJustPressed = s.interact && !lastSpellInput;
       lastSpellInput = s.interact;
-      if (spellJustPressed) {
-        // Priority: read interactable first; fall back to casting if nothing nearby
-        const didRead = !bookReader.isOpen && interactables.tryRead();
-        if (!didRead && spellCooldown <= 0) {
-          spellCooldown = 0.6;
-          spells.fire(player.group.position, mouseWorld, enemies, scene);
+      if (interactJustPressed && !bookReader.isOpen) {
+        interactables.tryRead();
+      }
+
+      // 6b. Right-click → cast active equipped spell
+      spellCooldown = Math.max(0, spellCooldown - dt);
+      const castJustPressed = s.castSpell && !lastCastInput;
+      lastCastInput = s.castSpell;
+      if (castJustPressed && spellCooldown <= 0) {
+        const activeSpell = progression.getEquippedSlot(s.activeSlot);
+        if (activeSpell) {
+          spellCooldown = 0.5;
+          spells.fire(player.group.position, mouseWorld, enemies, scene, undefined, activeSpell);
         }
       }
 
@@ -236,7 +251,8 @@ async function main() {
       sceneManager.killCount,
       sceneManager.totalEnemies,
       sceneManager.currentFloor,
-      progression.getUnlockedSpells(),
+      progression.getEquippedSlots(),
+      input.activeSlot,
       player.dodgeReadyFraction,
       input.state.run,
     );
