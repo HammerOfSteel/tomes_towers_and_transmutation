@@ -9,6 +9,7 @@ export class HUD {
   private readonly hpText: HTMLSpanElement;
   private readonly killText: HTMLSpanElement;
   private readonly floorText: HTMLSpanElement;
+  private readonly spellsText: HTMLSpanElement;
 
   constructor() {
     this.root = document.createElement('div');
@@ -77,10 +78,19 @@ export class HUD {
     } satisfies Partial<CSSStyleDeclaration>);
     this.root.appendChild(this.floorText);
 
+    // ── Spell indicator ───────────────────────────────────────────────
+    this.spellsText = document.createElement('div');
+    Object.assign(this.spellsText.style, {
+      fontSize: '11px',
+      marginTop: '4px',
+      color: '#bb99ff',
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.root.appendChild(this.spellsText);
+
     document.body.appendChild(this.root);
   }
 
-  update(hp: number, maxHp: number, kills: number, total: number, floor = 0): void {
+  update(hp: number, maxHp: number, kills: number, total: number, floor = 0, spells: string[] = []): void {
     const pct = Math.max(0, (hp / maxHp) * 100);
     this.hpFill.style.width = `${pct}%`;
     this.hpFill.style.background = pct > 50 ? '#44ddff' : pct > 25 ? '#ffcc44' : '#ff4444';
@@ -88,9 +98,22 @@ export class HUD {
     this.killText.textContent = `Enemies: ${kills}/${total}`;
     const floorLabel = floor === 0 ? 'Ground' : floor > 0 ? `Floor ${floor}` : `Basement ${Math.abs(floor)}`;
     this.floorText.textContent = `▲ ${floorLabel}`;
+    if (spells.length > 0) {
+      const labels = spells.map((s) => SPELL_LABEL[s] ?? s).join(' · ');
+      this.spellsText.textContent = `✦ ${labels}  [E]`;
+    } else {
+      this.spellsText.textContent = '';
+    }
   }
 
   dispose(): void {
     this.root.remove();
   }
 }
+
+// ── Spell display names ───────────────────────────────────────────────────
+
+const SPELL_LABEL: Record<string, string> = {
+  magic_bolt: 'Magic Bolt',
+  flame_dart: 'Flame Dart',
+};

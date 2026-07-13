@@ -49,6 +49,8 @@ export interface InteractableEntry {
   content?: string;
   /** Clockwise rotation around Y axis. Defaults to 0 (faces south into the room). */
   rotation?: Rotation;
+  /** Spell key that is unlocked the first time this item is read. */
+  spellUnlock?: string;
 }
 
 export interface StaircaseEntry {
@@ -186,6 +188,8 @@ export function validateBlueprint(raw: unknown): Blueprint {
       throw new BlueprintError(id, `unknown interactable type "${String(item.type)}"`);
     if (item.rotation !== undefined && !VALID_ROTATIONS.has(item.rotation as number))
       throw new BlueprintError(id, `invalid interactable rotation "${String(item.rotation)}"`);
+    if (item.spellUnlock !== undefined && typeof item.spellUnlock !== 'string')
+      throw new BlueprintError(id, 'interactable spellUnlock must be a string');
   }
 
   return raw as Blueprint;

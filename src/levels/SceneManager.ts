@@ -4,6 +4,7 @@ import type { PlayerController } from '@/player/PlayerController';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { renderBlueprint, type RenderedRoom } from './BlueprintRenderer';
 import { validateBlueprint, doorSpawnPosition, isInsideTrigger, type Blueprint } from './blueprint';
+import type { WorldInteractable } from '@/interactables/InteractableSystem';
 
 // Raw JSON imports — each is validated on first load.
 import cellStartRaw from './blueprints/cell_start.json';
@@ -99,6 +100,25 @@ export class SceneManager {
   /** Enemies the player can target with attacks this frame. */
   getActiveEnemies(): SlimeEnemy[] {
     return this.activeEnemies;
+  }
+
+  /** World-positioned interactables for the currently loaded room.
+   *  Returns an empty array if no room is active. */
+  getActiveInteractables(): WorldInteractable[] {
+    if (!this.currentBpId) return [];
+    const bp = this.blueprints.get(this.currentBpId);
+    if (!bp) return [];
+    return bp.interactables.map((item, i) => ({
+      id: `${bp.id}__${item.type}__${i}`,
+      position: new THREE.Vector3(
+        (item.x + 0.5) * bp.cellSize - (bp.width  * bp.cellSize) / 2,
+        0,
+        (item.z + 0.5) * bp.cellSize - (bp.depth  * bp.cellSize) / 2,
+      ),
+      type: item.type,
+      content: item.content ?? '',
+      spellUnlock: item.spellUnlock,
+    }));
   }
 
   /** Show or hide the active room group (used by the level editor). */
