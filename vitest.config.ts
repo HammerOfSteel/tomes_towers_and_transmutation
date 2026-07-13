@@ -9,5 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Exclude Playwright e2e tests — those run via `npm run test:e2e`
+    exclude: ['tests/e2e/**', 'node_modules/**'],
   },
 });

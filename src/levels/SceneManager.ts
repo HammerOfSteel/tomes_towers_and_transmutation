@@ -167,6 +167,28 @@ export class SceneManager {
     if (this.currentRoom) this.currentRoom.group.visible = v;
   }
 
+  /**
+   * Remove the current dungeon room from the scene and destroy its physics
+   * bodies. Call this before entering exterior mode so the dungeon geometry
+   * and colliders don't interfere with the overworld.
+   *
+   * Inverse of loadRoomImmediate — the room can be reloaded later via
+   * loadRoomImmediate / loadDungeon.
+   */
+  unloadCurrentRoom(): void {
+    if (!this.currentRoom) return;
+    this.accumulatedKills += this.activeEnemies.filter(e => e.isDead).length;
+    for (const enemy of this.activeEnemies) {
+      this.scene.remove(enemy.group);
+      enemy.dispose(this.physics);
+    }
+    this.activeEnemies = [];
+    this.scene.remove(this.currentRoom.group);
+    this.currentRoom.dispose();
+    this.currentRoom = null;
+    this.currentBpId  = null;
+  }
+
   /** Called once per frame by the game loop.
    *  @param dt Frame delta time in seconds.
    *  @param playerPos Player world position (read-only).

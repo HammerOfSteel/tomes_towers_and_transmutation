@@ -8,6 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report tests/e2e/report",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "@types/three": "^0.170.0",
     "eslint": "^9.0.0",
