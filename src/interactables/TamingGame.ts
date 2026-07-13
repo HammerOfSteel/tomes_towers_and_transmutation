@@ -137,6 +137,7 @@ export class TamingGame {
   begin(slime: SlimeEnemy): void {
     if (this._phase !== 'idle') return;
     this._slime = slime;
+    slime.startTaming();   // freeze flee movement during the song
     this._phase = 'choosing';
     this._round = 0;
     this._totalScore = 0;
@@ -168,6 +169,7 @@ export class TamingGame {
 
   /** Close and clean up the overlay without triggering callbacks (ESC / walk away). */
   close(): void {
+    this._slime?.stopTaming();  // let the slime resume fleeing
     this._phase = 'idle';
     this._overlay?.remove();
     this._overlay = null;
