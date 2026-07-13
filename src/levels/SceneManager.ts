@@ -92,6 +92,11 @@ export class SceneManager {
     return this.activeEnemies.length;
   }
 
+  /** Enemies defeated (dead) in the currently loaded room only. */
+  get roomEnemiesDefeated(): number {
+    return this.activeEnemies.filter(e => e.isDead).length;
+  }
+
   /** The floor number of the currently loaded room (0 = ground floor). */
   get currentFloor(): number {
     return this._currentFloor;

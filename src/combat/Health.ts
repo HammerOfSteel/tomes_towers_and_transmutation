@@ -70,4 +70,10 @@ export class HealthComponent implements Damageable {
     if (this.isDead || amount <= 0) return;
     this._hp = Math.min(this._maxHp, this._hp + amount);
   }
+
+  /** Fully restore HP and clear i-frame timer (use for respawn / restart). */
+  reset(): void {
+    this._hp = this._maxHp;
+    this._iframeTimer = 0;
+  }
 }
