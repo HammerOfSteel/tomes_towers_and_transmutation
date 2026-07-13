@@ -162,158 +162,47 @@ Shipping a phase without all three is not shipping.
        so generated rooms can be hand-tweaked and re-exported.
 - [ ] Overworld editor: place enemy camps, building entrances, resource nodes and export to JSON.
 
-### 6e — Tower Interior: 10-Floor Procedural Generation ⬜
+### 6e — Tower Interior: 10-Floor Procedural Generation ✅
 
-#### Research Summary (completed 2026-07-13)
+#### Implementation (completed 2026-07-13)
 
-**Algorithms evaluated:**
-- *Dungeon-Building Algorithm* (Mike Anderson / Tyrant): grow outward from a seed room — pick a
-  wall, attempt to attach a new feature (room/corridor/arena), retry on collision. Guarantees
-  connectivity because every feature is added through an existing wall. Best fit for our tower:
-  each floor starts from a fixed circular central chamber and side rooms grow out from it.
-- *Rooms-and-Mazes* (Bob Nystrom / Hauberk): place rooms → flood-fill gaps with maze →
-  spanning-tree connect all regions → prune dead ends. Produces imperfect (loopy) dungeons.
-  Relevant for basement / more organic floors.
-- *Cellular Automata*: organic cave shapes; documented on RogueBasin. Useful for the experimental
-  garden floor or the alchemy workshop.
+Instead of the blueprint-library approach in the original plan, all 11 floors were implemented
+as fully procedural rooms — no JSON blueprint files needed. Two new source files handle everything:
 
-**rot-js (`npm install rot-js`)** — the standard JS roguelike toolkit (TypeScript, BSD-3, 2.7k★).
-  Provides Map.Digger, Map.Cellular, Map.Uniform generators; FOV; pathfinding; RNG.
-  *Verdict: skip for now.* rot-js outputs ASCII tile callbacks `(x, y, value) => void`; converting
-  those to our Blueprint JSON format (wall objects, door positions, spawns) needs a non-trivial
-  adapter layer, and our existing SimplexNoise + mulberry32 + DungeonGenerator infrastructure
-  already covers the fundamentals. Re-evaluate if we need A* pathfinding for minion AI (Phase 6c).
+- **`src/levels/TowerFloorDef.ts`** — 11 `TowerFloorDef` entries (B + F0–F9), each carrying:
+  name, floorType, keyFixture (type + content + optional spellUnlock), sideRoomCount [min,max],
+  sideRoomProps, chamberPillars, chamberBookshelves, wallHeight (observatory = 1.2),
+  exteriorExitSlot (foyer only → NW door fires onExitTrigger → overworld).
+- **`src/levels/TowerGenerator.ts`** — `generateTower(seed)` builds all 11 chambers + side rooms
+  into a `DungeonPlan` consumed by `SceneManager.loadDungeon()` unchanged. Circular chambers
+  (radius=7, 17×17 cell grid), door slots, staircase chain, pillar rings, bookshelf rings.
+- **`src/levels/BlueprintRenderer.ts`** — 5 new fixture renderers: `cauldron` (sphere + tripod +
+  torus glow), `telescope` (cylinder pedestal + angled tube), `forge` (box + fire glow),
+  `quest_board` (corkboard plane), `greenhouse_orb` (floating sphere + ring).
+- **`src/levels/SceneManager.ts`** — staircase entry detection, `clearedRooms` Set (localStorage),
+  Observatory sky ambiance (deep-space background + wide fog when floor=9).
+- **`src/ui/TelescopeView.ts`** — 3D orbit camera remote-viewing mode: unloads interior, enters
+  overworld, renders it through a free PerspectiveCamera. Mouse drag orbits, scroll zooms,
+  arrows/WASD pan. ESC restores the previous interior room. `gameMode='telescope'` skips physics.
+- **`src/ui/HUD.ts`** — `update()` now accepts optional `floorName?: string`; shows "The Reading
+  Galleries" etc. instead of "Floor 1".
 
----
-
-#### Floor Manifest (replaces GDD §9 — 10 floors + basement)
-
-| Level | ID | Name | Central Fixture | Side Rooms (pool) | Player start? |
-|---|---|---|---|---|---|
-| B | `floor_alchemy` | Alchemical Workshop | Distillation rig | Ingredient store, Experiment chamber, Dangerous materials vault | — |
-| 0 | `floor_foyer` | Grand Foyer | Quest board + world exit door | Guard post, Waiting room, Trophy niche | — |
-| 1 | `floor_library` | Library of Accumulated Arrogance | Giant book stacks + reading lectern | Restricted section, Manuscript alcove, Candlelit reading nook | — |
-| 2 | `floor_brewing` | The Brewing Chamber | Enormous cauldron (centrepiece) | Ingredient prep, Bottling room, Reagent storage | — |
-| 3 | `floor_quarters` | Living Quarters | Communal lounge / kitchen | Bedroom, Dressing room, Private study | **YES** |
-| 4 | `floor_smithy` | The Arcane Smithy | Runic forge | Enchanting bench, Materials store, Display gallery | — |
-| 5 | `floor_menagerie` | Followers' Den | Minion common room | Slime pool, Goblin corner, Undead rest alcove, Construct bay | — |
-| 6 | `floor_trophies` | Trophy Hall / War Room | Map table + mounted trophies | Vault (locked), Tactical briefing room, Comms alcove | — |
-| 7 | `floor_garden` | Experimental Garden | Floating-orb greenhouse floor | Propagation lab, Seed vault, Distillation prep | — |
-| 8 | `floor_archive` | The Forbidden Archive | Sealed magical cabinets | Dangerous knowledge wing, Artefact storage, Quarantine cell | — |
-| 9 | `floor_observatory` | The Observatory Rooftop | Telescope (interactable) | Star-chart alcove, Instrument room, Observation decks ×4 | — |
-
-#### Initial enemies (cleared-on-first-run, no respawn)
-Every floor except F3 (player quarters) starts with a small group of slimes/constructs.
-Cleared state is stored in the save slot; enemies are not re-spawned on subsequent visits.
-Boss-lite variant (higher HP) guards the staircase up on floors B, 2, 4, 6, 8.
-
----
-
-#### Implementation Plan
-
-**Step 1 — Floor Theme Definitions** (`src/levels/TowerFloorDef.ts`)
-- Define `TowerFloorTheme` interface:
-  ```ts
-  interface TowerFloorTheme {
-    id: string;               // e.g. 'floor_brewing'
-    floorIndex: number;       // B=-1, F0=0 … F9=9
-    name: string;
-    chamberRadius: number;    // tile-radius of circular main hall (default 7)
-    sideRoomPool: string[];   // blueprint IDs eligible for this floor
-    sideRoomCount: [number, number]; // [min, max] per seed
-    keyFixture: FixtureDef;   // placed at (0, 0) of chamber
-    initialEnemyCount: number;
-    hasBossVariant: boolean;
-  }
-  ```
-- Export `TOWER_FLOORS: TowerFloorTheme[]` (array index = floor, B=index 0).
-
-**Step 2 — Circular Chamber Generator** (add to `src/levels/DungeonGenerator.ts`)
-- `buildCircularChamber(radius: number, rand): BlueprintTile[][]`
-  - Mark every tile (col, row) within `radius` of centre as `floor`.
-  - Walk the perimeter; mark tiles just outside the circle as `wall`.
-  - Place staircase-down at due-south wall, staircase-up at due-north wall.
-  - Place door sockets evenly around the perimeter: E, W, and 2–4 random spots.
-  - Key fixture is injected as an `interactable` at centre.
-- Algorithm: scan all tiles; `if (col² + row² <= radius²) → floor, else wall`.
-  Inner-edge detection: a wall tile adjacent to ≥1 floor tile = door-eligible wall.
-
-**Step 3 — Side-Room Attachment** (new `TowerFloorGenerator` in `DungeonGenerator.ts`)
-Follows the *Dungeon-Building Algorithm*:
-1. Start with the generated circular chamber.
-2. For each side-room slot (seeded count, min-max from FloorTheme):
-   a. Pick a random door-eligible wall section (use `mulberry32` PRNG).
-   b. Select a blueprint ID from `sideRoomPool` (seeded pick).
-   c. Check that a `T×2` corridor + room bounding box doesn't overlap existing geometry.
-   d. If clear: place a `corridor_ns` or `corridor_ew` connector + attach the room blueprint.
-   e. If collision: try up to 10 other wall sections; skip if none found.
-3. After all rooms placed, add initial enemies (seeded Poisson spread within the chamber floor).
-
-**Step 4 — Blueprint Library Expansion** (`src/levels/blueprints/`)
-New blueprint files needed (add using the Level Editor tool):
-- `room_ingredient_store.json`, `room_experiment_chamber.json` (alchemy)
-- `room_restricted_section.json`, `room_manuscript_alcove.json` (library)
-- `room_ingredient_prep.json`, `room_bottling_room.json` (brewing)
-- `room_bedroom.json`, `room_dressing_room.json` (quarters)
-- `room_enchanting_bench.json`, `room_smithy_gallery.json` (smithy)
-- `room_slime_pool.json`, `room_goblin_corner.json`, `room_undead_alcove.json` (menagerie)
-- `room_vault.json`, `room_briefing.json` (trophies)
-- `room_propagation_lab.json`, `room_seed_vault.json` (garden)
-- `room_dangerous_wing.json`, `room_quarantine.json` (archive)
-- `room_star_chart.json`, `room_observation_deck.json` (observatory)
-
-Each room blueprint includes floor-appropriate procedural props (bookcases, cauldron props,
-forge geometry, planters, etc.) via the existing `BlueprintRenderer` prop system.
-
-**Step 5 — Key Fixtures (procedural geometry, no assets)**
-Fixtures rendered in `BlueprintRenderer.ts` by new `interactable` subtypes:
-- `cauldron`: large sphere (r=1.2) on a tripod frame, emissive glow, emits particle steam.
-- `telescope`: cylinder + angled tube geometry, `[E]` → shows aerial render of exterior.
-- `runic_forge`: box with emissive fire-glow material inside, tongs geometry.
-- `quest_board`: flat plane with canvas-texture grid marks, cork-board colour.
-- `greenhouse_orb`: floating sphere (MeshBasicMaterial, light-emissive) × N scattered.
-
-**Step 6 — SceneManager / main.ts Integration**
-- Remove hardcoded `cell_start` as initial room.
-- `startGame()` → generate tower with seed → `sceneManager.loadRoomImmediate('floor_quarters')`.
-- Each floor's staircase-down triggers `sceneManager.loadFloor(floorIndex - 1)`.
-- Each floor's staircase-up triggers `sceneManager.loadFloor(floorIndex + 1)`.
-- Exit door on F0 triggers `switchToExterior()` (already wired).
-
-**Step 7 — Telescope Interaction**
-- On `[E]` at F9 telescope: render the exterior `OverworldScene` top-down (orthographic camera
-  directly overhead, zoom-out) into an offscreen `THREE.WebGLRenderTarget`.
-- Display the render target texture in a canvas overlay (like `BookReader`).
-- Overlay shows a zoomed-out map of the exterior including tower, camps, greenhouse.
-
-**Step 8 — Cleared-Enemy State**
-- `GameState` (new or extend save-slot object): `clearedFloors: Set<string>` keyed by floor ID.
-- When `floor_brewing` is loaded for the first time, enemies spawn (initial seed).
-- On second load, `clearedFloors.has('floor_brewing')` → skip enemy spawn.
-- Persist to `localStorage` with the save slot.
-
----
+#### Playtesting fixes (2026-07-13)
+- [x] HUD showed "Floor 1" — now shows actual floor name from TowerFloorDef
+- [x] Telescope showed 2D canvas art — now full 3D orbit camera over real overworld
+- [x] Bookshelves at (8,2) and (8,14) blocked staircase access — moved to (12,4) and (4,12)
+- [x] No way to exit the tower — foyer now has a west-facing exit door (slot 2, `exteriorExitSlot`)
 
 #### Task Checklist
-
-- [ ] `TowerFloorDef.ts`: define all 11 `TowerFloorTheme` entries.
-- [ ] `buildCircularChamber()`: tile-scan circle algorithm; perimeter doors; staircase positions.
-- [ ] `TowerFloorGenerator`: dungeon-building side-room attachment loop.
-- [ ] Populate `src/levels/blueprints/` with the 20+ new room blueprints (use Level Editor).
-- [ ] `BlueprintRenderer`: add `cauldron`, `telescope`, `runic_forge`, `quest_board`, `greenhouse_orb` fixture renderers.
-- [ ] `SceneManager`: `loadFloor(index)` replaces hardcoded room chain; inter-floor staircase triggers.
-- [ ] `main.ts`: `startGame()` spawns player at `floor_quarters` centre.
-- [ ] Telescope interaction: offscreen render → canvas overlay.
-- [ ] `GameState`: `clearedFloors` set; persist to save slot; skip enemy spawn on reload.
-- [ ] Update `DungeonGenerator` tests: cover circular chamber connectivity, side-room overlap-free placement, 50-seed determinism across all 11 floors.
-- [ ] Manual playtest: descend from F9 to B, clearing each floor; confirm enemies don't respawn; confirm telescope shows exterior.
-
-**Tests (Phase 6e):**
-- Circular chamber: all floor tiles reachable from centre (flood-fill check).
-- Side rooms: zero overlap across 100 seeds per floor theme.
-- Staircase chain: loadFloor(-1) through loadFloor(9) produces valid rooms for all seeds.
-- Cleared state: enemies absent on second load; enemies present on first load.
-- Telescope: render target produced without errors; overlay displays.
+- [x] `TowerFloorDef.ts`: all 11 `TowerFloorDef` entries with names, fixtures, decor flags
+- [x] `TowerGenerator.ts`: circular chamber tile-scan, perimeter doors, staircase chain, side-room attachment loop
+- [x] `BlueprintRenderer`: cauldron, telescope, forge, quest_board, greenhouse_orb fixture renderers
+- [x] `SceneManager`: inter-floor staircase triggers, clearedRooms persistence (localStorage)
+- [x] `main.ts`: `startGame()` → `generateTower(seed)` → player starts at floor_quarters (F3)
+- [x] Telescope interaction: full 3D orbit camera over real overworld scene
+- [x] `clearedRooms`: enemies absent on second visit, present on first (SceneManager)
+- [x] 25 TowerGenerator unit tests + 182 total passing; 0 tsc errors
+- [ ] **Manual playtest**: descend B→F9, clear each floor, confirm no enemy respawn, telescope works
 
 ### 6f — Outdoor Location Interiors ⬜
 - [ ] Ruined Greenhouse blueprint: round floor plan, enemies only, once cleared = safe space.
