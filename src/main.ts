@@ -18,6 +18,7 @@ import { BookReader } from '@/interactables/BookReader';
 import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel } from '@/ui/DevPanel';
+import { generateDungeon } from '@/levels/DungeonGenerator';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -69,7 +70,10 @@ async function main() {
 
   // ── Scene / room manager ──────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player);
-  sceneManager.loadRoomImmediate('cell_start');
+  // Initial room load: generate a fresh dungeon with a random seed.
+  // The generated plan is registered into sceneManager; the player starts at room_0.
+  const _initialPlan = generateDungeon(Math.floor(Math.random() * 0xFFFFFFFF), 1);
+  sceneManager.loadDungeon(_initialPlan);
 
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
@@ -118,7 +122,13 @@ async function main() {
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
   const mainMenu = new MainMenu({
-    onPlay: () => gameLoop.start(),
+    onPlay: () => {
+      // Generate a new dungeon each time the player presses Play.
+      const seed = Math.floor(Math.random() * 0xFFFFFFFF);
+      const plan = generateDungeon(seed, 1);
+      sceneManager.loadDungeon(plan);
+      gameLoop.start();
+    },
   });
   // ── Centralised key routing ──────────────────────────────────────────────
   window.addEventListener('keydown', (e) => {
@@ -172,7 +182,8 @@ async function main() {
     onRestart: () => {
       player.health.reset();
       player.teleport(new THREE.Vector3(0, 1.5, 0));
-      sceneManager.loadRoomImmediate('cell_start');
+      // Return to the start of the current dungeon (or fall back to cell_start)
+      sceneManager.loadRoomImmediate(sceneManager.startRoomId ?? 'cell_start');
       deathTriggered = false;
     },
     onMainMenu: () => {
