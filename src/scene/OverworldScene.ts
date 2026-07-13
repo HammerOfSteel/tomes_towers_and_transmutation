@@ -1,144 +1,198 @@
-// ── OverworldScene ────────────────────────────────────────────────────────────
-//
-//  The exterior world: a procedurally generated landscape with a heightmap
-//  terrain, procedural trees + rocks, enemy camps, and building entrances.
-//
-//  Scene modes:
-//    enter() — adds all geometry to the Three.js scene + creates physics ground
-//    exit()  — removes geometry + removes physics bodies
-//    update(dt) — ticks enemies each frame
-//
-//  Trigger API (polled by main.ts each frame):
-//    nearTowerEntrance(pos)  → true when player can press E to enter the tower
-//    nearBuilding(pos)       → BuildingEntrance | null
+/**
+ * OverworldScene — tile-based exterior world
+ *
+ * TERRAIN
+ *   51×51 grid of 2-unit square tiles, each at an integer height level 0–4.
+ *   Levels are determined by simplex noise with a flat zone around the tower.
+ *   All tile tops and exposed side-walls are baked into a single merged
+ *   BufferGeometry so the terrain is one draw call.
+ *   Tile-to-world:  worldX = (col − 25) × 2,  worldZ = (row − 25) × 2
+ *   This matches the 2×2 interior cell footprint for visual coherence.
+ *
+ * PHYSICS
+ *   Ground plane at y = 0 (player KCC walks on this flat surface).
+ *   Tree trunks and rocks get static Rapier capsule/ball colliders.
+ *   The tower gets a static cylinder/capsule collider.
+ *   All static bodies are created in enter() and removed in exit().
+ *
+ * TOWER
+ *   Multi-floor procedural octagonal stone tower at world origin.
+ *   Foundation → three 5-unit floors (each slightly tapered) → parapet
+ *   → 8 battlements → conical spire.  Door arch on the south face (+Z).
+ *
+ * OBJECTS
+ *   Trees   — CylinderGeometry trunk + two layered ConeGeometry canopy cones
+ *   Rocks   — DodecahedronGeometry, random rotation / scale
+ *   Ruins   — circular ring of broken stone pillars + overgrown floor disc
+ *   Enemies — SlimeEnemy camps placed via Poisson disk
+ */
 
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
-import { mulberry32, randInt } from '@/core/prng';
+import { mulberry32 } from '@/core/prng';
 import { createNoise2D, fbm } from '@/core/SimplexNoise';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
 
-// ── World constants ───────────────────────────────────────────────────────────
+// ── Grid constants ────────────────────────────────────────────────────────────
 
-const WORLD_SIZE  = 200; // world units across
-const TERRAIN_RES = 80;  // vertices per side
-const MAX_HEIGHT  = 10;  // maximum terrain elevation
-const FLAT_INNER  = 18;  // radius of perfectly flat zone (tower area)
-const FLAT_OUTER  = 32;  // radius where terrain reaches full height
+const GW  = 51;               // grid columns
+const GH  = 51;               // grid rows
+const GHW = (GW - 1) / 2;    // 25 — centre column
+const GHH = (GH - 1) / 2;    // 25 — centre row
+const T   = 2;                // tile side length in world units (= interior cell)
+const SH  = 0.55;             // world-unit height increment per level
+const MLV = 4;                // max height level index (0 = ground, 4 = highland)
+const FR  = 7;                // flat-zone radius in tiles around tower
+
+// ── Biome vertex colours [r, g, b] for height levels 0–4 ─────────────────────
+//   Slightly darker at night-ish palette to match the dungeon interior mood.
+
+const BIOME: readonly [number, number, number][] = [
+  [0.20, 0.26, 0.11],   // 0  bog / muddy path
+  [0.26, 0.44, 0.16],   // 1  grass
+  [0.20, 0.36, 0.13],   // 2  forest floor
+  [0.35, 0.41, 0.26],   // 3  highland
+  [0.44, 0.41, 0.30],   // 4  rocky upland
+];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type BuildingType = 'greenhouse';
 
 export interface BuildingEntrance {
-  type: BuildingType;
+  type:     BuildingType;
   position: THREE.Vector3;
-  label: string;
+  label:    string;
 }
+
+// Internal storage entries (not exported)
+interface TreeEntry { group: THREE.Group; px: number; pz: number; }
+interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: number; }
 
 // ── OverworldScene ────────────────────────────────────────────────────────────
 
 export class OverworldScene {
-  private readonly _terrainMesh: THREE.Mesh;
-  private readonly _objectGroup  = new THREE.Group();
-  private readonly _enemies: SlimeEnemy[] = [];
-  private _groundBody: RAPIER.RigidBody | null = null;
+  // ── Visual geometry (built in constructor, never rebuilt)
+  private readonly _terrain: THREE.Mesh;
+  private readonly _tower:   THREE.Group;
+  private readonly _trees:   TreeEntry[] = [];
+  private readonly _rocks:   RockEntry[] = [];
+  private readonly _ruins:   THREE.Group[] = [];
+  private readonly _enemies: SlimeEnemy[]  = [];
 
   readonly buildingEntrances: BuildingEntrance[] = [];
 
-  /** Height function (world-space x, z → y). Used for placing objects. */
-  private readonly _heightAt: (x: number, z: number) => number;
+  // ── Physics handles (created in enter(), cleared in exit())
+  private _groundBody:   RAPIER.RigidBody | null = null;
+  private _staticBodies: RAPIER.RigidBody[] = [];
+
+  // ── Height data (used during construction for object placement)
+  private readonly _grid: Uint8Array; // [row * GW + col] → level 0–4
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
   constructor(
-    private readonly scene: THREE.Scene,
+    private readonly scene:   THREE.Scene,
     private readonly physics: PhysicsWorld,
-    private readonly player: PlayerController,
+    private readonly player:  PlayerController,
     seed: number,
   ) {
-    // XOR the seed so the overworld layout is always different from the dungeon
-    const overworldSeed = seed ^ 0xA5_F0_3C_12;
-    const rand  = mulberry32(overworldSeed);
-    const noise = createNoise2D(overworldSeed ^ 0x5E_A1_9D_7B);
+    const rand  = mulberry32(seed ^ 0xA5_F0_3C_12);
+    const noise = createNoise2D(seed ^ 0x5E_A1_9D_7B);
 
-    // Build the height function (shared by terrain + object placement)
-    this._heightAt = (x: number, z: number): number => {
-      const dist = Math.sqrt(x * x + z * z);
-      const flatFactor = dist < FLAT_INNER
-        ? 0
-        : Math.min(1, (dist - FLAT_INNER) / (FLAT_OUTER - FLAT_INNER));
-      return fbm(noise, x * 0.018, z * 0.018, 4) * MAX_HEIGHT * flatFactor;
-    };
+    this._grid    = this._buildGrid(noise);
+    this._terrain = this._buildTerrain();
+    this._tower   = this._buildTower();
 
-    this._terrainMesh = this._buildTerrain();
-    this._populateTrees(rand);
-    this._populateRocks(rand);
-    this._spawnEnemyCamps(rand);
-    this._placeBuildings(rand);
-
-    // Tower entrance marker (procedural archway at world origin)
-    this._buildTowerEntrance();
+    this._plantTrees(rand);
+    this._placeRocks(rand);
+    this._spawnCamps(rand);
+    this._addRuins(rand);
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-  /** Add all overworld objects to the scene and create the physics ground. */
+  /** Add geometry to scene and register physics colliders. */
   enter(): void {
+    // Flat ground plane — player KCC slides across this regardless of visual height
     this._groundBody = this.physics.createGroundPlane(0);
-    this.scene.add(this._terrainMesh);
-    this.scene.add(this._objectGroup);
-    for (const e of this._enemies) this.scene.add(e.group);
+
+    // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
+    this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
+
+    // Tree trunk colliders
+    for (const tr of this._trees) {
+      this._addStaticBody(tr.px, 1.2, tr.pz, RAPIER.ColliderDesc.capsule(1.0, 0.22));
+    }
+
+    // Rock colliders
+    for (const rk of this._rocks) {
+      this._addStaticBody(rk.px, rk.py, rk.pz, RAPIER.ColliderDesc.ball(rk.r * 0.85));
+    }
+
+    // Add visuals
+    this.scene.add(this._terrain, this._tower);
+    for (const tr of this._trees)   this.scene.add(tr.group);
+    for (const rk of this._rocks)   this.scene.add(rk.mesh);
+    for (const ru of this._ruins)   this.scene.add(ru);
+    for (const en of this._enemies) this.scene.add(en.group);
   }
 
-  /** Remove all overworld objects from the scene and destroy the physics ground. */
+  /** Remove geometry from scene and destroy physics colliders. */
   exit(): void {
-    this.scene.remove(this._terrainMesh);
-    this.scene.remove(this._objectGroup);
-    for (const e of this._enemies) this.scene.remove(e.group);
     if (this._groundBody) {
       this.physics.rapierWorld.removeRigidBody(this._groundBody);
       this._groundBody = null;
     }
+    for (const b of this._staticBodies) this.physics.rapierWorld.removeRigidBody(b);
+    this._staticBodies = [];
+
+    this.scene.remove(this._terrain, this._tower);
+    for (const tr of this._trees)   this.scene.remove(tr.group);
+    for (const rk of this._rocks)   this.scene.remove(rk.mesh);
+    for (const ru of this._ruins)   this.scene.remove(ru);
+    for (const en of this._enemies) this.scene.remove(en.group);
   }
 
-  /** Per-frame update: tick enemy AI. */
+  /** Per-frame enemy AI tick. */
   update(dt: number): void {
     const pos = this.player.group.position;
-    for (const e of this._enemies) {
-      if (!e.isDead) e.update(pos, dt);
+    for (const en of this._enemies) {
+      if (!en.isDead) en.update(pos, dt);
     }
   }
 
+  /** Full teardown — disposes GPU resources. */
   dispose(): void {
     this.exit();
-    (this._terrainMesh.geometry as THREE.BufferGeometry).dispose();
-    (this._terrainMesh.material as THREE.Material).dispose();
-    for (const child of this._objectGroup.children) {
-      const m = child as THREE.Mesh;
-      m.geometry?.dispose();
-      if (Array.isArray(m.material)) m.material.forEach((mt) => mt.dispose());
-      else m.material?.dispose();
+    (this._terrain.geometry as THREE.BufferGeometry).dispose();
+    (this._terrain.material as THREE.Material).dispose();
+    this._freeGroup(this._tower);
+    for (const tr of this._trees) this._freeGroup(tr.group);
+    for (const rk of this._rocks) {
+      rk.mesh.geometry.dispose();
+      (rk.mesh.material as THREE.Material).dispose();
     }
-    for (const e of this._enemies) e.dispose(this.physics);
+    for (const ru of this._ruins) this._freeGroup(ru);
+    for (const en of this._enemies) en.dispose(this.physics);
   }
 
   // ── Trigger queries ───────────────────────────────────────────────────────
 
-  /** True when `playerPos` is within the tower entrance trigger radius. */
-  nearTowerEntrance(playerPos: THREE.Vector3): boolean {
-    return playerPos.x * playerPos.x + playerPos.z * playerPos.z < 3.5 * 3.5;
+  /** True when the player is close enough to the tower door to press E. */
+  nearTowerEntrance(pos: THREE.Vector3): boolean {
+    return pos.x * pos.x + pos.z * pos.z < 4.5 * 4.5;
   }
 
-  /** Returns the nearest building entrance if the player is within 3.5 units. */
-  nearBuilding(playerPos: THREE.Vector3): BuildingEntrance | null {
+  /** Returns the nearest building entrance if the player is within range. */
+  nearBuilding(pos: THREE.Vector3): BuildingEntrance | null {
     for (const b of this.buildingEntrances) {
-      const dx = playerPos.x - b.position.x;
-      const dz = playerPos.z - b.position.z;
-      if (dx * dx + dz * dz < 3.5 * 3.5) return b;
+      const dx = pos.x - b.position.x;
+      const dz = pos.z - b.position.z;
+      if (dx * dx + dz * dz < 4.0 * 4.0) return b;
     }
     return null;
   }
@@ -147,261 +201,499 @@ export class OverworldScene {
 
   // ── Private builders ──────────────────────────────────────────────────────
 
+  /** Create a fixed static rigid body with the given collider at (x, y, z). */
+  private _addStaticBody(x: number, y: number, z: number, desc: RAPIER.ColliderDesc): void {
+    const body = this.physics.rapierWorld.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z),
+    );
+    this.physics.rapierWorld.createCollider(desc, body);
+    this._staticBodies.push(body);
+  }
+
+  /** Build the integer height grid from seeded simplex noise. */
+  private _buildGrid(noise: (x: number, y: number) => number): Uint8Array {
+    const grid = new Uint8Array(GW * GH);
+
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        const dc = col - GHW;
+        const dr = row - GHH;
+        const tR = Math.sqrt(dc * dc + dr * dr); // tile-space radius from centre
+
+        // Normalised fbm noise → 0..1
+        const nx  = dc / GW;
+        const nz  = dr / GH;
+        const raw = (fbm(noise, nx * 3.8, nz * 3.8, 4) + 1) * 0.5;
+        let level = Math.min(MLV, Math.floor(raw * (MLV + 1)));
+
+        // Smooth flatness gradient: levels fade to 0 within FR tiles of centre
+        const flatness = Math.max(0, 1 - tR / FR);
+        level = Math.round(level * (1 - flatness));
+
+        // Outer rim bias: terrain rises toward the map edge (bowl effect)
+        const rimBias = Math.max(0, (tR - 20) / 9);
+        level = Math.min(MLV, Math.round(level + rimBias * 1.8));
+
+        grid[row * GW + col] = level;
+      }
+    }
+    return grid;
+  }
+
+  /**
+   * Build the merged terrain BufferGeometry.
+   *
+   * For each tile at height H:
+   *   – Top face     (normal +Y)
+   *   – South wall   (normal +Z) when south neighbour is lower
+   *   – North wall   (normal −Z) when north neighbour is lower
+   *   – East  wall   (normal +X) when east  neighbour is lower
+   *   – West  wall   (normal −X) when west  neighbour is lower
+   *
+   * Winding:  triangles (v0,v1,v2) and (v0,v2,v3) produce the outward normal.
+   * All vertex-order derivations verified with the right-hand rule.
+   */
   private _buildTerrain(): THREE.Mesh {
-    const geo  = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, TERRAIN_RES, TERRAIN_RES);
-    geo.rotateX(-Math.PI / 2);
+    const pos: number[] = [];
+    const nrm: number[] = [];
+    const clr: number[] = [];
+    const idx: number[] = [];
 
-    const pos    = geo.attributes.position as THREE.BufferAttribute;
-    const colors = new Float32Array(pos.count * 3);
+    /** Height level of a (possibly out-of-bounds) tile. */
+    const lvl = (c: number, r: number): number =>
+      (c < 0 || c >= GW || r < 0 || r >= GH) ? 0 : this._grid[r * GW + c];
 
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = this._heightAt(x, z);
-      pos.setY(i, h);
+    /**
+     * Append a quad face to the buffers.
+     * v0→v1→v2→v3 must be counter-clockwise when viewed along the outward normal.
+     */
+    const addFace = (
+      v0: [number, number, number], v1: [number, number, number],
+      v2: [number, number, number], v3: [number, number, number],
+      nx: number, ny: number, nz: number,
+      r: number, g: number, b: number,
+    ): void => {
+      const base = pos.length / 3;
+      pos.push(...v0, ...v1, ...v2, ...v3);
+      nrm.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+      clr.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
+      idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+    };
 
-      // Vertex colour by normalised height → biome palette
-      const t = Math.max(0, Math.min(1, (h + 1) / (MAX_HEIGHT + 1)));
-      if (t < 0.12) {                               // bog — dark, waterlogged
-        colors[i*3] = 0.17; colors[i*3+1] = 0.21; colors[i*3+2] = 0.13;
-      } else if (t < 0.52) {                        // forest floor — muted green
-        colors[i*3] = 0.10 + t * 0.12;
-        colors[i*3+1] = 0.30 + t * 0.12;
-        colors[i*3+2] = 0.06;
-      } else if (t < 0.78) {                        // upper forest — faded green
-        colors[i*3] = 0.28; colors[i*3+1] = 0.36; colors[i*3+2] = 0.18;
-      } else {                                      // highlands — grey rock
-        colors[i*3] = 0.42 + t * 0.1;
-        colors[i*3+1] = 0.40 + t * 0.08;
-        colors[i*3+2] = 0.38 + t * 0.06;
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        const H   = lvl(col, row);
+        const wy  = H * SH;
+        const wx  = (col - GHW) * T;
+        const wz  = (row - GHH) * T;
+        const wx1 = wx + T;
+        const wz1 = wz + T;
+
+        // Subtle per-tile brightness variation (avoids repetitive flat look)
+        const v = 0.92 + ((col * 29 + row * 19) % 18) / 200;
+        const [rb, gb, bb] = BIOME[H];
+        const tr = rb * v, tg = gb * v, tb = bb * v;
+
+        // ── TOP face (normal +Y) ─────────────────────────────────────────
+        // v0(wx,wz) → v1(wx,wz1) → v2(wx1,wz1) → v3(wx1,wz) gives +Y normal
+        addFace(
+          [wx, wy, wz], [wx, wy, wz1], [wx1, wy, wz1], [wx1, wy, wz],
+          0, 1, 0,  tr, tg, tb,
+        );
+
+        // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────
+        const Hs = lvl(col, row + 1);
+        if (Hs < H) {
+          const wy2 = Hs * SH;
+          const d = 0.76;
+          addFace(
+            [wx1, wy, wz1], [wx, wy, wz1], [wx, wy2, wz1], [wx1, wy2, wz1],
+            0, 0, 1,  tr * d, tg * d, tb * d,
+          );
+        }
+
+        // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
+        const Hn = lvl(col, row - 1);
+        if (Hn < H) {
+          const wy2 = Hn * SH;
+          const d = 0.50;
+          addFace(
+            [wx, wy, wz], [wx1, wy, wz], [wx1, wy2, wz], [wx, wy2, wz],
+            0, 0, -1,  tr * d, tg * d, tb * d,
+          );
+        }
+
+        // ── EAST wall (+X face, at wx1) ──────────────────────────────────
+        const He = lvl(col + 1, row);
+        if (He < H) {
+          const wy2 = He * SH;
+          const d = 0.63;
+          addFace(
+            [wx1, wy, wz], [wx1, wy, wz1], [wx1, wy2, wz1], [wx1, wy2, wz],
+            1, 0, 0,  tr * d, tg * d, tb * d,
+          );
+        }
+
+        // ── WEST wall (−X face, at wx) ───────────────────────────────────
+        const Hw = lvl(col - 1, row);
+        if (Hw < H) {
+          const wy2 = Hw * SH;
+          const d = 0.55;
+          addFace(
+            [wx, wy, wz1], [wx, wy, wz], [wx, wy2, wz], [wx, wy2, wz1],
+            -1, 0, 0,  tr * d, tg * d, tb * d,
+          );
+        }
       }
     }
 
-    geo.computeVertexNormals();
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('color',    new THREE.Float32BufferAttribute(clr, 3));
+    geo.setIndex(idx);
 
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    return mesh;
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   }
 
-  // ── Trees ─────────────────────────────────────────────────────────────────
+  /**
+   * Build the multi-storey tower group centered at world origin.
+   *
+   * Structure (bottom to top, Y values are mesh centres):
+   *   Foundation      CylinderGeometry(4.8, 5.2, 2.5, 8)   y = 1.25
+   *   Floor 1         CylinderGeometry(4.2, 4.5, 5.0, 8)   y = 5.0
+   *   Floor 2         CylinderGeometry(3.9, 4.2, 5.0, 8)   y = 10.0
+   *   Floor 3         CylinderGeometry(3.6, 3.9, 5.0, 8)   y = 15.0
+   *   Parapet ring    CylinderGeometry(4.05, 3.6, 0.9, 8)  y = 17.95
+   *   8 merlons       BoxGeometry(0.85, 1.9, 0.75)          y = 19.35
+   *   Spire           ConeGeometry(3.2, 5.5, 8)             y = 20.65
+   *
+   * All cylinders are rotated π/8 so their flat faces align to cardinal axes
+   * (i.e. flat-face normals point N/S/E/W/NE/NW/SE/SW).
+   */
+  private _buildTower(): THREE.Group {
+    const grp = new THREE.Group();
+    const m   = (hex: number) => new THREE.MeshLambertMaterial({ color: hex });
+    const ROT = Math.PI / 8;  // aligns flat faces to cardinal directions
 
-  private _populateTrees(rand: () => number): void {
-    const HALF = WORLD_SIZE / 2;
-    const pts  = poissonDisk(WORLD_SIZE, WORLD_SIZE, 6, rand);
+    // ── Foundation ────────────────────────────────────────────────────────
+    const fnd = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.2, 2.5, 8), m(0x524840));
+    fnd.position.y = 1.25;
+    fnd.rotation.y = ROT;
+    grp.add(fnd);
+
+    // ── Three tower floors ────────────────────────────────────────────────
+    const floorDefs = [
+      { rt: 4.2, rb: 4.5, h: 5.0, cy: 5.0,  hex: 0x706860 as number },
+      { rt: 3.9, rb: 4.2, h: 5.0, cy: 10.0, hex: 0x686058 as number },
+      { rt: 3.6, rb: 3.9, h: 5.0, cy: 15.0, hex: 0x706860 as number },
+    ];
+
+    for (const { rt, rb, h, cy, hex } of floorDefs) {
+      const flr = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 8), m(hex));
+      flr.position.y = cy;
+      flr.rotation.y = ROT;
+      grp.add(flr);
+
+      // 4 windows per floor (cardinal directions: S, E, N, W)
+      const faceApothem = ((rt + rb) / 2) * Math.cos(Math.PI / 8) + 0.06;
+      const winDefs: [number, number, number][] = [
+        [ 0,           faceApothem,  0          ],   // south (+Z)
+        [ faceApothem, 0,           -Math.PI / 2 ],  // east  (+X)
+        [ 0,          -faceApothem,  Math.PI     ],  // north (−Z)
+        [-faceApothem, 0,            Math.PI / 2 ],  // west  (−X)
+      ];
+      for (const [wx, wz, ry] of winDefs) {
+        const win = new THREE.Mesh(
+          new THREE.BoxGeometry(0.62, 0.92, 0.16),
+          m(0x14100c),
+        );
+        win.position.set(wx, cy, wz);
+        win.rotation.y = ry;
+        grp.add(win);
+      }
+    }
+
+    // ── Parapet ───────────────────────────────────────────────────────────
+    const par = new THREE.Mesh(new THREE.CylinderGeometry(4.05, 3.6, 0.9, 8), m(0x625a52));
+    par.position.y = 17.95;
+    par.rotation.y = ROT;
+    grp.add(par);
+
+    // ── Battlements (8 merlons) ───────────────────────────────────────────
+    for (let i = 0; i < 8; i++) {
+      const angle  = (i / 8) * Math.PI * 2 + Math.PI / 16;
+      const bx     = Math.sin(angle) * 3.85;
+      const bz     = Math.cos(angle) * 3.85;
+      const merlon = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.9, 0.72), m(0x625a52));
+      merlon.position.set(bx, 19.35, bz);
+      merlon.rotation.y = -angle;
+      grp.add(merlon);
+    }
+
+    // ── Spire ─────────────────────────────────────────────────────────────
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(3.2, 5.5, 8), m(0x3c3a4a));
+    spire.position.y = 20.65;
+    spire.rotation.y = ROT;
+    grp.add(spire);
+
+    // ── Door arch on the south face (z+ direction) ────────────────────────
+    //   Foundation south-face apothem ≈ 5.2 × cos(π/8) ≈ 4.8 world units
+    const DZ   = 4.62;                                  // door face Z position
+    const arcM = m(0x4c4438);
+    const opnM = m(0x100e0c);
+    const glwM = new THREE.MeshLambertMaterial({
+      color: 0xffaa44, emissive: 0xffaa44, emissiveIntensity: 0.55,
+    });
+
+    // Left pillar
+    const pL = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.27, 3.8, 6), arcM);
+    pL.position.set(-0.92, 1.9, DZ);
+    grp.add(pL);
+
+    // Right pillar
+    const pR = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.27, 3.8, 6), arcM);
+    pR.position.set(0.92, 1.9, DZ);
+    grp.add(pR);
+
+    // Lintel
+    const lin = new THREE.Mesh(new THREE.BoxGeometry(2.28, 0.44, 0.48), arcM);
+    lin.position.set(0, 3.82, DZ);
+    grp.add(lin);
+
+    // Dark opening
+    const opn = new THREE.Mesh(new THREE.BoxGeometry(1.76, 3.62, 0.1), opnM);
+    opn.position.set(0, 1.81, DZ + 0.05);
+    grp.add(opn);
+
+    // Interior warm glow
+    const glw = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), glwM);
+    glw.position.set(0, 1.55, DZ - 1.4);
+    grp.add(glw);
+
+    return grp;
+  }
+
+  // ── Tree placement ─────────────────────────────────────────────────────────
+
+  private _plantTrees(rand: () => number): void {
+    const W  = GW * T;   // 102
+    const H  = GH * T;   // 102
+    const pts = poissonDisk(W, H, 5.5, rand);
 
     for (const [px, pz] of pts) {
-      const wx = px - HALF;
-      const wz = pz - HALF;
-      if (wx * wx + wz * wz < 20 * 20) continue; // avoid tower area
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const d  = Math.sqrt(wx * wx + wz * wz);
+      if (d < FR * T + 5 || d > 44) continue;   // outside flat zone, inside grid edge
 
-      const h = this._heightAt(wx, wz);
-      const t = (h + 1) / (MAX_HEIGHT + 1);
-      if (t < 0.10 || t > 0.76) continue; // bogs & highlands have no trees
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      if (c < 0 || c >= GW || r < 0 || r >= GH) continue;
 
-      this._objectGroup.add(this._makeTree(rand, wx, h, wz));
+      const level = this._grid[r * GW + c];
+      if (level < 1) continue;   // no trees on bog
+
+      const tree = this._makeTree(rand);
+      tree.position.set(wx, level * SH, wz);
+      tree.rotation.y = rand() * Math.PI * 2;
+      this._trees.push({ group: tree, px: wx, pz: wz });
     }
   }
 
-  private _makeTree(rand: () => number, x: number, groundY: number, z: number): THREE.Group {
+  private _makeTree(rand: () => number): THREE.Group {
     const g      = new THREE.Group();
-    const height = 3.5 + rand() * 3.0;
-    const radius = 0.18 + rand() * 0.12;
+    const trunkH = 1.6 + rand() * 1.2;
+    const trunkR = 0.12 + rand() * 0.07;
+    const coneR  = 0.85 + rand() * 0.55;
+    const coneH  = 2.0 + rand() * 1.2;
 
     // Trunk
-    const trunkGeo = new THREE.CylinderGeometry(radius * 0.55, radius, height, 6);
-    const trunk    = new THREE.Mesh(trunkGeo, new THREE.MeshLambertMaterial({ color: 0x4a3020 }));
-    trunk.position.y = height / 2;
-    trunk.castShadow  = true;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(trunkR * 0.72, trunkR, trunkH, 6),
+      new THREE.MeshLambertMaterial({ color: 0x4a2810 }),
+    );
+    trunk.position.y = trunkH / 2;
     g.add(trunk);
 
-    // Canopy: 1–2 overlapping spheres with slight vertex displacement
-    const canopyCount = 1 + Math.floor(rand() * 2);
-    for (let c = 0; c < canopyCount; c++) {
-      const cr  = 1.1 + rand() * 0.9;
-      const geo = new THREE.SphereGeometry(cr, 7, 5);
+    // Lower canopy cone
+    const greenBase = 0x1a4610 + Math.floor(rand() * 6) * 0x010100;
+    const coneL = new THREE.Mesh(
+      new THREE.ConeGeometry(coneR, coneH, 6),
+      new THREE.MeshLambertMaterial({ color: greenBase }),
+    );
+    coneL.position.y = trunkH + coneH * 0.48;
+    g.add(coneL);
 
-      // Organic noise displacement
-      const pa = geo.attributes.position as THREE.BufferAttribute;
-      for (let v = 0; v < pa.count; v++) {
-        pa.setX(v, pa.getX(v) + (rand() - 0.5) * 0.35);
-        pa.setY(v, pa.getY(v) + (rand() - 0.5) * 0.35);
-        pa.setZ(v, pa.getZ(v) + (rand() - 0.5) * 0.35);
-      }
-      geo.computeVertexNormals();
+    // Upper canopy cone (smaller, slightly lighter)
+    const coneU = new THREE.Mesh(
+      new THREE.ConeGeometry(coneR * 0.65, coneH * 0.70, 6),
+      new THREE.MeshLambertMaterial({ color: greenBase + 0x040800 }),
+    );
+    coneU.position.y = trunkH + coneH * 0.88;
+    g.add(coneU);
 
-      const greenVal = 0.22 + rand() * 0.28;
-      const canopy   = new THREE.Mesh(
-        geo,
-        new THREE.MeshLambertMaterial({ color: new THREE.Color(0.05, greenVal, 0.04) }),
-      );
-      canopy.position.set(
-        (rand() - 0.5) * 0.9,
-        height - cr * 0.25 + c * 0.55,
-        (rand() - 0.5) * 0.9,
-      );
-      canopy.castShadow = true;
-      g.add(canopy);
-    }
-
-    g.position.set(x, groundY, z);
     return g;
   }
 
-  // ── Rocks ─────────────────────────────────────────────────────────────────
+  // ── Rock placement ─────────────────────────────────────────────────────────
 
-  private _populateRocks(rand: () => number): void {
-    const HALF = WORLD_SIZE / 2;
-    const pts  = poissonDisk(WORLD_SIZE, WORLD_SIZE, 9, rand);
+  private _placeRocks(rand: () => number): void {
+    const W  = GW * T;
+    const H  = GH * T;
+    const pts = poissonDisk(W, H, 8, rand);
 
-    for (const [px, pz] of pts.slice(0, 70)) {
-      const wx = px - HALF;
-      const wz = pz - HALF;
-      if (wx * wx + wz * wz < 13 * 13) continue;
+    for (const [px, pz] of pts) {
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const d  = Math.sqrt(wx * wx + wz * wz);
+      if (d < FR * T + 6 || d > 46) continue;
 
-      const h = this._heightAt(wx, wz);
-      this._objectGroup.add(this._makeRock(rand, wx, h, wz));
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      if (c < 0 || c >= GW || r < 0 || r >= GH) continue;
+
+      const level = this._grid[r * GW + c];
+      const wy    = level * SH;
+      const radius = 0.48 + rand() * 0.84;
+
+      const grey  = 0x58 + Math.floor(rand() * 0x18);
+      const color = (grey << 16) | (Math.floor(grey * 0.96) << 8) | Math.floor(grey * 0.88);
+      const mesh  = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(radius, 0),
+        new THREE.MeshLambertMaterial({ color }),
+      );
+      mesh.position.set(wx, wy + radius * 0.45, wz);
+      mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+      mesh.scale.set(1 + rand() * 0.4, 0.5 + rand() * 0.55, 0.9 + rand() * 0.3);
+
+      this._rocks.push({ mesh, px: wx, py: wy + radius * 0.5, pz: wz, r: radius });
     }
   }
 
-  private _makeRock(rand: () => number, x: number, groundY: number, z: number): THREE.Mesh {
-    const r    = 0.35 + rand() * 0.85;
-    const geo  = new THREE.DodecahedronGeometry(r, 0);
-    const grey = 0.28 + rand() * 0.28;
-    const mesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshLambertMaterial({ color: new THREE.Color(grey, grey * 0.95, grey * 0.87) }),
-    );
-    mesh.scale.set(1.0 + rand() * 0.5, 0.55 + rand() * 0.55, 0.85 + rand() * 0.45);
-    mesh.rotation.set(0, rand() * Math.PI * 2, rand() * 0.4 - 0.2);
-    mesh.position.set(x, groundY + r * 0.25, z);
-    mesh.castShadow = true;
-    return mesh;
-  }
+  // ── Enemy camps ────────────────────────────────────────────────────────────
 
-  // ── Enemy camps ───────────────────────────────────────────────────────────
+  private _spawnCamps(rand: () => number): void {
+    const W  = GW * T;
+    const H  = GH * T;
+    const pts = poissonDisk(W, H, 26, rand);
+    let camps = 0;
 
-  private _spawnEnemyCamps(rand: () => number): void {
-    const HALF     = WORLD_SIZE / 2;
-    const campPts  = poissonDisk(WORLD_SIZE, WORLD_SIZE, 28, rand);
+    for (const [px, pz] of pts) {
+      if (camps >= 5) break;
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const d  = Math.sqrt(wx * wx + wz * wz);
+      if (d < 28 || d > 44) continue;
 
-    const camps = campPts
-      .map(([px, pz]): [number, number] => [px - HALF, pz - HALF])
-      .filter(([wx, wz]) => wx * wx + wz * wz > 28 * 28)
-      .slice(0, 5);
-
-    for (const [cx, cz] of camps) {
-      const count = 3 + randInt(rand, 3); // 3–5 per camp
+      const count = 3 + Math.floor(rand() * 3);
       for (let i = 0; i < count; i++) {
-        const angle = rand() * Math.PI * 2;
-        const dist  = rand() * 4.5;
-        const ex    = cx + Math.cos(angle) * dist;
-        const ez    = cz + Math.sin(angle) * dist;
-        const ey    = this._heightAt(ex, ez) + 1.0;
+        const angle  = rand() * Math.PI * 2;
+        const spread = 2 + rand() * 3;
+        const ex = wx + Math.cos(angle) * spread;
+        const ez = wz + Math.sin(angle) * spread;
 
-        const slime = new SlimeEnemy(
-          new THREE.Vector3(ex, ey, ez),
+        const c = Math.floor(ex / T + GHW);
+        const r = Math.floor(ez / T + GHH);
+        const level = (c >= 0 && c < GW && r >= 0 && r < GH) ? this._grid[r * GW + c] : 0;
+
+        this._enemies.push(new SlimeEnemy(
+          new THREE.Vector3(ex, level * SH + 0.9, ez),
           this.physics,
           (dmg) => this.player.health.takeDamage(dmg),
-        );
-        this._enemies.push(slime);
+        ));
       }
+      camps++;
     }
   }
 
-  // ── Outdoor buildings ─────────────────────────────────────────────────────
+  // ── Ruined greenhouse structures ───────────────────────────────────────────
 
-  private _placeBuildings(rand: () => number): void {
-    const HALF = WORLD_SIZE / 2;
-    const pts  = poissonDisk(WORLD_SIZE, WORLD_SIZE, 45, rand);
+  private _addRuins(rand: () => number): void {
+    const W  = GW * T;
+    const H  = GH * T;
+    const pts = poissonDisk(W, H, 45, rand);
 
-    const candidates = pts
-      .map(([px, pz]): [number, number] => [px - HALF, pz - HALF])
-      .filter(([wx, wz]) => {
-        const d = Math.sqrt(wx * wx + wz * wz);
-        return d > 38 && d < HALF - 18;
-      })
-      .slice(0, 2);
+    for (const [px, pz] of pts) {
+      if (this.buildingEntrances.length >= 2) break;
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const d  = Math.sqrt(wx * wx + wz * wz);
+      if (d < 30 || d > 44) continue;
 
-    for (const [bx, bz] of candidates) {
-      const h = this._heightAt(bx, bz);
-      this._buildGreenhouseRuin(rand, bx, h, bz);
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const level = (c >= 0 && c < GW && r >= 0 && r < GH) ? this._grid[r * GW + c] : 0;
+      const wy = level * SH;
+
+      this._ruins.push(this._makeRuin(wx, wy, wz, rand));
       this.buildingEntrances.push({
         type:     'greenhouse',
-        position: new THREE.Vector3(bx, h, bz),
+        position: new THREE.Vector3(wx, wy, wz),
         label:    'Ruined Greenhouse',
       });
     }
   }
 
-  private _buildGreenhouseRuin(rand: () => number, cx: number, groundY: number, cz: number): void {
-    const PILLARS = 10;
-    const RADIUS  = 4.5;
+  private _makeRuin(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp     = new THREE.Group();
+    grp.position.set(cx, cy, cz);   // all child positions are relative to this
 
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0x504838 });
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x383428 });
+    const PILLARS  = 10;
+    const RING_R   = 4.5;
+
+    // Cracked stone floor disc
+    const flr = new THREE.Mesh(
+      new THREE.CylinderGeometry(RING_R + 0.28, RING_R + 0.28, 0.16, 16),
+      floorMat,
+    );
+    flr.position.y = 0.08;
+    grp.add(flr);
+
+    // Broken pillars — random heights for a ruined look
     for (let i = 0; i < PILLARS; i++) {
-      const angle  = (i / PILLARS) * Math.PI * 2;
-      const intact = rand() > 0.35;
-      const h      = intact ? 2.8 + rand() * 1.2 : 0.7 + rand() * 0.9;
-      const r      = 0.22 + rand() * 0.1;
-
-      const geo  = new THREE.CylinderGeometry(r * (intact ? 0.9 : 1.2), r, h, 8);
-      const grey = 0.35 + rand() * 0.18;
-      const mesh = new THREE.Mesh(
-        geo,
-        new THREE.MeshLambertMaterial({ color: new THREE.Color(grey, grey * 0.94, grey * 0.88) }),
+      const angle = (i / PILLARS) * Math.PI * 2;
+      const ph    = 1.4 + rand() * 2.8;
+      const pillar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.20, 0.24, ph, 6),
+        stoneMat,
       );
-      mesh.position.set(
-        cx + Math.cos(angle) * RADIUS,
-        groundY + h / 2,
-        cz + Math.sin(angle) * RADIUS,
-      );
-      mesh.rotation.y = rand() * 0.3 - 0.15; // slight lean for ruin feel
-      this._objectGroup.add(mesh);
+      pillar.position.set(Math.cos(angle) * RING_R, ph / 2, Math.sin(angle) * RING_R);
+      pillar.rotation.y = rand() * 0.28 - 0.14;
+      grp.add(pillar);
     }
 
-    // Overgrown stone-slab floor (round disc)
-    const floorGeo = new THREE.CylinderGeometry(RADIUS * 0.88, RADIUS * 0.88, 0.12, 14);
-    const floor    = new THREE.Mesh(floorGeo, new THREE.MeshLambertMaterial({ color: 0x38362d }));
-    floor.position.set(cx, groundY + 0.04, cz);
-    this._objectGroup.add(floor);
-
-    // Entrance glow — small emissive sphere marks the entry point
-    const glowGeo = new THREE.SphereGeometry(0.28, 8, 6);
-    const glow    = new THREE.Mesh(
-      glowGeo,
-      new THREE.MeshLambertMaterial({ color: 0x55ff99, emissive: 0x22aa44, emissiveIntensity: 0.7 }),
+    // Bioluminescent glow — cleared area becomes safe space eventually
+    const glw = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 8, 6),
+      new THREE.MeshLambertMaterial({
+        color:            0x44cc88,
+        emissive:         0x44cc88,
+        emissiveIntensity: 0.55,
+      }),
     );
-    glow.position.set(cx, groundY + 1.9, cz);
-    this._objectGroup.add(glow);
+    glw.position.set(0, 0.48, 0);
+    grp.add(glw);
+
+    return grp;
   }
 
-  // ── Tower entrance marker ─────────────────────────────────────────────────
+  // ── Utility ───────────────────────────────────────────────────────────────
 
-  private _buildTowerEntrance(): void {
-    // Simple archway: two pillars + lintel over the tower door
-    const pillarGeo = new THREE.CylinderGeometry(0.3, 0.35, 4, 8);
-    const stoneMat  = new THREE.MeshLambertMaterial({ color: 0x4a4540 });
-
-    for (const side of [-1, 1]) {
-      const p = new THREE.Mesh(pillarGeo, stoneMat);
-      p.position.set(side * 1.4, 2, -2.5);
-      this._objectGroup.add(p);
+  private _freeGroup(g: THREE.Group): void {
+    for (const child of g.children) {
+      const m = child as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      if (Array.isArray(m.material)) {
+        m.material.forEach(mt => (mt as THREE.Material).dispose());
+      } else if (m.material) {
+        (m.material as THREE.Material).dispose();
+      }
     }
-
-    const lintelGeo  = new THREE.BoxGeometry(3.4, 0.4, 0.5);
-    const lintel     = new THREE.Mesh(lintelGeo, stoneMat);
-    lintel.position.set(0, 4.2, -2.5);
-    this._objectGroup.add(lintel);
-
-    // Entry glow
-    const glowGeo = new THREE.SphereGeometry(0.22, 8, 6);
-    const glow    = new THREE.Mesh(
-      glowGeo,
-      new THREE.MeshLambertMaterial({ color: 0xaaddff, emissive: 0x4488cc, emissiveIntensity: 0.8 }),
-    );
-    glow.position.set(0, 2.0, -2.5);
-    this._objectGroup.add(glow);
   }
 }
