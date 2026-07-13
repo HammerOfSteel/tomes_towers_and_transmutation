@@ -3,6 +3,7 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { HealthComponent, type Damageable } from '@/combat/Health';
 import { rapierToThreeInto } from '@/physics/helpers';
 import RAPIER from '@dimforge/rapier3d-compat';
+import type { SlimePersonality } from '@/interactables/TamingGame';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -30,6 +31,10 @@ const FLEE_HP_FRACTION = 0.15;     // ≤ 15% HP → enter Flee state
 const FLEE_SPEED = 4.5;            // run-away speed in flee state
 const FOLLOW_DISTANCE = 4.0;       // desired distance from player when recruited
 const FOLLOW_SPEED = 3.5;          // following movement speed
+const FOLLOWER_AGGRO_RANGE = 7.0;  // radius at which a follower attacks nearby hostiles
+const FOLLOWER_ATTACK_SPEED = 4.5; // move speed when chasing a target
+const FOLLOWER_ATTACK_DAMAGE = 1;  // damage per follower strike
+const TAME_REACT_DURATION = 0.9;   // how long a tame-reaction colour flash lasts
 
 // Visual
 const SLIME_COLOR     = 0x44bb55;
@@ -59,6 +64,8 @@ export class SlimeEnemy implements Damageable {
   private state: EnemyState = 'idle';
   private attackTimer = 0;
   private flashTimer = 0;
+  private tameReactTimer = 0;
+  private tameReactColor = SLIME_COLOR;
   private verticalVelocity = 0;
   private bounceTimer = 0;
   private wasGrounded = true;
@@ -66,6 +73,8 @@ export class SlimeEnemy implements Damageable {
   private readonly _moveDir = new THREE.Vector3();
   private readonly _pos = new THREE.Vector3();
   private readonly bodyMesh: THREE.Mesh;
+  /** Current aggro target when acting as a follower. null = follow player. */
+  private _followerTarget: SlimeEnemy | null = null;
 
   constructor(
     spawnPosition: THREE.Vector3,
@@ -116,6 +125,50 @@ export class SlimeEnemy implements Damageable {
   get isRecruited(): boolean { return this.state === 'recruited'; }
 
   /**
+   * Deterministic personality derived from spawn position.
+   * Used by TamingGame to score song-word choices against this slime.
+   */
+  get personality(): SlimePersonality {
+    const PERSONALITIES: SlimePersonality[] = ['bold', 'gentle', 'curious', 'lonely'];
+    const px = Math.round(this._pos.x * 10);
+    const pz = Math.round(this._pos.z * 10);
+    // Simple integer hash — deterministic, PRNG-free
+    const hash = (Math.abs((px * 2654435761) ^ (pz * 1234567891))) >>> 0;
+    return PERSONALITIES[hash % 4];
+  }
+
+  /**
+   * Visual reaction to a taming song word (called by TamingGame after each choice).
+   * Triggers a colour flash and a scale animation without touching FSM state.
+   */
+  tameReact(quality: 'great' | 'good' | 'neutral' | 'bad'): void {
+    this.tameReactTimer = TAME_REACT_DURATION;
+    const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
+    switch (quality) {
+      case 'great':
+        this.tameReactColor = 0xffdd44;          // golden
+        mat.color.setHex(0xffdd44);
+        this.verticalVelocity = 3.5;             // happy bounce
+        this.bodyMesh.scale.set(1.3, 0.28, 1.3); // squash before launch
+        break;
+      case 'good':
+        this.tameReactColor = 0x66ee88;          // lime-green shimmer
+        mat.color.setHex(0x66ee88);
+        this.bodyMesh.scale.set(1.2, 0.38, 1.2);
+        break;
+      case 'neutral':
+        this.tameReactColor = 0x6688ff;          // cool blue
+        mat.color.setHex(0x6688ff);
+        break;
+      case 'bad':
+        this.tameReactColor = 0xee3344;          // alarm red
+        mat.color.setHex(0xee3344);
+        this.bodyMesh.scale.set(0.85, 0.72, 0.85); // cower / shrink
+        break;
+    }
+  }
+
+  /**
    * Recruit this enemy into the player's party.
    * Changes colour to purple and sets the FSM to `'recruited'`.
    * Should be called via `PartyManager.recruit(enemy)`, not directly.
@@ -142,11 +195,14 @@ export class SlimeEnemy implements Damageable {
     this.health.tick(dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
+    this.tameReactTimer = Math.max(0, this.tameReactTimer - dt);
 
-    // Update mesh flash colour (respect current state tint)
+    // Update mesh flash colour — priority: hit flash > tame react > state colour
     const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
     if (this.flashTimer > 0) {
       mat.color.setHex(SLIME_HIT_COLOR);
+    } else if (this.tameReactTimer > 0) {
+      mat.color.setHex(this.tameReactColor);
     } else if (this.state === 'flee') {
       mat.color.setHex(SLIME_FLEE_COLOR);
     } else {
@@ -282,42 +338,99 @@ export class SlimeEnemy implements Damageable {
    * Simple follower behaviour: keep close to the player, basic idle at range.
    * (Full combat AI for followers is Phase 7.)
    *
-   * @param playerPos Target position to follow
-   * @param _enemies  Reserved for Phase 7 follower combat
-   * @param dt        Frame delta
+   * @param playerPos  Target position to follow
+   * @param enemies    All active enemies in the scene — followers will aggro hostiles within range
+   * @param dt         Frame delta
    */
-  updateAsFollower(playerPos: THREE.Vector3, _enemies: readonly unknown[], dt: number): void {
+  updateAsFollower(playerPos: THREE.Vector3, enemies: readonly SlimeEnemy[], dt: number): void {
     if (this.state !== 'recruited' || this.isDead) return;
 
     this.health.tick(dt);
+    this.attackTimer = Math.max(0, this.attackTimer - dt);
 
-    const dx = playerPos.x - this._pos.x;
-    const dz = playerPos.z - this._pos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-
-    let vx = 0, vz = 0;
-    if (dist > FOLLOW_DISTANCE) {
-      const speed = Math.min(FOLLOW_SPEED, (dist - FOLLOW_DISTANCE) * 4);
-      vx = (dx / dist) * speed;
-      vz = (dz / dist) * speed;
-      this.group.rotation.y = Math.atan2(vx, vz);
+    // ── Follower aggro — scan for nearby hostile enemies ───────────────────
+    // Clear dead/recruited target
+    if (this._followerTarget && (this._followerTarget.isDead || this._followerTarget.isRecruited)) {
+      this._followerTarget = null;
+    }
+    // Search for new target if we don't have one
+    if (!this._followerTarget) {
+      let closestDist = FOLLOWER_AGGRO_RANGE;
+      for (const en of enemies) {
+        if (en === this || en.isDead || en.isRecruited) continue;
+        const d = en.worldPosition.distanceTo(this._pos);
+        if (d < closestDist) { closestDist = d; this._followerTarget = en; }
+      }
     }
 
-    // Bounce toward player if far enough
-    this.bounceTimer = Math.max(0, this.bounceTimer - dt);
+    let vx = 0;
+    let vz = 0;
+
+    if (this._followerTarget) {
+      // ── Chase and attack hostile enemy ───────────────────────────────────
+      const toTarget = this._followerTarget.worldPosition.clone().sub(this._pos);
+      const dist = toTarget.length();
+      if (dist > SLIME_ATTACK_RANGE) {
+        const dir = toTarget.normalize();
+        vx = dir.x * FOLLOWER_ATTACK_SPEED;
+        vz = dir.z * FOLLOWER_ATTACK_SPEED;
+        this.group.rotation.y = Math.atan2(vx, vz);
+      } else if (this.attackTimer <= 0) {
+        this._followerTarget.takeDamage(FOLLOWER_ATTACK_DAMAGE);
+        this.attackTimer = SLIME_ATTACK_COOLDOWN;
+        // Small pounce on attack
+        this.verticalVelocity = BOUNCE_VEL * 0.6;
+        this.bodyMesh.scale.set(0.8, 0.9, 0.8);
+      }
+    } else {
+      // ── Follow player ─────────────────────────────────────────────────────
+      const dx = playerPos.x - this._pos.x;
+      const dz = playerPos.z - this._pos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > FOLLOW_DISTANCE) {
+        const speed = Math.min(FOLLOW_SPEED, (dist - FOLLOW_DISTANCE) * 4);
+        vx = (dx / dist) * speed;
+        vz = (dz / dist) * speed;
+        this.group.rotation.y = Math.atan2(vx, vz);
+      }
+      // Bounce toward player if far behind
+      this.bounceTimer = Math.max(0, this.bounceTimer - dt);
+      const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
+      this.kcc.computeColliderMovement(this.collider, desired);
+      const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
+      if (isGrounded) {
+        this.verticalVelocity = GROUND_PUSH;
+        if (dist > FOLLOW_DISTANCE + 2 && this.bounceTimer === 0) {
+          this.verticalVelocity = BOUNCE_VEL * 0.8;
+          this.bounceTimer = BOUNCE_INTERVAL;
+        }
+      } else {
+        this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+      }
+      const actual = this.kcc.computedMovement();
+      const cur = this.body.translation();
+      this.body.setNextKinematicTranslation({
+        x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
+      });
+      rapierToThreeInto(this.body.translation(), this._pos);
+      this.group.position.copy(this._pos);
+      // Follower idle breathing (purple tint held)
+      const breath = Math.sin(Date.now() * 0.0022) * 0.05;
+      this.bodyMesh.scale.y = REST_SCALE_Y + breath;
+      this.bodyMesh.scale.x = 1.0 - breath * 0.4;
+      this.bodyMesh.scale.z = 1.0 - breath * 0.4;
+      return;
+    }
+
+    // Physics step for aggro-chase branch
     const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
     this.kcc.computeColliderMovement(this.collider, desired);
     const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
     if (isGrounded) {
       this.verticalVelocity = GROUND_PUSH;
-      if (dist > FOLLOW_DISTANCE + 2 && this.bounceTimer === 0) {
-        this.verticalVelocity = BOUNCE_VEL * 0.8;
-        this.bounceTimer = BOUNCE_INTERVAL;
-      }
     } else {
       this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
     }
-
     const actual = this.kcc.computedMovement();
     const cur = this.body.translation();
     this.body.setNextKinematicTranslation({
@@ -325,12 +438,11 @@ export class SlimeEnemy implements Damageable {
     });
     rapierToThreeInto(this.body.translation(), this._pos);
     this.group.position.copy(this._pos);
-
-    // Follower idle breathing (purple tint held)
-    const breath = Math.sin(Date.now() * 0.0022) * 0.05;
-    this.bodyMesh.scale.y = REST_SCALE_Y + breath;
-    this.bodyMesh.scale.x = 1.0 - breath * 0.4;
-    this.bodyMesh.scale.z = 1.0 - breath * 0.4;
+    // Scale lerp when attacking
+    const lerpT = Math.min(1, SCALE_LERP * dt);
+    this.bodyMesh.scale.x += (1.0 - this.bodyMesh.scale.x) * lerpT;
+    this.bodyMesh.scale.y += (REST_SCALE_Y - this.bodyMesh.scale.y) * lerpT;
+    this.bodyMesh.scale.z += (1.0 - this.bodyMesh.scale.z) * lerpT;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
