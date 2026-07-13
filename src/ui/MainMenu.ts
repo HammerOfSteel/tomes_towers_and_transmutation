@@ -228,13 +228,16 @@ export class MainMenu {
     const title = mkEl('h1', 'mm-title');
     title.textContent = 'For Princesses';
     const nav = mkEl('nav', 'mm-nav');
+    const navSep = mkEl('span', 'mm-nav-sep');
     nav.append(
       mkBtn('Play',     'mm-btn', () => { this._renderSaveSlots(); this._openModal('mm-play'); }),
       mkBtn('Settings', 'mm-btn', () => this._openModal('mm-settings')),
       mkBtn('Controls', 'mm-btn', () => this._openModal('mm-controls')),
       mkBtn('Lore',     'mm-btn', () => { this._setLorePage(0); this._openModal('mm-lore'); }),
+      navSep,
+      this._buildMusicPlayer(),
     );
-    header.append(subtitle, title, nav, this._buildMusicPlayer());
+    header.append(subtitle, title, nav);
 
     // Masonry gallery
     const section = mkEl('section', 'mm-gallery');
@@ -566,7 +569,11 @@ export class MainMenu {
     this._audio.src = `/music/${encodeURIComponent(TRACKS[this._trackIdx] + '.mp3')}`;
     this._updatePlayerUI();
     if (autoStart) {
-      this._audio.play().catch(() => { /* autoplay blocked — user can click ▶ */ });
+      // Muted autoplay is universally permitted; unmute as soon as playback begins
+      this._audio.muted = true;
+      this._audio.play()
+        .then(() => { if (this._audio) this._audio.muted = false; })
+        .catch(() => { if (this._audio) this._audio.muted = false; });
     }
   }
 
@@ -1163,12 +1170,18 @@ const MM_CSS = `
 }
 
 /* ── Music player ────────────────────────────────────────────────────────── */
+.mm-nav-sep {
+  width: 1px; height: 28px;
+  background: #4a4158;
+  align-self: center;
+  flex-shrink: 0;
+}
+
 .mm-player {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin: 14px auto 0;
-  padding: 7px 18px 7px 12px;
+  gap: 10px;
+  padding: 6px 14px 6px 10px;
   background: rgba(0,0,0,.28);
   border: 1px solid #4a4158;
   border-radius: 100px;
