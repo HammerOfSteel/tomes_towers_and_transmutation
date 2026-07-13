@@ -194,6 +194,12 @@ async function main() {
       getGameMode: () => gameMode,
       /** Whether the player group is marked visible. */
       isPlayerVisible: () => player.group.visible,
+      /** Teleport player to a specific world position (for tests). */
+      teleportPlayer: (x: number, y: number, z: number) => {
+        player.teleport(new THREE.Vector3(x, y, z));
+      },
+      /** Whether player is currently in the tower entrance trigger zone. */
+      isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
@@ -241,6 +247,30 @@ async function main() {
 
   // ── HUD ───────────────────────────────────────────────────────────────────
   const hud = new HUD();
+
+  // ── Exterior interaction prompt ───────────────────────────────────────────
+  // Reuses the same visual style as InteractableSystem's prompt.
+  const exteriorPrompt = (() => {
+    const el = document.createElement('div');
+    el.id = 'exterior-prompt';
+    el.style.cssText = [
+      'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);',
+      'background:rgba(10,8,18,0.88);border:1px solid #44405a;',
+      'border-radius:5px;padding:7px 16px;',
+      'color:#ccc;font:13px monospace;',
+      'pointer-events:none;z-index:500;',
+      'opacity:0;transition:opacity 0.18s;',
+      'white-space:nowrap;',
+    ].join('');
+    document.body.appendChild(el);
+    return el;
+  })();
+  const _KBD = '<kbd style="background:#2a2838;border:1px solid #665588;border-radius:3px;padding:1px 6px;color:#bb99ff;">E</kbd>';
+  function _setExteriorPrompt(text: string | null): void {
+    if (!text) { exteriorPrompt.style.opacity = '0'; return; }
+    exteriorPrompt.innerHTML = `${_KBD}&nbsp; ${text}`;
+    exteriorPrompt.style.opacity = '1';
+  }
 
   // ── Death screen ──────────────────────────────────────────────────────────
   let deathTriggered = false;
@@ -293,6 +323,22 @@ async function main() {
       } else if (overworld) {
         overworld.update(dt);
         party.pruneDead();
+
+        // Update exterior interaction prompt
+        const _pos = player.group.position;
+        const _flee = overworld.getActiveEnemies().find(
+          e => !e.isDead && e.isRecruitable && e.worldPosition.distanceTo(_pos) < 2.5,
+        );
+        if (_flee) {
+          _setExteriorPrompt(party.isFull ? 'Party full' : 'Recruit slime');
+        } else if (overworld.nearTowerEntrance(_pos)) {
+          _setExteriorPrompt('Enter Tower');
+        } else {
+          const _bld = overworld.nearBuilding(_pos);
+          _setExteriorPrompt(_bld ? _bld.label : null);
+        }
+      } else {
+        _setExteriorPrompt(null);
       }
       const enemies = gameMode === 'interior'
         ? sceneManager.getActiveEnemies()
