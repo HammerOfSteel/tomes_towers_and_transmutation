@@ -9,6 +9,7 @@ import { SpellSystem } from '@/combat/SpellSystem';
 import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
+import { MainMenu } from '@/ui/MainMenu';
 import { EditMode } from '@/editor/EditMode';
 import { ProgressionSystem } from '@/progression/ProgressionSystem';
 import { BookReader } from '@/interactables/BookReader';
@@ -79,8 +80,15 @@ async function main() {
     onOpenEditor: () => editMode.toggle(),
   });
 
+  // ── Main menu (shown at startup; starts the game loop on Play) ────────────
+  const mainMenu = new MainMenu({
+    onPlay: () => gameLoop.start(),
+  });
   // ── Centralised key routing ──────────────────────────────────────────────
   window.addEventListener('keydown', (e) => {
+    // Ignore all game key routing while the main menu is visible
+    if (mainMenu.isVisible) return;
+
     if (e.key === 'Escape') {
       if (bookReader.isOpen) {
         bookReader.close();         // close book → game
@@ -192,7 +200,7 @@ async function main() {
     // 10. Render
     renderer.render(scene, cameraRig.camera);
   });
-  gameLoop.start();
+  // Game loop is started by MainMenu.onPlay — not here.
 }
 
 main().catch(console.error);

@@ -15,14 +15,208 @@ Shipping a phase without all three is not shipping.
 
 | Phase | Goal | Status |
 |---|---|---|
-| 1 | Isometric Sandbox & Physics | ⬜ Not started |
-| 2 | ALttP Action Combat | ⬜ Not started |
-| 3 | Modular Blueprint System | ⬜ Not started |
-| 4 | Level Designer (Dev Tool) | ⬜ Not started |
-| 5 | Procedural Generation & Discovery | ⬜ Not started |
+| 1 | Isometric Sandbox & Physics | ✅ Complete |
+| 2 | ALttP Action Combat | ✅ Complete |
+| 3 | Modular Blueprint System | ✅ Complete |
+| 4 | Level Designer (Dev Tool) | ✅ Complete |
+| 4.5 | UI Suite (Main Menu + All Game Screens) | 🔄 In Progress |
+| 5 | Procedural Generation & Discovery | 🔄 In Progress |
 | 6 | Overworld & Monster Minions | ⬜ Not started |
 | 7 | The OP Power Fantasy | ⬜ Not started |
 | 8 | Asset Replacement & Final Boss | ⬜ Not started |
+
+---
+
+## Phase 1: The Isometric Sandbox & Physics ✅
+
+**Goal:** Establish the Three.js environment, the isometric camera, and character physics.
+
+**Completed:**
+- [x] Initialize Vite + Three.js + TypeScript project with ESLint/Prettier config.
+- [x] Implement `GameLoop.ts` (rAF loop, delta time, physics step).
+- [x] Implement `InputManager.ts` (WASD, mouse position, action keys).
+- [x] Set up `OrthographicCamera` locked to isometric angle; follows player via translation only.
+- [x] Integrate Rapier3D; create `PhysicsWorld.ts` wrapper.
+- [x] Create `PlayerController.ts`: procedural capsule geometry, WASD movement via `KinematicCharacterController`, wall-sliding.
+
+**Tests:** ✅ Input mapping, physics velocity clamping.
+
+---
+
+## Phase 2: ALttP Action Combat ✅
+
+**Goal:** Implement real-time combat mechanics, hitboxes, and damage states.
+
+**Completed:**
+- [x] Define `Health` and `Damageable` interfaces; implemented on player and enemies.
+- [x] `CombatSystem.ts`: melee sweep arc (procedural arc geometry, 0.2s lifetime).
+- [x] `SpellSystem.ts`: mouse-aimed magic bolt projectile with emissive glow.
+- [x] Enemy prototype: `SlimeEnemy` — bounce locomotion + pounce state machine.
+- [x] i-frames: 0.5s invulnerability window on taking damage.
+- [x] Dodge-roll: directional dash with i-frames, short cooldown.
+- [x] HUD: HP bar + kill counter (HTML overlay).
+
+**Tests:** ✅ Hitbox overlap, damage math, i-frame window, FSM transitions.
+
+---
+
+## Phase 3: The Modular Blueprint System ✅
+
+**Goal:** Build the underlying data structure for rooms and towers.
+
+**Completed:**
+- [x] JSON blueprint schema v1.0 — walls, floors, doors, staircases, spawns, interactables, floorType, rotation.
+- [x] `BlueprintRenderer.ts`: parses JSON → Three.js geometry + Rapier static bodies. Staircase steps with 7 colliders.
+- [x] 5 hand-crafted blueprints: `cell_start`, `corridor_ns`, `corridor_ew`, `library_small`, `library_large`.
+- [x] Door/portal trigger volumes with fade transitions.
+- [x] `SceneManager.ts`: room loading/unloading, enemy state, floor tracking, staircase traversal.
+
+**Tests:** ✅ Schema validation, renderer accuracy, serialization round-trip, door transitions.
+
+---
+
+## Phase 4: The Level Designer (Dev Tool) ✅
+
+**Goal:** A UI overlay to build rooms visually.
+
+**Completed:**
+- [x] `EditMode.ts`: toggleable via `~` hotkey. Pauses game loop; activates editor input mode.
+- [x] `EditorGrid.ts`: mutable blueprint state, `fromBlueprint`/`toBlueprint` round-trip.
+- [x] Entity palette: wall/floor/door/staircase/bookshelf/lectern/spawn; place by click; remove by right-click.
+- [x] `R` to cycle rotation; `Tab` to cycle tile type. Live preview with spawn/orientation markers.
+- [x] Export: downloads blueprint JSON; Import: loads from JSON file.
+- [x] `PauseMenu.ts`: Escape → pause overlay with Resume / Level Editor buttons.
+- [x] Outdoor floor types (grass/dirt/wood) + rotation support on all tile types.
+
+**Tests:** ✅ Export/import round-trip, grid snapping, validation.
+
+---
+
+## Phase 4.5: UI Suite — Main Menu & All Game Screens 🔄
+
+**Goal:** All game-facing UI screens polished and accessible, establishing the final aesthetic.
+
+**Tasks:**
+- [x] `MainMenu.ts`: full-screen animated masonry gallery + title + nav buttons.
+  - [x] Concept art masonry grid — 8 tiles, staggered cross-fade, no duplicate images.
+  - [x] Play modal with 3 save slots (localStorage).
+  - [x] Settings modal: master volume slider + fullscreen toggle.
+  - [x] Credits modal.
+  - [x] Controls modal.
+- [ ] `HUD.ts` polish pass: spell slot display, run indicator, dodge cooldown pip.
+- [ ] In-game death screen: "The Ritual Failed" with restart/menu options.
+- [ ] Victory / floor-clear banner.
+- [ ] Tooltip system: hover any HUD element to see description.
+
+**Design rules:**
+- Fonts: Cinzel (titles/buttons), IM Fell English (body/lore text).
+- Colour palette: bg `#1a1820`, text `#e2d9c8`, accent `#9d7cce`, frame border `#4a4158`.
+- Decorative corners: `✥` glyph at each frame corner.
+- All modals: dark glass card with slide-up entrance, click-outside-to-close.
+
+**Tests:**
+- Save slot CRUD: create/delete/re-read persists correctly in localStorage.
+- Menu navigation: all buttons open correct modals; Escape closes topmost modal.
+
+---
+
+## Phase 5: Procedural Generation & Discovery 🔄
+
+**Goal:** Let the algorithm build the tower, and let the princess learn magic.
+
+**Completed so far:**
+- [x] `InteractableSystem.ts`: proximity (2.5u) detection, `[E]` prompt, context-sensitive E key.
+- [x] `BookReader.ts`: parchment UI overlay with content + spell discovery banner on first read.
+- [x] `ProgressionSystem.ts`: tracks read books + spell unlocks (Set-based, session-scoped).
+- [x] `blueprint.ts`: `InteractableEntry.spellUnlock?` field.
+- [x] `SceneManager.getActiveInteractables()`: exposes room interactables to game loop.
+- [x] `library_large` lectern: unlocks `flame_dart` on first read.
+
+**Remaining:**
+- [ ] `DungeonGenerator.ts`: takes a seed + floor count; stitches blueprints by matching doorways.
+- [ ] Seed-safe PRNG: replace any `Math.random()` calls with `mulberry32(seed)` equivalent.
+- [ ] Hook `flame_dart` into `SpellSystem` (now with book unlock gate — `ProgressionSystem.isSpellUnlocked`).
+- [ ] Spell slots UI: display available spells + hotkeys on HUD.
+
+**Tests:**
+- Generator stability: 1000 random seeds never produce overlapping or disconnected rooms.
+- Generator determinism: same seed → identical layout.
+- Progression: `markRead` fires unlock exactly once; re-reading does not re-unlock. ✅ (15 tests)
+- PRNG: `mulberry32` output matches expected sequence for known seeds.
+
+---
+
+## Phase 6: Overworld & Monster Minions
+
+**Goal:** Leave the tower and build the army.
+
+**Tasks:**
+- [ ] Exterior scene: Simplex noise heightmap terrain, biome shader (bog/forest/highlands).
+- [ ] Procedural trees: tapered `CylinderGeometry` trunk + vertex-displaced `SphereGeometry` canopy.
+- [ ] Procedural rocks: `DodecahedronGeometry`, randomized scale/rotation (also resource nodes).
+- [ ] Enemy camp placement: Poisson disk sampling for spacing, 3–8 enemies per camp + elite.
+- [ ] Tame/Recruit mechanic: at HP < 10%, enemy enters `Flee` state; player "Spare" action → `Recruit`.
+- [ ] `PartyManager.ts`: tracks recruited minions, enforces party limit (Phase 6 cap: 5).
+- [ ] Follower AI: minions use NavMesh (recast.js or hand-baked) to follow player and attack target.
+- [ ] Tower entrance trigger: smooth transition between exterior and tower interior.
+
+**Tests:**
+- NavMesh path calculation: given start/end points on valid terrain, path is found and has no off-mesh steps.
+- Party management: recruiting beyond the limit prompts dismissal; dismissed minions are removed from party array.
+- Tame threshold: `Spare` action is only available when enemy HP ≤ 10% of max.
+- Camp spawning: Poisson disk ensures no two camps are within minimum distance.
+
+**Playtest 6:**
+Exit the tower to the exterior. Find an enemy camp. Reduce one enemy below 10% HP and recruit them. Use the recruit to help clear the remaining camp enemies. Confirm follower pathfinding works (no getting stuck).
+
+---
+
+## Phase 7: The OP Power Fantasy
+
+**Goal:** Scale the player's power to ridiculous heights and implement base building.
+
+**Tasks:**
+- [ ] XP + level-up system: simple scaling multiplier on spell damage and HP.
+- [ ] Nova Burst spell: full-screen AOE, 15s cooldown, screen-fill expanding torus VFX.
+- [ ] Mass Animate ultimate: resurrect all defeated enemies in room as temporary minions.
+- [ ] Party limit raised to 20.
+- [ ] Resource gathering: mine procedural rocks/trees; currency feeds upgrades.
+- [ ] Base building (lite): player commands minions to construct/guard tower defenses (barrier walls, archer perches).
+- [ ] Performance pass: profile and optimize for 100-minion stress test.
+
+**Tests:**
+- Load test: 100 simultaneous minions, all pathfinding and attacking, maintain ≥ 30fps.
+- AOE accuracy: Nova Burst hits all enemies within radius, misses all outside.
+- Resource system: mining increments counter; spending decrements correctly, cannot go negative.
+- Level scaling: damage formula produces expected output at levels 1, 10, 20.
+
+**Playtest 7:**
+Achieve a party of 20 minions. Cast Nova Burst on a horde of 15 enemies. All must die. Confirm frame rate holds.
+
+---
+
+## Phase 8: Asset Replacement & The Final Boss
+
+**Goal:** Turn the "greybox" into a finished game.
+
+**Tasks:**
+- [ ] Define Phase 8 asset brief (see [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) — forward reference section).
+- [ ] Asset pipeline: swap procedural primitives for `.gltf` models + `.png` textures.
+- [ ] Character animations: Idle, Walk, Attack, Hurt, Die (mixamo/Blender) replacing kinematic sliding.
+- [ ] Audio: Web Audio API — ambient, footsteps, spell SFX, impact sounds.
+- [ ] UI polish: styled HTML/CSS to match final art style.
+- [ ] Final boss room: hand-crafted blueprint, scripted encounter, victory sequence.
+- [ ] Memory leak audit: profile scene transitions, ensure geometry/material disposal is correct.
+- [ ] End-to-end playtest & bug fix sprint.
+
+**Tests:**
+- Asset loading: no memory leak on 10 consecutive scene transitions (heap measured before/after).
+- Animation blending: transitions between all animation states play without popping.
+- Boss encounter: scripted events fire in correct order; cannot be skipped.
+
+**Playtest 8:**
+Full end-to-end speedrun. Observe all 8 phases' content. End with the defeat of the Wizard Captor. The final boss fight should feel intentionally anticlimactic.
+
 
 ---
 
