@@ -18,6 +18,8 @@ export interface Damageable {
 export class HealthComponent implements Damageable {
   private _hp: number;
   private _iframeTimer = 0;
+  /** When true this component never takes damage (dev/cheat flag). */
+  godMode = false;
 
   constructor(
     private readonly _maxHp: number,
@@ -53,7 +55,7 @@ export class HealthComponent implements Damageable {
   }
 
   takeDamage(amount: number): number {
-    if (this.isDead || this.isInvulnerable || amount <= 0) return 0;
+    if (this.isDead || this.isInvulnerable || this.godMode || amount <= 0) return 0;
 
     const actual = Math.min(amount, this._hp);
     this._hp -= actual;
@@ -74,6 +76,12 @@ export class HealthComponent implements Damageable {
   /** Fully restore HP and clear i-frame timer (use for respawn / restart). */
   reset(): void {
     this._hp = this._maxHp;
+    this._iframeTimer = 0;
+  }
+
+  /** Dev/cheat: set HP to an exact value, bypassing isDead guard. */
+  forceSetHp(amount: number): void {
+    this._hp = Math.max(1, Math.min(this._maxHp, Math.round(amount)));
     this._iframeTimer = 0;
   }
 }

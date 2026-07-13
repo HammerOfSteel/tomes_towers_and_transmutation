@@ -2,6 +2,7 @@
 
 export interface PauseMenuActions {
   onOpenEditor: () => void;
+  onOpenDevPanel?: () => void;
 }
 
 /** Full-screen pause overlay, opened via Escape.
@@ -57,6 +58,11 @@ export class PauseMenu {
           <span style="color:#ff9933;">⬡</span>&nbsp; Level Editor
         </button>
 
+        ${localStorage.getItem('ttt_dev_mode') === 'true' ? `
+        <button class="pm-btn" data-action="devpanel" style="${BTN_STYLE.replace('#44405a','#5a3a22').replace('#44405a','#5a3a22')}">
+          <span style="color:#cc8844;">⚙</span>&nbsp; Dev Panel
+        </button>` : ''}
+
         <div style="${DIVIDER_STYLE}margin-top:18px;"></div>
 
         <div style="${HINT_STYLE}">Press <kbd style="${KBD_STYLE}">Esc</kbd> to resume</div>
@@ -80,6 +86,9 @@ export class PauseMenu {
         } else if (action === 'editor') {
           this.close();
           this.actions.onOpenEditor();
+        } else if (action === 'devpanel') {
+          this.close();
+          this.actions.onOpenDevPanel?.();
         }
       });
     }
