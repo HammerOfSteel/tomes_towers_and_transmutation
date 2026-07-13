@@ -117,8 +117,13 @@ export class OverworldScene {
 
   /** Add geometry to scene and register physics colliders. */
   enter(): void {
-    // Heightfield collider — matches visual tile heights so the player walks on the terrain
-    this._groundBody = this._createTerrainHeightfield();
+    // Flat base plane covers level-0 tiles and acts as the underfloor.
+    this._groundBody = this.physics.createGroundPlane(0);
+    // Per-tile box colliders for elevated terrain: each box is a solid block from
+    // y=0 to y=level*SH, so the top surface is perfectly flat and exactly matches
+    // the visual tile height.  This avoids the triangulated-slope artefact of a
+    // heightfield where adjacent tiles share interpolated corner vertices.
+    this._staticBodies.push(this._createTileBoxColliders());
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
     this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
@@ -222,29 +227,32 @@ export class OverworldScene {
    *   x = -50 + gridCol*2 = (gridCol-25)*2  ✓
    *   z = -50 + gridRow*2 = (gridRow-25)*2  ✓
    */
-  private _createTerrainHeightfield(): RAPIER.RigidBody {
-    const nrows = GW - 1;  // 50  — rows span X (gridCol direction)
-    const ncols = GH - 1;  // 50  — cols span Z (gridRow direction)
-    const heights = new Float32Array((nrows + 1) * (ncols + 1));
+  private _createTileBoxColliders(): RAPIER.RigidBody {
+    // One fixed body; one cuboid collider per elevated tile.
+    // Cuboid half-extents: (T/2, level*SH/2, T/2) centred at the tile centre
+    // and at height level*SH/2 so its top surface sits at exactly level*SH.
+    // Level-0 tiles are covered by the ground plane added in enter().
+    const body = this.physics.rapierWorld.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed(),
+    );
 
-    for (let gridRow = 0; gridRow < GH; gridRow++) {
-      for (let gridCol = 0; gridCol < GW; gridCol++) {
-        // Column-major: col_j * (nrows+1) + row_i  → j=gridRow, i=gridCol
-        heights[gridRow * (nrows + 1) + gridCol] =
-          this._grid[gridRow * GW + gridCol] * SH;
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        const level = this._grid[row * GW + col];
+        if (level === 0) continue;
+
+        const cx    = (col - GHW) * T + T * 0.5;
+        const cz    = (row - GHH) * T + T * 0.5;
+        const halfH = level * SH * 0.5;
+
+        this.physics.rapierWorld.createCollider(
+          RAPIER.ColliderDesc.cuboid(T * 0.5, halfH, T * 0.5)
+            .setTranslation(cx, halfH, cz),
+          body,
+        );
       }
     }
 
-    const body = this.physics.rapierWorld.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
-    );
-    this.physics.rapierWorld.createCollider(
-      RAPIER.ColliderDesc.heightfield(
-        nrows, ncols, heights,
-        { x: (GW - 1) * T, y: 1.0, z: (GH - 1) * T },
-      ),
-      body,
-    );
     return body;
   }
 
