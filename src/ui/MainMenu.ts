@@ -65,6 +65,24 @@ const lsSave   = (i: number) => `ttt_save_${i}`;
 const LS_VOL   = 'ttt_vol';
 const NUM_SLOTS = 3;
 
+const LS_MUSIC_VISIBLE = 'ttt_music_visible';
+
+// ── Music tracks (Dancing Salamanders — Glitchwitch) ─────────────────────
+const TRACKS: readonly string[] = [
+  'Lint',
+  'bless this mess (and all its variables)',
+  'breadcrumb cosmology',
+  'checksum of the heart',
+  'half hymn whole hashmap',
+  'kettle logic',
+  'kindly demons of the pantry',
+  'leaven rise',
+  'magpie logging',
+  'meandering migration',
+  'moss matrix',
+  'patch day at the cottage',
+];
+
 interface SaveData {
   location: string;
   floor: number;
@@ -156,6 +174,12 @@ export class MainMenu {
   private _lorePage = 0;
   private _prevBtn: HTMLButtonElement | null = null;
   private _nextBtn: HTMLButtonElement | null = null;
+  private _audio: HTMLAudioElement | null = null;
+  private _trackIdx = 0;
+  private _shuffling = false;
+  private _songNameEl: HTMLElement | null = null;
+  private _playPauseBtn: HTMLButtonElement | null = null;
+  private _shuffleBtn: HTMLButtonElement | null = null;
 
   constructor(private readonly opts: MainMenuOptions) {
     this._ensureFonts();
@@ -168,6 +192,7 @@ export class MainMenu {
     this.overlay = this._buildDOM();
     document.body.appendChild(this.overlay);
     this._scheduleAll();
+    this._initAudio();
   }
 
   get isVisible(): boolean { return this._visible; }
@@ -187,6 +212,7 @@ export class MainMenu {
 
   dispose(): void {
     this.timers.forEach(clearTimeout);
+    if (this._audio) { this._audio.pause(); this._audio.src = ''; }
     this.overlay.remove();
   }
 
@@ -208,7 +234,7 @@ export class MainMenu {
       mkBtn('Controls', 'mm-btn', () => this._openModal('mm-controls')),
       mkBtn('Lore',     'mm-btn', () => { this._setLorePage(0); this._openModal('mm-lore'); }),
     );
-    header.append(subtitle, title, nav);
+    header.append(subtitle, title, nav, this._buildMusicPlayer());
 
     // Masonry gallery
     const section = mkEl('section', 'mm-gallery');
@@ -320,6 +346,7 @@ export class MainMenu {
     const vol = parseInt(localStorage.getItem(LS_VOL) ?? '80');
     const [modal, card] = mkModal('mm-settings', 'Grimoire Options', () => this._closeModal('mm-settings'));
 
+    const musicVis = localStorage.getItem(LS_MUSIC_VISIBLE) !== 'false';
     card.insertAdjacentHTML('beforeend', `
       <div class="mm-setting-row">
         <label class="mm-setting-label">Master Volume</label>
@@ -335,6 +362,13 @@ export class MainMenu {
           <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
         </label>
       </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Music Player</label>
+        <label class="mm-toggle">
+          <input type="checkbox" id="mm-music-toggle" ${musicVis ? 'checked' : ''}>
+          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
@@ -346,6 +380,7 @@ export class MainMenu {
     slider.addEventListener('input', () => {
       valEl.textContent = `${slider.value}%`;
       localStorage.setItem(LS_VOL, slider.value);
+      if (this._audio) this._audio.volume = parseInt(slider.value) / 100;
     });
 
     const fsCb = card.querySelector<HTMLInputElement>('#mm-fs')!;
@@ -353,6 +388,13 @@ export class MainMenu {
     fsCb.addEventListener('change', () => {
       if (fsCb.checked) document.documentElement.requestFullscreen().catch(() => {});
       else              document.exitFullscreen().catch(() => {});
+    });
+
+    const musicToggle = card.querySelector<HTMLInputElement>('#mm-music-toggle')!;
+    musicToggle.addEventListener('change', () => {
+      const playerEl = document.getElementById('mm-player');
+      if (playerEl) playerEl.style.display = musicToggle.checked ? 'flex' : 'none';
+      localStorage.setItem(LS_MUSIC_VISIBLE, String(musicToggle.checked));
     });
 
     modal.appendChild(card);
@@ -471,6 +513,96 @@ export class MainMenu {
       page.classList.add(enterCls);
       setTimeout(() => page.classList.remove(enterCls), 300);
     }, 260);
+  }
+
+  // ── Music player ───────────────────────────────────────────────────────
+
+  private _buildMusicPlayer(): HTMLElement {
+    const visible = localStorage.getItem(LS_MUSIC_VISIBLE) !== 'false';
+
+    const wrap = mkEl('div', 'mm-player');
+    wrap.id = 'mm-player';
+    if (!visible) wrap.style.display = 'none';
+
+    const prevBtn = mkBtn('⏮', 'mm-player-btn', () => this._prevTrack());
+    prevBtn.title = 'Previous';
+
+    this._playPauseBtn = mkBtn('▶', 'mm-player-btn mm-player-btn--pp', () => this._togglePlayPause()) as HTMLButtonElement;
+    this._playPauseBtn.title = 'Play / Pause';
+
+    const nextBtn = mkBtn('⏭', 'mm-player-btn', () => this._nextTrack());
+    nextBtn.title = 'Next';
+
+    this._shuffleBtn = mkBtn('⇄', 'mm-player-btn mm-player-btn--shuf', () => this._toggleShuffle()) as HTMLButtonElement;
+    this._shuffleBtn.title = 'Shuffle';
+
+    const controls = mkEl('div', 'mm-player-controls');
+    controls.append(prevBtn, this._playPauseBtn, nextBtn, this._shuffleBtn);
+
+    this._songNameEl = mkEl('span', 'mm-player-track');
+    this._songNameEl.textContent = TRACKS[0];
+    const artist = mkEl('span', 'mm-player-artist');
+    artist.textContent = 'Dancing Salamanders';
+    const info = mkEl('div', 'mm-player-info');
+    info.append(this._songNameEl, artist);
+
+    wrap.append(controls, info);
+    return wrap;
+  }
+
+  private _initAudio(): void {
+    const audio = new Audio();
+    audio.volume = parseInt(localStorage.getItem(LS_VOL) ?? '80') / 100;
+    this._audio = audio;
+    audio.addEventListener('ended', () => this._nextTrack());
+    audio.addEventListener('pause', () => this._updatePlayerUI());
+    audio.addEventListener('play',  () => this._updatePlayerUI());
+    this._playTrack(this._trackIdx, /*autoStart*/ true);
+  }
+
+  private _playTrack(idx: number, autoStart = false): void {
+    if (!this._audio) return;
+    this._trackIdx = Math.max(0, Math.min(idx, TRACKS.length - 1));
+    this._audio.src = `/music/${encodeURIComponent(TRACKS[this._trackIdx] + '.mp3')}`;
+    this._updatePlayerUI();
+    if (autoStart) {
+      this._audio.play().catch(() => { /* autoplay blocked — user can click ▶ */ });
+    }
+  }
+
+  private _prevTrack(): void {
+    if (this._audio && this._audio.currentTime > 3) {
+      this._audio.currentTime = 0;
+    } else {
+      this._playTrack((this._trackIdx - 1 + TRACKS.length) % TRACKS.length, true);
+    }
+  }
+
+  private _nextTrack(): void {
+    let idx: number;
+    if (this._shuffling) {
+      do { idx = Math.floor(Math.random() * TRACKS.length); }
+      while (TRACKS.length > 1 && idx === this._trackIdx);
+    } else {
+      idx = (this._trackIdx + 1) % TRACKS.length;
+    }
+    this._playTrack(idx, true);
+  }
+
+  private _togglePlayPause(): void {
+    if (!this._audio) return;
+    if (this._audio.paused) this._audio.play().catch(() => {});
+    else                    this._audio.pause();
+  }
+
+  private _toggleShuffle(): void {
+    this._shuffling = !this._shuffling;
+    this._shuffleBtn?.classList.toggle('mm-player-btn--active', this._shuffling);
+  }
+
+  private _updatePlayerUI(): void {
+    if (this._songNameEl)   this._songNameEl.textContent   = TRACKS[this._trackIdx];
+    if (this._playPauseBtn) this._playPauseBtn.textContent = this._audio?.paused !== false ? '▶' : '⏸';
   }
 
   // ── Modal helpers ──────────────────────────────────────────────────────
@@ -1028,5 +1160,56 @@ const MM_CSS = `
 .mm-book-page-num {
   font-family: 'Cinzel', serif; font-size: 12px;
   color: #8b6030; letter-spacing: 2px;
+}
+
+/* ── Music player ────────────────────────────────────────────────────────── */
+.mm-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px auto 0;
+  padding: 7px 18px 7px 12px;
+  background: rgba(0,0,0,.28);
+  border: 1px solid #4a4158;
+  border-radius: 100px;
+  width: fit-content;
+  max-width: 94vw;
+  transition: border-color .25s;
+}
+.mm-player:hover { border-color: #9d7cce; }
+
+.mm-player-controls {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+}
+
+.mm-player-btn {
+  background: transparent; border: none; cursor: pointer;
+  color: #c8bedd; font-size: 15px; line-height: 1;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: color .2s, background .2s;
+  padding: 0;
+}
+.mm-player-btn:hover { color: #fff; background: rgba(157,124,206,.18); }
+.mm-player-btn--active { color: #9d7cce !important; }
+
+.mm-player-info {
+  display: flex; flex-direction: column; justify-content: center;
+  min-width: 0;
+}
+
+.mm-player-track {
+  font-family: 'Cinzel', serif;
+  font-size: 11px; letter-spacing: .5px;
+  color: #e2d9c8; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.mm-player-artist {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-style: italic; font-size: 10px;
+  color: #9d7cce; white-space: nowrap;
 }
 `;
