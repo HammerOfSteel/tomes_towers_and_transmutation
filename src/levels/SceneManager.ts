@@ -32,6 +32,7 @@ export class SceneManager {
   private currentRoom: RenderedRoom | null = null;
   private activeEnemies: SlimeEnemy[] = [];
   private _currentFloor = 0;
+  private _startRoomId: string | null = null;
 
   // Transition state machine
   private transitionState: TransitionState = 'idle';
@@ -79,6 +80,33 @@ export class SceneManager {
   loadRoomImmediate(id: string): void {
     this.executeRoomSwap(id, null);
     this.triggerCooldown = TRIGGER_COOLDOWN;
+  }
+
+  /**
+   * Register a dynamically generated blueprint so the SceneManager can load
+   * it by its `id`.  Generated blueprints (e.g. from DungeonGenerator) have
+   * unique instance IDs that don't clash with the base blueprint names.
+   */
+  registerBlueprint(bp: import('./blueprint').Blueprint): void {
+    this.blueprints.set(bp.id, bp);
+  }
+
+  /**
+   * Load a generated dungeon plan: register all room instances then
+   * immediately teleport the player to the starting room.
+   */
+  loadDungeon(plan: import('./DungeonGenerator').DungeonPlan): void {
+    for (const [, bp] of plan.rooms) {
+      this.registerBlueprint(bp);
+    }
+    this._startRoomId = plan.startRoomId;
+    this.loadRoomImmediate(plan.startRoomId);
+  }
+
+  /** Instance ID of the dungeon's starting room, or `null` if no dungeon has
+   *  been loaded yet.  Used by death-screen restart to return to the beginning. */
+  get startRoomId(): string | null {
+    return this._startRoomId;
   }
 
   /** Current total kill count (across all rooms visited). */
