@@ -19,9 +19,9 @@ Shipping a phase without all three is not shipping.
 | 2 | ALttP Action Combat | ✅ Complete |
 | 3 | Modular Blueprint System | ✅ Complete |
 | 4 | Level Designer (Dev Tool) | ✅ Complete |
-| 4.5 | UI Suite (Main Menu + All Game Screens) | 🔄 In Progress |
-| 5 | Procedural Generation & Discovery | 🔄 In Progress |
-| 6 | Overworld & Monster Minions | ⬜ Not started |
+| 4.5 | UI Suite (Main Menu + All Game Screens) | ✅ Complete |
+| 5 | Procedural Generation & Discovery | ✅ Complete |
+| 6 | Overworld & Monster Minions | 🔄 In Progress |
 | 7 | The OP Power Fantasy | ⬜ Not started |
 | 8 | Asset Replacement & Final Boss | ⬜ Not started |
 
@@ -92,82 +92,93 @@ Shipping a phase without all three is not shipping.
 
 ---
 
-## Phase 4.5: UI Suite — Main Menu & All Game Screens 🔄
+## Phase 4.5: UI Suite — Main Menu & All Game Screens ✅
 
 **Goal:** All game-facing UI screens polished and accessible, establishing the final aesthetic.
 
-**Tasks:**
+**Completed:**
 - [x] `MainMenu.ts`: full-screen animated masonry gallery + title + nav buttons.
   - [x] Concept art masonry grid — 8 tiles, staggered cross-fade, no duplicate images.
   - [x] Play modal with 3 save slots (localStorage).
-  - [x] Settings modal: master volume slider + fullscreen toggle.
+  - [x] Settings modal: master volume slider + fullscreen toggle + **Dev Mode toggle (amber)**.
   - [x] Credits modal.
   - [x] Controls modal.
-- [ ] `HUD.ts` polish pass: spell slot display, run indicator, dodge cooldown pip.
-- [ ] In-game death screen: "The Ritual Failed" with restart/menu options.
-- [ ] Victory / floor-clear banner.
-- [ ] Tooltip system: hover any HUD element to see description.
-
-**Design rules:**
-- Fonts: Cinzel (titles/buttons), IM Fell English (body/lore text).
-- Colour palette: bg `#1a1820`, text `#e2d9c8`, accent `#9d7cce`, frame border `#4a4158`.
-- Decorative corners: `✥` glyph at each frame corner.
-- All modals: dark glass card with slide-up entrance, click-outside-to-close.
-
-**Tests:**
-- Save slot CRUD: create/delete/re-read persists correctly in localStorage.
-- Menu navigation: all buttons open correct modals; Escape closes topmost modal.
+- [x] `HUD.ts` polish pass: 4-slot spell bar, run indicator, dodge cooldown pip.
+- [x] `DeathScreen.ts`: "The Ritual Failed" with restart/menu options.
+- [x] `VictoryBanner.ts`: floor-clear banner (auto-dismisses 3.2 s).
+- [x] `SpellBook.ts`: Grimoire overlay — equip/unequip spells to action bar slots. `[K]` key.
+- [x] `DevPanel.ts`: cheat panel — god mode, fill HP, all spells, kill all, teleport (amber UI).
+- [x] `PauseMenu.ts`: dev panel button when dev mode active.
+- [x] Tooltip system: hover any HUD element to see description; dynamic spell-slot tooltips.
 
 ---
 
-## Phase 5: Procedural Generation & Discovery 🔄
+## Phase 5: Procedural Generation & Discovery ✅
 
 **Goal:** Let the algorithm build the tower, and let the princess learn magic.
 
-**Completed so far:**
-- [x] `InteractableSystem.ts`: proximity (2.5u) detection, `[E]` prompt, context-sensitive E key.
-- [x] `BookReader.ts`: parchment UI overlay with content + spell discovery banner on first read.
-- [x] `ProgressionSystem.ts`: tracks read books + spell unlocks (Set-based, session-scoped).
-- [x] `blueprint.ts`: `InteractableEntry.spellUnlock?` field.
-- [x] `SceneManager.getActiveInteractables()`: exposes room interactables to game loop.
-- [x] `library_large` lectern: unlocks `flame_dart` on first read.
+**Completed:**
+- [x] `InteractableSystem.ts`: proximity (2.5u) detection, `[E]` prompt.
+- [x] `BookReader.ts`: parchment UI overlay + spell discovery banner on first read.
+- [x] `ProgressionSystem.ts`: spell unlock tracking, 4 equip slots, `grantSpell()` cheat.
+- [x] `SpellSystem.ts` rewrite: `SpellDef` map, per-spell damage/speed/radius/colour.
+- [x] WoW-style spell bar (slots 1–4), `[K]` Grimoire, right-click to cast.
+- [x] `DungeonGenerator.ts`: seed + floorCount → connected room chain (`mulberry32` PRNG).
+- [x] Seed-safe PRNG (`src/core/prng.ts`): `mulberry32`, `randInt`, `randPick`.
+- [x] `flame_dart` unlock gate: `ProgressionSystem.isSpellUnlocked` checked before cast.
+- [x] `magic_bolt` pre-unlocked at start (starter spell, no book required).
 
-**Remaining:**
-- [ ] `DungeonGenerator.ts`: takes a seed + floor count; stitches blueprints by matching doorways.
-- [ ] Seed-safe PRNG: replace any `Math.random()` calls with `mulberry32(seed)` equivalent.
-- [ ] Hook `flame_dart` into `SpellSystem` (now with book unlock gate — `ProgressionSystem.isSpellUnlocked`).
-- [ ] Spell slots UI: display available spells + hotkeys on HUD.
-
-**Tests:**
-- Generator stability: 1000 random seeds never produce overlapping or disconnected rooms.
-- Generator determinism: same seed → identical layout.
-- Progression: `markRead` fires unlock exactly once; re-reading does not re-unlock. ✅ (15 tests)
-- PRNG: `mulberry32` output matches expected sequence for known seeds.
+**Tests:** 145 passing — generator determinism, connectivity, symmetry, 1000-seed stability.
 
 ---
 
-## Phase 6: Overworld & Monster Minions
+## Phase 6: Overworld & Monster Minions 🔄
 
-**Goal:** Leave the tower and build the army.
+**Goal:** Leave the tower, explore the wilds, build the monster army.
 
-**Tasks:**
-- [ ] Exterior scene: Simplex noise heightmap terrain, biome shader (bog/forest/highlands).
-- [ ] Procedural trees: tapered `CylinderGeometry` trunk + vertex-displaced `SphereGeometry` canopy.
-- [ ] Procedural rocks: `DodecahedronGeometry`, randomized scale/rotation (also resource nodes).
-- [ ] Enemy camp placement: Poisson disk sampling for spacing, 3–8 enemies per camp + elite.
-- [ ] Tame/Recruit mechanic: at HP < 10%, enemy enters `Flee` state; player "Spare" action → `Recruit`.
-- [ ] `PartyManager.ts`: tracks recruited minions, enforces party limit (Phase 6 cap: 5).
-- [ ] Follower AI: minions use NavMesh (recast.js or hand-baked) to follow player and attack target.
-- [ ] Tower entrance trigger: smooth transition between exterior and tower interior.
+### 6a — Exterior World Foundation
+- [x] `src/core/SimplexNoise.ts`: seeded 2D simplex noise + `fbm()` (fractal brownian motion).
+- [x] `src/core/poissonDisk.ts`: Bridson Poisson-disk sampling (deterministic, rand-injected).
+- [x] `src/scene/OverworldScene.ts`: heightmap terrain (vertex-coloured biomes: bog/forest/highlands),
+       procedural trees, procedural rocks, enemy camps, tower entrance trigger, ruined greenhouse.
+- [x] `PhysicsWorld.createGroundPlane(y)`: large static flat plane for exterior movement.
+- [x] Scene-mode switching in `main.ts`: `'interior' | 'exterior'` flag;
+       null door → exit to overworld; `[E]` near tower entrance → return to dungeon.
+- [x] `SceneManager.onExitTrigger`: callback fired when player hits a null-target door.
 
-**Tests:**
-- NavMesh path calculation: given start/end points on valid terrain, path is found and has no off-mesh steps.
-- Party management: recruiting beyond the limit prompts dismissal; dismissed minions are removed from party array.
-- Tame threshold: `Spare` action is only available when enemy HP ≤ 10% of max.
-- Camp spawning: Poisson disk ensures no two camps are within minimum distance.
+### 6b — Tame & Recruit
+- [x] `SlimeEnemy`: `'flee'` FSM state (HP ≤ 15% → flee away from player).
+- [x] `SlimeEnemy.isRecruitable`: true when in flee state and in exterior scene.
+- [x] `SlimeEnemy.recruit()`: transitions to `'recruited'`; colour changes to signal allegiance.
+- [x] `PartyManager.ts`: tracks recruited minions, enforces Phase 6 cap (5).
+
+### 6c — Follower Behaviour ⬜
+- [ ] Recruited slimes follow player at a comfortable distance (simple steering, no NavMesh).
+- [ ] Followers automatically attack enemies within aggro range.
+- [ ] `PartyManager.pruneDead()` removes fallen followers.
+
+### 6d — Editor Improvements
+- [x] `EditMode`: "Load Room" button loads the active SceneManager blueprint into the editor
+       so generated rooms can be hand-tweaked and re-exported.
+- [ ] Overworld editor: place enemy camps, building entrances, resource nodes and export to JSON.
+
+### 6e — Tower Floor Blueprints ⬜
+- [ ] Hand-craft blueprints for all 7 tower floors per GDD §9.
+- [ ] Add key fixture to each floor: cauldron, telescope, diary, etc.
+- [ ] Wire floors via staircases; update `DungeonGenerator` to chain floors.
+
+### 6f — Outdoor Location Interiors ⬜
+- [ ] Ruined Greenhouse blueprint: round floor plan, enemies only, once cleared = safe space.
+- [ ] Greenhouse uses a separate seed from the tower dungeon.
+
+**Tests (Phase 6):**
+- Poisson-disk: no two points closer than `minDist` across 50 seeds.
+- Party: recruit beyond limit → false; dismiss shrinks array; pruneDead removes dead members.
+- Flee threshold: flee only entered at ≤ 15% HP.
 
 **Playtest 6:**
-Exit the tower to the exterior. Find an enemy camp. Reduce one enemy below 10% HP and recruit them. Use the recruit to help clear the remaining camp enemies. Confirm follower pathfinding works (no getting stuck).
+Exit tower → exterior. Find enemy camp. Reduce slime below 15% HP, recruit it. Party counter updates.
+Explore to find ruined greenhouse. Confirm scene transitions are smooth in both directions.
 
 ---
 

@@ -8,6 +8,11 @@ export class ProgressionSystem {
   /** 4 equipped spell slots (0–3). Slot 0 always holds magic_bolt. */
   private readonly _equippedSlots: (string | null)[] = ['magic_bolt', null, null, null];
 
+  constructor() {
+    // magic_bolt is the starter spell — always unlocked, no book required.
+    this._unlockedSpells.add('magic_bolt');
+  }
+
   /** Mark a book as read.  If `spellUnlock` is supplied and this is the first
    *  time the book has been read, the spell is added to the unlocked set and
    *  auto-equipped to the first empty slot (1–3, slot 0 is reserved).

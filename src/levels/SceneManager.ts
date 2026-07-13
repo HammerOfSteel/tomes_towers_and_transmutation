@@ -33,6 +33,8 @@ export class SceneManager {
   private activeEnemies: SlimeEnemy[] = [];
   private _currentFloor = 0;
   private _startRoomId: string | null = null;
+  /** Callback invoked when the player walks through a null-target door (world exit). */
+  onExitTrigger: (() => void) | null = null;
 
   // Transition state machine
   private transitionState: TransitionState = 'idle';
@@ -101,6 +103,12 @@ export class SceneManager {
     }
     this._startRoomId = plan.startRoomId;
     this.loadRoomImmediate(plan.startRoomId);
+  }
+
+  /** The currently active Blueprint, or null if no room is loaded. */
+  get currentBlueprint(): import('./blueprint').Blueprint | null {
+    if (!this.currentBpId) return null;
+    return this.blueprints.get(this.currentBpId) ?? null;
   }
 
   /** Instance ID of the dungeon's starting room, or `null` if no dungeon has
@@ -207,7 +215,10 @@ export class SceneManager {
           { x: trigger.hx, z: trigger.hz },
         )
       ) continue;
-      if (trigger.targetId === null) break; // exterior — no destination yet
+      if (trigger.targetId === null) {
+        this.onExitTrigger?.();
+        break; // exterior — delegate to caller
+      }
 
       // Start the fade-out transition
       this.pendingBpId = trigger.targetId;

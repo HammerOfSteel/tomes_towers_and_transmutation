@@ -116,3 +116,49 @@ For architectural constraints, branch rules, and the No-Asset rule, see [ARCHITE
 - Save-to-cloud / leaderboards
 - Endless/roguelite mode (post-launch consideration)
 - Localization
+
+---
+
+## 9. Tower Architecture — Floor Purposes
+
+The tower has seven distinct floors plus a basement, each designed by the Wizard for a specific
+purpose and now being reclaimed by the princess, floor by floor.  Clearing a floor of enemies
+makes it part of her permanent safe space.
+
+| Floor | Name | Wizard's Original Use | Princess Reclaims It As |
+|---|---|---|---|
+| B1 | **The Alchemical Workshop** | Ingredient prep, distillation, volatile experiments. There is a stain on the floor he never explained. | Potion crafting station; reagent storage; upgrade bench. |
+| 0 | **The Grand Foyer** | Where supplicants waited — sometimes for weeks — to petition him. He enjoyed that. | The home base. Door to the outside world. Board for tracking quests and recruited monsters. |
+| 1 | **The Library of Accumulated Arrogance** | Dense arcane research, forbidden knowledge, and approximately four hundred unfinished manuscripts. | The source of her power. Every spell she learns came from his own bookshelf. |
+| 2 | **The Brewing Chamber** | Industrial-scale potion production. He called it "optimised workflow". | Mass-production of combat consumables for the army. The central cauldron is enormous. |
+| 3 | **The Living Quarters** | His private rooms, surprisingly austere given the ego. A diary that must never be read. | Her bedroom. She reads the diary immediately. It is worse than expected. |
+| 4 | **The Menagerie / Followers' Den** | Where his monster "associates" were housed. They called him "the tall nervous one". Central hall plus individual wing rooms per monster type — slime pool, goblin corner, etc. | Party headquarters. Recruited minions settle here; their comfort affects morale. |
+| 5 | **The Observatory** | Ostensibly for astronomy. Actually for spying on the Baron next door. Detailed surveillance notes. | Strategic overview. The telescope reveals the entire overworld. Used to plan expeditions. |
+
+### Design Note — Clearing Sequence
+The player starts in a cell on an unnumbered sub-floor (below B1) and fights upward.  Each floor
+is procedurally generated around the thematic blueprint for that level but guarantees the key
+fixture (cauldron, telescope, diary, etc.) is always present.
+
+---
+
+## 10. Outdoor Locations
+
+The surrounding wilderness is procedurally generated on a heightmap (biome: bog → forest → highlands).
+Structures found in the world initially contain enemies; clearing them permanently adds them to the
+player's territory.
+
+### Enemy Camps
+Small clusters of 3–8 enemies with a tougher elite variant.  Spread via Poisson-disk sampling to
+prevent crowding.  Can be cleared for resources.
+
+### The Ruined Greenhouse
+A circle of crumbling stone pillars partially swallowed by the forest, with an overgrown stone-slab
+floor.  The Wizard grew rare magical ingredients here.  The floor plan is **round**, unlike the
+tower's rectangular rooms.  Once cleared it becomes a source of rare crafting reagents.
+
+### Other Structures (future phases)
+- **The Watchtower Ruin** — highlands vantage point; restoring it extends the telescope's range.
+- **The Bog Shrine** — submerged stone altar; clearing it unlocks a water-affinity spell.
+- **The Abandoned Mine** — resource node for rare minerals used in advanced upgrades.
+- **The Baron's Keep** — late-game location; the Baron is also annoyed at the Wizard.

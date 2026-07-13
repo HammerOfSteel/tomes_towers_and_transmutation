@@ -19,6 +19,8 @@ import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel } from '@/ui/DevPanel';
 import { generateDungeon } from '@/levels/DungeonGenerator';
+import { OverworldScene } from '@/scene/OverworldScene';
+import { PartyManager } from '@/combat/PartyManager';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -71,9 +73,35 @@ async function main() {
   // ── Scene / room manager ──────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player);
   // Initial room load: generate a fresh dungeon with a random seed.
-  // The generated plan is registered into sceneManager; the player starts at room_0.
-  const _initialPlan = generateDungeon(Math.floor(Math.random() * 0xFFFFFFFF), 1);
+  let currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
+  const _initialPlan = generateDungeon(currentSeed, 1);
   sceneManager.loadDungeon(_initialPlan);
+
+  // ── Scene mode (interior ↔ exterior) ─────────────────────────────────
+  let gameMode: 'interior' | 'exterior' = 'interior';
+  let overworld: OverworldScene | null = null;
+  const party = new PartyManager(5);
+
+  function switchToExterior(): void {
+    if (!overworld) {
+      overworld = new OverworldScene(scene, physics, player, currentSeed);
+    }
+    gameMode = 'exterior';
+    overworld.enter();
+    // Spawn the player just in front of the tower entrance
+    player.teleport(new THREE.Vector3(0, 1.5, 4));
+    // Widen fog for the open world
+    scene.fog = new THREE.Fog(0x0a1408, 60, 180);
+  }
+
+  function switchToInterior(roomId?: string): void {
+    overworld?.exit();
+    gameMode = 'interior';
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
+    sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
+  }
+
+  sceneManager.onExitTrigger = () => switchToExterior();
 
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
@@ -123,9 +151,13 @@ async function main() {
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
   const mainMenu = new MainMenu({
     onPlay: () => {
-      // Generate a new dungeon each time the player presses Play.
-      const seed = Math.floor(Math.random() * 0xFFFFFFFF);
-      const plan = generateDungeon(seed, 1);
+      // Generate a new dungeon + fresh world each time the player presses Play.
+      currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
+      overworld?.dispose();
+      overworld = null;
+      gameMode = 'interior';
+      scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+      const plan = generateDungeon(currentSeed, 1);
       sceneManager.loadDungeon(plan);
       gameLoop.start();
     },
@@ -221,12 +253,21 @@ async function main() {
       raycaster.setFromCamera(mouseNDC, cameraRig.camera);
       raycaster.ray.intersectPlane(floorPlane, mouseWorld);
 
-      // 4. Room manager — enemy AI + door trigger checks
-      sceneManager.update(dt, player.group.position);
-      const enemies = sceneManager.getActiveEnemies();
+      // 4. Room manager / overworld — enemy AI + door trigger checks
+      if (gameMode === 'interior') {
+        sceneManager.update(dt, player.group.position);
+      } else if (overworld) {
+        overworld.update(dt);
+        party.pruneDead();
+      }
+      const enemies = gameMode === 'interior'
+        ? sceneManager.getActiveEnemies()
+        : (overworld?.getActiveEnemies() ?? []);
 
-      // 4b. Interactable proximity detection
-      interactables.update(player.group.position, sceneManager.getActiveInteractables());
+      // 4b. Interactable proximity detection (interior only)
+      if (gameMode === 'interior') {
+        interactables.update(player.group.position, sceneManager.getActiveInteractables());
+      }
 
       // 5. Melee attack (mouse button 0, 0.4s cooldown)
       meleeCooldown = Math.max(0, meleeCooldown - dt);
@@ -241,11 +282,37 @@ async function main() {
         combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
       }
 
-      // 6a. E key → interact with nearby interactable (read books etc.)
+      // 6a. E key — context-sensitive: interior = read book; exterior = enter/recruit
       const interactJustPressed = s.interact && !lastSpellInput;
       lastSpellInput = s.interact;
       if (interactJustPressed && !bookReader.isOpen) {
-        interactables.tryRead();
+        if (gameMode === 'interior') {
+          interactables.tryRead();
+        } else if (overworld) {
+          // Spare nearby fleeing enemy first
+          const nearFlee = overworld.getActiveEnemies().find(
+            (en) => !en.isDead && en.isRecruitable
+              && en.worldPosition.distanceTo(player.group.position) < 2.5,
+          );
+          if (nearFlee) {
+            if (!party.isFull) {
+              party.recruit(nearFlee);
+            }
+          } else if (overworld.nearTowerEntrance(player.group.position)) {
+            switchToInterior();
+          } else {
+            const bld = overworld.nearBuilding(player.group.position);
+            if (bld) {
+              // Load a separate dungeon for the building (XOR seed for variety)
+              const bldSeed = currentSeed ^ 0xCAFE_BABE;
+              const bldPlan = generateDungeon(bldSeed, 1);
+              overworld.exit();
+              gameMode = 'interior';
+              scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+              sceneManager.loadDungeon(bldPlan);
+            }
+          }
+        }
       }
 
       // 6b. Right-click → cast active equipped spell
@@ -254,7 +321,7 @@ async function main() {
       lastCastInput = s.castSpell;
       if (castJustPressed && spellCooldown <= 0) {
         const activeSpell = progression.getEquippedSlot(s.activeSlot);
-        if (activeSpell) {
+        if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
           spellCooldown = 0.5;
           spells.fire(player.group.position, mouseWorld, enemies, scene, undefined, activeSpell);
         }
@@ -270,9 +337,10 @@ async function main() {
         deathScreen.show();
       }
 
-      // 7c. Room-clear check — show victory banner the frame all enemies die
-      const dead  = sceneManager.roomEnemiesDefeated;
-      const total = sceneManager.totalEnemies;
+      // 7c. Room-clear check (interior only)
+      if (gameMode === 'interior') {
+        const dead  = sceneManager.roomEnemiesDefeated;
+        const total = sceneManager.totalEnemies;
       const isCleared = total > 0 && dead >= total;
       if (isCleared && !wasRoomCleared) {
         const fl = sceneManager.currentFloor;
@@ -281,7 +349,8 @@ async function main() {
                     :           `Basement ${Math.abs(fl)} Cleared`;
         victoryBanner.show(label);
       }
-      wasRoomCleared = isCleared;
+        wasRoomCleared = isCleared;
+      }
     }
 
     // 8. Camera
