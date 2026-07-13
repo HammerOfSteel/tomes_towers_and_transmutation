@@ -19,14 +19,12 @@ function makeSlimeStub(personality: 'bold' | 'gentle' | 'curious' | 'lonely') {
   } as unknown as import('@/enemy/SlimeEnemy').SlimeEnemy;
 }
 
-/** Click the nth choice button inside the active taming overlay. */
+/** Click the nth choice button inside the active taming strip. */
 function clickButton(game: TamingGame, index: number): void {
-  // Find THIS game's overlay — use the last one in the DOM in case of leaks
-  const overlays = document.querySelectorAll('#taming-overlay');
-  const overlay = overlays[overlays.length - 1] as HTMLElement;
-  const buttons = overlay.querySelectorAll('button');
+  const strips = document.querySelectorAll('#taming-strip');
+  const strip = strips[strips.length - 1] as HTMLElement;
+  const buttons = strip.querySelectorAll('button');
   (buttons[index] as HTMLButtonElement).click();
-  // Immediately advance past the reaction timer so the next round is ready
   game.update(2.0);
 }
 
@@ -40,9 +38,8 @@ describe('TamingGame', () => {
   });
 
   afterEach(() => {
-    // Ensure any leftover overlay is cleaned up between tests
     game.close();
-    document.querySelectorAll('#taming-overlay').forEach(el => el.remove());
+    document.querySelectorAll('#taming-strip').forEach(el => el.remove());
   });
 
   it('is not active before begin()', () => {
@@ -65,17 +62,17 @@ describe('TamingGame', () => {
   it('renders word buttons in the DOM', () => {
     const slime = makeSlimeStub('curious');
     game.begin(slime);
-    const overlay = document.getElementById('taming-overlay');
-    expect(overlay).not.toBeNull();
-    const buttons = overlay!.querySelectorAll('button');
+    const strip = document.getElementById('taming-strip');
+    expect(strip).not.toBeNull();
+    const buttons = strip!.querySelectorAll('button');
     expect(buttons.length).toBe(4);  // 4 choices in round 0
   });
 
-  it('overlay is removed from DOM after close()', () => {
+  it('strip is removed from DOM after close()', () => {
     const slime = makeSlimeStub('lonely');
     game.begin(slime);
     game.close();
-    expect(document.getElementById('taming-overlay')).toBeNull();
+    expect(document.getElementById('taming-strip')).toBeNull();
   });
 
   it('triggers onSuccess when score meets threshold for best-matched personality', () => {
@@ -94,10 +91,9 @@ describe('TamingGame', () => {
     clickButton(game, 3);
 
     // Round 2 — "Through storm and shadow" (bold +25)
-    // click advances one step (into 'reacting'), then a second update closes out
-    const overlays = document.querySelectorAll('#taming-overlay');
-    const overlay = overlays[overlays.length - 1] as HTMLElement;
-    const buttons = overlay.querySelectorAll('button');
+    const strips = document.querySelectorAll('#taming-strip');
+    const strip = strips[strips.length - 1] as HTMLElement;
+    const buttons = strip.querySelectorAll('button');
     (buttons[1] as HTMLButtonElement).click();  // word1 chosen
     // First update: reacting → success (fires onSuccess callback)
     game.update(2.0);
@@ -122,9 +118,9 @@ describe('TamingGame', () => {
     clickButton(game, 3);  // "Together we'll be bold" (gentle −10)
 
     // Round 2 — "Through storm and shadow" (gentle −15)
-    const overlays = document.querySelectorAll('#taming-overlay');
-    const overlay = overlays[overlays.length - 1] as HTMLElement;
-    (overlay.querySelectorAll('button')[1] as HTMLButtonElement).click();
+    const strips2 = document.querySelectorAll('#taming-strip');
+    const strip2 = strips2[strips2.length - 1] as HTMLElement;
+    (strip2.querySelectorAll('button')[1] as HTMLButtonElement).click();
     game.update(2.0);   // reacting → fail (fires onFail)
     expect(failFired).toBe(true);
     expect(successFired).toBe(false);
@@ -137,11 +133,11 @@ describe('TamingGame', () => {
     game.begin(slime);
 
     // Round 0 — "Curious little one" (curious +25 → 'great')
-    const getOverlay = () => {
-      const els = document.querySelectorAll('#taming-overlay');
+    const getStrip = () => {
+      const els = document.querySelectorAll('#taming-strip');
       return els[els.length - 1] as HTMLElement;
     };
-    (getOverlay().querySelectorAll('button')[2] as HTMLButtonElement).click();
+    (getStrip().querySelectorAll('button')[2] as HTMLButtonElement).click();
     const reacts = (slime as unknown as { _reactions: string[] })._reactions;
     // tameReact fires inside _onWordChosen, before phase changes
     expect(reacts.length).toBe(1);
@@ -150,14 +146,14 @@ describe('TamingGame', () => {
     game.update(2.0);  // advance to round 1
 
     // Round 1 — "We'll see new worlds" (curious +25 → 'great')
-    (getOverlay().querySelectorAll('button')[1] as HTMLButtonElement).click();
+    (getStrip().querySelectorAll('button')[1] as HTMLButtonElement).click();
     expect(reacts.length).toBe(2);
     expect(reacts[1]).toBe('great');
 
     game.update(2.0);  // advance to round 2
 
     // Round 2 — "Ever forward, ever free" (curious +25 → 'great')
-    (getOverlay().querySelectorAll('button')[3] as HTMLButtonElement).click();
+    (getStrip().querySelectorAll('button')[3] as HTMLButtonElement).click();
     expect(reacts.length).toBe(3);
 
     // clean up
