@@ -560,7 +560,25 @@ export class MainMenu {
     audio.addEventListener('ended', () => this._nextTrack());
     audio.addEventListener('pause', () => this._updatePlayerUI());
     audio.addEventListener('play',  () => this._updatePlayerUI());
-    this._playTrack(this._trackIdx, /*autoStart*/ true);
+
+    // Set first track src without auto-starting
+    this._playTrack(0, false);
+
+    // Muted autoplay is universally permitted by browser policy; unmute once playing
+    audio.muted = true;
+    audio.play()
+      .then(() => { audio.muted = false; })
+      .catch(() => {
+        // Very restrictive config: fall back to first user gesture
+        audio.muted = false;
+        const startOnGesture = () => {
+          audio.play().catch(() => {});
+          document.removeEventListener('click',   startOnGesture, true);
+          document.removeEventListener('keydown', startOnGesture, true);
+        };
+        document.addEventListener('click',   startOnGesture, { capture: true, once: true });
+        document.addEventListener('keydown', startOnGesture, { capture: true, once: true });
+      });
   }
 
   private _playTrack(idx: number, autoStart = false): void {
@@ -568,13 +586,7 @@ export class MainMenu {
     this._trackIdx = Math.max(0, Math.min(idx, TRACKS.length - 1));
     this._audio.src = `/music/${encodeURIComponent(TRACKS[this._trackIdx] + '.mp3')}`;
     this._updatePlayerUI();
-    if (autoStart) {
-      // Muted autoplay is universally permitted; unmute as soon as playback begins
-      this._audio.muted = true;
-      this._audio.play()
-        .then(() => { if (this._audio) this._audio.muted = false; })
-        .catch(() => { if (this._audio) this._audio.muted = false; });
-    }
+    if (autoStart) this._audio.play().catch(() => {});
   }
 
   private _prevTrack(): void {
@@ -783,7 +795,7 @@ const MM_CSS = `
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .mm-header {
   text-align: center;
-  width: 100%; max-width: 860px;
+  width: 100%; max-width: min(94vw, 1140px);
   padding: 52px 24px 28px;
 }
 
