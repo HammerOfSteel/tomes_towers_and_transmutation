@@ -19,8 +19,13 @@ export interface WorldInteractable {
 
 const INTERACT_RANGE = 2.5; // world units (XZ distance)
 const PROMPT_LABELS: Record<string, string> = {
-  bookshelf: 'bookshelf',
-  lectern:   'tome',
+  bookshelf:      'bookshelf',
+  lectern:        'tome',
+  cauldron:       'cauldron',
+  telescope:      'telescope',
+  forge:          'forge',
+  quest_board:    'notice board',
+  greenhouse_orb: 'orb',
 };
 
 /** Detects the nearest interactable within range and shows a world prompt.
@@ -29,6 +34,9 @@ export class InteractableSystem {
   private nearby: WorldInteractable | null = null;
   private readonly promptEl: HTMLElement;
   private readonly _tmp = new THREE.Vector3();
+
+  /** Called instead of BookReader when a telescope is activated. */
+  onTelescopeActivate: (() => void) | null = null;
 
   constructor(
     private readonly progression: ProgressionSystem,
@@ -63,11 +71,18 @@ export class InteractableSystem {
     }
   }
 
-  /** Attempt to read the nearby interactable.
-   *  @returns `true` if the BookReader was opened; `false` if nothing was nearby. */
+  /** Attempt to interact with the nearest item.
+   *  @returns `true` if an interaction was triggered; `false` if nothing was nearby. */
   tryRead(): boolean {
     if (!this.nearby || this.bookReader.isOpen) return false;
     const item = this.nearby;
+
+    // Telescope routes to its own dedicated view instead of the BookReader
+    if (item.type === 'telescope') {
+      this.onTelescopeActivate?.();
+      return true;
+    }
+
     const firstRead = this.progression.markRead(item.id, item.spellUnlock);
     this.bookReader.open(
       item.content || '(blank page)',
@@ -104,8 +119,12 @@ export class InteractableSystem {
       return;
     }
     const label = PROMPT_LABELS[item.type] ?? item.type;
-    const alreadyRead = this.progression.hasRead(item.id);
-    const verb = alreadyRead ? 'Re-read' : 'Read';
+    // Verb depends on object type
+    const verb = item.type === 'telescope'
+      ? 'Use'
+      : (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type)
+        ? 'Examine'
+        : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
     this.promptEl.innerHTML = `<kbd style="${KBD_STYLE}">E</kbd>&nbsp; ${verb} ${label}`;
     this.promptEl.style.opacity = '1';
   }

@@ -335,7 +335,8 @@ Explore to find ruined greenhouse. Confirm scene transitions are smooth in both 
 **Goal:** Scale the player's power to ridiculous heights and implement base building.
 
 **Tasks:**
-- [ ] XP + level-up system: simple scaling multiplier on spell damage and HP.
+- [ ] Do web research on best practices and if there are any libraries or such to use or base this upon: XP + level-up system, their spells and expressions, player alot stat points etc AND we want to make a talent progression system kind of like in game like elderscrolls with the charts etc and chosing a specialization (there are more melee focused trees, caster focused which brances of into like AOE or close combat, there are Warlock focused branches with DOTs like in WOW etc, there are less combat focused paths like being a healer almost and letting minions do the fighring, perhaps alchemy paths to focus more on alchemical stuff and you can think of many more and build a well developed deeo system that has niot just interaciton in branches but also cross-interactions and almost emergent seeming stuff etc to make this real fun - maybe we can even procedurally generate these types of things too given a modular like design). Then implement this fully and break down into smaller tasks if you need to.
+- [ ] Research, breakdown and implement various crafting types and how they work and implement.
 - [ ] Nova Burst spell: full-screen AOE, 15s cooldown, screen-fill expanding torus VFX.
 - [ ] Mass Animate ultimate: resurrect all defeated enemies in room as temporary minions.
 - [ ] Party limit raised to 20.
@@ -354,14 +355,27 @@ Achieve a party of 20 minions. Cast Nova Burst on a horde of 15 enemies. All mus
 
 ---
 
-## Phase 8: Asset Replacement & The Final Boss
+## Phase 7.5: Massively improve the procedurally generated assets and textures ll across the board and make new assets to make the world come alive much more
+- [ ] web research on best practices and support libraries etc for this if any
+- [ ] More assets of all kinds
+
+- [ ] From previous task plan this phase task out and its tests
+- [ ] Procedural character generation on modular base, we want to be able to have a charactert creation screen working with such an implementation and using 
+
+
+---
+
+## Phase 8: Asset improvements & The Final Boss
 
 **Goal:** Turn the "greybox" into a finished game.
 
 **Tasks:**
-- [ ] Define Phase 8 asset brief (see [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) — forward reference section).
-- [ ] Asset pipeline: swap procedural primitives for `.gltf` models + `.png` textures.
-- [ ] Character animations: Idle, Walk, Attack, Hurt, Die (mixamo/Blender) replacing kinematic sliding.
+- [ ] Day night system and time (research, libraries if any and implementation)
+- [ ] various types of weather etc (research, libraries if any and implementation)
+- [ ] Seasons and calendar (research, libraries if any and implementation)
+- [ ] gardening and hermlism system and harvesting etc (research, libraries if any and implementation)
+- [ ] potion making system (research, libraries if any and implementation)
+- [ ] alchemy system (research, libraries if any and implementation)
 - [ ] Audio: Web Audio API — ambient, footsteps, spell SFX, impact sounds.
 - [ ] UI polish: styled HTML/CSS to match final art style.
 - [ ] Final boss room: hand-crafted blueprint, scripted encounter, victory sequence.
@@ -376,6 +390,14 @@ Achieve a party of 20 minions. Cast Nova Burst on a horde of 15 enemies. All mus
 **Playtest 8:**
 Full end-to-end speedrun. Observe all 8 phases' content. End with the defeat of the Wizard Captor. The final boss fight should feel intentionally anticlimactic.
 
+---
+
+## Phase 9: Amazing custom spell craftingh system
+
+**Goal:** Create a spell crafting system that enables seemingly endless various of spells that can also be procedurally generated
+
+**Tasks:**
+- [ ] web research on best practices and support libraries etc for this if any and plan the rest of the tasks and test and update this todo.md then implement accordingly.
 
 ---
 

@@ -19,6 +19,9 @@ import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel } from '@/ui/DevPanel';
 import { generateDungeon } from '@/levels/DungeonGenerator';
+import { generateTower } from '@/levels/TowerGenerator';
+import { getFloorDef } from '@/levels/TowerFloorDef';
+import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { PartyManager } from '@/combat/PartyManager';
 
@@ -72,13 +75,13 @@ async function main() {
 
   // ── Scene / room manager ──────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player);
-  // Initial room load: generate a fresh dungeon with a random seed.
+  // Initial room load: generate the tower with a random seed.
   let currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
-  const _initialPlan = generateDungeon(currentSeed, 1);
+  const _initialPlan = generateTower(currentSeed);
   sceneManager.loadDungeon(_initialPlan);
 
-  // ── Scene mode (interior ↔ exterior) ─────────────────────────────────
-  let gameMode: 'interior' | 'exterior' = 'interior';
+  // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
+  let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   const party = new PartyManager(5);
 
@@ -115,6 +118,37 @@ async function main() {
   const progression   = new ProgressionSystem();
   const bookReader    = new BookReader();
   const interactables = new InteractableSystem(progression, bookReader);
+  const telescopeView = new TelescopeView();
+  let _telescopePrevRoomId: string | null = null;
+
+  function enterTelescopeMode(): void {
+    if (telescopeView.active) return;
+    _telescopePrevRoomId = sceneManager.currentBlueprint?.id ?? null;
+    // Unload interior, load exterior world for remote viewing
+    sceneManager.unloadCurrentRoom();
+    if (!overworld) {
+      overworld = new OverworldScene(scene, physics, player, currentSeed);
+    }
+    overworld.enter();
+    scene.background = new THREE.Color(0x4a6888);
+    scene.fog = new THREE.Fog(0x4a6888, 200, 800);
+    player.group.visible = false;
+    gameMode = 'telescope';
+    telescopeView.updateAspect(window.innerWidth, window.innerHeight);
+    telescopeView.show(renderer.domElement);
+    telescopeView.onClose = () => {
+      overworld?.exit();
+      player.group.visible = true;
+      gameMode = 'interior';
+      scene.background = null;
+      scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+      if (_telescopePrevRoomId) {
+        sceneManager.loadRoomImmediate(_telescopePrevRoomId);
+      }
+    };
+  }
+
+  interactables.onTelescopeActivate = () => enterTelescopeMode();
 
   // ── Dev panel ───────────────────────────────────────────────────────────
   const devPanel = new DevPanel({
@@ -161,7 +195,8 @@ async function main() {
     overworld = null;
     gameMode = 'interior';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-    const plan = generateDungeon(currentSeed, 1);
+    const plan = generateTower(currentSeed);
+    sceneManager.resetCleared();
     sceneManager.loadDungeon(plan);
     gameLoop.start();
   }
@@ -298,11 +333,19 @@ async function main() {
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     cameraRig.resize(window.innerWidth / window.innerHeight);
+    telescopeView.updateAspect(window.innerWidth, window.innerHeight);
   });
 
   // ── Game loop ─────────────────────────────────────────────────────────────
   const gameLoop = new GameLoop();
   gameLoop.onTick((dt) => {
+    // ── Telescope remote-view mode — skip all game simulation ──────────────
+    if (gameMode === 'telescope') {
+      telescopeView.update(dt);
+      renderer.render(scene, telescopeView.camera);
+      return;
+    }
+
     // 1. Physics
     physics.step(dt);
 
@@ -365,7 +408,7 @@ async function main() {
       // 6a. E key — context-sensitive: interior = read book; exterior = enter/recruit
       const interactJustPressed = s.interact && !lastSpellInput;
       lastSpellInput = s.interact;
-      if (interactJustPressed && !bookReader.isOpen) {
+      if (interactJustPressed && !bookReader.isOpen && !telescopeView.active) {
         if (gameMode === 'interior') {
           interactables.tryRead();
         } else if (overworld) {
@@ -447,6 +490,7 @@ async function main() {
       input.activeSlot,
       player.dodgeReadyFraction,
       input.state.run,
+      getFloorDef(sceneManager.currentFloor)?.name,
     );
 
     // 10. Render

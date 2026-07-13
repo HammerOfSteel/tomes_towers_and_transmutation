@@ -46,6 +46,11 @@ export class SceneManager {
   // Kill tracking across rooms
   private accumulatedKills = 0;
 
+  // Cleared rooms — rooms where every spawned enemy was defeated.  Persisted
+  // across sessions in localStorage so enemies don't respawn on revisit.
+  private readonly CLEARED_KEY = 'tt3_cleared_rooms';
+  private clearedRooms: Set<string>;
+
   private readonly fadeEl: HTMLDivElement;
 
   constructor(
@@ -61,6 +66,8 @@ export class SceneManager {
         return [bp.id, bp];
       }),
     );
+
+    this.clearedRooms = this._loadClearedRooms();
 
     // Fade overlay — black div that animates opacity for room transitions.
     this.fadeEl = document.createElement('div');
@@ -224,6 +231,9 @@ export class SceneManager {
       enemy.update(playerPos, dt);
     }
 
+    // ── Cleared-room check ────────────────────────────────────────────────
+    this._checkRoomCleared();
+
     // ── Door trigger checks ───────────────────────────────────────────────
     this.triggerCooldown = Math.max(0, this.triggerCooldown - dt);
     if (this.triggerCooldown > 0 || !this.currentRoom) return;
@@ -252,7 +262,41 @@ export class SceneManager {
     }
   }
 
+  // ── Public helpers ────────────────────────────────────────────────────────
+
+  /** Reset cleared-room state (call when starting a new game). */
+  resetCleared(): void {
+    this.clearedRooms.clear();
+    try { localStorage.removeItem(this.CLEARED_KEY); } catch { /* ignore */ }
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
+
+  private _loadClearedRooms(): Set<string> {
+    try {
+      const raw = localStorage.getItem(this.CLEARED_KEY);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  }
+
+  private _saveClearedRooms(): void {
+    try {
+      localStorage.setItem(this.CLEARED_KEY, JSON.stringify([...this.clearedRooms]));
+    } catch { /* storage unavailable */ }
+  }
+
+  /** Mark the current room cleared when all enemies are dead. */
+  private _checkRoomCleared(): void {
+    if (!this.currentBpId) return;
+    if (this.clearedRooms.has(this.currentBpId)) return;
+    if (this.activeEnemies.length === 0) return;   // nothing to clear (empty room)
+    if (this.activeEnemies.every((e) => e.isDead)) {
+      this.clearedRooms.add(this.currentBpId);
+      this._saveClearedRooms();
+    }
+  }
 
   /** Unload current room, load `newId`, reposition player, spawn enemies. */
   private executeRoomSwap(newId: string, fromId: string | null): void {
@@ -280,31 +324,51 @@ export class SceneManager {
     this._currentFloor = bp.floor;
     this.scene.add(this.currentRoom.group);
 
-    // ── Spawn enemies ─────────────────────────────────────────────────────
-    for (const spawn of bp.spawns) {
-      const spawnPos = new THREE.Vector3(
-        (spawn.x + 0.5) * bp.cellSize - (bp.width * bp.cellSize) / 2,
-        1.5,
-        (spawn.z + 0.5) * bp.cellSize - (bp.depth * bp.cellSize) / 2,
-      );
-      const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) =>
-        this.player.health.takeDamage(dmg),
-      );
-      this.scene.add(enemy.group);
-      this.activeEnemies.push(enemy);
+    // ── Spawn enemies (skip if room was previously cleared) ──────────────
+    const skipEnemies = this.clearedRooms.has(newId);
+    if (!skipEnemies) {
+      for (const spawn of bp.spawns) {
+        const spawnPos = new THREE.Vector3(
+          (spawn.x + 0.5) * bp.cellSize - (bp.width * bp.cellSize) / 2,
+          1.5,
+          (spawn.z + 0.5) * bp.cellSize - (bp.depth * bp.cellSize) / 2,
+        );
+        const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) =>
+          this.player.health.takeDamage(dmg),
+        );
+        this.scene.add(enemy.group);
+        this.activeEnemies.push(enemy);
+      }
     }
 
-    // ── Teleport player to entry door ─────────────────────────────────────
+    // ── Teleport player to entry point ────────────────────────────────────
     if (fromId !== null) {
-      // Find the door in the new room that leads back to where we came from.
+      // First try a door that leads back to where we came from.
       const entryDoor = bp.doors.find((d) => d.targetId === fromId);
       if (entryDoor) {
         const sp = doorSpawnPosition(entryDoor, bp);
         this.player.teleport(new THREE.Vector3(sp.x, sp.y, sp.z));
+      } else {
+        // Then try a staircase that leads back to the previous room.
+        const entryStair = bp.staircases.find((s) => s.targetId === fromId);
+        if (entryStair) {
+          const sp = doorSpawnPosition(entryStair, bp);
+          this.player.teleport(new THREE.Vector3(sp.x, sp.y, sp.z));
+        }
       }
     } else {
       // Initial load — spawn at centre of room
       this.player.teleport(new THREE.Vector3(0, 1.5, 0));
+    }
+
+    // ── Scene ambiance ────────────────────────────────────────────────────────
+    if (bp.floor === 9) {
+      // Observatory rooftop — open twilight sky
+      this.scene.background = new THREE.Color(0x0c0820);
+      this.scene.fog = new THREE.Fog(0x0c0820, 30, 100);
+    } else {
+      this.scene.background = null;
+      this.scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     }
 
     this.triggerCooldown = TRIGGER_COOLDOWN;
