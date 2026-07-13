@@ -66,6 +66,7 @@ export class SlimeEnemy implements Damageable {
   private flashTimer = 0;
   private tameReactTimer = 0;
   private tameReactColor = SLIME_COLOR;
+  private _isTaming = false;
   private verticalVelocity = 0;
   private bounceTimer = 0;
   private wasGrounded = true;
@@ -167,6 +168,17 @@ export class SlimeEnemy implements Damageable {
         break;
     }
   }
+
+  /**
+   * Called by TamingGame when the song begins — freezes the slime in place
+   * so it doesn't outrun the player during the 3-round overlay.
+   */
+  startTaming(): void { this._isTaming = true; }
+
+  /**
+   * Called by TamingGame on success, failure, or cancel — resumes normal movement.
+   */
+  stopTaming(): void { this._isTaming = false; }
 
   /**
    * Force this enemy into the flee state (used by the Intimidate spell / dev tool).
@@ -275,11 +287,14 @@ export class SlimeEnemy implements Damageable {
         this.group.rotation.y = Math.atan2(vx, vz);
       }
     } else if (this.state === 'flee' && distToPlayer > 0.05) {
-      // Run directly away from the player
-      const dir = flat.clone().normalize().negate();
-      vx = dir.x * FLEE_SPEED;
-      vz = dir.z * FLEE_SPEED;
-      this.group.rotation.y = Math.atan2(vx, vz);
+      if (!this._isTaming) {
+        // Run directly away from the player
+        const dir = flat.clone().normalize().negate();
+        vx = dir.x * FLEE_SPEED;
+        vz = dir.z * FLEE_SPEED;
+        this.group.rotation.y = Math.atan2(vx, vz);
+      }
+      // _isTaming === true → stay still while the song plays
     }
 
     // Apply and decay attack lunge burst

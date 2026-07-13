@@ -381,7 +381,7 @@ async function main() {
         // Update exterior interaction prompt
         const _pos = player.group.position;
         const _flee = overworld.getActiveEnemies().find(
-          e => !e.isDead && e.isRecruitable && e.worldPosition.distanceTo(_pos) < 3.0,
+          e => !e.isDead && e.isRecruitable && e.worldPosition.distanceTo(_pos) < 6.0,
         );
         if (_flee) {
           _setExteriorPrompt(party.isFull ? 'Party full' : '♪ Sing to it');
@@ -401,6 +401,14 @@ async function main() {
       // 4b. Interactable proximity detection (interior only)
       if (gameMode === 'interior') {
         interactables.update(player.group.position, sceneManager.getActiveInteractables());
+        // Taming prompt takes priority over book prompts when a fleeing slime is nearby
+        const _nearFleeInt = sceneManager.getActiveEnemies().find(
+          en => !en.isDead && en.isRecruitable
+            && en.worldPosition.distanceTo(player.group.position) < 6.0,
+        );
+        interactables.overridePrompt(
+          _nearFleeInt ? (party.isFull ? 'Party full' : '♪ Sing to it') : null,
+        );
       }
 
       // 5. Melee attack (mouse button 0, 0.4s cooldown)
@@ -421,12 +429,23 @@ async function main() {
       lastSpellInput = s.interact;
       if (interactJustPressed && !bookReader.isOpen && !telescopeView.active && !tamingGame.active) {
         if (gameMode === 'interior') {
-          interactables.tryRead();
+          // Taming takes priority over book reading when a recruitable slime is nearby
+          const nearFleeInt = sceneManager.getActiveEnemies().find(
+            en => !en.isDead && en.isRecruitable
+              && en.worldPosition.distanceTo(player.group.position) < 6.0,
+          );
+          if (nearFleeInt && !party.isFull) {
+            tamingGame.begin(nearFleeInt);
+            tamingGame.onSuccess = (slime) => { party.recruit(slime); };
+            tamingGame.onFail = () => {};
+          } else {
+            interactables.tryRead();
+          }
         } else if (overworld) {
           // Tame nearby fleeing enemy with the mini-game
           const nearFlee = overworld.getActiveEnemies().find(
             (en) => !en.isDead && en.isRecruitable
-              && en.worldPosition.distanceTo(player.group.position) < 3.0,
+              && en.worldPosition.distanceTo(player.group.position) < 6.0,
           );
           if (nearFlee) {
             if (!party.isFull) {

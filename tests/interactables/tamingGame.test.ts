@@ -13,6 +13,8 @@ function makeSlimeStub(personality: 'bold' | 'gentle' | 'curious' | 'lonely') {
   return {
     personality,
     tameReact(q: 'great' | 'good' | 'neutral' | 'bad') { reactions.push(q); },
+    startTaming() {},
+    stopTaming() {},
     _reactions: reactions,
   } as unknown as import('@/enemy/SlimeEnemy').SlimeEnemy;
 }

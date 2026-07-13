@@ -34,6 +34,7 @@ export class InteractableSystem {
   private nearby: WorldInteractable | null = null;
   private readonly promptEl: HTMLElement;
   private readonly _tmp = new THREE.Vector3();
+  private _promptOverride: string | null = null;
 
   /** Called instead of BookReader when a telescope is activated. */
   onTelescopeActivate: (() => void) | null = null;
@@ -47,6 +48,18 @@ export class InteractableSystem {
 
   /** The interactable currently within range, if any. */
   get nearbyItem(): WorldInteractable | null { return this.nearby; }
+
+  /** Override the normal interactable prompt with custom text.
+   *  Pass `null` to restore normal proximity-based prompting. */
+  overridePrompt(text: string | null): void {
+    this._promptOverride = text;
+    if (text !== null) {
+      this.promptEl.innerHTML = `<kbd style="${KBD_STYLE}">E</kbd>&nbsp; ${text}`;
+      this.promptEl.style.opacity = '1';
+    } else {
+      this._updatePrompt(this.nearby);
+    }
+  }
 
   /** Update proximity each frame. Pass the player world position and the
    *  interactables for the currently loaded room. */
@@ -114,6 +127,7 @@ export class InteractableSystem {
   }
 
   private _updatePrompt(item: WorldInteractable | null): void {
+    if (this._promptOverride !== null) return;  // taming / other override active
     if (!item) {
       this.promptEl.style.opacity = '0';
       return;
