@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captive Ascendant - Main Menu</title>
+    
+    <!-- Tailwind CSS for rapid styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tone.js for UI sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+    <!-- Google Fonts: 'Cinzel' for titles (wizardy/epic), 'Lato' for UI text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --color-bg: #1a1820; /* Deep dark purple/grey */
+            --color-text-main: #e2d9c8; /* Parchment white */
+            --color-accent: #9d7cce; /* Arcane purple */
+            --color-accent-hover: #bfa5e6;
+            --color-frame-border: #4a4158;
+            --color-frame-bg: rgba(30, 26, 38, 0.7);
+        }
+
+        body {
+            background-color: var(--color-bg);
+            color: var(--color-text-main);
+            font-family: 'Lato', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(157, 124, 206, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, rgba(85, 60, 120, 0.2) 0%, transparent 40%);
+        }
+
+        h1, h2, h3, .font-title {
+            font-family: 'Cinzel', serif;
+        }
+
+        .menu-btn {
+            background: transparent;
+            border: 2px solid var(--color-frame-border);
+            color: var(--color-text-main);
+            font-family: 'Cinzel', serif;
+            font-size: 1.5rem;
+            padding: 0.75rem 2.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .menu-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(157, 124, 206, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .menu-btn:hover {
+            border-color: var(--color-accent);
+            color: #fff;
+            box-shadow: 0 0 15px rgba(157, 124, 206, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .menu-btn:hover::before {
+            left: 100%;
+        }
+
+        .menu-btn:active {
+            transform: translateY(1px);
+        }
+
+        .masonry-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background-color: var(--color-frame-bg);
+            border: 2px solid var(--color-frame-border);
+            border-radius: 12px;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.4);
+            position: relative;
+        }
+
+        /* Decorative corners for the frame */
+        .masonry-container::before, .masonry-container::after {
+            content: '✥';
+            position: absolute;
+            color: var(--color-frame-border);
+            font-size: 1.5rem;
+        }
+        .masonry-container::before { top: 10px; left: 15px; }
+        .masonry-container::after { top: 10px; right: 15px; }
+        
+        .corner-bottom-left, .corner-bottom-right {
+            position: absolute;
+            color: var(--color-frame-border);
+            font-size: 1.5rem;
+            bottom: 10px;
+        }
+        .corner-bottom-left { left: 15px; }
+        .corner-bottom-right { right: 15px; }
+
+        .masonry-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            grid-auto-rows: 200px;
+            grid-auto-flow: dense;
+        }
+
+        .masonry-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .masonry-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+            filter: brightness(0.8) contrast(1.1); /* Slightly moody default */
+        }
+
+        .masonry-item:hover {
+            transform: scale(1.05) translateY(-5px);
+            box-shadow: 0 15px 25px rgba(0,0,0,0.5), 0 0 15px rgba(157, 124, 206, 0.3);
+            z-index: 10;
+            border-color: rgba(157, 124, 206, 0.5);
+        }
+
+        .masonry-item:hover img {
+            transform: scale(1.1);
+            filter: brightness(1.1) contrast(1.0); /* Brighten on hover */
+        }
+
+        /* Specific sizing for masonry variety */
+        .item-tall { grid-row: span 2; }
+        .item-wide { grid-column: span 2; }
+        
+        /* Title styling with glow */
+        .main-title {
+            text-shadow: 0 0 20px rgba(157, 124, 206, 0.6), 0 5px 5px rgba(0,0,0,0.8);
+            letter-spacing: 4px;
+        }
+        .subtitle {
+            color: var(--color-accent);
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            font-size: 1rem;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.4s ease;
+            backdrop-filter: blur(4px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .modal-content {
+            background-color: var(--color-frame-bg);
+            border: 2px solid var(--color-frame-border);
+            padding: 2.5rem; border-radius: 12px;
+            width: 90%; max-width: 600px; position: relative;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 20px 50px rgba(0,0,0,0.6);
+            transform: translateY(20px); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+
+        .modal-content::before, .modal-content::after {
+            content: '✥'; position: absolute; color: var(--color-frame-border); font-size: 1.5rem;
+        }
+        .modal-content::before { top: 10px; left: 15px; }
+        .modal-content::after { top: 10px; right: 15px; }
+        
+        .modal-corner-bl, .modal-corner-br {
+            position: absolute; color: var(--color-frame-border); font-size: 1.5rem; bottom: 10px;
+        }
+        .modal-corner-bl { left: 15px; }
+        .modal-corner-br { right: 15px; }
+
+        /* Save Slot Styling */
+        .save-slot {
+            background: rgba(0,0,0,0.4); border: 1px solid var(--color-frame-border);
+            border-radius: 6px; padding: 1rem; margin-bottom: 1rem;
+            display: flex; justify-content: space-between; align-items: center;
+            transition: border-color 0.3s;
+        }
+        .save-slot:hover { border-color: var(--color-accent); }
+        .slot-btn {
+            background: transparent; border: 1px solid var(--color-accent); color: var(--color-text-main);
+            padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+            font-family: 'Cinzel', serif; text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;
+        }
+        .slot-btn:hover { background: var(--color-accent); color: #fff; box-shadow: 0 0 10px rgba(157, 124, 206, 0.4); }
+        .slot-btn.delete { border-color: #8b3a3a; color: #d68989; }
+        .slot-btn.delete:hover { background: #8b3a3a; color: #fff; box-shadow: 0 0 10px rgba(139, 58, 58, 0.4); }
+
+        /* Settings Styling */
+        .setting-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1rem;
+        }
+        .setting-row label { font-family: 'Cinzel', serif; font-size: 1.1rem; letter-spacing: 1px; }
+        input[type="range"] { accent-color: var(--color-accent); width: 150px; cursor: pointer; }
+        
+        .toggle-switch {
+            position: relative; display: inline-block; width: 50px; height: 24px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #2a2533; transition: .4s; border-radius: 24px;
+            border: 1px solid var(--color-frame-border);
+        }
+        .toggle-slider:before {
+            position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+            background-color: var(--color-text-main); transition: .4s; border-radius: 50%;
+        }
+        input:checked + .toggle-slider { background-color: var(--color-accent); border-color: var(--color-accent); }
+        input:checked + .toggle-slider:before { transform: translateX(26px); background-color: #fff; }
+    </style>
+</head>
+<body class="p-8">
+
+    <header class="text-center w-full max-w-4xl mx-auto mt-8 mb-12">
+        <h2 class="subtitle font-title mb-2">Tomes, Towers & Transmutation</h2>
+        <h1 class="main-title text-5xl md:text-7xl font-bold mb-10 text-white">For princesses</h1>
+        
+        <!-- Navigation Buttons -->
+        <div class="flex flex-col sm:flex-row justify-center gap-6 mt-8">
+            <button class="menu-btn" id="btn-play" onmouseenter="playHoverSound()" onclick="openModal('play-menu')">Play</button>
+            <button class="menu-btn" id="btn-settings" onmouseenter="playHoverSound()" onclick="openModal('settings-menu')">Settings</button>
+        </div>
+    </header>
+
+    <main class="w-full px-4 flex justify-center">
+        <div class="masonry-container">
+            <div class="corner-bottom-left">✥</div>
+            <div class="corner-bottom-right">✥</div>
+
+            <div class="masonry-grid" id="masonry-grid">
+                <!-- 8 tiles mapped out. Front and back images allow for smooth CSS transitions. -->
+                <div class="masonry-item item-tall" data-tile-index="0" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x600/30283d/white?text=Tower+Study" alt="Tower Study">
+                </div>
+                <div class="masonry-item" data-tile-index="1" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x400/30283d/white?text=Punk+Mage" alt="Punk Rock Mage">
+                </div>
+                <div class="masonry-item item-tall" data-tile-index="2" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x600/30283d/white?text=Magic" alt="Practice Magic">
+                </div>
+                <div class="masonry-item item-wide" data-tile-index="3" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/800x400/30283d/white?text=Dungeon" alt="Dungeon">
+                </div>
+                <div class="masonry-item" data-tile-index="4" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x400/30283d/white?text=Potions" alt="Potions">
+                </div>
+                <div class="masonry-item" data-tile-index="5" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x400/30283d/white?text=Hammock" alt="Hammock">
+                </div>
+                <div class="masonry-item item-wide" data-tile-index="6" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/800x400/30283d/white?text=Hiking" alt="Hiking">
+                </div>
+                 <div class="masonry-item item-tall" data-tile-index="7" onmouseenter="playImageHoverSound()">
+                    <img class="img-back" src=""><img class="img-front" src="https://placehold.co/400x600/30283d/white?text=Study" alt="Study">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="play-menu" class="modal-overlay" onclick="closeModal(event, 'play-menu')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-corner-bl">✥</div><div class="modal-corner-br">✥</div>
+            <h2 class="font-title text-3xl mb-6 text-center text-[var(--color-accent)] border-b border-[var(--color-frame-border)] pb-4">Select Save File</h2>
+            <div id="save-slots-container">
+                <!-- Javascript will populate the save slots here -->
+            </div>
+            <div class="mt-8 text-center">
+                <button class="slot-btn" onclick="closeModal(null, 'play-menu')" onmouseenter="playHoverSound()">Back to Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-menu" class="modal-overlay" onclick="closeModal(event, 'settings-menu')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-corner-bl">✥</div><div class="modal-corner-br">✥</div>
+            <h2 class="font-title text-3xl mb-6 text-center text-[var(--color-accent)] border-b border-[var(--color-frame-border)] pb-4">Grimoire Options</h2>
+            
+            <div class="setting-row">
+                <label>Master Volume</label>
+                <input type="range" min="0" max="100" value="80">
+            </div>
+            <div class="setting-row">
+                <label>Fullscreen Mode</label>
+                <label class="toggle-switch">
+                    <input type="checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="mt-8 text-center">
+                <button class="slot-btn" onclick="closeModal(null, 'settings-menu')" onmouseenter="playHoverSound()">Apply & Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Audio System Setup ---
+        let audioInitialized = false;
+        let hoverSynth, clickSynth, ambientSynth;
+
+        async function initAudio() {
+            if (audioInitialized) return;
+            
+            await Tone.start();
+            
+            hoverSynth = new Tone.MembraneSynth({
+                pitchDecay: 0.01,
+                octaves: 1,
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+            }).toDestination();
+            hoverSynth.volume.value = -15;
+
+            ambientSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.05, decay: 0.2, sustain: 0.1, release: 1 }
+            }).toDestination();
+            ambientSynth.volume.value = -20;
+
+            clickSynth = new Tone.FMSynth({
+                modulationIndex: 2,
+                envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 },
+                modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+            }).toDestination();
+            clickSynth.volume.value = -10;
+
+            audioInitialized = true;
+        }
+
+        // Initialize audio on first click or interaction
+        document.body.addEventListener('click', initAudio, { once: true });
+        document.body.addEventListener('mouseover', initAudio, { once: true });
+
+        // --- Sound Playback Functions ---
+        function playHoverSound() {
+            if (audioInitialized && hoverSynth) {
+                hoverSynth.triggerAttackRelease("C3", "8n");
+            }
+        }
+
+        function playImageHoverSound() {
+            if (audioInitialized && ambientSynth) {
+                const notes = ["C4", "E4", "G4", "A4", "C5"];
+                ambientSynth.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "16n");
+            }
+        }
+
+        async function playClickSound(action) {
+            await initAudio(); // Await full initialization
+            if (!clickSynth) return; 
+            
+            if (action === 'start') {
+                clickSynth.triggerAttackRelease("E2", "4n");
+            } else if (action === 'settings') {
+                clickSynth.triggerAttackRelease("G2", "8n");
+            }
+        }
+
+        // --- Save Slot Logic ---
+        let saveSlotsData = [
+            { id: 1, empty: false, title: "Day 14 - Spire Balcony" },
+            { id: 2, empty: true, title: "" },
+            { id: 3, empty: true, title: "" }
+        ];
+
+        function renderSaveSlots() {
+            const container = document.getElementById('save-slots-container');
+            container.innerHTML = '';
+            saveSlotsData.forEach(slot => {
+                const div = document.createElement('div');
+                div.className = 'save-slot';
+                if (slot.empty) {
+                    div.innerHTML = `
+                        <span class="text-gray-400 font-sans italic">Slot ${slot.id} - Empty</span>
+                        <button class="slot-btn" onclick="startGame(${slot.id}, true)">New Game</button>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <span class="text-white font-sans font-bold">${slot.title}</span>
+                        <div class="flex gap-2">
+                            <button class="slot-btn" onclick="startGame(${slot.id}, false)">Play</button>
+                            <button class="slot-btn delete" onclick="deleteSave(${slot.id})">Delete</button>
+                        </div>
+                    `;
+                }
+                container.appendChild(div);
+            });
+        }
+
+        async function startGame(slotId, isNew) {
+            await playClickSound('start');
+            closeModal(null, 'play-menu');
+            console.log(isNew ? `Creating new game in Slot ${slotId}...` : `Loading Slot ${slotId}...`);
+        }
+
+        function deleteSave(slotId) {
+            playHoverSound();
+            const slot = saveSlotsData.find(s => s.id === slotId);
+            if(slot) {
+                slot.empty = true;
+                slot.title = "";
+                renderSaveSlots();
+            }
+        }
+
+        // --- Modal Logic ---
+        async function openModal(id) {
+            await playClickSound('settings');
+            document.getElementById(id).classList.add('active');
+            if(id === 'play-menu') renderSaveSlots();
+        }
+
+        function closeModal(event, id) {
+            if (event && event.target.id !== id) return;
+            playHoverSound();
+            document.getElementById(id).classList.remove('active');
+        }
+
+        // --- Masonry Animation ---
+        const allImages = [
+            "https://placehold.co/400x400/30283d/white?text=Arcane+Library",
+            "https://placehold.co/400x400/30283d/white?text=Tower+Top",
+            "https://placehold.co/400x400/30283d/white?text=Forest+Path",
+            "https://placehold.co/400x400/30283d/white?text=Alchemy+Lab",
+            "https://placehold.co/400x400/30283d/white?text=Monster+Camp",
+            "https://placehold.co/400x400/30283d/white?text=Spire+View",
+            "https://placehold.co/400x400/30283d/white?text=Ancient+Scrolls",
+            "https://placehold.co/400x400/30283d/white?text=Castle+Dungeon",
+            "https://placehold.co/400x400/30283d/white?text=Wizard+Study",
+            "https://placehold.co/400x400/30283d/white?text=Magic+Circle"
+        ];
+        
+        let displayedImages = allImages.slice(0, 8);
+        let poolImages = allImages.slice(8);
+
+        function swapTileImage(tileIndex) {
+            if(poolImages.length === 0) return;
+            
+            const tile = document.querySelector(`.masonry-item[data-tile-index="${tileIndex}"]`);
+            if(!tile) return;
+            
+            const imgFront = tile.querySelector('.img-front');
+            const imgBack = tile.querySelector('.img-back');
+
+            const newImgSrc = poolImages.pop();
+            const oldImgSrc = displayedImages[tileIndex];
+
+            imgBack.src = newImgSrc;
+            imgFront.style.opacity = '0';
+
+            setTimeout(() => {
+                imgFront.src = newImgSrc;
+                imgFront.style.opacity = '1';
+                displayedImages[tileIndex] = newImgSrc;
+                poolImages.push(oldImgSrc);
+                
+                setTimeout(() => swapTileImage(tileIndex), 8000 + Math.random() * 7000);
+            }, 1500);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            displayedImages.forEach((_, i) => {
+                setTimeout(() => swapTileImage(i), 3000 + Math.random() * 10000);
+            });
+        });
+    </script>
+</body>
+</html>
