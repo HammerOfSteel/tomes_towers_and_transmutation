@@ -83,13 +83,18 @@ async function main() {
   const party = new PartyManager(5);
 
   function switchToExterior(): void {
+    // MUST unload dungeon first — onExitTrigger fires directly without
+    // going through executeRoomSwap, so the room geometry + physics bodies
+    // would otherwise stay in the scene and interfere with the overworld.
+    sceneManager.unloadCurrentRoom();
     if (!overworld) {
       overworld = new OverworldScene(scene, physics, player, currentSeed);
     }
     gameMode = 'exterior';
     overworld.enter();
-    // Spawn just south of the tower door — outside the tower capsule collider (r=4.5)
-    player.teleport(new THREE.Vector3(0, 0.5, 8));
+    // Spawn just south of the tower door, high enough that the KCC capsule
+    // starts above the heightfield surface and falls cleanly to ground.
+    player.teleport(new THREE.Vector3(0, 1.5, 8));
     // Widen fog for the open world
     scene.fog = new THREE.Fog(0x0a1408, 60, 180);
   }
@@ -149,19 +154,48 @@ async function main() {
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
+  /** Shared start-game logic — called by main menu onPlay and by tests. */
+  function startGame(seed?: number): void {
+    currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
+    overworld?.dispose();
+    overworld = null;
+    gameMode = 'interior';
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+    const plan = generateDungeon(currentSeed, 1);
+    sceneManager.loadDungeon(plan);
+    gameLoop.start();
+  }
+
   const mainMenu = new MainMenu({
-    onPlay: () => {
-      // Generate a new dungeon + fresh world each time the player presses Play.
-      currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
-      overworld?.dispose();
-      overworld = null;
-      gameMode = 'interior';
-      scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-      const plan = generateDungeon(currentSeed, 1);
-      sceneManager.loadDungeon(plan);
-      gameLoop.start();
-    },
+    onPlay: () => startGame(),
   });
+
+  // ── Test / debug hook (dev builds only) ──────────────────────────────────
+  // Exposed on window so Playwright e2e tests can drive the game without
+  // simulating keyboard/mouse events for every action.
+  if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__game = {
+      /** Start the game with an optional deterministic seed (default random). */
+      startGame: (seed?: number) => {
+        mainMenu.hide();
+        startGame(seed);
+      },
+      /** Switch to exterior overworld (requires game already started). */
+      switchToExterior: () => switchToExterior(),
+      /** Switch back to interior dungeon. */
+      switchToInterior: (roomId?: string) => switchToInterior(roomId),
+      /** Current player position { x, y, z }. */
+      getPlayerPos: () => {
+        const p = player.group.position;
+        return { x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3) };
+      },
+      /** Current scene mode: 'interior' | 'exterior'. */
+      getGameMode: () => gameMode,
+      /** Whether the player group is marked visible. */
+      isPlayerVisible: () => player.group.visible,
+    };
+  }
   // ── Centralised key routing ──────────────────────────────────────────────
   window.addEventListener('keydown', (e) => {
     // Ignore all game key routing while the main menu is visible
