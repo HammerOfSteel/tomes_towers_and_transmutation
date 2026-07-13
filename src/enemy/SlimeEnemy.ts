@@ -343,13 +343,33 @@ export class SlimeEnemy implements Damageable {
     rapierToThreeInto(this.body.translation(), this._pos);
     this.group.position.copy(this._pos);
 
-    // Idle breathing pulse — gentle scale sine when at rest
-    if (this.state === 'idle' || this.state === 'alert') {
+    // ── Animation ─────────────────────────────────────────────────────────
+
+    if (this._isTaming) {
+      // Hypnosis trance: slow spin, gentle float, pulsing lavender
+      this.group.rotation.y += 0.65 * dt;
+      const t = Date.now() * 0.001;
+      this.bodyMesh.position.y = Math.sin(t * 2.3) * 0.14;
+      const swell = Math.sin(t * 3.8) * 0.07;
+      this.bodyMesh.scale.set(1.15 + swell, REST_SCALE_Y - swell * 0.45, 1.15 + swell);
+      // Pulsing lavender — only when no hit / tame-react flash is active
+      if (this.flashTimer <= 0 && this.tameReactTimer <= 0) {
+        const pulse = 0.5 + 0.5 * Math.sin(t * 4.2);
+        (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setRGB(
+          0.52 + pulse * 0.08,
+          0.28 + pulse * 0.05,
+          0.72 + pulse * 0.1,
+        );
+      }
+    } else if (this.state === 'idle' || this.state === 'alert') {
+      this.bodyMesh.position.y = 0;
+      // Idle breathing pulse — gentle scale sine when at rest
       const breath = Math.sin(Date.now() * 0.0022) * 0.06;
       this.bodyMesh.scale.y = REST_SCALE_Y + breath;
       this.bodyMesh.scale.x = 1.0 - breath * 0.55;
       this.bodyMesh.scale.z = 1.0 - breath * 0.55;
     } else {
+      this.bodyMesh.position.y = 0;
       // Lerp scale back toward resting values after any squash/stretch
       const lerpT = Math.min(1, SCALE_LERP * dt);
       this.bodyMesh.scale.x += (1.0 - this.bodyMesh.scale.x) * lerpT;

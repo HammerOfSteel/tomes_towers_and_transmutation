@@ -86,7 +86,7 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   const party = new PartyManager(5);
-  const tamingGame = new TamingGame();
+  const tamingGame = new TamingGame(scene, cameraRig.camera);
 
   function switchToExterior(): void {
     // MUST unload dungeon first — onExitTrigger fires directly without
