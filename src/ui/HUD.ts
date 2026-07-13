@@ -92,6 +92,7 @@ const HUD_CSS = `
   background: rgba(0,0,0,.52); border: 1px solid #1a1428;
   border-radius: 3px; min-width: 96px;
   transition: border-color .12s, box-shadow .12s;
+  pointer-events: auto;
 }
 .hud-slot--active {
   border-color: #9d7cce;
@@ -111,12 +112,37 @@ const HUD_CSS = `
 }
 .hud-slot--active .hud-slot-name { color: #c9b8e8; }
 .hud-slot--empty  .hud-slot-name { font-style: italic; color: #1e1830; }
+
+/* ── Tooltip ── */
+#hud-tooltip {
+  position: fixed; z-index: 9999; pointer-events: none;
+  background: rgba(12,10,18,.97);
+  border: 1px solid #4a4158; border-radius: 3px;
+  padding: 8px 13px; max-width: 220px;
+  opacity: 0; visibility: hidden;
+  transition: opacity .14s ease;
+  box-shadow: 0 6px 24px rgba(0,0,0,.65);
+}
+#hud-tooltip.hud-tt--on { opacity: 1; visibility: visible; }
+.hud-tt-title {
+  font-family: 'Cinzel', serif; font-size: 11px;
+  letter-spacing: 1px; color: #c9b8e8; margin-bottom: 5px;
+}
+.hud-tt-body {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 11px; color: #5a4e70;
+  line-height: 1.55; white-space: pre-wrap;
+}
 `;
 
 // ── Spell display names ───────────────────────────────────────────────────
 const SPELL_LABEL: Record<string, string> = {
   magic_bolt: 'Magic Bolt',
   flame_dart: 'Flame Dart',
+};
+const SPELL_DESC: Record<string, string> = {
+  magic_bolt: 'A focused bolt of arcane energy.\nRight-click to cast.',
+  flame_dart: 'A dart of conjured fire — burns brighter.\nRight-click to cast.',
 };
 
 // ── HUD class ─────────────────────────────────────────────────────────────
@@ -134,6 +160,11 @@ export class HUD {
   private readonly barSlots: HTMLElement[];
   private _lastSlotKey = '';
   private _lastActiveSlot = -1;
+  /** Tooltip element (shared, body-level) */
+  private readonly _tooltip: HTMLElement;
+  private _tooltipTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Current spell IDs in each slot — read by tooltip closures */
+  private _slotSpells: (string | null)[] = [null, null, null, null];
 
   constructor() {
     this._ensureStyles();
@@ -201,6 +232,28 @@ export class HUD {
     this.root.append(hpRow, statusRow, infoEl);
     document.body.appendChild(this.root);
 
+    // Tooltips for top-left HUD elements
+    this._tooltip = document.createElement('div');
+    this._tooltip.id = 'hud-tooltip';
+    this._tooltip.innerHTML = '<div class="hud-tt-title"></div><div class="hud-tt-body"></div>';
+    document.body.appendChild(this._tooltip);
+
+    this._addTooltip(
+      hpRow,
+      () => 'Hit Points',
+      () => 'Drains when you take damage.\nZero ends the ritual.',
+    );
+    this._addTooltip(
+      dodgeEl,
+      () => 'Dodge Roll  [F]',
+      () => 'Dash in your movement direction with i-frames.\nPips show cooldown — 3 lit means ready.',
+    );
+    this._addTooltip(
+      this.runEl,
+      () => 'Sprint  [⇧]',
+      () => 'Hold Shift to move faster.\nNo stamina cost.',
+    );
+
     // ── Action bar ──────────────────────────────────────────────────────
     this.barRoot = document.createElement('div');
     this.barRoot.id = 'hud-bar';
@@ -218,6 +271,20 @@ export class HUD {
 
       slot.append(num, name);
       this.barRoot.appendChild(slot);
+      // Dynamic tooltip — reads _slotSpells at the time of hover
+      this._addTooltip(
+        slot,
+        () => {
+          const id = this._slotSpells[i];
+          return id ? (SPELL_LABEL[id] ?? id) : `Slot ${i + 1}  —  Empty`;
+        },
+        () => {
+          const id = this._slotSpells[i];
+          return id
+            ? (SPELL_DESC[id] ?? '')
+            : 'No spell equipped.\nPress K to open the Grimoire.';
+        },
+      );
       return slot;
     });
     document.body.appendChild(this.barRoot);
@@ -257,6 +324,7 @@ export class HUD {
     if (slotKey !== this._lastSlotKey) {
       this._lastSlotKey = slotKey;
       this._lastActiveSlot = -1; // force re-highlight pass
+      this._slotSpells = equippedSlots.slice(0, 4);
       this.barSlots.forEach((slotEl, i) => {
         const id    = equippedSlots[i] ?? null;
         const nameEl = slotEl.querySelector('.hud-slot-name') as HTMLElement;
@@ -274,6 +342,53 @@ export class HUD {
   dispose(): void {
     this.root.remove();
     this.barRoot.remove();
+    this._tooltip.remove();
+    if (this._tooltipTimer) clearTimeout(this._tooltipTimer);
+  }
+
+  // ── Tooltip helpers ───────────────────────────────────────────────────
+
+  private _addTooltip(
+    el: HTMLElement,
+    getTitle: () => string,
+    getBody: () => string,
+  ): void {
+    el.style.pointerEvents = 'auto';
+    el.addEventListener('mouseenter', (e) => {
+      this._tooltipTimer = setTimeout(() => {
+        this._showTooltip(getTitle(), getBody(), (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+      }, 360);
+    });
+    el.addEventListener('mousemove', (e) => {
+      if (this._tooltip.classList.contains('hud-tt--on')) {
+        this._positionTooltip((e as MouseEvent).clientX, (e as MouseEvent).clientY);
+      }
+    });
+    el.addEventListener('mouseleave', () => {
+      if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
+      this._tooltip.classList.remove('hud-tt--on');
+    });
+  }
+
+  private _showTooltip(title: string, body: string, cx: number, cy: number): void {
+    const titleEl = this._tooltip.querySelector('.hud-tt-title') as HTMLElement;
+    const bodyEl  = this._tooltip.querySelector('.hud-tt-body')  as HTMLElement;
+    titleEl.textContent = title;
+    bodyEl.textContent  = body;
+    this._positionTooltip(cx, cy);
+    this._tooltip.classList.add('hud-tt--on');
+  }
+
+  private _positionTooltip(cx: number, cy: number): void {
+    const tt = this._tooltip;
+    const W = window.innerWidth;
+    const tw = tt.offsetWidth || 220, th = tt.offsetHeight || 60;
+    const ox = 14, oy = 14;
+    let x = cx + ox, y = cy - th - oy;
+    if (x + tw > W - 8) x = cx - tw - ox;
+    if (y < 8)          y = cy + oy;
+    tt.style.left = `${x}px`;
+    tt.style.top  = `${y}px`;
   }
 
   private _ensureStyles(): void {
