@@ -169,6 +169,16 @@ export class SlimeEnemy implements Damageable {
   }
 
   /**
+   * Force this enemy into the flee state (used by the Intimidate spell / dev tool).
+   * Has no effect if the enemy is already recruited or dead.
+   */
+  forceFlee(): void {
+    if (this.state === 'dead' || this.state === 'recruited') return;
+    this.state = 'flee';
+    (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_FLEE_COLOR);
+  }
+
+  /**
    * Recruit this enemy into the player's party.
    * Changes colour to purple and sets the FSM to `'recruited'`.
    * Should be called via `PartyManager.recruit(enemy)`, not directly.

@@ -167,12 +167,19 @@ async function main() {
       if (deathTriggered && v > 0) { deathTriggered = false; deathScreen.hide(); }
     },
     onAllSpells: () => {
-      for (const id of ['magic_bolt', 'flame_dart']) progression.grantSpell(id);
+      for (const id of ['magic_bolt', 'flame_dart', 'intimidate']) progression.grantSpell(id);
     },
     onKillAll:   () => {
       sceneManager.getActiveEnemies().forEach(e => {
         if (!e.isDead) e.health.takeDamage(9999);
       });
+    },
+    onForceFlee: () => {
+      // Works in both interior and exterior scenes
+      const all = gameMode === 'interior'
+        ? sceneManager.getActiveEnemies()
+        : (overworld?.getActiveEnemies() ?? []);
+      all.forEach(e => { if (!e.isDead) e.forceFlee(); });
     },
     onTeleport:  (roomId) => {
       sceneManager.loadRoomImmediate(roomId);
@@ -462,7 +469,18 @@ async function main() {
         const activeSpell = progression.getEquippedSlot(s.activeSlot);
         if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
           spellCooldown = 0.5;
-          spells.fire(player.group.position, mouseWorld, enemies, scene, undefined, activeSpell);
+          if (activeSpell === 'intimidate') {
+            // AOE fear — instantly force all nearby living enemies to flee
+            const INTIMIDATE_RANGE = 30;
+            enemies.forEach(e => {
+              if (!e.isDead && e.worldPosition
+                  && e.worldPosition.distanceTo(player.group.position) <= INTIMIDATE_RANGE) {
+                e.forceFlee();
+              }
+            });
+          } else {
+            spells.fire(player.group.position, mouseWorld, enemies, scene, undefined, activeSpell);
+          }
         }
       }
 

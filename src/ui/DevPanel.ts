@@ -33,6 +33,8 @@ export interface DevPanelOptions {
   getHpInfo: () => { hp: number; maxHp: number };
   /** Instantly kill all living enemies in the current room. */
   onKillAll: () => void;
+  /** Force all living enemies in the current scene to flee (for taming tests). */
+  onForceFlee: () => void;
   /** Teleport to a room by its blueprint ID. Closes the panel. */
   onTeleport: (roomId: string) => void;
 }
@@ -319,6 +321,7 @@ export class DevPanel {
     const row = document.createElement('div');
     row.className = 'dp-row';
     row.appendChild(this._btn('☠  Kill All Enemies', true, () => this._opts.onKillAll()));
+    row.appendChild(this._btn('💛  Force Flee All', false, () => this._opts.onForceFlee()));
     sec.appendChild(row);
     return sec;
   }

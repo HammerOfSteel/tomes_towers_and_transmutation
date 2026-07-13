@@ -11,10 +11,12 @@ import type { ProgressionSystem } from '@/progression/ProgressionSystem';
 const SPELL_LABEL: Record<string, string> = {
   magic_bolt: 'Magic Bolt',
   flame_dart: 'Flame Dart',
+  intimidate:  'Intimidate',
 };
 const SPELL_DESC: Record<string, string> = {
   magic_bolt: 'A focused bolt of arcane energy.',
   flame_dart: 'A conjured dart of living fire.',
+  intimidate:  'AOE cry that sends nearby creatures fleeing. (Dev spell)',
 };
 
 // ── CSS ───────────────────────────────────────────────────────────────────
