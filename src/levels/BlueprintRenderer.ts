@@ -323,25 +323,22 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
           ),
         ),
       );
-    } else {
-      // lectern
+
+    } else if (item.type === 'lectern') {
       const rot = item.rotation ?? 0;
       const rotRad = THREE.MathUtils.degToRad(rot);
       const baseGeo = new THREE.BoxGeometry(0.55, 1.05, 0.38);
       const topGeo = new THREE.BoxGeometry(0.48, 0.07, 0.48);
       geometries.push(baseGeo, topGeo);
-
       const base = new THREE.Mesh(baseGeo, itemMat);
       base.position.set(ix, 0.525, iz);
       base.rotation.y = rotRad;
       base.castShadow = true;
-
       const top = new THREE.Mesh(topGeo, itemMat);
       top.position.set(ix, 1.09, iz);
       top.rotation.y = rotRad;
       top.rotation.x = -0.38;
       top.castShadow = true;
-
       group.add(base, top);
       bodies.push(
         physics.createStaticBox(
@@ -349,6 +346,179 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
           new THREE.Vector3(0.275, 0.525, 0.19),
         ),
       );
+
+    } else if (item.type === 'cauldron') {
+      // Large iron cauldron: squat sphere body on three stubby legs, emissive glow
+      const cauldronMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+      const glowMat     = new THREE.MeshBasicMaterial({ color: 0x44ff88, opacity: 0.7, transparent: true });
+      materials.push(cauldronMat, glowMat);
+      // Body
+      const bodyGeo = new THREE.SphereGeometry(1.1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.65);
+      geometries.push(bodyGeo);
+      const body = new THREE.Mesh(bodyGeo, cauldronMat);
+      body.position.set(ix, 0.65, iz);
+      body.castShadow = true;
+      group.add(body);
+      // Rim ring
+      const rimGeo = new THREE.TorusGeometry(1.1, 0.08, 8, 20);
+      geometries.push(rimGeo);
+      const rim = new THREE.Mesh(rimGeo, cauldronMat);
+      rim.position.set(ix, 1.3, iz);
+      rim.rotation.x = Math.PI / 2;
+      group.add(rim);
+      // Glowing liquid surface
+      const liquidGeo = new THREE.CircleGeometry(0.95, 16);
+      liquidGeo.rotateX(-Math.PI / 2);
+      geometries.push(liquidGeo);
+      const liquid = new THREE.Mesh(liquidGeo, glowMat);
+      liquid.position.set(ix, 1.31, iz);
+      group.add(liquid);
+      // Three legs
+      for (let li = 0; li < 3; li++) {
+        const angle = (li / 3) * Math.PI * 2;
+        const legGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.65, 6);
+        geometries.push(legGeo);
+        const leg = new THREE.Mesh(legGeo, cauldronMat);
+        leg.position.set(ix + Math.cos(angle) * 0.8, 0.32, iz + Math.sin(angle) * 0.8);
+        group.add(leg);
+      }
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.65, iz),
+        new THREE.Vector3(1.1, 0.65, 1.1),
+      ));
+
+    } else if (item.type === 'telescope') {
+      // Brass telescope on a pivot mount
+      const brassMat  = new THREE.MeshLambertMaterial({ color: 0xcc8800 });
+      const darkMat   = new THREE.MeshLambertMaterial({ color: 0x333322 });
+      materials.push(brassMat, darkMat);
+      // Pedestal
+      const pedGeo = new THREE.CylinderGeometry(0.25, 0.32, 1.1, 8);
+      geometries.push(pedGeo);
+      const ped = new THREE.Mesh(pedGeo, darkMat);
+      ped.position.set(ix, 0.55, iz);
+      ped.castShadow = true;
+      group.add(ped);
+      // Tube (angled ~30° upward toward south)
+      const tubeGeo = new THREE.CylinderGeometry(0.12, 0.18, 2.4, 10);
+      geometries.push(tubeGeo);
+      const tube = new THREE.Mesh(tubeGeo, brassMat);
+      tube.position.set(ix, 1.55, iz + 0.35);
+      tube.rotation.x = -0.55;   // tilt toward viewer
+      tube.castShadow = true;
+      group.add(tube);
+      // Eyepiece cap
+      const capGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.18, 10);
+      geometries.push(capGeo);
+      const cap = new THREE.Mesh(capGeo, brassMat);
+      cap.position.set(ix, 2.55, iz - 0.5);
+      cap.rotation.x = -0.55;
+      group.add(cap);
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 1.0, iz),
+        new THREE.Vector3(0.32, 1.0, 0.32),
+      ));
+
+    } else if (item.type === 'forge') {
+      // Runic forge: stone base + metal anvil + glowing interior
+      const stoneMat = new THREE.MeshLambertMaterial({ color: 0x555566 });
+      const metalMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+      const fireMat  = new THREE.MeshBasicMaterial({ color: 0xff5500, opacity: 0.85, transparent: true });
+      materials.push(stoneMat, metalMat, fireMat);
+      // Stone base
+      const baseGeo = new THREE.BoxGeometry(1.6, 0.9, 1.2);
+      geometries.push(baseGeo);
+      const base = new THREE.Mesh(baseGeo, stoneMat);
+      base.position.set(ix, 0.45, iz);
+      base.castShadow = true;
+      group.add(base);
+      // Firepit hollow (visual glow quad)
+      const pitGeo = new THREE.PlaneGeometry(1.0, 0.7);
+      pitGeo.rotateX(-Math.PI / 2);
+      geometries.push(pitGeo);
+      const pit = new THREE.Mesh(pitGeo, fireMat);
+      pit.position.set(ix, 0.91, iz);
+      group.add(pit);
+      // Anvil
+      const anvilGeo = new THREE.BoxGeometry(0.55, 0.28, 0.38);
+      geometries.push(anvilGeo);
+      const anvil = new THREE.Mesh(anvilGeo, metalMat);
+      anvil.position.set(ix + 0.6, 1.04, iz);
+      group.add(anvil);
+      // Chimney hood
+      const hoodGeo = new THREE.BoxGeometry(1.5, 0.6, 1.1);
+      geometries.push(hoodGeo);
+      const hood = new THREE.Mesh(hoodGeo, stoneMat);
+      hood.position.set(ix, wallHeight - 0.3, iz);
+      group.add(hood);
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.45, iz),
+        new THREE.Vector3(0.8, 0.45, 0.6),
+      ));
+
+    } else if (item.type === 'quest_board') {
+      // Tall corkboard on a wooden frame
+      const frameMat2 = new THREE.MeshLambertMaterial({ color: 0x6b4a2a });
+      const corkMat   = new THREE.MeshLambertMaterial({ color: 0xc8a060 });
+      materials.push(frameMat2, corkMat);
+      // Frame
+      const boardGeo = new THREE.BoxGeometry(1.5, 1.8, 0.12);
+      geometries.push(boardGeo);
+      const board = new THREE.Mesh(boardGeo, frameMat2);
+      board.position.set(ix, 1.1, iz);
+      board.castShadow = true;
+      group.add(board);
+      // Cork surface
+      const corkGeo = new THREE.BoxGeometry(1.3, 1.55, 0.06);
+      geometries.push(corkGeo);
+      const cork = new THREE.Mesh(corkGeo, corkMat);
+      cork.position.set(ix, 1.1, iz - 0.04);
+      group.add(cork);
+      // Two legs
+      for (const lx of [-0.55, 0.55]) {
+        const legGeo = new THREE.BoxGeometry(0.08, 0.6, 0.08);
+        geometries.push(legGeo);
+        const leg = new THREE.Mesh(legGeo, frameMat2);
+        leg.position.set(ix + lx, 0.3, iz + 0.06);
+        group.add(leg);
+      }
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 1.1, iz),
+        new THREE.Vector3(0.75, 0.9, 0.1),
+      ));
+
+    } else if (item.type === 'greenhouse_orb') {
+      // Hovering luminescent orb — magical grow-light
+      const orbMat   = new THREE.MeshBasicMaterial({ color: 0xaaffcc });
+      const ringMat  = new THREE.MeshLambertMaterial({ color: 0x557744 });
+      materials.push(orbMat, ringMat);
+      // Glow orb
+      const orbGeo = new THREE.SphereGeometry(0.5, 14, 10);
+      geometries.push(orbGeo);
+      const orb = new THREE.Mesh(orbGeo, orbMat);
+      orb.position.set(ix, wallHeight * 0.75, iz);
+      group.add(orb);
+      // Decorative ring around the orb
+      const ringGeo = new THREE.TorusGeometry(0.65, 0.055, 6, 20);
+      geometries.push(ringGeo);
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(ix, wallHeight * 0.75, iz);
+      group.add(ring);
+      // Thin chain down to a short post
+      const chainGeo = new THREE.CylinderGeometry(0.025, 0.025, wallHeight * 0.4, 5);
+      geometries.push(chainGeo);
+      const chain = new THREE.Mesh(chainGeo, ringMat);
+      chain.position.set(ix, wallHeight * 0.95, iz);
+      group.add(chain);
+      // (no physics body — player can walk under the orb)
+
+    } else {
+      // Fallback: unknown type — render a small marker cube so it's visible in editor
+      const unknownGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+      geometries.push(unknownGeo);
+      const marker = new THREE.Mesh(unknownGeo, itemMat);
+      marker.position.set(ix, 0.2, iz);
+      group.add(marker);
     }
   }
 

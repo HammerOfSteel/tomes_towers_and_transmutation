@@ -300,6 +300,7 @@ export class HUD {
     activeSlot = 0,
     dodgeReady = 1,
     isRunning = false,
+    floorName?: string,
   ): void {
     // HP bar
     const pct = Math.max(0, hp / maxHp) * 100;
@@ -316,7 +317,7 @@ export class HUD {
 
     // Info
     this.killText.textContent  = `${kills} / ${total} foes`;
-    const fl = floor === 0 ? 'Ground' : floor > 0 ? `Floor ${floor}` : `B${Math.abs(floor)}`;
+    const fl = floorName ?? (floor === 0 ? 'Ground' : floor > 0 ? `Floor ${floor}` : `B${Math.abs(floor)}`);
     this.floorText.textContent = `▲ ${fl}`;
 
     // Action bar — rebuild slot labels only when equipped spells change
