@@ -350,6 +350,7 @@ export class MainMenu {
     const [modal, card] = mkModal('mm-settings', 'Grimoire Options', () => this._closeModal('mm-settings'));
 
     const musicVis = localStorage.getItem(LS_MUSIC_VISIBLE) !== 'false';
+    const devOn    = localStorage.getItem('ttt_dev_mode') === 'true';
     card.insertAdjacentHTML('beforeend', `
       <div class="mm-setting-row">
         <label class="mm-setting-label">Master Volume</label>
@@ -370,6 +371,17 @@ export class MainMenu {
         <label class="mm-toggle">
           <input type="checkbox" id="mm-music-toggle" ${musicVis ? 'checked' : ''}>
           <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="mm-setting-divider"></div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label mm-setting-label--dev">
+          Dev Mode
+          <span class="mm-setting-dev-hint">Enables cheat panel in-game (Pause → Dev Panel)</span>
+        </label>
+        <label class="mm-toggle mm-toggle--dev">
+          <input type="checkbox" id="mm-dev-toggle" ${devOn ? 'checked' : ''}>
+          <span class="mm-toggle-track mm-toggle-track--dev"><span class="mm-toggle-thumb"></span></span>
         </label>
       </div>
     `);
@@ -398,6 +410,11 @@ export class MainMenu {
       const playerEl = document.getElementById('mm-player');
       if (playerEl) playerEl.style.display = musicToggle.checked ? 'flex' : 'none';
       localStorage.setItem(LS_MUSIC_VISIBLE, String(musicToggle.checked));
+    });
+
+    const devToggle = card.querySelector<HTMLInputElement>('#mm-dev-toggle')!;
+    devToggle.addEventListener('change', () => {
+      localStorage.setItem('ttt_dev_mode', String(devToggle.checked));
     });
 
     modal.appendChild(card);
@@ -1030,6 +1047,18 @@ const MM_CSS = `
 .mm-toggle input:checked ~ .mm-toggle-track .mm-toggle-thumb {
   transform: translateX(22px); background: #fff;
 }
+
+/* Dev-mode toggle (amber accent instead of purple) */
+.mm-setting-divider {
+  border-top: 1px solid rgba(204,136,68,.15); margin: 4px 0;
+}
+.mm-setting-label--dev { color: #cc8844; }
+.mm-setting-dev-hint {
+  display: block; font-family: monospace; font-size: 9px;
+  color: #4a2a10; letter-spacing: 0.5px; margin-top: 3px;
+}
+.mm-toggle-track--dev { background: #2a1a08; border-color: #5a3a18; }
+.mm-toggle input:checked ~ .mm-toggle-track--dev { background: #cc8844; border-color: #cc8844; }
 
 /* ── Controls table ──────────────────────────────────────────────────────── */
 .mm-controls-table { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }

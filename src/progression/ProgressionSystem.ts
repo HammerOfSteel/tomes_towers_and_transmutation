@@ -63,6 +63,15 @@ export class ProgressionSystem {
     return [...this._equippedSlots];
   }
 
+  /** Dev/cheat: unlock a spell without reading a book, and auto-equip it. */
+  grantSpell(spellId: string): void {
+    this._unlockedSpells.add(spellId);
+    // Equip to first empty slot if any
+    const empty = this._equippedSlots.findIndex((s, i) => i > 0 && s === null);
+    if (empty !== -1) this._equippedSlots[empty] = spellId;
+    // If already in some slot, leave it alone
+  }
+
   /** Number of unique books read this run. */
   get readCount(): number {
     return this._readBooks.size;

@@ -17,6 +17,7 @@ import { ProgressionSystem } from '@/progression/ProgressionSystem';
 import { BookReader } from '@/interactables/BookReader';
 import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
+import { DevPanel } from '@/ui/DevPanel';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -78,12 +79,41 @@ async function main() {
   const bookReader    = new BookReader();
   const interactables = new InteractableSystem(progression, bookReader);
 
+  // ── Dev panel ───────────────────────────────────────────────────────────
+  const devPanel = new DevPanel({
+    getGodMode:  () => player.health.godMode,
+    onGodMode:   (v) => { player.health.godMode = v; },
+    getHpInfo:   () => ({ hp: player.health.hp, maxHp: player.health.maxHp }),
+    onFillHp:    () => {
+      player.health.reset();
+      if (deathTriggered) { deathTriggered = false; deathScreen.hide(); }
+    },
+    onSetHp:     (v) => {
+      player.health.forceSetHp(v);
+      if (deathTriggered && v > 0) { deathTriggered = false; deathScreen.hide(); }
+    },
+    onAllSpells: () => {
+      for (const id of ['magic_bolt', 'flame_dart']) progression.grantSpell(id);
+    },
+    onKillAll:   () => {
+      sceneManager.getActiveEnemies().forEach(e => {
+        if (!e.isDead) e.health.takeDamage(9999);
+      });
+    },
+    onTeleport:  (roomId) => {
+      sceneManager.loadRoomImmediate(roomId);
+      player.teleport(new THREE.Vector3(0, 1.5, 0));
+      wasRoomCleared = false;
+    },
+  });
+
   // ── Spell book ──────────────────────────────────────────────────────────
   const spellBook = new SpellBook(progression);
 
   // ── Pause menu ───────────────────────────────────────────────────────────
   const pauseMenu = new PauseMenu({
     onOpenEditor: () => editMode.toggle(),
+    onOpenDevPanel: () => devPanel.open(),
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
@@ -100,6 +130,8 @@ async function main() {
         bookReader.close();         // close book → game
       } else if (spellBook.isOpen) {
         spellBook.close();          // close grimoire → game
+      } else if (devPanel.isOpen) {
+        devPanel.close();           // close dev panel → game
       } else if (editMode.isActive) {
         editMode.toggle();          // close editor → game
       } else if (pauseMenu.isOpen) {
@@ -168,7 +200,7 @@ async function main() {
     physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
-    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen) {
+    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
       player.update(input.state, dt);
 
