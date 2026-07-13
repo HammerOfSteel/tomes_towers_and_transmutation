@@ -154,6 +154,11 @@ export class PlayerController {
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
 
+  /** 0 = dodge just used (full cooldown), 1 = fully ready. */
+  get dodgeReadyFraction(): number {
+    return this.dodgeCooldown <= 0 ? 1 : Math.max(0, 1 - this.dodgeCooldown / DODGE_COOLDOWN);
+  }
+
   /** Instantly reposition both the physics body and the visual mesh.
    *  Use for room transitions only — not for gameplay movement. */
   teleport(pos: THREE.Vector3): void {

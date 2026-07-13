@@ -10,6 +10,8 @@ import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { MainMenu } from '@/ui/MainMenu';
+import { DeathScreen } from '@/ui/DeathScreen';
+import { VictoryBanner } from '@/ui/VictoryBanner';
 import { EditMode } from '@/editor/EditMode';
 import { ProgressionSystem } from '@/progression/ProgressionSystem';
 import { BookReader } from '@/interactables/BookReader';
@@ -123,6 +125,27 @@ async function main() {
   // ── HUD ───────────────────────────────────────────────────────────────────
   const hud = new HUD();
 
+  // ── Death screen ──────────────────────────────────────────────────────────
+  let deathTriggered = false;
+  const deathScreen = new DeathScreen({
+    onRestart: () => {
+      player.health.reset();
+      player.teleport(new THREE.Vector3(0, 1.5, 0));
+      sceneManager.loadRoomImmediate('cell_start');
+      deathTriggered = false;
+    },
+    onMainMenu: () => {
+      player.health.reset();
+      deathTriggered = false;
+      gameLoop.stop();
+      mainMenu.show();
+    },
+  });
+
+  // ── Victory banner ────────────────────────────────────────────────────────
+  const victoryBanner = new VictoryBanner();
+  let wasRoomCleared = false;
+
   // ── Resize ────────────────────────────────────────────────────────────────
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -135,8 +158,8 @@ async function main() {
     // 1. Physics
     physics.step(dt);
 
-    // 2-7. Game simulation — paused while the level editor or pause menu is open
-    if (!editMode.isActive && !pauseMenu.isOpen) {
+    // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
+    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible) {
       // 2. Player movement
       player.update(input.state, dt);
 
@@ -182,6 +205,25 @@ async function main() {
       // 7. Combat tick (expire arcs / projectiles)
       combat.update(dt, scene);
       spells.update(dt, scene);
+
+      // 7b. Death check
+      if (player.health.hp <= 0 && !deathTriggered) {
+        deathTriggered = true;
+        deathScreen.show();
+      }
+
+      // 7c. Room-clear check — show victory banner the frame all enemies die
+      const dead  = sceneManager.roomEnemiesDefeated;
+      const total = sceneManager.totalEnemies;
+      const isCleared = total > 0 && dead >= total;
+      if (isCleared && !wasRoomCleared) {
+        const fl = sceneManager.currentFloor;
+        const label = fl === 0 ? 'Ground Floor Cleared'
+                    : fl  > 0 ? `Floor ${fl} Cleared`
+                    :           `Basement ${Math.abs(fl)} Cleared`;
+        victoryBanner.show(label);
+      }
+      wasRoomCleared = isCleared;
     }
 
     // 8. Camera
@@ -195,6 +237,8 @@ async function main() {
       sceneManager.totalEnemies,
       sceneManager.currentFloor,
       progression.getUnlockedSpells(),
+      player.dodgeReadyFraction,
+      input.state.run,
     );
 
     // 10. Render
