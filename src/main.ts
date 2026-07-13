@@ -10,6 +10,9 @@ import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { EditMode } from '@/editor/EditMode';
+import { ProgressionSystem } from '@/progression/ProgressionSystem';
+import { BookReader } from '@/interactables/BookReader';
+import { InteractableSystem } from '@/interactables/InteractableSystem';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -66,6 +69,11 @@ async function main() {
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
 
+  // ── Progression & interactables ───────────────────────────────────────────
+  const progression   = new ProgressionSystem();
+  const bookReader    = new BookReader();
+  const interactables = new InteractableSystem(progression, bookReader);
+
   // ── Pause menu ───────────────────────────────────────────────────────────
   const pauseMenu = new PauseMenu({
     onOpenEditor: () => editMode.toggle(),
@@ -74,7 +82,9 @@ async function main() {
   // ── Centralised key routing ──────────────────────────────────────────────
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (editMode.isActive) {
+      if (bookReader.isOpen) {
+        bookReader.close();         // close book → game
+      } else if (editMode.isActive) {
         editMode.toggle();          // close editor → game
       } else if (pauseMenu.isOpen) {
         pauseMenu.close();          // close menu → game
@@ -132,6 +142,9 @@ async function main() {
       sceneManager.update(dt, player.group.position);
       const enemies = sceneManager.getActiveEnemies();
 
+      // 4b. Interactable proximity detection
+      interactables.update(player.group.position, sceneManager.getActiveInteractables());
+
       // 5. Melee attack (mouse button 0, 0.4s cooldown)
       meleeCooldown = Math.max(0, meleeCooldown - dt);
       const attackJustPressed = s.attack && !lastAttackInput;
@@ -145,13 +158,17 @@ async function main() {
         combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
       }
 
-      // 6. Spell (right-click / 'E' remapped — here we use E key via interact)
+      // 6. Spell / interact (E key — context-sensitive: read nearby item OR cast spell)
       spellCooldown = Math.max(0, spellCooldown - dt);
       const spellJustPressed = s.interact && !lastSpellInput;
       lastSpellInput = s.interact;
-      if (spellJustPressed && spellCooldown <= 0) {
-        spellCooldown = 0.6;
-        spells.fire(player.group.position, mouseWorld, enemies, scene);
+      if (spellJustPressed) {
+        // Priority: read interactable first; fall back to casting if nothing nearby
+        const didRead = !bookReader.isOpen && interactables.tryRead();
+        if (!didRead && spellCooldown <= 0) {
+          spellCooldown = 0.6;
+          spells.fire(player.group.position, mouseWorld, enemies, scene);
+        }
       }
 
       // 7. Combat tick (expire arcs / projectiles)
@@ -163,7 +180,14 @@ async function main() {
     cameraRig.follow(player.group.position);
 
     // 9. HUD
-    hud.update(player.health.hp, player.health.maxHp, sceneManager.killCount, sceneManager.totalEnemies, sceneManager.currentFloor);
+    hud.update(
+      player.health.hp,
+      player.health.maxHp,
+      sceneManager.killCount,
+      sceneManager.totalEnemies,
+      sceneManager.currentFloor,
+      progression.getUnlockedSpells(),
+    );
 
     // 10. Render
     renderer.render(scene, cameraRig.camera);

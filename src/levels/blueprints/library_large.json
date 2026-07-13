@@ -46,7 +46,8 @@
     },
     {
       "x":4,"z":2,"type":"lectern",
-      "content":"The Grand Codex Arcanum lies open on the lectern. The pages hum faintly. A margin note reads: 'Do not read aloud unless you mean it. — W'"
+      "content":"The Grand Codex Arcanum — The page falls open to a chapter titled 'On the Kindling of Directed Flame'.\n\nThe diagram shows a tight spiral of heat compressed to a point, then released along a single vector.\n\nIn hasty script in the margin: 'Compress. Focus. Release. Do not aim at the bookshelves. — W'",
+      "spellUnlock":"flame_dart"
     }
   ],
   "floor": 1
