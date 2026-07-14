@@ -179,6 +179,33 @@ test.describe('Biped: body proportion morphs', () => {
   });
 });
 
+test.describe('Biped: props placement', () => {
+  test('wings — front + back', async ({ page }) => {
+    await openLab(page);
+    await page.evaluate(() => {
+      const lab = (window as any).__lab;
+      // Build a biped with bat wings via full DNA
+      const dna = (window as any).__labDNA?.biped ?? lab.showCreature('biped');
+      lab.showCreature({
+        archetype: 'biped', subRace: 'none',
+        colors: { primary: 0x8844cc, secondary: 0x221133, emissive: 0x4422aa, emissiveIntensity: 0.08 },
+        proportions: { global: 1, torso: [1, 1, 1], headSize: 1, limbLength: 1, limbWidth: 1,
+          neckLength: 1, tailLength: 1, wingSpan: 1, segmentCount: 8,
+          shoulderWidth: 1, hipWidth: 1, bellySize: 0, neckThickness: 1 },
+        face: { type: 'cute', eyeColor: 0xffdd44, mouthType: 'smile', expression: 'neutral' },
+        material: { roughness: 0.55, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.25 },
+        props: ['wings_bat'],
+        outfit: { top: 'none', legs: 'none', over: 'none' },
+      }, 'wings_test');
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => (window as any).__lab.setAngle(0));
+    await snap(page, 'props-wings-front');
+    await page.evaluate(() => (window as any).__lab.setAngle(180));
+    await snap(page, 'props-wings-back');
+  });
+});
+
 test.describe('Animation states — all archetypes', () => {
   for (const state of ['idle', 'walk', 'run'] as const) {
     test(`all archetypes — ${state}`, async ({ page }) => {

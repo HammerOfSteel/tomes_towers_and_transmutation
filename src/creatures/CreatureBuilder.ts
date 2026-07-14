@@ -209,7 +209,7 @@ function _props(
   if (props.includes('wings_bat') && torso) {
     for (const s of [-1, 1]) {
       const wg = new THREE.Group();
-      wg.position.set(s * 0.3, 0.3, -0.1);
+      wg.position.set(s * 0.26, 1.32, -0.14);  // upper-back attachment, shoulder height
       const shape = new THREE.Shape();
       shape.moveTo(0, 0);
       shape.lineTo(s * 0.82, 0.2); shape.lineTo(s * 0.92, -0.45);
@@ -547,41 +547,35 @@ function _avian(dna: CreatureDNA): CreatureRig {
 
 // ── Serpent ───────────────────────────────────────────────────────────────────
 
-// Cobra/naga pose: front segments arch upward; tail trails in -Z (behind the creature).
-// Each capsule mesh is rotated to align with the chain direction so segments
-// visually connect rather than appearing as disconnected floating pills.
+// Flat snake: all segments lie horizontal. Head is raised; body & tail hug the ground.
+// Chained parent-child layout so rotation.y on each segment animates as a lateral body wave.
 function _serpent(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { segments: [] };
   const p = dna.proportions;
   const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
 
   const root = new THREE.Group(); root.scale.setScalar(p.global);
-  const n = Math.round(Math.max(3, Math.min(12, p.segmentCount)));
+  const n = Math.round(Math.max(5, Math.min(14, p.segmentCount)));
 
-  // First floor(n/3) segments arch upward (cobra crown); rest trail in -Z.
-  const upCount = Math.max(2, Math.floor(n / 3));
   let parent: THREE.Object3D = root;
 
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
-    // torso[0]=1 gives radius 0.30→0.12; original default was 0.5 so we don't apply it here
-    const r = (0.30 - t * 0.18) * p.torso[0];
+    const r = Math.max(0.035, (0.26 - t * 0.16) * p.torso[0]);
     const g = new THREE.Group();
 
-    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(Math.max(0.04, r), 0.24, 6, 8), i % 2 ? sm : pm);
+    // Capsule lies flat — long axis along Z
+    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.28, 5, 8), i % 2 ? sm : pm);
+    seg.rotation.x = Math.PI / 2;
 
     if (i === 0) {
-      g.position.y = 0.30;               // base sits above ground; capsule points up (default)
-    } else if (i < upCount) {
-      g.position.y = 0.40;               // chain upward; capsule points up
-    } else if (i === upCount) {
-      g.position.z = -0.28;              // first horizontal — tail trails BEHIND (-Z)
-      g.position.y = 0.06;
-      seg.rotation.x = Math.PI / 2;      // rotate capsule so long axis points in Z
+      g.position.set(0, 0.32, 0);          // head raised above ground
+    } else if (i === 1) {
+      g.position.set(0, -0.14, -0.30);     // neck drops, steps back in -Z
+    } else if (i === 2) {
+      g.position.set(0, -0.10, -0.32);     // transition to ground level
     } else {
-      g.position.z = -0.38;              // each tail segment continues in -Z
-      g.position.y = -0.10;
-      seg.rotation.x = Math.PI / 2;
+      g.position.set(0, -0.02, -0.34 - t * 0.06);  // body/tail flat, slight taper
     }
 
     g.add(seg); parent.add(g);
@@ -590,11 +584,11 @@ function _serpent(dna: CreatureDNA): CreatureRig {
     parent = g;
   }
 
-  // Head sits atop the raised cobra crown, faces forward (+Z).
+  // Head on first segment — nose tilts upward (snake raising head to look ahead)
   const headNeck = new THREE.Group();
-  headNeck.position.y = 0.32;
-  headNeck.rotation.x = -0.15;           // slight forward tilt
-  bones.segments![upCount - 1].add(headNeck);
+  headNeck.position.y = 0.22;
+  headNeck.rotation.x = 0.25;    // +x → face (+Z) tilts toward +Y (nose up)
+  bones.segments![0].add(headNeck);
 
   const head = new THREE.Group(); bones.head = head;
   const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.80), pm); head.add(hm); ms.push(hm);
