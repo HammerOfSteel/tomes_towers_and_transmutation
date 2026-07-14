@@ -30,7 +30,18 @@ export type PropId     =
   | 'robe'
   | 'armor_light'
   | 'aura'
-  | 'hair_short' | 'hair_long' | 'hair_bun';
+  | 'hair_short' | 'hair_long' | 'hair_bun'
+  // CC-6 new props
+  | 'antlers'
+  | 'fin_dorsal'
+  | 'mane'
+  | 'feather_crest'
+  | 'tusk_lower'
+  | 'scale_ridges'
+  | 'tentacles'
+  | 'carapace'
+  | 'lantern'
+  | 'ghost_trail';
 
 export interface CreatureDNA {
   archetype: Archetype;
@@ -269,3 +280,26 @@ export function base64ToDna(b64: string): CreatureDNA {
 export function cloneDNA(dna: CreatureDNA): CreatureDNA { return JSON.parse(JSON.stringify(dna)) as CreatureDNA; }
 export function numToHex(n: number): string { return '#' + n.toString(16).padStart(6, '0'); }
 export function hexToNum(s: string): number { return parseInt(s.replace('#', ''), 16); }
+
+// ── CC-5 / CC-6 Allowlists ────────────────────────────────────────────────────
+
+/** Which face types are valid for each archetype (union across all subraces). */
+export const ARCHETYPE_FACE_ALLOW: Record<Archetype, FaceType[]> = {
+  biped:     ['cute','cherubic','gaunt','angry','skull','cat','demon','ancient','cyclops','compound','blank'],
+  quadruped: ['cat','lizard','angry','blank'],
+  amoeba:    ['cyclops','compound','insect','blank','ancient'],
+  avian:     ['bird','cute','cyclops'],
+  serpent:   ['lizard','angry','demon','cat'],
+};
+
+/** Which props are valid (shown in UI) for each archetype. */
+export const ARCHETYPE_PROP_ALLOW: Record<Archetype, PropId[]> = {
+  biped:     ['horns_small','horns_large','tail_stub','tail_long','wings_bat','crown','armor_light','aura',
+              'antlers','mane','feather_crest','tusk_lower','lantern','ghost_trail',
+              'hair_short','hair_long','hair_bun'],
+  quadruped: ['horns_small','horns_large','tail_stub','tail_long','armor_light','aura',
+              'antlers','mane','tusk_lower','scale_ridges','carapace'],
+  amoeba:    ['aura','fin_dorsal','tentacles','carapace','lantern','ghost_trail'],
+  avian:     ['wings_bat','crown','tail_stub','tail_long','feather_crest','fin_dorsal','lantern','scale_ridges'],
+  serpent:   ['tail_long','horns_small','crown','aura','fin_dorsal','scale_ridges','tentacles','carapace'],
+};

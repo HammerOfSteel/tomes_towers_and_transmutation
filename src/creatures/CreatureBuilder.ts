@@ -225,6 +225,99 @@ function _props(
     );
     torso.add(m); ms.push(m);
   }
+
+  // ── CC-6 new props ───────────────────────────────────────────────────────
+  if (props.includes('antlers') && head) {
+    const am = _m(dna.colors.secondary, dna, { roughness: 0.85, metalness: 0 });
+    for (const s of [-1, 1]) {
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.28, 5), am);
+      base.position.set(s * 0.10, 0.16, 0); base.rotation.z = s * 0.35;
+      head.add(base); ms.push(base);
+      for (const [bx, by, bz, rx, rz] of [[0.06, 0.24, 0, 0, s * 0.6], [-0.02, 0.22, 0.04, -0.3, s * 0.2]] as number[][]) {
+        const tine = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.025, 0.14, 4), am);
+        tine.position.set(s * bx, by, bz); tine.rotation.set(rx, 0, rz);
+        base.add(tine); ms.push(tine);
+      }
+    }
+  }
+  if (props.includes('fin_dorsal') && torso) {
+    const fm = _m(dna.colors.secondary, dna, { roughness: 0.7 });
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0); shape.lineTo(-0.12, 0.45); shape.lineTo(0.12, 0.45); shape.closePath();
+    const fin = new THREE.Mesh(new THREE.ShapeGeometry(shape), fm);
+    fin.position.set(0, 0.55, -0.12); fin.rotation.x = -0.15;
+    torso.add(fin); ms.push(fin);
+  }
+  if (props.includes('mane') && torso) {
+    const mm = _m(dna.colors.secondary, dna, { roughness: 0.95, clearcoat: 0, metalness: 0 });
+    const neckY = torso === null ? 1.5 : 1.45;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.018, 0.22, 4), mm);
+      strand.position.set(Math.cos(a) * 0.19, neckY, Math.sin(a) * 0.19);
+      strand.rotation.z = Math.cos(a) * 0.5; strand.rotation.x = Math.sin(a) * 0.3;
+      torso.add(strand); ms.push(strand);
+    }
+  }
+  if (props.includes('feather_crest') && head) {
+    const fcm = _m(dna.colors.secondary, dna, { roughness: 0.8, metalness: 0 });
+    for (let i = 0; i < 5; i++) {
+      const t = (i / 4 - 0.5);
+      const f = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.28 - Math.abs(t) * 0.08, 4), fcm);
+      f.position.set(t * 0.15, 0.22, -0.04); f.rotation.z = t * 0.3;
+      head.add(f); ms.push(f);
+    }
+  }
+  if (props.includes('tusk_lower') && head) {
+    const tm = _m(dna.colors.secondary, dna, { roughness: 0.6, metalness: 0.1 });
+    for (const s of [-1, 1]) {
+      const t = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.14, 5), tm);
+      t.position.set(s * 0.08, -0.14, 0.06); t.rotation.set(0.3, 0, s * 0.15);
+      head.add(t); ms.push(t);
+    }
+  }
+  if (props.includes('scale_ridges') && torso) {
+    const sm2 = _m(dna.colors.secondary, dna, { roughness: 0.65 });
+    for (let i = 0; i < 5; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.036, 0.10 + i * 0.012, 4), sm2);
+      spike.position.set(0, 0.85 - i * 0.22, -0.14); spike.rotation.x = 0.25;
+      torso.add(spike); ms.push(spike);
+    }
+  }
+  if (props.includes('tentacles') && torso) {
+    const tentm = _m(dna.colors.secondary, dna, { roughness: 0.9, clearcoat: 0, metalness: 0 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      for (let seg = 0; seg < 3; seg++) {
+        const s = new THREE.Mesh(new THREE.CylinderGeometry(0.025 - seg * 0.006, 0.032 - seg * 0.006, 0.18, 5), tentm);
+        s.position.set(Math.cos(a) * (0.28 + seg * 0.14), -(0.12 + seg * 0.20), Math.sin(a) * (0.28 + seg * 0.14));
+        s.rotation.x = 0.4 + seg * 0.2; s.rotation.y = a;
+        torso.add(s); ms.push(s);
+      }
+    }
+  }
+  if (props.includes('carapace') && torso) {
+    const cm = _m(dna.colors.secondary, dna, { roughness: 0.45, metalness: 0.12 });
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.48, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5), cm);
+    shell.position.set(0, 0.72, -0.08); shell.rotation.x = -Math.PI * 0.5;
+    torso.add(shell); ms.push(shell);
+  }
+  if (props.includes('lantern') && torso) {
+    const lm = new THREE.MeshBasicMaterial({ color: new THREE.Color(dna.colors.emissive) });
+    const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.08, 7, 6), lm);
+    lantern.position.set(0.32, 0.30, 0.18);
+    torso.add(lantern); ms.push(lantern);
+  }
+  if (props.includes('ghost_trail') && torso) {
+    const gtm = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(dna.colors.emissive), transparent: true, opacity: 0.22, side: THREE.BackSide,
+    });
+    for (let i = 0; i < 3; i++) {
+      const trail = new THREE.Mesh(new THREE.ConeGeometry(0.20 - i * 0.04, 0.30, 6), gtm);
+      trail.position.set(0, -(0.18 + i * 0.28), 0);
+      torso.add(trail); ms.push(trail);
+    }
+  }
 }
 // ── Outfit ────────────────────────────────────────────────────────────────────────────────
 
