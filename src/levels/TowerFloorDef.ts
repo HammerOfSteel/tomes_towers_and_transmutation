@@ -256,7 +256,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
         'this means you, Hendricks."\n\n' +
         'You are not Hendricks.\n\n' +
         'You open it.',
-      spellUnlock: 'arcane_nova',
+      spellUnlock: 'nova_burst',
     },
     sideRoomCount: [2, 3],
     enemiesPerRoom: 4,

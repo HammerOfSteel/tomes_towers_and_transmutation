@@ -60,22 +60,22 @@ export const TALENT_NODES: readonly TalentNode[] = [
   {
     id: 'ar_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['ar_1'],
     name: 'Resonant Field',
-    description: '+50% AOE radius on all spells. The ripples of your magic spread further.',
-    applyEffect: p => { p.mods.aoeRadiusMult *= 1.50; },
+    description: '+50% AOE radius on all spells. Also unlocks Chain Arc spell.',
+    applyEffect: p => { p.mods.aoeRadiusMult *= 1.50; p.grantSpell('chain_arc'); },
   },
   {
     id: 'ar_apex', path: 'arcanist', tier: 3, cost: 2, prerequisites: ['ar_2'],
     name: 'Time Fracture',
-    description: 'Casting any spell briefly freezes all enemies within 8u for 1.2s. 30s cooldown.',
-    applyEffect: () => { /* flag checked in SpellSystem */ },
+    description: 'Casting any spell briefly freezes all enemies within 8u for 1.2s. Unlocks Nova Burst spell.',
+    applyEffect: p => { p.grantSpell('nova_burst'); },
   },
 
   // ── Warlock ───────────────────────────────────────────────────────────────
   {
     id: 'wl_1', path: 'warlock', tier: 1, cost: 1, prerequisites: [],
     name: 'Curse Touch',
-    description: 'Spell hits apply a 3s Curse: 1 dmg/s. Stack up to 3 times.',
-    applyEffect: p => { p.mods.hasCurseTouch = true; },
+    description: 'Spell hits apply a 3s Curse: 1 dmg/s. Also unlocks Void Rift spell.',
+    applyEffect: p => { p.mods.hasCurseTouch = true; p.grantSpell('void_rift'); },
   },
   {
     id: 'wl_2', path: 'warlock', tier: 2, cost: 1, prerequisites: ['wl_1'],
@@ -100,14 +100,14 @@ export const TALENT_NODES: readonly TalentNode[] = [
   {
     id: 'co_2', path: 'conductor', tier: 2, cost: 1, prerequisites: ['co_1'],
     name: 'Inspiring Aura',
-    description: '+2 max party size. Minions within 12u gain +25% movement speed.',
-    applyEffect: p => { p.mods.extraPartySlots += 2; },
+    description: '+2 max party size. Minions within 12u gain +25% movement speed. Unlocks Mass Animate spell.',
+    applyEffect: p => { p.mods.extraPartySlots += 2; p.grantSpell('mass_animate'); },
   },
   {
     id: 'co_apex', path: 'conductor', tier: 3, cost: 2, prerequisites: ['co_2'],
     name: 'Undying Legion',
-    description: 'Each minion can reanimate once per combat at 5 HP when slain.',
-    applyEffect: () => { /* flag checked in OverworldScene/SceneManager */ },
+    description: 'Each minion can reanimate once per combat at 5 HP when slain. Unlocks Battle Hymn spell.',
+    applyEffect: p => { p.grantSpell('battle_hymn'); },
   },
 
   // ── Artificer ─────────────────────────────────────────────────────────────

@@ -182,7 +182,7 @@ async function main() {
       if (deathTriggered && v > 0) { deathTriggered = false; deathScreen.hide(); }
     },
     onAllSpells: () => {
-      for (const id of ['magic_bolt', 'flame_dart', 'intimidate']) progression.grantSpell(id);
+      for (const id of ['magic_bolt', 'flame_dart', 'intimidate', 'nova_burst', 'chain_arc', 'void_rift', 'battle_hymn', 'mass_animate']) progression.grantSpell(id);
     },
     onKillAll:   () => {
       sceneManager.getActiveEnemies().forEach(e => {
@@ -312,7 +312,6 @@ async function main() {
 
   // Attack / spell cooldowns
   let meleeCooldown = 0;
-  let spellCooldown = 0;
   let lastAttackInput = false;
   let lastSpellInput = false;
   let lastCastInput = false;
@@ -508,31 +507,37 @@ async function main() {
       }
 
       // 6b. Right-click → cast active equipped spell
-      spellCooldown = Math.max(0, spellCooldown - dt);
       const castJustPressed = s.castSpell && !lastCastInput;
       lastCastInput = s.castSpell;
-      if (castJustPressed && spellCooldown <= 0) {
+      if (castJustPressed) {
         const activeSpell = progression.getEquippedSlot(s.activeSlot);
         if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
-          spellCooldown = 0.5;
-          if (activeSpell === 'intimidate') {
-            // AOE fear — instantly force all nearby living enemies to flee
-            const INTIMIDATE_RANGE = 30;
-            enemies.forEach(e => {
-              if (!e.isDead && e.worldPosition
-                  && e.worldPosition.distanceTo(player.group.position) <= INTIMIDATE_RANGE) {
-                e.forceFlee();
-              }
-            });
-          } else {
-            spells.fire(player.group.position, mouseWorld, enemies, scene, undefined, activeSpell);
-          }
+          spells.cast(
+            activeSpell,
+            player.group.position,
+            mouseWorld,
+            enemies,
+            scene,
+            undefined,
+            {
+              spellDamageMult: progression.derivedSpellDamageMult,
+              aoeRadiusMult: progression.mods.aoeRadiusMult,
+              party,
+              onForceFlee: (targets) => targets.forEach(e => (e as unknown as { forceFlee?(): void }).forceFlee?.()),
+              onBattleHymn: (_dur) => { party.followerDamageMult = 1.5; },
+            },
+          );
         }
       }
 
-      // 7. Combat tick (expire arcs / projectiles)
+      // Battle Hymn expiry — reset follower damage boost when aura ends
+      if (!spells.battleHymnActive && party.followerDamageMult !== 1.0) {
+        party.followerDamageMult = 1.0;
+      }
+
+      // 7. Combat tick (expire arcs / projectiles / zones / auras)
       combat.update(dt, scene);
-      spells.update(dt, scene);
+      spells.update(dt, scene, enemies, player.group.position);
 
       // 7b. Death check
       if (player.health.hp <= 0 && !deathTriggered) {
@@ -583,6 +588,11 @@ async function main() {
       getFloorDef(sceneManager.currentFloor)?.name,
       progression.level,
       progression.xpProgress,
+    );
+
+    // Cooldown sweep overlays for action bar slots
+    hud.setCooldowns(
+      progression.getEquippedSlots().map(id => id ? spells.cooldownFraction(id) : null),
     );
 
     // 10. Render

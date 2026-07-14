@@ -125,6 +125,14 @@ const HUD_CSS = `
 .hud-slot--active .hud-slot-name { color: #c9b8e8; }
 .hud-slot--empty  .hud-slot-name { font-style: italic; color: #1e1830; }
 
+/* ── Cooldown sweep overlay ── */
+.hud-slot-cd {
+  position: absolute; inset: 0; border-radius: 3px;
+  background: conic-gradient(from -90deg, rgba(0,0,0,.55) 0% var(--cd, 0%), transparent var(--cd, 0%) 100%);
+  pointer-events: none;
+  transition: none;
+}
+
 /* ── Tooltip ── */
 #hud-tooltip {
   position: fixed; z-index: 9999; pointer-events: none;
@@ -149,12 +157,24 @@ const HUD_CSS = `
 
 // ── Spell display names ───────────────────────────────────────────────────
 const SPELL_LABEL: Record<string, string> = {
-  magic_bolt: 'Magic Bolt',
-  flame_dart: 'Flame Dart',
+  magic_bolt:   'Magic Bolt',
+  flame_dart:   'Flame Dart',
+  intimidate:   'Intimidate',
+  nova_burst:   'Nova Burst',
+  chain_arc:    'Chain Arc',
+  void_rift:    'Void Rift',
+  battle_hymn:  'Battle Hymn',
+  mass_animate: 'Mass Animate',
 };
 const SPELL_DESC: Record<string, string> = {
-  magic_bolt: 'A focused bolt of arcane energy.\nRight-click to cast.',
-  flame_dart: 'A dart of conjured fire — burns brighter.\nRight-click to cast.',
+  magic_bolt:   'A focused bolt of arcane energy.\nRight-click to cast.',
+  flame_dart:   'A dart of conjured fire — burns brighter.\nRight-click to cast.',
+  intimidate:   'An AOE cry that sends nearby creatures fleeing.\n10u radius. 8s cooldown.',
+  nova_burst:   'Player-centred radial explosion.\n12u radius · 8 dmg · 15s cooldown.\nExpanding torus VFX.',
+  chain_arc:    'Lightning bolt that bounces to 3 nearby enemies.\nEach bounce deals −15%. 5s cooldown.',
+  void_rift:    'Stationary DoT zone at cursor point.\n3 dmg/s for 8s · 2u radius. 12s cooldown.',
+  battle_hymn:  'Aura buff: minions deal +50% damage for 12s.\nGold ring follows you. 20s cooldown.',
+  mass_animate: 'Raises dead enemy corpses as temporary minions.\n[Gated: Conductor tier 2] 30s cooldown.',
 };
 
 // ── HUD class ─────────────────────────────────────────────────────────────
@@ -288,6 +308,12 @@ export class HUD {
     this.barSlots = Array.from({ length: 4 }, (_, i) => {
       const slot = document.createElement('div');
       slot.className = 'hud-slot hud-slot--empty';
+      slot.style.position = 'relative';
+
+      // Cooldown sweep overlay (conic-gradient from 12 o'clock)
+      const cdOverlay = document.createElement('div');
+      cdOverlay.className = 'hud-slot-cd';
+      slot.appendChild(cdOverlay);
 
       const num = document.createElement('span');
       num.className = 'hud-slot-num';
@@ -423,6 +449,18 @@ export class HUD {
     if (y < 8)          y = cy + oy;
     tt.style.left = `${x}px`;
     tt.style.top  = `${y}px`;
+  }
+
+  /** Update the cooldown sweep overlays on the 4 action slots.
+   *  @param fractions Array of 4 values where 0 = ready, 1 = just cast. */
+  setCooldowns(fractions: (number | null)[]): void {
+    for (let i = 0; i < 4; i++) {
+      const slot = this.barSlots[i];
+      const cdEl = slot.querySelector<HTMLElement>('.hud-slot-cd');
+      if (!cdEl) continue;
+      const frac = fractions[i] ?? 0;
+      cdEl.style.setProperty('--cd', `${Math.round(frac * 100)}%`);
+    }
   }
 
   private _ensureStyles(): void {
