@@ -9,10 +9,12 @@
  * terrain for any worldSize (128, 256, …).
  */
 
-import { WorldGrid } from './WorldGrid';
+import { WorldGrid }           from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
-import { createNoise2D, fbm } from '@/core/SimplexNoise';
-import { generateHydrology } from './HydrologyGenerator';
+import type { WorldData }      from './WorldData';
+import { createNoise2D, fbm }  from '@/core/SimplexNoise';
+import { generateHydrology }   from './HydrologyGenerator';
+import { placeDungeons }       from './DungeonPlacer';
 
 const MLV = 4;
 
@@ -68,5 +70,16 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   generateHydrology(grid, config, seed);
 
   return grid;
+}
+
+/**
+ * Build a complete WorldData (grid + all entity placements) from a seed and
+ * config.  main.ts and tests should call this instead of buildWorldGrid.
+ */
+export function buildWorldData(seed: number, config: WorldGenConfig): WorldData {
+  const cfg     = { ...config, seed };
+  const grid    = buildWorldGrid(seed, cfg);
+  const dungeons = placeDungeons(grid, cfg, seed);
+  return { config: cfg, grid, dungeons };
 }
 

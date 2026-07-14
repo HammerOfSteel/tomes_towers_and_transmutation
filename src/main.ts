@@ -29,7 +29,7 @@ import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
-import { buildWorldGrid } from '@/world/WorldGenerator';
+import { buildWorldData } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
@@ -114,9 +114,9 @@ async function main() {
   function _makeOverworld(seed: number): OverworldScene {
     // Always re-read so changes made in the Settings modal are picked up.
     worldGenConfig = loadWorldGenConfig();
-    const cfg  = { ...worldGenConfig, seed };
-    const grid = buildWorldGrid(seed, cfg);
-    return new OverworldScene(scene, physics, player, grid, cfg);
+    const cfg       = { ...worldGenConfig, seed };
+    const worldData = buildWorldData(seed, cfg);
+    return new OverworldScene(scene, physics, player, worldData);
   }
 
   function switchToExterior(): void {
@@ -648,8 +648,13 @@ async function main() {
         } else if (overworld.nearTowerEntrance(_pos)) {
           _setExteriorPrompt('Enter Tower');
         } else {
-          const _bld = overworld.nearBuilding(_pos);
-          _setExteriorPrompt(_bld ? _bld.label : null);
+          const _dng = overworld.nearDungeonEntrance(_pos);
+          if (_dng) {
+            _setExteriorPrompt(_dng.entry.name);
+          } else {
+            const _bld = overworld.nearBuilding(_pos);
+            _setExteriorPrompt(_bld ? _bld.label : null);
+          }
         }
       } else {
         _setExteriorPrompt(null);
@@ -716,24 +721,35 @@ async function main() {
           } else if (overworld.nearTowerEntrance(player.group.position)) {
             switchToInterior();
           } else {
-            const bld = overworld.nearBuilding(player.group.position);
-            if (bld) {
-              if (bld.type === 'greenhouse') {
-                // Load the greenhouse interior dungeon
-                const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
-                overworld.exit();
-                gameMode = 'interior';
-                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                sceneManager.loadDungeon(ghPlan);
-                player.teleport(new THREE.Vector3(0, 1.5, 8));
-              } else {
-                // Generic building — load a random dungeon floor
-                const bldSeed = currentSeed ^ 0xCAFE_BABE;
-                const bldPlan = generateDungeon(bldSeed, 1);
-                overworld.exit();
-                gameMode = 'interior';
-                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                sceneManager.loadDungeon(bldPlan);
+            const dngHandle = overworld.nearDungeonEntrance(player.group.position);
+            if (dngHandle) {
+              // Enter a seeded dungeon whose floor count was set at world-gen time
+              const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
+              overworld.exit();
+              gameMode = 'interior';
+              scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+              sceneManager.loadDungeon(dngPlan);
+              player.teleport(new THREE.Vector3(0, 1.5, 8));
+            } else {
+              const bld = overworld.nearBuilding(player.group.position);
+              if (bld) {
+                if (bld.type === 'greenhouse') {
+                  // Load the greenhouse interior dungeon
+                  const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  sceneManager.loadDungeon(ghPlan);
+                  player.teleport(new THREE.Vector3(0, 1.5, 8));
+                } else {
+                  // Generic building — load a random dungeon floor
+                  const bldSeed = currentSeed ^ 0xCAFE_BABE;
+                  const bldPlan = generateDungeon(bldSeed, 1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  sceneManager.loadDungeon(bldPlan);
+                }
               }
             }
           }
