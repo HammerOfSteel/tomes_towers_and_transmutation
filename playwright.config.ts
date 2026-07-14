@@ -33,4 +33,13 @@ export default defineConfig({
 
   // Stop after the first failing test file — enable only during CI to speed up feedback
   // maxFailures: 1,
+
+  // Auto-start the Vite dev server if not already running.
+  // Playwright will reuse an already-running server on port 5173.
+  webServer: {
+    command: 'npm run dev',
+    url:     'http://localhost:5173',
+    reuseExistingServer: true,
+    timeout: 30_000,
+  },
 });
