@@ -156,8 +156,9 @@ const LORE_PAGES: LorePage[] = [
 ];
 
 export interface MainMenuOptions {
-  /** Called when the player picks a save slot. */
-  onPlay: (slotId: number) => void;
+  /** Called when the player picks a save slot.
+   *  `isNewGame` is true when the slot was previously empty. */
+  onPlay: (slotId: number, isNewGame: boolean) => void;
   /** Called when the Dev Lab button is clicked (only visible in dev mode). */
   onDevLab?: () => void;
 }
@@ -331,13 +332,14 @@ export class MainMenu {
       row.querySelectorAll<HTMLButtonElement>('.mm-slot-btn--play').forEach(b => {
         b.addEventListener('click', () => {
           const idx = parseInt(b.dataset.i ?? '0');
+          const wasNew = !data;
           if (!data) {
             const save: SaveData = { location: 'The Cell', floor: 0, timestamp: Date.now() };
             localStorage.setItem(lsSave(idx), JSON.stringify(save));
           }
           this._closeModal('mm-play');
           this.hide();
-          this.opts.onPlay(idx);
+          this.opts.onPlay(idx, wasNew);
         });
       });
       row.querySelectorAll<HTMLButtonElement>('.mm-slot-btn--del').forEach(b => {

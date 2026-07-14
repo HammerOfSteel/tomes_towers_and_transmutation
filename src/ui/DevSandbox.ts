@@ -170,6 +170,7 @@ type TabId = 'spells' | 'enemies' | 'procgen';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
+  private _bodyEl: HTMLElement | null = null;
   private _activeTab: TabId = 'spells';
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
@@ -180,6 +181,7 @@ export class DevSandbox {
   constructor(private readonly _opts: DevSandboxOptions) {
     this._ensureStyles();
     this._panel = this._build();
+    this._renderTab();          // called AFTER this._panel is assigned
     document.body.appendChild(this._panel);
   }
 
@@ -236,9 +238,10 @@ export class DevSandbox {
     const body = document.createElement('div');
     body.className = 'ds-body';
     body.id = 'ds-body';
+    this._bodyEl = body;
 
     panel.append(header, tabBar, body);
-    this._renderTab();
+    // _renderTab() is NOT called here — it's called after this._panel is set
     return panel;
   }
 
@@ -252,7 +255,7 @@ export class DevSandbox {
   }
 
   private _renderTab(): void {
-    const body = this._panel.querySelector('#ds-body');
+    const body = this._bodyEl ?? this._panel?.querySelector<HTMLElement>('#ds-body');
     if (!body) return;
     body.innerHTML = '';
 

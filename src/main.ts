@@ -374,9 +374,7 @@ async function main() {
   }
 
   const mainMenu = new MainMenu({
-    onPlay: (slotId) => {
-      const raw = localStorage.getItem(`ttt_save_${slotId}`);
-      const isNewGame = !raw;
+    onPlay: (slotId, isNewGame) => {
       if (isNewGame) {
         // New save — show character creation before starting
         mainMenu.hide();
