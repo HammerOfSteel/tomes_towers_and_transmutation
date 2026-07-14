@@ -78,7 +78,13 @@ src/
 │
 ├── ui/
 │   ├── HUD.ts               — HP bar, spell slots, party count
-│   └── BookReader.ts        — "Arcane for Dummies" overlay; triggers progression
+│   ├── BookReader.ts        — "Arcane for Dummies" overlay; triggers progression
+│   └── CharacterCreation.ts — DNA-driven character creator UI (archetype, morph sliders, outfit, props)
+│
+├── creatures/
+│   ├── CreatureDNA.ts       — creature DNA type (archetype, proportions, colors, face, outfit, props)
+│   ├── CreatureBuilder.ts   — procedural geometry builder; one function per archetype
+│   └── CreatureAnimator.ts  — per-archetype idle/walk/run animation driver
 │
 └── shaders/
     ├── palette.ts           — canonical color constants
@@ -145,4 +151,6 @@ Unit tests **must not** instantiate `THREE.WebGLRenderer` or `RAPIER.World`. The
 | Project start | Vite over webpack/parcel | Fastest HMR, native ESM, minimal config |
 | Project start | No game engine (Three.js direct) | Full control, no black-box overhead, intentional scope |
 | Project start | JSON blueprints over code-driven rooms | Human-readable, editor-exportable, testable |
-| Project start | `MeshToonMaterial` for characters | Consistent toon style; re-evaluate at Phase 8 |
+| Project start | `MeshPhysicalMaterial` with clearcoat for creatures | Toy-plastic look; better lighting than MeshToon; no toon outlines needed at isometric scale. Re-evaluate at Phase 8 |
+| Phase 4.5 | DNA-based creature system (`CreatureDNA`, `CreatureBuilder`, `CreatureAnimator`) | All creature geometry is procedural + data-driven; same DNA object drives CC preview and in-game rig |
+| Phase 4.5 | `creature-lab.html` as isolated visual sandbox | Allows fast iteration on creature geometry outside the game loop; Playwright E2E tests target it directly |

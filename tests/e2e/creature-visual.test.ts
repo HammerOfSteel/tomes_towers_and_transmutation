@@ -184,8 +184,6 @@ test.describe('Biped: props placement', () => {
     await openLab(page);
     await page.evaluate(() => {
       const lab = (window as any).__lab;
-      // Build a biped with bat wings via full DNA
-      const dna = (window as any).__labDNA?.biped ?? lab.showCreature('biped');
       lab.showCreature({
         archetype: 'biped', subRace: 'none',
         colors: { primary: 0x8844cc, secondary: 0x221133, emissive: 0x4422aa, emissiveIntensity: 0.08 },

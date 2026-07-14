@@ -61,8 +61,6 @@ Open `http://localhost:5173` in your browser.
 npm test
 ```
 
-> **Note:** The project is pre-Phase 1. No runnable code exists yet — only design documents. The commands above describe the intended setup.
-
 ---
 
 ## Project Structure
@@ -94,12 +92,13 @@ tomes_towers_and_transmutation/
 
 | Phase | Goal | Status |
 |---|---|---|
-| 1 | Isometric sandbox & physics | ⬜ Not started |
-| 2 | ALttP action combat | ⬜ Not started |
-| 3 | Modular blueprint system | ⬜ Not started |
-| 4 | Level designer (dev tool) | ⬜ Not started |
-| 5 | Procedural generation & discovery | ⬜ Not started |
-| 6 | Overworld & monster minions | ⬜ Not started |
+| 1 | Isometric sandbox & physics | ✅ Complete |
+| 2 | ALttP action combat | ✅ Complete |
+| 3 | Modular blueprint system | ✅ Complete |
+| 4 | Level designer (dev tool) | ✅ Complete |
+| 4.5 | UI suite (menus, HUD, spellbook) | ✅ Complete |
+| 5 | Procedural generation & spell discovery | ✅ Complete |
+| 6 | Overworld & monster minions | 🔄 In Progress |
 | 7 | The OP power fantasy | ⬜ Not started |
 | 8 | Asset replacement & final boss | ⬜ Not started |
 
@@ -119,6 +118,7 @@ Full details in [TODO.md](TODO.md).
 | [docs/WORLD_DESIGN.md](docs/WORLD_DESIGN.md) | Tower, overworld, and environment design |
 | [docs/ENEMY_DESIGN.md](docs/ENEMY_DESIGN.md) | Enemy types, AI states, recruitment |
 | [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) | Procedural art style guide and shader conventions |
+| [TESTING_AND_TOOLS.md](TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
 | [docs/BLUEPRINT_SCHEMA.md](docs/BLUEPRINT_SCHEMA.md) | JSON level format specification |
 
 ---

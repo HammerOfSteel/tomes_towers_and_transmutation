@@ -42,7 +42,12 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 | No sub-races for biped (elf, goblin, orc, pixie, undead…) | ✅ Fixed (CC-1) — 12 species with ear geometry, head scale, colors |
 | Props not filtered by archetype — wings on an amoeba, legs on a serpent | ⏳ CC-6 |
 | Randomiser absent — no quick way to discover wild combos | ✅ Fixed (CC-4) — 🎲 Lucky Roll + ~ Mutate buttons, mulberry32-seeded |
-| Only 4 body sliders (global scale, head, limb length/width) | ✅ Fixed (CC-3) — +4 sliders: shoulders, hips, belly, neck thickness |
+| Only 4 body sliders (global scale, head, limb length/width) | ✅ Fixed (CC-3) — +6 sliders: shoulders, hips, belly, neck thickness, Torso H, Leg L |
+| No hair props | ✅ Fixed (CC-3 ext.) — hair_short, hair_long, hair_bun props (sphere cap + optional flow/bun) |
+| Biped lower body too tall / not adjustable | ✅ Fixed — hip joints raised to 0.70×ty; pelvis 0.42×ty; legLength prop + slider |
+| Amoeba face plane hidden inside blob | ✅ Fixed — face z-offset = 0.52×headSize×torso[2]+0.04 (just outside blob surface) |
+| Serpent was a vertical cobra stack, not a snake | ✅ Fixed — full redesign as flat snake; head raised, body/tail horizontal along ground |
+| Wings on biped attached at foot level | ✅ Fixed — wg.position.y raised from 0.3 → 1.32 (shoulder/upper back) |
 | No skin pattern/texture layer | ⏳ CC-7 |
 | Face types not differentiated per sub-race | ⏳ CC-5 |
 | No outfit/clothing concept — robe IS the body appearance | ✅ Fixed (CC-2) — outfit.top / outfit.legs / outfit.over slots |
