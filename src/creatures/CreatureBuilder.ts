@@ -5,7 +5,8 @@
 //  All geometry is procedural — no asset files loaded.
 
 import * as THREE from 'three';
-import type { CreatureDNA, PropId } from './CreatureDNA';
+import type { CreatureDNA, PropId, EarShape } from './CreatureDNA';
+import { SUBRACE_DEFS } from './CreatureDNA';
 import { makeFaceTexture, type FaceSpec } from './CanvasFace';
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -82,6 +83,31 @@ function _faceplane(dna: CreatureDNA, hs: number): { tex: THREE.CanvasTexture; p
   plane.position.z = 0.225 * hs;
   plane.position.y = 0.02;
   return { tex, plane };
+}
+
+function _ears(
+  earShape: EarShape, hs: number, head: THREE.Group,
+  mat: THREE.MeshPhysicalMaterial, ms: THREE.Mesh[],
+): void {
+  if (earShape === 'none' || earShape === 'round') return; // round ears = no visible geometry
+  if (earShape === 'pointed') {
+    // Slender pointy elven/pixie/fae ears — thin cones angled outward
+    for (const s of [-1, 1] as const) {
+      const m = new THREE.Mesh(new THREE.ConeGeometry(0.045 * hs, 0.22 * hs, 5), mat);
+      m.position.set(s * 0.2 * hs, 0.08 * hs, 0);
+      m.rotation.z = s * 1.2;
+      head.add(m); ms.push(m);
+    }
+  } else if (earShape === 'large') {
+    // Wide flat goblin / troll ears — flattened sphere halves
+    for (const s of [-1, 1] as const) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.13 * hs, 8, 6, 0, Math.PI), mat);
+      m.position.set(s * 0.22 * hs, 0, 0);
+      m.rotation.y = s * Math.PI / 2;
+      m.rotation.z = s * 0.2;
+      head.add(m); ms.push(m);
+    }
+  }
 }
 
 function _headgeo(ftype: string, hs: number): THREE.BufferGeometry {
@@ -216,9 +242,15 @@ function _biped(dna: CreatureDNA): CreatureRig {
 
   const head = new THREE.Group();
   head.position.y = 0.065 + 0.22 * p.headSize; bones.head = head; neck.add(head);
+  // Sub-race head scale modifier
+  const srDef = (dna.subRace && dna.subRace !== 'none') ? SUBRACE_DEFS[dna.subRace] : null;
+  const headScale = srDef?.headStyle === 'large' ? 1.18 : srDef?.headStyle === 'small' ? 0.82 : srDef?.headStyle === 'elongated' ? 1.0 : 1.0;
+  head.scale.setScalar(headScale);
   const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize), pm); head.add(hm); ms.push(hm);
   const { tex, plane } = _faceplane(dna, p.headSize);
   head.add(plane); ms.push(plane);
+  // Sub-race ears
+  _ears(srDef?.earShape ?? 'round', p.headSize, head, sm, ms);
 
   _props(dna.props, head, undefined, dna, ms);
 
