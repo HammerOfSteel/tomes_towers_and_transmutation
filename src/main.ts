@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { EffectComposer, EffectPass, RenderPass, BloomEffect, KernelSize } from 'postprocessing';
 import { GameLoop } from '@/core/GameLoop';
 import { InputManager } from '@/core/InputManager';
 import { CameraRig } from '@/core/CameraRig';
@@ -47,7 +48,13 @@ async function main() {
 
   // ── Camera (isometric) ────────────────────────────────────────────────────
   const cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
-
+  // ── Post-processing — bloom/glow for all emissive + additive VFX ──────────────
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, cameraRig.camera));
+  composer.addPass(new EffectPass(
+    cameraRig.camera,
+    new BloomEffect({ intensity: 2.2, luminanceThreshold: 0.12, kernelSize: KernelSize.MEDIUM }),
+  ));
   // ── Physics ────────────────────────────────────────────────────────────────
   const physics = new PhysicsWorld();
   await physics.init();
@@ -368,6 +375,7 @@ async function main() {
   // ── Resize ────────────────────────────────────────────────────────────────
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
     cameraRig.resize(window.innerWidth / window.innerHeight);
     telescopeView.updateAspect(window.innerWidth, window.innerHeight);
   });
@@ -378,7 +386,7 @@ async function main() {
     // ── Telescope remote-view mode — skip all game simulation ──────────────
     if (gameMode === 'telescope') {
       telescopeView.update(dt);
-      renderer.render(scene, telescopeView.camera);
+      renderer.render(scene, telescopeView.camera); // bypass bloom for telescope
       return;
     }
 
@@ -596,7 +604,7 @@ async function main() {
     );
 
     // 10. Render
-    renderer.render(scene, cameraRig.camera);
+    composer.render(dt);
   });
   // Game loop is started by MainMenu.onPlay — not here.
 }

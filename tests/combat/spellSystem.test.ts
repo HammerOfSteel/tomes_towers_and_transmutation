@@ -30,6 +30,7 @@ vi.mock('three', () => {
       this.x += v.x * s; this.y += v.y * s; this.z += v.z * s; return this;
     }
     length() { return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z); }
+    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
     lerpVectors(a: Vector3, b: Vector3, t: number) {
       this.x = a.x + (b.x - a.x) * t;
       this.y = a.y + (b.y - a.y) * t;
@@ -42,8 +43,11 @@ vi.mock('three', () => {
   }
 
   const disposeStub = vi.fn();
-  const makeGeometry = () => ({ dispose: disposeStub });
-  const makeMaterial = () => ({ opacity: 1, transparent: false, emissiveIntensity: 1, dispose: disposeStub });
+  const makeGeometry = () => ({ dispose: disposeStub, setAttribute: vi.fn() });
+  const makeMaterial = () => ({ opacity: 1, transparent: false, emissiveIntensity: 1, size: 0.2, dispose: disposeStub });
+  const makeBufferAttr = () => ({
+    setXYZ: vi.fn(), getX: vi.fn(() => 0), getY: vi.fn(() => 0), getZ: vi.fn(() => 0), needsUpdate: false,
+  });
   const makeMesh = () => ({
     position: new Vector3(),
     rotation: { x: 0, y: 0, z: 0 },
@@ -52,21 +56,43 @@ vi.mock('three', () => {
     geometry: makeGeometry(),
     scale: { setScalar: vi.fn(), x: 1, y: 1, z: 1 },
   });
+  const makePoints = () => ({
+    position: new Vector3(),
+    material: makeMaterial(),
+    geometry: makeGeometry(),
+  });
 
   return {
+    // Constants
+    AdditiveBlending: 2,
+    DoubleSide: 2,
+    // Core classes
     Vector3,
     Scene: class { add = vi.fn(); remove = vi.fn(); },
     Mesh: vi.fn(() => makeMesh()),
+    Group: class {
+      position = new Vector3();
+      rotation = { x: 0, y: 0, z: 0 };
+      children: unknown[] = [];
+      add = vi.fn();
+      traverse = vi.fn();
+    },
+    // Materials
     MeshStandardMaterial: vi.fn(() => makeMaterial()),
     MeshBasicMaterial: vi.fn(() => makeMaterial()),
+    PointsMaterial: vi.fn(() => makeMaterial()),
+    Color: vi.fn(() => ({})),
+    // Geometry
     SphereGeometry: vi.fn(() => makeGeometry()),
     TorusGeometry: vi.fn(() => makeGeometry()),
     CylinderGeometry: vi.fn(() => makeGeometry()),
-    Color: vi.fn(() => ({})),
-    Group: class {
-      position = new Vector3();
-      children: unknown[] = [];
-    },
+    CircleGeometry: vi.fn(() => makeGeometry()),
+    TubeGeometry: vi.fn(() => makeGeometry()),
+    BufferGeometry: vi.fn(() => makeGeometry()),
+    BufferAttribute: vi.fn(() => makeBufferAttr()),
+    // Points / curves
+    Points: vi.fn(() => makePoints()),
+    CatmullRomCurve3: vi.fn(() => ({})),
   };
 });
 
