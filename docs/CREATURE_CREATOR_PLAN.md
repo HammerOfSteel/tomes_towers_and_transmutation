@@ -421,6 +421,265 @@ and a "Test Drive" mini-mode that runs the full AnimationState loop.
 
 ---
 
+### Phase CC-10 — Visual Quality Pass (Flat Shading + Vertex Wobble)
+
+**Goal:** Make existing procedural shapes look hand-crafted rather than computer-perfect,
+without touching DNA or UI. This is the single highest-impact-to-effort ratio step
+recommended in Gemini's procedural mesh research.
+
+> **Gemini insight:** "Pure mathematical shapes look fake. Add a tiny amount of
+> high-frequency 3D Perlin noise to your vertex positions. This makes the mesh look
+> hand-carved or clay-like. Flat shading calculates normals per triangle rather than
+> per vertex — giving a clean, faceted, modern low-poly aesthetic."
+
+#### Research checkpoint
+- [ ] **Research:** Read Inigo Quilez's SDF functions reference (`iquilezles.org/articles/distfunctions`)
+  — specifically `opSmoothUnion`, `sdCapsule`, `sdEllipsoid`. Understanding these
+  shapes and blend operations is the mathematical foundation for all future organic mesh work.
+- [ ] **Research:** Benchmark `material.flatShading = true` on all archetypes in the
+  preview renderer. Check if Three.js `MeshPhysicalMaterial` + `flatShading` causes
+  a normal recompute on geometry rebuild (it should be free after first build).
+- [ ] **Research:** `FastNoiseLite` JavaScript port (GitHub: Auburn/FastNoiseLite).
+  Find the `fastnoise-lite` npm package and read its API — focus on `GetNoise3D(x,y,z)`
+  and `SetNoiseType('OpenSimplex2')`. Check bundle size impact.
+
+#### Tasks
+
+**`src/creatures/meshUtils.ts`** — new utility file:
+```typescript
+// Applies subtle vertex displacement noise to a BufferGeometry in-place.
+// Strength ~0.012–0.03 on body parts; 0.0 on flat props like armor.
+export function wobbleVertices(geo: THREE.BufferGeometry, strength: number, seed: number): void;
+
+// Sets flatShading on a MeshPhysicalMaterial and marks needsUpdate.
+export function flatShade(mat: THREE.MeshPhysicalMaterial): THREE.MeshPhysicalMaterial;
+```
+
+`wobbleVertices` implementation options (choose one):
+- **Option A (zero deps):** Use the existing `mulberry32` PRNG from `src/core/` to generate
+  pseudo-random vertex offsets seeded from `dna.colors.primary`. Simple, no new dep.
+  Multiply displacement by `Math.sin(px * 12) * Math.cos(pz * 9)` for a knobbly surface.
+- **Option B (FastNoiseLite):** Install `fastnoise-lite` npm, use
+  `noise.GetNoise(x * 8, y * 8, z * 8) * strength` for true coherent noise.
+  More organic result but adds ~15KB to bundle.
+
+**`CreatureBuilder.ts` changes:**
+- [ ] Call `flatShade(mat)` in the `_m()` helper (one call covers all materials).
+  `MeshPhysicalMaterial.flatShading = true` is sufficient — no geometry change needed.
+- [ ] Call `wobbleVertices(geo, strength, seed)` on body part geometries:
+  - Head sphere: strength `0.018`
+  - Torso: strength `0.014`
+  - Limb cylinders: strength `0.010`
+  - Neck: strength `0.008`
+  - **Skip:** armor, crown, robe, lantern (flat/hard surfaces should stay clean)
+  - **Skip:** face canvas plane (wobble would distort the face texture)
+
+**Expected visual result:** Creatures look like they were made from clay or carved stone
+rather than assembled from perfect geometric primitives. Especially dramatic on the amoeba
+archetype.
+
+**Performance note:** `wobbleVertices` runs once at DNA build time, not per frame.
+Cost is paid once per `CreatureBuilder.buildCreature()` call, same as all other geometry ops.
+
+---
+
+### Phase CC-11 — Profile-Based Clothing (LatheGeometry Dresses)
+
+**Goal:** Replace `CylinderGeometry` clothing meshes with `THREE.LatheGeometry` revolve
+profiles — enabling organic dress silhouettes (flared hem, gathered skirt, layered robe)
+impossible to achieve with cylinders alone.
+
+> **Gemini insight:** "By defining a mathematical silhouette (e.g., a bezier curve
+> defining the flare of a princess dress) you can revolve that curve 360 degrees to
+> generate a low-poly skirt mesh." Three.js's built-in `LatheGeometry` does exactly
+> this — no new dependencies required.
+
+#### Research checkpoint
+- [ ] **Research:** Read Three.js `LatheGeometry` docs
+  (`threejs.org/docs/#api/en/geometries/LatheGeometry`). Understand the `points: Vector2[]`
+  profile curve input and `segments` / `phiLength` parameters. Practice making a
+  flared dress profile and a layered robe profile in an isolated CodePen or scratch file.
+- [ ] **Research:** Bézier interpolation for smooth profiles. Study how to turn 4–6 control
+  points into a 16-point smooth profile using De Casteljau's algorithm. A simple cubic
+  Bézier `t=0..1` loop suffices.
+
+#### Tasks
+
+**`src/creatures/profileCurves.ts`** — new file:
+```typescript
+import * as THREE from 'three';
+
+// Returns a Vector2[] profile array suitable for LatheGeometry.
+// All profiles assume bottom at y=0, top at y=height.
+export function dressFlairedProfile(height: number, waistR: number, hemR: number, hemFlare: number): THREE.Vector2[];
+export function robeLayeredProfile(height: number, chest: number): THREE.Vector2[];
+export function skirtGatheredProfile(height: number, hip: number): THREE.Vector2[];
+export function tunicProfile(height: number, chest: number): THREE.Vector2[];
+
+// Utility: apply a sine wave to hem points (adds fold/ruffle effect to bottom N points)
+export function addHemFolds(profile: THREE.Vector2[], foldCount: number, foldDepth: number): THREE.Vector2[];
+```
+
+Profile control points design:
+- `dressFlairedProfile` — starts narrow at top (waistR), curves inward mid-torso,
+  then flares wide at hem (hemR + hemFlare). Like a princess dress silhouette.
+- `robeLayeredProfile` — tall, slight A-line, with a step/layer seam in the profile
+  to suggest a layered garment rather than a smooth cone.
+- `skirtGatheredProfile` — short, wide curve from hip to mid-thigh.
+- `addHemFolds` — applies a sine modulation to the bottom profile points to simulate
+  gathered or pleated fabric. E.g. `6 folds, depth 0.04` for a ruffle effect.
+
+**New `OutfitLegsId` / `OutfitOverId` values (additions to CC-2 outfit system):**
+```typescript
+// New top IDs:
+'dress_flared'    // Full one-piece LatheGeometry dress (replaces top+legs slot together)
+'dress_layered'   // Two-layer robe dress
+
+// New legs IDs:
+'skirt_gathered'  // Gathered/pleated short skirt
+'skirt_long'      // Long flowing LatheGeometry skirt
+
+// New over IDs:
+'robe_layered'    // LatheGeometry robe with step-layer detail
+```
+
+**`CreatureBuilder._outfit()` changes:**
+- [ ] Import `profileCurves.ts`.
+- [ ] For new LatheGeometry outfit types: call the relevant profile function, pass to
+  `new THREE.LatheGeometry(points, 12)` (12 segments = clean low-poly faceted look).
+  Assign secondary-color material.
+- [ ] `dress_flared`: spawns as a single large mesh positioned at torso midpoint;
+  uses `hemFlare = 0.3 * proportions.hipWidth` so wider characters get wider dresses.
+- [ ] Retain `CylinderGeometry` for armor, trousers, and simple outfit types —
+  LatheGeometry is only warranted where silhouette variety matters.
+- [ ] Add `dress_flared` to `CharacterCreation` outfit chip row.
+
+---
+
+### Phase CC-12 — SDF Smooth Body Blending (Organic Silhouettes)
+
+**Goal:** Replace the sphere+cylinder assembly model with capsule-based Signed Distance
+Fields along a bone graph, blended with `opSmoothUnion`. This produces seamless
+neck-to-torso, head-to-neck, and limb-root transitions — the underlying technique
+behind Spore's creature mesh generation.
+
+> **Gemini insight:** "Generate capsules along these bone vectors. Use smooth blending
+> to turn the skeleton graph into a thick, meaty body mesh. SDFs allow you to use
+> opSmoothUnion — this automatically creates organic skin bridges between shapes."
+>
+> **Chris Hecker (Technology Behind Spore):** Spore used implicit surfaces (metaballs)
+> attached to a bone hierarchy. Smooth blending at joints removes seams entirely.
+
+This phase is **architecturally significant** — it requires either marching cubes mesh
+generation or a hybrid approach where SDF blending is applied only at joint seams.
+
+#### Research checkpoint
+- [ ] **Research:** `three-mesh-bvh` npm package — read the README for spatial query
+  capabilities. Understand if it helps with SDF evaluation or is primarily for raycasting.
+- [ ] **Research:** Lightweight marching cubes for Three.js. Search GitHub for
+  `"marching cubes three.js"`. Two candidates:
+  - `@smoli/marching-cubes` (npm) — pure JS, returns Three.js BufferGeometry.
+  - Rolling a 64³ grid evaluation ourselves — feasible given our small creature scale.
+  Benchmark: a 32³ grid at creature scale should evaluate in < 5ms on a modern CPU.
+- [ ] **Research:** Chris Hecker's GDC presentations on Spore creature generation —
+  search "Chris Hecker Spore GDC procedural creatures". Look for the implicit surface
+  / metaball skinning technique.
+- [ ] **Research:** Inigo Quilez `opSmoothUnion(d1, d2, k)` function — understand the
+  `k` parameter (blend radius). A value of `k=0.3` creates a shoulder-width smooth join.
+
+#### Architecture design decision (choose before implementation):
+
+**Option A — Hybrid approach (recommended first):**
+Keep the existing `THREE.SphereGeometry` / `THREE.CylinderGeometry` body parts but
+add seam-bridging meshes at joints using a local SDF evaluation:
+- Neck-torso seam: generate a 8×8×8 SDF grid around the neck attach point, evaluate
+  `opSmoothUnion(capsuleTorso, capsuleNeck, 0.3)`, run marching cubes → small "collar"
+  mesh that fills the gap.
+- Head-neck seam: same approach.
+- This is backwards-compatible — existing parts stay, we only ADD blend meshes.
+- Low polygon cost (each blend mesh ~200 tris).
+
+**Option B — Full SDF architecture (ambitious):**
+Discard all `THREE.SphereGeometry` / `THREE.CylinderGeometry` body generation.
+Define the entire creature as a tree of SDF capsule nodes. Evaluate on a 32³ or 64³
+grid. Run marching cubes. Assign face regions by closest SDF primitive (for material).
+- Produces fully seamless organic creatures.
+- Requires rebuilding `CreatureBuilder` from scratch.
+- Must stay under 4,000 triangles — grid resolution must be managed.
+
+#### Tasks (Option A first)
+
+**`src/creatures/sdfBlend.ts`** — new file:
+```typescript
+// SDF primitives
+export function sdCapsule(p: Vec3, a: Vec3, b: Vec3, r: number): number;
+export function sdSphere(p: Vec3, c: Vec3, r: number): number;
+export function opSmoothUnion(d1: number, d2: number, k: number): number;
+
+// Generate a Three.js BufferGeometry seam-fill mesh for two connected body parts.
+// Evaluates SDF on a local grid and runs a simple marching cubes pass.
+export function buildSeamMesh(
+  partA: { center: THREE.Vector3; radius: number },
+  partB: { center: THREE.Vector3; radius: number },
+  blendK?: number,     // default 0.25
+  gridRes?: number,    // default 12 — coarser grid = fewer tris
+): THREE.BufferGeometry;
+```
+
+**`CreatureBuilder.ts` changes (biped first, extend to all archetypes):**
+- [ ] After placing head and neck, call `buildSeamMesh(headInfo, neckInfo)` → add
+  resulting `THREE.Mesh` to the scene group. Material = same as head (`_bodyMat(dna)`).
+- [ ] After placing neck and torso, call `buildSeamMesh(neckInfo, torsoInfo)`.
+- [ ] For quadruped: same at neck-torso and all four limb-root attach points.
+- [ ] Use low `gridRes = 10` to keep triangle budget under control.
+- [ ] Toggle via `dna.material.useSDFSeams?: boolean` (default `true`) so the
+  old sharp-join look is still accessible if needed for debugging.
+
+**Performance note:** `buildSeamMesh` runs at DNA build time, not per frame. Each seam mesh
+costs ~100–200 triangles. A biped with 2 seams adds ~400 tris maximum — within budget.
+
+---
+
+### Phase CC-13 — Draw Call Reduction + Material Consolidation
+
+**Goal:** Currently every body part spawns its own `MeshPhysicalMaterial` instance.
+For a complex creature with 30+ mesh nodes, this is 30+ draw calls. Consolidate to
+2–3 materials per creature (body, accent, emissive) and optionally merge static
+geometry into a single `BufferGeometry` per material group.
+
+> **Gemini insight:** "Texture Atlasing: Combine multiple textures into a single map.
+> Material Parameterization: Instead of generating new materials for every outfit
+> variation, use Dynamic Material Instances that allow you to shift colors via shader
+> parameters at runtime."
+>
+> Also: "Mesh Merging: Merge separate meshes and materials at runtime to drastically
+> reduce draw calls."
+
+#### Research checkpoint
+- [ ] **Research:** Three.js `BufferGeometryUtils.mergeGeometries()` — understand
+  how it handles transforms (geometries must have transforms applied via
+  `applyMatrix4()` before merge). Read the docs and check if materials are unified.
+- [ ] **Research:** `THREE.InstancedMesh` for repeated parts (e.g., scale ridges,
+  tentacle segments, mane strands). Instancing dramatically reduces draw calls for
+  repeated geometry.
+
+#### Tasks
+- [ ] **Material pool:** Refactor `_m()` in `CreatureBuilder.ts` to accept a `role`
+  parameter: `'body' | 'accent' | 'emissive' | 'hair' | 'armor'`. Cache one material
+  instance per role per DNA build (not per mesh). All body meshes share the same
+  `MeshPhysicalMaterial` object.
+- [ ] **Instanced scale ridges:** Replace the current for-loop in `scale_ridges` prop
+  that creates 5 separate Meshes with a single `THREE.InstancedMesh(geo, mat, 5)`.
+  Set instance matrices in the loop. Same for `mane` strands, `tentacles` segments.
+- [ ] **Geometry merge (optional):** After all body parts are placed, call
+  `BufferGeometryUtils.mergeGeometries()` on all meshes sharing the body material.
+  Replace the group with a single merged mesh. Skip animated/dynamic parts (tail
+  chains, wings with per-frame rotation).
+- [ ] Add `material.dispose()` calls to the existing `dispose()` method on
+  `CreatureBuilder` to prevent GPU memory leaks when rebuilding from new DNA.
+
+---
+
 ### Phase CC-9 — Gameplay Integration of Creator Choices
 
 **Goal:** Visual choices have mild stat implications, deepening identity investment.
@@ -456,7 +715,11 @@ CC-5 (Face expansion)   ← Can be done in parallel with CC-3
 CC-6 (Prop filtering)   ← Depends on CC-1 (archetype allowlists need subraces)
 CC-7 (Skin patterns)    ← Independent — do whenever time allows
 CC-8 (Preview polish)   ← Can be done incrementally as other phases land
-CC-9 (Gameplay hooks)   ← Last — depends on all visual systems being stable
+CC-10 (Flat + wobble)   ← Quick visual win, do before/during CC-9; no DNA change
+CC-11 (Lathe clothing)  ← After CC-2 clothing system is in place
+CC-9 (Gameplay hooks)   ← After all visual systems stable
+CC-12 (SDF blending)    ← After CC-10 (shares meshUtils infrastructure)
+CC-13 (Draw call opt.)  ← After CC-12 (do together with mesh consolidation)
 ```
 
 ---
@@ -477,3 +740,46 @@ CC-9 (Gameplay hooks)   ← Last — depends on all visual systems being stable
 4. **Randomiser must produce coherent results** — use weighted tables not pure random. A creature should never look visually broken from a Lucky Roll.
 5. **Performance budget** — character creation preview runs in its own `WebGLRenderer`. Total polygon count for preview creature must stay under 4,000 triangles. Skin pattern textures max 128×128.
 6. **DNA serialises cleanly** — all new DNA fields get default values. `base64ToDna` adds missing fields with defaults so old saves load correctly.
+7. **Debounce mesh rebuilds** — never trigger `buildCreature()` on every input event. Call via debounce (50ms) so rapid slider drags don't stutter the preview renderer.
+8. **Geometry is built once** — mesh generation runs at DNA-commit time (on debounce flush), not per animation frame. The RAF loop only animates — it never rebuilds geometry.
+
+---
+
+## Key References & Libraries (from Gemini research consultation)
+
+### Must-read conceptual foundations
+- **Inigo Quilez — SDF Functions:** `iquilezles.org/articles/distfunctions`
+  The canonical reference for SDF shapes and blend operators (`opSmoothUnion`,
+  `sdCapsule`, `sdEllipsoid`, etc.). Everything for CC-12 starts here.
+- **Chris Hecker — "The Technology Behind Spore" (GDC):**
+  Details how Maxis used implicit surfaces / metaballs attached to a bone hierarchy.
+  The fundamental architecture of Spore's skinning system. Search GDC Vault.
+- **"Procedural Generation of 3D Monsters" (academic):**
+  Search Google Scholar for "Grammar-based procedural creature generation". Covers
+  ruleset-driven generation (Princess → wears(Dress), has(Crown), has(HumanoidTorso)).
+- **Paul Bourke — Marching Cubes:** The historical source and algorithm reference.
+  `paulbourke.net/geometry/polygonise/`. Table-based edge/triangle lookup.
+
+### JavaScript / Three.js libraries
+| Library | Purpose | Where used |
+|---------|---------|-----------|
+| `fastnoise-lite` (npm, Auburn/FastNoiseLite) | Perlin/Simplex/Cellular noise for vertex wobble | CC-10 |
+| `three-mesh-bvh` (npm) | Spatial BVH for fast geometry queries, SDF evaluation | CC-12 |
+| `@smoli/marching-cubes` or similar | Converts SDF grid to BufferGeometry | CC-12 |
+| `THREE.LatheGeometry` (built-in) | Revolve a profile curve → dress/skirt silhouette | CC-11 |
+| `THREE.BufferGeometryUtils.mergeGeometries()` (built-in) | Merge body-material meshes → fewer draw calls | CC-13 |
+| `THREE.InstancedMesh` (built-in) | Instanced repeated props (scale ridges, mane, tentacles) | CC-13 |
+| `leva` (pmndrs/leva) | Modern dat.GUI successor — for internal debug panels | Dev tooling only |
+
+### Architectural patterns validated by Gemini
+- **Source of truth is the DNA object.** UI writes to DNA. Builder reads from DNA.
+  Never store display state separately from DNA.
+- **Debounce mesh generation on slider input (50–100ms).** Already implicit in our
+  pattern but should be made explicit in `CharacterCreation.ts`.
+- **Flat shading is free.** `material.flatShading = true` on `MeshPhysicalMaterial`
+  costs nothing and gives a clean modern low-poly look. Set it globally.
+- **Vertex noise runs at build time.** Never apply noise per frame. Apply once to
+  `BufferGeometry` when building; the displaced vertices are static after that.
+- **Separate skeleton graph from mesh.** Even our current `buildCreature()` function
+  implicitly does this (joint positions are computed before meshes are placed). Make
+  this separation explicit for CC-12 SDF work.
