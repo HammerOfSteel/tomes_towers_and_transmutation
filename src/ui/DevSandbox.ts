@@ -11,19 +11,17 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface DevSandboxOptions {
-  /** Grant (unlock + equip) the given spell via ProgressionSystem. */
   onGrantSpell: (spellId: string) => void;
-  /** Set slot-1 to the given spell so it fires on left-click. */
   onSetActiveSpell: (spellId: string) => void;
-  /** Spawn N slimes near the player. */
   onSpawnEnemies: (n: number) => void;
-  /** Remove all active sandbox enemies. */
   onKillAllEnemies: () => void;
-  /** Grant all 8 spells at once. */
   onGrantAllSpells: () => void;
-  /** Run the tower generator with the given seed and return a text summary. */
-  getProcGenStats: (type: 'tower' | 'overworld' | 'dungeon', seed: number) => string;
-  /** Return to the main menu. */
+  /** Run generator, return text stats AND the room IDs it contains. */
+  getProcGenStats: (type: 'tower' | 'overworld' | 'dungeon', seed: number) => { text: string; roomIds: string[] };
+  /** Teleport into a generated room by ID. */
+  onEnterRoom: (roomId: string) => void;
+  /** Return to the open sandbox arena. */
+  onReturnToArena: () => void;
   onClose: () => void;
 }
 
@@ -171,12 +169,15 @@ type TabId = 'spells' | 'enemies' | 'procgen';
 export class DevSandbox {
   private readonly _panel: HTMLElement;
   private _bodyEl: HTMLElement | null = null;
+  private _locationBarEl: HTMLElement | null = null;
   private _activeTab: TabId = 'spells';
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
   private _procType: 'tower' | 'overworld' | 'dungeon' = 'tower';
   private _procSeed = 42;
   private _outputEl: HTMLElement | null = null;
+  private _roomListEl: HTMLElement | null = null;
+  private _lastProcResult: { text: string; roomIds: string[] } | null = null;
 
   constructor(private readonly _opts: DevSandboxOptions) {
     this._ensureStyles();
@@ -188,6 +189,21 @@ export class DevSandbox {
   show(): void { this._panel.style.display = 'flex'; }
   hide(): void { this._panel.style.display = 'none'; }
   dispose(): void { this._panel.remove(); }
+
+  /** Update the location strip in the header. Pass 'arena' or a room ID. */
+  setLocation(loc: string): void {
+    const bar = this._locationBarEl;
+    if (!bar) return;
+    if (loc === 'arena') {
+      bar.innerHTML = '<span style="color:#5a4880">📍 Sandbox Arena</span>';
+    } else {
+      bar.innerHTML =
+        '<span style="color:#8070a0">📍 ' + loc + '</span>' +
+        '<button class="ds-btn ds-loc-back">↩ Arena</button>';
+      bar.querySelector<HTMLButtonElement>('.ds-loc-back')!.onclick =
+        () => this._opts.onReturnToArena();
+    }
+  }
 
   // ── DOM ───────────────────────────────────────────────────────────────────
 
@@ -217,6 +233,14 @@ export class DevSandbox {
 
     header.append(left, closeBtn);
 
+    // ── Location bar ──────────────────────────────────────────────────────
+    const locBar = document.createElement('div');
+    locBar.style.cssText =
+      'padding:5px 14px 4px;font-size:.73rem;border-bottom:1px solid #1e1530;' +
+      'display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.2);min-height:26px;';
+    this._locationBarEl = locBar;
+    this.setLocation('arena'); // set initial content
+
     // ── Tabs ─────────────────────────────────────────────────────────────
     const tabBar = document.createElement('div');
     tabBar.className = 'ds-tabs';
@@ -240,7 +264,7 @@ export class DevSandbox {
     body.id = 'ds-body';
     this._bodyEl = body;
 
-    panel.append(header, tabBar, body);
+    panel.append(header, locBar, tabBar, body);
     // _renderTab() is NOT called here — it's called after this._panel is set
     return panel;
   }
@@ -451,10 +475,11 @@ export class DevSandbox {
     runBtn.onclick = () => {
       runBtn.disabled = true;
       runBtn.textContent = '…running';
-      // Defer one frame so the UI can update before the (possibly slow) generation
       setTimeout(() => {
         const result = this._opts.getProcGenStats(this._procType, this._procSeed);
-        if (this._outputEl) this._outputEl.textContent = result;
+        this._lastProcResult = result;
+        if (this._outputEl) this._outputEl.textContent = result.text;
+        this._renderRoomList(result.roomIds);
         runBtn.disabled = false;
         runBtn.textContent = '▶ Run Generator';
       }, 0);
@@ -473,10 +498,60 @@ export class DevSandbox {
     output.textContent = '← Press "Run Generator" to see stats';
     this._outputEl = output;
 
-    outSec.append(outTitle, output);
+    // Room list section (populated after generation)
+    const roomSec = document.createElement('div');
+    roomSec.className = 'ds-section';
+    roomSec.style.display = 'none';
+    const roomTitle = document.createElement('div');
+    roomTitle.className = 'ds-section-title';
+    roomTitle.textContent = 'Teleport to room';
+    const roomList = document.createElement('div');
+    roomList.style.cssText = 'display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;';
+    this._roomListEl = roomList;
+    roomSec.append(roomTitle, roomList);
 
-    wrap.append(genSec, outSec);
+    // Restore last result if switching back to tab
+    if (this._lastProcResult) {
+      output.textContent = this._lastProcResult.text;
+      roomSec.style.display = '';
+      this._renderRoomList(this._lastProcResult.roomIds);
+    }
+
+    outSec.append(outTitle, output);
+    wrap.append(genSec, outSec, roomSec);
     return wrap;
+  }
+
+  private _renderRoomList(roomIds: string[]): void {
+    const list = this._roomListEl;
+    if (!list) return;
+    list.innerHTML = '';
+    // Show parent roomSec
+    const sec = list.parentElement;
+    if (sec) sec.style.display = '';
+
+    if (roomIds.length === 0) {
+      const info = document.createElement('div');
+      info.className = 'ds-hint';
+      info.textContent = 'No rooms available (overworld has no teleportable rooms).';
+      list.appendChild(info);
+      return;
+    }
+
+    for (const id of roomIds) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;';
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn';
+      btn.style.cssText = 'font-size:.72rem;padding:3px 8px;flex-shrink:0;';
+      btn.textContent = '↳ Enter';
+      btn.onclick = () => this._opts.onEnterRoom(id);
+      const label = document.createElement('span');
+      label.style.cssText = 'font-size:.74rem;color:#8070a0;word-break:break-all;';
+      label.textContent = id;
+      row.append(btn, label);
+      list.appendChild(row);
+    }
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────

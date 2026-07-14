@@ -23,7 +23,7 @@ import { BookReader } from '@/interactables/BookReader';
 import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel } from '@/ui/DevPanel';
-import { generateDungeon } from '@/levels/DungeonGenerator';
+import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
@@ -281,6 +281,9 @@ async function main() {
     sceneManager.loadDungeon(plan);
     gameLoop.start();
 
+    // Track the last generated plan so room-teleport can load it
+    let _lastGeneratedPlan: DungeonPlan | null = null;
+
     // Build sandbox UI
     _sandboxUi?.dispose();
     _sandboxUi = new DevSandbox({
@@ -318,50 +321,69 @@ async function main() {
       getProcGenStats: (type, seed) => {
         try {
           if (type === 'tower') {
-            const plan = generateTower(seed);
-            const roomIds = [...plan.rooms.keys()];
+            const p = generateTower(seed);
+            _lastGeneratedPlan = p;
+            const roomIds = [...p.rooms.keys()];
             const byFloor = new Map<number, number>();
-            for (const bp of plan.rooms.values()) {
+            for (const bp of p.rooms.values()) {
               byFloor.set(bp.floor, (byFloor.get(bp.floor) ?? 0) + 1);
             }
             const floors = [...byFloor.entries()].sort((a, b) => a[0] - b[0]);
-            return [
-              `Seed:      ${seed}`,
-              `Rooms:     ${plan.rooms.size}`,
-              `Start:     ${plan.startRoomId}`,
-              '',
-              'Floor breakdown:',
-              ...floors.map(([f, c]) => `  Floor ${f.toString().padStart(2)}: ${c} room(s)`),
-              '',
-              'Room IDs:',
-              ...roomIds.map(id => `  ${id}`),
-            ].join('\n');
+            return {
+              text: [
+                `Seed:  ${seed}`,
+                `Rooms: ${p.rooms.size}`,
+                `Start: ${p.startRoomId}`,
+                '',
+                'Floor breakdown:',
+                ...floors.map(([f, c]) => `  Floor ${String(f).padStart(2)}: ${c} room(s)`),
+              ].join('\n'),
+              roomIds,
+            };
           } else if (type === 'dungeon') {
-            const plan = generateDungeon(seed, 5); // 5 floors for preview
-            const roomIds = [...plan.rooms.keys()];
-            return [
-              `Seed:  ${seed}`,
-              `Rooms: ${plan.rooms.size}`,
-              `Start: ${plan.startRoomId}`,
-              '',
-              'Room IDs:',
-              ...roomIds.map(id => `  ${id}`),
-            ].join('\n');
+            const p = generateDungeon(seed, 5);
+            _lastGeneratedPlan = p;
+            const roomIds = [...p.rooms.keys()];
+            return {
+              text: [
+                `Seed:  ${seed}`,
+                `Rooms: ${p.rooms.size}`,
+                `Start: ${p.startRoomId}`,
+                '',
+                'Room IDs:',
+                ...roomIds.map(id => `  ${id}`),
+              ].join('\n'),
+              roomIds,
+            };
           } else {
-            // overworld — just describe the seed
-            return [
-              `Seed:        ${seed}`,
-              `Biomes:      5 (bog, forest, highland, coastal, plains)`,
-              `Grid:        64×64 heightfield`,
-              `Settlements: procedural (seed-derived)`,
-              '',
-              'Note: the overworld generates as a live scene.',
-              'It cannot be previewed as a static blueprint.',
-            ].join('\n');
+            _lastGeneratedPlan = null;
+            return {
+              text: [
+                `Seed:        ${seed}`,
+                `Biomes:      5 (bog, forest, highland, coastal, plains)`,
+                `Grid:        64×64 heightfield`,
+                '',
+                'Note: overworld generates as a live scene.',
+                'No rooms to teleport into.',
+              ].join('\n'),
+              roomIds: [],
+            };
           }
         } catch (e) {
-          return `Error: ${String(e)}`;
+          return { text: `Error: ${String(e)}`, roomIds: [] };
         }
+      },
+      onEnterRoom: (roomId) => {
+        if (!_lastGeneratedPlan) return;
+        sceneManager.loadDungeon(_lastGeneratedPlan);
+        sceneManager.loadRoomImmediate(roomId);
+        _sandboxUi?.setLocation(roomId);
+      },
+      onReturnToArena: () => {
+        const arenaPlan = generateSandboxArena();
+        sceneManager.loadDungeon(arenaPlan);
+        sceneManager.loadRoomImmediate('sandbox_arena');
+        _sandboxUi?.setLocation('arena');
       },
       onClose: () => {
         _sandboxUi?.hide();
