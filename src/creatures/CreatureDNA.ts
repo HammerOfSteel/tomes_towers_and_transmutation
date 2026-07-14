@@ -4,6 +4,14 @@
 //  A DNA object serialises to Base64 for save files, clipboard, and the lab.
 
 export type Archetype  = 'biped' | 'quadruped' | 'amoeba' | 'avian' | 'serpent';
+export type SubRace    =
+  | 'none'                                        // non-biped / unknown
+  | 'human' | 'elf' | 'high_elf'
+  | 'goblin' | 'orc' | 'troll'
+  | 'pixie' | 'fae' | 'gnome'
+  | 'undead' | 'draconic' | 'celestial';
+export type EarShape   = 'none' | 'round' | 'pointed' | 'large';
+export type HeadStyle  = 'normal' | 'large' | 'small' | 'elongated';
 export type FaceType   = 'cute' | 'angry' | 'cyclops' | 'blank' | 'skull' | 'compound';
 export type MouthType  = 'smile' | 'frown' | 'beak' | 'fangs' | 'none';
 export type Expression = 'neutral' | 'happy' | 'angry' | 'scared';
@@ -18,6 +26,7 @@ export type PropId     =
 
 export interface CreatureDNA {
   archetype: Archetype;
+  subRace:   SubRace;
   colors: {
     primary:           number;
     secondary:         number;
@@ -54,6 +63,7 @@ export interface CreatureDNA {
 
 export const DEFAULT_PLAYER_DNA: CreatureDNA = {
   archetype: 'biped',
+  subRace:   'human',
   colors: { primary: 0xf5c89a, secondary: 0x4a2080, emissive: 0x6030c0, emissiveIntensity: 0.04 },
   proportions: {
     global: 1.0, torso: [1, 1, 1], headSize: 1.0,
@@ -62,8 +72,92 @@ export const DEFAULT_PLAYER_DNA: CreatureDNA = {
   },
   face: { type: 'cute', eyeColor: 0x2a1a4a, mouthType: 'smile', expression: 'neutral' },
   material: { roughness: 0.55, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.2 },
-  props: ['robe'],
+  props: [],
 };
+
+// ── Sub-race definitions ──────────────────────────────────────────────────────
+
+export interface SubRaceDef {
+  label:      string;
+  icon:       string;
+  hint:       string;
+  earShape:   EarShape;
+  headStyle:  HeadStyle;
+  proportions?: Partial<CreatureDNA['proportions']>;
+  colors?:     Partial<CreatureDNA['colors']>;
+  face?:       Partial<CreatureDNA['face']>;
+  props?:      PropId[];
+}
+
+export const SUBRACE_DEFS: Record<SubRace, SubRaceDef> = {
+  none:      { label: 'Unknown',   icon: '?',  hint: 'Indeterminate form.',
+               earShape: 'round',   headStyle: 'normal' },
+  human:     { label: 'Human',     icon: '👤', hint: 'Versatile and adaptable.',
+               earShape: 'round',   headStyle: 'normal' },
+  elf:       { label: 'Elf',       icon: '🧝', hint: 'Slender, long-lived, and sharp of ear.',
+               earShape: 'pointed', headStyle: 'elongated',
+               proportions: { limbLength: 1.15, global: 0.95, headSize: 0.92, neckLength: 1.1 },
+               colors:      { primary: 0xd8e0c8 },
+               face:        { type: 'cute', mouthType: 'smile' } },
+  high_elf:  { label: 'High Elf',  icon: '⭐', hint: 'Ancient bloodline, luminous bearing.',
+               earShape: 'pointed', headStyle: 'elongated',
+               proportions: { limbLength: 1.2, global: 1.0, headSize: 0.88, neckLength: 1.2 },
+               colors:      { primary: 0xe8f0e0, emissive: 0xc0e0ff, emissiveIntensity: 0.06 },
+               face:        { type: 'cute', mouthType: 'smile' } },
+  goblin:    { label: 'Goblin',    icon: '👺', hint: 'Short, clever, and mischievous.',
+               earShape: 'large',   headStyle: 'large',
+               proportions: { global: 0.78, headSize: 1.35, limbLength: 0.88, limbWidth: 0.85 },
+               colors:      { primary: 0x88a050 },
+               face:        { type: 'angry', mouthType: 'fangs' } },
+  orc:       { label: 'Orc',       icon: '💪', hint: 'Broad, strong, and battle-forged.',
+               earShape: 'round',   headStyle: 'normal',
+               proportions: { global: 1.08, limbWidth: 1.3, headSize: 1.05 },
+               colors:      { primary: 0x708050 },
+               face:        { type: 'angry', mouthType: 'fangs' } },
+  troll:     { label: 'Troll',     icon: '🧌', hint: 'Massive and regenerative.',
+               earShape: 'large',   headStyle: 'large',
+               proportions: { global: 1.3, headSize: 1.4, limbWidth: 1.45, limbLength: 1.05 },
+               colors:      { primary: 0x6a7060 },
+               face:        { type: 'angry', mouthType: 'frown' } },
+  pixie:     { label: 'Pixie',     icon: '🧚', hint: 'Tiny, fast, and full of tricks.',
+               earShape: 'pointed', headStyle: 'large',
+               proportions: { global: 0.52, headSize: 1.5, limbLength: 0.9 },
+               colors:      { primary: 0xf0d0ff, emissive: 0xe080ff, emissiveIntensity: 0.12 },
+               face:        { type: 'cute', mouthType: 'smile' },
+               props:       ['wings_bat'] },
+  fae:       { label: 'Fae',       icon: '🌿', hint: 'Nature-bound, mercurial, and enchanting.',
+               earShape: 'pointed', headStyle: 'large',
+               proportions: { global: 0.72, headSize: 1.25, limbLength: 1.05 },
+               colors:      { primary: 0xa0d880, emissive: 0x60ff80, emissiveIntensity: 0.1 },
+               face:        { type: 'cute', mouthType: 'smile' },
+               props:       ['wings_bat', 'aura'] },
+  gnome:     { label: 'Gnome',     icon: '🍄', hint: 'Inventive, stout, and surprising.',
+               earShape: 'round',   headStyle: 'large',
+               proportions: { global: 0.72, headSize: 1.3, limbLength: 0.85 },
+               colors:      { primary: 0xf0c890 } },
+  undead:    { label: 'Undead',    icon: '💀', hint: 'Returned from beyond — cold and tireless.',
+               earShape: 'none',    headStyle: 'normal',
+               colors:      { primary: 0xc0b8a8, secondary: 0x302820 },
+               face:        { type: 'skull', mouthType: 'fangs' },
+               props:       ['aura'] },
+  draconic:  { label: 'Draconic',  icon: '🐉', hint: 'Dragon-blooded. Scales, fire, and pride.',
+               earShape: 'none',    headStyle: 'normal',
+               colors:      { primary: 0x904020, secondary: 0x602010, emissive: 0xff4000, emissiveIntensity: 0.08 },
+               face:        { type: 'angry', mouthType: 'fangs' },
+               props:       ['horns_small'] },
+  celestial: { label: 'Celestial', icon: '✨', hint: 'Descended from starlight. Radiant and serene.',
+               earShape: 'pointed', headStyle: 'elongated',
+               proportions: { global: 1.0, limbLength: 1.1, headSize: 0.9 },
+               colors:      { primary: 0xfff0d8, secondary: 0xd0c0f0, emissive: 0xffd080, emissiveIntensity: 0.12 },
+               face:        { type: 'cute', mouthType: 'smile' },
+               props:       ['aura', 'crown'] },
+};
+
+/** Subraces available when archetype === 'biped'. */
+export const BIPED_SUBRACES: SubRace[] = [
+  'human', 'elf', 'high_elf', 'goblin', 'orc', 'troll',
+  'pixie', 'fae', 'gnome', 'undead', 'draconic', 'celestial',
+];
 
 export const ARCHETYPE_DEFAULTS: Partial<Record<Archetype, Partial<CreatureDNA>>> = {
   quadruped: {
@@ -95,6 +189,8 @@ export const ARCHETYPE_DEFAULTS: Partial<Record<Archetype, Partial<CreatureDNA>>
 export function dnaForArchetype(arch: Archetype): CreatureDNA {
   const base = cloneDNA(DEFAULT_PLAYER_DNA);
   base.archetype = arch;
+  // Non-biped archetypes have no sub-race.
+  if (arch !== 'biped') base.subRace = 'none';
   const over = ARCHETYPE_DEFAULTS[arch];
   if (!over) return base;
   if (over.colors)      Object.assign(base.colors,      over.colors);
@@ -104,10 +200,28 @@ export function dnaForArchetype(arch: Archetype): CreatureDNA {
   return base;
 }
 
+/** Apply a sub-race's defaults on top of an existing DNA (biped only). */
+export function dnaForSubRace(subRace: SubRace, base: CreatureDNA): CreatureDNA {
+  const dna = cloneDNA(base);
+  dna.subRace = subRace;
+  if (subRace === 'none') return dna;
+  const def = SUBRACE_DEFS[subRace];
+  if (def.proportions) Object.assign(dna.proportions, def.proportions);
+  if (def.colors)      Object.assign(dna.colors,      def.colors);
+  if (def.face)        Object.assign(dna.face,        def.face);
+  if (def.props !== undefined) dna.props = [...def.props];
+  return dna;
+}
+
 // ── Serialisation ─────────────────────────────────────────────────────────────
 
 export function dnaToBase64(dna: CreatureDNA): string { return btoa(JSON.stringify(dna)); }
-export function base64ToDna(b64: string): CreatureDNA  { return JSON.parse(atob(b64)) as CreatureDNA; }
+export function base64ToDna(b64: string): CreatureDNA {
+  const dna = JSON.parse(atob(b64)) as CreatureDNA;
+  // Backwards-compat: old saves have no subRace field.
+  if (dna.subRace === undefined) dna.subRace = dna.archetype === 'biped' ? 'human' : 'none';
+  return dna;
+}
 export function cloneDNA(dna: CreatureDNA): CreatureDNA { return JSON.parse(JSON.stringify(dna)) as CreatureDNA; }
 export function numToHex(n: number): string { return '#' + n.toString(16).padStart(6, '0'); }
 export function hexToNum(s: string): number { return parseInt(s.replace('#', ''), 16); }

@@ -8,7 +8,10 @@
 import * as THREE from 'three';
 import {
   type CreatureDNA, type Archetype, type FaceType, type MouthType, type PropId,
-  DEFAULT_PLAYER_DNA, dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64,
+  type SubRace,
+  DEFAULT_PLAYER_DNA, dnaForArchetype, dnaForSubRace, cloneDNA,
+  numToHex, hexToNum, dnaToBase64,
+  BIPED_SUBRACES, SUBRACE_DEFS,
 } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature }                 from '@/creatures/CreatureAnimator';
@@ -123,6 +126,12 @@ const CC_CSS = `
 .cc-color-input::-webkit-color-swatch { border: none; border-radius: 2px; }
 .cc-slider { flex: 1; accent-color: #7050cc; cursor: pointer; min-width: 80px; }
 .cc-slider-val { font-size: .72rem; color: #5a4880; min-width: 28px; text-align: right; }
+.cc-subrace-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cc-subrace-chip { font-size: .72rem; padding: 3px 8px; border-radius: 14px;
+  border: 1px solid #2e1f50; color: #8070b0; cursor: pointer; user-select: none;
+  background: transparent; transition: all .12s; white-space: nowrap; }
+.cc-subrace-chip:hover { border-color: #5040a0; color: #c0b0e0; }
+.cc-subrace-chip.cc-chip--on { background: #2a1858; border-color: #7050cc; color: #d4c8f8; }
 .cc-prop-grid { display: flex; flex-wrap: wrap; gap: 5px; }
 .cc-prop { display: flex; align-items: center; gap: 4px; cursor: pointer;
   font-size: .76rem; color: #7060a0; user-select: none; }
@@ -228,6 +237,8 @@ export class CharacterCreation {
   // Control refs (populated in _build)
   private _nameInput!: HTMLInputElement;
   private _archChips  = new Map<Archetype, HTMLElement>();
+  private _subRaceChips = new Map<SubRace, HTMLElement>();
+  private _subRaceRow!: HTMLElement;
   private _boonCards  = new Map<StartingBoon, HTMLElement>();
   private _faceChips  = new Map<FaceType,  HTMLElement>();
   private _mouthChips = new Map<MouthType, HTMLElement>();
@@ -286,6 +297,8 @@ export class CharacterCreation {
     this._eyeInput.value      = numToHex(d.face.eyeColor);
 
     this._archChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.archetype));
+    this._subRaceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.subRace));
+    this._subRaceRow.style.display = d.archetype === 'biped' ? 'flex' : 'none';
     this._boonCards.forEach((el, id) => el.classList.toggle('cc-boon--on', id === this._boon));
     this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.type));
     this._mouthChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.mouthType));
@@ -341,10 +354,38 @@ export class CharacterCreation {
     for (const a of ARCHETYPES) {
       const chip = document.createElement('div'); chip.className = 'cc-chip';
       chip.textContent = a.icon + ' ' + a.label; chip.title = a.hint;
-      chip.onclick = () => { this._dna = dnaForArchetype(a.id); this._syncControls(); this._preview?.setDNA(this._dna); };
+      chip.onclick = () => {
+        this._dna = dnaForArchetype(a.id);
+        this._subRaceRow.style.display = a.id === 'biped' ? 'flex' : 'none';
+        this._syncControls();
+        this._preview?.setDNA(this._dna);
+      };
       this._archChips.set(a.id, chip); archChips.appendChild(chip);
     }
     archSec.append(archTitle, archChips);
+
+    // Sub-race selector (biped only)
+    const subRaceLabel = document.createElement('div');
+    subRaceLabel.className = 'cc-label'; subRaceLabel.textContent = 'Species';
+    subRaceLabel.style.marginTop = '4px';
+    this._subRaceRow = document.createElement('div');
+    this._subRaceRow.className = 'cc-subrace-row';
+    this._subRaceRow.style.display = this._dna.archetype === 'biped' ? 'flex' : 'none';
+    for (const sr of BIPED_SUBRACES) {
+      const def = SUBRACE_DEFS[sr];
+      const chip = document.createElement('div');
+      chip.className = 'cc-subrace-chip';
+      chip.textContent = def.icon + ' ' + def.label;
+      chip.title = def.hint;
+      chip.onclick = () => {
+        this._dna = dnaForSubRace(sr, this._dna);
+        this._syncControls();
+        this._preview?.setDNA(this._dna);
+      };
+      this._subRaceChips.set(sr, chip);
+      this._subRaceRow.appendChild(chip);
+    }
+    archSec.append(subRaceLabel, this._subRaceRow);
 
     // Boon
     const boonSec = document.createElement('div'); boonSec.className = 'cc-section';
