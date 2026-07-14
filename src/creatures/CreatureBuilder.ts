@@ -200,7 +200,104 @@ function _props(
     torso.add(m); ms.push(m);
   }
 }
+// ── Outfit ────────────────────────────────────────────────────────────────────────────────
 
+function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
+  const o = (dna as any).outfit ?? { top: 'none', legs: 'none', over: 'none' };
+  const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
+
+  // ─ Top ───────────────────────────────────────────────────────────────
+  if (o.top === 'tunic') {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.26, 0.5, 10), sm);
+    m.position.y = 1.17; torso.add(m); ms.push(m);
+  }
+  if (o.top === 'robe_top') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.26, 0.5, 10), sm);
+    body.position.y = 1.17; torso.add(body); ms.push(body);
+    const belt2 = new THREE.Mesh(new THREE.CylinderGeometry(0.265, 0.265, 0.055, 10), pm);
+    belt2.position.y = 0.91; torso.add(belt2); ms.push(belt2);
+  }
+  if (o.top === 'armor_chest') {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.44, 0.21), _m(0x8090a0, dna, { metalness: 0.5, roughness: 0.3 }));
+    plate.position.y = 1.29; torso.add(plate); ms.push(plate);
+    for (const s of [-1, 1] as const) {
+      const spd = new THREE.Mesh(new THREE.SphereGeometry(0.1, 7, 5), _m(0x8090a0, dna, { metalness: 0.5, roughness: 0.3 }));
+      spd.position.set(s * 0.32, 1.5, 0); torso.add(spd); ms.push(spd);
+    }
+  }
+  if (o.top === 'wrap') {
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.215, 0.055, 10, 1, true),
+        _m(0xe8dcc8, dna, { roughness: 0.9, clearcoat: 0 }));
+      ring.position.y = 1.08 + i * 0.12; torso.add(ring); ms.push(ring);
+    }
+  }
+
+  // ─ Legs ──────────────────────────────────────────────────────────────
+  if (o.legs === 'trousers') {
+    for (const s of [-1, 1] as const) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.088, 0.46, 8), sm);
+      leg.position.set(s * 0.13, -0.25, 0); torso.add(leg); ms.push(leg);
+    }
+  }
+  if (o.legs === 'skirt') {
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.42, 0.58, 10), sm);
+    skirt.position.y = -0.06; torso.add(skirt); ms.push(skirt);
+  }
+  if (o.legs === 'shorts') {
+    for (const s of [-1, 1] as const) {
+      const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.22, 8), sm);
+      s2.position.set(s * 0.12, -0.14, 0); torso.add(s2); ms.push(s2);
+    }
+  }
+  if (o.legs === 'loincloth') {
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.28, 0.03), sm);
+    front.position.set(0, -0.19, 0.15); torso.add(front); ms.push(front);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.22, 0.03), sm);
+    back.position.set(0, -0.17, -0.14); torso.add(back); ms.push(back);
+  }
+  if (o.legs === 'robe_skirt') {
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.52, 1.08, 10), sm);
+    skirt.position.y = 0.52; torso.add(skirt); ms.push(skirt);
+    const belt3 = new THREE.Mesh(new THREE.CylinderGeometry(0.248, 0.248, 0.058, 10), pm);
+    belt3.position.y = 1.05; torso.add(belt3); ms.push(belt3);
+  }
+
+  // ─ Over ──────────────────────────────────────────────────────────────
+  if (o.over === 'robe_full') {
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.48, 1.12, 10), sm);
+    skirt.position.y = 0.56; torso.add(skirt); ms.push(skirt);
+    const belt4 = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.245, 0.07, 10), pm);
+    belt4.position.y = 1.07; torso.add(belt4); ms.push(belt4);
+  }
+  if (o.over === 'cape') {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.38, 0); shape.lineTo(0.38, 0);
+    shape.lineTo(0.44, -0.92); shape.lineTo(0, -1.04); shape.lineTo(-0.44, -0.92);
+    shape.closePath();
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(dna.colors.secondary), emissive: new THREE.Color(dna.colors.emissive),
+      emissiveIntensity: dna.colors.emissiveIntensity * 0.4,
+      roughness: 0.88, metalness: 0, clearcoat: 0.1, side: THREE.DoubleSide,
+    }));
+    m.position.set(0, 1.52, -0.26); m.rotation.x = 0.16; torso.add(m); ms.push(m);
+  }
+  if (o.over === 'cloak') {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.33, 0); shape.lineTo(0.33, 0);
+    shape.lineTo(0.37, -0.74); shape.lineTo(0, -0.84); shape.lineTo(-0.37, -0.74);
+    shape.closePath();
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(dna.colors.secondary), emissive: new THREE.Color(dna.colors.emissive),
+      emissiveIntensity: dna.colors.emissiveIntensity * 0.4,
+      roughness: 0.88, metalness: 0, clearcoat: 0.1, side: THREE.DoubleSide,
+    }));
+    m.position.set(0, 1.52, -0.24); m.rotation.x = 0.13; torso.add(m); ms.push(m);
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6),
+      new THREE.MeshPhysicalMaterial({ color: new THREE.Color(dna.colors.secondary), roughness: 0.88, metalness: 0, clearcoat: 0.1 }));
+    hood.position.set(0, 1.73, -0.06); hood.rotation.x = 0.3; torso.add(hood); ms.push(hood);
+  }
+}
 // ── Biped ─────────────────────────────────────────────────────────────────────
 
 function _biped(dna: CreatureDNA): CreatureRig {
@@ -215,17 +312,27 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const torso = new THREE.Group();
   bones.torso = torso; root.add(torso);
 
-  // Body cylinder (above any robe)
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * tx, 0.245 * tx, 0.52 * ty, 10), pm);
-  body.position.y = 1.38 * ty; torso.add(body); ms.push(body);
+  // CC-3 morph scalars
+  const sw = p.shoulderWidth  ?? 1.0;
+  const hw = p.hipWidth       ?? 1.0;
+  const bz = p.bellySize      ?? 0.0;
+  const nt = p.neckThickness  ?? 1.0;
 
-  // Robe handled in _props
+  // Body cylinder
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * tx * sw, 0.245 * tx * hw, 0.52 * ty, 10), pm);
+  body.position.y = 1.38 * ty; torso.add(body); ms.push(body);
+  if (bz > 0.3) {
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.19 * tx * bz, 8, 6), pm);
+    belly.scale.z = 1.35; belly.position.set(0, 1.18 * ty, 0.09); torso.add(belly); ms.push(belly);
+  }
+
+  // Legacy props
   _props(dna.props, undefined, torso, dna, ms);
 
   // Arms
   for (const s of [-1, 1] as const) {
     const sh = new THREE.Group();
-    sh.position.set(s * 0.31 * tx, 1.44 * ty, 0); sh.rotation.z = s * 0.25;
+    sh.position.set(s * 0.31 * tx * sw, 1.44 * ty, 0); sh.rotation.z = s * 0.25;
     const arm  = new THREE.Mesh(new THREE.CylinderGeometry(0.065 * p.limbWidth, 0.075 * p.limbWidth, 0.34 * p.limbLength, 7), sm);
     arm.position.y = -0.17 * p.limbLength; sh.add(arm); ms.push(arm);
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.062 * p.limbWidth, 6, 5), pm);
@@ -237,7 +344,7 @@ function _biped(dna: CreatureDNA): CreatureRig {
   // Neck + Head
   const neck = new THREE.Group();
   neck.position.y = 1.62 * ty; bones.neck = neck; torso.add(neck);
-  const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.085, 0.13 * p.neckLength, 8), pm);
+  const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * nt, 0.085 * nt, 0.13 * p.neckLength, 8), pm);
   neck.add(neckM); ms.push(neckM);
 
   const head = new THREE.Group();
@@ -254,11 +361,13 @@ function _biped(dna: CreatureDNA): CreatureRig {
 
   _props(dna.props, head, undefined, dna, ms);
 
-  // Legs (only if no robe)
-  if (!dna.props.includes('robe')) {
+  // Legs — hidden when a full-length over garment or skirt is worn
+  const _ot = (dna as any).outfit ?? { top: 'none', legs: 'none', over: 'none' };
+  const _hideLegs = dna.props.includes('robe') || _ot.over === 'robe_full' || _ot.legs === 'robe_skirt' || _ot.legs === 'skirt';
+  if (!_hideLegs) {
     for (const s of [-1, 1] as const) {
       const hip = new THREE.Group();
-      hip.position.set(s * 0.13 * tx, 0.02, 0);
+      hip.position.set(s * 0.13 * tx * hw, 0.02, 0);
       const leg  = new THREE.Mesh(new THREE.CylinderGeometry(0.085 * p.limbWidth, 0.072 * p.limbWidth, 0.46 * p.limbLength, 7), sm);
       leg.position.y = -0.23 * p.limbLength; hip.add(leg); ms.push(leg);
       const footGeo = new THREE.SphereGeometry(0.09 * p.limbWidth, 6, 4);
@@ -269,6 +378,9 @@ function _biped(dna: CreatureDNA): CreatureRig {
       if (s === -1) bones.legL = hip; else bones.legR = hip;
     }
   }
+
+  // Outfit (top / legs / over clothing layer)
+  _outfit(dna, torso, ms);
 
   return { root, bones, faceTex: tex, dispose: _free(ms, [tex]) };
 }
