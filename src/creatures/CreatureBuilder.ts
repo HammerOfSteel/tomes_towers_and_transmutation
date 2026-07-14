@@ -519,49 +519,58 @@ function _avian(dna: CreatureDNA): CreatureRig {
 
 // ── Serpent ───────────────────────────────────────────────────────────────────
 
-// Naga/cobra pose: front segments arch upward, tail segments trail horizontally.
+// Cobra/naga pose: front segments arch upward; tail trails in -Z (behind the creature).
+// Each capsule mesh is rotated to align with the chain direction so segments
+// visually connect rather than appearing as disconnected floating pills.
 function _serpent(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { segments: [] };
   const p = dna.proportions;
   const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
 
   const root = new THREE.Group(); root.scale.setScalar(p.global);
-  const n    = Math.round(Math.max(3, Math.min(12, p.segmentCount)));
+  const n = Math.round(Math.max(3, Math.min(12, p.segmentCount)));
 
-  // Segments 0..(upCount-1) arch upward (cobra crown); rest trail horizontally
+  // First floor(n/3) segments arch upward (cobra crown); rest trail in -Z.
   const upCount = Math.max(2, Math.floor(n / 3));
   let parent: THREE.Object3D = root;
 
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
-    const r = (0.22 - t * 0.14) * p.torso[0];
+    // torso[0]=1 gives radius 0.30→0.12; original default was 0.5 so we don't apply it here
+    const r = (0.30 - t * 0.18) * p.torso[0];
     const g = new THREE.Group();
 
+    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(Math.max(0.04, r), 0.24, 6, 8), i % 2 ? sm : pm);
+
     if (i === 0) {
-      g.position.y = 0.22;                        // chest above ground
+      g.position.y = 0.30;               // base sits above ground; capsule points up (default)
     } else if (i < upCount) {
-      g.position.y = 0.30;                        // chain upward (cobra neck)
+      g.position.y = 0.40;               // chain upward; capsule points up
+    } else if (i === upCount) {
+      g.position.z = -0.28;              // first horizontal — tail trails BEHIND (-Z)
+      g.position.y = 0.06;
+      seg.rotation.x = Math.PI / 2;      // rotate capsule so long axis points in Z
     } else {
-      g.position.z = (i === upCount) ? 0.22 : 0.32;  // horizontal tail
-      g.position.y = (i === upCount) ? 0.05 : -0.10;
+      g.position.z = -0.38;              // each tail segment continues in -Z
+      g.position.y = -0.10;
+      seg.rotation.x = Math.PI / 2;
     }
 
-    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.20, 6, 8), i % 2 ? sm : pm);
     g.add(seg); parent.add(g);
     bones.segments!.push(g); ms.push(seg);
     if (i === 0) bones.torso = g;
     parent = g;
   }
 
-  // Head sits atop the raised section, faces forward
+  // Head sits atop the raised cobra crown, faces forward (+Z).
   const headNeck = new THREE.Group();
-  headNeck.position.y = 0.28;
-  headNeck.rotation.x = -0.20;
+  headNeck.position.y = 0.32;
+  headNeck.rotation.x = -0.15;           // slight forward tilt
   bones.segments![upCount - 1].add(headNeck);
 
   const head = new THREE.Group(); bones.head = head;
-  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.75), pm); head.add(hm); ms.push(hm);
-  const { tex, plane } = _faceplane(dna, p.headSize * 0.75); head.add(plane); ms.push(plane);
+  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.80), pm); head.add(hm); ms.push(hm);
+  const { tex, plane } = _faceplane(dna, p.headSize * 0.80); head.add(plane); ms.push(plane);
   headNeck.add(head);
 
   _props(dna.props, head, bones.torso, dna, ms);
