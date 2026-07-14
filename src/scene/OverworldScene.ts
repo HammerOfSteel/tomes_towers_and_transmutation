@@ -39,6 +39,7 @@ import type { WorldData, DungeonEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
+import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -1105,7 +1106,8 @@ export class OverworldScene {
     if (!settlements || settlements.length === 0) return;
 
     const { _GHW: GHW, _GHH: GHH } = this;
-    const roadMat  = new THREE.MeshLambertMaterial({ color: 0x5a4832 });
+    const roadTex  = cobblestoneTexture(2, 2);
+    const roadMat  = new THREE.MeshLambertMaterial({ map: roadTex, color: 0x8a7a68 });
 
     // Collect all road tile positions from all settlements
     const roadPositions: THREE.Vector3[] = [];

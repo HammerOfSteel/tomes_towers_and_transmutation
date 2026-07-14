@@ -1,128 +1,250 @@
 /**
- * BuildingGenerator — returns a THREE.Group for each building type.
+ * BuildingGenerator — procedural THREE.Group for each building type.
+ *
+ * Improvements over OW-4:
+ *   • Canvas-generated procedural textures (stone, brick, render, thatch, slate)
+ *     via TextureFactory — individual bricks/stones visible with mortar lines.
+ *   • 4-panel wall construction: front/back/left/right panels give each face
+ *     its own UV space so the texture tiles correctly relative to wall size.
+ *   • Proper pitched / hipped BufferGeometry roofs (not LatheGeometry cones).
+ *   • Window geometry: trim frame + glass pane on every occupied floor.
+ *   • Plinth on all solid buildings.
+ *
+ * Materials use MeshLambertMaterial (consistent with the rest of the game).
+ * The canvas texture map provides visual detail; a seed-derived colour tint
+ * on the material gives per-building variation.
  *
  * All groups are positioned at the origin (y=0 = ground level).
  * The caller translates them to world-space after the call.
- *
- * Materials use MeshLambertMaterial (consistent with the rest of the game).
- * Per-seed colour variance is applied as a small hue offset so each settlement
- * has a distinct palette feel.
  */
 
 import * as THREE from 'three';
-import { mulberry32 } from '@/core/prng';
+import { mulberry32 }    from '@/core/prng';
 import type { BuildingType } from './BuildingTypes';
+import {
+  stoneTexture,
+  brickTexture,
+  renderTexture,
+  slateTexture,
+  thatchTexture,
+} from './TextureFactory';
 
-// ── Shared geometry cache (module-level, lazy) ────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-let _latheSegments = 12;  // reduce for performance on older hw
+const WT       = 0.25;   // wall thickness (world units)
+const PLINTH_H = 0.28;   // plinth / foundation height
 
-// ── Colour palette ─────────────────────────────────────────────────────────────
-
-function _wallColor(rand: () => number): number {
-  // Stone palette: warm grey with slight seeded variation
-  const base = 0x9a8870;
-  const r    = ((base >> 16) & 0xff) + Math.floor((rand() - 0.5) * 24);
-  const g    = ((base >>  8) & 0xff) + Math.floor((rand() - 0.5) * 18);
-  const b    = ( base        & 0xff) + Math.floor((rand() - 0.5) * 14);
-  return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-}
-
-function _roofColor(rand: () => number): number {
-  // Thatch/slate palette: warm amber or dark grey
-  if (rand() < 0.55) {
-    // thatch — amber
-    const v = 0xb89050 + Math.floor((rand() - 0.5) * 16 * 0x010100);
-    return v;
-  }
-  // slate — blue-grey
-  return 0x556677 + Math.floor((rand() - 0.5) * 8 * 0x010101);
-}
-
-function _mat(color: number): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({ color });
-}
-
-// ── Roof builders ──────────────────────────────────────────────────────────────
+// ── Roof geometry ─────────────────────────────────────────────────────────────
 
 /**
- * Thatched dome — quarter-circle LatheGeometry profile.
- * @param radius  base radius of the roof
- * @param height  total height of the dome
+ * Gabled pitched roof — ridge runs along the X-axis.
+ * Vertices sit at y=0 (eave level); ridge at y=rh.
  */
-function _buildThatchedDome(radius: number, height: number, mat: THREE.Material): THREE.Mesh {
-  const pts: THREE.Vector2[] = [];
-  const SEG = 8;
-  for (let i = 0; i <= SEG; i++) {
-    const t = (i / SEG) * (Math.PI / 2);
-    // slight overhang at the base (radius * 1.12)
-    const r = Math.cos(t) * radius * 1.12;
-    const y = Math.sin(t) * height;
-    pts.push(new THREE.Vector2(r, y));
-  }
-  return new THREE.Mesh(new THREE.LatheGeometry(pts, _latheSegments), mat);
+function _pitchedRoof(w: number, d: number): THREE.BufferGeometry {
+  const hw = w / 2, hd = d / 2, rh = w * 0.52;
+  const pos = new Float32Array([
+    -hw, 0, -hd,  // 0 front-left eave
+     hw, 0, -hd,  // 1 front-right eave
+     hw, 0,  hd,  // 2 back-right eave
+    -hw, 0,  hd,  // 3 back-left eave
+    -hw, rh, 0,   // 4 left gable ridge
+     hw, rh, 0,   // 5 right gable ridge
+  ]);
+  const idx = new Uint16Array([
+    0, 1, 5,  0, 5, 4,   // front slope  (faces -Z)
+    3, 5, 4,  3, 2, 5,   // back slope   (faces +Z)
+    0, 3, 4,             // left gable   (faces -X)
+    1, 5, 2,             // right gable  (faces +X)
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /**
- * Pointed/pitched roof — tapering cone profile with slight curve.
+ * Hipped roof — ridge shorter than the building depth, both ends are sloped.
  */
-function _buildPointedRoof(radius: number, height: number, mat: THREE.Material): THREE.Mesh {
-  const pts: THREE.Vector2[] = [
-    new THREE.Vector2(radius * 1.1, 0),
-    new THREE.Vector2(radius * 0.7,  height * 0.35),
-    new THREE.Vector2(radius * 0.25, height * 0.75),
-    new THREE.Vector2(0.04,          height),
+function _hippedRoof(w: number, d: number): THREE.BufferGeometry {
+  const hw = w / 2, hd = d / 2;
+  const rh  = w * 0.48;
+  const hip = d * 0.28;
+  const rl  = hd - hip;
+
+  const pos = new Float32Array([
+    -hw, 0,  -hd,   // 0 front-left
+     hw, 0,  -hd,   // 1 front-right
+     hw, 0,   hd,   // 2 back-right
+    -hw, 0,   hd,   // 3 back-left
+    -hw, rh, -rl,   // 4 left-front ridge
+     hw, rh, -rl,   // 5 right-front ridge
+     hw, rh,  rl,   // 6 right-back ridge
+    -hw, rh,  rl,   // 7 left-back ridge
+  ]);
+  const idx = new Uint16Array([
+    0, 1, 5,  0, 5, 4,   // front hip
+    3, 7, 6,  3, 6, 2,   // back hip
+    0, 4, 7,  0, 7, 3,   // left hip
+    1, 2, 6,  1, 6, 5,   // right hip
+    4, 5, 6,  4, 6, 7,   // ridge cap
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// ── Material helpers ──────────────────────────────────────────────────────────
+
+/** Canvas-textured Lambert wall material with a seed-tinted colour. */
+function _wallMat(
+  texFn: (rx: number, ry: number) => THREE.CanvasTexture,
+  w: number, h: number,
+  tint: THREE.Color,
+): THREE.MeshLambertMaterial {
+  const repX = Math.max(1, w / 2.0);
+  const repY = Math.max(1, h / 1.5);
+  return new THREE.MeshLambertMaterial({ map: texFn(repX, repY), color: tint });
+}
+
+/** Canvas-textured Lambert roof material. */
+function _roofMat(
+  texFn: (rx: number, ry: number) => THREE.CanvasTexture,
+  w: number, d: number,
+  tint: THREE.Color,
+): THREE.MeshLambertMaterial {
+  const slopeLen = Math.sqrt((w / 2) ** 2 + (w * 0.52) ** 2);
+  const repX = Math.max(1, d / 2.0);
+  const repY = Math.max(1, slopeLen / 1.5);
+  return new THREE.MeshLambertMaterial({
+    map:  texFn(repX, repY),
+    color: tint,
+    side: THREE.DoubleSide,
+  });
+}
+
+/** Flat colour Lambert — for doors, frames, trim. */
+function _flatMat(hex: number): THREE.MeshLambertMaterial {
+  return new THREE.MeshLambertMaterial({ color: hex });
+}
+
+// ── Colour tint generators ────────────────────────────────────────────────────
+
+function _stoneColor(rand: () => number): THREE.Color {
+  const v = (rand() - 0.5) * 0.1;
+  return new THREE.Color(0.62 + v, 0.58 + v * 0.9, 0.52 + v * 0.7);
+}
+
+function _brickColor(rand: () => number): THREE.Color {
+  const v = (rand() - 0.5) * 0.07;
+  return new THREE.Color(0.72 + v, 0.44 + v * 0.8, 0.34 + v * 0.5);
+}
+
+function _renderColor(rand: () => number): THREE.Color {
+  const v = (rand() - 0.5) * 0.07;
+  return new THREE.Color(0.84 + v, 0.78 + v, 0.65 + v * 0.8);
+}
+
+function _slateColor(rand: () => number): THREE.Color {
+  const v = (rand() - 0.5) * 0.05;
+  return new THREE.Color(0.24 + v, 0.28 + v, 0.32 + v);
+}
+
+function _thatchColor(rand: () => number): THREE.Color {
+  const v = (rand() - 0.5) * 0.08;
+  return new THREE.Color(0.70 + v, 0.56 + v * 0.9, 0.22 + v * 0.3);
+}
+
+// ── Wall construction helpers ─────────────────────────────────────────────────
+
+/** Stone plinth / foundation slab. */
+function _addPlinth(grp: THREE.Group, w: number, d: number): void {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.5, PLINTH_H, d + 0.5),
+    _flatMat(0x5a5048),
+  );
+  mesh.position.y = PLINTH_H / 2;
+  grp.add(mesh);
+}
+
+/**
+ * Four-panel wall construction.
+ * Each face is a separate BoxGeometry so UV tiling is independent per face.
+ */
+function _addWalls(
+  grp: THREE.Group,
+  w: number, wallH: number, d: number,
+  mat: THREE.MeshLambertMaterial,
+): void {
+  const yMid = PLINTH_H + wallH / 2;
+  const panels: [number, number, number, number, number, number][] = [
+    [w,   wallH, WT,          0,               yMid,  d / 2 - WT / 2  ],  // front
+    [w,   wallH, WT,          0,               yMid, -d / 2 + WT / 2  ],  // back
+    [WT,  wallH, d - WT * 2, -w / 2 + WT / 2,  yMid,  0               ],  // left
+    [WT,  wallH, d - WT * 2,  w / 2 - WT / 2,  yMid,  0               ],  // right
   ];
-  return new THREE.Mesh(new THREE.LatheGeometry(pts, _latheSegments), mat);
-}
-
-/**
- * Spire — very tall narrow cone.
- */
-function _buildSpire(baseRadius: number, height: number, mat: THREE.Material): THREE.Mesh {
-  const pts: THREE.Vector2[] = [
-    new THREE.Vector2(baseRadius, 0),
-    new THREE.Vector2(baseRadius * 0.5, height * 0.4),
-    new THREE.Vector2(baseRadius * 0.15, height * 0.8),
-    new THREE.Vector2(0.03, height),
-  ];
-  return new THREE.Mesh(new THREE.LatheGeometry(pts, _latheSegments), mat);
-}
-
-/**
- * Flat parapet — a hollow BoxGeometry frame.
- * Returns a Group (4 merlons + flat top slab).
- */
-function _buildFlatParapet(
-  w: number, d: number, mat: THREE.Material,
-  merlon = true,
-): THREE.Group {
-  const grp  = new THREE.Group();
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.22, d + 0.3), mat);
-  slab.position.y = 0.11;
-  grp.add(slab);
-  if (merlon) {
-    const mH = 0.4;
-    const mW = 0.28;
-    for (let i = -1; i <= 1; i += 2) {
-      for (let j = -1; j <= 1; j += 2) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(mW, mH, mW), mat);
-        m.position.set(i * (w / 2 - 0.18), 0.22 + mH / 2, j * (d / 2 - 0.18));
-        grp.add(m);
-      }
-    }
+  for (const [gw, gh, gd, px, py, pz] of panels) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, gd), mat);
+    mesh.position.set(px, py, pz);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+    grp.add(mesh);
   }
-  return grp;
 }
 
-// ── Wall builder ───────────────────────────────────────────────────────────────
+/**
+ * Place a window: trim frame + glass pane.
+ * rotY=0 → window faces +Z (front wall).
+ */
+function _addWindow(
+  grp:     THREE.Group,
+  x:       number, y: number, z: number,
+  rotY:    number,
+  winW:    number, winH: number,
+  trimMat: THREE.MeshLambertMaterial,
+): void {
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(winW + 0.16, winH + 0.16, WT * 0.6),
+    trimMat,
+  );
+  frame.position.set(x, y, z);
+  frame.rotation.y = rotY;
 
-/** Rectangular wall box with optional window cutouts simulated via colour. */
-function _buildBox(w: number, h: number, d: number, mat: THREE.Material): THREE.Mesh {
-  return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(winW, winH, WT * 0.35),
+    new THREE.MeshLambertMaterial({ color: 0x1a2a38 }),
+  );
+  glass.position.set(x, y, z);
+  glass.rotation.y = rotY;
+
+  grp.add(frame, glass);
 }
 
-// ── Building generators ────────────────────────────────────────────────────────
+/** Simple door panel + surround. */
+function _addDoor(
+  grp:      THREE.Group,
+  x:        number, _z: number,
+  doorW:    number, doorH: number,
+  wallFaceZ: number,
+  doorColor: number, trimColor: number,
+): void {
+  const surround = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW + 0.22, doorH + 0.22, WT * 0.5),
+    _flatMat(trimColor),
+  );
+  surround.position.set(x, PLINTH_H + doorH / 2 + 0.06, wallFaceZ);
+
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW, doorH, WT * 0.45),
+    _flatMat(doorColor),
+  );
+  door.position.set(x, PLINTH_H + doorH / 2, wallFaceZ);
+  grp.add(surround, door);
+}
+
+// ── Public entry point ────────────────────────────────────────────────────────
 
 export function generateBuilding(type: BuildingType, seed: number): THREE.Group {
   const rand = mulberry32(seed ^ 0x3C_BA_19_E7);
@@ -140,248 +262,270 @@ export function generateBuilding(type: BuildingType, seed: number): THREE.Group 
   }
 }
 
-// ── Individual types ──────────────────────────────────────────────────────────
+// ── Individual building generators ────────────────────────────────────────────
 
-/** Small 1-room dwelling with thatched dome roof. */
+/** Cottage — render/plaster walls, thatched pitched roof, flower boxes. */
 function _makeCottage(rand: () => number): THREE.Group {
-  const grp      = new THREE.Group();
-  const wallMat  = _mat(_wallColor(rand));
-  const roofMat  = _mat(_roofColor(rand));
+  const grp   = new THREE.Group();
+  const w     = 3.4 + rand() * 0.7;
+  const d     = 2.9 + rand() * 0.5;
+  const wallH = 2.1;
 
-  const w = 3.2 + rand() * 0.6;
-  const d = 2.8 + rand() * 0.4;
-  const h = 2.0;
+  const wallTint  = _renderColor(rand);
+  const roofTint  = _thatchColor(rand);
+  const trimColor = 0x4a3420;
+  const wallM     = _wallMat(renderTexture, w, wallH, wallTint);
+  const roofM     = _roofMat(thatchTexture, w, d, roofTint);
+  const trimM     = _flatMat(trimColor);
 
-  const walls = _buildBox(w, h, d, wallMat);
-  walls.position.y = h / 2;
-  grp.add(walls);
+  _addPlinth(grp, w, d);
+  _addWalls(grp, w, wallH, d, wallM);
 
-  const roof = _buildThatchedDome(Math.max(w, d) * 0.52, 1.5 + rand() * 0.4, roofMat);
-  roof.position.y = h;
-  grp.add(roof);
+  // Pitched roof with slight overhang
+  const roofMesh = new THREE.Mesh(_pitchedRoof(w + 0.4, d + 0.4), roofM);
+  roofMesh.position.y = PLINTH_H + wallH;
+  grp.add(roofMesh);
 
-  // Door — darker inset rectangle on the front face
-  const door = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 1.2, 0.12),
-    _mat(0x2a1e12),
-  );
-  door.position.set(0, 0.6, d / 2 + 0.06);
-  grp.add(door);
+  // Door (slightly off-centre for character)
+  const doorX = w * (rand() < 0.5 ? -0.15 : 0.15);
+  _addDoor(grp, doorX, 0, 0.7, 1.6, d / 2 + WT / 2, 0x2a1e12, trimColor);
 
-  // Flower boxes on windowsills
-  const flowMat = _mat(0x5a3820);
-  for (const sx of [-0.9, 0.9]) {
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.18), flowMat);
-    box.position.set(sx, 1.05, d / 2 + 0.09);
+  // Small windows front + back
+  const winY   = PLINTH_H + wallH * 0.55;
+  const frontZ = d / 2 + WT / 2 + 0.01;
+  for (const [wx, wz, ry] of [
+    [-w * 0.28,  frontZ,   0        ],
+    [ w * 0.28,  frontZ,   0        ],
+    [-w * 0.28, -frontZ,   Math.PI  ],
+  ] as [number, number, number][]) {
+    _addWindow(grp, wx, winY, wz, ry, 0.65, 0.75, trimM);
+  }
+
+  // Flower boxes on front windowsills
+  const flowMat = _flatMat(0x5a3820);
+  for (const sx of [-w * 0.28, w * 0.28]) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.15, 0.18), flowMat);
+    box.position.set(sx, PLINTH_H + wallH * 0.38, d / 2 + 0.14);
     grp.add(box);
-    // Tiny flower blobs
-    for (let i = 0; i < 3; i++) {
-      const fl = new THREE.Mesh(
-        new THREE.SphereGeometry(0.07, 4, 3),
-        _mat(0xdd6688 + Math.floor(rand() * 0x003300)),
-      );
-      fl.position.set(sx + (i - 1) * 0.17, 1.2, d / 2 + 0.09);
-      grp.add(fl);
-    }
   }
 
   return grp;
 }
 
-/** Two-floor inn with pitched roof and hanging sign. */
+/** Inn — brick walls, 2 floors, hipped slate roof, hanging sign. */
 function _makeInn(rand: () => number): THREE.Group {
-  const grp     = new THREE.Group();
-  const wallMat = _mat(_wallColor(rand));
-  const roofMat = _mat(_roofColor(rand));
+  const grp  = new THREE.Group();
+  const w    = 5.2 + rand() * 1.0;
+  const d    = 4.2 + rand() * 0.8;
+  const flH  = 2.2;
+  const wallH = flH * 2;
 
-  const w = 5.0 + rand() * 1.0;
-  const d = 4.0 + rand() * 0.8;
-  const h1 = 2.2;
-  const h2 = 2.0;
+  const wallTint  = _brickColor(rand);
+  const roofTint  = _slateColor(rand);
+  const trimColor = 0x3a2a18;
+  const wallM     = _wallMat(brickTexture, w, wallH, wallTint);
+  const roofM     = _roofMat(slateTexture, w, d, roofTint);
+  const trimM     = _flatMat(trimColor);
 
-  // Ground floor
-  const floor1 = _buildBox(w, h1, d, wallMat);
-  floor1.position.y = h1 / 2;
-  grp.add(floor1);
+  _addPlinth(grp, w, d);
+  _addWalls(grp, w, wallH, d, wallM);
 
-  // Second floor — slightly narrower
-  const floor2 = _buildBox(w - 0.2, h2, d - 0.2, _mat(_wallColor(rand)));
-  floor2.position.y = h1 + h2 / 2;
-  grp.add(floor2);
+  // Floor separation band
+  const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.18, d + 0.1), _flatMat(0x3a3028));
+  band.position.y = PLINTH_H + flH;
+  grp.add(band);
 
-  // Pitched roof
-  const roof = _buildPointedRoof(Math.max(w, d) * 0.54, 2.2 + rand() * 0.5, roofMat);
-  roof.position.y = h1 + h2;
-  grp.add(roof);
+  // Hipped slate roof + eave
+  const roofMesh = new THREE.Mesh(_hippedRoof(w + 0.4, d + 0.4), roofM);
+  roofMesh.position.y = PLINTH_H + wallH;
+  grp.add(roofMesh);
+  const eave = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.18, d + 0.5), trimM);
+  eave.position.y = PLINTH_H + wallH + 0.09;
+  grp.add(eave);
 
   // Door
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 0.14), _mat(0x3a2010));
-  door.position.set(0, 0.8, d / 2 + 0.07);
-  grp.add(door);
+  _addDoor(grp, 0, 0, 0.9, 2.0, d / 2 + WT / 2, 0x3a2010, trimColor);
 
-  // Hanging sign — post + plank
-  const postMat = _mat(0x5c3d1e);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 5), postMat);
-  post.position.set(1.0, 2.2, d / 2 + 0.06);
+  // Windows per floor
+  const frontZ = d / 2 + WT / 2 + 0.01;
+  for (let fl = 0; fl < 2; fl++) {
+    const wy = PLINTH_H + fl * flH + flH * 0.55;
+    for (const wx of [-w * 0.3, w * 0.3]) {
+      if (fl === 0 && Math.abs(wx) < 1.0) continue;
+      _addWindow(grp, wx, wy,  frontZ,   0,       0.85, 1.0, trimM);
+      _addWindow(grp, wx, wy, -frontZ,   Math.PI, 0.85, 1.0, trimM);
+    }
+  }
+
+  // Hanging sign
+  const wood = _flatMat(0x5c3d1e);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 5), wood);
+  post.position.set(w * 0.32, PLINTH_H + flH * 0.8, d / 2 + 0.06);
   grp.add(post);
-  const sign = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.35, 0.06),
-    _mat(0x7a5c3a),
-  );
-  sign.position.set(1.0, 1.8, d / 2 + 0.04);
-  sign.rotation.y = 0.12 + rand() * 0.08;
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.32, 0.07), wood);
+  sign.position.set(w * 0.32, PLINTH_H + flH * 0.55, d / 2 + 0.06);
+  sign.rotation.y = 0.1 + rand() * 0.08;
   grp.add(sign);
 
   return grp;
 }
 
-/** Open-sided market stall — 4 poles + awning + counter. */
+/** Market stall — open timber frame, fabric awning, counter. */
 function _makeMarketStall(rand: () => number): THREE.Group {
   const grp    = new THREE.Group();
-  const wood   = _mat(0x6b4120);
-  const canopy = _mat(0xaa3030 + Math.floor(rand() * 3) * 0x002000);
+  const w      = 3.2 + rand() * 0.5;
+  const d      = 2.2 + rand() * 0.3;
+  const H      = 2.0;
+  const wood   = _flatMat(0x6b4120);
+  const awning = _flatMat(0x8a2828 + Math.floor(rand() * 4) * 0x002200);
 
-  const w = 3.0 + rand() * 0.5;
-  const d = 2.2 + rand() * 0.3;
-  const H = 2.0;
-
-  // 4 corner poles
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.07, 0.08, H, 5),
-        wood,
-      );
-      pole.position.set(sx * (w / 2 - 0.1), H / 2, sz * (d / 2 - 0.1));
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, H, 5), wood);
+      pole.position.set(sx * (w / 2 - 0.12), H / 2, sz * (d / 2 - 0.12));
       grp.add(pole);
     }
   }
 
-  // Awning — flat box angled slightly down at front
-  const awning = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.1, d + 0.5), canopy);
-  awning.position.set(0, H, 0.1);
-  awning.rotation.x = -0.12;
-  grp.add(awning);
+  const awn = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.1, d + 0.5), awning);
+  awn.position.set(0, H, 0.1);
+  awn.rotation.x = -0.1;
+  grp.add(awn);
 
-  // Counter
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(w - 0.4, 0.6, 0.3), wood);
-  counter.position.set(0, 0.3, d / 2 - 0.1);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(w - 0.3, 0.55, 0.28), wood);
+  counter.position.set(0, 0.28, d / 2 - 0.1);
   grp.add(counter);
 
-  // Goods on counter — random sphere / box blobs
   for (let i = 0; i < 3; i++) {
-    const g = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12 + rand() * 0.08, 5, 4),
-      _mat(0x774422 + Math.floor(rand() * 6) * 0x100900),
+    const blob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13 + rand() * 0.07, 5, 4),
+      _flatMat(0x774422 + Math.floor(rand() * 6) * 0x100900),
     );
-    g.position.set((i - 1) * 0.45, 0.68, d / 2 - 0.05);
-    grp.add(g);
+    blob.position.set((i - 1) * 0.45, 0.65, d / 2 - 0.05);
+    grp.add(blob);
   }
 
   return grp;
 }
 
-/** Smithy — rectangular building with chimney and forge glow. */
+/** Smithy — stone walls, flat parapet, chimney, forge glow. */
 function _makeSmity(rand: () => number): THREE.Group {
-  const grp     = new THREE.Group();
-  const wallMat = _mat(_wallColor(rand));
+  const grp   = new THREE.Group();
+  const w     = 4.5 + rand() * 0.7;
+  const d     = 3.8 + rand() * 0.5;
+  const wallH = 2.6;
 
-  const w = 4.4 + rand() * 0.6;
-  const d = 3.6 + rand() * 0.4;
-  const h = 2.4;
+  const wallTint = _stoneColor(rand);
+  const wallM    = _wallMat(stoneTexture, w, wallH, wallTint);
+  const trimM    = _flatMat(0x3a3228);
 
-  const walls = _buildBox(w, h, d, wallMat);
-  walls.position.y = h / 2;
-  grp.add(walls);
+  _addPlinth(grp, w, d);
+  _addWalls(grp, w, wallH, d, wallM);
 
-  // Flat parapet roof
-  const parapet = _buildFlatParapet(w, d, wallMat, false);
-  parapet.position.y = h;
+  // Flat parapet
+  const parapet = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.25, 0.45, d + 0.25),
+    _flatMat(0x4a4238),
+  );
+  parapet.position.y = PLINTH_H + wallH + 0.22;
   grp.add(parapet);
 
-  // Chimney
-  const chimney = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.25, 0.30, 1.6, 6),
-    _mat(0x4a4238),
+  // Roof slab
+  const slab = new THREE.Mesh(
+    new THREE.BoxGeometry(w - WT * 2, 0.18, d - WT * 2),
+    _flatMat(0x2e2a22),
   );
-  chimney.position.set(w * 0.3, h + 0.8, -d * 0.25);
-  grp.add(chimney);
+  slab.position.y = PLINTH_H + wallH + 0.09;
+  grp.add(slab);
 
-  // Forge ember glow — emissive sphere inside
+  // Chimney
+  const chimMat = _flatMat(0x4a4238);
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.5, 0.7), chimMat);
+  chimney.position.set(w * 0.28, PLINTH_H + wallH + 0.75, -d * 0.22);
+  grp.add(chimney);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.85), chimMat);
+  cap.position.set(w * 0.28, PLINTH_H + wallH + 1.57, -d * 0.22);
+  grp.add(cap);
+
+  // Forge ember glow
   const glow = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 7, 6),
-    new THREE.MeshLambertMaterial({
-      color:            0xff4400,
-      emissive:         0xff2200,
-      emissiveIntensity: 0.9,
-    }),
+    new THREE.MeshLambertMaterial({ color: 0xff4400, emissive: 0xff2200, emissiveIntensity: 0.9 }),
   );
-  glow.position.set(w * 0.3, h + 0.35, -d * 0.25);
+  glow.position.set(w * 0.28, PLINTH_H + wallH + 0.1, -d * 0.22);
   grp.add(glow);
 
-  // Door
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.14), _mat(0x2a1800));
-  door.position.set(0, 0.9, d / 2 + 0.07);
-  grp.add(door);
+  // Door + front window
+  _addDoor(grp, 0, 0, 0.9, 1.9, d / 2 + WT / 2, 0x2a1800, 0x3a2a18);
+  _addWindow(grp, -w * 0.3, PLINTH_H + wallH * 0.55, d / 2 + WT / 2 + 0.01, 0, 0.7, 0.8, trimM);
 
   return grp;
 }
 
-/** Tavern — wide 2-floor building with barrel cluster out front. */
+/** Tavern — brick 2-floor, hipped slate roof, barrel cluster, hanging sign. */
 function _makeTavern(rand: () => number): THREE.Group {
-  const grp     = new THREE.Group();
-  const wallMat = _mat(_wallColor(rand));
-  const roofMat = _mat(_roofColor(rand));
-  const wood    = _mat(0x5c3d1e);
+  const grp  = new THREE.Group();
+  const w    = 6.2 + rand() * 1.0;
+  const d    = 5.0 + rand() * 0.8;
+  const flH  = 2.4;
+  const wallH = flH * 2;
 
-  const w = 6.0 + rand() * 1.0;
-  const d = 5.0 + rand() * 0.8;
-  const h1 = 2.4;
-  const h2 = 2.2;
+  const wallTint  = _brickColor(rand);
+  const roofTint  = _slateColor(rand);
+  const trimColor = 0x3a2818;
+  const wallM     = _wallMat(brickTexture, w, wallH, wallTint);
+  const roofM     = _roofMat(slateTexture, w, d, roofTint);
+  const trimM     = _flatMat(trimColor);
+  const wood      = _flatMat(0x5c3d1e);
 
-  const f1 = _buildBox(w, h1, d, wallMat);
-  f1.position.y = h1 / 2;
-  grp.add(f1);
+  _addPlinth(grp, w, d);
+  _addWalls(grp, w, wallH, d, wallM);
 
-  const f2 = _buildBox(w - 0.2, h2, d - 0.2, _mat(_wallColor(rand)));
-  f2.position.y = h1 + h2 / 2;
-  grp.add(f2);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.2, d + 0.12), trimM);
+  band.position.y = PLINTH_H + flH;
+  grp.add(band);
 
-  const roof = _buildPointedRoof(Math.max(w, d) * 0.54, 2.4 + rand() * 0.5, roofMat);
-  roof.position.y = h1 + h2;
-  grp.add(roof);
+  const roofMesh = new THREE.Mesh(_hippedRoof(w + 0.45, d + 0.45), roofM);
+  roofMesh.position.y = PLINTH_H + wallH;
+  grp.add(roofMesh);
+  const eave = new THREE.Mesh(new THREE.BoxGeometry(w + 0.55, 0.18, d + 0.55), trimM);
+  eave.position.y = PLINTH_H + wallH + 0.09;
+  grp.add(eave);
 
-  // Door
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.14), _mat(0x3a2010));
-  door.position.set(0, 0.9, d / 2 + 0.07);
-  grp.add(door);
+  _addDoor(grp, 0, 0, 1.1, 2.2, d / 2 + WT / 2, 0x3a2010, trimColor);
+
+  const frontZ = d / 2 + WT / 2 + 0.01;
+  for (let fl = 0; fl < 2; fl++) {
+    const wy = PLINTH_H + fl * flH + flH * 0.55;
+    const n  = fl === 0 ? 2 : 3;
+    for (let wi = 0; wi < n; wi++) {
+      const wx = (wi - (n - 1) / 2) * (w / (n + 0.5));
+      if (fl === 0 && Math.abs(wx) < 0.8) continue;
+      _addWindow(grp, wx, wy,  frontZ,   0,       0.9, 1.05, trimM);
+      _addWindow(grp, wx, wy, -frontZ,   Math.PI, 0.9, 1.05, trimM);
+    }
+  }
 
   // Hanging sign
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 5), wood);
-  post.position.set(1.2, 2.3, d / 2 + 0.05);
+  post.position.set(w * 0.34, PLINTH_H + flH * 0.85, d / 2 + 0.06);
   grp.add(post);
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.4, 0.07), wood);
-  sign.position.set(1.2, 1.8, d / 2 + 0.05);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.38, 0.08), wood);
+  sign.position.set(w * 0.34, PLINTH_H + flH * 0.55, d / 2 + 0.06);
+  sign.rotation.y = 0.1 + rand() * 0.07;
   grp.add(sign);
 
-  // Barrel cluster outside the door
-  const barMat = _mat(0x5c3822);
+  // Barrel cluster
+  const barMat = _flatMat(0x5c3822);
   for (let i = 0; i < 3; i++) {
-    const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.22, 0.55, 8),
-      barMat,
-    );
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.55, 8), barMat);
     barrel.position.set(
-      -1.0 + i * 0.55 + (rand() - 0.5) * 0.1,
-      0.275,
+      -0.9 + i * 0.52 + (rand() - 0.5) * 0.1,
+      0.28,
       d / 2 + 0.55 + (rand() - 0.5) * 0.2,
     );
     grp.add(barrel);
-    // Barrel hoop ring (TorusGeometry)
-    const hoop = new THREE.Mesh(
-      new THREE.TorusGeometry(0.22, 0.025, 4, 8),
-      _mat(0x2a2010),
-    );
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.025, 4, 8), _flatMat(0x2a2010));
     hoop.rotation.x = Math.PI / 2;
     hoop.position.copy(barrel.position).add(new THREE.Vector3(0, 0.12, 0));
     grp.add(hoop);
@@ -390,211 +534,226 @@ function _makeTavern(rand: () => number): THREE.Group {
   return grp;
 }
 
-/** Temple — circular column peristyle + dome roof + emissive altar. */
+/** Temple — stone columns peristyle, gabled slate roof, emissive altar. */
 function _makeTemple(rand: () => number): THREE.Group {
-  const grp      = new THREE.Group();
-  const stoneMat = _mat(0xd0c8b8);
-  const domeMat  = _mat(0xc8a060);
+  const grp   = new THREE.Group();
+  const R     = 3.8;
+  const bodyW = R * 1.4;
+  const bodyD = R * 1.4;
+  const wallH = 3.2;
+  const COLS  = 8;
 
-  const R       = 4.0;
-  const bodyH   = 3.0;
-  const COLS    = 8;
+  const wallTint = _stoneColor(rand);
+  const roofTint = _slateColor(rand);
+  const wallM    = _wallMat(stoneTexture, bodyW, wallH, wallTint);
+  const roofM    = _roofMat(slateTexture, bodyW, bodyD, roofTint);
 
-  // Central body (cella)
-  const body = _buildBox(R * 1.2, bodyH, R * 1.2, stoneMat);
-  body.position.y = bodyH / 2;
-  grp.add(body);
+  _addPlinth(grp, bodyW + 0.6, bodyD + 0.6);
 
-  // Dome roof
-  const dome = _buildThatchedDome(R * 0.7, 2.2 + rand() * 0.4, domeMat);
-  dome.position.y = bodyH;
-  grp.add(dome);
+  // Stepped platform
+  for (let s = 0; s < 2; s++) {
+    const sW = bodyW + 0.6 - s * 0.4;
+    const step = new THREE.Mesh(
+      new THREE.BoxGeometry(sW, 0.22, bodyD + 0.6 - s * 0.4),
+      _flatMat(0x8a8270),
+    );
+    step.position.y = PLINTH_H + s * 0.22;
+    grp.add(step);
+  }
+
+  _addWalls(grp, bodyW, wallH, bodyD, wallM);
+
+  // Gabled roof
+  const roofMesh = new THREE.Mesh(_pitchedRoof(bodyW + 0.5, bodyD + 0.5), roofM);
+  roofMesh.position.y = PLINTH_H + wallH + 0.44;
+  grp.add(roofMesh);
 
   // Peristyle columns
+  const colTint = _stoneColor(rand);
+  const colMat  = _wallMat(stoneTexture, 1, wallH + 0.3, colTint);
   for (let i = 0; i < COLS; i++) {
-    const angle  = (i / COLS) * Math.PI * 2;
-    const colH   = bodyH + 0.3 + rand() * 0.2;
-    const col    = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.26, colH, 7),
-      stoneMat,
+    const angle = (i / COLS) * Math.PI * 2;
+    const colH  = wallH + 0.3;
+    const col   = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.28, colH, 7),
+      colMat,
     );
-    col.position.set(Math.cos(angle) * R * 0.85, colH / 2, Math.sin(angle) * R * 0.85);
+    col.position.set(
+      Math.cos(angle) * (R + 0.2),
+      PLINTH_H + 0.44 + colH / 2,
+      Math.sin(angle) * (R + 0.2),
+    );
     grp.add(col);
-    // Column capital
-    const cap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.34, 0.24, 0.22, 7),
-      stoneMat,
+    const capMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.26, 0.2, 7), colMat);
+    capMesh.position.set(
+      Math.cos(angle) * (R + 0.2),
+      PLINTH_H + 0.44 + colH + 0.1,
+      Math.sin(angle) * (R + 0.2),
     );
-    cap.position.set(Math.cos(angle) * R * 0.85, colH + 0.11, Math.sin(angle) * R * 0.85);
-    grp.add(cap);
+    grp.add(capMesh);
   }
 
   // Emissive altar orb
   const altar = new THREE.Mesh(
-    new THREE.SphereGeometry(0.30, 8, 6),
-    new THREE.MeshLambertMaterial({
-      color:            0xffcc44,
-      emissive:         0xffaa00,
-      emissiveIntensity: 0.75,
-    }),
+    new THREE.SphereGeometry(0.28, 8, 6),
+    new THREE.MeshLambertMaterial({ color: 0xffcc44, emissive: 0xffaa00, emissiveIntensity: 0.7 }),
   );
-  altar.position.set(0, 0.4, 0);
+  altar.position.set(0, PLINTH_H + 0.35, 0);
   grp.add(altar);
 
   return grp;
 }
 
-/** City hall — 3 floors, flat parapet, central spire + arched windows. */
+/** City hall — render + stone 3 floors, flat parapet, central spire. */
 function _makeCityHall(rand: () => number): THREE.Group {
-  const grp     = new THREE.Group();
-  const wallMat = _mat(0xb0a490 + Math.floor((rand() - 0.5) * 16) * 0x010101);
-  const spireMat = _mat(0x6a7a88);
+  const grp = new THREE.Group();
+  const w   = 9.0 + rand() * 2.0;
+  const d   = 6.0 + rand() * 1.0;
+  const flH = [2.7, 2.4, 2.2] as const;
 
-  const w  = 9.0 + rand() * 2.0;
-  const d  = 6.0 + rand() * 1.0;
-  const fh = [2.6, 2.4, 2.2];  // floor heights
-  let y = 0;
+  const wallTint  = _renderColor(rand);
+  const trimColor = 0x3a3028;
+  const trimM     = _flatMat(trimColor);
+  const spireMat  = _flatMat(0x6a7a88);
 
+  _addPlinth(grp, w, d);
+
+  let y = PLINTH_H;
   for (let f = 0; f < 3; f++) {
-    const fw  = w - f * 0.3;
-    const fd  = d - f * 0.2;
-    const box = _buildBox(fw, fh[f], fd, wallMat);
-    box.position.y = y + fh[f] / 2;
-    grp.add(box);
-    y += fh[f];
+    const fw = w - f * 0.3, fd = d - f * 0.2;
+    const fMat = _wallMat(renderTexture, fw, flH[f], wallTint);
+    _addWalls(grp, fw, flH[f], fd, fMat);
+    if (f < 2) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(fw + 0.15, 0.2, fd + 0.15), trimM);
+      band.position.y = y + flH[f];
+      grp.add(band);
+    }
+    y += flH[f];
   }
 
   // Flat parapet
-  const totalH = fh[0] + fh[1] + fh[2];
-  const parapet = _buildFlatParapet(w - 0.9, d - 0.6, wallMat);
-  parapet.position.y = totalH;
+  const parapet = new THREE.Mesh(
+    new THREE.BoxGeometry(w - 0.8, 0.55, d - 0.5),
+    _flatMat(0x4a4438),
+  );
+  parapet.position.y = y + 0.28;
   grp.add(parapet);
 
   // Central spire
-  const spire = _buildSpire(0.7, 4.0 + rand() * 0.8, spireMat);
-  spire.position.y = totalH + 0.22;
+  const spireH = 4.2 + rand() * 0.8;
+  const spire  = new THREE.Mesh(new THREE.ConeGeometry(0.65, spireH, 7), spireMat);
+  spire.position.y = y + 0.55 + spireH / 2;
   grp.add(spire);
 
-  // Front door arch — LatheGeometry semicircle
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.4, 0.16), _mat(0x2a1a0e));
-  door.position.set(0, 1.2, d / 2 + 0.08);
-  grp.add(door);
+  // Front door
+  _addDoor(grp, 0, 0, 1.2, 2.5, d / 2 + WT / 2, 0x2a1a0e, trimColor);
 
-  // Arched window profiles on each floor (just coloured rectangles)
-  for (let f = 0; f < 2; f++) {
-    const fy = fh[0] * (f + 0.5);
-    for (const sx of [-2.5, 0, 2.5]) {
-      const win = new THREE.Mesh(
-        new THREE.BoxGeometry(0.6, 0.9, 0.12),
-        _mat(0x2a3040),
-      );
-      win.position.set(sx, fy, d / 2 + 0.06);
-      grp.add(win);
+  // Windows per floor
+  let fy = PLINTH_H;
+  for (let f = 0; f < 3; f++) {
+    const cy   = fy + flH[f] * 0.55;
+    const fw   = w - f * 0.3, fd = d - f * 0.2;
+    const frontZ = fd / 2 + WT / 2 + 0.01;
+    const n = 3;
+    for (let wi = 0; wi < n; wi++) {
+      const wx = (wi - (n - 1) / 2) * (fw / (n + 1));
+      if (f === 0 && Math.abs(wx) < 0.9) continue;
+      _addWindow(grp, wx, cy,  frontZ,   0,       0.7, 1.0, trimM);
+      _addWindow(grp, wx, cy, -frontZ,   Math.PI, 0.7, 1.0, trimM);
     }
+    fy += flH[f];
   }
 
   return grp;
 }
 
-/** Guard tower — tall narrow cylinder + battlements. */
+/** Guard tower — stone cylinder, battlements. */
 function _makeGuardTower(rand: () => number): THREE.Group {
-  const grp      = new THREE.Group();
-  const stoneMat = _mat(0x5a5248 + Math.floor((rand() - 0.5) * 12) * 0x010101);
-
-  const r      = 1.2 + rand() * 0.3;
+  const grp    = new THREE.Group();
+  const r      = 1.3 + rand() * 0.3;
   const floors = 4 + Math.floor(rand() * 2);
-  const fh     = 2.2;
+  const fh     = 2.3;
   const totalH = floors * fh;
 
-  // Tower cylinder
-  const cylinder = new THREE.Mesh(
-    new THREE.CylinderGeometry(r, r * 1.05, totalH, 10),
-    stoneMat,
-  );
-  cylinder.position.y = totalH / 2;
-  grp.add(cylinder);
+  const stoneMat = new THREE.MeshLambertMaterial({
+    map:   stoneTexture(2, 3),
+    color: _stoneColor(rand),
+  });
 
-  // Battlement ring
-  const MERLONS = 8;
-  for (let i = 0; i < MERLONS; i++) {
-    const angle  = (i / MERLONS) * Math.PI * 2;
-    const merlon = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.55, 0.28), stoneMat);
-    merlon.position.set(
-      Math.cos(angle) * (r - 0.04),
-      totalH + 0.275,
-      Math.sin(angle) * (r - 0.04),
-    );
-    merlon.rotation.y = angle;
-    grp.add(merlon);
-  }
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.06, totalH, 10), stoneMat);
+  cyl.position.y = totalH / 2;
+  grp.add(cyl);
 
-  // Top ring slab
   const topSlab = new THREE.Mesh(
-    new THREE.CylinderGeometry(r + 0.18, r + 0.18, 0.22, 10),
+    new THREE.CylinderGeometry(r + 0.2, r + 0.2, 0.22, 10),
     stoneMat,
   );
   topSlab.position.y = totalH + 0.11;
   grp.add(topSlab);
 
-  // Door opening
-  const door = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.5, 0.14), _mat(0x201508));
-  door.position.set(0, 0.75, r + 0.07);
-  grp.add(door);
+  const MERLONS = 8;
+  for (let i = 0; i < MERLONS; i++) {
+    const angle  = (i / MERLONS) * Math.PI * 2;
+    const merlon = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.26), stoneMat);
+    merlon.position.set(
+      Math.cos(angle) * (r - 0.02),
+      totalH + 0.25 + 0.22,
+      Math.sin(angle) * (r - 0.02),
+    );
+    merlon.rotation.y = angle;
+    grp.add(merlon);
+  }
+
+  _addDoor(grp, 0, 0, 0.7, 1.5, r + WT / 2, 0x201508, 0x3a2a18);
 
   return grp;
 }
 
-/** Village well — cylinder surround + mini pitched roof + rope/bucket. */
+/** Village well — stone surround, A-frame, cone roof cap, bucket. */
 function _makeWell(rand: () => number): THREE.Group {
-  const grp   = new THREE.Group();
-  const stone = _mat(0x7a6858);
-  const wood  = _mat(0x5c3d1e);
+  const grp = new THREE.Group();
+  const wood = _flatMat(0x5c3d1e);
 
-  // Well surround
   const surround = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.7, 0.75, 0.6, 10),
-    stone,
+    new THREE.CylinderGeometry(0.7, 0.78, 0.6, 10),
+    new THREE.MeshLambertMaterial({
+      map:   stoneTexture(1, 1),
+      color: new THREE.Color(0.5, 0.44, 0.38),
+    }),
   );
   surround.position.y = 0.3;
   grp.add(surround);
 
-  // Two A-frame posts
   for (const sx of [-0.5, 0.5]) {
-    const post = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.06, 1.4, 5),
-      wood,
-    );
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1.4, 5), wood);
     post.position.set(sx, 0.95, 0);
     post.rotation.z = sx * 0.22;
     grp.add(post);
   }
 
-  // Cross-beam
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 1.1, 5),
-    wood,
-  );
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 5), wood);
   beam.rotation.z = Math.PI / 2;
   beam.position.y = 1.55;
   grp.add(beam);
 
-  // Mini pointed roof over the well
-  const roof = _buildPointedRoof(0.85, 0.9, _mat(_roofColor(rand)));
-  roof.position.y = 1.55;
-  grp.add(roof);
-
-  // Rope (line segment approximated as thin cylinder)
-  const rope = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.02, 1.0, 4),
-    _mat(0x8a6a30),
+  const roofCone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.82, 0.9, 8),
+    new THREE.MeshLambertMaterial({
+      map:   slateTexture(1, 1),
+      color: _slateColor(rand),
+      side:  THREE.DoubleSide,
+    }),
   );
+  roofCone.position.y = 1.55 + 0.45;
+  grp.add(roofCone);
+
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 4), _flatMat(0x8a6a30));
   rope.position.set(0, 1.05, 0);
   grp.add(rope);
 
-  // Bucket
   const bucket = new THREE.Mesh(
     new THREE.CylinderGeometry(0.12, 0.14, 0.22, 7),
-    _mat(0x5c3d1e),
+    _flatMat(0x5c3d1e),
   );
   bucket.position.set(0, 0.55, 0);
   grp.add(bucket);
@@ -602,38 +761,34 @@ function _makeWell(rand: () => number): THREE.Group {
   return grp;
 }
 
-/** Market cross — stone plinth + single column + cross-arm. */
+/** Market cross — stone plinth steps, column shaft, cross-arm. */
 function _makeMarketCross(rand: () => number): THREE.Group {
-  const grp   = new THREE.Group();
-  const stone = _mat(0xb0a090 + Math.floor((rand() - 0.5) * 10) * 0x010101);
+  const grp  = new THREE.Group();
+  const stone = new THREE.MeshLambertMaterial({
+    map:   stoneTexture(1, 2),
+    color: new THREE.Color(0.68 + (rand() - 0.5) * 0.06, 0.64, 0.57),
+  });
 
-  // Plinth
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 1.2), stone);
-  plinth.position.y = 0.2;
-  grp.add(plinth);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.4, 1.3), stone);
+  base.position.y = 0.2;
+  grp.add(base);
 
-  // Step
-  const step = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.22, 0.9), stone);
+  const step = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.95), stone);
   step.position.y = 0.51;
   grp.add(step);
 
-  // Column shaft
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.15, 3.2, 7),
-    stone,
-  );
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 3.2, 7), stone);
   shaft.position.y = 0.72 + 1.6;
   grp.add(shaft);
 
-  // Cross-arm
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.15), stone);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.14, 0.14), stone);
   arm.position.y = 0.72 + 3.0;
   grp.add(arm);
 
-  // Cross top cap
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.4, 0.15), stone);
-  cap.position.y = 0.72 + 3.2 + 0.2;
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.14), stone);
+  cap.position.y = 0.72 + 3.2 + 0.19;
   grp.add(cap);
 
   return grp;
 }
+
