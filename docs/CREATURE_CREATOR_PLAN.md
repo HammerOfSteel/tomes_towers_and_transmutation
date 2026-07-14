@@ -38,15 +38,15 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 
 | Gap | Impact |
 |-----|--------|
-| Robe is default for biped — looks like "everyone is a wizard in a dress" | ✅ bug / design flaw |
-| No sub-races for biped (elf, goblin, orc, pixie, undead…) | Missing fantasy diversity |
-| Props not filtered by archetype — wings on an amoeba, legs on a serpent | Visual incoherence |
-| Randomiser absent — no quick way to discover wild combos | Low replayability |
-| Only 4 body sliders (global scale, head, limb length/width) | Not enough body shape variety |
-| No skin pattern/texture layer | All creatures look flat |
-| Face types not differentiated per sub-race | Mismatched aesthetics |
-| No outfit/clothing concept — robe IS the body appearance | Conflated visual systems |
-| Overlay bug: pressing Begin does not hide character creation screen | **Fixed — charCreation.hide() added to main.ts onStart callback** |
+| Robe is default for biped — looks like "everyone is a wizard in a dress" | ✅ Fixed (CC-2) — outfit system with trousers/skirt/shorts/loincloth/robe_skirt |
+| No sub-races for biped (elf, goblin, orc, pixie, undead…) | ✅ Fixed (CC-1) — 12 species with ear geometry, head scale, colors |
+| Props not filtered by archetype — wings on an amoeba, legs on a serpent | ⏳ CC-6 |
+| Randomiser absent — no quick way to discover wild combos | ✅ Fixed (CC-4) — 🎲 Lucky Roll + ~ Mutate buttons, mulberry32-seeded |
+| Only 4 body sliders (global scale, head, limb length/width) | ✅ Fixed (CC-3) — +4 sliders: shoulders, hips, belly, neck thickness |
+| No skin pattern/texture layer | ⏳ CC-7 |
+| Face types not differentiated per sub-race | ⏳ CC-5 |
+| No outfit/clothing concept — robe IS the body appearance | ✅ Fixed (CC-2) — outfit.top / outfit.legs / outfit.over slots |
+| Overlay bug: pressing Begin does not hide character creation screen | ✅ Fixed — charCreation.hide() added to main.ts onStart callback |
 
 ---
 
