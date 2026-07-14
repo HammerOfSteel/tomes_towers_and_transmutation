@@ -12,6 +12,9 @@ export type SubRace    =
   | 'undead' | 'draconic' | 'celestial';
 export type EarShape   = 'none' | 'round' | 'pointed' | 'large';
 export type HeadStyle  = 'normal' | 'large' | 'small' | 'elongated';
+export type OutfitTopId  = 'none' | 'tunic' | 'robe_top' | 'armor_chest' | 'wrap';
+export type OutfitLegsId = 'none' | 'trousers' | 'skirt' | 'shorts' | 'loincloth' | 'robe_skirt';
+export type OutfitOverId = 'none' | 'robe_full' | 'cape' | 'cloak';
 export type FaceType   = 'cute' | 'angry' | 'cyclops' | 'blank' | 'skull' | 'compound';
 export type MouthType  = 'smile' | 'frown' | 'beak' | 'fangs' | 'none';
 export type Expression = 'neutral' | 'happy' | 'angry' | 'scared';
@@ -43,6 +46,10 @@ export interface CreatureDNA {
     tailLength:   number;
     wingSpan:     number;
     segmentCount: number;
+    shoulderWidth:  number;
+    hipWidth:       number;
+    bellySize:      number;
+    neckThickness:  number;
   };
   face: {
     type:       FaceType;
@@ -57,6 +64,11 @@ export interface CreatureDNA {
     clearcoatRoughness: number;
   };
   props: PropId[];
+  outfit: {
+    top:  OutfitTopId;
+    legs: OutfitLegsId;
+    over: OutfitOverId;
+  };
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -69,10 +81,12 @@ export const DEFAULT_PLAYER_DNA: CreatureDNA = {
     global: 1.0, torso: [1, 1, 1], headSize: 1.0,
     limbLength: 1.0, limbWidth: 1.0, neckLength: 1.0,
     tailLength: 0.0, wingSpan: 1.5, segmentCount: 5,
+    shoulderWidth: 1.0, hipWidth: 1.0, bellySize: 0.0, neckThickness: 1.0,
   },
   face: { type: 'cute', eyeColor: 0x2a1a4a, mouthType: 'smile', expression: 'neutral' },
   material: { roughness: 0.55, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.2 },
   props: [],
+  outfit: { top: 'none', legs: 'none', over: 'none' },
 };
 
 // ── Sub-race definitions ──────────────────────────────────────────────────────
@@ -162,25 +176,25 @@ export const BIPED_SUBRACES: SubRace[] = [
 export const ARCHETYPE_DEFAULTS: Partial<Record<Archetype, Partial<CreatureDNA>>> = {
   quadruped: {
     colors: { primary: 0x6a9a5a, secondary: 0x3a5a2a, emissive: 0x204010, emissiveIntensity: 0.02 },
-    proportions: { global: 1.0, torso: [1.4, 0.85, 1.8], headSize: 0.85, limbLength: 0.95, limbWidth: 0.9, neckLength: 1.4, tailLength: 1.2, wingSpan: 1.5, segmentCount: 4 },
+    proportions: { global: 1.0, torso: [1.4, 0.85, 1.8], headSize: 0.85, limbLength: 0.95, limbWidth: 0.9, neckLength: 1.4, tailLength: 1.2, wingSpan: 1.5, segmentCount: 4, shoulderWidth: 1.1, hipWidth: 1.0, bellySize: 0.0, neckThickness: 1.1 },
     face: { type: 'angry', eyeColor: 0xff4000, mouthType: 'fangs', expression: 'angry' },
     props: [],
   },
   amoeba: {
     colors: { primary: 0x40c0a0, secondary: 0x20a080, emissive: 0x40ffd0, emissiveIntensity: 0.18 },
-    proportions: { global: 1.0, torso: [1.3, 1.3, 1.3], headSize: 1.6, limbLength: 0.3, limbWidth: 1.5, neckLength: 0.3, tailLength: 0, wingSpan: 0.5, segmentCount: 6 },
+    proportions: { global: 1.0, torso: [1.3, 1.3, 1.3], headSize: 1.6, limbLength: 0.3, limbWidth: 1.5, neckLength: 0.3, tailLength: 0, wingSpan: 0.5, segmentCount: 6, shoulderWidth: 1.0, hipWidth: 1.0, bellySize: 0.0, neckThickness: 0.7 },
     face: { type: 'cyclops', eyeColor: 0xff8800, mouthType: 'none', expression: 'neutral' },
     props: ['aura'],
   },
   avian: {
     colors: { primary: 0xe8c060, secondary: 0xa87020, emissive: 0xffe080, emissiveIntensity: 0.06 },
-    proportions: { global: 0.85, torso: [0.85, 1.1, 0.7], headSize: 0.75, limbLength: 0.7, limbWidth: 0.7, neckLength: 1.6, tailLength: 0.9, wingSpan: 2.2, segmentCount: 3 },
+    proportions: { global: 0.85, torso: [0.85, 1.1, 0.7], headSize: 0.75, limbLength: 0.7, limbWidth: 0.7, neckLength: 1.6, tailLength: 0.9, wingSpan: 2.2, segmentCount: 3, shoulderWidth: 0.9, hipWidth: 0.85, bellySize: 0.0, neckThickness: 0.8 },
     face: { type: 'cute', eyeColor: 0x1a3060, mouthType: 'beak', expression: 'neutral' },
     props: [],
   },
   serpent: {
     colors: { primary: 0x506020, secondary: 0x304010, emissive: 0x60a020, emissiveIntensity: 0.08 },
-    proportions: { global: 1.0, torso: [0.5, 0.5, 0.5], headSize: 1.1, limbLength: 0.4, limbWidth: 0.6, neckLength: 0.5, tailLength: 1.8, wingSpan: 0.5, segmentCount: 9 },
+    proportions: { global: 1.0, torso: [0.5, 0.5, 0.5], headSize: 1.1, limbLength: 0.4, limbWidth: 0.6, neckLength: 0.5, tailLength: 1.8, wingSpan: 0.5, segmentCount: 9, shoulderWidth: 0.8, hipWidth: 0.8, bellySize: 0.0, neckThickness: 0.9 },
     face: { type: 'angry', eyeColor: 0xff2000, mouthType: 'fangs', expression: 'angry' },
     props: ['tail_long'],
   },
@@ -220,6 +234,17 @@ export function base64ToDna(b64: string): CreatureDNA {
   const dna = JSON.parse(atob(b64)) as CreatureDNA;
   // Backwards-compat: old saves have no subRace field.
   if (dna.subRace === undefined) dna.subRace = dna.archetype === 'biped' ? 'human' : 'none';
+  // Backwards-compat: old saves have no outfit field.
+  if (!(dna as any).outfit) (dna as any).outfit = { top: 'none', legs: 'none', over: 'none' };
+  // Migrate legacy 'robe' prop → outfit.over = 'robe_full'.
+  const _ri = (dna.props as string[]).indexOf('robe');
+  if (_ri >= 0) { dna.props.splice(_ri, 1); if (dna.outfit.over === 'none') dna.outfit.over = 'robe_full'; }
+  // Backwards-compat: CC-3 morph fields.
+  const _pp = dna.proportions as any;
+  if (_pp.shoulderWidth === undefined) _pp.shoulderWidth = 1.0;
+  if (_pp.hipWidth      === undefined) _pp.hipWidth      = 1.0;
+  if (_pp.bellySize     === undefined) _pp.bellySize     = 0.0;
+  if (_pp.neckThickness === undefined) _pp.neckThickness = 1.0;
   return dna;
 }
 export function cloneDNA(dna: CreatureDNA): CreatureDNA { return JSON.parse(JSON.stringify(dna)) as CreatureDNA; }

@@ -8,13 +8,14 @@
 import * as THREE from 'three';
 import {
   type CreatureDNA, type Archetype, type FaceType, type MouthType, type PropId,
-  type SubRace,
+  type SubRace, type OutfitTopId, type OutfitLegsId, type OutfitOverId,
   DEFAULT_PLAYER_DNA, dnaForArchetype, dnaForSubRace, cloneDNA,
   numToHex, hexToNum, dnaToBase64,
   BIPED_SUBRACES, SUBRACE_DEFS,
 } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature }                 from '@/creatures/CreatureAnimator';
+import { randomDNA, mutateDNA }            from '@/creatures/CreatureRandomiser';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -51,14 +52,12 @@ const ARCHETYPES: ArchDef[] = [
 
 interface PropDef { id: PropId; label: string; }
 const PROP_DEFS: PropDef[] = [
-  { id: 'robe',        label: 'Robe'       },
   { id: 'crown',       label: 'Crown'      },
   { id: 'horns_small', label: 'Horns (S)'  },
   { id: 'horns_large', label: 'Horns (L)'  },
   { id: 'wings_bat',   label: 'Bat Wings'  },
   { id: 'tail_stub',   label: 'Tail (stub)'},
   { id: 'tail_long',   label: 'Tail (long)'},
-  { id: 'armor_light', label: 'Armor'      },
   { id: 'aura',        label: 'Aura'       },
 ];
 
@@ -92,6 +91,8 @@ const CC_CSS = `
   color: #5a4880; font-size: .72rem; cursor: pointer; padding: 4px 10px; font-family: inherit;
   letter-spacing: .04em; transition: all .12s; }
 .cc-dna-btn:hover { background: rgba(80,48,160,.1); color: #a080e0; border-color: #4a3870; }
+.cc-dna-btn.cc-dna-btn--roll { background: rgba(90,60,160,.12); border-color: #4a3070; color: #c0a0f0; font-size: .8rem; }
+.cc-dna-btn.cc-dna-btn--roll:hover { background: rgba(110,70,200,.25); color: #e0d0ff; }
 .cc-controls-col { flex: 1 1 280px; min-width: 230px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 82vh; }
 .cc-label { font-size: .76rem; color: #7a6a99; letter-spacing: .08em; text-transform: uppercase; display: block; margin-bottom: 4px; }
 .cc-name-input { width: 100%; box-sizing: border-box;
@@ -242,7 +243,12 @@ export class CharacterCreation {
   private _boonCards  = new Map<StartingBoon, HTMLElement>();
   private _faceChips  = new Map<FaceType,  HTMLElement>();
   private _mouthChips = new Map<MouthType, HTMLElement>();
-  private _propChips  = new Map<PropId,    HTMLElement>();
+  private _propChips      = new Map<PropId,      HTMLElement>();
+  private _outfitTopChips  = new Map<OutfitTopId,  HTMLElement>();
+  private _outfitLegsChips = new Map<OutfitLegsId, HTMLElement>();
+  private _outfitOverChips = new Map<OutfitOverId, HTMLElement>();
+  private _outfitSec!: HTMLElement;
+  private _morphInputs: Array<{ prop: string; slider: HTMLInputElement; val: HTMLElement }> = [];
   private _primaryInput!:   HTMLInputElement;
   private _secondaryInput!: HTMLInputElement;
   private _emissiveInput!:  HTMLInputElement;
@@ -294,6 +300,10 @@ export class CharacterCreation {
     this._emissiveVal.textContent = d.colors.emissiveIntensity.toFixed(2);
     this._scaleSlider.value   = String(d.proportions.global);
     this._scaleVal.textContent = d.proportions.global.toFixed(2);
+    for (const { prop, slider, val } of this._morphInputs) {
+      const v = ((d.proportions as any)[prop] as number) ?? 1.0;
+      slider.value = String(v); val.textContent = v.toFixed(2);
+    }
     this._eyeInput.value      = numToHex(d.face.eyeColor);
 
     this._archChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.archetype));
@@ -303,6 +313,10 @@ export class CharacterCreation {
     this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.type));
     this._mouthChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.mouthType));
     this._propChips.forEach((el, id) => el.classList.toggle('cc-prop--on', d.props.includes(id)));
+    this._outfitTopChips.forEach((el, id) => el.classList.toggle('cc-chip--on',  id === d.outfit.top));
+    this._outfitLegsChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.legs));
+    this._outfitOverChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.over));
+    this._outfitSec.style.display = d.archetype === 'biped' ? 'flex' : 'none';
   }
 
   // ── DOM builder ──────────────────────────────────────────────────────────
@@ -333,7 +347,19 @@ export class CharacterCreation {
     dnaBtn.onclick = () => {
       navigator.clipboard?.writeText(dnaToBase64(this._dna)).catch(() => {});
     };
-    previewCol.append(canvas, hint, dnaBtn);
+    const rollBtn = document.createElement('button'); rollBtn.className = 'cc-dna-btn cc-dna-btn--roll'; rollBtn.textContent = '🎲 Lucky Roll';
+    rollBtn.onclick = () => {
+      this._dna = randomDNA(Date.now() >>> 0);
+      this._syncControls();
+      this._preview?.setDNA(this._dna);
+    };
+    const mutateBtn = document.createElement('button'); mutateBtn.className = 'cc-dna-btn'; mutateBtn.textContent = '~ Mutate';
+    mutateBtn.onclick = () => {
+      this._dna = mutateDNA(this._dna, 0.25, Date.now() >>> 0);
+      this._syncControls();
+      this._preview?.setDNA(this._dna);
+    };
+    previewCol.append(canvas, hint, rollBtn, mutateBtn, dnaBtn);
 
     // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
@@ -476,8 +502,44 @@ export class CharacterCreation {
     }
     propSec.appendChild(propGrid);
 
+    // Outfit — Top / Legs / Over (biped only, _syncControls handles show/hide)
+    this._outfitSec = this._makeSection('Outfit');
+    {
+      const topRow = document.createElement('div'); topRow.className = 'cc-row';
+      const topLbl = document.createElement('span'); topLbl.className = 'cc-row-lbl'; topLbl.textContent = 'Top:';
+      const topChips = document.createElement('div'); topChips.className = 'cc-chips';
+      for (const [id, lbl4] of [['none','None'],['tunic','Tunic'],['robe_top','Robe Top'],['armor_chest','Armor'],['wrap','Wrap']] as const) {
+        const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
+        chip.onclick = () => { this._dna.outfit.top = id; this._outfitTopChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
+        this._outfitTopChips.set(id, chip); topChips.appendChild(chip);
+      }
+      topRow.append(topLbl, topChips); this._outfitSec.appendChild(topRow);
+    }
+    {
+      const legsRow = document.createElement('div'); legsRow.className = 'cc-row';
+      const legsLbl = document.createElement('span'); legsLbl.className = 'cc-row-lbl'; legsLbl.textContent = 'Legs:';
+      const legsChips = document.createElement('div'); legsChips.className = 'cc-chips';
+      for (const [id, lbl4] of [['none','None'],['trousers','Trousers'],['skirt','Skirt'],['shorts','Shorts'],['loincloth','Loincloth'],['robe_skirt','Robe Skirt']] as const) {
+        const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
+        chip.onclick = () => { this._dna.outfit.legs = id; this._outfitLegsChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
+        this._outfitLegsChips.set(id, chip); legsChips.appendChild(chip);
+      }
+      legsRow.append(legsLbl, legsChips); this._outfitSec.appendChild(legsRow);
+    }
+    {
+      const overRow = document.createElement('div'); overRow.className = 'cc-row';
+      const overLbl = document.createElement('span'); overLbl.className = 'cc-row-lbl'; overLbl.textContent = 'Over:';
+      const overChips = document.createElement('div'); overChips.className = 'cc-chips';
+      for (const [id, lbl4] of [['none','None'],['robe_full','Robe'],['cape','Cape'],['cloak','Cloak']] as const) {
+        const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
+        chip.onclick = () => { this._dna.outfit.over = id; this._outfitOverChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
+        this._outfitOverChips.set(id, chip); overChips.appendChild(chip);
+      }
+      overRow.append(overLbl, overChips); this._outfitSec.appendChild(overRow);
+    }
+
     // Scale
-    const scaleSec = this._makeSection('Scale');
+    const scaleSec = this._makeSection('Body');
     const scRow = document.createElement('div'); scRow.className = 'cc-row';
     const scLbl = document.createElement('span'); scLbl.className = 'cc-row-lbl'; scLbl.textContent = 'Global:';
     this._scaleSlider = document.createElement('input'); this._scaleSlider.type = 'range';
@@ -485,8 +547,24 @@ export class CharacterCreation {
     this._scaleVal = document.createElement('span'); this._scaleVal.className = 'cc-slider-val';
     this._scaleSlider.oninput = () => { this._dna.proportions.global = +this._scaleSlider.value; this._scaleVal.textContent = (+this._scaleSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
     scRow.append(scLbl, this._scaleSlider, this._scaleVal); scaleSec.appendChild(scRow);
+    // CC-3 morph sliders
+    for (const md of [
+      { label: 'Shoulders', prop: 'shoulderWidth', min: '0.5', max: '2.0', step: '0.05' },
+      { label: 'Hips',      prop: 'hipWidth',      min: '0.5', max: '2.0', step: '0.05' },
+      { label: 'Belly',     prop: 'bellySize',     min: '0.0', max: '1.5', step: '0.05' },
+      { label: 'Neck W',    prop: 'neckThickness', min: '0.5', max: '1.8', step: '0.05' },
+    ] as const) {
+      const mRow = document.createElement('div'); mRow.className = 'cc-row';
+      const mLbl = document.createElement('span'); mLbl.className = 'cc-row-lbl'; mLbl.textContent = md.label + ':';
+      const mSlider = document.createElement('input'); mSlider.type = 'range';
+      mSlider.className = 'cc-slider'; mSlider.min = md.min; mSlider.max = md.max; mSlider.step = md.step;
+      const mVal = document.createElement('span'); mVal.className = 'cc-slider-val';
+      mSlider.oninput = () => { (this._dna.proportions as any)[md.prop] = +mSlider.value; mVal.textContent = (+mSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
+      mRow.append(mLbl, mSlider, mVal); scaleSec.appendChild(mRow);
+      this._morphInputs.push({ prop: md.prop, slider: mSlider, val: mVal });
+    }
 
-    ctrlCol.append(nameWrap, archSec, boonSec, palSec, faceSec, propSec, scaleSec);
+    ctrlCol.append(nameWrap, archSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
     main.append(previewCol, ctrlCol);
 
     // Actions
