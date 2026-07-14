@@ -15,9 +15,13 @@ export type HeadStyle  = 'normal' | 'large' | 'small' | 'elongated';
 export type OutfitTopId  = 'none' | 'tunic' | 'robe_top' | 'armor_chest' | 'wrap';
 export type OutfitLegsId = 'none' | 'trousers' | 'skirt' | 'shorts' | 'loincloth' | 'robe_skirt';
 export type OutfitOverId = 'none' | 'robe_full' | 'cape' | 'cloak';
-export type FaceType   = 'cute' | 'angry' | 'cyclops' | 'blank' | 'skull' | 'compound';
+export type FaceType   = 'cute' | 'angry' | 'cyclops' | 'blank' | 'skull' | 'compound'
+  | 'cherubic' | 'gaunt' | 'cat' | 'lizard' | 'bird' | 'insect' | 'demon' | 'ancient';
 export type MouthType  = 'smile' | 'frown' | 'beak' | 'fangs' | 'none';
-export type Expression = 'neutral' | 'happy' | 'angry' | 'scared';
+export type Expression = 'neutral' | 'happy' | 'angry' | 'scared' | 'casting' | 'surprised' | 'hurt';
+export type EyeShape   = 'round' | 'almond' | 'slit' | 'compound' | 'void' | 'star';
+export type SkinPattern = 'none' | 'stripes' | 'spots' | 'scales' | 'gradient' | 'cracks' | 'fur';
+export type BrowStyle  = 'none' | 'thin' | 'thick' | 'furrowed' | 'arched';
 export type PropId     =
   | 'horns_small' | 'horns_large'
   | 'tail_stub'   | 'tail_long'
@@ -26,7 +30,18 @@ export type PropId     =
   | 'robe'
   | 'armor_light'
   | 'aura'
-  | 'hair_short' | 'hair_long' | 'hair_bun';
+  | 'hair_short' | 'hair_long' | 'hair_bun'
+  // CC-6 new props
+  | 'antlers'
+  | 'fin_dorsal'
+  | 'mane'
+  | 'feather_crest'
+  | 'tusk_lower'
+  | 'scale_ridges'
+  | 'tentacles'
+  | 'carapace'
+  | 'lantern'
+  | 'ghost_trail';
 
 export interface CreatureDNA {
   archetype: Archetype;
@@ -36,6 +51,11 @@ export interface CreatureDNA {
     secondary:         number;
     emissive:          number;
     emissiveIntensity: number;
+    // CC-7 body skin pattern
+    pattern:        SkinPattern;
+    patternColor:   number;
+    patternScale:   number;    // 0.5–3.0
+    patternOpacity: number;    // 0.0–1.0
   };
   proportions: {
     global:       number;
@@ -58,6 +78,10 @@ export interface CreatureDNA {
     eyeColor:   number;
     mouthType:  MouthType;
     expression: Expression;
+    eyeShape:   EyeShape;
+    skinPattern: SkinPattern;
+    markColor:  number;
+    browStyle:  BrowStyle;
   };
   material: {
     roughness:          number;
@@ -78,14 +102,18 @@ export interface CreatureDNA {
 export const DEFAULT_PLAYER_DNA: CreatureDNA = {
   archetype: 'biped',
   subRace:   'human',
-  colors: { primary: 0xf5c89a, secondary: 0x4a2080, emissive: 0x6030c0, emissiveIntensity: 0.04 },
+  colors: { primary: 0xf5c89a, secondary: 0x4a2080, emissive: 0x6030c0, emissiveIntensity: 0.04,
+             pattern: 'none', patternColor: 0x884488, patternScale: 1.0, patternOpacity: 0.35 },
   proportions: {
     global: 1.0, torso: [1, 1, 1], headSize: 1.0,
     limbLength: 1.0, limbWidth: 1.0, neckLength: 1.0,
     tailLength: 0.0, wingSpan: 1.5, segmentCount: 5,
     shoulderWidth: 1.0, hipWidth: 1.0, bellySize: 0.0, neckThickness: 1.0,
   },
-  face: { type: 'cute', eyeColor: 0x2a1a4a, mouthType: 'smile', expression: 'neutral' },
+  face: {
+    type: 'cute', eyeColor: 0x2a1a4a, mouthType: 'smile', expression: 'neutral',
+    eyeShape: 'round', skinPattern: 'none', markColor: 0x884488, browStyle: 'none',
+  },
   material: { roughness: 0.55, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.2 },
   props: [],
   outfit: { top: 'none', legs: 'none', over: 'none' },
@@ -177,27 +205,27 @@ export const BIPED_SUBRACES: SubRace[] = [
 
 export const ARCHETYPE_DEFAULTS: Partial<Record<Archetype, Partial<CreatureDNA>>> = {
   quadruped: {
-    colors: { primary: 0x6a9a5a, secondary: 0x3a5a2a, emissive: 0x204010, emissiveIntensity: 0.02 },
+    colors: { primary: 0x6a9a5a, secondary: 0x3a5a2a, emissive: 0x204010, emissiveIntensity: 0.02, pattern: 'none', patternColor: 0x3a5a2a, patternScale: 1.0, patternOpacity: 0.35 },
     proportions: { global: 1.0, torso: [1.4, 0.85, 1.8], headSize: 0.85, limbLength: 0.95, limbWidth: 0.9, neckLength: 1.4, tailLength: 1.2, wingSpan: 1.5, segmentCount: 4, shoulderWidth: 1.1, hipWidth: 1.0, bellySize: 0.0, neckThickness: 1.1 },
-    face: { type: 'angry', eyeColor: 0xff4000, mouthType: 'fangs', expression: 'angry' },
+    face: { type: 'angry', eyeColor: 0xff4000, mouthType: 'fangs', expression: 'angry', eyeShape: 'slit', skinPattern: 'none', markColor: 0x443322, browStyle: 'thick' },
     props: [],
   },
   amoeba: {
-    colors: { primary: 0x40c0a0, secondary: 0x20a080, emissive: 0x40ffd0, emissiveIntensity: 0.18 },
+    colors: { primary: 0x40c0a0, secondary: 0x20a080, emissive: 0x40ffd0, emissiveIntensity: 0.18, pattern: 'none', patternColor: 0x20a080, patternScale: 1.0, patternOpacity: 0.35 },
     proportions: { global: 1.0, torso: [1.3, 1.3, 1.3], headSize: 1.6, limbLength: 0.3, limbWidth: 1.5, neckLength: 0.3, tailLength: 0, wingSpan: 0.5, segmentCount: 6, shoulderWidth: 1.0, hipWidth: 1.0, bellySize: 0.0, neckThickness: 0.7 },
-    face: { type: 'cyclops', eyeColor: 0xff8800, mouthType: 'none', expression: 'neutral' },
+    face: { type: 'cyclops', eyeColor: 0xff8800, mouthType: 'none', expression: 'neutral', eyeShape: 'round', skinPattern: 'none', markColor: 0x40ffd0, browStyle: 'none' },
     props: ['aura'],
   },
   avian: {
-    colors: { primary: 0xe8c060, secondary: 0xa87020, emissive: 0xffe080, emissiveIntensity: 0.06 },
+    colors: { primary: 0xe8c060, secondary: 0xa87020, emissive: 0xffe080, emissiveIntensity: 0.06, pattern: 'none', patternColor: 0xa87020, patternScale: 1.0, patternOpacity: 0.35 },
     proportions: { global: 0.85, torso: [0.85, 1.1, 0.7], headSize: 0.75, limbLength: 0.7, limbWidth: 0.7, neckLength: 1.6, tailLength: 0.9, wingSpan: 2.2, segmentCount: 3, shoulderWidth: 0.9, hipWidth: 0.85, bellySize: 0.0, neckThickness: 0.8 },
-    face: { type: 'cute', eyeColor: 0x1a3060, mouthType: 'beak', expression: 'neutral' },
+    face: { type: 'cute', eyeColor: 0x1a3060, mouthType: 'beak', expression: 'neutral', eyeShape: 'round', skinPattern: 'none', markColor: 0xa87020, browStyle: 'none' },
     props: [],
   },
   serpent: {
-    colors: { primary: 0x506020, secondary: 0x304010, emissive: 0x60a020, emissiveIntensity: 0.08 },
+    colors: { primary: 0x506020, secondary: 0x304010, emissive: 0x60a020, emissiveIntensity: 0.08, pattern: 'scales', patternColor: 0x304010, patternScale: 1.2, patternOpacity: 0.4 },
     proportions: { global: 1.0, torso: [1.0, 1.0, 1.0], headSize: 1.1, limbLength: 0.4, limbWidth: 0.6, neckLength: 0.5, tailLength: 1.8, wingSpan: 0.5, segmentCount: 9, shoulderWidth: 0.8, hipWidth: 0.8, bellySize: 0.0, neckThickness: 0.9 },
-    face: { type: 'angry', eyeColor: 0xff2000, mouthType: 'fangs', expression: 'angry' },
+    face: { type: 'angry', eyeColor: 0xff2000, mouthType: 'fangs', expression: 'angry', eyeShape: 'slit', skinPattern: 'scales', markColor: 0x304010, browStyle: 'thick' },
     props: ['tail_long'],
   },
 };
@@ -247,8 +275,43 @@ export function base64ToDna(b64: string): CreatureDNA {
   if (_pp.hipWidth      === undefined) _pp.hipWidth      = 1.0;
   if (_pp.bellySize     === undefined) _pp.bellySize     = 0.0;
   if (_pp.neckThickness === undefined) _pp.neckThickness = 1.0;
+  // Backwards-compat: CC-5 face expansion fields.
+  const _ff = dna.face as any;
+  if (_ff.eyeShape    === undefined) _ff.eyeShape    = 'round';
+  if (_ff.skinPattern === undefined) _ff.skinPattern = 'none';
+  if (_ff.markColor   === undefined) _ff.markColor   = 0x884488;
+  if (_ff.browStyle   === undefined) _ff.browStyle   = 'none';
+  // Backwards-compat: CC-7 body skin pattern fields.
+  const _cc = dna.colors as any;
+  if (_cc.pattern        === undefined) _cc.pattern        = 'none';
+  if (_cc.patternColor   === undefined) _cc.patternColor   = 0x884488;
+  if (_cc.patternScale   === undefined) _cc.patternScale   = 1.0;
+  if (_cc.patternOpacity === undefined) _cc.patternOpacity = 0.35;
   return dna;
 }
 export function cloneDNA(dna: CreatureDNA): CreatureDNA { return JSON.parse(JSON.stringify(dna)) as CreatureDNA; }
 export function numToHex(n: number): string { return '#' + n.toString(16).padStart(6, '0'); }
 export function hexToNum(s: string): number { return parseInt(s.replace('#', ''), 16); }
+
+// ── CC-5 / CC-6 Allowlists ────────────────────────────────────────────────────
+
+/** Which face types are valid for each archetype (union across all subraces). */
+export const ARCHETYPE_FACE_ALLOW: Record<Archetype, FaceType[]> = {
+  biped:     ['cute','cherubic','gaunt','angry','skull','cat','demon','ancient','cyclops','compound','blank'],
+  quadruped: ['cat','lizard','angry','blank'],
+  amoeba:    ['cyclops','compound','insect','blank','ancient'],
+  avian:     ['bird','cute','cyclops'],
+  serpent:   ['lizard','angry','demon','cat'],
+};
+
+/** Which props are valid (shown in UI) for each archetype. */
+export const ARCHETYPE_PROP_ALLOW: Record<Archetype, PropId[]> = {
+  biped:     ['horns_small','horns_large','tail_stub','tail_long','wings_bat','crown','armor_light','aura',
+              'antlers','mane','feather_crest','tusk_lower','lantern','ghost_trail',
+              'hair_short','hair_long','hair_bun'],
+  quadruped: ['horns_small','horns_large','tail_stub','tail_long','armor_light','aura',
+              'antlers','mane','tusk_lower','scale_ridges','carapace'],
+  amoeba:    ['aura','fin_dorsal','tentacles','carapace','lantern','ghost_trail'],
+  avian:     ['wings_bat','crown','tail_stub','tail_long','feather_crest','fin_dorsal','lantern','scale_ridges'],
+  serpent:   ['tail_long','horns_small','crown','aura','fin_dorsal','scale_ridges','tentacles','carapace'],
+};
