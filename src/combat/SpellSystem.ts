@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { Damageable } from './Health';
 import type { PartyManager } from './PartyManager';
+import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 
 // ── VFX PRNG — deterministic, never Math.random() ────────────────────────────
 const _vfxRand = mulberry32(0xF00DCAFE);
@@ -62,13 +63,11 @@ class Projectile {
 
   constructor(
     private readonly pos: THREE.Vector3,
-    private readonly dir: THREE.Vector3,
+    readonly dir: THREE.Vector3,
     private readonly targets: (Damageable & { worldPosition?: THREE.Vector3 })[],
     private readonly def: SpellDef,
     private readonly damageMult: number,
     private readonly onHit?: (target: Damageable, damage: number) => void,
-    private readonly onChain?: (hitPos: THREE.Vector3, hitTarget: Damageable, bouncesLeft: number) => void,
-    private readonly bouncesLeft = 0,
   ) {
     this.mesh = new THREE.Group();
 
@@ -122,9 +121,22 @@ class Projectile {
   /** The spell's primary colour, used for impact VFX. */
   get spellColor(): number { return this.def.color; }
 
-  update(dt: number): void {
+  update(dt: number, physics?: PhysicsWorld): void {
     if (this.expired) return;
     this.timer -= dt;
+
+    // Wall collision: cast a ray ahead this frame; explode if wall is within reach
+    if (physics) {
+      const moveDistance = this.def.speed * dt;
+      const wallDist = physics.castRayVsWalls(this.pos, this.dir, moveDistance + 0.35);
+      if (wallDist !== null && wallDist <= moveDistance + 0.15) {
+        this.pos.addScaledVector(this.dir, wallDist);
+        this.mesh.position.copy(this.pos);
+        // _hitPos stays null → SpellSystem treats this as a wall fizzle
+        this.timer = -1;
+        return;
+      }
+    }
 
     this.pos.addScaledVector(this.dir, this.def.speed * dt);
     this.mesh.position.copy(this.pos);
@@ -150,7 +162,6 @@ class Projectile {
         const dmg = Math.round(this.def.damage * this.damageMult);
         const applied = target.takeDamage(dmg);
         if (applied > 0) this.onHit?.(target, applied);
-        if (this.bouncesLeft > 0) this.onChain?.(this.pos.clone(), target, this.bouncesLeft);
         this._hitPos = this.pos.clone();
         this._hit = true;
         return;
@@ -692,9 +703,6 @@ export class SpellSystem {
   private _hymn: HymnAura | null               = null;
   private readonly _cooldowns = new Map<string, CooldownEntry>();
 
-  // Chain arc: trailing bolts that dynamically follow their projectile
-  private readonly _chainTrails: Array<{ bolt: LightningBolt; proj: Projectile }> = [];
-
   // ── Public query ─────────────────────────────────────────────────────────
 
   /** 0 = ready, 1 = just cast; decreases to 0 over cooldown duration. */
@@ -776,27 +784,17 @@ export class SpellSystem {
     scene: THREE.Scene,
     targets?: (Damageable & { worldPosition?: THREE.Vector3 })[],
     playerPos?: THREE.Vector3,
+    physics?: PhysicsWorld,
   ): void {
     // Cooldown timers
     for (const [, cd] of this._cooldowns) {
       cd.remaining = Math.max(0, cd.remaining - dt);
     }
 
-    // Chain arc trailing bolts — update endpoints to follow their projectile
-    for (let i = this._chainTrails.length - 1; i >= 0; i--) {
-      const ct = this._chainTrails[i];
-      if (ct.proj.expired) {
-        this._chainTrails.splice(i, 1); // bolt fades naturally in _bolts
-      } else {
-        ct.bolt.setEndpoint(ct.proj.mesh.position);
-        ct.bolt.keepAlive();
-      }
-    }
-
-    // Projectiles — also spawn impact VFX when they expire
+    // Projectiles — wall collision + impact VFX on expire
     for (let i = this._projectiles.length - 1; i >= 0; i--) {
       const p = this._projectiles[i];
-      p.update(dt);
+      p.update(dt, physics);
       if (p.expired) {
         // Impact or wall-fizzle spark burst
         const impactPos = p.hitPos ?? p.mesh.position;
@@ -882,25 +880,20 @@ export class SpellSystem {
     dmgMult: number,
     scene: THREE.Scene,
     onHit?: (t: Damageable, d: number) => void,
-    bouncesLeft = 0,
-    excludeTarget?: Damageable,
   ): void {
     const dir = new THREE.Vector3().subVectors(aimTarget, origin).setY(0).normalize();
     const spawnPos = origin.clone().addScaledVector(dir, 0.6);
     spawnPos.y = origin.y + 0.5;
-
-    const filteredTargets = excludeTarget
-      ? targets.filter(t => t !== excludeTarget)
-      : targets;
-
-    const proj = new Projectile(spawnPos, dir, filteredTargets, def, dmgMult, onHit,
-      (hitPos, hitTarget, bounces) => this._doChainBounce(hitPos, hitTarget, targets, def, dmgMult * 0.85, scene, onHit, bounces),
-      bouncesLeft,
-    );
+    const proj = new Projectile(spawnPos, dir, targets, def, dmgMult, onHit);
     scene.add(proj.mesh);
     this._projectiles.push(proj);
   }
 
+  /**
+   * Chain Arc — instant lightning strike from player to cursor.
+   * If an enemy is near the cursor, chains to adjacent enemies up to `bounces` times.
+   * No projectile is fired; all bolts and damage are resolved immediately.
+   */
   private _fireChain(
     origin: THREE.Vector3,
     aimTarget: THREE.Vector3,
@@ -910,71 +903,82 @@ export class SpellSystem {
     scene: THREE.Scene,
     onHit?: (t: Damageable, d: number) => void,
   ): void {
-    const bounces  = def.bounces ?? 0;
-    const dir      = new THREE.Vector3().subVectors(aimTarget, origin).setY(0).normalize();
-    const spawnPos = origin.clone().addScaledVector(dir, 0.6);
-    spawnPos.y     = origin.y + 0.5;
+    const bounces = def.bounces ?? 0;
+    const strikeY = origin.y + 0.7; // chest-height for the bolt
 
-    // Origin conjuring spark
-    this._addSpark(spawnPos, def.color, 3.5, scene);
+    const originPt = new THREE.Vector3(origin.x,    strikeY, origin.z);
+    const cursorPt = new THREE.Vector3(aimTarget.x, strikeY, aimTarget.z);
 
-    const proj = new Projectile(
-      spawnPos, dir, targets, def, dmgMult, onHit,
-      (hitPos, hitTarget, bouncesLeft) => this._doChainBounce(hitPos, hitTarget, targets, def, dmgMult * 0.85, scene, onHit, bouncesLeft),
-      bounces,
-    );
-    scene.add(proj.mesh);
-    this._projectiles.push(proj);
+    // Conjuring spark at player's position
+    this._addSpark(originPt, def.color, 3.5, scene);
 
-    // Trailing bolt that stretches from cast origin to the flying projectile
-    const trailBolt = new LightningBolt(spawnPos, spawnPos.clone().addScaledVector(dir, 0.4), def.color);
-    scene.add(trailBolt.mesh);
-    this._bolts.push(trailBolt);
-    this._chainTrails.push({ bolt: trailBolt, proj });
-  }
+    // Primary bolt: player → cursor (always drawn, regardless of enemy)
+    const primaryBolt = new LightningBolt(originPt, cursorPt, def.color);
+    scene.add(primaryBolt.mesh);
+    this._bolts.push(primaryBolt);
 
-  private _doChainBounce(
-    from: THREE.Vector3,
-    prevTarget: Damageable & { worldPosition?: THREE.Vector3 },
-    allTargets: (Damageable & { worldPosition?: THREE.Vector3 })[],
-    def: SpellDef,
-    dmgMult: number,
-    scene: THREE.Scene,
-    onHit?: (t: Damageable, d: number) => void,
-    bouncesLeft = 0,
-  ): void {
-    // Find nearest non-dead target within 6u that isn't the one just hit
-    let nearest: (Damageable & { worldPosition?: THREE.Vector3 }) | null = null;
-    let nearestDist = 6.0;
-    for (const t of allTargets) {
-      if (t === prevTarget || t.isDead || !t.worldPosition) continue;
-      const d = from.distanceTo(t.worldPosition);
-      if (d < nearestDist) { nearestDist = d; nearest = t; }
+    // Hit detection: nearest enemy within 2.0u of the cursor
+    const hitTargets = new Set<Damageable>();
+    let initialHit: (Damageable & { worldPosition?: THREE.Vector3 }) | null = null;
+    let bestDist = 2.0;
+    for (const t of targets) {
+      if (t.isDead || !t.worldPosition) continue;
+      const d = aimTarget.distanceTo(t.worldPosition);
+      if (d < bestDist) { bestDist = d; initialHit = t; }
     }
-    if (!nearest?.worldPosition) return;
 
-    // Jagged lightning bolt between bounce points
-    const boltTo = nearest.worldPosition.clone().setY(from.y);
-    const bolt   = new LightningBolt(from, boltTo, def.color);
-    scene.add(bolt.mesh);
-    this._bolts.push(bolt);
+    if (!initialHit) {
+      // No enemy at cursor — fizzle spark and done
+      this._addSpark(cursorPt, def.color, 3.0, scene);
+      return;
+    }
 
-    // Spark burst at impact point
-    this._addSpark(from, def.color, 4.0, scene);
+    // Strike the initial target
+    this._addSpark(cursorPt, def.color, 6.0, scene);
+    const dmg = Math.round(def.damage * dmgMult);
+    const applied = initialHit.takeDamage(dmg);
+    if (applied > 0) onHit?.(initialHit, applied);
+    hitTargets.add(initialHit);
 
-    // Fire next projectile toward nearest target
-    const nextDir = new THREE.Vector3().subVectors(nearest.worldPosition, from).setY(0).normalize();
-    const nextProj = new Projectile(
-      from.clone(), nextDir,
-      allTargets.filter(t => t !== prevTarget),
-      def, dmgMult, onHit,
-      bouncesLeft > 1
-        ? (hp, ht, bl) => this._doChainBounce(hp, ht, allTargets, def, dmgMult * 0.85, scene, onHit, bl)
-        : undefined,
-      bouncesLeft - 1,
+    let chainFrom = new THREE.Vector3(
+      initialHit.worldPosition!.x, strikeY, initialHit.worldPosition!.z,
     );
-    scene.add(nextProj.mesh);
-    this._projectiles.push(nextProj);
+
+    // Chain bounces — each bolt jumps to the nearest unhit enemy within 6u
+    let bounceMult = dmgMult * 0.85;
+    for (let b = 0; b < bounces; b++) {
+      let nextTarget: (Damageable & { worldPosition?: THREE.Vector3 }) | null = null;
+      let nextDist = 6.0;
+      for (const t of targets) {
+        if (hitTargets.has(t) || t.isDead || !t.worldPosition) continue;
+        const d = new THREE.Vector3(t.worldPosition.x, strikeY, t.worldPosition.z)
+          .distanceTo(chainFrom);
+        if (d < nextDist) { nextDist = d; nextTarget = t; }
+      }
+      if (!nextTarget?.worldPosition) break;
+
+      const nextPt = new THREE.Vector3(
+        nextTarget.worldPosition.x, strikeY, nextTarget.worldPosition.z,
+      );
+
+      // Chain bolt + arrival spark
+      const chainBolt = new LightningBolt(chainFrom, nextPt, def.color);
+      scene.add(chainBolt.mesh);
+      this._bolts.push(chainBolt);
+      this._addSpark(chainFrom, def.color, 4.5, scene);
+
+      // Chain damage (diminishes per bounce)
+      const chainDmg = Math.round(def.damage * bounceMult);
+      const chainApplied = nextTarget.takeDamage(chainDmg);
+      if (chainApplied > 0) onHit?.(nextTarget, chainApplied);
+      hitTargets.add(nextTarget);
+
+      chainFrom = nextPt;
+      bounceMult *= 0.85;
+    }
+
+    // Final impact spark at last chain point
+    this._addSpark(chainFrom, def.color, 4.5, scene);
   }
 
   private _fireAoe(

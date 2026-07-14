@@ -545,7 +545,7 @@ async function main() {
 
       // 7. Combat tick (expire arcs / projectiles / zones / auras)
       combat.update(dt, scene);
-      spells.update(dt, scene, enemies, player.group.position);
+      spells.update(dt, scene, enemies, player.group.position, physics);
 
       // 7b. Death check
       if (player.health.hp <= 0 && !deathTriggered) {

@@ -545,14 +545,16 @@ export class SlimeEnemy implements Damageable {
     this.state = 'dead';
     this._deathTimer = DEATH_ANIM_DURATION;
 
-    // Make body transparent for fade-out
+    // Make body transparent for fade-out and force material recompile
     const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
     mat.transparent = true;
     mat.opacity = 1.0;
     mat.color.setHex(SLIME_COLOR);
+    mat.needsUpdate = true; // required when changing transparent after first render
 
     // Initial pop squash — very flat, spread wide
     this.bodyMesh.scale.set(1.9, 0.06, 1.9);
+    this.bodyMesh.visible = true;
 
     // Goo chunk blobs ejected radially outward
     this._deathChunkGeo = new THREE.IcosahedronGeometry(0.11, 0);
@@ -592,17 +594,14 @@ export class SlimeEnemy implements Damageable {
     const elapsed = DEATH_ANIM_DURATION - Math.max(0, this._deathTimer);
     const t = elapsed / DEATH_ANIM_DURATION; // 0 → 1
 
-    const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
-
     if (t < 0.20) {
-      // Phase 1 (0-20%): expanding squash ring — spread outward then snap invisible
+      // Phase 1 (0–20%): pop—body expands outward flat like a burst bubble
       const et = t / 0.20;
       this.bodyMesh.scale.set(1.9 + et * 0.8, Math.max(0.01, 0.06 - et * 0.05), 1.9 + et * 0.8);
-      mat.opacity = 1.0;
-    } else {
-      // Phase 2 (20-100%): body fades, chunks fly
-      const ft = (t - 0.20) / 0.80;
-      mat.opacity = Math.max(0, 1 - ft);
+      this.bodyMesh.visible = true;
+    } else if (this.bodyMesh.visible) {
+      // Phase 2 (20–100%): body is done — hide it, let chunks take over
+      this.bodyMesh.visible = false;
     }
 
     // Animate goo chunks
