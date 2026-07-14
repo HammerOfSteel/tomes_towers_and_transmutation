@@ -15,7 +15,8 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
     "postprocessing": "^6.39.2",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "tweakpane": "^4.0.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

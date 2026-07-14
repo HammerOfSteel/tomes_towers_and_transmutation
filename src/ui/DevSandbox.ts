@@ -4,11 +4,17 @@
 //  Accessible from the main menu Dev button when dev mode is on.
 //
 //  Tabs:
-//    Spell Lab   — grant/select any spell; cast in isolation.
-//    Enemy Lab   — spawn slimes, adjust HP/count, kill all.
-//    Proc-Gen    — run tower/overworld generators, view stats.
+//    Spell Lab     — grant/select any spell; cast in isolation.
+//    Enemy Lab     — spawn slimes, adjust HP/count, kill all.
+//    Proc-Gen      — run tower/overworld generators, view stats.
+//    Creature Lab  — build a creature from DNA and spawn it.
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import * as THREE from 'three';
+import { Pane } from 'tweakpane';
+import type { CreatureDNA, Archetype, FaceType, MouthType } from '@/creatures/CreatureDNA';
+import { dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64 } from '@/creatures/CreatureDNA';
+import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { animateCreature } from '@/creatures/CreatureAnimator';
 
 export interface DevSandboxOptions {
   onGrantSpell: (spellId: string) => void;
@@ -22,6 +28,10 @@ export interface DevSandboxOptions {
   onEnterRoom: (roomId: string) => void;
   /** Return to the open sandbox arena. */
   onReturnToArena: () => void;
+  /** Teleport into a live overworld scene with the given seed. */
+  onEnterOverworld: (seed: number) => void;
+  /** Spawn a creature (built from DNA) in the arena. */
+  onSpawnCreature: (dna: CreatureDNA) => void;
   onClose: () => void;
 }
 
@@ -164,7 +174,7 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-type TabId = 'spells' | 'enemies' | 'procgen';
+type TabId = 'spells' | 'enemies' | 'procgen' | 'creature';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
@@ -178,6 +188,15 @@ export class DevSandbox {
   private _outputEl: HTMLElement | null = null;
   private _roomListEl: HTMLElement | null = null;
   private _lastProcResult: { text: string; roomIds: string[] } | null = null;
+  // Creature Lab
+  private _creatureDna: CreatureDNA = dnaForArchetype('biped');
+  private _labRenderer: THREE.WebGLRenderer | null = null;
+  private _labRig: CreatureRig | null = null;
+  private _labScene: THREE.Scene | null = null;
+  private _labCamera: THREE.PerspectiveCamera | null = null;
+  private _labRafId: number | null = null;
+  private _labRotY = 0;
+  private _labPane: Pane | null = null;
 
   constructor(private readonly _opts: DevSandboxOptions) {
     this._ensureStyles();
@@ -188,7 +207,13 @@ export class DevSandbox {
 
   show(): void { this._panel.style.display = 'flex'; }
   hide(): void { this._panel.style.display = 'none'; }
-  dispose(): void { this._panel.remove(); }
+  dispose(): void {
+    this._stopLabLoop();
+    this._labPane?.dispose();
+    this._labRenderer?.dispose();
+    this._labRig?.dispose();
+    this._panel.remove();
+  }
 
   /** Update the location strip in the header. Pass 'arena' or a room ID. */
   setLocation(loc: string): void {
@@ -245,9 +270,10 @@ export class DevSandbox {
     const tabBar = document.createElement('div');
     tabBar.className = 'ds-tabs';
     const tabs: Array<{ id: TabId; label: string }> = [
-      { id: 'spells',  label: '✦ Spells' },
-      { id: 'enemies', label: '⚔ Enemies' },
-      { id: 'procgen', label: '⚙ Proc-Gen' },
+      { id: 'spells',   label: '✦ Spells'  },
+      { id: 'enemies',  label: '⚔ Enemies' },
+      { id: 'procgen',  label: '⚙ Proc-Gen'},
+      { id: 'creature', label: '🧬 Creature'},
     ];
     for (const t of tabs) {
       const btn = document.createElement('button');
@@ -283,9 +309,10 @@ export class DevSandbox {
     if (!body) return;
     body.innerHTML = '';
 
-    if (this._activeTab === 'spells')  body.appendChild(this._buildSpellsTab());
-    if (this._activeTab === 'enemies') body.appendChild(this._buildEnemiesTab());
-    if (this._activeTab === 'procgen') body.appendChild(this._buildProcGenTab());
+    if (this._activeTab === 'spells')   body.appendChild(this._buildSpellsTab());
+    if (this._activeTab === 'enemies')  body.appendChild(this._buildEnemiesTab());
+    if (this._activeTab === 'procgen')  body.appendChild(this._buildProcGenTab());
+    if (this._activeTab === 'creature') body.appendChild(this._buildCreatureLabTab());
   }
 
   // ── Spells tab ────────────────────────────────────────────────────────────
@@ -442,9 +469,7 @@ export class DevSandbox {
       opt.selected = o.v === this._procType;
       typeSelect.appendChild(opt);
     }
-    typeSelect.onchange = () => {
-      this._procType = typeSelect.value as typeof this._procType;
-    };
+    // onchange wired below after overworldBtn is created
     typeRow.append(typeLbl, typeSelect);
 
     const seedRow = document.createElement('div');
@@ -472,6 +497,20 @@ export class DevSandbox {
     runBtn.className = 'ds-btn ds-btn--accent';
     runBtn.textContent = '▶ Run Generator';
     runBtn.style.marginTop = '4px';
+
+    // "Enter Overworld" button (only shown when type === overworld)
+    const overworldBtn = document.createElement('button');
+    overworldBtn.className = 'ds-btn ds-btn--accent';
+    overworldBtn.textContent = '🌍 Enter Overworld';
+    overworldBtn.style.cssText = 'margin-top:4px;display:none;';
+    overworldBtn.onclick = () => this._opts.onEnterOverworld(this._procSeed);
+
+    typeSelect.onchange = () => {
+      this._procType = typeSelect.value as typeof this._procType;
+      runBtn.style.display = this._procType === 'overworld' ? 'none' : '';
+      overworldBtn.style.display = this._procType === 'overworld' ? '' : 'none';
+    };
+
     runBtn.onclick = () => {
       runBtn.disabled = true;
       runBtn.textContent = '…running';
@@ -485,7 +524,7 @@ export class DevSandbox {
       }, 0);
     };
 
-    genSec.append(genTitle, typeRow, seedRow, runBtn);
+    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn);
 
     // Output area
     const outSec = document.createElement('div');
@@ -552,6 +591,210 @@ export class DevSandbox {
       row.append(btn, label);
       list.appendChild(row);
     }
+  }
+
+  // ── Creature Lab tab ──────────────────────────────────────────────────────
+
+  private _buildCreatureLabTab(): HTMLElement {
+    const wrap = document.createElement('div');
+
+    // ── Archetype chips ────────────────────────────────────────────────────
+    const archSec = document.createElement('div');
+    archSec.className = 'ds-section';
+    const archTitle = document.createElement('div');
+    archTitle.className = 'ds-section-title';
+    archTitle.textContent = 'Archetype';
+    const archRow = document.createElement('div');
+    archRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;';
+
+    const archetypes: Array<{ id: Archetype; icon: string }> = [
+      { id: 'biped',     icon: '🧙' },
+      { id: 'quadruped', icon: '🐺' },
+      { id: 'amoeba',    icon: '🫧' },
+      { id: 'avian',     icon: '🦅' },
+      { id: 'serpent',   icon: '🐍' },
+    ];
+    for (const a of archetypes) {
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn' + (this._creatureDna.archetype === a.id ? ' ds-btn--accent' : '');
+      btn.textContent = a.icon + ' ' + a.id;
+      btn.dataset.archId = a.id;
+      btn.onclick = () => {
+        this._creatureDna = dnaForArchetype(a.id);
+        archRow.querySelectorAll<HTMLButtonElement>('.ds-btn').forEach(b => {
+          b.classList.toggle('ds-btn--accent', b.dataset.archId === a.id);
+        });
+        this._rebuildLabRig();
+        this._syncLabPane();
+      };
+      archRow.appendChild(btn);
+    }
+    archSec.append(archTitle, archRow);
+
+    // ── Preview canvas ─────────────────────────────────────────────────────
+    const prevSec = document.createElement('div');
+    prevSec.className = 'ds-section';
+    const cv = document.createElement('canvas');
+    cv.width = 280; cv.height = 220;
+    cv.style.cssText = 'display:block;width:280px;height:220px;border:1px solid #2a1850;border-radius:3px;background:#0d0b18;cursor:grab;';
+    prevSec.appendChild(cv);
+
+    // Init renderer once canvas is in DOM
+    requestAnimationFrame(() => {
+      this._initLabRenderer(cv);
+      this._rebuildLabRig();
+      this._startLabLoop();
+    });
+
+    // ── Tweakpane controls ─────────────────────────────────────────────────
+    const paneSec = document.createElement('div');
+    paneSec.className = 'ds-section';
+    const paneContainer = document.createElement('div');
+    paneContainer.style.cssText = 'max-height:200px;overflow-y:auto;';
+    paneSec.appendChild(paneContainer);
+
+    // Build pane after element is mounted
+    requestAnimationFrame(() => {
+      this._labPane?.dispose();
+      const params = this._dnaToParams(this._creatureDna);
+      const pane = new Pane({ container: paneContainer, title: 'DNA Editor' });
+      this._labPane = pane;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p: any = pane;
+
+      const colFolder = p.addFolder({ title: 'Colors', expanded: true });
+      colFolder.addBinding(params, 'primary',   { view: 'color', label: 'Body' });
+      colFolder.addBinding(params, 'secondary', { view: 'color', label: 'Accent' });
+      colFolder.addBinding(params, 'emissive',  { view: 'color', label: 'Glow' });
+      colFolder.addBinding(params, 'emissiveIntensity', { min: 0, max: 0.5, step: 0.01, label: 'Glow amt' });
+
+      const propFolder = p.addFolder({ title: 'Proportions', expanded: false });
+      propFolder.addBinding(params, 'global',     { min: 0.5, max: 2,   step: 0.05, label: 'Scale' });
+      propFolder.addBinding(params, 'headSize',   { min: 0.4, max: 2,   step: 0.05, label: 'Head' });
+      propFolder.addBinding(params, 'limbLength', { min: 0.3, max: 2,   step: 0.05, label: 'Limb L' });
+      propFolder.addBinding(params, 'limbWidth',  { min: 0.3, max: 1.8, step: 0.05, label: 'Limb W' });
+
+      const faceFolder = p.addFolder({ title: 'Face', expanded: false });
+      faceFolder.addBinding(params, 'faceType',  { options: { cute: 'cute', angry: 'angry', cyclops: 'cyclops', skull: 'skull', compound: 'compound', blank: 'blank' }, label: 'Type' });
+      faceFolder.addBinding(params, 'mouthType', { options: { smile: 'smile', frown: 'frown', beak: 'beak', fangs: 'fangs', none: 'none' }, label: 'Mouth' });
+      faceFolder.addBinding(params, 'eyeColor', { view: 'color', label: 'Eye' });
+
+      p.on('change', () => {
+        this._paramsToCreatureDna(params, this._creatureDna);
+        this._rebuildLabRig();
+      });
+    });
+
+    // ── Actions ────────────────────────────────────────────────────────────
+    const actSec = document.createElement('div');
+    actSec.className = 'ds-section';
+    const actRow = document.createElement('div');
+    actRow.className = 'ds-row';
+
+    const spawnBtn = document.createElement('button');
+    spawnBtn.className = 'ds-btn ds-btn--accent';
+    spawnBtn.textContent = '⚡ Spawn in Arena';
+    spawnBtn.onclick = () => this._opts.onSpawnCreature(cloneDNA(this._creatureDna));
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'ds-btn';
+    copyBtn.textContent = '📋 Copy DNA';
+    copyBtn.onclick = () => {
+      navigator.clipboard?.writeText(dnaToBase64(this._creatureDna)).catch(() => {});
+      copyBtn.textContent = '✓ Copied';
+      setTimeout(() => { copyBtn.textContent = '📋 Copy DNA'; }, 1500);
+    };
+
+    actRow.append(spawnBtn, copyBtn);
+    actSec.appendChild(actRow);
+
+    wrap.append(archSec, prevSec, paneSec, actSec);
+    return wrap;
+  }
+
+  private _initLabRenderer(cv: HTMLCanvasElement): void {
+    if (this._labRenderer) return;
+    this._labRenderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+    this._labRenderer.setSize(280, 220);
+    this._labRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this._labRenderer.setClearColor(0x0d0b18);
+
+    this._labScene  = new THREE.Scene();
+    this._labCamera = new THREE.PerspectiveCamera(42, 280 / 220, 0.1, 50);
+    this._labCamera.position.set(0.4, 1.4, 3.0);
+    this._labCamera.lookAt(0, 1.0, 0);
+
+    this._labScene.add(new THREE.AmbientLight(0xffe8d0, 0.6));
+    const key = new THREE.DirectionalLight(0xfff0e0, 1.1); key.position.set(3, 5, 3);
+    this._labScene.add(key);
+    const rim = new THREE.DirectionalLight(0x8060ff, 0.35); rim.position.set(-3, 2, -2);
+    this._labScene.add(rim);
+  }
+
+  private _rebuildLabRig(): void {
+    if (!this._labScene) return;
+    if (this._labRig) { this._labScene.remove(this._labRig.root); this._labRig.dispose(); }
+    this._labRig = buildCreature(this._creatureDna);
+    this._labScene.add(this._labRig.root);
+  }
+
+  private _startLabLoop(): void {
+    if (this._labRafId !== null) return;
+    const tick = () => {
+      this._labRafId = requestAnimationFrame(tick);
+      this._labRotY += 0.008;
+      if (this._labRig) {
+        this._labRig.root.rotation.y = this._labRotY;
+        const t = performance.now() * 0.001;
+        this._labRig.root.position.y = Math.sin(t * 1.2) * 0.016;
+        animateCreature(this._labRig, { state: 'idle', time: t });
+      }
+      if (this._labRenderer && this._labScene && this._labCamera) {
+        this._labRenderer.render(this._labScene, this._labCamera);
+      }
+    };
+    tick();
+  }
+
+  private _stopLabLoop(): void {
+    if (this._labRafId !== null) { cancelAnimationFrame(this._labRafId); this._labRafId = null; }
+  }
+
+  // ── Tweakpane param conversion ─────────────────────────────────────────────
+
+  private _dnaToParams(dna: CreatureDNA): Record<string, unknown> {
+    return {
+      primary:   numToHex(dna.colors.primary),
+      secondary: numToHex(dna.colors.secondary),
+      emissive:  numToHex(dna.colors.emissive),
+      emissiveIntensity: dna.colors.emissiveIntensity,
+      global:     dna.proportions.global,
+      headSize:   dna.proportions.headSize,
+      limbLength: dna.proportions.limbLength,
+      limbWidth:  dna.proportions.limbWidth,
+      faceType:   dna.face.type as string,
+      mouthType:  dna.face.mouthType as string,
+      eyeColor:   numToHex(dna.face.eyeColor),
+    };
+  }
+
+  private _paramsToCreatureDna(p: Record<string, unknown>, dna: CreatureDNA): void {
+    dna.colors.primary           = hexToNum(p.primary   as string);
+    dna.colors.secondary         = hexToNum(p.secondary as string);
+    dna.colors.emissive          = hexToNum(p.emissive  as string);
+    dna.colors.emissiveIntensity = p.emissiveIntensity as number;
+    dna.proportions.global       = p.global     as number;
+    dna.proportions.headSize     = p.headSize   as number;
+    dna.proportions.limbLength   = p.limbLength as number;
+    dna.proportions.limbWidth    = p.limbWidth  as number;
+    dna.face.type                = p.faceType   as FaceType;
+    dna.face.mouthType           = p.mouthType  as MouthType;
+    dna.face.eyeColor            = hexToNum(p.eyeColor as string);
+  }
+
+  private _syncLabPane(): void {
+    // Rebuild pane when archetype changes (easier than updating individual bindings)
+    if (this._labPane) { this._labPane.dispose(); this._labPane = null; }
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
