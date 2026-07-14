@@ -177,8 +177,10 @@ async function main() {
 
   // ── Dev panel ───────────────────────────────────────────────────────────
   const devPanel = new DevPanel({
-    getGodMode:  () => player.health.godMode,
-    onGodMode:   (v) => { player.health.godMode = v; },
+    getGodMode:          () => player.health.godMode,
+    onGodMode:           (v) => { player.health.godMode = v; },
+    getInstantCooldowns: () => spells.instantCooldowns,
+    onInstantCooldowns:  (v) => { spells.instantCooldowns = v; },
     getHpInfo:   () => ({ hp: player.health.hp, maxHp: player.health.maxHp }),
     onFillHp:    () => {
       player.health.reset();
