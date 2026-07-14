@@ -33,7 +33,8 @@ import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { TalentSystem } from '@/progression/TalentSystem';
-import { buildCreature } from '@/creatures/CreatureBuilder';
+import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { animateCreature } from '@/creatures/CreatureAnimator';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
 import { LevelUpBanner } from '@/ui/LevelUpBanner';
@@ -102,6 +103,8 @@ async function main() {
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
+  // Rigs spawned via the Creature Lab sandbox — animated each tick.
+  const _spawnedRigs: Array<{ rig: CreatureRig; born: number }> = [];
   const party = new PartyManager(5);
   const tamingGame = new TamingGame(scene, cameraRig.camera);
 
@@ -387,28 +390,38 @@ async function main() {
         _sandboxUi?.setLocation(roomId);
       },
       onReturnToArena: () => {
+        // Exit overworld if we were in it
+        if (gameMode === 'exterior') {
+          overworld?.exit();
+          gameMode = 'interior';
+        }
+        // Clear spawned sandbox rigs
+        for (const { rig } of _spawnedRigs) { scene.remove(rig.root); rig.dispose(); }
+        _spawnedRigs.length = 0;
         const arenaPlan = generateSandboxArena();
         sceneManager.loadDungeon(arenaPlan);
         sceneManager.loadRoomImmediate('sandbox_arena');
+        scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
         _sandboxUi?.setLocation('arena');
       },
       onEnterOverworld: (seed) => {
+        // Tear down any existing interior room
         sceneManager.unloadCurrentRoom();
-        if (!overworld) {
-          overworld = new OverworldScene(scene, physics, player, seed);
-        }
+        // Always recreate so the specified seed is honoured
+        if (overworld) { overworld.exit(); overworld.dispose(); overworld = null; }
+        overworld = new OverworldScene(scene, physics, player, seed);
         overworld.enter();
+        gameMode = 'exterior';
         player.teleport(new THREE.Vector3(0, 1.5, 8));
         scene.fog = new THREE.Fog(0x0a1408, 60, 180);
         _sandboxUi?.setLocation('overworld');
       },
       onSpawnCreature: (dna) => {
-        // Spawn a non-player creature built from DNA near the player.
-        // A full DNA-driven enemy class is Phase 5 work.
         const rig = buildCreature(dna);
         const pp  = player.group.position;
         rig.root.position.set(pp.x + 2.5, 0, pp.z + 2.5);
         scene.add(rig.root);
+        _spawnedRigs.push({ rig, born: performance.now() * 0.001 });
       },
       onClose: () => {
         _sandboxUi?.hide();
@@ -598,7 +611,15 @@ async function main() {
       raycaster.setFromCamera(mouseNDC, cameraRig.camera);
       raycaster.ray.intersectPlane(floorPlane, mouseWorld);
 
-      // 4. Room manager / overworld — enemy AI + door trigger checks
+      // 4. Animate sandbox-spawned creature rigs
+      if (_spawnedRigs.length > 0) {
+        const _now = performance.now() * 0.001;
+        for (const { rig, born } of _spawnedRigs) {
+          animateCreature(rig, { state: 'idle', time: _now - born });
+        }
+      }
+
+      // 5. Room manager / overworld — enemy AI + door trigger checks
       if (gameMode === 'interior') {
         sceneManager.update(dt, player.group.position);
       } else if (overworld) {
