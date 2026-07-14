@@ -38,6 +38,7 @@ import type { WorldGrid }              from '@/world/WorldGrid';
 import type { WorldData, DungeonEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
+import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -90,6 +91,8 @@ export class OverworldScene {
   private readonly _ruins:          THREE.Group[] = [];
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
+  private readonly _buildingGroups: THREE.Group[] = [];
+  private _roadMesh: THREE.InstancedMesh | null = null;
 
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
@@ -133,6 +136,7 @@ export class OverworldScene {
     this._spawnCamps(rand, config.enemyCampCount);
     this._addRuins(rand);
     this._placeDungeonEntrances(worldData.dungeons, rand);
+    this._buildSettlements(worldData);
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -159,12 +163,14 @@ export class OverworldScene {
 
     // Add visuals
     this.scene.add(this._terrain, this._tower);
-    if (this._waterMesh) this.scene.add(this._waterMesh);
+    if (this._waterMesh)  this.scene.add(this._waterMesh);
+    if (this._roadMesh)   this.scene.add(this._roadMesh);
     for (const tr of this._trees)        this.scene.add(tr.group);
     for (const rk of this._rocks)        this.scene.add(rk.mesh);
     for (const ru of this._ruins)        this.scene.add(ru);
     for (const en of this._enemies)      this.scene.add(en.group);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
+    for (const bg of this._buildingGroups) this.scene.add(bg);
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
@@ -177,12 +183,14 @@ export class OverworldScene {
     this._staticBodies = [];
 
     this.scene.remove(this._terrain, this._tower);
-    if (this._waterMesh) this.scene.remove(this._waterMesh);
+    if (this._waterMesh)  this.scene.remove(this._waterMesh);
+    if (this._roadMesh)   this.scene.remove(this._roadMesh);
     for (const tr of this._trees)        this.scene.remove(tr.group);
     for (const rk of this._rocks)        this.scene.remove(rk.mesh);
     for (const ru of this._ruins)        this.scene.remove(ru);
     for (const en of this._enemies)      this.scene.remove(en.group);
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
+    for (const bg of this._buildingGroups) this.scene.remove(bg);
   }
 
   /** Per-frame enemy AI tick. */
@@ -217,6 +225,12 @@ export class OverworldScene {
     for (const ru of this._ruins)        this._freeGroup(ru);
     for (const en of this._enemies)       en.dispose(this.physics);
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
+    for (const bg of this._buildingGroups) this._freeGroup(bg);
+    if (this._roadMesh) {
+      this._roadMesh.geometry.dispose();
+      (this._roadMesh.material as THREE.Material).dispose();
+      this._roadMesh.dispose();
+    }
   }
 
   // ── Trigger queries ───────────────────────────────────────────────────────
@@ -1082,6 +1096,65 @@ export class OverworldScene {
     }
 
     return grp;
+  }
+
+  // ── Settlements ────────────────────────────────────────────────────────────
+
+  private _buildSettlements(worldData: WorldData): void {
+    const { settlements } = worldData;
+    if (!settlements || settlements.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+    const roadMat  = new THREE.MeshLambertMaterial({ color: 0x5a4832 });
+
+    // Collect all road tile positions from all settlements
+    const roadPositions: THREE.Vector3[] = [];
+    const roadSeen = new Set<string>();
+
+    for (const entry of settlements) {
+      const { plan } = entry;
+
+      // Place building THREE.Groups
+      for (const b of plan.buildings) {
+        const wx = (b.col - GHW) * T;
+        const wz = (b.row - GHH) * T;
+        const lv = this._wg.get(b.col, b.row).elevation;
+        const wy = lv * SH;
+
+        const grp = generateBuilding(b.type, b.seed);
+        grp.position.set(wx, wy, wz);
+        grp.rotation.y = b.rotation;
+        this._buildingGroups.push(grp);
+      }
+
+      // Collect road tiles (deduplicated across all settlements)
+      for (const r of plan.roads) {
+        const key = `${r.col},${r.row}`;
+        if (roadSeen.has(key)) continue;
+        roadSeen.add(key);
+        const wx = (r.col - GHW) * T;
+        const wz = (r.row - GHH) * T;
+        const lv = this._wg.get(r.col, r.row).elevation;
+        const wy = lv * SH + 0.04;
+        roadPositions.push(new THREE.Vector3(wx, wy, wz));
+      }
+    }
+
+    // Build road InstancedMesh — one quad per road tile
+    if (roadPositions.length > 0) {
+      const roadGeo  = new THREE.BoxGeometry(T, 0.08, T);
+      const roadIM   = new THREE.InstancedMesh(roadGeo, roadMat, roadPositions.length);
+      roadIM.frustumCulled = false;
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < roadPositions.length; i++) {
+        const p = roadPositions[i];
+        m.makeTranslation(p.x, p.y, p.z);
+        roadIM.setMatrixAt(i, m);
+      }
+      roadIM.instanceMatrix.needsUpdate = true;
+      // Cast to Mesh to satisfy the _roadMesh: THREE.Mesh type
+      this._roadMesh = roadIM;
+    }
   }
 
   // ── Utility ───────────────────────────────────────────────────────────────
