@@ -25,7 +25,8 @@ export type PropId     =
   | 'crown'
   | 'robe'
   | 'armor_light'
-  | 'aura';
+  | 'aura'
+  | 'hair_short' | 'hair_long' | 'hair_bun';
 
 export interface CreatureDNA {
   archetype: Archetype;
@@ -50,6 +51,7 @@ export interface CreatureDNA {
     hipWidth:       number;
     bellySize:      number;
     neckThickness:  number;
+    legLength?:     number;  // biped leg length override (default 1.0)
   };
   face: {
     type:       FaceType;
