@@ -253,95 +253,194 @@ class AoeVfx {
   }
 }
 
-// ── NovaWave — multi-ring "pebble in pond" ripple effect for nova_burst ───────
+// ── NovaWave — shader-driven "pebble in pond" ripple effect for nova_burst ────
 //
-//  Five concentric rings expand outward from the cast point like water ripples.
-//  Inner echoes start slightly later and reach a smaller maximum radius.
-//  When the primary wave front sweeps past an enemy position a "splash" callback
-//  fires so SpellSystem can spawn a SparkBurst there.
+//  A single PlaneGeometry with a ShaderMaterial replaces the old torus-ring
+//  approach.  The vertex shader displaces geometry along Y using a Gaussian-
+//  masked damped sine wave that travels outward from the cast origin.
+//  24 Rapier raycasts (pre-computed at cast time) are passed as uWallDists[24]
+//  so the shader discards fragments beyond each wall boundary — the wave visually
+//  stops at pillars and walls in the dungeon/overworld.
+//
+//  Damage is deferred: enemies take damage only when the expanding wave front
+//  sweeps past their snapshotted XZ position, matching the visual timing.
 
-interface _RingStage {
-  mesh: THREE.Mesh;
-  mat: THREE.MeshBasicMaterial;
-  delay: number;
-  maxR: number;
-  expandDur: number;
-  baseOpacity: number;
+// ── GLSL — shared between vertex and fragment ─────────────────────────────────
+
+const _NOVA_VERT = /* glsl */`
+  #define NUM_SECTORS 24
+  #define PI 3.14159265358979
+
+  uniform float uProgress;    // wave-front radius (0 → maxR)
+  uniform float uMaxR;
+  uniform float uBandHalf;    // Gaussian sigma for the pulse width
+  uniform float uWallDists[NUM_SECTORS];
+
+  varying float vWaveHeight;
+  varying float vDist;
+  varying vec2  vLocalXY;     // local-plane XY, needed in fragment for wall test
+
+  void main() {
+    // position.xy are the local XZ offsets (PlaneGeometry lies in XY, then
+    // rotation.x = -PI/2 maps local-Y → world-Z, local-X → world-X).
+    float dist = length(position.xy);
+    // World-XZ angle: worldZ = -localY  →  atan(worldZ, worldX) = atan(-localY, localX)
+    float worldAngle = atan(-position.y, position.x);
+
+    // Find wall distance for this angular sector
+    int sector = int(floor((worldAngle + PI) / (2.0 * PI / float(NUM_SECTORS))));
+    sector = clamp(sector, 0, NUM_SECTORS - 1);
+    float wallDist = uMaxR;
+    for (int i = 0; i < NUM_SECTORS; i++) {
+      if (i == sector) { wallDist = uWallDists[i]; }
+    }
+
+    // Gaussian pulse centred on the current wave front
+    float fromFront = dist - uProgress;
+    float pulse = exp(-(fromFront * fromFront) / (uBandHalf * uBandHalf));
+
+    // Dampening: amplitude decays away from origin
+    float damp = exp(-dist * 0.055);
+
+    // Mask: no displacement beyond walls or max radius
+    float wallMask = step(dist, min(wallDist - 0.08, uMaxR));
+
+    // Damped sine gives the water-ripple "teeth" within the Gaussian pulse
+    float wave = sin(dist * 3.8 - uProgress * 2.2) * pulse * damp * wallMask;
+
+    vWaveHeight = wave;
+    vDist       = dist;
+    vLocalXY    = position.xy;
+
+    // Displace in local-Z (= world-Y after rotation.x = -PI/2 → crest rises)
+    vec3 displaced = vec3(position.x, position.y, position.z + wave * 0.42);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+  }
+`;
+
+const _NOVA_FRAG = /* glsl */`
+  #define NUM_SECTORS 24
+  #define PI 3.14159265358979
+
+  uniform vec3  uColor;
+  uniform float uMaxR;
+  uniform float uAlpha;
+  uniform float uWallDists[NUM_SECTORS];
+
+  varying float vWaveHeight;
+  varying float vDist;
+  varying vec2  vLocalXY;
+
+  void main() {
+    // Discard outside max radius
+    if (vDist > uMaxR) discard;
+
+    // Wall occlusion — same sector logic as vertex shader
+    float worldAngle = atan(-vLocalXY.y, vLocalXY.x);
+    int sector = int(floor((worldAngle + PI) / (2.0 * PI / float(NUM_SECTORS))));
+    sector = clamp(sector, 0, NUM_SECTORS - 1);
+    float wallDist = uMaxR;
+    for (int i = 0; i < NUM_SECTORS; i++) {
+      if (i == sector) { wallDist = uWallDists[i]; }
+    }
+    if (vDist > wallDist - 0.05) discard;
+
+    // Brightness: wave crest glows, trough is dim
+    float waveAbs   = abs(vWaveHeight);
+    float brightness = waveAbs * 3.2 * uAlpha;
+
+    // Soft fade near max radius
+    float edgeFade = 1.0 - smoothstep(uMaxR * 0.85, uMaxR, vDist);
+    brightness *= edgeFade;
+
+    if (brightness < 0.005) discard;
+
+    gl_FragColor = vec4(uColor * brightness, brightness * 0.88);
+  }
+`;
+
+// ── Supporting types ──────────────────────────────────────────────────────────
+
+interface _NovaDeferredTarget {
+  pos: THREE.Vector3;
+  entity: Damageable;
+  damage: number;
+  onHit?: (t: Damageable, d: number) => void;
+  fired: boolean;
+}
+
+interface _NovaWallSpark {
+  pos: THREE.Vector3;   // world position of the wall surface
+  dist: number;         // XZ distance from nova origin
+  fired: boolean;
 }
 
 class NovaWave {
   readonly mesh: THREE.Group;
-  private readonly _flash: THREE.Mesh;
-  private _remaining: number;
+  private readonly _mat: THREE.ShaderMaterial;
+  private readonly _flashMat: THREE.MeshBasicMaterial;
   private _elapsed = 0;
-  private readonly _center: THREE.Vector3;
-  // Splash points are snapshotted at cast time so dead enemies still trigger
-  // a visual splash when the wave front sweeps past their former position.
-  private readonly _splashPoints: Array<{ pos: THREE.Vector3; fired: boolean }>;
+  private _remaining: number;
   private _prevWaveFront = 0;
-  private readonly _stages: _RingStage[];
+  private readonly _deferredTargets: _NovaDeferredTarget[];
+  private readonly _wallSparks: _NovaWallSpark[];
 
   constructor(
     pos: THREE.Vector3,
-    maxRadius: number,
+    private readonly _maxR: number,
     color: number,
     readonly duration: number,
-    splashPoints: THREE.Vector3[],
+    deferredTargets: _NovaDeferredTarget[],
+    wallSparks: _NovaWallSpark[],
+    wallDists: Float32Array,          // 24 Rapier wall distances, one per 15° sector
     private readonly onSplash: (splashPos: THREE.Vector3) => void,
+    private readonly onWallImpact: (impactPos: THREE.Vector3) => void,
   ) {
-    this._splashPoints = splashPoints.map(p => ({ pos: p.clone(), fired: false }));
-    // Total lifetime = duration + a little extra so inner echoes fully fade
-    this._remaining = duration + 0.45;
-    this._center = new THREE.Vector3(pos.x, 0, pos.z);
+    this._remaining      = duration + 0.4;
+    this._deferredTargets = deferredTargets;
+    this._wallSparks      = wallSparks;
+
     this.mesh = new THREE.Group();
-    this.mesh.position.set(pos.x, 0.06, pos.z);
+    // Place the Group at the caster's actual height so the wave sits on the
+    // terrain surface rather than always at Y=0 (overworld fix).
+    this.mesh.position.set(pos.x, pos.y + 0.01, pos.z);
 
-    // Five ring stages: primary + 4 echo ripples
-    const stageParams = [
-      { delayFrac: 0.00, maxRFrac: 1.00, durFrac: 1.00, tube: 0.016, opacity: 1.00 },
-      { delayFrac: 0.16, maxRFrac: 0.74, durFrac: 0.92, tube: 0.014, opacity: 0.75 },
-      { delayFrac: 0.32, maxRFrac: 0.52, durFrac: 0.84, tube: 0.012, opacity: 0.55 },
-      { delayFrac: 0.48, maxRFrac: 0.33, durFrac: 0.76, tube: 0.010, opacity: 0.40 },
-      { delayFrac: 0.64, maxRFrac: 0.17, durFrac: 0.68, tube: 0.009, opacity: 0.28 },
-    ];
-
-    this._stages = stageParams.map(p => {
-      const ringRadius  = maxRadius * p.maxRFrac;
-      const tubeRadius  = Math.max(0.06, ringRadius * p.tube);
-      const geo = new THREE.TorusGeometry(ringRadius, tubeRadius, 6, 64);
-      const mat = new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: p.opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const ring = new THREE.Mesh(geo, mat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.scale.setScalar(0.001);
-      this.mesh.add(ring);
-      return {
-        mesh: ring, mat,
-        delay:       p.delayFrac * duration,
-        maxR:        ringRadius,
-        expandDur:   p.durFrac   * duration,
-        baseOpacity: p.opacity,
-      };
+    // ── Shader-driven displacement plane ─────────────────────────────────
+    const geo = new THREE.PlaneGeometry(_maxR * 2, _maxR * 2, 80, 80);
+    const colorObj = new THREE.Color(color);
+    this._mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uProgress:  { value: 0 },
+        uMaxR:      { value: _maxR },
+        uBandHalf:  { value: _maxR * 0.13 },
+        uColor:     { value: colorObj },
+        uAlpha:     { value: 1.0 },
+        uWallDists: { value: wallDists },
+      },
+      vertexShader:   _NOVA_VERT,
+      fragmentShader: _NOVA_FRAG,
+      transparent:  true,
+      blending:     THREE.AdditiveBlending,
+      depthWrite:   false,
+      side:         THREE.DoubleSide,
     });
+    const planeMesh = new THREE.Mesh(geo, this._mat);
+    planeMesh.rotation.x = -Math.PI / 2;
+    this.mesh.add(planeMesh);
 
-    // Central blast flash disc (bright white, fades in ~0.25s)
-    const flashGeo = new THREE.CircleGeometry(maxRadius * 0.4, 40);
-    const flashMat = new THREE.MeshBasicMaterial({
+    // ── Central blast flash (white disc, fades in ~0.22s) ─────────────────
+    const flashGeo = new THREE.CircleGeometry(_maxR * 0.38, 40);
+    this._flashMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.7,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    this._flash = new THREE.Mesh(flashGeo, flashMat);
-    this._flash.rotation.x = -Math.PI / 2;
-    this.mesh.add(this._flash);
+    const flashMesh = new THREE.Mesh(flashGeo, this._flashMat);
+    flashMesh.rotation.x = -Math.PI / 2;
+    this.mesh.add(flashMesh);
   }
 
   get expired(): boolean { return this._remaining <= 0; }
@@ -351,48 +450,42 @@ class NovaWave {
     this._remaining -= dt;
     this._elapsed   += dt;
 
-    // ── Primary wave front — drives splash detection ──────────────────────
-    const primary = this._stages[0];
-    const primaryT  = Math.min(1, Math.max(0, this._elapsed / primary.expandDur));
-    const waveFront = primary.maxR * primaryT;
+    // Wave front expands from 0 → maxR over `duration` seconds
+    const waveFront = Math.min(this._maxR, (this._elapsed / this.duration) * this._maxR);
+    this._mat.uniforms.uProgress.value = waveFront;
 
-    // Splash: fire when the wave front sweeps past each snapshotted position.
-    // Using pre-captured positions means enemies that died from the nova blast
-    // still produce a splash VFX when the visual ring reaches them.
-    for (const sp of this._splashPoints) {
-      if (sp.fired) continue;
-      const dx = sp.pos.x - this._center.x;
-      const dz = sp.pos.z - this._center.z;
+    // Fade alpha near end of lifetime
+    this._mat.uniforms.uAlpha.value = Math.min(1.0, this._remaining / 0.3);
+
+    // ── Deferred damage: fires as wave front reaches each enemy ────────────
+    for (const t of this._deferredTargets) {
+      if (t.fired) continue;
+      const dx = t.pos.x - this.mesh.position.x;
+      const dz = t.pos.z - this.mesh.position.z;
       const d  = Math.sqrt(dx * dx + dz * dz);
       if (d > this._prevWaveFront && d <= waveFront) {
-        sp.fired = true;
-        this.onSplash(new THREE.Vector3(sp.pos.x, 0.5, sp.pos.z));
+        t.fired = true;
+        if (t.damage > 0) {
+          const applied = t.entity.takeDamage(t.damage);
+          if (applied > 0) t.onHit?.(t.entity, applied);
+        }
+        this.onSplash(new THREE.Vector3(t.pos.x, this.mesh.position.y + 0.5, t.pos.z));
       }
     }
-    this._prevWaveFront = waveFront;
 
-    // ── Animate each ring stage ───────────────────────────────────────────
-    for (const stage of this._stages) {
-      const age = this._elapsed - stage.delay;
-      if (age <= 0) { stage.mesh.scale.setScalar(0.001); continue; }
-
-      const t = Math.min(1, age / stage.expandDur); // 0→1 within expansion
-
-      // Scale from 0 → 1 (torus baked at maxR, scale=1 is full size)
-      stage.mesh.scale.setScalar(Math.max(0.001, t));
-
-      // Gentle wave-height: ring rises and falls like a real wave crest
-      stage.mesh.position.y = Math.sin(t * Math.PI) * 0.22 * (1 - t * 0.6);
-
-      // Opacity: hold until 65% then fade; also fade at total end
-      const holdFade  = t < 0.65 ? 1.0 : 1.0 - (t - 0.65) / 0.35;
-      const endFade   = this._remaining < 0.2 ? this._remaining / 0.2 : 1.0;
-      stage.mat.opacity = stage.baseOpacity * holdFade * endFade;
+    // ── Wall impact sparks: fire when wave front reaches each wall hit ─────
+    for (const ws of this._wallSparks) {
+      if (ws.fired) continue;
+      if (ws.dist > this._prevWaveFront && ws.dist <= waveFront) {
+        ws.fired = true;
+        this.onWallImpact(ws.pos.clone());
+      }
     }
 
+    this._prevWaveFront = waveFront;
+
     // ── Central flash fades quickly ────────────────────────────────────────
-    (this._flash.material as THREE.MeshBasicMaterial).opacity =
-      Math.max(0, 0.65 * (1 - this._elapsed * 4.5));
+    this._flashMat.opacity = Math.max(0, 0.7 * (1 - this._elapsed * 4.5));
   }
 
   dispose(): void {
@@ -857,6 +950,8 @@ export class SpellSystem {
   private readonly _cooldowns = new Map<string, CooldownEntry>();
   /** When true all cooldowns are skipped — set by the dev panel. */
   instantCooldowns = false;
+  /** Latest PhysicsWorld reference, stored each update() for use in _fireAoe. */
+  private _physics?: PhysicsWorld;
 
   // ── Public query ─────────────────────────────────────────────────────────
 
@@ -942,6 +1037,7 @@ export class SpellSystem {
     playerPos?: THREE.Vector3,
     physics?: PhysicsWorld,
   ): void {
+    if (physics) this._physics = physics;
     // Cooldown timers
     for (const [, cd] of this._cooldowns) {
       cd.remaining = Math.max(0, cd.remaining - dt);
@@ -1167,24 +1263,53 @@ export class SpellSystem {
     const vfxDur = def.aoeVfxDuration ?? 0.8;
 
     if (spellId === 'nova_burst') {
-      // ── Nova Burst: multi-ring water-ripple wave effect ──────────────────
-      // Snapshot enemy positions BEFORE applying damage so the wave can still
-      // fire splash VFX at enemies that die from the blast.
+      // ── Nova Burst: shader-driven ripple wave ─────────────────────────────
+
+      // 1. Pre-cast 24 Rapier wall rays (one every 15°) to fill the wall-distance
+      //    uniform used by the shader for geometry-level wall clipping.
+      const NUM_SECTORS = 24;
+      const wallDists = new Float32Array(NUM_SECTORS).fill(radius);
+      const rayOrigin = new THREE.Vector3(origin.x, origin.y + 0.5, origin.z);
+      const wallSparks: _NovaWallSpark[] = [];
+      for (let i = 0; i < NUM_SECTORS; i++) {
+        // Angle sector i covers [-PI + i*dA, -PI + (i+1)*dA)
+        const angle = -Math.PI + i * (2 * Math.PI / NUM_SECTORS);
+        const dir   = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+        const hit   = this._physics?.castRayVsWalls(rayOrigin, dir, radius + 0.5) ?? null;
+        if (hit !== null && hit < radius) {
+          wallDists[i] = hit;
+          const hitPos = new THREE.Vector3(
+            origin.x + Math.cos(angle) * hit,
+            origin.y,
+            origin.z + Math.sin(angle) * hit,
+          );
+          wallSparks.push({ pos: hitPos, dist: hit, fired: false });
+        }
+      }
+
+      // 2. Snapshot target positions + snapshot damage for deferred application.
+      //    Damage fires as the wave front reaches each enemy — no instant kills.
       const novaDmg = Math.round(def.damage * dmgMult);
-      const splashPts: THREE.Vector3[] = [];
+      const deferredTargets: _NovaDeferredTarget[] = [];
       for (const t of targets) {
         if (t.isDead || !t.worldPosition) continue;
         if (origin.distanceTo(t.worldPosition) < radius + 0.4) {
-          splashPts.push(t.worldPosition.clone());
-          if (novaDmg > 0) {
-            const applied = t.takeDamage(novaDmg);
-            if (applied > 0) onHit?.(t, applied);
-          }
+          deferredTargets.push({
+            pos:    t.worldPosition.clone(),
+            entity: t,
+            damage: novaDmg,
+            onHit,
+            fired:  false,
+          });
         }
       }
+
+      // 3. Create wave — ShaderMaterial plane with Rapier wall data baked in.
       const wave = new NovaWave(
-        origin, radius, def.color, vfxDur, splashPts,
-        (splashPos) => this._addSpark(splashPos, def.color, 4.5, scene),
+        origin, radius, def.color, vfxDur,
+        deferredTargets, wallSparks, wallDists,
+        (splashPos) => this._addSpark(splashPos, def.color, 5.0, scene),
+        (impactPos) => this._addSpark(impactPos, 0xffffff, 3.5, scene),
       );
       scene.add(wave.mesh);
       this._novaWaves.push(wave);
