@@ -1,66 +1,63 @@
 // ── CharacterCreation ────────────────────────────────────────────────────────
 //
-//  Character creation screen shown on New Game.
-//  Includes a live procedural 3D mini-scene for appearance preview using a
-//  dedicated WebGLRenderer (Phase 7.5e FK rig will replace the geometry once built).
+//  DNA-based character creation screen.  Every being type (biped, quadruped,
+//  amoeba, avian, serpent) can be chosen — the player is NOT constrained to
+//  a human shape.  Appearance is described by CreatureDNA and rendered live
+//  via CreatureBuilder in a dedicated WebGLRenderer.
 
 import * as THREE from 'three';
+import {
+  type CreatureDNA, type Archetype, type FaceType, type MouthType, type PropId,
+  DEFAULT_PLAYER_DNA, dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64,
+} from '@/creatures/CreatureDNA';
+import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { animateCreature }                 from '@/creatures/CreatureAnimator';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Public types ──────────────────────────────────────────────────────────────
 
 export type StartingBoon = 'tome' | 'blood' | 'swift';
-export type HeadShape    = 'round' | 'angular' | 'elongated';
-export type HairStyle    = 'none'  | 'short'   | 'long';
 
 export interface CharacterConfig {
-  name:        string;
-  boon:        StartingBoon;
-  slotId:      number;
-  // Appearance — stored for Phase 7.5e FK rig
-  headShape:   HeadShape;
-  hairStyle:   HairStyle;
-  skinColor:   number;   // 0xRRGGBB
-  robeColor:   number;   // 0xRRGGBB
-  heightScale: number;   // 0.7 – 1.3
-  widthScale:  number;   // 0.8 – 1.2
+  name:   string;
+  boon:   StartingBoon;
+  slotId: number;
+  dna:    CreatureDNA;
 }
 
-// ── Boon definitions ──────────────────────────────────────────────────────────
+// ── Boon data ─────────────────────────────────────────────────────────────────
 
-interface BoonDef {
-  id: StartingBoon;
-  icon: string;
-  title: string;
-  desc: string;
-  effect: string;
-}
-
+interface BoonDef { id: StartingBoon; icon: string; title: string; desc: string; effect: string; }
 const BOONS: BoonDef[] = [
-  {
-    id: 'tome', icon: '📖', title: 'Ancient Tome',
-    desc: 'A singed spellbook left behind by a previous occupant of the cell.',
-    effect: 'Start with Flame Dart unlocked',
-  },
-  {
-    id: 'blood', icon: '❤', title: "Warrior's Blood",
-    desc: 'A trace of old lineage. Harder to extinguish than it looks.',
-    effect: '+30 maximum HP',
-  },
-  {
-    id: 'swift', icon: '💨', title: 'Swift Feet',
-    desc: 'A talent for movement, developed over years of being where you ought not to be.',
-    effect: 'Dodge −35%  •  Move speed +15%',
-  },
+  { id: 'tome',  icon: '📖', title: 'Ancient Tome',    desc: 'A singed spellbook left in the cell.',            effect: 'Start with Flame Dart' },
+  { id: 'blood', icon: '❤',  title: "Warrior's Blood", desc: 'Old lineage — harder to extinguish.',             effect: '+30 maximum HP' },
+  { id: 'swift', icon: '💨', title: 'Swift Feet',      desc: 'A talent for movement and mischief.',             effect: 'Dodge −35%  •  Move +15%' },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Archetype data ────────────────────────────────────────────────────────────
 
-function hexToInput(n: number): string {
-  return '#' + n.toString(16).padStart(6, '0');
-}
-function inputToHex(s: string): number {
-  return parseInt(s.slice(1), 16);
-}
+interface ArchDef { id: Archetype; icon: string; label: string; hint: string; }
+const ARCHETYPES: ArchDef[] = [
+  { id: 'biped',     icon: '🧙', label: 'Biped',     hint: 'Two-legged — arms, legs, full spellcasting posture.' },
+  { id: 'quadruped', icon: '🐺', label: 'Quadruped', hint: 'Four-limbed beast — swift, imposing.' },
+  { id: 'amoeba',    icon: '🫧', label: 'Amoeba',    hint: 'Amorphous blob — orbiting satellite masses.' },
+  { id: 'avian',     icon: '🦅', label: 'Avian',     hint: 'Winged form — graceful, airborne aesthetic.' },
+  { id: 'serpent',   icon: '🐍', label: 'Serpent',   hint: 'Segmented serpentine — sinuous and ancient.' },
+];
+
+// ── Prop data ─────────────────────────────────────────────────────────────────
+
+interface PropDef { id: PropId; label: string; }
+const PROP_DEFS: PropDef[] = [
+  { id: 'robe',        label: 'Robe'       },
+  { id: 'crown',       label: 'Crown'      },
+  { id: 'horns_small', label: 'Horns (S)'  },
+  { id: 'horns_large', label: 'Horns (L)'  },
+  { id: 'wings_bat',   label: 'Bat Wings'  },
+  { id: 'tail_stub',   label: 'Tail (stub)'},
+  { id: 'tail_long',   label: 'Tail (long)'},
+  { id: 'armor_light', label: 'Armor'      },
+  { id: 'aura',        label: 'Aura'       },
+];
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -68,686 +65,416 @@ const CC_CSS = `
 .cc-overlay {
   display: none; align-items: center; justify-content: center;
   position: fixed; inset: 0; z-index: 8500;
-  background: rgba(4,3,10,.92);
-  backdrop-filter: blur(6px);
+  background: rgba(4,3,10,.92); backdrop-filter: blur(6px);
   opacity: 0; transition: opacity .25s ease;
-  font-family: 'Crimson Text','Georgia',serif;
-  overflow-y: auto;
+  font-family: 'Crimson Text','Georgia',serif; overflow-y: auto;
 }
 .cc-overlay.cc-open { opacity: 1; }
-
 .cc-card {
   background: linear-gradient(160deg,#0e0b1a 0%,#07060f 100%);
-  border: 1px solid #3a2860; border-radius: 4px;
-  padding: 26px 28px 22px;
-  width: min(96vw, 820px);
-  display: flex; flex-direction: column; gap: 18px;
-  box-shadow: 0 20px 80px rgba(0,0,0,.9), 0 0 0 1px #0b0817 inset;
-  margin: auto;
+  border: 1px solid #3a2860; border-radius: 4px; padding: 22px 24px 18px;
+  width: min(98vw, 860px); display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 20px 80px rgba(0,0,0,.9); margin: auto;
 }
-
-.cc-title {
-  font-size: 1.75rem; color: #e8d8b0; letter-spacing: .08em; text-align: center;
-  text-shadow: 0 0 24px rgba(160,120,220,.5); margin-bottom: -12px;
-}
-.cc-subtitle {
-  font-size: .82rem; color: #6a5880; text-align: center; letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-/* ── Two-column layout ── */
-.cc-main { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
-
-.cc-preview-col {
-  flex: 0 0 240px; display: flex; flex-direction: column; align-items: center; gap: 6px;
-}
-.cc-preview-canvas {
-  display: block; width: 240px; height: 300px;
-  border: 1px solid #2a1850; border-radius: 4px;
-  cursor: grab; user-select: none; background: #0e0b1a;
-}
+.cc-title { font-size: 1.65rem; color: #e8d8b0; letter-spacing: .08em; text-align: center;
+  text-shadow: 0 0 24px rgba(160,120,220,.5); margin-bottom: -8px; }
+.cc-subtitle { font-size: .8rem; color: #5a4880; text-align: center; letter-spacing: .08em; text-transform: uppercase; }
+.cc-main { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.cc-preview-col { flex: 0 0 240px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cc-preview-canvas { display: block; width: 240px; height: 300px; border: 1px solid #2a1850;
+  border-radius: 4px; cursor: grab; user-select: none; background: #0d0b18; }
 .cc-preview-canvas:active { cursor: grabbing; }
-.cc-drag-hint { font-size: .69rem; color: #3a2860; letter-spacing: .06em; text-transform: uppercase; }
-
-.cc-controls-col {
-  flex: 1 1 280px; min-width: 230px;
-  display: flex; flex-direction: column; gap: 13px;
-}
-
-/* ── Name ── */
-.cc-name-row { display: flex; flex-direction: column; gap: 5px; }
-.cc-label { font-size: .77rem; color: #7a6a99; letter-spacing: .08em; text-transform: uppercase; }
-.cc-name-input {
+.cc-drag-hint { font-size: .68rem; color: #3a2860; letter-spacing: .06em; text-transform: uppercase; }
+.cc-dna-btn { background: transparent; border: 1px solid #2a1850; border-radius: 3px;
+  color: #5a4880; font-size: .72rem; cursor: pointer; padding: 4px 10px; font-family: inherit;
+  letter-spacing: .04em; transition: all .12s; }
+.cc-dna-btn:hover { background: rgba(80,48,160,.1); color: #a080e0; border-color: #4a3870; }
+.cc-controls-col { flex: 1 1 280px; min-width: 230px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 82vh; }
+.cc-label { font-size: .76rem; color: #7a6a99; letter-spacing: .08em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.cc-name-input { width: 100%; box-sizing: border-box;
   background: #07060f; border: 1px solid #2e1f50; border-radius: 3px;
-  color: #e0d0ff; font-size: 1.04rem; font-family: inherit;
-  padding: 8px 12px; outline: none; transition: border-color .15s;
-}
+  color: #e0d0ff; font-size: 1.02rem; font-family: inherit; padding: 7px 11px;
+  outline: none; transition: border-color .15s; }
 .cc-name-input:focus { border-color: #7050cc; box-shadow: 0 0 0 2px rgba(112,80,204,.18); }
-
-/* ── Boons ── */
-.cc-boon-label { font-size: .77rem; color: #7a6a99; letter-spacing: .08em; text-transform: uppercase; }
-.cc-boons { display: flex; flex-direction: column; gap: 6px; }
-.cc-boon {
-  display: flex; align-items: flex-start; gap: 10px;
-  background: rgba(255,255,255,.025); border: 1px solid #1e1530;
-  border-radius: 3px; padding: 8px 11px; cursor: pointer;
-  transition: background .12s, border-color .12s;
-}
-.cc-boon:hover { background: rgba(112,80,204,.08); border-color: #3a2860; }
-.cc-boon.cc-boon--active {
-  background: rgba(112,80,204,.14); border-color: #7050cc;
-  box-shadow: 0 0 0 1px rgba(112,80,204,.22);
-}
-.cc-boon-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 1px; }
-.cc-boon-body { display: flex; flex-direction: column; gap: 2px; }
-.cc-boon-title { color: #d4c0f0; font-size: .93rem; }
-.cc-boon-desc { color: #7a6a90; font-size: .78rem; line-height: 1.4; }
-.cc-boon-effect { color: #a080e8; font-size: .74rem; letter-spacing: .03em; margin-top: 1px; }
-
-/* ── Appearance ── */
-.cc-appear-section { display: flex; flex-direction: column; gap: 8px; }
-.cc-appear-title {
-  font-size: .77rem; color: #5a4880; letter-spacing: .1em; text-transform: uppercase;
-  border-bottom: 1px solid #1a1228; padding-bottom: 4px;
-}
-.cc-appear-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.cc-appear-row-label { font-size: .77rem; color: #7a6a99; min-width: 44px; flex-shrink: 0; }
-
-.cc-radio-group { display: flex; gap: 5px; flex-wrap: wrap; }
-.cc-radio {
-  display: flex; align-items: center; gap: 4px; cursor: pointer;
-  font-size: .79rem; color: #8070a0; user-select: none;
-}
-.cc-radio-dot {
-  width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #3a2860;
-  background: transparent; flex-shrink: 0; transition: all .12s;
-}
-.cc-radio:hover .cc-radio-dot { border-color: #7050cc; }
-.cc-radio.cc-radio--active .cc-radio-dot { background: #7050cc; border-color: #9070e0; }
-.cc-radio.cc-radio--active { color: #d4c0f0; }
-
-.cc-color-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-.cc-color-item { display: flex; align-items: center; gap: 6px; }
-.cc-color-label { font-size: .77rem; color: #7a6a99; }
-.cc-color-input {
-  width: 42px; height: 26px; border: 1px solid #2a1850; border-radius: 3px;
+.cc-section { display: flex; flex-direction: column; gap: 7px; }
+.cc-section-title { font-size: .76rem; color: #5a4880; letter-spacing: .1em; text-transform: uppercase;
+  border-bottom: 1px solid #1a1228; padding-bottom: 3px; }
+.cc-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.cc-chip { border: 1px solid #2a1850; border-radius: 3px; padding: 5px 9px;
+  background: rgba(255,255,255,.02); cursor: pointer; transition: all .12s;
+  font-size: .8rem; color: #7060a0; font-family: inherit; user-select: none; }
+.cc-chip:hover { background: rgba(112,80,204,.08); border-color: #3a2860; }
+.cc-chip.cc-chip--on { background: rgba(112,80,204,.18); border-color: #7050cc; color: #d4c0f0; }
+.cc-boon { display: flex; align-items: flex-start; gap: 9px;
+  background: rgba(255,255,255,.02); border: 1px solid #1e1530;
+  border-radius: 3px; padding: 7px 10px; cursor: pointer; transition: all .12s; }
+.cc-boon:hover { background: rgba(112,80,204,.07); border-color: #3a2860; }
+.cc-boon.cc-boon--on { background: rgba(112,80,204,.14); border-color: #7050cc; }
+.cc-boon-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
+.cc-boon-title { color: #d4c0f0; font-size: .9rem; }
+.cc-boon-desc  { color: #6a5a80; font-size: .76rem; line-height: 1.4; }
+.cc-boon-effect{ color: #a080e8; font-size: .72rem; margin-top: 1px; }
+.cc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-row-lbl { font-size: .75rem; color: #7a6a99; min-width: 48px; flex-shrink: 0; }
+.cc-color-input { width: 38px; height: 24px; border: 1px solid #2a1850; border-radius: 3px;
   padding: 2px; background: #07060f; cursor: pointer;
-  -webkit-appearance: none; appearance: none;
-}
+  -webkit-appearance: none; appearance: none; }
 .cc-color-input::-webkit-color-swatch-wrapper { padding: 1px; }
 .cc-color-input::-webkit-color-swatch { border: none; border-radius: 2px; }
-
-.cc-slider-row { display: flex; align-items: center; gap: 9px; }
-.cc-slider-label { font-size: .77rem; color: #7a6a99; min-width: 50px; }
-.cc-slider { flex: 1; accent-color: #7050cc; cursor: pointer; }
-.cc-slider-val { font-size: .73rem; color: #5a4880; min-width: 32px; text-align: right; }
-
-/* ── Actions ── */
-.cc-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2px; }
-.cc-btn {
-  border: none; border-radius: 3px; cursor: pointer; font-family: inherit;
-  font-size: .91rem; letter-spacing: .04em; padding: 10px 22px;
-  transition: background .12s, transform .05s;
-}
+.cc-slider { flex: 1; accent-color: #7050cc; cursor: pointer; min-width: 80px; }
+.cc-slider-val { font-size: .72rem; color: #5a4880; min-width: 28px; text-align: right; }
+.cc-prop-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+.cc-prop { display: flex; align-items: center; gap: 4px; cursor: pointer;
+  font-size: .76rem; color: #7060a0; user-select: none; }
+.cc-prop-box { width: 12px; height: 12px; border: 1.5px solid #3a2860; border-radius: 2px;
+  background: transparent; flex-shrink: 0; transition: all .12s; }
+.cc-prop:hover .cc-prop-box { border-color: #7050cc; }
+.cc-prop.cc-prop--on .cc-prop-box { background: #7050cc; border-color: #9070e0; }
+.cc-prop.cc-prop--on { color: #d4c0f0; }
+.cc-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+.cc-btn { border: none; border-radius: 3px; cursor: pointer; font-family: inherit;
+  font-size: .9rem; letter-spacing: .04em; padding: 9px 20px; transition: background .12s, transform .05s; }
 .cc-btn:active { transform: scale(.97); }
-.cc-btn--back {
-  background: transparent; border: 1px solid #2e1f50; color: #7060a0;
-}
+.cc-btn--back { background: transparent; border: 1px solid #2e1f50; color: #7060a0; }
 .cc-btn--back:hover { background: rgba(255,255,255,.04); border-color: #4a3870; }
-.cc-btn--start {
-  background: linear-gradient(135deg,#5030a0 0%,#7050cc 100%);
-  color: #f0e8ff; font-weight: 600;
-  box-shadow: 0 4px 18px rgba(80,48,160,.45);
-}
-.cc-btn--start:hover { background: linear-gradient(135deg,#6040b8 0%,#8060e0 100%); }
+.cc-btn--start { background: linear-gradient(135deg,#5030a0,#7050cc); color: #f0e8ff;
+  font-weight: 600; box-shadow: 0 4px 18px rgba(80,48,160,.45); }
+.cc-btn--start:hover { background: linear-gradient(135deg,#6040b8,#8060e0); }
 `;
 
 // ── CharacterPreview ──────────────────────────────────────────────────────────
-// Dedicated mini Three.js scene rendered into the CC canvas.
 
-const PW = 240;
-const PH = 300;
+const PW = 240, PH = 300;
 
 class CharacterPreview {
   private readonly _renderer: THREE.WebGLRenderer;
   private readonly _scene:    THREE.Scene;
   private readonly _camera:   THREE.PerspectiveCamera;
-  private readonly _charRoot  = new THREE.Group();
+  private _rig:   CreatureRig | null = null;
+  private _rafId: number | null = null;
+  private _rotY  = 0;
+  private _drag  = false;
+  private _prevX = 0;
+  private _rotYStart = 0;
 
-  // Materials (updated in place on color changes)
-  private _skinMat!: THREE.MeshLambertMaterial;
-  private _robeMat!: THREE.MeshLambertMaterial;
-  private _beltMat!: THREE.MeshLambertMaterial;
-  private _hairMat!: THREE.MeshLambertMaterial;
-
-  // Rebuilt groups on shape/style change
-  private _headGroup!: THREE.Group;
-  private _hairGroup!: THREE.Group;
-
-  // Config
-  private _headShape: HeadShape = 'round';
-  private _hairStyle: HairStyle = 'short';
-  private _skinColor = 0xf5c89a;
-  private _robeColor = 0x4a2080;
-
-  // Animation
-  private _rotY    = 0.5;
-  private _running = false;
-  private _raf     = 0;
-  // Drag
-  private _dragging   = false;
-  private _dragStartX = 0;
-  private _rotStartY  = 0;
-
-  constructor(canvas: HTMLCanvasElement) {
-    this._renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this._renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  constructor(canvas: HTMLCanvasElement, dna: CreatureDNA) {
+    this._renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this._renderer.setSize(PW, PH);
-    this._renderer.setClearColor(0x0e0b1a, 1);
+    this._renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this._renderer.setClearColor(0x0d0b18);
 
-    this._scene = new THREE.Scene();
+    this._scene  = new THREE.Scene();
     this._camera = new THREE.PerspectiveCamera(42, PW / PH, 0.1, 50);
     this._camera.position.set(0.4, 1.5, 3.2);
     this._camera.lookAt(0, 1.1, 0);
 
-    const ambient = new THREE.AmbientLight(0xffe8d0, 0.6);
-    const key     = new THREE.DirectionalLight(0xfff0e0, 1.1);
-    key.position.set(3, 5, 3);
-    const rim     = new THREE.DirectionalLight(0x8080cc, 0.28);
-    rim.position.set(-2, 2, -3);
-    this._scene.add(ambient, key, rim);
-    this._scene.add(this._charRoot);
+    this._scene.add(new THREE.AmbientLight(0xffe8d0, 0.65));
+    const key = new THREE.DirectionalLight(0xfff0e0, 1.15); key.position.set(3, 5, 3); this._scene.add(key);
+    const rim = new THREE.DirectionalLight(0x8060ff, 0.38);  rim.position.set(-3, 2, -2); this._scene.add(rim);
 
-    this._buildCharacter();
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), new THREE.MeshBasicMaterial({ color: 0x0a0814, transparent: true, opacity: 0.4 }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; this._scene.add(disc);
 
-    // Drag-to-rotate
-    canvas.addEventListener('pointerdown', (e) => {
-      this._dragging = true;
-      this._dragStartX = e.clientX;
-      this._rotStartY = this._rotY;
-      canvas.setPointerCapture(e.pointerId);
-    });
-    canvas.addEventListener('pointermove', (e) => {
-      if (!this._dragging) return;
-      this._rotY = this._rotStartY + (e.clientX - this._dragStartX) * 0.012;
-    });
-    canvas.addEventListener('pointerup',     () => { this._dragging = false; });
-    canvas.addEventListener('pointercancel', () => { this._dragging = false; });
+    this._build(dna);
+    this._bindPointer(canvas);
   }
 
-  start(): void {
-    if (this._running) return;
-    this._running = true;
-    this._loop();
+  private _build(dna: CreatureDNA): void {
+    if (this._rig) { this._scene.remove(this._rig.root); this._rig.dispose(); }
+    this._rig = buildCreature(dna);
+    this._scene.add(this._rig.root);
   }
 
-  stop(): void {
-    this._running = false;
-    cancelAnimationFrame(this._raf);
-  }
+  setDNA(dna: CreatureDNA): void { this._build(dna); }
 
-  dispose(): void {
-    this.stop();
-    this._charRoot.traverse(o => {
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
-    });
-    [this._skinMat, this._robeMat, this._beltMat, this._hairMat].forEach(m => m?.dispose());
-    this._renderer.dispose();
-  }
-
-  // ── Setters ──────────────────────────────────────────────────────────────────
-
-  setHeadShape(s: HeadShape): void {
-    if (s === this._headShape) return;
-    this._headShape = s;
-    this._rebuildHead();
-  }
-  setHairStyle(s: HairStyle): void {
-    if (s === this._hairStyle) return;
-    this._hairStyle = s;
-    this._rebuildHair();
-  }
-  setSkinColor(hex: number): void {
-    this._skinColor = hex;
-    this._skinMat.color.setHex(hex);
-  }
-  setRobeColor(hex: number): void {
-    this._robeColor = hex;
-    this._robeMat.color.setHex(hex);
-    const belt = new THREE.Color(hex);
-    belt.multiplyScalar(0.65);
-    this._beltMat.color.copy(belt);
-  }
-  setHeightScale(s: number): void { this._charRoot.scale.y = s; }
-  setWidthScale(s: number):  void { this._charRoot.scale.x = s; this._charRoot.scale.z = s; }
-
-  // ── Build ─────────────────────────────────────────────────────────────────────
-
-  private _buildCharacter(): void {
-    this._skinMat = new THREE.MeshLambertMaterial({ color: this._skinColor });
-    this._robeMat = new THREE.MeshLambertMaterial({ color: this._robeColor });
-    const beltCol = new THREE.Color(this._robeColor);
-    beltCol.multiplyScalar(0.65);
-    this._beltMat = new THREE.MeshLambertMaterial({ color: beltCol });
-    this._hairMat = new THREE.MeshLambertMaterial({ color: 0x1e0c04 });
-    const eyeMat    = new THREE.MeshLambertMaterial({ color: 0x100808 });
-    const shadowMat = new THREE.MeshLambertMaterial({ color: 0x030208, transparent: true, opacity: 0.35 });
-
-    // Shadow disc
-    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.01, 16), shadowMat);
-    sh.position.y = 0.005;
-    this._charRoot.add(sh);
-
-    // Robe (lower body — flared)
-    const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.46, 1.1, 10), this._robeMat);
-    robe.position.y = 0.55;
-    this._charRoot.add(robe);
-
-    // Belt / sash
-    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.07, 10), this._beltMat);
-    belt.position.y = 1.07;
-    this._charRoot.add(belt);
-
-    // Upper torso
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.235, 0.50, 10), this._robeMat);
-    torso.position.y = 1.35;
-    this._charRoot.add(torso);
-
-    // Sleeves
-    const slGeo = new THREE.CylinderGeometry(0.065, 0.07, 0.32, 7);
-    const lSl   = new THREE.Mesh(slGeo, this._robeMat);
-    lSl.position.set(-0.265, 1.43, 0); lSl.rotation.z = 0.25;
-    const rSl   = new THREE.Mesh(slGeo, this._robeMat);
-    rSl.position.set( 0.265, 1.43, 0); rSl.rotation.z = -0.25;
-    this._charRoot.add(lSl, rSl);
-
-    // Hands (skin-coloured sphere at sleeve ends)
-    const handGeo = new THREE.SphereGeometry(0.058, 8, 6);
-    const lH = new THREE.Mesh(handGeo, this._skinMat);
-    lH.position.set(-0.31, 1.27, 0);
-    const rH = new THREE.Mesh(handGeo, this._skinMat);
-    rH.position.set( 0.31, 1.27, 0);
-    this._charRoot.add(lH, rH);
-
-    // Neck
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.13, 8), this._skinMat);
-    neck.position.y = 1.665;
-    this._charRoot.add(neck);
-
-    // Head group (rebuilt on head shape change)
-    this._headGroup = new THREE.Group();
-    this._headGroup.position.y = 1.92;
-    this._charRoot.add(this._headGroup);
-    this._rebuildHead();
-
-    // Eyes (positioned in charRoot space)
-    const eyeGeo = new THREE.SphereGeometry(0.03, 6, 4);
-    const lE = new THREE.Mesh(eyeGeo, eyeMat);
-    lE.position.set(-0.072, 1.934, 0.183);
-    const rE = new THREE.Mesh(eyeGeo, eyeMat);
-    rE.position.set( 0.072, 1.934, 0.183);
-    this._charRoot.add(lE, rE);
-
-    // Hair group (rebuilt on hair style change)
-    this._hairGroup = new THREE.Group();
-    this._hairGroup.position.y = 1.92;
-    this._charRoot.add(this._hairGroup);
-    this._rebuildHair();
-  }
-
-  private _rebuildHead(): void {
-    this._headGroup.traverse(o => {
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
-    });
-    this._headGroup.clear();
-    let geo: THREE.BufferGeometry;
-    let sy = 1;
-    switch (this._headShape) {
-      case 'angular':   geo = new THREE.SphereGeometry(0.21, 5, 4);   break;
-      case 'elongated': geo = new THREE.SphereGeometry(0.18, 12, 8); sy = 1.32; break;
-      default:          geo = new THREE.SphereGeometry(0.21, 16, 12);
-    }
-    const m = new THREE.Mesh(geo, this._skinMat);
-    m.scale.y = sy;
-    this._headGroup.add(m);
-  }
-
-  private _rebuildHair(): void {
-    this._hairGroup.traverse(o => {
-      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
-    });
-    this._hairGroup.clear();
-    if (this._hairStyle === 'none') return;
-
-    // Top hemisphere cap (shared by short + long)
-    const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.223, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      this._hairMat,
-    );
-    cap.position.y = 0.04;
-    this._hairGroup.add(cap);
-
-    if (this._hairStyle === 'short') {
-      // Small bun at back
-      const bun = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6), this._hairMat);
-      bun.position.set(0, 0.18, -0.15);
-      this._hairGroup.add(bun);
-    } else {
-      // Long strands via CatmullRomCurve3 → TubeGeometry
-      const strands: Array<[number, number, number]> = [
-        [-Math.PI * 0.55,  0.03, -0.02],
-        [-Math.PI * 0.75, -0.02,  0.01],
-        [-Math.PI,         0.00,  0.00],
-        [ Math.PI * 0.75,  0.02,  0.03],
-        [ Math.PI * 0.55, -0.03, -0.01],
-        [-Math.PI * 0.35,  0.04,  0.02],
-        [ Math.PI * 0.35, -0.02,  0.03],
-      ];
-      for (const [angle, jx, jz] of strands) {
-        const sx = Math.cos(angle) * 0.20;
-        const sz = Math.sin(angle) * 0.20;
-        const curve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(sx * 0.55, 0.17,  sz * 0.55),
-          new THREE.Vector3(sx,        0.00,  sz),
-          new THREE.Vector3(sx * 1.05 + jx, -0.28, sz * 0.95 + jz),
-          new THREE.Vector3(sx * 0.88 + jx, -0.72, sz * 0.82),
-        ]);
-        this._hairGroup.add(new THREE.Mesh(
-          new THREE.TubeGeometry(curve, 8, 0.024, 4, false),
-          this._hairMat,
-        ));
+  startLoop(): void {
+    if (this._rafId !== null) return;
+    const tick = () => {
+      this._rafId = requestAnimationFrame(tick);
+      if (!this._drag) this._rotY += 0.007;
+      if (this._rig) {
+        this._rig.root.rotation.y = this._rotY;
+        const t = performance.now() * 0.001;
+        this._rig.root.position.y = Math.sin(t * 1.2) * 0.016;
+        animateCreature(this._rig, { state: 'idle', time: t });
       }
-    }
+      this._renderer.render(this._scene, this._camera);
+    };
+    tick();
   }
 
-  private _loop(): void {
-    if (!this._running) return;
-    this._raf = requestAnimationFrame(() => this._loop());
-    if (!this._dragging) this._rotY += 0.007;
-    this._charRoot.rotation.y = this._rotY;
-    // Gentle idle bob
-    this._charRoot.position.y = Math.sin(performance.now() * 0.0012) * 0.016;
-    this._renderer.render(this._scene, this._camera);
+  stopLoop(): void {
+    if (this._rafId !== null) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
+
+  private _bindPointer(cv: HTMLCanvasElement): void {
+    cv.addEventListener('pointerdown', (e) => { this._drag = true; this._prevX = e.clientX; this._rotYStart = this._rotY; });
+    window.addEventListener('pointermove', (e) => { if (this._drag) this._rotY = this._rotYStart + (e.clientX - this._prevX) * 0.012; });
+    window.addEventListener('pointerup', () => { this._drag = false; });
+  }
+
+  dispose(): void { this.stopLoop(); this._rig?.dispose(); this._renderer.dispose(); }
 }
 
 // ── CharacterCreation ─────────────────────────────────────────────────────────
 
 export class CharacterCreation {
   private readonly _overlay: HTMLElement;
-  private _preview: CharacterPreview | null = null;
+  private _preview:  CharacterPreview | null = null;
+  private _dna:      CreatureDNA = cloneDNA(DEFAULT_PLAYER_DNA);
+  private _boon:     StartingBoon = 'tome';
+  private _slotId    = 0;
 
-  // State
-  private _selectedBoon: StartingBoon = 'tome';
-  private _nameInput:    HTMLInputElement | null = null;
-  private _headShape:    HeadShape = 'round';
-  private _hairStyle:    HairStyle = 'short';
-  private _skinColor  = 0xf5c89a;
-  private _robeColor  = 0x4a2080;
-  private _heightScale = 1.0;
-  private _widthScale  = 1.0;
+  // Control refs (populated in _build)
+  private _nameInput!: HTMLInputElement;
+  private _archChips  = new Map<Archetype, HTMLElement>();
+  private _boonCards  = new Map<StartingBoon, HTMLElement>();
+  private _faceChips  = new Map<FaceType,  HTMLElement>();
+  private _mouthChips = new Map<MouthType, HTMLElement>();
+  private _propChips  = new Map<PropId,    HTMLElement>();
+  private _primaryInput!:   HTMLInputElement;
+  private _secondaryInput!: HTMLInputElement;
+  private _emissiveInput!:  HTMLInputElement;
+  private _emissiveSlider!: HTMLInputElement;
+  private _emissiveVal!:    HTMLElement;
+  private _scaleSlider!:    HTMLInputElement;
+  private _scaleVal!:       HTMLElement;
+  private _eyeInput!:       HTMLInputElement;
 
   constructor(
     private readonly _onStart: (cfg: CharacterConfig) => void,
-    private readonly _onBack: () => void,
+    private readonly _onBack:  () => void,
   ) {
-    this._ensureStyles();
+    _ensureStyles();
     this._overlay = this._build();
     document.body.appendChild(this._overlay);
   }
 
   show(slotId: number): void {
-    this._overlay.dataset.slotId = String(slotId);
+    this._slotId = slotId;
+    this._dna    = cloneDNA(DEFAULT_PLAYER_DNA);
+    this._boon   = 'tome';
     this._overlay.style.display = 'flex';
     requestAnimationFrame(() => this._overlay.classList.add('cc-open'));
-    this._preview?.start();
+    const canvas = this._overlay.querySelector<HTMLCanvasElement>('.cc-preview-canvas')!;
+    if (!this._preview) this._preview = new CharacterPreview(canvas, this._dna);
+    else                this._preview.setDNA(this._dna);
+    this._syncControls();
+    this._preview.startLoop();
   }
 
   hide(): void {
-    this._preview?.stop();
     this._overlay.classList.remove('cc-open');
-    setTimeout(() => { this._overlay.style.display = 'none'; }, 260);
+    this._preview?.stopLoop();
+    setTimeout(() => { this._overlay.style.display = 'none'; }, 250);
   }
 
-  dispose(): void {
-    this._preview?.dispose();
-    this._overlay.remove();
+  dispose(): void { this._preview?.dispose(); this._overlay.remove(); }
+
+  // ── Sync all control values from _dna ───────────────────────────────────
+
+  private _syncControls(): void {
+    const d = this._dna;
+    this._nameInput.value     = '';
+    this._primaryInput.value   = numToHex(d.colors.primary);
+    this._secondaryInput.value = numToHex(d.colors.secondary);
+    this._emissiveInput.value  = numToHex(d.colors.emissive);
+    this._emissiveSlider.value = String(d.colors.emissiveIntensity);
+    this._emissiveVal.textContent = d.colors.emissiveIntensity.toFixed(2);
+    this._scaleSlider.value   = String(d.proportions.global);
+    this._scaleVal.textContent = d.proportions.global.toFixed(2);
+    this._eyeInput.value      = numToHex(d.face.eyeColor);
+
+    this._archChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.archetype));
+    this._boonCards.forEach((el, id) => el.classList.toggle('cc-boon--on', id === this._boon));
+    this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.type));
+    this._mouthChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.mouthType));
+    this._propChips.forEach((el, id) => el.classList.toggle('cc-prop--on', d.props.includes(id)));
   }
 
-  // ── DOM ─────────────────────────────────────────────────────────────────────
+  // ── DOM builder ──────────────────────────────────────────────────────────
 
   private _build(): HTMLElement {
-    const ov   = document.createElement('div');
-    ov.className = 'cc-overlay';
+    const overlay = document.createElement('div');
+    overlay.className = 'cc-overlay';
 
     const card = document.createElement('div');
     card.className = 'cc-card';
 
     // Title
-    const title    = document.createElement('div');
-    title.className = 'cc-title';
-    title.textContent = 'The Ritual Begins';
-    const subtitle = document.createElement('div');
-    subtitle.className = 'cc-subtitle';
-    subtitle.textContent = 'Who are you, exactly?';
+    const title = document.createElement('div'); title.className = 'cc-title'; title.textContent = 'SHAPE YOUR BEING';
+    const sub   = document.createElement('div'); sub.className   = 'cc-subtitle'; sub.textContent = 'Form • Boon • Appearance';
+    card.append(title, sub);
 
-    // ── Two-column main area ─────────────────────────────────────────────────
+    // Two-column main
     const main = document.createElement('div');
     main.className = 'cc-main';
 
-    // Preview column
-    const prevCol = document.createElement('div');
-    prevCol.className = 'cc-preview-col';
+    // ── Left column: preview ────────────────────────────────────────────────
+    const previewCol = document.createElement('div');
+    previewCol.className = 'cc-preview-col';
     const canvas = document.createElement('canvas');
     canvas.className = 'cc-preview-canvas';
-    canvas.width  = PW;
-    canvas.height = PH;
-    const dragHint = document.createElement('div');
-    dragHint.className = 'cc-drag-hint';
-    dragHint.textContent = '← drag to rotate →';
-    prevCol.append(canvas, dragHint);
+    const hint = document.createElement('div'); hint.className = 'cc-drag-hint'; hint.textContent = 'Drag to rotate';
+    const dnaBtn = document.createElement('button'); dnaBtn.className = 'cc-dna-btn'; dnaBtn.textContent = '📋 Copy DNA';
+    dnaBtn.onclick = () => {
+      navigator.clipboard?.writeText(dnaToBase64(this._dna)).catch(() => {});
+    };
+    previewCol.append(canvas, hint, dnaBtn);
 
-    // Try creating the 3D preview
-    try {
-      this._preview = new CharacterPreview(canvas);
-    } catch {
-      // WebGL unavailable — canvas stays as dark background
-    }
-
-    // Controls column
+    // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
     ctrlCol.className = 'cc-controls-col';
 
-    // Name row
-    const nameRow = document.createElement('div');
-    nameRow.className = 'cc-name-row';
-    const nameLbl = document.createElement('label');
-    nameLbl.className = 'cc-label';
-    nameLbl.textContent = 'Your name';
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.className = 'cc-name-input';
-    nameInput.placeholder = 'Princess…';
-    nameInput.maxLength = 32;
-    nameInput.autocomplete = 'off';
-    this._nameInput = nameInput;
-    nameRow.append(nameLbl, nameInput);
+    // Name
+    const nameWrap = document.createElement('div'); nameWrap.className = 'cc-section';
+    const nameLbl = document.createElement('label'); nameLbl.className = 'cc-label'; nameLbl.textContent = 'Name';
+    this._nameInput = document.createElement('input');
+    this._nameInput.type = 'text'; this._nameInput.className = 'cc-name-input';
+    this._nameInput.placeholder = 'Enter a name…'; this._nameInput.maxLength = 24;
+    nameWrap.append(nameLbl, this._nameInput);
 
-    // Boons
-    const boonLbl = document.createElement('div');
-    boonLbl.className = 'cc-boon-label';
-    boonLbl.textContent = 'Starting boon';
-    const boonList = document.createElement('div');
-    boonList.className = 'cc-boons';
-    boonList.id = 'cc-boons';
-    for (const b of BOONS) {
-      const row = document.createElement('div');
-      row.className = 'cc-boon' + (b.id === 'tome' ? ' cc-boon--active' : '');
-      row.dataset.boon = b.id;
-      row.innerHTML = `
-        <div class="cc-boon-icon">${b.icon}</div>
-        <div class="cc-boon-body">
-          <div class="cc-boon-title">${b.title}</div>
-          <div class="cc-boon-desc">${b.desc}</div>
-          <div class="cc-boon-effect">✦ ${b.effect}</div>
-        </div>`;
-      row.addEventListener('click', () => {
-        this._selectedBoon = b.id as StartingBoon;
-        this._refreshBoons();
-      });
-      boonList.appendChild(row);
+    // Archetype
+    const archSec = document.createElement('div'); archSec.className = 'cc-section';
+    const archTitle = document.createElement('div'); archTitle.className = 'cc-section-title'; archTitle.textContent = 'Form';
+    const archChips = document.createElement('div'); archChips.className = 'cc-chips';
+    for (const a of ARCHETYPES) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip';
+      chip.textContent = a.icon + ' ' + a.label; chip.title = a.hint;
+      chip.onclick = () => { this._dna = dnaForArchetype(a.id); this._syncControls(); this._preview?.setDNA(this._dna); };
+      this._archChips.set(a.id, chip); archChips.appendChild(chip);
     }
+    archSec.append(archTitle, archChips);
 
-    // Appearance section
-    const appearSec = document.createElement('div');
-    appearSec.className = 'cc-appear-section';
-    const appearTitle = document.createElement('div');
-    appearTitle.className = 'cc-appear-title';
-    appearTitle.textContent = 'Appearance';
+    // Boon
+    const boonSec = document.createElement('div'); boonSec.className = 'cc-section';
+    const boonTitle = document.createElement('div'); boonTitle.className = 'cc-section-title'; boonTitle.textContent = 'Boon';
+    const boonList = document.createElement('div'); boonList.style.cssText = 'display:flex;flex-direction:column;gap:5px;';
+    for (const b of BOONS) {
+      const card2 = document.createElement('div'); card2.className = 'cc-boon';
+      const icon = document.createElement('span'); icon.className = 'cc-boon-icon'; icon.textContent = b.icon;
+      const body = document.createElement('div');
+      const t2 = document.createElement('div'); t2.className = 'cc-boon-title'; t2.textContent = b.title;
+      const d2 = document.createElement('div'); d2.className = 'cc-boon-desc';  d2.textContent = b.desc;
+      const e2 = document.createElement('div'); e2.className = 'cc-boon-effect'; e2.textContent = b.effect;
+      body.append(t2, d2, e2); card2.append(icon, body);
+      card2.onclick = () => { this._boon = b.id; this._boonCards.forEach((el, id) => el.classList.toggle('cc-boon--on', id === b.id)); };
+      this._boonCards.set(b.id, card2); boonList.appendChild(card2);
+    }
+    boonSec.append(boonTitle, boonList);
 
-    const headRow = this._buildRadioRow('Head',
-      [['round','Round'],['angular','Angular'],['elongated','Elongated']],
-      this._headShape,
-      (v) => { this._headShape = v as HeadShape; this._preview?.setHeadShape(v as HeadShape); },
-    );
-    const hairRow = this._buildRadioRow('Hair',
-      [['short','Short'],['long','Long'],['none','None']],
-      this._hairStyle,
-      (v) => { this._hairStyle = v as HairStyle; this._preview?.setHairStyle(v as HairStyle); },
-    );
+    // Palette
+    const palSec = this._makeSection('Palette');
+    const colorRows: [string, 'primary' | 'secondary' | 'emissive'][] = [['Body', 'primary'], ['Accent', 'secondary'], ['Emissive', 'emissive']];
+    for (const [lbl, key] of colorRows) {
+      const row = document.createElement('div'); row.className = 'cc-row';
+      const label = document.createElement('span'); label.className = 'cc-row-lbl'; label.textContent = lbl + ':';
+      const inp = document.createElement('input'); inp.type = 'color'; inp.className = 'cc-color-input';
+      inp.addEventListener('input', () => { this._dna.colors[key] = hexToNum(inp.value); this._preview?.setDNA(this._dna); });
+      if (key === 'primary')   this._primaryInput   = inp;
+      if (key === 'secondary') this._secondaryInput = inp;
+      if (key === 'emissive')  this._emissiveInput  = inp;
+      row.append(label, inp);
+      palSec.appendChild(row);
+    }
+    // Emissive intensity
+    const emRow = document.createElement('div'); emRow.className = 'cc-row';
+    const emLbl = document.createElement('span'); emLbl.className = 'cc-row-lbl'; emLbl.textContent = 'Glow:';
+    this._emissiveSlider = document.createElement('input'); this._emissiveSlider.type = 'range';
+    this._emissiveSlider.className = 'cc-slider'; this._emissiveSlider.min = '0'; this._emissiveSlider.max = '0.5'; this._emissiveSlider.step = '0.01';
+    this._emissiveVal = document.createElement('span'); this._emissiveVal.className = 'cc-slider-val';
+    this._emissiveSlider.oninput = () => { this._dna.colors.emissiveIntensity = +this._emissiveSlider.value; this._emissiveVal.textContent = (+this._emissiveSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
+    emRow.append(emLbl, this._emissiveSlider, this._emissiveVal); palSec.appendChild(emRow);
 
-    const colorRow = document.createElement('div');
-    colorRow.className = 'cc-appear-row cc-color-row';
-    colorRow.append(
-      this._buildColorPicker('Skin', this._skinColor, (h) => { this._skinColor = h; this._preview?.setSkinColor(h); }),
-      this._buildColorPicker('Robe', this._robeColor, (h) => { this._robeColor = h; this._preview?.setRobeColor(h); }),
-    );
+    // Face
+    const faceSec = this._makeSection('Face');
+    // Face type chips
+    const ftRow = document.createElement('div'); ftRow.className = 'cc-row';
+    const ftLbl = document.createElement('span'); ftLbl.className = 'cc-row-lbl'; ftLbl.textContent = 'Type:';
+    const ftChips = document.createElement('div'); ftChips.className = 'cc-chips';
+    for (const ft of ['cute','angry','cyclops','skull','compound','blank'] as FaceType[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = ft;
+      chip.onclick = () => { this._dna.face.type = ft; this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === ft)); this._preview?.setDNA(this._dna); };
+      this._faceChips.set(ft, chip); ftChips.appendChild(chip);
+    }
+    ftRow.append(ftLbl, ftChips); faceSec.appendChild(ftRow);
 
-    const heightRow = this._buildSlider('Height', 70, 130, 100, (v) => {
-      this._heightScale = v / 100;
-      this._preview?.setHeightScale(this._heightScale);
-    });
+    // Mouth chips
+    const mRow = document.createElement('div'); mRow.className = 'cc-row';
+    const mLbl = document.createElement('span'); mLbl.className = 'cc-row-lbl'; mLbl.textContent = 'Mouth:';
+    const mChips = document.createElement('div'); mChips.className = 'cc-chips';
+    for (const mt of ['smile','frown','beak','fangs','none'] as MouthType[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = mt;
+      chip.onclick = () => { this._dna.face.mouthType = mt; this._mouthChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === mt)); this._preview?.setDNA(this._dna); };
+      this._mouthChips.set(mt, chip); mChips.appendChild(chip);
+    }
+    mRow.append(mLbl, mChips); faceSec.appendChild(mRow);
 
-    appearSec.append(appearTitle, headRow, hairRow, colorRow, heightRow);
-    ctrlCol.append(nameRow, boonLbl, boonList, appearSec);
-    main.append(prevCol, ctrlCol);
+    // Eye color
+    const eyRow = document.createElement('div'); eyRow.className = 'cc-row';
+    const eyLbl = document.createElement('span'); eyLbl.className = 'cc-row-lbl'; eyLbl.textContent = 'Eye:';
+    this._eyeInput = document.createElement('input'); this._eyeInput.type = 'color'; this._eyeInput.className = 'cc-color-input';
+    this._eyeInput.addEventListener('input', () => { this._dna.face.eyeColor = hexToNum(this._eyeInput.value); this._preview?.setDNA(this._dna); });
+    eyRow.append(eyLbl, this._eyeInput); faceSec.appendChild(eyRow);
+
+    // Props
+    const propSec = this._makeSection('Props');
+    const propGrid = document.createElement('div'); propGrid.className = 'cc-prop-grid';
+    for (const pd of PROP_DEFS) {
+      const item = document.createElement('div'); item.className = 'cc-prop';
+      const box = document.createElement('span'); box.className = 'cc-prop-box';
+      const lbl2 = document.createElement('span'); lbl2.textContent = pd.label;
+      item.append(box, lbl2);
+      item.onclick = () => {
+        const idx = this._dna.props.indexOf(pd.id);
+        if (idx >= 0) this._dna.props.splice(idx, 1); else this._dna.props.push(pd.id);
+        item.classList.toggle('cc-prop--on', this._dna.props.includes(pd.id));
+        this._preview?.setDNA(this._dna);
+      };
+      this._propChips.set(pd.id, item); propGrid.appendChild(item);
+    }
+    propSec.appendChild(propGrid);
+
+    // Scale
+    const scaleSec = this._makeSection('Scale');
+    const scRow = document.createElement('div'); scRow.className = 'cc-row';
+    const scLbl = document.createElement('span'); scLbl.className = 'cc-row-lbl'; scLbl.textContent = 'Global:';
+    this._scaleSlider = document.createElement('input'); this._scaleSlider.type = 'range';
+    this._scaleSlider.className = 'cc-slider'; this._scaleSlider.min = '0.5'; this._scaleSlider.max = '2.0'; this._scaleSlider.step = '0.05';
+    this._scaleVal = document.createElement('span'); this._scaleVal.className = 'cc-slider-val';
+    this._scaleSlider.oninput = () => { this._dna.proportions.global = +this._scaleSlider.value; this._scaleVal.textContent = (+this._scaleSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
+    scRow.append(scLbl, this._scaleSlider, this._scaleVal); scaleSec.appendChild(scRow);
+
+    ctrlCol.append(nameWrap, archSec, boonSec, palSec, faceSec, propSec, scaleSec);
+    main.append(previewCol, ctrlCol);
 
     // Actions
-    const actions  = document.createElement('div');
-    actions.className = 'cc-actions';
-    const backBtn  = document.createElement('button');
-    backBtn.className = 'cc-btn cc-btn--back';
-    backBtn.textContent = '← Back';
-    backBtn.onclick = () => { this.hide(); this._onBack(); };
-    const startBtn = document.createElement('button');
-    startBtn.className = 'cc-btn cc-btn--start';
-    startBtn.textContent = 'Begin the Ritual →';
+    const actions = document.createElement('div'); actions.className = 'cc-actions';
+    const backBtn = document.createElement('button'); backBtn.className = 'cc-btn cc-btn--back'; backBtn.textContent = '← Back';
+    backBtn.onclick = () => this._onBack();
+    const startBtn = document.createElement('button'); startBtn.className = 'cc-btn cc-btn--start'; startBtn.textContent = 'Begin →';
     startBtn.onclick = () => {
-      const slotId = parseInt(this._overlay.dataset.slotId ?? '0');
-      this.hide();
-      this._onStart({
-        name:        this._nameInput?.value.trim() || 'Princess',
-        boon:        this._selectedBoon,
-        slotId,
-        headShape:   this._headShape,
-        hairStyle:   this._hairStyle,
-        skinColor:   this._skinColor,
-        robeColor:   this._robeColor,
-        heightScale: this._heightScale,
-        widthScale:  this._widthScale,
-      });
+      const name = this._nameInput.value.trim() || 'The Transmuter';
+      this._onStart({ name, boon: this._boon, slotId: this._slotId, dna: cloneDNA(this._dna) });
     };
     actions.append(backBtn, startBtn);
-
-    card.append(title, subtitle, main, actions);
-    ov.appendChild(card);
-    return ov;
+    card.append(main, actions);
+    overlay.appendChild(card);
+    return overlay;
   }
 
-  // ── Control helpers ─────────────────────────────────────────────────────────
-
-  private _buildRadioRow(
-    label: string,
-    options: Array<[string, string]>,
-    initial: string,
-    onChange: (v: string) => void,
-  ): HTMLElement {
-    const row  = document.createElement('div');
-    row.className = 'cc-appear-row';
-    const lbl  = document.createElement('span');
-    lbl.className = 'cc-appear-row-label';
-    lbl.textContent = label;
-    const grp  = document.createElement('div');
-    grp.className = 'cc-radio-group';
-    for (const [val, text] of options) {
-      const item = document.createElement('label');
-      item.className = 'cc-radio' + (val === initial ? ' cc-radio--active' : '');
-      item.dataset.val = val;
-      const dot = document.createElement('span');
-      dot.className = 'cc-radio-dot';
-      item.append(dot, text);
-      item.addEventListener('click', () => {
-        grp.querySelectorAll<HTMLElement>('.cc-radio').forEach(el =>
-          el.classList.toggle('cc-radio--active', el.dataset.val === val));
-        onChange(val);
-      });
-      grp.appendChild(item);
-    }
-    row.append(lbl, grp);
-    return row;
+  // Creates a section wrapper with a title div that returns the section element
+  private _makeSection(title: string): HTMLElement {
+    const sec = document.createElement('div'); sec.className = 'cc-section';
+    const t   = document.createElement('div'); t.className   = 'cc-section-title'; t.textContent = title;
+    sec.appendChild(t);
+    return sec;
   }
+}
 
-  private _buildColorPicker(label: string, initHex: number, onChange: (h: number) => void): HTMLElement {
-    const wrap  = document.createElement('div');
-    wrap.className = 'cc-color-item';
-    const lbl   = document.createElement('span');
-    lbl.className = 'cc-color-label';
-    lbl.textContent = label;
-    const input = document.createElement('input');
-    input.type  = 'color';
-    input.className = 'cc-color-input';
-    input.value = hexToInput(initHex);
-    input.addEventListener('input', () => onChange(inputToHex(input.value)));
-    wrap.append(lbl, input);
-    return wrap;
-  }
-
-  private _buildSlider(label: string, min: number, max: number, initPct: number, onChange: (v: number) => void): HTMLElement {
-    const row   = document.createElement('div');
-    row.className = 'cc-slider-row cc-appear-row';
-    const lbl   = document.createElement('span');
-    lbl.className = 'cc-slider-label';
-    lbl.textContent = label;
-    const slider = document.createElement('input');
-    slider.type  = 'range';
-    slider.className = 'cc-slider';
-    slider.min   = String(min);
-    slider.max   = String(max);
-    slider.value = String(initPct);
-    slider.step  = '1';
-    const val   = document.createElement('span');
-    val.className = 'cc-slider-val';
-    val.textContent = initPct + '%';
-    slider.addEventListener('input', () => {
-      val.textContent = slider.value + '%';
-      onChange(parseInt(slider.value));
-    });
-    row.append(lbl, slider, val);
-    return row;
-  }
-
-  private _refreshBoons(): void {
-    const list = this._overlay.querySelector('#cc-boons');
-    if (!list) return;
-    list.querySelectorAll<HTMLElement>('.cc-boon').forEach(el =>
-      el.classList.toggle('cc-boon--active', el.dataset.boon === this._selectedBoon));
-  }
-
-  private _ensureStyles(): void {
-    if (document.getElementById('char-creation-css')) return;
-    const s = document.createElement('style');
-    s.id = 'char-creation-css';
-    s.textContent = CC_CSS;
-    document.head.appendChild(s);
-  }
+function _ensureStyles(): void {
+  if (document.getElementById('cc-css')) return;
+  const s = document.createElement('style');
+  s.id = 'cc-css'; s.textContent = CC_CSS;
+  document.head.appendChild(s);
 }

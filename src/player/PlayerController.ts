@@ -5,6 +5,9 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PALETTE } from '@/shaders/palette';
 import { rapierToThreeInto } from '@/physics/helpers';
 import { HealthComponent } from '@/combat/Health';
+import type { CreatureDNA } from '@/creatures/CreatureDNA';
+import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { animateCreature } from '@/creatures/CreatureAnimator';
 
 // ── Capsule dimensions ─────────────────────────────────────────────────────
 
@@ -151,12 +154,32 @@ export class PlayerController {
   private readonly bodyMesh: THREE.Mesh;
   private readonly headMesh: THREE.Mesh;
 
+  // DNA-based creature rig (replaces bodyMesh/headMesh visually when applied)
+  private _creatureRig: CreatureRig | null = null;
+
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
 
   /** 0 = dodge just used (full cooldown), 1 = fully ready. */
   get dodgeReadyFraction(): number {
     return this.dodgeCooldown <= 0 ? 1 : Math.max(0, 1 - this.dodgeCooldown / DODGE_COOLDOWN);
+  }
+
+  /**
+   * Swap the player's visual for a DNA-based creature rig.
+   * The existing capsule physics body is unchanged.
+   * Called from main.ts after character creation.
+   */
+  applyDNA(dna: CreatureDNA): void {
+    if (this._creatureRig) {
+      this.group.remove(this._creatureRig.root);
+      this._creatureRig.dispose();
+    }
+    this.bodyMesh.visible = false;
+    this.headMesh.visible = false;
+    this._creatureRig = buildCreature(dna);
+    this._creatureRig.root.scale.setScalar(dna.proportions.global);
+    this.group.add(this._creatureRig.root);
   }
 
   /** Instantly reposition both the physics body and the visual mesh.
@@ -380,6 +403,20 @@ export class PlayerController {
     this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
     this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
     this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+
+    // DNA rig animation (runs alongside hidden bodyMesh/headMesh logic)
+    if (this._creatureRig) {
+      const t = performance.now() * 0.001;
+      if (this.flashTimer > 0) {
+        animateCreature(this._creatureRig, { state: 'hit', time: t, timeSinceHit: PLAYER_IFRAME - this.flashTimer });
+      } else if (hSpeed > RUN_SPEED * 0.5) {
+        animateCreature(this._creatureRig, { state: 'run',  time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+      } else if (hSpeed > 0.3) {
+        animateCreature(this._creatureRig, { state: 'walk', time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+      } else {
+        animateCreature(this._creatureRig, { state: 'idle', time: t });
+      }
+    }
 
     // Shadow blob tracks position, shrinks with height
     const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));

@@ -33,6 +33,7 @@ import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { TalentSystem } from '@/progression/TalentSystem';
+import { buildCreature } from '@/creatures/CreatureBuilder';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
 import { LevelUpBanner } from '@/ui/LevelUpBanner';
@@ -250,6 +251,11 @@ async function main() {
       progression.boostStat('swiftness', 7);
     }
 
+    // Apply DNA-based player character appearance
+    if (cfg?.dna) {
+      player.applyDNA(cfg.dna);
+    }
+
     gameLoop.start();
   }
 
@@ -384,6 +390,24 @@ async function main() {
         sceneManager.loadDungeon(arenaPlan);
         sceneManager.loadRoomImmediate('sandbox_arena');
         _sandboxUi?.setLocation('arena');
+      },
+      onEnterOverworld: (seed) => {
+        sceneManager.unloadCurrentRoom();
+        if (!overworld) {
+          overworld = new OverworldScene(scene, physics, player, seed);
+        }
+        overworld.enter();
+        player.teleport(new THREE.Vector3(0, 1.5, 8));
+        scene.fog = new THREE.Fog(0x0a1408, 60, 180);
+        _sandboxUi?.setLocation('overworld');
+      },
+      onSpawnCreature: (dna) => {
+        // Spawn a non-player creature built from DNA near the player.
+        // A full DNA-driven enemy class is Phase 5 work.
+        const rig = buildCreature(dna);
+        const pp  = player.group.position;
+        rig.root.position.set(pp.x + 2.5, 0, pp.z + 2.5);
+        scene.add(rig.root);
       },
       onClose: () => {
         _sandboxUi?.hide();
