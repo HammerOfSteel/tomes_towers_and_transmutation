@@ -7,8 +7,8 @@ import type * as THREE from 'three';
 import type { SlimeEnemy } from '@/enemy/SlimeEnemy';
 
 export class PartyManager {
-  /** Maximum number of followers allowed in Phase 6. */
-  readonly maxSize: number;
+  /** Maximum number of followers allowed. Updated dynamically via Dominion stat. */
+  maxSize: number;
 
   private readonly _members: SlimeEnemy[] = [];
 
