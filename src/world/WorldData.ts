@@ -10,6 +10,7 @@
 import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldGrid }      from './WorldGrid';
 import type { DungeonType }    from './DungeonType';
+import type { SettlementPlan } from './SettlementGenerator';
 
 // ── Entity record types ────────────────────────────────────────────────────────
 
@@ -30,10 +31,18 @@ export interface DungeonEntry {
 
 // ── WorldData ──────────────────────────────────────────────────────────────────
 
+export interface SettlementEntry {
+  /** 1-based sequential ID. */
+  id:   number;
+  seed: number;
+  plan: SettlementPlan;
+}
+
 export interface WorldData {
-  config:    WorldGenConfig;
-  grid:      WorldGrid;
+  config:      WorldGenConfig;
+  grid:        WorldGrid;
   /** Placed dungeon entrances.  Populated by DungeonPlacer. */
-  dungeons:  DungeonEntry[];
-  // settlements and buildings added in OW-5
+  dungeons:    DungeonEntry[];
+  /** Placed settlements (villages, towns, city).  Populated by SettlementPlacer. */
+  settlements: SettlementEntry[];
 }
