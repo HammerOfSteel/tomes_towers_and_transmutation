@@ -9,9 +9,10 @@ import * as THREE from 'three';
 import {
   type CreatureDNA, type Archetype, type FaceType, type MouthType, type PropId,
   type SubRace, type OutfitTopId, type OutfitLegsId, type OutfitOverId,
+  type EyeShape, type BrowStyle, type SkinPattern,
   DEFAULT_PLAYER_DNA, dnaForArchetype, dnaForSubRace, cloneDNA,
   numToHex, hexToNum, dnaToBase64,
-  BIPED_SUBRACES, SUBRACE_DEFS,
+  BIPED_SUBRACES, SUBRACE_DEFS, ARCHETYPE_FACE_ALLOW, ARCHETYPE_PROP_ALLOW,
 } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature }                 from '@/creatures/CreatureAnimator';
@@ -52,16 +53,27 @@ const ARCHETYPES: ArchDef[] = [
 
 interface PropDef { id: PropId; label: string; }
 const PROP_DEFS: PropDef[] = [
-  { id: 'crown',       label: 'Crown'      },
-  { id: 'horns_small', label: 'Horns (S)'  },
-  { id: 'horns_large', label: 'Horns (L)'  },
-  { id: 'wings_bat',   label: 'Bat Wings'  },
-  { id: 'tail_stub',   label: 'Tail (stub)'},
-  { id: 'tail_long',   label: 'Tail (long)'},
-  { id: 'aura',        label: 'Aura'       },
-  { id: 'hair_short',  label: 'Hair (S)'   },
-  { id: 'hair_long',   label: 'Hair (L)'   },
-  { id: 'hair_bun',    label: 'Hair (bun)' },
+  { id: 'crown',         label: 'Crown'        },
+  { id: 'horns_small',   label: 'Horns (S)'    },
+  { id: 'horns_large',   label: 'Horns (L)'    },
+  { id: 'antlers',       label: 'Antlers'      },
+  { id: 'wings_bat',     label: 'Bat Wings'    },
+  { id: 'feather_crest', label: 'Feathers'     },
+  { id: 'tail_stub',     label: 'Tail (stub)'  },
+  { id: 'tail_long',     label: 'Tail (long)'  },
+  { id: 'mane',          label: 'Mane'         },
+  { id: 'aura',          label: 'Aura'         },
+  { id: 'lantern',       label: 'Lantern'      },
+  { id: 'ghost_trail',   label: 'Ghost Trail'  },
+  { id: 'tusk_lower',    label: 'Tusks'        },
+  { id: 'fin_dorsal',    label: 'Dorsal Fin'   },
+  { id: 'scale_ridges',  label: 'Scale Ridges' },
+  { id: 'tentacles',     label: 'Tentacles'    },
+  { id: 'carapace',      label: 'Carapace'     },
+  { id: 'armor_light',   label: 'Light Armor'  },
+  { id: 'hair_short',    label: 'Hair (S)'     },
+  { id: 'hair_long',     label: 'Hair (L)'     },
+  { id: 'hair_bun',      label: 'Hair (bun)'   },
 ];
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -244,7 +256,12 @@ export class CharacterCreation {
   private _subRaceChips = new Map<SubRace, HTMLElement>();
   private _subRaceRow!: HTMLElement;
   private _boonCards  = new Map<StartingBoon, HTMLElement>();
-  private _faceChips  = new Map<FaceType,  HTMLElement>();
+  private _faceChips       = new Map<FaceType,    HTMLElement>();
+  private _eyeShapeChips   = new Map<EyeShape,    HTMLElement>();
+  private _browStyleChips  = new Map<BrowStyle,   HTMLElement>();
+  private _skinPatternChips = new Map<SkinPattern, HTMLElement>();
+  private _markColorRow!:   HTMLElement;
+  private _markColorInput!: HTMLInputElement;
   private _mouthChips = new Map<MouthType, HTMLElement>();
   private _propChips      = new Map<PropId,      HTMLElement>();
   private _outfitTopChips  = new Map<OutfitTopId,  HTMLElement>();
@@ -311,14 +328,31 @@ export class CharacterCreation {
       slider.value = String(v); val.textContent = v.toFixed(2);
     }
     this._eyeInput.value      = numToHex(d.face.eyeColor);
+    this._eyeShapeChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.eyeShape));
+    this._browStyleChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.browStyle));
+    this._skinPatternChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.skinPattern));
+    this._markColorInput.value = numToHex(d.face.markColor);
+    this._markColorRow.style.display = d.face.skinPattern !== 'none' ? 'flex' : 'none';
 
     this._archChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.archetype));
     this._subRaceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.subRace));
     this._subRaceRow.style.display = d.archetype === 'biped' ? 'flex' : 'none';
     this._boonCards.forEach((el, id) => el.classList.toggle('cc-boon--on', id === this._boon));
+
+    // Filter face chips + auto-correct
+    const faceAllow = ARCHETYPE_FACE_ALLOW[d.archetype];
+    this._faceChips.forEach((el, id) => { el.style.display = faceAllow.includes(id) ? '' : 'none'; });
+    if (!faceAllow.includes(d.face.type)) d.face.type = faceAllow[0];
     this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.type));
+
     this._mouthChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.mouthType));
+
+    // Filter prop chips by archetype
+    const propAllow = ARCHETYPE_PROP_ALLOW[d.archetype];
+    this._propChips.forEach((el, id) => { el.style.display = propAllow.includes(id) ? '' : 'none'; });
+    d.props = d.props.filter(p => propAllow.includes(p));
     this._propChips.forEach((el, id) => el.classList.toggle('cc-prop--on', d.props.includes(id)));
+
     this._outfitTopChips.forEach((el, id) => el.classList.toggle('cc-chip--on',  id === d.outfit.top));
     this._outfitLegsChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.legs));
     this._outfitOverChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.over));
@@ -462,16 +496,38 @@ export class CharacterCreation {
 
     // Face
     const faceSec = this._makeSection('Face');
-    // Face type chips
+    // Face type chips (all 14 — archetype filtering applied in _syncControls)
     const ftRow = document.createElement('div'); ftRow.className = 'cc-row';
     const ftLbl = document.createElement('span'); ftLbl.className = 'cc-row-lbl'; ftLbl.textContent = 'Type:';
     const ftChips = document.createElement('div'); ftChips.className = 'cc-chips';
-    for (const ft of ['cute','angry','cyclops','skull','compound','blank'] as FaceType[]) {
+    for (const ft of ['cute','cherubic','gaunt','angry','skull','cat','lizard','demon','ancient','bird','insect','cyclops','compound','blank'] as FaceType[]) {
       const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = ft;
       chip.onclick = () => { this._dna.face.type = ft; this._faceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === ft)); this._preview?.setDNA(this._dna); };
       this._faceChips.set(ft, chip); ftChips.appendChild(chip);
     }
     ftRow.append(ftLbl, ftChips); faceSec.appendChild(ftRow);
+
+    // Eye shape chips
+    const esRow = document.createElement('div'); esRow.className = 'cc-row';
+    const esLbl = document.createElement('span'); esLbl.className = 'cc-row-lbl'; esLbl.textContent = 'Eye shape:';
+    const esChips = document.createElement('div'); esChips.className = 'cc-chips';
+    for (const es of ['round','almond','slit','compound','void','star'] as EyeShape[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip cc-chip--sm'; chip.textContent = es;
+      chip.onclick = () => { this._dna.face.eyeShape = es; this._eyeShapeChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === es)); this._preview?.setDNA(this._dna); };
+      this._eyeShapeChips.set(es, chip); esChips.appendChild(chip);
+    }
+    esRow.append(esLbl, esChips); faceSec.appendChild(esRow);
+
+    // Brow style chips
+    const bsRow = document.createElement('div'); bsRow.className = 'cc-row';
+    const bsLbl = document.createElement('span'); bsLbl.className = 'cc-row-lbl'; bsLbl.textContent = 'Brow:';
+    const bsChips = document.createElement('div'); bsChips.className = 'cc-chips';
+    for (const bs of ['none','thin','thick','furrowed','arched'] as BrowStyle[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip cc-chip--sm'; chip.textContent = bs;
+      chip.onclick = () => { this._dna.face.browStyle = bs; this._browStyleChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === bs)); this._preview?.setDNA(this._dna); };
+      this._browStyleChips.set(bs, chip); bsChips.appendChild(chip);
+    }
+    bsRow.append(bsLbl, bsChips); faceSec.appendChild(bsRow);
 
     // Mouth chips
     const mRow = document.createElement('div'); mRow.className = 'cc-row';
@@ -484,9 +540,32 @@ export class CharacterCreation {
     }
     mRow.append(mLbl, mChips); faceSec.appendChild(mRow);
 
+    // Skin pattern chips
+    const spRow = document.createElement('div'); spRow.className = 'cc-row';
+    const spLbl = document.createElement('span'); spLbl.className = 'cc-row-lbl'; spLbl.textContent = 'Pattern:';
+    const spChips = document.createElement('div'); spChips.className = 'cc-chips';
+    for (const sp of ['none','stripes','spots','scales','gradient','cracks','fur'] as SkinPattern[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip cc-chip--sm'; chip.textContent = sp;
+      chip.onclick = () => {
+        this._dna.face.skinPattern = sp;
+        this._skinPatternChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === sp));
+        this._markColorRow.style.display = sp !== 'none' ? 'flex' : 'none';
+        this._preview?.setDNA(this._dna);
+      };
+      this._skinPatternChips.set(sp, chip); spChips.appendChild(chip);
+    }
+    spRow.append(spLbl, spChips); faceSec.appendChild(spRow);
+
+    // Mark color (visible when pattern is active)
+    this._markColorRow = document.createElement('div'); this._markColorRow.className = 'cc-row'; this._markColorRow.style.display = 'none';
+    const mcLbl = document.createElement('span'); mcLbl.className = 'cc-row-lbl'; mcLbl.textContent = 'Mark color:';
+    this._markColorInput = document.createElement('input'); this._markColorInput.type = 'color'; this._markColorInput.className = 'cc-color-input';
+    this._markColorInput.addEventListener('input', () => { this._dna.face.markColor = hexToNum(this._markColorInput.value); this._preview?.setDNA(this._dna); });
+    this._markColorRow.append(mcLbl, this._markColorInput); faceSec.appendChild(this._markColorRow);
+
     // Eye color
     const eyRow = document.createElement('div'); eyRow.className = 'cc-row';
-    const eyLbl = document.createElement('span'); eyLbl.className = 'cc-row-lbl'; eyLbl.textContent = 'Eye:';
+    const eyLbl = document.createElement('span'); eyLbl.className = 'cc-row-lbl'; eyLbl.textContent = 'Eye color:';
     this._eyeInput = document.createElement('input'); this._eyeInput.type = 'color'; this._eyeInput.className = 'cc-color-input';
     this._eyeInput.addEventListener('input', () => { this._dna.face.eyeColor = hexToNum(this._eyeInput.value); this._preview?.setDNA(this._dna); });
     eyRow.append(eyLbl, this._eyeInput); faceSec.appendChild(eyRow);

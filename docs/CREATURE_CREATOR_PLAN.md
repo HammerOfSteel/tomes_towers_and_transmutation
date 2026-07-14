@@ -40,7 +40,7 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 |-----|--------|
 | Robe is default for biped — looks like "everyone is a wizard in a dress" | ✅ Fixed (CC-2) — outfit system with trousers/skirt/shorts/loincloth/robe_skirt |
 | No sub-races for biped (elf, goblin, orc, pixie, undead…) | ✅ Fixed (CC-1) — 12 species with ear geometry, head scale, colors |
-| Props not filtered by archetype — wings on an amoeba, legs on a serpent | ⏳ CC-6 |
+| Props not filtered by archetype — wings on an amoeba, legs on a serpent | ⏳ CC-6 — allowlists defined, UI filtering in progress |
 | Randomiser absent — no quick way to discover wild combos | ✅ Fixed (CC-4) — 🎲 Lucky Roll + ~ Mutate buttons, mulberry32-seeded |
 | Only 4 body sliders (global scale, head, limb length/width) | ✅ Fixed (CC-3) — +6 sliders: shoulders, hips, belly, neck thickness, Torso H, Leg L |
 | No hair props | ✅ Fixed (CC-3 ext.) — hair_short, hair_long, hair_bun props (sphere cap + optional flow/bun) |
@@ -49,7 +49,7 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 | Serpent was a vertical cobra stack, not a snake | ✅ Fixed — full redesign as flat snake; head raised, body/tail horizontal along ground |
 | Wings on biped attached at foot level | ✅ Fixed — wg.position.y raised from 0.3 → 1.32 (shoulder/upper back) |
 | No skin pattern/texture layer | ⏳ CC-7 |
-| Face types not differentiated per sub-race | ⏳ CC-5 |
+| Face types not differentiated per sub-race | ✅ Fixed (CC-5) — 14 face types; EyeShape, BrowStyle, SkinPattern DNA fields; archetype allowlists; CC-5 UI chips pending |
 | No outfit/clothing concept — robe IS the body appearance | ✅ Fixed (CC-2) — outfit.top / outfit.legs / outfit.over slots |
 | Overlay bug: pressing Begin does not hide character creation screen | ✅ Fixed — charCreation.hide() added to main.ts onStart callback |
 
@@ -290,25 +290,23 @@ brow styles, and cheek marks are separately configurable. Skin pattern overlays
 ```
 
 **`CanvasFace.ts` additions:**
-- [ ] Implement 8 new face drawers.
-- [ ] Add `eyeShape: 'round' | 'almond' | 'slit' | 'compound' | 'void' | 'star'`
-  to `FaceSpec`. Overrides the eye drawn by face type if specified.
-- [ ] Add `skinPattern: 'none' | 'stripes' | 'spots' | 'scales' | 'gradient' | 'crack'`
-  to `FaceSpec`. Drawn as a semi-transparent overlay on top of base face colour.
-- [ ] Add `markColor: number` to `FaceSpec` — colour used for pattern overlay.
+- [x] Implement 8 new face drawers (`cherubic`, `gaunt`, `cat`, `lizard`, `bird`, `insect`, `demon`, `ancient`).
+- [x] Add `eyeShape`, `skinPattern`, `markColor`, `browStyle` to `FaceSpec`.
+- [x] `_drawSkinPattern()` and `_drawBrows()` overlay helpers.
+- [x] `_star()` helper for star-shaped pupils.
 
 **DNA additions:**
-```typescript
-face: {
-  // existing
-  type, eyeColor, mouthType, expression,
-  // new
-  eyeShape:    EyeShape;
-  skinPattern: SkinPattern;
-  markColor:   number;
-  browStyle:   'none' | 'thin' | 'thick' | 'furrowed' | 'arched';
-}
-```
+- [x] `EyeShape`, `SkinPattern`, `BrowStyle` union types in `CreatureDNA.ts`.
+- [x] `FaceType` expanded to 14 entries.
+- [x] `face.eyeShape`, `face.skinPattern`, `face.markColor`, `face.browStyle` fields in `CreatureDNA` interface.
+- [x] Backwards-compat migration in `base64ToDna`.
+
+**UI (⏳ in progress):**
+- [ ] Show all 14 face type chips (currently only 6 in CharacterCreation).
+- [ ] EyeShape chip row.
+- [ ] BrowStyle chip row.
+- [ ] SkinPattern chip row + markColor picker.
+- [ ] Filter face chips by archetype (`ARCHETYPE_FACE_ALLOW`).
 
 **Archetype ↔ Face type allowlists** (enforced by the randomiser and UI chip filter):
 ```
@@ -358,14 +356,22 @@ archetype. New props expand the vocabulary significantly.
 
 **Prop allowlists** (per archetype — props not in list are hidden in UI):
 ```
-biped     → horns_small, horns_large, tail_stub, tail_long, wings_bat, crown, robe_body,
-            armor_light, aura, antlers, mane, feather_crest, tusk_lower, lantern, ghost_trail
+biped     → horns_small, horns_large, tail_stub, tail_long, wings_bat, crown,
+            armor_light, aura, antlers, mane, feather_crest, tusk_lower, lantern, ghost_trail,
+            hair_short, hair_long, hair_bun
 quadruped → horns_small, horns_large, tail_stub, tail_long, armor_light, aura,
             antlers, mane, tusk_lower, scale_ridges, carapace
 amoeba    → aura, fin_dorsal, tentacles, carapace, lantern, ghost_trail
 avian     → wings_bat, crown, tail_stub, tail_long, feather_crest, fin_dorsal, lantern, scale_ridges
 serpent   → tail_long, horns_small, crown, aura, fin_dorsal, scale_ridges, tentacles, carapace
 ```
+
+**Implementation status:**
+- [ ] New PropId types added to `CreatureDNA.ts` (antlers, fin_dorsal, mane, feather_crest, tusk_lower, scale_ridges, tentacles, carapace, lantern, ghost_trail)
+- [ ] New props implemented in `CreatureBuilder._props()`
+- [ ] `ARCHETYPE_PROP_ALLOW` exported from `CreatureDNA.ts`
+- [ ] `ARCHETYPE_FACE_ALLOW` exported from `CreatureDNA.ts`
+- [ ] UI filters prop chips and face chips by archetype
 
 **UI:** Props section becomes a two-column grid, only showing archetype-allowed props.
 Props outside the allowlist for the current archetype are hidden (not greyed — hidden,
