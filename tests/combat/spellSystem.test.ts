@@ -188,16 +188,23 @@ describe('SpellSystem', () => {
   });
 
   // ── chain_arc bounce limit ─────────────────────────────────────────────
-  it('chain_arc hits at most 3 enemies (max bounces)', () => {
+  it('chain_arc: instant strike hits initial target + up to 3 bounces', () => {
+    // 4 enemies within range plus a 5th that should be unreachable once bounces run out
     const enemies = [
-      makeEnemy(1, 0),
-      makeEnemy(2, 0),
-      makeEnemy(3, 0),
-      makeEnemy(4, 0),
+      makeEnemy(0, 0),  // reachable from x=1 but bounces exhausted — NOT hit
+      makeEnemy(1, 0),  // bounce 3
+      makeEnemy(2, 0),  // bounce 2
+      makeEnemy(3, 0),  // bounce 1
+      makeEnemy(4, 0),  // initial strike (closest to aim at x=5)
     ];
     sys.cast('chain_arc', origin, aim, enemies, scene);
+    // bounces:3 → initial strike + 3 bounces = at most 4 enemies hit
     const hitCount = enemies.filter(e => (e.takeDamage as ReturnType<typeof vi.fn>).mock.calls.length > 0).length;
-    expect(hitCount).toBeLessThanOrEqual(3);
+    expect(hitCount).toBeLessThanOrEqual(4);
+    // Primary target closest to cursor was struck
+    expect((enemies[4].takeDamage as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    // Enemy at x=0 should NOT be hit (all bounces consumed by x=4,3,2,1)
+    expect((enemies[0].takeDamage as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
   // ── intimidate via onForceFlee callback ───────────────────────────────

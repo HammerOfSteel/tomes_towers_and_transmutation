@@ -81,4 +81,35 @@ export class PhysicsWorld {
   get rapierWorld(): RAPIER.World {
     return this.world;
   }
+
+  /**
+   * Cast a ray against static (fixed) colliders only — walls, tiles, floors.
+   * Kinematic bodies (player, enemies) are excluded so projectiles pass through them.
+   * Returns the time-of-impact (= distance along the ray in world units) of the
+   * first hit, or null if the ray travels `maxDist` without hitting anything solid.
+   */
+  castRayVsWalls(
+    origin: THREE.Vector3,
+    dir: THREE.Vector3,
+    maxDist: number,
+  ): number | null {
+    const ray = new RAPIER.Ray(
+      { x: origin.x, y: origin.y, z: origin.z },
+      { x: dir.x,    y: dir.y,    z: dir.z    },
+    );
+    const hit = this.world.castRay(
+      ray,
+      maxDist,
+      true,       // solidShape — treat solid interiors as hits
+      undefined,  // filterFlags
+      undefined,  // filterGroups (all groups)
+      undefined,  // excludeCollider
+      undefined,  // excludeRigidBody
+      (collider) => {
+        const body = collider.parent();
+        return body !== null && body.bodyType() === RAPIER.RigidBodyType.Fixed;
+      },
+    );
+    return hit !== null ? hit.timeOfImpact : null;
+  }
 }
