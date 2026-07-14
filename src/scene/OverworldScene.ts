@@ -34,8 +34,10 @@ import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { WorldGrid } from '@/world/WorldGrid';
-import type { WorldGenConfig } from '@/world/WorldGenConfig';
+import type { WorldGrid }              from '@/world/WorldGrid';
+import type { WorldData, DungeonEntry } from '@/world/WorldData';
+import type { EntranceMeshKey }        from '@/world/DungeonType';
+import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -66,6 +68,12 @@ export interface BuildingEntrance {
   label:    string;
 }
 
+/** Lightweight handle returned by nearDungeonEntrance(). */
+export interface DungeonEntranceHandle {
+  entry:    DungeonEntry;
+  position: THREE.Vector3;
+}
+
 // Internal storage entries (not exported)
 interface TreeEntry { group: THREE.Group; px: number; pz: number; }
 interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: number; }
@@ -79,16 +87,18 @@ export class OverworldScene {
   private readonly _waterMesh: THREE.Mesh | null;
   private readonly _trees:     TreeEntry[] = [];
   private readonly _rocks:     RockEntry[] = [];
-  private readonly _ruins:     THREE.Group[] = [];
-  private readonly _enemies:   SlimeEnemy[]  = [];
+  private readonly _ruins:          THREE.Group[] = [];
+  private readonly _enemies:        SlimeEnemy[]  = [];
+  private readonly _dungeonGroups:  THREE.Group[] = [];
 
-  readonly buildingEntrances: BuildingEntrance[] = [];
+  readonly buildingEntrances:  BuildingEntrance[]   = [];
+  readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
 
   // ── Physics handles (created in enter(), cleared in exit())
   private _groundBody:   RAPIER.RigidBody | null = null;
   private _staticBodies: RAPIER.RigidBody[] = [];
 
-  // ── World grid (passed in; built by WorldGenerator externally)
+  // ── World data (passed in; built by WorldGenerator externally)
   private readonly _wg:  WorldGrid;
   private readonly _GW:  number;
   private readonly _GH:  number;
@@ -102,9 +112,9 @@ export class OverworldScene {
     private readonly scene:   THREE.Scene,
     private readonly physics: PhysicsWorld,
     private readonly player:  PlayerController,
-    worldGrid: WorldGrid,
-    config: WorldGenConfig,
+    worldData: WorldData,
   ) {
+    const { config, grid: worldGrid } = worldData;
     this._wg  = worldGrid;
     this._GW  = worldGrid.width;
     this._GH  = worldGrid.height;
@@ -122,6 +132,7 @@ export class OverworldScene {
     this._placeRocks(rand);
     this._spawnCamps(rand, config.enemyCampCount);
     this._addRuins(rand);
+    this._placeDungeonEntrances(worldData.dungeons, rand);
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -149,10 +160,11 @@ export class OverworldScene {
     // Add visuals
     this.scene.add(this._terrain, this._tower);
     if (this._waterMesh) this.scene.add(this._waterMesh);
-    for (const tr of this._trees)   this.scene.add(tr.group);
-    for (const rk of this._rocks)   this.scene.add(rk.mesh);
-    for (const ru of this._ruins)   this.scene.add(ru);
-    for (const en of this._enemies) this.scene.add(en.group);
+    for (const tr of this._trees)        this.scene.add(tr.group);
+    for (const rk of this._rocks)        this.scene.add(rk.mesh);
+    for (const ru of this._ruins)        this.scene.add(ru);
+    for (const en of this._enemies)      this.scene.add(en.group);
+    for (const dg of this._dungeonGroups) this.scene.add(dg);
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
@@ -166,10 +178,11 @@ export class OverworldScene {
 
     this.scene.remove(this._terrain, this._tower);
     if (this._waterMesh) this.scene.remove(this._waterMesh);
-    for (const tr of this._trees)   this.scene.remove(tr.group);
-    for (const rk of this._rocks)   this.scene.remove(rk.mesh);
-    for (const ru of this._ruins)   this.scene.remove(ru);
-    for (const en of this._enemies) this.scene.remove(en.group);
+    for (const tr of this._trees)        this.scene.remove(tr.group);
+    for (const rk of this._rocks)        this.scene.remove(rk.mesh);
+    for (const ru of this._ruins)        this.scene.remove(ru);
+    for (const en of this._enemies)      this.scene.remove(en.group);
+    for (const dg of this._dungeonGroups) this.scene.remove(dg);
   }
 
   /** Per-frame enemy AI tick. */
@@ -201,8 +214,9 @@ export class OverworldScene {
       rk.mesh.geometry.dispose();
       (rk.mesh.material as THREE.Material).dispose();
     }
-    for (const ru of this._ruins) this._freeGroup(ru);
-    for (const en of this._enemies) en.dispose(this.physics);
+    for (const ru of this._ruins)        this._freeGroup(ru);
+    for (const en of this._enemies)       en.dispose(this.physics);
+    for (const dg of this._dungeonGroups) this._freeGroup(dg);
   }
 
   // ── Trigger queries ───────────────────────────────────────────────────────
@@ -220,6 +234,17 @@ export class OverworldScene {
       const dx = pos.x - b.position.x;
       const dz = pos.z - b.position.z;
       if (dx * dx + dz * dz < 4.0 * 4.0) return b;
+    }
+    return null;
+  }
+
+  /** Returns the nearest dungeon entrance if the player is within trigger range. */
+  nearDungeonEntrance(pos: THREE.Vector3): DungeonEntranceHandle | null {
+    const TRIGGER_R2 = 5.0 * 5.0;
+    for (const d of this.dungeonEntrances) {
+      const dx = pos.x - d.position.x;
+      const dz = pos.z - d.position.z;
+      if (dx * dx + dz * dz < TRIGGER_R2) return d;
     }
     return null;
   }
@@ -790,6 +815,271 @@ export class OverworldScene {
     );
     glw.position.set(0, 0.48, 0);
     grp.add(glw);
+
+    return grp;
+  }
+
+  // ── Dungeon entrances ─────────────────────────────────────────────────────
+
+  private _placeDungeonEntrances(dungeons: DungeonEntry[], rand: () => number): void {
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    for (const entry of dungeons) {
+      const wx  = (entry.col - GHW) * T;
+      const wz  = (entry.row - GHH) * T;
+      const lv  = this._wg.get(entry.col, entry.row).elevation;
+      const wy  = lv * SH;
+
+      const meshKey = DUNGEON_TYPE_CONFIGS[entry.type].entranceMeshKey;
+      const grp = this._buildEntranceMesh(meshKey, wx, wy, wz, rand);
+      this._dungeonGroups.push(grp);
+      this.dungeonEntrances.push({
+        entry,
+        position: new THREE.Vector3(wx, wy, wz),
+      });
+    }
+  }
+
+  private _buildEntranceMesh(
+    key:  EntranceMeshKey,
+    wx:   number,
+    wy:   number,
+    wz:   number,
+    rand: () => number,
+  ): THREE.Group {
+    switch (key) {
+      case 'crypt_door':   return this._makeCryptDoor(wx, wy, wz, rand);
+      case 'ruin_pillars': return this._makeRuinPillars(wx, wy, wz, rand);
+      case 'mine_shaft':   return this._makeMineShaft(wx, wy, wz, rand);
+      case 'book_portal':  return this._makeBookPortal(wx, wy, wz, rand);
+      case 'cave_arch':
+      default:             return this._makeCaveArch(wx, wy, wz, rand);
+    }
+  }
+
+  /** Two rough boulders flanking a dark arch opening. */
+  private _makeCaveArch(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp = new THREE.Group();
+    grp.position.set(cx, cy, cz);
+    const stone = new THREE.MeshLambertMaterial({ color: 0x4a4540 });
+
+    for (const side of [-1, 1]) {
+      const h    = 1.2 + rand() * 0.6;
+      const rock = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.7 + rand() * 0.3, 0),
+        stone,
+      );
+      rock.position.set(side * 1.1, h * 0.5, 0);
+      rock.scale.set(0.9, h, 0.85 + rand() * 0.25);
+      rock.rotation.y = rand() * Math.PI;
+      grp.add(rock);
+    }
+
+    // Arch cap
+    const cap = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.55, 0),
+      new THREE.MeshLambertMaterial({ color: 0x39332e }),
+    );
+    cap.position.set(0, 1.9, 0);
+    cap.scale.set(1.6, 0.45, 0.7);
+    grp.add(cap);
+
+    // Debris pebbles at the base
+    for (let i = 0; i < 4; i++) {
+      const p = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.14 + rand() * 0.1, 0),
+        stone,
+      );
+      p.position.set((rand() - 0.5) * 2.4, 0.1, (rand() - 0.5) * 1.6);
+      p.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+      grp.add(p);
+    }
+
+    return grp;
+  }
+
+  /** Heavy stone-slab door frame. */
+  private _makeCryptDoor(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp  = new THREE.Group();
+    grp.position.set(cx, cy, cz);
+    const slab = new THREE.MeshLambertMaterial({ color: 0x5a5248 });
+
+    // Two frame posts
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.38, 2.4, 0.38),
+        slab,
+      );
+      post.position.set(side * 0.9, 1.2, 0);
+      post.rotation.z = side * 0.05;
+      grp.add(post);
+    }
+    // Lintel
+    const lintel = new THREE.Mesh(
+      new THREE.BoxGeometry(2.1, 0.32, 0.40),
+      slab,
+    );
+    lintel.position.set(0, 2.4, 0);
+    grp.add(lintel);
+
+    // Slightly leaning door slab
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 2.2, 0.20),
+      new THREE.MeshLambertMaterial({ color: 0x3a322c }),
+    );
+    door.position.set(0, 1.1, 0.05);
+    door.rotation.y = 0.12 + rand() * 0.08;
+    grp.add(door);
+
+    return grp;
+  }
+
+  /** Ring of 3 broken columns at varying heights. */
+  private _makeRuinPillars(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp  = new THREE.Group();
+    grp.position.set(cx, cy, cz);
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0x524840 });
+
+    const COUNT = 3;
+    const R     = 1.4;
+    for (let i = 0; i < COUNT; i++) {
+      const angle = (i / COUNT) * Math.PI * 2 + rand() * 0.4;
+      const h     = 0.9 + rand() * 1.8;
+      const col   = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.22, h, 6),
+        stoneMat,
+      );
+      col.position.set(Math.cos(angle) * R, h / 2, Math.sin(angle) * R);
+      col.rotation.z = (rand() - 0.5) * 0.22;
+      grp.add(col);
+
+      // Rubble at base
+      for (let j = 0; j < 2; j++) {
+        const peb = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(0.13 + rand() * 0.09, 0),
+          stoneMat,
+        );
+        peb.position.set(
+          Math.cos(angle) * (R + (rand() - 0.5) * 0.9),
+          0.1,
+          Math.sin(angle) * (R + (rand() - 0.5) * 0.9),
+        );
+        peb.rotation.set(rand() * Math.PI, rand() * Math.PI, 0);
+        grp.add(peb);
+      }
+    }
+    return grp;
+  }
+
+  /** Wooden A-frame mine entrance. */
+  private _makeMineShaft(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp  = new THREE.Group();
+    grp.position.set(cx, cy, cz);
+    const wood = new THREE.MeshLambertMaterial({ color: 0x5c3d1e });
+
+    // Two angled support posts forming an A
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.11, 2.2, 5),
+        wood,
+      );
+      post.position.set(side * 0.7, 1.1, 0);
+      post.rotation.z = side * 0.22;
+      grp.add(post);
+    }
+    // Crossbeam
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.08, 1.8, 5),
+      wood,
+    );
+    beam.rotation.z = Math.PI / 2;
+    beam.position.set(0, 1.65, 0);
+    grp.add(beam);
+
+    // Dark opening (square frame inset)
+    const opening = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 1.6, 0.12),
+      new THREE.MeshLambertMaterial({ color: 0x1a1008 }),
+    );
+    opening.position.set(0, 0.8, 0.06);
+    grp.add(opening);
+
+    // Plank floor
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(1.0 + rand() * 0.4, 0.08, 0.18),
+      wood,
+    );
+    plank.position.set((rand() - 0.5) * 0.5, 0.04, 0.4 + rand() * 0.4);
+    plank.rotation.y = (rand() - 0.5) * 0.5;
+    grp.add(plank);
+
+    return grp;
+  }
+
+  /** Magical floating-book portal (reuses greenhouse glow aesthetic). */
+  private _makeBookPortal(
+    cx: number, cy: number, cz: number,
+    rand: () => number,
+  ): THREE.Group {
+    const grp = new THREE.Group();
+    grp.position.set(cx, cy, cz);
+
+    // Open book — two planes angled like an open book
+    const bookMat = new THREE.MeshLambertMaterial({
+      color:            0xd4a855,
+      emissive:         0x7a5020,
+      emissiveIntensity: 0.3,
+      side:             THREE.DoubleSide,
+    });
+    for (const side of [-1, 1]) {
+      const page = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.8, 1.1),
+        bookMat,
+      );
+      page.rotation.y = side * 0.35;
+      page.position.set(side * 0.38, 1.5, 0);
+      grp.add(page);
+    }
+
+    // Central glow orb
+    const glowMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 8, 6),
+      new THREE.MeshLambertMaterial({
+        color:            0x88aaff,
+        emissive:         0x4466ff,
+        emissiveIntensity: 0.85,
+      }),
+    );
+    glowMesh.position.set(0, 1.5, 0);
+    grp.add(glowMesh);
+
+    // Floating sparkle particles (tiny spheres)
+    const sparkMat = new THREE.MeshLambertMaterial({
+      color:            0xaaccff,
+      emissive:         0x6688ee,
+      emissiveIntensity: 0.6,
+    });
+    for (let i = 0; i < 5; i++) {
+      const sp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 4, 3), sparkMat);
+      sp.position.set(
+        (rand() - 0.5) * 1.2,
+        0.8 + rand() * 1.4,
+        (rand() - 0.5) * 0.8,
+      );
+      grp.add(sp);
+    }
 
     return grp;
   }
