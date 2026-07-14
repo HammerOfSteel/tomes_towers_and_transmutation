@@ -1,6 +1,10 @@
 import * as THREE from 'three';
+import { mulberry32 } from '@/core/prng';
 import type { Damageable } from './Health';
 import type { PartyManager } from './PartyManager';
+
+// ── VFX PRNG — deterministic, never Math.random() ────────────────────────────
+const _vfxRand = mulberry32(0xF00DCAFE);
 
 // ── Spell definitions ─────────────────────────────────────────────────────────
 
@@ -44,10 +48,14 @@ export interface CastOptions {
   onBattleHymn?: (duration: number) => void;
 }
 
-// ── Projectile ────────────────────────────────────────────────────────────────
+// ── Projectile — comet with glowing core + additive trail ─────────────────────
 
 class Projectile {
-  readonly mesh: THREE.Mesh;
+  readonly mesh: THREE.Group;
+  private readonly _sphere: THREE.Mesh;
+  private readonly _trailAttr: THREE.BufferAttribute;
+  private readonly _posHist: THREE.Vector3[] = [];
+  private static readonly TRAIL_N = 5;
   private timer = PROJECTILE_LIFETIME;
   private _hit = false;
 
@@ -61,7 +69,47 @@ class Projectile {
     private readonly onChain?: (hitPos: THREE.Vector3, hitTarget: Damageable, bouncesLeft: number) => void,
     private readonly bouncesLeft = 0,
   ) {
-    this.mesh = this._buildMesh();
+    this.mesh = new THREE.Group();
+
+    // Outer glow sphere
+    const outerGeo = new THREE.SphereGeometry(def.radius, 8, 8);
+    const outerMat = new THREE.MeshBasicMaterial({
+      color: def.color,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this._sphere = new THREE.Mesh(outerGeo, outerMat);
+    this.mesh.add(this._sphere);
+
+    // Bright white inner core
+    const coreGeo = new THREE.SphereGeometry(def.radius * 0.45, 6, 6);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.mesh.add(new THREE.Mesh(coreGeo, coreMat));
+
+    // Comet trail — Points, positions stored as offsets behind the projectile
+    const trailPos = new Float32Array(Projectile.TRAIL_N * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    this._trailAttr = new THREE.BufferAttribute(trailPos, 3);
+    trailGeo.setAttribute('position', this._trailAttr);
+    const trailMat = new THREE.PointsMaterial({
+      color: def.color,
+      size: def.radius * 2.8,
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    this.mesh.add(new THREE.Points(trailGeo, trailMat));
+
     this.mesh.position.copy(pos);
   }
 
@@ -74,8 +122,18 @@ class Projectile {
     this.pos.addScaledVector(this.dir, this.def.speed * dt);
     this.mesh.position.copy(this.pos);
 
-    const pulse = 0.6 + 0.4 * Math.sin(this.timer * 20);
-    (this.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = pulse;
+    // Roll position history; write trail as local offsets from current pos
+    this._posHist.unshift(this.pos.clone());
+    if (this._posHist.length > Projectile.TRAIL_N + 1) this._posHist.pop();
+    for (let i = 0; i < Projectile.TRAIL_N; i++) {
+      const h = this._posHist[i + 1] ?? this.pos;
+      this._trailAttr.setXYZ(i, h.x - this.pos.x, h.y - this.pos.y, h.z - this.pos.z);
+    }
+    this._trailAttr.needsUpdate = true;
+
+    // Pulsing glow
+    const pulse = 0.65 + 0.35 * Math.sin(this.timer * 22);
+    (this._sphere.material as THREE.MeshBasicMaterial).opacity = pulse;
 
     for (const target of this.targets) {
       if (target.isDead || !target.worldPosition) continue;
@@ -92,29 +150,23 @@ class Projectile {
     }
   }
 
-  private _buildMesh(): THREE.Mesh {
-    const geo = new THREE.SphereGeometry(this.def.radius, 8, 8);
-    const mat = new THREE.MeshStandardMaterial({
-      color: this.def.color,
-      emissive: new THREE.Color(this.def.emissive),
-      emissiveIntensity: 1.0,
-      roughness: 0.2,
-      metalness: 0.0,
-    });
-    return new THREE.Mesh(geo, mat);
-  }
-
   dispose(): void {
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.MeshStandardMaterial).dispose();
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Points) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
   }
 }
 
-// ── Expanding torus VFX (Nova Burst / intimidate / mass_animate) ──────────────
+// ── AoeVfx — expanding torus ring + ground flash disc ────────────────────────
 
 class AoeVfx {
-  readonly mesh: THREE.Mesh;
-  private timer: number;
+  readonly mesh: THREE.Group;
+  private readonly _ring: THREE.Mesh;
+  private readonly _flash: THREE.Mesh;
+  private _timer: number;
 
   constructor(
     pos: THREE.Vector3,
@@ -122,80 +174,257 @@ class AoeVfx {
     color: number,
     readonly duration: number,
   ) {
-    this.timer = duration;
-    const geo = new THREE.TorusGeometry(radius, Math.max(0.1, radius * 0.035), 8, 48);
-    const mat = new THREE.MeshStandardMaterial({
+    this._timer = duration;
+    this.mesh = new THREE.Group();
+    this.mesh.position.set(pos.x, 0.05, pos.z);
+
+    // Expanding ring torus — starts tiny, grows to full radius
+    const ringGeo = new THREE.TorusGeometry(radius, Math.max(0.1, radius * 0.04), 8, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
       color,
-      emissive: new THREE.Color(color),
-      emissiveIntensity: 1.5,
       transparent: true,
       opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.mesh.position.set(pos.x, 0.1, pos.z);
-    this.mesh.scale.setScalar(0.01);
+    this._ring = new THREE.Mesh(ringGeo, ringMat);
+    this._ring.rotation.x = -Math.PI / 2;
+    this._ring.scale.setScalar(0.01);
+    this.mesh.add(this._ring);
+
+    // Ground flash disc — bright, fades out in first ~20% of lifetime
+    const flashGeo = new THREE.CircleGeometry(radius, 48);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._flash = new THREE.Mesh(flashGeo, flashMat);
+    this._flash.rotation.x = -Math.PI / 2;
+    this.mesh.add(this._flash);
   }
 
-  get expired(): boolean { return this.timer <= 0; }
+  get expired(): boolean { return this._timer <= 0; }
 
   update(dt: number): void {
     if (this.expired) return;
-    this.timer -= dt;
-    const t = 1 - this.timer / this.duration; // 0→1
-    this.mesh.scale.setScalar(t < 0.02 ? 0.02 : t);
-    const mat = this.mesh.material as THREE.MeshStandardMaterial;
-    mat.opacity = t < 0.75 ? 1 : 1 - (t - 0.75) / 0.25;
-    mat.emissiveIntensity = 1.5 * (1 - t * 0.7);
+    this._timer -= dt;
+    const t = 1 - this._timer / this.duration; // 0→1
+
+    // Ring expands and fades near end
+    this._ring.scale.setScalar(Math.max(0.01, t));
+    const ringMat = this._ring.material as THREE.MeshBasicMaterial;
+    ringMat.opacity = t < 0.75 ? 1.0 : 1.0 - (t - 0.75) / 0.25;
+
+    // Flash fades out quickly
+    const flashMat = this._flash.material as THREE.MeshBasicMaterial;
+    flashMat.opacity = Math.max(0, 0.55 * (1 - t * 5));
   }
 
   dispose(): void {
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.MeshStandardMaterial).dispose();
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
   }
 }
 
-// ── Chain Arc segment VFX (lightning bolt between two points) ─────────────────
+// ── LightningBolt — jagged midpoint-displaced tube with crawling flicker ──────
+//    Replaces the old straight CylinderGeometry ChainSegment
 
-class ChainSegment {
-  readonly mesh: THREE.Mesh;
-  private timer = 0.25;
+class LightningBolt {
+  readonly mesh: THREE.Group;
+  private readonly _coreMesh: THREE.Mesh;
+  private readonly _glowMesh: THREE.Mesh;
+  private _timer = 0.45;
+  private _flickerTimer = 0;
+  private readonly _from: THREE.Vector3;
+  private readonly _to: THREE.Vector3;
+  private readonly _color: number;
 
   constructor(from: THREE.Vector3, to: THREE.Vector3, color: number) {
-    const dir = new THREE.Vector3().subVectors(to, from);
-    const len = dir.length();
-    const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+    this._from = from.clone();
+    this._to   = to.clone();
+    this._color = color;
+    this.mesh = new THREE.Group();
 
-    const geo = new THREE.CylinderGeometry(0.04, 0.04, len, 4);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.position.copy(mid);
-    this.mesh.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      dir.length() > 0.001 ? dir.normalize() : new THREE.Vector3(0, 1, 0),
+    const { curve, segs } = this._buildCurve();
+
+    // Thin white core — bright centre of the bolt
+    this._coreMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, segs, 0.012, 4, false),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
     );
+
+    // Wider coloured glow layer
+    this._glowMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, segs, 0.065, 5, false),
+      new THREE.MeshBasicMaterial({
+        color: this._color,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+
+    this.mesh.add(this._coreMesh);
+    this.mesh.add(this._glowMesh);
   }
 
-  get expired(): boolean { return this.timer <= 0; }
+  get expired(): boolean { return this._timer <= 0; }
 
   update(dt: number): void {
     if (this.expired) return;
-    this.timer -= dt;
-    (this.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, this.timer / 0.25);
+    this._timer -= dt;
+    this._flickerTimer -= dt;
+
+    // Fade at very end + instant random flicker
+    const fade    = Math.min(1, this._timer / 0.08);
+    const flicker = _vfxRand() < 0.25 ? 0.3 : 1.0;
+    (this._coreMesh.material as THREE.MeshBasicMaterial).opacity = 0.95 * fade * flicker;
+    (this._glowMesh.material as THREE.MeshBasicMaterial).opacity = 0.60 * fade * flicker;
+
+    // Regenerate jagged path every 40–70 ms for crawling electricity
+    if (this._flickerTimer <= 0) {
+      this._flickerTimer = 0.04 + _vfxRand() * 0.03;
+      this._regen();
+    }
+  }
+
+  private _buildCurve(): { curve: THREE.CatmullRomCurve3; segs: number } {
+    const pts   = this._displace(this._from, this._to, 4, 0.42);
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.05);
+    return { curve, segs: Math.max(16, pts.length * 3) };
+  }
+
+  private _regen(): void {
+    const { curve, segs } = this._buildCurve();
+    this._coreMesh.geometry.dispose();
+    this._coreMesh.geometry = new THREE.TubeGeometry(curve, segs, 0.012, 4, false);
+    this._glowMesh.geometry.dispose();
+    this._glowMesh.geometry = new THREE.TubeGeometry(curve, segs, 0.065, 5, false);
+  }
+
+  /** Recursive midpoint displacement — turns a line into jagged lightning */
+  private _displace(
+    a: THREE.Vector3,
+    b: THREE.Vector3,
+    depth: number,
+    spread: number,
+  ): THREE.Vector3[] {
+    if (depth === 0) return [a.clone(), b.clone()];
+    const dir  = new THREE.Vector3().subVectors(b, a);
+    const mid  = a.clone().addScaledVector(dir, 0.4 + _vfxRand() * 0.2);
+    const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+    if (perp.lengthSq() > 0.0001) perp.normalize();
+    mid.addScaledVector(perp, (_vfxRand() - 0.5) * 2 * spread * dir.length());
+    mid.y += (_vfxRand() - 0.5) * 0.45;
+    const L = this._displace(a,   mid, depth - 1, spread * 0.55);
+    const R = this._displace(mid, b,   depth - 1, spread * 0.55);
+    return [...L.slice(0, -1), ...R];
+  }
+
+  dispose(): void {
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
+  }
+}
+
+// ── SparkBurst — radial explosion of additive point particles ─────────────────
+
+class SparkBurst {
+  readonly mesh: THREE.Points;
+  private static readonly COUNT = 22;
+  private static readonly DUR   = 0.55;
+  private _timer = SparkBurst.DUR;
+  private readonly _vel: THREE.Vector3[];
+  private readonly _posAttr: THREE.BufferAttribute;
+
+  constructor(pos: THREE.Vector3, color: number, speed = 5.5) {
+    const positions = new Float32Array(SparkBurst.COUNT * 3);
+    this._vel = [];
+
+    for (let i = 0; i < SparkBurst.COUNT; i++) {
+      positions[i * 3]     = pos.x;
+      positions[i * 3 + 1] = pos.y;
+      positions[i * 3 + 2] = pos.z;
+      const theta = _vfxRand() * Math.PI * 2;
+      const phi   = _vfxRand() * Math.PI;
+      const spd   = speed * (0.3 + _vfxRand() * 0.7);
+      this._vel.push(new THREE.Vector3(
+        Math.sin(phi) * Math.cos(theta) * spd,
+        Math.abs(Math.cos(phi)) * spd * 0.55 + 1.5,
+        Math.sin(phi) * Math.sin(theta) * spd,
+      ));
+    }
+
+    const geo = new THREE.BufferGeometry();
+    this._posAttr = new THREE.BufferAttribute(positions, 3);
+    geo.setAttribute('position', this._posAttr);
+    this.mesh = new THREE.Points(geo, new THREE.PointsMaterial({
+      color,
+      size: 0.22,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }));
+  }
+
+  get expired(): boolean { return this._timer <= 0; }
+
+  update(dt: number): void {
+    if (this.expired) return;
+    this._timer -= dt;
+    for (let i = 0; i < SparkBurst.COUNT; i++) {
+      const v = this._vel[i];
+      v.y -= 11 * dt; // gravity
+      this._posAttr.setXYZ(
+        i,
+        this._posAttr.getX(i) + v.x * dt,
+        this._posAttr.getY(i) + v.y * dt,
+        this._posAttr.getZ(i) + v.z * dt,
+      );
+    }
+    this._posAttr.needsUpdate = true;
+    const t = this._timer / SparkBurst.DUR;
+    (this.mesh.material as THREE.PointsMaterial).opacity = t * t;
   }
 
   dispose(): void {
     this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.MeshBasicMaterial).dispose();
+    (this.mesh.material as THREE.PointsMaterial).dispose();
   }
 }
 
-// ── Void Rift zone (stationary DoT circle on the floor) ───────────────────────
+// ── ZoneEntity — void rift DoT disc + rising mist wisps ──────────────────────
 
 class ZoneEntity {
-  readonly mesh: THREE.Mesh;
-  private timer: number;
-  private dotTimer = 1.0;
+  readonly mesh: THREE.Group;
+  private readonly _disc: THREE.Mesh;
+  private readonly _wispAttr: THREE.BufferAttribute;
+  private readonly _wispMat: THREE.PointsMaterial;
+  private static readonly WISP_N = 24;
+  private readonly _wispVels: THREE.Vector3[];
+  private _timer: number;
+  private _dotTimer = 1.0;
   private _t = 0;
 
   constructor(
@@ -207,38 +436,101 @@ class ZoneEntity {
     private readonly damageMult: number,
     private readonly onHit?: (target: Damageable, damage: number) => void,
   ) {
-    this.timer = dotDuration;
-    const geo = new THREE.CylinderGeometry(radius, radius, 0.08, 32);
-    const mat = new THREE.MeshStandardMaterial({
+    this._timer = dotDuration;
+    this.mesh = new THREE.Group();
+    this.mesh.position.set(pos.x, 0, pos.z);
+
+    // Base flat disc
+    const discGeo = new THREE.CylinderGeometry(radius, radius, 0.06, 32);
+    const discMat = new THREE.MeshBasicMaterial({
       color,
-      emissive: new THREE.Color(color),
-      emissiveIntensity: 0.8,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.position.set(pos.x, 0.04, pos.z);
+    this._disc = new THREE.Mesh(discGeo, discMat);
+    this._disc.position.y = 0.04;
+    this.mesh.add(this._disc);
+
+    // Glowing edge ring
+    const edgeGeo = new THREE.TorusGeometry(radius, 0.07, 5, 48);
+    const edgeMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
+    edgeMesh.rotation.x = -Math.PI / 2;
+    edgeMesh.position.y = 0.04;
+    this.mesh.add(edgeMesh);
+
+    // Rising mist wisps — Points that loop from floor upward
+    const wispPos = new Float32Array(ZoneEntity.WISP_N * 3);
+    this._wispVels = [];
+    for (let i = 0; i < ZoneEntity.WISP_N; i++) {
+      const angle = _vfxRand() * Math.PI * 2;
+      const r     = _vfxRand() * radius * 0.88;
+      wispPos[i * 3]     = Math.cos(angle) * r;
+      wispPos[i * 3 + 1] = _vfxRand() * 2.0;
+      wispPos[i * 3 + 2] = Math.sin(angle) * r;
+      this._wispVels.push(new THREE.Vector3(
+        (_vfxRand() - 0.5) * 0.35,
+        0.45 + _vfxRand() * 0.55,
+        (_vfxRand() - 0.5) * 0.35,
+      ));
+    }
+    const wispGeo = new THREE.BufferGeometry();
+    this._wispAttr = new THREE.BufferAttribute(wispPos, 3);
+    wispGeo.setAttribute('position', this._wispAttr);
+    this._wispMat = new THREE.PointsMaterial({
+      color: 0xbb88ff,
+      size: 0.21,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    this.mesh.add(new THREE.Points(wispGeo, this._wispMat));
   }
 
-  get expired(): boolean { return this.timer <= 0; }
+  get expired(): boolean { return this._timer <= 0; }
 
   update(dt: number, targets: (Damageable & { worldPosition?: THREE.Vector3 })[]): void {
     if (this.expired) return;
-    this.timer -= dt;
+    this._timer -= dt;
     this._t += dt;
 
-    // Pulsing opacity
-    const mat = this.mesh.material as THREE.MeshStandardMaterial;
-    mat.opacity = 0.3 + 0.2 * Math.abs(Math.sin(this._t * 2.5));
-    mat.emissiveIntensity = 0.6 + 0.4 * Math.abs(Math.sin(this._t * 2.5));
+    // Pulsing disc
+    const pulse = 0.25 + 0.15 * Math.abs(Math.sin(this._t * 2.5));
+    const fade  = this._timer < 1.5 ? this._timer / 1.5 : 1;
+    (this._disc.material as THREE.MeshBasicMaterial).opacity = pulse * fade;
 
-    // Fade out in last 1.5s
-    if (this.timer < 1.5) mat.opacity *= this.timer / 1.5;
+    // Animate wisps — rise and loop back to floor
+    for (let i = 0; i < ZoneEntity.WISP_N; i++) {
+      const v = this._wispVels[i];
+      let x = this._wispAttr.getX(i) + v.x * dt;
+      let y = this._wispAttr.getY(i) + v.y * dt;
+      let z = this._wispAttr.getZ(i) + v.z * dt;
+      if (y > 2.8) {
+        const angle = _vfxRand() * Math.PI * 2;
+        const r     = _vfxRand() * this.radius * 0.88;
+        x = Math.cos(angle) * r;
+        y = 0;
+        z = Math.sin(angle) * r;
+      }
+      this._wispAttr.setXYZ(i, x, y, z);
+    }
+    this._wispAttr.needsUpdate = true;
+    this._wispMat.opacity = 0.65 * fade;
 
     // DoT tick (once per second)
-    this.dotTimer -= dt;
-    if (this.dotTimer <= 0) {
-      this.dotTimer = 1.0;
+    this._dotTimer -= dt;
+    if (this._dotTimer <= 0) {
+      this._dotTimer = 1.0;
       const dmg = Math.max(1, Math.round(this.damagePerSecond * this.damageMult));
       for (const target of targets) {
         if (target.isDead || !target.worldPosition) continue;
@@ -253,43 +545,117 @@ class ZoneEntity {
   }
 
   dispose(): void {
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.MeshStandardMaterial).dispose();
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Points) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
   }
 }
 
-// ── Battle Hymn aura ring (follows player while active) ───────────────────────
+// ── HymnAura — gold ring + orbiting spark particles ──────────────────────────
 
 class HymnAura {
-  readonly mesh: THREE.Mesh;
-  private timer: number;
+  readonly mesh: THREE.Group;
+  private readonly _ring: THREE.Mesh;
+  private readonly _sparkAttr: THREE.BufferAttribute;
+  private readonly _sparkMat: THREE.PointsMaterial;
+  private static readonly SPARK_N = 10;
+  private readonly _orbits: { radius: number; speed: number; phase: number; height: number }[];
+  private _timer: number;
   private _t = 0;
 
   constructor(duration: number) {
-    this.timer = duration;
-    const geo = new THREE.TorusGeometry(2.8, 0.12, 6, 36);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.6 });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.rotation.x = -Math.PI / 2;
+    this._timer = duration;
+    this.mesh = new THREE.Group();
+
+    // Outer ring torus
+    const geo = new THREE.TorusGeometry(2.8, 0.1, 6, 64);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffcc44,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this._ring = new THREE.Mesh(geo, mat);
+    this._ring.rotation.x = -Math.PI / 2;
+    this.mesh.add(this._ring);
+
+    // Inner narrower ring for depth
+    const innerGeo = new THREE.TorusGeometry(1.5, 0.06, 5, 48);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0xffee88,
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const innerRing = new THREE.Mesh(innerGeo, innerMat);
+    innerRing.rotation.x = -Math.PI / 2;
+    this.mesh.add(innerRing);
+
+    // Orbiting sparks in group-local space (group = player pos)
+    const sparkPos = new Float32Array(HymnAura.SPARK_N * 3);
+    this._orbits = Array.from({ length: HymnAura.SPARK_N }, (_, i) => ({
+      radius: 1.3 + _vfxRand() * 2.0,
+      speed:  0.65 + _vfxRand() * 0.85,
+      phase:  (i / HymnAura.SPARK_N) * Math.PI * 2 + _vfxRand() * 0.6,
+      height: 0.2 + _vfxRand() * 1.6,
+    }));
+    const sparkGeo = new THREE.BufferGeometry();
+    this._sparkAttr = new THREE.BufferAttribute(sparkPos, 3);
+    sparkGeo.setAttribute('position', this._sparkAttr);
+    this._sparkMat = new THREE.PointsMaterial({
+      color: 0xffdd55,
+      size: 0.28,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    this.mesh.add(new THREE.Points(sparkGeo, this._sparkMat));
   }
 
-  get expired(): boolean { return this.timer <= 0; }
-  get remaining(): number { return this.timer; }
+  get expired(): boolean { return this._timer <= 0; }
+  get remaining(): number { return this._timer; }
 
   update(dt: number, playerPos: THREE.Vector3): void {
     if (this.expired) return;
-    this.timer -= dt;
+    this._timer -= dt;
     this._t += dt;
-    this.mesh.position.set(playerPos.x, 0.15, playerPos.z);
-    this.mesh.rotation.z += dt * 0.6;
-    const mat = this.mesh.material as THREE.MeshBasicMaterial;
-    mat.opacity = 0.35 + 0.25 * Math.abs(Math.sin(this._t * 3));
-    if (this.timer < 2) mat.opacity *= this.timer / 2;
+    this.mesh.position.set(playerPos.x, 0.12, playerPos.z);
+    this._ring.rotation.z += dt * 0.55;
+
+    // Orbiting sparks in local space — group is at playerPos so sparks orbit player
+    for (let i = 0; i < HymnAura.SPARK_N; i++) {
+      const o     = this._orbits[i];
+      const angle = o.phase + this._t * o.speed;
+      this._sparkAttr.setXYZ(
+        i,
+        Math.cos(angle) * o.radius,
+        o.height + Math.sin(this._t * 2.2 + o.phase) * 0.28,
+        Math.sin(angle) * o.radius,
+      );
+    }
+    this._sparkAttr.needsUpdate = true;
+
+    const fade    = this._timer < 2 ? this._timer / 2 : 1;
+    const twinkle = 0.42 + 0.28 * Math.sin(this._t * 3);
+    (this._ring.material as THREE.MeshBasicMaterial).opacity = twinkle * fade;
+    this._sparkMat.opacity = fade * (0.6 + 0.4 * Math.sin(this._t * 7.5));
+    if (this._timer < 2) this._sparkMat.opacity *= this._timer / 2;
   }
 
   dispose(): void {
-    this.mesh.geometry.dispose();
-    (this.mesh.material as THREE.MeshBasicMaterial).dispose();
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Points) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
   }
 }
 
@@ -300,11 +666,12 @@ interface CooldownEntry { remaining: number; duration: number; }
 // ── SpellSystem ───────────────────────────────────────────────────────────────
 
 export class SpellSystem {
-  private readonly _projectiles: Projectile[] = [];
-  private readonly _aoeVfx: AoeVfx[] = [];
-  private readonly _chainSegs: ChainSegment[] = [];
-  private readonly _zones: ZoneEntity[] = [];
-  private _hymn: HymnAura | null = null;
+  private readonly _projectiles: Projectile[]  = [];
+  private readonly _aoeVfx: AoeVfx[]           = [];
+  private readonly _bolts: LightningBolt[]      = [];
+  private readonly _sparks: SparkBurst[]        = [];
+  private readonly _zones: ZoneEntity[]         = [];
+  private _hymn: HymnAura | null               = null;
   private readonly _cooldowns = new Map<string, CooldownEntry>();
 
   // ── Public query ─────────────────────────────────────────────────────────
@@ -416,14 +783,25 @@ export class SpellSystem {
       }
     }
 
-    // Chain arc segments
-    for (let i = this._chainSegs.length - 1; i >= 0; i--) {
-      const s = this._chainSegs[i];
+    // Lightning bolts
+    for (let i = this._bolts.length - 1; i >= 0; i--) {
+      const b = this._bolts[i];
+      b.update(dt);
+      if (b.expired) {
+        scene.remove(b.mesh);
+        b.dispose();
+        this._bolts.splice(i, 1);
+      }
+    }
+
+    // Spark bursts
+    for (let i = this._sparks.length - 1; i >= 0; i--) {
+      const s = this._sparks[i];
       s.update(dt);
       if (s.expired) {
         scene.remove(s.mesh);
         s.dispose();
-        this._chainSegs.splice(i, 1);
+        this._sparks.splice(i, 1);
       }
     }
 
@@ -453,6 +831,12 @@ export class SpellSystem {
 
   private _setCooldown(spellId: string, duration: number): void {
     this._cooldowns.set(spellId, { remaining: duration, duration });
+  }
+
+  private _addSpark(pos: THREE.Vector3, color: number, speed: number, scene: THREE.Scene): void {
+    const burst = new SparkBurst(pos, color, speed);
+    scene.add(burst.mesh);
+    this._sparks.push(burst);
   }
 
   private _fireProjectile(
@@ -491,15 +875,19 @@ export class SpellSystem {
     scene: THREE.Scene,
     onHit?: (t: Damageable, d: number) => void,
   ): void {
-    const bounces = def.bounces ?? 0;
-    const dir = new THREE.Vector3().subVectors(aimTarget, origin).setY(0).normalize();
+    const bounces  = def.bounces ?? 0;
+    const dir      = new THREE.Vector3().subVectors(aimTarget, origin).setY(0).normalize();
     const spawnPos = origin.clone().addScaledVector(dir, 0.6);
-    spawnPos.y = origin.y + 0.5;
+    spawnPos.y     = origin.y + 0.5;
 
-    // Add initial chain-start segment from origin glow
-    const chainSeg = new ChainSegment(spawnPos, spawnPos.clone().addScaledVector(dir, 1.5), def.color);
-    scene.add(chainSeg.mesh);
-    this._chainSegs.push(chainSeg);
+    // Origin conjuring spark
+    this._addSpark(spawnPos, def.color, 3.5, scene);
+
+    // Initial bolt flash from caster outward
+    const boltEnd  = spawnPos.clone().addScaledVector(dir, 1.8);
+    const initBolt = new LightningBolt(spawnPos, boltEnd, def.color);
+    scene.add(initBolt.mesh);
+    this._bolts.push(initBolt);
 
     const proj = new Projectile(
       spawnPos, dir, targets, def, dmgMult, onHit,
@@ -530,10 +918,14 @@ export class SpellSystem {
     }
     if (!nearest?.worldPosition) return;
 
-    // VFX segment
-    const seg = new ChainSegment(from, nearest.worldPosition.clone().setY(from.y), def.color);
-    scene.add(seg.mesh);
-    this._chainSegs.push(seg);
+    // Jagged lightning bolt between bounce points
+    const boltTo = nearest.worldPosition.clone().setY(from.y);
+    const bolt   = new LightningBolt(from, boltTo, def.color);
+    scene.add(bolt.mesh);
+    this._bolts.push(bolt);
+
+    // Spark burst at impact point
+    this._addSpark(from, def.color, 4.0, scene);
 
     // Fire next projectile toward nearest target
     const nextDir = new THREE.Vector3().subVectors(nearest.worldPosition, from).setY(0).normalize();
@@ -570,7 +962,8 @@ export class SpellSystem {
     this._aoeVfx.push(vfx);
 
     if (spellId === 'intimidate') {
-      // Force all enemies in radius to flee
+      // Shockwave burst + force flee
+      this._addSpark(origin, def.color, 6.5, scene);
       for (const t of targets) {
         if (t.isDead || !t.worldPosition) continue;
         if (origin.distanceTo(t.worldPosition) < radius) {
@@ -581,9 +974,15 @@ export class SpellSystem {
       return;
     }
 
+    if (spellId === 'nova_burst') {
+      // Two overlapping spark bursts — gold + white for bright explosion
+      this._addSpark(origin, def.color, 8.5, scene);
+      this._addSpark(origin, 0xffffff, 6.0, scene);
+    }
+
     if (spellId === 'mass_animate') {
-      // Stub — visual only; full implementation in Phase 7d.2
-      return;
+      this._addSpark(origin, def.color, 5.0, scene);
+      return; // visual only
     }
 
     // Standard AOE damage
@@ -613,6 +1012,8 @@ export class SpellSystem {
     );
     scene.add(zone.mesh);
     this._zones.push(zone);
+    // Portal-opening burst
+    this._addSpark(pos, def.color, 3.5, scene);
   }
 
   private _fireBuff(
@@ -630,12 +1031,14 @@ export class SpellSystem {
     }
 
     this._hymn = new HymnAura(duration);
-    this._hymn.mesh.position.set(origin.x, 0.15, origin.z);
+    this._hymn.mesh.position.set(origin.x, 0.12, origin.z);
     scene.add(this._hymn.mesh);
+
+    // Cast burst
+    this._addSpark(origin, def.color, 4.5, scene);
 
     opts.onBattleHymn?.(duration);
 
-    // Boost party followers
     if (opts.party) {
       opts.party.followerDamageMult = 1.5;
     }
