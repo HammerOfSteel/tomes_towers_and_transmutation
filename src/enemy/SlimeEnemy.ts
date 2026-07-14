@@ -4,6 +4,10 @@ import { HealthComponent, type Damageable } from '@/combat/Health';
 import { rapierToThreeInto } from '@/physics/helpers';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { SlimePersonality } from '@/interactables/TamingGame';
+import { mulberry32 } from '@/core/prng';
+
+// VFX PRNG — deterministic, never Math.random()
+const _slimeRand = mulberry32(0xBAADF00D);
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -25,6 +29,11 @@ const ATTACK_BOUNCE_VEL = 8.5;     // upward launch speed for attack lunge
 const ATTACK_LUNGE_SPEED = 5.5;    // forward burst speed on attack pounce
 const SCALE_LERP = 9;              // scale recovery speed (per second)
 const REST_SCALE_Y = 0.55;         // resting body Y scale (matches buildMesh)
+
+// Hit / death VFX
+const HIT_JIGGLE_DURATION = 0.22;  // seconds of lateral wobble after being hit
+const DEATH_ANIM_DURATION  = 0.55; // seconds for the pop-and-fade death animation
+const DEATH_CHUNK_COUNT    = 8;    // goo blobs ejected on death
 
 // Tame / recruit
 const FLEE_HP_FRACTION = 0.15;     // ≤ 15% HP → enter Flee state
@@ -74,6 +83,15 @@ export class SlimeEnemy implements Damageable {
   private readonly _moveDir = new THREE.Vector3();
   private readonly _pos = new THREE.Vector3();
   private readonly bodyMesh: THREE.Mesh;
+
+  // Hit reaction
+  private _hitJiggle = 0;
+
+  // Death animation
+  private _deathTimer = -1.0;
+  private readonly _deathChunks: Array<{ mesh: THREE.Mesh; vel: THREE.Vector3 }> = [];
+  private _deathChunkGeo: THREE.IcosahedronGeometry | null = null;
+
   /** Current aggro target when acting as a follower. null = follow player. */
   private _followerTarget: SlimeEnemy | null = null;
 
@@ -212,7 +230,10 @@ export class SlimeEnemy implements Damageable {
   // ── Update ────────────────────────────────────────────────────────────────
 
   update(playerPos: THREE.Vector3, dt: number): void {
-    if (this.state === 'dead') return;
+    if (this.state === 'dead') {
+      this._tickDeathAnim(dt);
+      return;
+    }
 
     this.health.tick(dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
@@ -229,6 +250,16 @@ export class SlimeEnemy implements Damageable {
       mat.color.setHex(SLIME_FLEE_COLOR);
     } else {
       mat.color.setHex(SLIME_COLOR);
+    }
+
+    // Hit jiggle — rapid lateral wobble while flash is active
+    if (this._hitJiggle > 0) {
+      this._hitJiggle -= dt;
+      const progress = 1 - this._hitJiggle / HIT_JIGGLE_DURATION; // 0→1
+      const jiggle = Math.sin(progress * Math.PI * 5) * 0.18 * (1 - progress);
+      this.bodyMesh.rotation.z = jiggle;
+    } else {
+      this.bodyMesh.rotation.z = 0;
     }
 
     // ── FSM transitions ────────────────────────────────────────────────────
@@ -388,7 +419,8 @@ export class SlimeEnemy implements Damageable {
    * @param dt         Frame delta
    */
   updateAsFollower(playerPos: THREE.Vector3, enemies: readonly SlimeEnemy[], dt: number): void {
-    if (this.state !== 'recruited' || this.isDead) return;
+    if (this.isDead) { this._tickDeathAnim(dt); return; }
+    if (this.state !== 'recruited') return;
 
     this.health.tick(dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
@@ -502,14 +534,94 @@ export class SlimeEnemy implements Damageable {
   }
 
   private onHit(): void {
-    this.flashTimer = 0.12;
-    this.bodyMesh.scale.set(1.35, 0.28, 1.35);  // splat flat on hit
+    this.flashTimer = 0.15;
+    this._hitJiggle = HIT_JIGGLE_DURATION;
+    this.bodyMesh.scale.set(1.55, 0.18, 1.55);  // dramatic splat on hit
+    this.verticalVelocity = 2.5;                  // small bounce-up reaction
     if (this.state === 'idle') this.state = 'alert';
   }
 
   private onDead(): void {
     this.state = 'dead';
-    this.group.visible = false;
+    this._deathTimer = DEATH_ANIM_DURATION;
+
+    // Make body transparent for fade-out
+    const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
+    mat.transparent = true;
+    mat.opacity = 1.0;
+    mat.color.setHex(SLIME_COLOR);
+
+    // Initial pop squash — very flat, spread wide
+    this.bodyMesh.scale.set(1.9, 0.06, 1.9);
+
+    // Goo chunk blobs ejected radially outward
+    this._deathChunkGeo = new THREE.IcosahedronGeometry(0.11, 0);
+    for (let i = 0; i < DEATH_CHUNK_COUNT; i++) {
+      const chunkMat = new THREE.MeshLambertMaterial({
+        color: SLIME_COLOR,
+        transparent: true,
+        opacity: 1.0,
+      });
+      const chunk = new THREE.Mesh(this._deathChunkGeo, chunkMat);
+      // Squished blob scale
+      chunk.scale.set(0.55 + _slimeRand() * 0.9, 0.2 + _slimeRand() * 0.25, 0.55 + _slimeRand() * 0.9);
+      chunk.position.set(
+        (_slimeRand() - 0.5) * 0.4,
+        0.1 + _slimeRand() * 0.25,
+        (_slimeRand() - 0.5) * 0.4,
+      );
+      this.group.add(chunk);
+      const angle = (i / DEATH_CHUNK_COUNT) * Math.PI * 2 + (_slimeRand() - 0.5) * 0.7;
+      const speed = 3.0 + _slimeRand() * 3.5;
+      this._deathChunks.push({
+        mesh: chunk,
+        vel: new THREE.Vector3(
+          Math.cos(angle) * speed,
+          2.0 + _slimeRand() * 3.0,
+          Math.sin(angle) * speed,
+        ),
+      });
+    }
+  }
+
+  /** Tick the death pop animation; hides group when complete. */
+  private _tickDeathAnim(dt: number): void {
+    if (this._deathTimer <= 0) return;
+    this._deathTimer -= dt;
+
+    const elapsed = DEATH_ANIM_DURATION - Math.max(0, this._deathTimer);
+    const t = elapsed / DEATH_ANIM_DURATION; // 0 → 1
+
+    const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
+
+    if (t < 0.20) {
+      // Phase 1 (0-20%): expanding squash ring — spread outward then snap invisible
+      const et = t / 0.20;
+      this.bodyMesh.scale.set(1.9 + et * 0.8, Math.max(0.01, 0.06 - et * 0.05), 1.9 + et * 0.8);
+      mat.opacity = 1.0;
+    } else {
+      // Phase 2 (20-100%): body fades, chunks fly
+      const ft = (t - 0.20) / 0.80;
+      mat.opacity = Math.max(0, 1 - ft);
+    }
+
+    // Animate goo chunks
+    for (const { mesh, vel } of this._deathChunks) {
+      vel.y -= 18 * dt; // gravity
+      mesh.position.x += vel.x * dt;
+      mesh.position.y += vel.y * dt;
+      mesh.position.z += vel.z * dt;
+      // Chunks fade out in second half of animation
+      if (t > 0.35) {
+        const cf = (t - 0.35) / 0.65;
+        (mesh.material as THREE.MeshLambertMaterial).opacity = Math.max(0, 1 - cf);
+      }
+    }
+
+    // End of animation: hide everything
+    if (this._deathTimer <= 0) {
+      this.group.visible = false;
+    }
   }
 
   /** Remove this enemy's physics bodies from the world.
@@ -517,6 +629,10 @@ export class SlimeEnemy implements Damageable {
   dispose(physics: PhysicsWorld): void {
     physics.rapierWorld.removeCharacterController(this.kcc);
     physics.rapierWorld.removeRigidBody(this.body);
+    this._deathChunkGeo?.dispose();
+    for (const { mesh } of this._deathChunks) {
+      (mesh.material as THREE.MeshLambertMaterial).dispose();
+    }
   }
 
   private static buildMesh(): { group: THREE.Group; bodyMesh: THREE.Mesh } {
