@@ -194,7 +194,7 @@ export const ARCHETYPE_DEFAULTS: Partial<Record<Archetype, Partial<CreatureDNA>>
   },
   serpent: {
     colors: { primary: 0x506020, secondary: 0x304010, emissive: 0x60a020, emissiveIntensity: 0.08 },
-    proportions: { global: 1.0, torso: [0.5, 0.5, 0.5], headSize: 1.1, limbLength: 0.4, limbWidth: 0.6, neckLength: 0.5, tailLength: 1.8, wingSpan: 0.5, segmentCount: 9, shoulderWidth: 0.8, hipWidth: 0.8, bellySize: 0.0, neckThickness: 0.9 },
+    proportions: { global: 1.0, torso: [1.0, 1.0, 1.0], headSize: 1.1, limbLength: 0.4, limbWidth: 0.6, neckLength: 0.5, tailLength: 1.8, wingSpan: 0.5, segmentCount: 9, shoulderWidth: 0.8, hipWidth: 0.8, bellySize: 0.0, neckThickness: 0.9 },
     face: { type: 'angry', eyeColor: 0xff2000, mouthType: 'fangs', expression: 'angry' },
     props: ['tail_long'],
   },

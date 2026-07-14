@@ -233,12 +233,14 @@ function showMorphs(): void {
 
 // ── Animation loop ────────────────────────────────────────────────────────────
 
+let tOverride: number | null = null;  // null = use real time; number = frozen time
+
 function tick(): void {
   requestAnimationFrame(tick);
-  const t = performance.now() * 0.001;
+  const t = tOverride ?? (performance.now() * 0.001);
 
   for (const rig of rigs) {
-    if (!freeze) rig.root.rotation.y = rotY + t * 0.3;
+    if (!freeze) rig.root.rotation.y = rotY + (tOverride ?? performance.now() * 0.001) * 0.3;
     else         rig.root.rotation.y = rotY;
     animateCreature(rig, { state: animState, time: t });
   }
@@ -304,6 +306,28 @@ function tick(): void {
       posY:   r.root.position.y,
       boneKeys: Object.keys(r.bones).filter(k => (r.bones as Record<string, unknown>)[k] != null),
     }));
+  },
+
+  /**
+   * Freeze animation at a specific time in seconds.
+   * All subsequent renders will use this fixed time until thawTime() is called.
+   * Useful in Playwright tests for capturing consistent animation frames.
+   */
+  freezeAt(t: number): void {
+    tOverride = t;
+    freeze = true;
+    // Render one frame at this time so the canvas updates immediately
+    for (const rig of rigs) {
+      rig.root.rotation.y = rotY;
+      animateCreature(rig, { state: animState, time: t });
+    }
+    renderer.render(scene, camera);
+  },
+
+  /** Resume live animation (undo freezeAt). */
+  thawTime(): void {
+    tOverride = null;
+    freeze = false;
   },
 
   /** Snapshot helper for Playwright: returns canvas data URL */
