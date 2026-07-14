@@ -235,21 +235,21 @@ function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
 
   // ─ Legs ──────────────────────────────────────────────────────────────
   if (o.legs === 'trousers') {
+    // Full-length trouser legs: from body bottom (y=1.12) to near feet (y=-0.45)
     for (const s of [-1, 1] as const) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.104, 0.091, 0.50, 8), sm);
-      leg.position.set(s * 0.13, -0.22, 0); torso.add(leg); ms.push(leg);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.090, 1.57, 8), sm);
+      leg.position.set(s * 0.13, 0.335, 0); torso.add(leg); ms.push(leg);
     }
   }
   if (o.legs === 'skirt') {
-    // Covers waist-to-mid-thigh (hides legs — same as robe_skirt but shorter & flared)
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.48, 0.92, 10), sm);
-    skirt.position.y = 0.38; torso.add(skirt); ms.push(skirt);
+    // Top at belt level (y=1.06), bottom at mid-thigh (y=-0.10)
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.50, 1.16, 10), sm);
+    skirt.position.y = 0.54; torso.add(skirt); ms.push(skirt);
   }
   if (o.legs === 'shorts') {
-    for (const s of [-1, 1] as const) {
-      const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.107, 0.096, 0.28, 8), sm);
-      s2.position.set(s * 0.13, -0.06, 0); torso.add(s2); ms.push(s2);
-    }
+    // Shorts wrap around the pelvis from belt (y=1.07) to mid-thigh (y=0.50)
+    const shorts = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.25, 0.57, 10), sm);
+    shorts.position.y = 0.785; torso.add(shorts); ms.push(shorts);
   }
   if (o.legs === 'loincloth') {
     const front = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.03), sm);
@@ -259,7 +259,7 @@ function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
   }
   if (o.legs === 'robe_skirt') {
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.52, 1.08, 10), sm);
-    skirt.position.y = 0.52; torso.add(skirt); ms.push(skirt);
+    skirt.position.y = 0.58; torso.add(skirt); ms.push(skirt);
     const belt3 = new THREE.Mesh(new THREE.CylinderGeometry(0.248, 0.248, 0.058, 10), pm);
     belt3.position.y = 1.05; torso.add(belt3); ms.push(belt3);
   }
@@ -319,13 +319,16 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const bz = p.bellySize      ?? 0.0;
   const nt = p.neckThickness  ?? 1.0;
 
-  // Body cylinder
+  // Body cylinder (chest / upper torso)
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * tx * sw, 0.245 * tx * hw, 0.52 * ty, 10), pm);
   body.position.y = 1.38 * ty; torso.add(body); ms.push(body);
   if (bz > 0.3) {
     const belly = new THREE.Mesh(new THREE.SphereGeometry(0.19 * tx * bz, 8, 6), pm);
     belly.scale.z = 1.35; belly.position.set(0, 1.18 * ty, 0.09); torso.add(belly); ms.push(belly);
   }
+  // Pelvis — fills the gap between body bottom (y=1.12) and hip joints (y=0.02)
+  const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.245 * tx * hw, 0.20 * tx * hw, 1.10 * ty, 10), pm);
+  pelvis.position.y = 0.57 * ty; torso.add(pelvis); ms.push(pelvis);
 
   // Legacy props
   _props(dna.props, undefined, torso, dna, ms);
