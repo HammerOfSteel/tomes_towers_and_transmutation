@@ -23,6 +23,10 @@ export interface DevPanelOptions {
   onGodMode: (enabled: boolean) => void;
   /** Return current god-mode state. */
   getGodMode: () => boolean;
+  /** Enable / disable instant spell cooldowns. */
+  onInstantCooldowns: (enabled: boolean) => void;
+  /** Return current instant-cooldowns state. */
+  getInstantCooldowns: () => boolean;
   /** Unlock and equip all known spells. */
   onAllSpells: () => void;
   /** Restore player HP to full. */
@@ -309,6 +313,32 @@ export class DevPanel {
 
   private _buildSpells(): HTMLElement {
     const sec = this._section('✦  Spells');
+
+    // Instant cooldowns toggle
+    const cdOn = this._opts.getInstantCooldowns();
+    const cdRow = document.createElement('div');
+    cdRow.className = 'dp-toggle-row' + (cdOn ? ' dp-on' : '');
+    const cdInfo = document.createElement('div');
+    cdInfo.className = 'dp-toggle-info';
+    const cdName = document.createElement('div');
+    cdName.className = 'dp-toggle-name';
+    cdName.textContent = 'Instant Cooldowns';
+    const cdSub = document.createElement('div');
+    cdSub.className = 'dp-toggle-sub';
+    cdSub.textContent = 'Cast every spell without waiting';
+    cdInfo.append(cdName, cdSub);
+    const cdCb = document.createElement('input');
+    cdCb.type = 'checkbox';
+    cdCb.className = 'dp-toggle-cb';
+    cdCb.checked = cdOn;
+    cdCb.onchange = () => {
+      cdRow.classList.toggle('dp-on', cdCb.checked);
+      this._opts.onInstantCooldowns(cdCb.checked);
+    };
+    cdRow.append(cdInfo, cdCb);
+    sec.appendChild(cdRow);
+
+    // All spells button
     const row = document.createElement('div');
     row.className = 'dp-row';
     row.appendChild(this._btn('✨  All Spells', false, () => this._opts.onAllSpells()));

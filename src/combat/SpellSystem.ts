@@ -275,7 +275,9 @@ class NovaWave {
   private _remaining: number;
   private _elapsed = 0;
   private readonly _center: THREE.Vector3;
-  private readonly _hitEnemies = new Set<Damageable>();
+  // Splash points are snapshotted at cast time so dead enemies still trigger
+  // a visual splash when the wave front sweeps past their former position.
+  private readonly _splashPoints: Array<{ pos: THREE.Vector3; fired: boolean }>;
   private _prevWaveFront = 0;
   private readonly _stages: _RingStage[];
 
@@ -284,8 +286,10 @@ class NovaWave {
     maxRadius: number,
     color: number,
     readonly duration: number,
+    splashPoints: THREE.Vector3[],
     private readonly onSplash: (splashPos: THREE.Vector3) => void,
   ) {
+    this._splashPoints = splashPoints.map(p => ({ pos: p.clone(), fired: false }));
     // Total lifetime = duration + a little extra so inner echoes fully fade
     this._remaining = duration + 0.45;
     this._center = new THREE.Vector3(pos.x, 0, pos.z);
@@ -342,26 +346,27 @@ class NovaWave {
 
   get expired(): boolean { return this._remaining <= 0; }
 
-  update(dt: number, targets: (Damageable & { worldPosition?: THREE.Vector3 })[]): void {
+  update(dt: number): void {
     if (this.expired) return;
     this._remaining -= dt;
     this._elapsed   += dt;
 
     // ── Primary wave front — drives splash detection ──────────────────────
     const primary = this._stages[0];
-    const primaryAge = this._elapsed - primary.delay; // always 0 for first stage
-    const primaryT   = Math.min(1, Math.max(0, primaryAge / primary.expandDur));
-    const waveFront  = primary.maxR * primaryT;
+    const primaryT  = Math.min(1, Math.max(0, this._elapsed / primary.expandDur));
+    const waveFront = primary.maxR * primaryT;
 
-    // Splash: enemies crossed by the advancing wave front this frame
-    for (const t of targets) {
-      if (this._hitEnemies.has(t) || t.isDead || !t.worldPosition) continue;
-      const dx = t.worldPosition.x - this._center.x;
-      const dz = t.worldPosition.z - this._center.z;
+    // Splash: fire when the wave front sweeps past each snapshotted position.
+    // Using pre-captured positions means enemies that died from the nova blast
+    // still produce a splash VFX when the visual ring reaches them.
+    for (const sp of this._splashPoints) {
+      if (sp.fired) continue;
+      const dx = sp.pos.x - this._center.x;
+      const dz = sp.pos.z - this._center.z;
       const d  = Math.sqrt(dx * dx + dz * dz);
       if (d > this._prevWaveFront && d <= waveFront) {
-        this._hitEnemies.add(t);
-        this.onSplash(new THREE.Vector3(t.worldPosition.x, 0.5, t.worldPosition.z));
+        sp.fired = true;
+        this.onSplash(new THREE.Vector3(sp.pos.x, 0.5, sp.pos.z));
       }
     }
     this._prevWaveFront = waveFront;
@@ -850,6 +855,8 @@ export class SpellSystem {
   private readonly _zones: ZoneEntity[]         = [];
   private _hymn: HymnAura | null               = null;
   private readonly _cooldowns = new Map<string, CooldownEntry>();
+  /** When true all cooldowns are skipped — set by the dev panel. */
+  instantCooldowns = false;
 
   // ── Public query ─────────────────────────────────────────────────────────
 
@@ -861,6 +868,7 @@ export class SpellSystem {
   }
 
   isReady(spellId: string): boolean {
+    if (this.instantCooldowns) return true;
     const cd = this._cooldowns.get(spellId);
     return !cd || cd.remaining <= 0;
   }
@@ -964,10 +972,10 @@ export class SpellSystem {
       }
     }
 
-    // Nova burst wave ripples (need targets for splash detection)
+    // Nova burst wave ripples (splash points snapshotted at cast time)
     for (let i = this._novaWaves.length - 1; i >= 0; i--) {
       const w = this._novaWaves[i];
-      w.update(dt, targets ?? []);
+      w.update(dt);
       if (w.expired) {
         scene.remove(w.mesh);
         w.dispose();
@@ -1022,6 +1030,7 @@ export class SpellSystem {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private _setCooldown(spellId: string, duration: number): void {
+    if (this.instantCooldowns) return; // dev: skip all cooldowns
     this._cooldowns.set(spellId, { remaining: duration, duration });
   }
 
@@ -1159,10 +1168,22 @@ export class SpellSystem {
 
     if (spellId === 'nova_burst') {
       // ── Nova Burst: multi-ring water-ripple wave effect ──────────────────
-      // The wave ripples outward; when the front reaches an enemy a splash
-      // SparkBurst fires at their position for the "pebble in pond" feel.
+      // Snapshot enemy positions BEFORE applying damage so the wave can still
+      // fire splash VFX at enemies that die from the blast.
+      const novaDmg = Math.round(def.damage * dmgMult);
+      const splashPts: THREE.Vector3[] = [];
+      for (const t of targets) {
+        if (t.isDead || !t.worldPosition) continue;
+        if (origin.distanceTo(t.worldPosition) < radius + 0.4) {
+          splashPts.push(t.worldPosition.clone());
+          if (novaDmg > 0) {
+            const applied = t.takeDamage(novaDmg);
+            if (applied > 0) onHit?.(t, applied);
+          }
+        }
+      }
       const wave = new NovaWave(
-        origin, radius, def.color, vfxDur,
+        origin, radius, def.color, vfxDur, splashPts,
         (splashPos) => this._addSpark(splashPos, def.color, 4.5, scene),
       );
       scene.add(wave.mesh);
@@ -1170,17 +1191,6 @@ export class SpellSystem {
       // Central detonation sparks
       this._addSpark(origin, def.color, 9.0, scene);
       this._addSpark(origin, 0xffffff, 6.5, scene);
-      // Instant AOE damage (damage is immediate; ripples are purely visual)
-      const novaDmg = Math.round(def.damage * dmgMult);
-      if (novaDmg > 0) {
-        for (const t of targets) {
-          if (t.isDead || !t.worldPosition) continue;
-          if (origin.distanceTo(t.worldPosition) < radius + 0.4) {
-            const applied = t.takeDamage(novaDmg);
-            if (applied > 0) onHit?.(t, applied);
-          }
-        }
-      }
       return;
     }
 
