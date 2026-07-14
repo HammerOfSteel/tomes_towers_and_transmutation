@@ -23,7 +23,10 @@ Shipping a phase without all three is not shipping.
 | 5 | Procedural Generation & Discovery | ✅ Complete |
 | 6 | Overworld & Monster Minions | 🔄 In Progress (6d overworld-editor pending) |
 | 7 | The OP Power Fantasy | ⬜ Not started |
-| 8 | Asset Replacement & Final Boss | ⬜ Not started |
+| 7.5 | Procedural Visual Quality | ⬜ Not started |
+| 8 | The Living World | ⬜ Not started |
+| 9 | Emergent Spell Crafting | ⬜ Not started |
+| 10 | The Destructible World | ⬜ Not started |
 
 ---
 
@@ -232,72 +235,347 @@ Explore to find ruined greenhouse. Confirm scene transitions are smooth in both 
 
 ## Phase 7: The OP Power Fantasy
 
-**Goal:** Scale the player's power to ridiculous heights and implement base building.
+**Goal:** Escalating player power through a deep talent system, new spells, resource economy, crafting, and base building — culminating in a 20-minion army demolishing everything in sight.
 
-**Tasks:**
-- [ ] Do web research on best practices and if there are any libraries or such to use or base this upon: XP + level-up system, their spells and expressions, player alot stat points etc AND we want to make a talent progression system kind of like in game like elderscrolls with the charts etc and chosing a specialization (there are more melee focused trees, caster focused which brances of into like AOE or close combat, there are Warlock focused branches with DOTs like in WOW etc, there are less combat focused paths like being a healer almost and letting minions do the fighring, perhaps alchemy paths to focus more on alchemical stuff and you can think of many more and build a well developed deeo system that has niot just interaciton in branches but also cross-interactions and almost emergent seeming stuff etc to make this real fun - maybe we can even procedurally generate these types of things too given a modular like design). Then implement this fully and break down into smaller tasks if you need to.
-- [ ] Research, breakdown and implement various crafting types and how they work and implement.
-- [ ] Nova Burst spell: full-screen AOE, 15s cooldown, screen-fill expanding torus VFX.
-- [ ] Mass Animate ultimate: resurrect all defeated enemies in room as temporary minions.
-- [ ] Party limit raised to 20.
-- [ ] Resource gathering: mine procedural rocks/trees; currency feeds upgrades.
-- [ ] Base building (lite): player commands minions to construct/guard tower defenses (barrier walls, archer perches).
-- [ ] Performance pass: profile and optimize for 100-minion stress test.
+### 7a — Research Sprint
+- [ ] Research XP curve formulas (linear vs polynomial), talent tree architectures (Elder Scrolls passive mesh, WoW talent trees, Path of Exile skill web), and cross-path synergy design. Document findings in ARCHITECTURE.md.
+- [ ] Evaluate any JS-friendly approaches for: star-map/constellation graph rendering (pure SVG/HTML canvas vs Three.js billboards), stat formula management, and crafting recipe lookup.
+- [ ] Draft design doc stub covering: stat names and effects, level cap, the 7 talent path names, each path's 3-tier outline, cross-path junction nodes, and the 4 crafting station types.
 
-**Tests:**
-- Load test: 100 simultaneous minions, all pathfinding and attacking, maintain ≥ 30fps.
-- AOE accuracy: Nova Burst hits all enemies within radius, misses all outside.
-- Resource system: mining increments counter; spending decrements correctly, cannot go negative.
-- Level scaling: damage formula produces expected output at levels 1, 10, 20.
+### 7b — XP & Levelling System
+- [ ] Extend `src/core/ProgressionSystem.ts`: add `xp`, `level` (cap 30), `statPoints` fields. `grantXP(amount)` advances level when threshold crossed; triggers level-up event.
+- [ ] XP sources: slime kill +20 base, spell discovery +50, new room visited +10, boss defeated +200. All grant calls go through `ProgressionSystem.grantXP()`.
+- [ ] Level threshold formula: `100 × level²` (so level 2 needs 400 total, level 10 needs 10 000).
+- [ ] **6 core stats** — each starts at 1, increments by 1 per stat point spent:
+  - **Power**: melee attack damage multiplier.
+  - **Attunement**: spell damage + projectile range.
+  - **Vitality**: max HP (+10 HP per point).
+  - **Swiftness**: move speed + dodge-roll refresh rate.
+  - **Dominion**: minion cap (+1 per point, base 5) + follower damage.
+  - **Cunning**: crit chance % + resource yield multiplier.
+- [ ] `[P]` opens stat allocation panel: current stat values, unspent points counter, +/− buttons. Spending is permanent (no undo except on level-up screen's single undo window of 30s).
+- [ ] Level-up banner: golden screen-edge glow + ascending stat-up text overlay, auto-dismisses at 3.5s. Plays bell tone via Phase 8 AudioSystem (or silent no-op until Phase 8).
+- [ ] All damage/HP/speed derivation functions read from stats — balancing happens in one formula file.
 
-**Playtest 7:**
-Achieve a party of 20 minions. Cast Nova Burst on a horde of 15 enemies. All must die. Confirm frame rate holds.
+**Tests:** XP accumulates correctly; level-up fires at exact threshold; stat delta applies to derived value; cannot spend more points than available.
+
+### 7c — Talent Constellation System
+- [ ] Design and finalize node registry: 7 paths × 3 tiers + 5 cross-path junction nodes = 26 total nodes. Each node: `{ id, path, tier, cost (talent points), prerequisites[], effect }`. Effects registered as modifiers on `ProgressionSystem`.
+- [ ] **7 talent paths** (radiate from a shared center in the UI constellation):
+  - 🗡 **Blade Dancer** — swift strikes, parry windows, whirlwind attacks. Apex: *Tempest Step* (melee hit teleports player behind the target).
+  - ✨ **Arcanist** — spell power, range, cooldown reduction. Sub-branches at tier 2: *Tempest* (AOE radius +50%) vs *Precision* (single-target +100% damage, +15% crit). Apex: *Time Fracture* (briefly freezes all enemies on spell cast, 30s cooldown).
+  - 🩸 **Warlock** — DoT application, life drain, curse chains. Apex: *Dark Covenant* (sacrifice 20% current HP to triple all damage for 10s).
+  - 👑 **Conductor** — minion cap +5 per tier, aura buffs (nearby minions +damage), tactical stance commands (Hold/Attack/Follow via `[Z]` radial). Apex: *Undying Legion* (fallen minions reanimate once per combat).
+  - ⚗️ **Apothecary** — potion potency ×1.5/×2/×3, potion carry slots +2 per tier, explosive throw option. Apex: *Grand Elixir* (brew a unique potion with all positive effects, once per in-game day).
+  - 🌿 **Naturalist** — herbalism yield +50%/+100%, unlock heal-over-time spells, terrain-growth utility (grow barriers from plants). Apex: *World Tree Blessing* (channel 3s → all allies in 15u fully healed).
+  - 🔨 **Artificer** — structure HP ×1.5/×2, build speed −30%, resource yield +25%/+50%, trap crafting unlock. Apex: *Master Builder* (structures auto-repair at 1 HP/10s; blueprint cost −50%).
+- [ ] **5 cross-path junction nodes** (each requires ≥ tier-1 in both adjacent paths):
+  - Warlock + Conductor → **Death Pact**: minions that die explode as a DoT cloud (3s, 3 dmg/s, 4u radius).
+  - Blade Dancer + Arcanist → **Spell Blade**: 20% chance melee hit re-triggers the active spell at the impact point.
+  - Apothecary + Naturalist → **Herbmaster**: harvest plants directly without a station; harvested ingredients have +1 potency.
+  - Conductor + Artificer → **War Machine**: assigned minions at Watch Perch structures gain +8 range and launch a small projectile (3 dmg, 4s cooldown) instead of rocks.
+  - Arcanist + Warlock → **Void Weave**: all spells apply a stacking Void Mark on hit; 3 marks → target explodes for bonus AOE damage.
+- [ ] `src/ui/TalentTree.ts`: SVG-on-canvas constellation layout. Nodes = glowing circles; connecting lines; locked nodes dimmed 40%; affordable nodes pulse slowly. `[T]` opens overlay.
+- [ ] `src/core/TalentSystem.ts`: node registry + `buyNode(id)` (validates prerequisites + talent point budget); effects applied immediately to `ProgressionSystem` modifier map; `serialize/deserialize` to localStorage.
+
+**Tests:** `buyNode` with unmet prereq returns false. Cross-path node requires ≥1 point in both adjacent paths. Spending deducts talent point. Cross-path emergent effect (Death Pact) fires on minion death event.
+
+### 7d — New Spells
+- [ ] **Nova Burst**: player-centered radial AOE. Expanding torus VFX (animated from radius 0 → 30u over 1.2s, opacity 1→0). Damages all non-recruited entities in 30u radius. 15s cooldown. Unlock: Arcanist apex, or via Grimoire in the Observatory floor.
+- [ ] **Mass Animate**: selects all dead-enemy markers in scene; each reforms as a temporary skeletal minion (30s timer, grey/bone colour, beyond normal party limit). VFX: spiral of white particles rises from each corpse. Gate: Conductor path tier 2.
+- [ ] **Void Rift**: targeted placement (cursor aim); 2u radius stationary DoT zone for 8s; enemies inside take 3 dmg/s + 30% slow. Warlock path.
+- [ ] **Battle Hymn**: aura buff for 12s — all recruited minions deal +50% damage and move 25% faster. Glowing gold ring aura around player during effect. Conductor apex.
+- [ ] **Chain Arc**: lightning bolt that bounces to up to 4 enemies within 5u of each other; each bounce deals −15% of previous hit. Arcanist mid-tier.
+- [ ] **Reconstruct** and **Fortify** (see Phase 10d — defined here, stubbed for Phase 10 physics integration).
+- [ ] Add all new spells to `SpellBook.ts` descriptions, `SpellSystem.ts` dispatch, and `HUD.ts` cooldown tracking.
+
+**Tests:** Nova Burst hits all within 30u; none outside. Mass Animate spawns correct count; all auto-expire at 30s. Void Rift DoT ticks at correct interval. Chain Arc bounce count capped at 4.
+
+### 7e — Resource Gathering & Economy
+- [ ] Procedural resource nodes in `OverworldScene.ts`: **ore veins** (grey shimmering pebble clusters, ~12 per map), **timber logs** (felled-tree stump mesh, ~10 per map), **essence blossoms** (glowing flower spheres, ~8 per map). All positioned via Poisson-disk to avoid clustering.
+- [ ] `[E]` near a node: starts a 1.5s circular progress ring (HTML element). Interrupts on movement. On complete: harvest. Cunning stat applies `Math.ceil(baseYield × (1 + cunning × 0.1))` multiplier.
+- [ ] `src/core/Inventory.ts`: tracks `gold`, `ore`, `timber`, `essence` as integers. `add(type, n)`, `spend(type, n): boolean` (returns false without deducting if insufficient), `toJSON/fromJSON`, persisted to localStorage.
+- [ ] HUD resource strip: 4 small icons + counts in bottom-left, below spell bar.
+- [ ] Node respawn: 180s real-time per node (tracked in `OverworldScene`); respawned nodes re-render mesh.
+
+**Tests:** Harvest increments inventory. Spend decrements. Overspend returns false without change. Cunning multiplier applies. Respawn timer tracked per node index.
+
+### 7f — Crafting Systems
+- [ ] Research and document recipe format for all 4 station types in ARCHITECTURE.md before coding.
+- [ ] **Alchemy Station** (`[E]` at cauldron fixture): 3 ingredient slots; `Brew` triggers 3s cauldron animation (colour-swirling material + bubble particles); produces 1 potion. 20 defined recipes + mystery fallback (random benign/harmful, seeded by attempt index).
+- [ ] **Forge** (`[E]` at forge fixture): ore + recipe card (found as loot) → equipment token. Tokens: equip up to 2; each passively modifies a stat (+5 Power, +3 Attunement, etc.).
+- [ ] **Enchanting Table** (upgraded lectern): apply crafted essence → spell modifier chip. Chips attach to a spell slot and add a suffix effect (e.g. "Blazing" adds fire DoT 2 dmg/s 3s; "Seeking" adds mild homing).
+- [ ] **Blueprint Crafting** (Construction Mode `[B]` in base building): timber + ore → structure blueprint consumed on placement.
+- [ ] `src/interactables/CraftingUI.ts`: shared panel UI used by all station types. Station type determines which recipe list is shown; ingredient slots; Craft button + result preview tooltip.
+
+**Tests:** Known recipe → correct output. Missing ingredient → button disabled, no deduction. Mystery potion outcome deterministic per attempt seed. Equipment token applies stat delta. Enchant chip serialises to save.
+
+### 7g — Base Building (Lite)
+- [ ] Raise `PartyManager` hard cap to **20**.
+- [ ] **Construction Mode** (`[B]` key, exterior only): enter ghost-placement overlay; radial structure menu (4 options); ghost mesh follows cursor (snapped to terrain grid); `[LClick]` places (deducts resources); `[Esc]` exits mode.
+- [ ] **4 buildable structures**:
+  - **Barrier Wall** (timber×3): 3u tall solid wall; blocks enemy pathing. Destructible in Phase 10.
+  - **Watch Perch** (timber×2 + ore×1): assign minion via `[E]` → minion enters `guard` state; gains +4 aggro range; attacks with thrown rocks (2 dmg, 3s cooldown, small projectile mesh).
+  - **Healing Fountain** (ore×4): pulsing blue-white glow orb; emits 1 HP/5s aura in 5u radius for player + minions within range.
+  - **Ward Stone** (essence×3): repels non-player non-recruited entities from a 4u radius (pathing avoidance flag).
+- [ ] `src/scene/BaseScene.ts`: persistent structure list serialised to localStorage; structures rendered on load.
+- [ ] Minion guard command: look at Watch Perch + `[E]` → nearest available minion walks to perch, enters `guard` FSM state (stops following player).
+
+**Tests:** Placement deducts resources. Insufficient resources → placement blocked. Structure list persists across scene reload. Minion in `guard` state does not run follow AI.
+
+### 7h — Performance Pass
+- [ ] Profile 100-minion scenario (Chrome DevTools Performance tab); identify top bottleneck.
+- [ ] Migrate all slime body meshes to `THREE.InstancedMesh` (one draw call for all bodies).
+- [ ] `src/core/SpatialHash.ts`: uniform grid spatial hash; `insert(entity)`, `queryRadius(pos, r): Entity[]`. Replace O(n²) distance scans in follower aggro loop.
+- [ ] Physics simplification: only simulate full KCC for minions within 30u of player; distant minions use simple kinematic steering (velocity only, no Rapier KCC).
+- [ ] Particle budget: max 512 active particles; oldest recycled when limit hit.
+
+**Tests:** Spatial hash query returns identical result to brute-force scan (verified across 100 random layouts). Load test: 100 simultaneous minions active for 10s — assert no crash; target ≥30fps median.
 
 ---
 
-## Phase 7.5: Massively improve the procedurally generated assets and textures ll across the board and make new assets to make the world come alive much more
-- [ ] web research on best practices and support libraries etc for this if any
-- [ ] More assets of all kinds
-
-- [ ] From previous task plan this phase task out and its tests
-- [ ] Procedural character generation on modular base, we want to be able to have a charactert creation screen working with such an implementation and using 
-
+**Phase 7 Playtest:**  
+Reach level 10. Spend stat points. Buy 5 talent nodes across ≥2 paths; trigger one cross-path node. Gather all 3 resource types. Craft a potion + one equipment token. Build a Watch Perch and assign a minion. Achieve 20-minion party. Cast Nova Burst on a horde — all 15 must die. Confirm ≥30fps throughout.
 
 ---
 
-## Phase 8: Asset improvements & The Final Boss
+## Phase 7.5: Procedural Visual Quality — Making the World Come Alive
 
-**Goal:** Turn the "greybox" into a finished game.
+**Goal:** Dramatically improve visual fidelity using only procedural geometry, shaders, and canvas-generated textures — no external asset files. The world should feel alive and handcrafted despite being entirely code-generated.
 
-**Tasks:**
-- [ ] Day night system and time (research, libraries if any and implementation)
-- [ ] various types of weather etc (research, libraries if any and implementation)
-- [ ] Seasons and calendar (research, libraries if any and implementation)
-- [ ] gardening and hermlism system and harvesting etc (research, libraries if any and implementation)
-- [ ] potion making system (research, libraries if any and implementation)
-- [ ] alchemy system (research, libraries if any and implementation)
-- [ ] Audio: Web Audio API — ambient, footsteps, spell SFX, impact sounds.
-- [ ] UI polish: styled HTML/CSS to match final art style.
-- [ ] Final boss room: hand-crafted blueprint, scripted encounter, victory sequence.
-- [ ] Memory leak audit: profile scene transitions, ensure geometry/material disposal is correct.
-- [ ] End-to-end playtest & bug fix sprint.
+### 7.5a — Research & Planning Sprint
+- [ ] Survey Three.js material options: `MeshLambertMaterial` (current) vs `MeshStandardMaterial` (PBR, roughness/metalness) vs `MeshPhysicalMaterial` (clearcoat/transmission) vs custom `ShaderMaterial`. Benchmark frame-time cost of each upgrade path.
+- [ ] Research canvas-based procedural texture generation (`OffscreenCanvas` 256×256 → `THREE.CanvasTexture`) for: stone, wood grain, moss, cloth, and sky.
+- [ ] Evaluate `THREE.EffectComposer` post-processing passes (bloom on emissives, subtle vignette, film grain). Gate behind a settings toggle — off by default for performance.
+- [ ] Compile findings + upgrade plan into ARCHITECTURE.md visual section.
 
-**Tests:**
-- Asset loading: no memory leak on 10 consecutive scene transitions (heap measured before/after).
-- Animation blending: transitions between all animation states play without popping.
-- Boss encounter: scripted events fire in correct order; cannot be skipped.
+### 7.5b — Material System Overhaul
+- [ ] `src/rendering/MaterialLibrary.ts`: singleton factory — `MaterialLibrary.get('stone_wall')` returns a cached instance. All game code calls this instead of inline `new THREE.Mesh*Material`.
+- [ ] Upgrade interior wall/floor/pillar materials to `MeshStandardMaterial` (roughness 0.85, metalness 0.05 for stone; roughness 0.7, metalness 0.0 for wood).
+- [ ] **Procedural stone texture** (OffscreenCanvas 256×256): Voronoi-ish cell boundaries drawn as dark cracks on a mid-grey base; random hue ±5° per cell; output as `CanvasTexture` used as `map`.
+- [ ] **Procedural wood grain** (OffscreenCanvas 256×256): stacked sine-wave stripes + circular knot rings; warm brown palette.
+- [ ] **Moss overlay**: second canvas pass with stipple green spots; intensity controlled by `moistness` param (higher for lower floors + greenhouse).
+- [ ] **Emissive rune glyphs**: cauldron + lectern get an `emissiveMap` canvas with procedurally drawn angular rune shapes (jagged polylines), colour-tinted per fixture type.
 
-**Playtest 8:**
-Full end-to-end speedrun. Observe all 8 phases' content. End with the defeat of the Wizard Captor. The final boss fight should feel intentionally anticlimactic.
+### 7.5c — Dynamic Lighting Upgrade
+- [ ] `src/rendering/LightingSystem.ts`: manages all dynamic light creation/update/disposal. Register lights by type (torch, ambient, spell, boss).
+- [ ] Replace flat ambient with `THREE.HemisphereLight` (warm sky / cool ground split) + `THREE.DirectionalLight` per scene.
+- [ ] Per-room torch `THREE.PointLight` (intensity 1.2, distance 8, decay 2): positioned at each torch fixture; flicker via `sin(t × flickerFreq + phaseOffset) × 0.18` where freq and phase are per-torch values from mulberry32.
+- [ ] Spell-cast light pulse: on any cast, spawn `PointLight` at origin, decay intensity 2→0 over 0.4s. Color = spell's visual color.
+- [ ] Scene ambiance presets: dungeon = dim orange; library = warm amber; observatory = cold blue-white; exterior night = near-black + moonblue; greenhouse = soft green.
+- [ ] `EffectComposer` (optional toggle): bloom on emissive surfaces + vignette pass. Off by default.
+
+### 7.5d — Particle System
+- [ ] `src/rendering/ParticleSystem.ts`: pooled `THREE.Points` emitter. `emit(config: ParticleConfig)` — position, velocity spread (cone angle + speed), color (start/end), lifetime, size. Pool capped at 1 024 particles; oldest recycled.
+- [ ] Spell trail: active projectile emits 12 particles/frame behind it; size 0.04; lifetime 0.3s.
+- [ ] Hit burst: 20 spark particles at collision point; velocity radial outward; color = spell color.
+- [ ] Slime death dissolve: 40 green droplets explode outward; gravity 4 u/s²; fade over 0.8s.
+- [ ] Ambient room dust: 200 very slow motes (velocity ≈0.02 u/s random) per interior room; alpha 0.15.
+- [ ] Torch fire: 8 orange/yellow rising particles per torch per frame; lifetime 0.5s, upward drift.
+
+### 7.5e — Character & Enemy Visual Polish
+- [ ] `src/rendering/CharacterBuilder.ts`: modular mesh-layering system. Character = base body capsule + separate head geometry + arm segments + optional accessory slots. Each segment has its own `MaterialLibrary` entry.
+- [ ] **Character Creation Screen** (Main Menu → New Game): adjust body proportions (height scale, width slider), head shape (round / angular / elongated — different `SphereGeometry` detail params), skin color (HSL picker → MaterialLibrary hue), robe color, hair (procedural spline curves as `TubeGeometry` from scalp control points).
+- [ ] **Slime personality variants**: `bold` = two small spike `ConeGeometry` protrusions; `gentle` = slightly translucent material (opacity 0.85) + softer pastel; `curious` = two small extra eye-sphere bulges on the body surface; `lonely` = darker hue + thin dragging tendril `TubeGeometry`.
+- [ ] Enemy biome tinting: slimes in bog = muddy brown lerp; forest = mossy green; highlands = grey-blue. Applied in `SlimeEnemy` based on spawn biome tag from `OverworldScene`.
+
+### 7.5f — Environment & Sky
+- [ ] **Procedural skybox** (`THREE.SphereGeometry` large inverted): canvas-drawn sky dome — gradient `#0a0018` to `#000008`; 800 seeded star points (mulberry32) of varying brightness; per-star twinkle via `sin(t × freq + phase)` where freq/phase seeded per star index.
+- [ ] **Moon billboard**: procedural canvas circle with crater pockmarks (dark filled arcs); rendered as `PlaneGeometry` that always faces camera (`mesh.lookAt(camera.position)` each frame).
+- [ ] **Foliage sway shader**: trees use `ShaderMaterial` with uniform `uTime`; vertex X/Z offset += `sin(uTime × 0.8 + worldPos.x × 0.4) × 0.06` for vertices above a height threshold.
+- [ ] **Fog system**: `THREE.FogExp2` configured per scene — thick in bog (density 0.08), thin in highlands (0.02), interior dungeon = ground fog only (low far-plane adjustment), none in library/observatory.
+- [ ] **Water shader** (bog biome patches): `ShaderMaterial` — scrolling UV `sin/cos` distortion + fresnel rim highlight + dark reflective colour.
+
+**Phase 7.5 Tests:**
+- `MaterialLibrary.get('stone_wall')` twice → same object reference (singleton).
+- Particle pool: emitting 1025 particles recycles oldest, no crash, pool.length stays at 1024.
+- Sky stars: positions deterministic — same seed produces identical star positions on two runs.
+- Foliage shader: GLSL compiles without error; mesh appears in render (visual assertion).
+
+**Phase 7.5 Playtest:**  
+Walk through all 11 tower floors, greenhouse, and all 3 exterior biomes. Every surface must have visible texture detail. Torches flicker visibly. Spell casts leave a light trace. Slime deaths produce satisfying particle bursts. Character creation screen must show live preview of all adjustments.
 
 ---
 
-## Phase 9: Amazing custom spell craftingh system
+## Phase 8: The Living World
 
-**Goal:** Create a spell crafting system that enables seemingly endless various of spells that can also be procedurally generated
+**Goal:** Add time, weather, seasons, biological systems (gardening, herbalism, alchemy), procedural audio, and a final boss. Turn the world from a backdrop into something that breathes.
 
-**Tasks:**
-- [ ] web research on best practices and support libraries etc for this if any and plan the rest of the tasks and test and update this todo.md then implement accordingly.
+### 8a — Time System & Day/Night Cycle
+- [ ] Research Three.js sun-position techniques and benchmark dynamic `DirectionalLight` shadow map performance. Decide shadow map resolution (512 or 1024) or baked-only approach.
+- [ ] `src/world/TimeSystem.ts`: game clock (1 real second = 2 in-game minutes, configurable in settings). Broadcasts `'timeOfDay'` event each in-game hour. Persisted to localStorage.
+- [ ] `THREE.DirectionalLight` angle tracks in-game hour: sunrise at hour 6, noon at 12, sunset at 18, midnight at 0. Smooth per-frame interpolation.
+- [ ] Sky/ambient color lerps through: dawn (orange-pink), noon (white), dusk (coral-purple), midnight (deep blue-black). `HemisphereLight` sky/ground colors also lerp.
+- [ ] Stars + moon appear from hour 19; fade at hour 5.
+- [ ] HUD clock widget: small top-right display showing in-game hour + sun/moon icon. Tooltip on hover: current date from Calendar.
+
+### 8b — Weather System
+- [ ] `src/world/WeatherSystem.ts`: FSM — Clear → Cloudy → Rain → Storm → Clear. Probabilistic transitions per in-game hour; seed derived from in-game day number so weather is consistent per day.
+- [ ] **Rain**: `THREE.Points` sheet (2000 particles, downward velocity 18 u/s, cylindrical spawn volume around player R=30). Render as thin white streaks (set `size` small, `sizeAttenuation` false).
+- [ ] **Fog**: `FogExp2` density lerp to 0.12 during heavy rain/storm.
+- [ ] **Storm**: lightning flash (white `DirectionalLight` spike 0→3→0 over 0.08s + screen white `HTMLElement` overlay flash); thunder (low-freq oscillator burst via AudioSystem, 1–4s delay after flash).
+- [ ] **Wind**: uniform `uWind` in foliage shader increases during storm; rain particle velocity gains X component.
+- [ ] Non-cosmetic effects: rain reduces outdoor torch intensity to 0.3; storm combat grants +10% XP (adrenaline bonus).
+
+### 8c — Seasons & Calendar
+- [ ] `src/world/Calendar.ts`: 30 in-game days per month, 4 seasons (Spring/Summer/Autumn/Winter), 12 months = 1 in-game year. Display: `{ season, month, day }`. Persisted to localStorage.
+- [ ] Season visual effects: foliage vertex color lerps (Spring = bright green, Summer = deep green, Autumn = orange/red/yellow random per tree, Winter = bare grey + snow-white accumulation on top surfaces).
+- [ ] Season gameplay effects: herbalism yield modifier (+50% Spring, normal Summer, ×2 rare herb chance in Autumn, −75% Winter); day length (Summer 16h day, Winter 8h day).
+- [ ] Season/date display in pause menu sidebar.
+
+### 8d — Gardening & Herbalism
+- [ ] `src/interactables/GardenPlot.ts`: placeable 2×2 dirt patch (base building, costs ore×1). Holds 4 plant slots. Persisted in `BaseScene` structure list.
+- [ ] 4 plant growth stages: Seed → Sprout → Mature → Withered. Advances one stage per N in-game days (varies per plant). Mesh grows per stage (scale lerp).
+- [ ] `[E]` when Mature → harvest (add to Inventory). Past-peak → withers (yields nothing).
+- [ ] **8 plant types**: Brightleaf (→ essence), Ironroot (→ ore supplement), Voidcap (Warlock DoT component), Flameblossom (fire spell amplifier chip), Coldmoss (frost effect component), Hearthweed (instant 15 HP restore consumable), Whispergrass (10s stealth buff — nearby enemies lose aggro), Glowpetal (portable light-source item, 60s glow aura).
+- [ ] Greenhouse interior auto-contains 4 pre-built garden plots on first entry (seeded from greenhouse seed).
+
+### 8e — Potion Making & Alchemy
+- [ ] `src/interactables/AlchemyStation.ts`: full crafting UI at cauldron (see 7f for shared `CraftingUI`). 3 ingredient slots; `Brew` triggers 3s cauldron animation; produces 1 potion token added to Inventory.
+- [ ] 20 defined recipes + mystery fallback table (unknown combo → `mystery_potion`, effect seeded per attempt for determinism).
+- [ ] **Potion effects** (sample): instant +30 HP, +50% speed 15s, 5s invulnerability, minion berserk 30s (+100% damage), XP double 60s, growth accelerant (plant advances 1 stage), ore→essence transmutation (×5), stealth 20s, full HP restore (expensive recipe), plus several mystery side-effects.
+- [ ] Potion inventory: carry up to 6. `[Q]` drinks equipped (first slot) potion. HUD shows potion slot with count. Slot cycles on Shift+Q.
+
+### 8f — Audio System
+- [ ] `src/audio/AudioSystem.ts`: Web Audio API singleton. Gain nodes per category: `music`, `sfx`, `ambient`, `ui`. Categories independently controllable by Settings sliders (already wired up in Settings modal — now functional).
+- [ ] **Procedural ambient tones**: interior dungeon = deep sine drone (80Hz, slow tremolo); library = warm chord (harmonics of 220Hz); exterior = layered wind noise (filtered white noise with LFO cutoff sweep); greenhouse = airier open-fifth chord.
+- [ ] **Footstep rhythm**: `AudioSystem.footstep(surface)` — short staccato click generated from decaying sine burst; pitch-shifted by surface type (stone +0, wood +200c, grass −300c).
+- [ ] **Spell SFX**: magic bolt = brief high ping (3000Hz → 6000Hz sweep 0.1s); flame dart = FM-synthesised crackle; Nova Burst = deep 60Hz boom + rising harmonic sweep 0.6s; Void Rift = low-pass filtered noise swell.
+- [ ] **Combat**: melee impact = mid thud (filtered noise 200–800Hz, 0.08s); slime death = wet pop (noise burst through resonant filter, 0.12s).
+- [ ] **Procedural generative music**: layered sine arpeggios (minor pentatonic scale, root varies by floor depth); notes trigger on a slow clock (every 2–4s per layer); new notes fade in, old fade out. Evolves over time without looping.
+- [ ] Settings sliders for master/music/sfx/ambient now update `AudioSystem` gain nodes in real time.
+
+### 8g — UI & HUD Polish Pass
+- [ ] Shared CSS custom properties file (`src/styles/theme.css`): `--panel-bg`, `--border-glow`, `--font-primary`, `--accent-purple`, `--accent-gold`. All overlay panels import and use these.
+- [ ] Spell bar: equip flash animation (brief rune-seal expanding ring); cast drain pulse (slot dims then refills); cooldown sweep overlay (conic-gradient progress).
+- [ ] **Floating damage numbers**: world→screen projection (same technique as taming reaction text); colour-coded by damage type (white physical, orange fire, blue ice, purple void).
+- [ ] Boss health bar: wide centered bar that fades in at encounter start; segmented at phase boundaries (50% and 25% markers); pulses red when boss enters a new phase.
+- [ ] Memory leak audit: `dispose()` on all `Geometry`, `Material`, `Texture` on scene unload. Profile heap before/after 10 scene transitions (Chrome memory snapshot).
+
+### 8h — Final Boss Encounter
+- [ ] Hand-craft final boss room blueprint (top of tower or sealed room unlocked by collecting 3 floor key items).
+- [ ] `src/enemy/WizardBoss.ts`: multi-phase FSM.
+  - **Phase 1** (full HP): teleport strikes — blinks to random position, fires magic bolt barrage.
+  - **Phase 2** (≤50% HP): summons temporary slime minions (8 per wave, 2 waves); AOE circle patterns.
+  - **Phase 3** (≤25% HP): desperate barrage (rapid-fire bolts from all 4 cardinal directions); 3s vulnerability window between volleys.
+- [ ] Scripted moments: camera pan on room entry (2s cinematic); short dialogue text overlay at phase transitions; death sequence (slow dissolve + particle explosion + screen fade).
+- [ ] Victory sequence: portal appears at room center; entering it triggers credits-style scrolling overlay, then returns to main menu.
+- [ ] With 20 minions + high talent investment, the boss should fall embarrassingly quickly — that's the power fantasy payoff.
+
+**Phase 8 Tests:**
+- Time: in-game hour advances at correct real-time rate; ambient color at hour 6 is in dawn-orange HSL range.
+- Weather: seeded day-weather transitions match expected FSM path over 30-day simulation.
+- Alchemy: 5 known recipes produce correct output tokens; unknown combo falls back to mystery table.
+- AudioSystem: `gainNode.gain.value` responds to volume slider change within one frame.
+- Boss FSM: phase transitions fire at correct HP thresholds; scripted events cannot be skipped by fast damage.
+
+**Phase 8 Playtest:**  
+Full end-to-end: new game → tower → overworld → gather resources → garden → brew 3 potions → 20-minion army → all talent paths sampled → Nova Burst horde wipe → Final Boss. Observe dawn/dusk transition and one full rain storm. Boss should feel epic then anticlimactic.
+
+---
+
+## Phase 9: Emergent Spell Crafting
+
+**Goal:** A modular spell assembly system enabling thousands of combinatorially unique spells — some procedurally generated, some player-crafted. Spells become the primary creative expression of the game.
+
+### 9a — Research & Design
+- [ ] Research spell crafting systems: Magicka's combinatorial casting, Noita's spell modification chain, Arcanist's per-spell modifier approach. Document what makes each fun vs frustrating.
+- [ ] Design component taxonomy: **Delivery** × **Effect** × **Modifier** × **Visual** = spell. Define how interactions resolve (valid, clamped, emergent bonus, forbidden).
+- [ ] Define balance constraints: each component has a `manaCost` and `craftCost` (materials); total spell cost = sum + interaction modifiers. Max total budget per spell = 100 mana.
+- [ ] Write full component registry spec in ARCHITECTURE.md before writing code.
+
+### 9b — Component System
+- [ ] `src/spells/SpellComponent.ts`: `interface SpellComponent { id, category, manaCost, craftCost, apply(context): void, visualConfig }`.
+- [ ] **Delivery**: Projectile, Beam, Nova (centered AOE), Touch (melee range), Totem (stationary emitter 8s), Chain (auto-bounces to nearby enemy).
+- [ ] **Effect**: Damage (physical/fire/ice/void/nature/lightning subtypes), Heal (self or targeted ally), DoT (tick rate + duration), Stun (duration), Slow, Push (impulse), Pull, Transmute (type-change on enemy for 5s — changes their colour and vulnerability).
+- [ ] **Modifier**: Multishot (×2–5), Bounce (≤4 ricochets), Delay (fuse timer), SizeGrow (radius expands over duration), Penetrate (pass through enemies), Homing (gentle tracking), Echo (re-fires at 50% power 0.5s later), Linger (DoT zone left on impact).
+- [ ] **Visual** (cosmetic + minor flavor): Flame, Frost, Arcane, Void, Nature, Lightning. Each sets the projectile color, particle system config, and impact sound category.
+- [ ] Interaction rules table: valid combos → apply normally; emergent combos → bonus modifier applied (e.g. Projectile+Bounce+Homing = "Seeking" tag +20 mana); forbidden combos (Nova+Bounce) → silently drop Bounce.
+
+### 9c — Spell Forge UI
+- [ ] `src/ui/SpellForge.ts`: assembly workspace overlay (`[F]` key, requires Arcanist or Artificer tier 1). Left panel: component library (unlocked components only). Center: assembly frame — 1 Delivery slot + up to 3 Effect slots + up to 3 Modifier slots + 1 Visual slot. Right panel: live preview — generated name, stat block, mana cost, craft cost, effect description.
+- [ ] **Procedural name generator**: delivery adjective (`Seeking`, `Erupting`, `Whispering`) + effect noun (`Bolt`, `Rift`, `Cascade`, `Tendril`) + modifier flavor (`of Echoes`, `of the Void`, `Eternal`) + visual suffix (`Flame`, `Frost`, `Arcane`). Table-driven; deterministic per component combination.
+- [ ] Save up to 12 custom spells (`SpellForge` saves to `ProgressionSystem` custom spell list). Any custom spell assignable to bar via Grimoire.
+- [ ] Validation: assembly frame rejects invalid combos with a red flash + tooltip explaining why.
+
+### 9d — Procedural Spell Generation
+- [ ] `src/spells/SpellGenerator.ts`: `generateRandom(seed, rarity: 'common'|'rare'|'legendary'): SpellDef`. Picks valid component combinations within rarity's budget (Common ≤ 40 mana, Rare ≤ 70, Legendary ≤ 100) using mulberry32 seeded selection.
+- [ ] **Spell scroll drops**: enemies have a kill-based drop chance (Common 3%, Rare 0.5%, Legendary 0.05%); chance multiplied by enemy level. Drop spawns a scroll pickup entity in the scene. `[E]` to collect → spell added to custom list.
+- [ ] **3 hidden Legendary spells**: each requires a specific talent node combination + specific components assembled. Easter-egg discovery system — a faint shimmer effect appears in the Forge when you're one component away.
+
+### 9e — Talent Integration
+- [ ] Talent nodes unlock components (Warlock tier 2 → DoT + Void visual; Conductor apex → Totem delivery; Arcanist Precision → Penetrate + Homing; Blade Dancer mid → Touch + Push; Artificer → Linger + Totem).
+- [ ] Cross-path node "Void Weave" passive: all player-cast spells automatically gain a free Void Mark DoT modifier (Warlock + Arcanist junction).
+- [ ] Apothecary apex "Grand Elixir" reuses the Spell Forge's `SpellGenerator` internally to produce a uniquely named potion each in-game day.
+
+**Phase 9 Tests:**
+- Valid combo: mana cost = sum of components + interaction bonus (verified for 10 combos).
+- Invalid combo: forbidden pair silently drops extra component; no crash; spell still functional.
+- Name generator: deterministic per component set; no empty strings; no duplicates in 1000-seed run.
+- `generateRandom`: all rarity tiers produce spells within their budget across 500-seed sweep.
+- Scroll drop: kill event triggers drop at correct probability (mocked RNG).
+
+**Phase 9 Playtest:**  
+Craft 5 custom spells, at least one from each major delivery type. Fire all in combat. Kill enemies until a scroll drops. Collect it. Confirm a Legendary spell triggers its easter-egg shimmer in the Forge when prerequisites met. Equip 4 custom spells to bar and clear a dungeon floor.
+
+---
+
+## Phase 10: The Destructible World
+
+**Goal:** Break the environment with spells. Rebuild it tactically. Fight massive clan battles as walls shatter and debris flies. Physics-based destruction with satisfying VFX and strict performance guardrails.
+
+### 10a — Destructible Tile Architecture
+- [ ] Add `"destructible": true` flag + `"hp": number` to blueprint wall/prop entity schema.
+- [ ] `src/world/DestructibleTile.ts`: tracks current HP; damage API; shard geometry cache per tile-type key.
+- [ ] **Shard geometry generation**: at scene load, for each destructible tile type generate 4–8 convex-fragment geometries via 3D Voronoi cell splitting of the tile's bounding box (implemented procedurally — mulberry32 seeded per tile-type key, no external library). Cache result; reuse across all instances of the same type.
+- [ ] **Damage-state visuals**: at 50% HP, overlay a `LineSegments` crack pattern on the tile face (procedural jagged polyline seeded by world position hash). Crack intensity increases toward 0 HP.
+- [ ] Tile damage sources: melee attack, spell projectile impact, Nova Burst radius, Clan Battle explosions.
+
+### 10b — Physics Debris System
+- [ ] `src/world/DebrisSystem.ts`: fixed object pool of **64** `{ rigidBody: RapierRigidBody, mesh: THREE.Mesh, timeLeft: number, active: boolean }` pairs. No allocation at runtime.
+- [ ] `spawn(position, shardGeometry, material, velocityImpulse)`: claims next inactive slot; sets body translation + velocity; starts `timeLeft` at 4.0s. If pool exhausted → silently skips. No crash.
+- [ ] On tile HP → 0: spawn 4–8 shard debris entries from tile center with mulberry32-seeded radial velocity impulses (speed 3–10 u/s, upward component 2–6 u/s).
+- [ ] Lifetime: `timeLeft` decrements each frame; at 2.0s remaining, `mesh.material.opacity` lerps 1→0 (transparent `MeshStandardMaterial`). At 0 → return to pool (set inactive, remove mesh from scene, reset body).
+- [ ] Shards collide with terrain via dynamic Rapier `RigidBody` + convex-hull `Collider`; bounce and settle naturally.
+
+### 10c — Destruction VFX
+- [ ] **Shockwave ring**: `THREE.RingGeometry` centered on destroyed tile; expands at 8 u/s for 0.3s; opacity 1→0; color = tile material tinted orange. Disposed after animation.
+- [ ] **Dust cloud**: expanding `THREE.SphereGeometry` mesh; `MeshBasicMaterial` opacity 0.6→0 over 0.5s; scale 0.2→2.0 over 0.5s.
+- [ ] **Screen shake**: `cameraRig` offset by random-direction impulse (max 0.3 units); decays exponentially (`shake × 0.85` per frame) over ~0.3s. Magnitude proportional to tile HP (bigger tiles = bigger shake).
+- [ ] **Spell-flavored destruction**: fire → orange+red ring + flame particles; ice → blue ring + crystalline spike particles (thin `CylinderGeometry` shards ejected outward); void → implosion (ring shrinks inward) then deferred outward debris; physical → plain grey dust.
+- [ ] AudioSystem: tile destruction plays impact crack SFX; large tile (wall) plays low rumble underneath.
+
+### 10d — Reconstruction Spells
+- [ ] **Reconstruct** (Phase 7d stub, now fully implemented): aim at broken tile site `[RClick]`; hold 2s cast bar; site glows white; shards fly back to origin and merge (physics bodies disabled, mesh scales+translates back, then tile entity restored). Costs `ore×1`.
+- [ ] **Fortify** variant: same cast, but reconstructed tile spawns with ×2 HP and a darker metallic material. Costs `ore×3`. Only available with Artificer tier 2.
+- [ ] Broken tile sites stored as `{ position, type, broken: true }` in scene structure list (persisted). Reconstruction removes the `broken` flag.
+- [ ] Tactical use: destroy a wall to create a passage → herd enemies through → reconstruct to trap them → Nova Burst.
+
+### 10e — Clan Battle Scenarios
+- [ ] `src/world/ClanBattle.ts`: triggered when player enters a clan camp marker (already in `OverworldScene`). Spawns **8–16 clan slimes** (mixed personalities, 2–4 with leader-tier stats: ×1.5 HP and damage). Clan enemies are flagged `clan` — they never flee; fight until dead.
+- [ ] Battle arena: procedurally generated outdoor clearing (40×40 unit zone); scattered 6–12 destructible boulder and barrier-wall props.
+- [ ] Player minions engage automatically via existing follower aggro AI (no new code needed for combat).
+- [ ] Battle-end condition: all clan enemies dead → victory reward (XP bonus + 3–6 ore/timber/essence + scroll drop chance). Player death → respawn at tower entrance, camp resets.
+- [ ] Clan camp respawn: 5 in-game days after defeat.
+- [ ] **Stress test target**: 20 player minions vs 16 clan enemies + 64 debris shards active → must maintain ≥30fps.
+
+### 10f — Terrain Deformation (Stretch Goal)
+- [ ] Nova Burst leaves a persistent crater: on detonation, depress terrain `BufferGeometry` vertices within 4u of impact center by 0.4 units; smooth edges (weighted average of neighbors); recompute normals.
+- [ ] Craters are cosmetic only (collision is the flat Rapier ground plane — unchanged).
+- [ ] Up to 8 craters persist per session; 9th overwrites oldest (ring buffer). Reset on new game.
+- [ ] Each crater has a subtle dark-scorched vertex-color tint radiating outward.
+
+**Phase 10 Tests:**
+- Destructible tile: HP reduces correctly on damage; shard spawn on HP=0 (4–8 shards).
+- Debris pool: pool of 64 — spawning 65 skips without crash; pool.activeCount never exceeds 64.
+- Shard lifetime: at `timeLeft=2.0` opacity begins decaying; at `timeLeft=0` slot returns to pool and mesh is removed from scene.
+- Reconstruct: broken site restored to full HP; `broken` flag cleared in structure list.
+- Fortify: HP exactly 2× base tile HP; material metalness elevated.
+- Clan battle: spawns in range [8, 16]; ends condition fires correctly; rewards granted exactly once.
+- Stress test: 20+16 entities + 64 shards simultaneously active — no crash, no pool overflow, assert ≥30fps median.
+
+**Phase 10 Playtest:**  
+Find a clan camp. Engage with 15+ minions. Fire Nova Burst — walls and boulders must visibly shatter, craters appear in terrain. Use Reconstruct to seal off a side passage trapping 3 enemies; use Fortify on a crumbling wall. Watch debris settle. Confirm ≥30fps throughout. Observe spell-flavored destruction differences between fire, ice, and void spells on destructibles.
 
 ---
 

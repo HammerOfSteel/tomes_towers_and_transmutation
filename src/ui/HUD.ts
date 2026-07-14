@@ -15,6 +15,18 @@ const HUD_CSS = `
   user-select: none; pointer-events: none;
 }
 
+/* ── XP bar ── */
+.hud-xp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 1px; }
+.hud-xp-fill {
+  height: 3px; width: 0%;
+  background: linear-gradient(90deg, #6644aa, #ffd43c);
+  border-radius: 1px; transition: width .4s ease;
+}
+.hud-xp-level {
+  font-family: monospace; font-size: 10px; letter-spacing: 1px;
+  color: #ffd43c; min-width: 48px;
+}
+
 /* ── HP ── */
 .hud-hp-row { display: flex; align-items: center; gap: 8px; }
 
@@ -155,6 +167,8 @@ export class HUD {
   private readonly floorText: HTMLElement;
   private readonly dodgePips: HTMLElement[];
   private readonly runEl: HTMLElement;
+  private readonly xpFill: HTMLElement;
+  private readonly xpLevelEl: HTMLElement;
   /** Bottom action-bar container */
   private readonly barRoot: HTMLElement;
   private readonly barSlots: HTMLElement[];
@@ -171,6 +185,20 @@ export class HUD {
 
     this.root = document.createElement('div');
     this.root.id = 'hud';
+
+    // ── XP bar ─────────────────────────────────────────────────────────
+    const xpRow = document.createElement('div');
+    xpRow.className = 'hud-xp-row';
+    this.xpLevelEl = document.createElement('span');
+    this.xpLevelEl.className = 'hud-xp-level';
+    this.xpLevelEl.textContent = 'Lv 1';
+    const xpTrack = document.createElement('div');
+    xpTrack.className = 'hud-track';
+    xpTrack.style.width = '80px'; xpTrack.style.height = '3px';
+    this.xpFill = document.createElement('div');
+    this.xpFill.className = 'hud-xp-fill';
+    xpTrack.appendChild(this.xpFill);
+    xpRow.append(this.xpLevelEl, xpTrack);
 
     // ── HP row ─────────────────────────────────────────────────────────
     const hpRow = document.createElement('div');
@@ -229,7 +257,7 @@ export class HUD {
     this.floorText.className = 'hud-info-text';
     infoEl.append(this.killText, this.floorText);
 
-    this.root.append(hpRow, statusRow, infoEl);
+    this.root.append(xpRow, hpRow, statusRow, infoEl);
     document.body.appendChild(this.root);
 
     // Tooltips for top-left HUD elements
@@ -301,7 +329,12 @@ export class HUD {
     dodgeReady = 1,
     isRunning = false,
     floorName?: string,
+    level = 1,
+    xpProgress = 0,
   ): void {
+    // XP bar
+    this.xpLevelEl.textContent = `Lv ${level}`;
+    this.xpFill.style.width = `${Math.round(xpProgress * 100)}%`;
     // HP bar
     const pct = Math.max(0, hp / maxHp) * 100;
     this.hpFill.style.width      = `${pct}%`;

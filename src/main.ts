@@ -26,6 +26,10 @@ import { OverworldScene } from '@/scene/OverworldScene';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
+import { TalentSystem } from '@/progression/TalentSystem';
+import { TalentTree } from '@/ui/TalentTree';
+import { StatPanel } from '@/ui/StatPanel';
+import { LevelUpBanner } from '@/ui/LevelUpBanner';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -119,6 +123,17 @@ async function main() {
 
   // ── Progression & interactables ───────────────────────────────────────────
   const progression   = new ProgressionSystem();
+  const talentSystem  = new TalentSystem();
+  const talentTree    = new TalentTree();
+  const statPanel     = new StatPanel();
+  const levelUpBanner = new LevelUpBanner();
+
+  // Fire banner + grant talent point on every level-up
+  progression.onLevelUp = (newLevel) => {
+    levelUpBanner.show(newLevel);
+    // Close stat panel if open so player sees the banner
+  };
+
   const bookReader    = new BookReader();
   const interactables = new InteractableSystem(progression, bookReader);
   const telescopeView = new TelescopeView();
@@ -208,8 +223,12 @@ async function main() {
     const plan = generateTower(currentSeed);
     sceneManager.resetCleared();
     sceneManager.loadDungeon(plan);
+    prevKillCount = 0; // reset XP kill tracker on new game
     gameLoop.start();
   }
+
+  /** XP kill tracker — grants XP for each new kill registered. */
+  let prevKillCount = 0;
 
   const mainMenu = new MainMenu({
     onPlay: () => startGame(),
@@ -261,6 +280,10 @@ async function main() {
         devPanel.close();           // close dev panel → game
       } else if (editMode.isActive) {
         editMode.toggle();          // close editor → game
+      } else if (statPanel.visible) {
+        statPanel.close();          // close stat panel → game
+      } else if (talentTree.visible) {
+        talentTree.close();         // close talent tree → game
       } else if (pauseMenu.isOpen) {
         pauseMenu.close();          // close menu → game
       } else {
@@ -268,6 +291,10 @@ async function main() {
       }
     } else if (e.key === 'k' || e.key === 'K') {
       if (!pauseMenu.isOpen && !editMode.isActive) spellBook.toggle();
+    } else if (e.key === 'p' || e.key === 'P') {
+      if (!pauseMenu.isOpen && !editMode.isActive) statPanel.toggle(progression);
+    } else if (e.key === 't' || e.key === 'T') {
+      if (!pauseMenu.isOpen && !editMode.isActive) talentTree.toggle(progression, talentSystem);
     } else if (e.key === '`' || e.key === '~') {
       if (!pauseMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
     }
@@ -532,7 +559,17 @@ async function main() {
     // 8. Camera
     cameraRig.follow(player.group.position);
 
-    // 9. HUD
+    // XP — grant 20 XP per kill tracked this frame
+    const currKillCount = sceneManager.killCount;
+    if (currKillCount > prevKillCount) {
+      progression.grantXP((currKillCount - prevKillCount) * 20);
+      prevKillCount = currKillCount;
+    }
+
+    // 9. HUD + per-frame stat sync
+    // Keep party cap in sync with Dominion stat + talent nodes
+    party.maxSize = progression.derivedPartyCap;
+
     hud.update(
       player.health.hp,
       player.health.maxHp,
@@ -544,6 +581,8 @@ async function main() {
       player.dodgeReadyFraction,
       input.state.run,
       getFloorDef(sceneManager.currentFloor)?.name,
+      progression.level,
+      progression.xpProgress,
     );
 
     // 10. Render
