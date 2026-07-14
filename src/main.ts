@@ -28,6 +28,8 @@ import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
+import { buildWorldGrid } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
@@ -97,6 +99,7 @@ async function main() {
   const sceneManager = new SceneManager(scene, physics, player);
   // Initial room load: generate the tower with a random seed.
   let currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
+  let worldGenConfig: WorldGenConfig = loadWorldGenConfig();
   const _initialPlan = generateTower(currentSeed);
   sceneManager.loadDungeon(_initialPlan);
 
@@ -108,13 +111,21 @@ async function main() {
   const party = new PartyManager(5);
   const tamingGame = new TamingGame(scene, cameraRig.camera);
 
+  function _makeOverworld(seed: number): OverworldScene {
+    // Always re-read so changes made in the Settings modal are picked up.
+    worldGenConfig = loadWorldGenConfig();
+    const cfg  = { ...worldGenConfig, seed };
+    const grid = buildWorldGrid(seed, cfg);
+    return new OverworldScene(scene, physics, player, grid, cfg);
+  }
+
   function switchToExterior(): void {
     // MUST unload dungeon first — onExitTrigger fires directly without
     // going through executeRoomSwap, so the room geometry + physics bodies
     // would otherwise stay in the scene and interfere with the overworld.
     sceneManager.unloadCurrentRoom();
     if (!overworld) {
-      overworld = new OverworldScene(scene, physics, player, currentSeed);
+      overworld = _makeOverworld(currentSeed);
     }
     gameMode = 'exterior';
     overworld.enter();
@@ -161,7 +172,7 @@ async function main() {
     // Unload interior, load exterior world for remote viewing
     sceneManager.unloadCurrentRoom();
     if (!overworld) {
-      overworld = new OverworldScene(scene, physics, player, currentSeed);
+      overworld = _makeOverworld(currentSeed);
     }
     overworld.enter();
     scene.background = new THREE.Color(0x4a6888);
@@ -409,7 +420,7 @@ async function main() {
         sceneManager.unloadCurrentRoom();
         // Always recreate so the specified seed is honoured
         if (overworld) { overworld.exit(); overworld.dispose(); overworld = null; }
-        overworld = new OverworldScene(scene, physics, player, seed);
+        overworld = _makeOverworld(seed);
         overworld.enter();
         gameMode = 'exterior';
         player.teleport(new THREE.Vector3(0, 1.5, 8));
