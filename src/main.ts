@@ -268,6 +268,7 @@ async function main() {
   const charCreation = new CharacterCreation(
     // onStart — boon was chosen, now actually start the game
     (cfg) => {
+      charCreation.hide();
       mainMenu.hide();
       startGame(undefined, cfg);
     },
