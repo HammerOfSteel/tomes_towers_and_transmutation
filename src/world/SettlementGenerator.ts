@@ -139,28 +139,43 @@ function _planVillage(
     buildings.push({ type: focalType, col: cc, row: cr, rotation: rand() * Math.PI * 2, seed: (seed ^ 0x11) >>> 0 });
   }
 
-  // Ring of cottages / occasional smithy
-  const N = 5 + Math.floor(rand() * 6);
-  const MIX: BuildingType[] = ['smithy', 'cottage', 'cottage', 'cottage', 'cottage', 'cottage', 'inn', 'cottage', 'cottage', 'cottage'];
+  // Ring of cottages / occasional smithy — generous radius so buildings don't crowd each other.
+  // Ring radius 5-7 tiles (10-14 WU center-to-center) gives ~9-13 WU between adjacent cottages.
+  const N   = 6 + Math.floor(rand() * 5);
+  const MIX: BuildingType[] = ['smithy', 'cottage', 'cottage', 'inn', 'cottage', 'cottage', 'cottage', 'market_stall', 'cottage', 'cottage', 'cottage'];
+  const baseR = 5 + Math.floor(rand() * 3);  // 5, 6, or 7 tiles
 
   for (let i = 0; i < N; i++) {
-    const angle = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.5;
-    const R     = 3 + Math.floor(rand() * 2);
-    const col   = Math.round(cc + Math.cos(angle) * R);
-    const row   = Math.round(cr + Math.sin(angle) * R);
+    const angle   = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.5;
+    const rJitter = (rand() - 0.5) * 1.2;  // slight radial variation for organic feel
+    const R       = baseR + rJitter;
+    const col     = Math.round(cc + Math.cos(angle) * R);
+    const row     = Math.round(cr + Math.sin(angle) * R);
     if (!_valid(grid, col, row)) continue;
     buildings.push({
-      type:     MIX[i] ?? 'cottage',
+      type:     MIX[i % MIX.length] ?? 'cottage',
       col, row,
-      rotation: angle + Math.PI + (rand() - 0.5) * 0.3,
+      rotation: angle + Math.PI + (rand() - 0.5) * 0.35,
       seed:     (seed ^ ((i + 1) * 0x9E37)) >>> 0,
     });
   }
 
+  // Spoke roads from center to each building
   _addSpokes(cc, cr, buildings, roads);
 
+  // Ring road connecting buildings in a circuit (village lane)
+  const roadSet = new Set<string>(roads.map(r => `${r.col},${r.row}`));
+  const bldgs   = buildings.slice(1); // skip focal feature
+  for (let i = 0; i < bldgs.length; i++) {
+    const a = bldgs[i]!, b = bldgs[(i + 1) % bldgs.length]!;
+    for (const [c, r] of _line(a.col, a.row, b.col, b.row)) {
+      const key = `${c},${r}`;
+      if (!roadSet.has(key)) { roadSet.add(key); roads.push({ col: c, row: r }); }
+    }
+  }
+
   return { type: 'village', name, centerCol: cc, centerRow: cr, buildings, roads,
-           population: 6 + Math.floor(rand() * 7) };
+           population: 8 + Math.floor(rand() * 9) };
 }
 
 // ── Town ──────────────────────────────────────────────────────────────────────
@@ -173,15 +188,20 @@ function _planTown(
   const buildings: PlacedBuilding[] = [];
   const roadSet = new Set<string>();
 
-  // Main E-W street + cross N-S street
-  const SL = 6;
+  // Main E-W street (3 tiles wide = 6 WU — feels like a real market high street)
+  const SL = 8;
   for (let i = -SL; i <= SL; i++) {
-    const c = cc + i, r = cr;
-    if (c >= 0 && c < GW) roadSet.add(`${c},${r}`);
+    for (const dr of [-1, 0, 1]) {
+      const c = cc + i, r = cr + dr;
+      if (c >= 0 && c < GW && r >= 0 && r < GH) roadSet.add(`${c},${r}`);
+    }
   }
-  for (let i = -SL + 2; i <= SL - 2; i++) {
-    const c = cc, r = cr + i;
-    if (r >= 0 && r < GH) roadSet.add(`${c},${r}`);
+  // N-S cross street (3 tiles wide)
+  for (let i = -(SL - 2); i <= SL - 2; i++) {
+    for (const dc of [-1, 0, 1]) {
+      const c = cc + dc, r = cr + i;
+      if (c >= 0 && c < GW && r >= 0 && r < GH) roadSet.add(`${c},${r}`);
+    }
   }
 
   // Central market_cross
@@ -192,17 +212,18 @@ function _planTown(
   const MIX: BuildingType[] = [
     'tavern', 'inn', 'smithy', 'market_stall', 'market_stall',
     'inn', 'cottage', 'cottage', 'cottage', 'cottage',
-    'cottage', 'cottage', 'well', 'guard_tower', 'cottage',
+    'cottage', 'well', 'guard_tower', 'cottage',
     'cottage', 'market_stall', 'cottage',
   ];
   let mi = 0;
 
-  // Buildings along E-W street, alternating sides
-  for (let step = -5; step <= 5; step += 2) {
+  // Buildings along E-W street — setback 3 tiles, spaced every 3 steps
+  // (was 2-tile setback + 2-step spacing which caused crowding)
+  for (let step = -7; step <= 7; step += 3) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
       const col = cc + step;
-      const row = cr + side * 2;
+      const row = cr + side * 3;
       if (!_valid(grid, col, row)) continue;
       buildings.push({
         type:     MIX[mi++],
@@ -213,11 +234,11 @@ function _planTown(
     }
   }
 
-  // Buildings along N-S cross street
-  for (let step = -3; step <= 3; step += 2) {
+  // Buildings along N-S cross street — setback 3 tiles, spaced every 3 steps
+  for (let step = -5; step <= 5; step += 3) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
-      const col = cc + side * 2;
+      const col = cc + side * 3;
       const row = cr + step;
       if (!_valid(grid, col, row)) continue;
       buildings.push({
@@ -232,11 +253,11 @@ function _planTown(
   const roads: RoadSegment[] = [];
   for (const key of roadSet) {
     const [c, r] = key.split(',').map(Number);
-    roads.push({ col: c, row: r });
+    roads.push({ col: c!, row: r! });
   }
 
   return { type: 'town', name, centerCol: cc, centerRow: cr, buildings, roads,
-           population: 20 + Math.floor(rand() * 21) };
+           population: 25 + Math.floor(rand() * 26) };
 }
 
 // ── City ──────────────────────────────────────────────────────────────────────
@@ -249,24 +270,38 @@ function _planCity(
   const buildings: PlacedBuilding[] = [];
   const roadSet = new Set<string>();
 
-  // Grand plaza streets (wider than town)
-  const SL = 9;
+  // Grand boulevard grid — 3-tile-wide avenues creating distinct city blocks.
+  const SL = 12;
+  // E-W main boulevard (3 tiles wide) + parallel avenues at ±4
   for (let i = -SL; i <= SL; i++) {
-    const c = cc + i;
-    if (c >= 0 && c < GW) { roadSet.add(`${c},${cr}`); roadSet.add(`${c},${cr + 3}`); roadSet.add(`${c},${cr - 3}`); }
+    for (const dr of [-1, 0, 1]) {
+      const c = cc + i;
+      if (c >= 0 && c < GW) {
+        const r0 = cr + dr; if (r0 >= 0 && r0 < GH) roadSet.add(`${c},${r0}`);
+        const r1 = cr + dr + 4; if (r1 >= 0 && r1 < GH) roadSet.add(`${c},${r1}`);
+        const r2 = cr + dr - 4; if (r2 >= 0 && r2 < GH) roadSet.add(`${c},${r2}`);
+      }
+    }
   }
+  // N-S main boulevard (3 tiles wide) + parallel avenues at ±4
   for (let i = -SL; i <= SL; i++) {
-    const r = cr + i;
-    if (r >= 0 && r < GH) { roadSet.add(`${cc},${r}`); roadSet.add(`${cc + 3},${r}`); roadSet.add(`${cc - 3},${r}`); }
+    for (const dc of [-1, 0, 1]) {
+      const r = cr + i;
+      if (r >= 0 && r < GH) {
+        const c0 = cc + dc; if (c0 >= 0 && c0 < GW) roadSet.add(`${c0},${r}`);
+        const c1 = cc + dc + 4; if (c1 >= 0 && c1 < GW) roadSet.add(`${c1},${r}`);
+        const c2 = cc + dc - 4; if (c2 >= 0 && c2 < GW) roadSet.add(`${c2},${r}`);
+      }
+    }
   }
 
   // Central city_hall
   if (_valid(grid, cc, cr)) {
     buildings.push({ type: 'city_hall', col: cc, row: cr, rotation: 0, seed: (seed ^ 0x01) >>> 0 });
   }
-  // Temple just north of city hall
-  if (_valid(grid, cc, cr - 5)) {
-    buildings.push({ type: 'temple', col: cc, row: cr - 5, rotation: 0, seed: (seed ^ 0x02) >>> 0 });
+  // Temple north of city hall with proper separation
+  if (_valid(grid, cc, cr - 8)) {
+    buildings.push({ type: 'temple', col: cc, row: cr - 8, rotation: 0, seed: (seed ^ 0x02) >>> 0 });
   }
 
   const QUADRANT_MIX: BuildingType[] = [
@@ -277,12 +312,12 @@ function _planCity(
   ];
   let mi = 0;
 
-  // 4 quadrants: pack buildings in a grid pattern
+  // 4 quadrants: generous spacing — 6+ tiles from center, 4-tile step between buildings
   for (const [qsc, qsr] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
     for (let bi = 0; bi < 5; bi++) {
       if (mi >= QUADRANT_MIX.length) break;
-      const col = cc + qsc * (4 + (bi % 3) * 2);
-      const row = cr + qsr * (4 + Math.floor(bi / 3) * 2);
+      const col = cc + qsc * (6 + (bi % 3) * 4);
+      const row = cr + qsr * (6 + Math.floor(bi / 3) * 4);
       if (!_valid(grid, col, row)) { mi++; continue; }
       buildings.push({
         type:     QUADRANT_MIX[mi++],
