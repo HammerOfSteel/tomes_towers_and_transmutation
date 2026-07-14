@@ -12,6 +12,7 @@
 import { WorldGrid } from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import { createNoise2D, fbm } from '@/core/SimplexNoise';
+import { generateHydrology } from './HydrologyGenerator';
 
 const MLV = 4;
 
@@ -63,5 +64,9 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
     }
   }
 
+  // OW-2: carve rivers into the grid
+  generateHydrology(grid, config, seed);
+
   return grid;
 }
+
