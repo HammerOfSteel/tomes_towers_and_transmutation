@@ -236,25 +236,26 @@ function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
   // ─ Legs ──────────────────────────────────────────────────────────────
   if (o.legs === 'trousers') {
     for (const s of [-1, 1] as const) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.088, 0.46, 8), sm);
-      leg.position.set(s * 0.13, -0.25, 0); torso.add(leg); ms.push(leg);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.104, 0.091, 0.50, 8), sm);
+      leg.position.set(s * 0.13, -0.22, 0); torso.add(leg); ms.push(leg);
     }
   }
   if (o.legs === 'skirt') {
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.42, 0.58, 10), sm);
-    skirt.position.y = -0.06; torso.add(skirt); ms.push(skirt);
+    // Covers waist-to-mid-thigh (hides legs — same as robe_skirt but shorter & flared)
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.48, 0.92, 10), sm);
+    skirt.position.y = 0.38; torso.add(skirt); ms.push(skirt);
   }
   if (o.legs === 'shorts') {
     for (const s of [-1, 1] as const) {
-      const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.09, 0.22, 8), sm);
-      s2.position.set(s * 0.12, -0.14, 0); torso.add(s2); ms.push(s2);
+      const s2 = new THREE.Mesh(new THREE.CylinderGeometry(0.107, 0.096, 0.28, 8), sm);
+      s2.position.set(s * 0.13, -0.06, 0); torso.add(s2); ms.push(s2);
     }
   }
   if (o.legs === 'loincloth') {
-    const front = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.28, 0.03), sm);
-    front.position.set(0, -0.19, 0.15); torso.add(front); ms.push(front);
-    const back = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.22, 0.03), sm);
-    back.position.set(0, -0.17, -0.14); torso.add(back); ms.push(back);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.03), sm);
+    front.position.set(0, -0.06, 0.17); torso.add(front); ms.push(front);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.26, 0.03), sm);
+    back.position.set(0, -0.04, -0.15); torso.add(back); ms.push(back);
   }
   if (o.legs === 'robe_skirt') {
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.52, 1.08, 10), sm);
@@ -400,10 +401,10 @@ function _quad(dna: CreatureDNA): CreatureRig {
   body.rotation.x = Math.PI / 2; torso.add(body); ms.push(body);
 
   const legDefs = [
-    { x: -0.28 * tx, z: -0.4 * tz, k: 'frontLegL' as const },
-    { x:  0.28 * tx, z: -0.4 * tz, k: 'frontLegR' as const },
-    { x: -0.28 * tx, z:  0.4 * tz, k: 'backLegL'  as const },
-    { x:  0.28 * tx, z:  0.4 * tz, k: 'backLegR'  as const },
+    { x: -0.28 * tx, z:  0.4 * tz, k: 'frontLegL' as const },
+    { x:  0.28 * tx, z:  0.4 * tz, k: 'frontLegR' as const },
+    { x: -0.28 * tx, z: -0.4 * tz, k: 'backLegL'  as const },
+    { x:  0.28 * tx, z: -0.4 * tz, k: 'backLegR'  as const },
   ];
   for (const d of legDefs) {
     const hip = new THREE.Group(); hip.position.set(d.x, -0.1, d.z);
@@ -414,7 +415,7 @@ function _quad(dna: CreatureDNA): CreatureRig {
     torso.add(hip); bones[d.k] = hip;
   }
 
-  const neck = new THREE.Group(); neck.position.set(0, 0.3, -0.5 * tz); neck.rotation.x = -0.7;
+  const neck = new THREE.Group(); neck.position.set(0, 0.3, 0.5 * tz); neck.rotation.x = -0.7;
   bones.neck = neck; torso.add(neck);
   const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.38 * p.neckLength, 8), pm);
   neckM.position.y = 0.19 * p.neckLength; neck.add(neckM); ms.push(neckM);
@@ -424,7 +425,7 @@ function _quad(dna: CreatureDNA): CreatureRig {
   const { tex, plane } = _faceplane(dna, p.headSize * 0.88); head.add(plane); ms.push(plane);
 
   if (p.tailLength > 0) {
-    const tail = new THREE.Group(); tail.position.set(0, 0.1, 0.45 * tz); tail.rotation.x = 1.0;
+    const tail = new THREE.Group(); tail.position.set(0, 0.1, -0.45 * tz); tail.rotation.x = -1.0;
     bones.tail = tail;
     const tM = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.55 * p.tailLength, 8), sm);
     tM.position.y = 0.275 * p.tailLength; tail.add(tM); ms.push(tM); torso.add(tail);
@@ -515,6 +516,7 @@ function _avian(dna: CreatureDNA): CreatureRig {
 
 // ── Serpent ───────────────────────────────────────────────────────────────────
 
+// Naga/cobra pose: front segments arch upward, tail segments trail horizontally.
 function _serpent(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { segments: [] };
   const p = dna.proportions;
@@ -522,25 +524,42 @@ function _serpent(dna: CreatureDNA): CreatureRig {
 
   const root = new THREE.Group(); root.scale.setScalar(p.global);
   const n    = Math.round(Math.max(3, Math.min(12, p.segmentCount)));
+
+  // Segments 0..(upCount-1) arch upward (cobra crown); rest trail horizontally
+  const upCount = Math.max(2, Math.floor(n / 3));
   let parent: THREE.Object3D = root;
-  let lastGrp: THREE.Group | null = null;
 
   for (let i = 0; i < n; i++) {
-    const t  = i / (n - 1);
-    const r  = (0.22 - t * 0.12) * p.torso[0];
-    const g  = new THREE.Group();
-    g.position.y = i === 0 ? 0.5 : 0.36;
-    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.18, 6, 8), i % 2 ? sm : pm);
+    const t = i / (n - 1);
+    const r = (0.22 - t * 0.14) * p.torso[0];
+    const g = new THREE.Group();
+
+    if (i === 0) {
+      g.position.y = 0.22;                        // chest above ground
+    } else if (i < upCount) {
+      g.position.y = 0.30;                        // chain upward (cobra neck)
+    } else {
+      g.position.z = (i === upCount) ? 0.22 : 0.32;  // horizontal tail
+      g.position.y = (i === upCount) ? 0.05 : -0.10;
+    }
+
+    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.20, 6, 8), i % 2 ? sm : pm);
     g.add(seg); parent.add(g);
     bones.segments!.push(g); ms.push(seg);
     if (i === 0) bones.torso = g;
-    parent = g; lastGrp = g;
+    parent = g;
   }
 
+  // Head sits atop the raised section, faces forward
+  const headNeck = new THREE.Group();
+  headNeck.position.y = 0.28;
+  headNeck.rotation.x = -0.20;
+  bones.segments![upCount - 1].add(headNeck);
+
   const head = new THREE.Group(); bones.head = head;
-  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.7), pm); head.add(hm); ms.push(hm);
-  const { tex, plane } = _faceplane(dna, p.headSize * 0.7); head.add(plane); ms.push(plane);
-  if (lastGrp) lastGrp.add(head);
+  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.75), pm); head.add(hm); ms.push(hm);
+  const { tex, plane } = _faceplane(dna, p.headSize * 0.75); head.add(plane); ms.push(plane);
+  headNeck.add(head);
 
   _props(dna.props, head, bones.torso, dna, ms);
   return { root, bones, faceTex: tex, dispose: _free(ms, [tex]) };
