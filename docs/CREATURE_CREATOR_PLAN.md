@@ -392,23 +392,11 @@ a pattern overlay channel. Analogous to Spore's Base/Coat/Detail layers.
   stippling — search "canvas 2d procedural texture pattern" and MDN CanvasRenderingContext2D.
 
 #### Tasks
-- [ ] `CreatureDNA.colors` gets new fields:
-  ```typescript
-  pattern:       SkinPattern;  // 'none'|'stripes'|'spots'|'scales'|'gradient'|'cracks'|'fur'
-  patternColor:  number;
-  patternScale:  number;       // 0.5–3.0, controls stripe/spot frequency
-  patternOpacity: number;      // 0.0–1.0
-  secondaryRegion: 'belly' | 'extremities' | 'back' | 'face' | 'none';
-  // secondaryRegion tints which body part uses dna.colors.secondary
-  ```
-- [ ] `CreatureBuilder`: pass pattern parameters to material. Since `MeshPhysicalMaterial`
-  doesn't use UV maps by default in our setup, implement pattern as a `CanvasTexture`
-  generated on a small (64×64) canvas and assigned to `material.map` with `alphaTest`.
-  The face texture system already does this — extend it to body parts.
-- [ ] New `src/creatures/CanvasSkin.ts` — generates skin pattern textures:
-  `makeSkinTexture(baseColor, patternColor, pattern, scale): THREE.CanvasTexture`
-- [ ] UI: add "Skin Pattern" chip row in Colors section. Sliders for pattern scale
-  and opacity appear when pattern ≠ 'none'.
+- [x] `CreatureDNA.colors` new fields: `pattern: SkinPattern`, `patternColor`, `patternScale`, `patternOpacity`
+- [x] Backwards-compat migration in `base64ToDna`
+- [x] `CreatureBuilder`: `_bodyMat(dna)` helper applies `makeSkinTexture` to primary-colour body meshes
+- [x] New `src/creatures/CanvasSkin.ts` — `makeSkinTexture()` with 6 pattern types + LCG-seeded cracks/fur
+- [x] UI: Body pattern chip row in Palette section; pattern color picker shown when pattern ≠ 'none'
 
 ---
 
@@ -425,23 +413,11 @@ and a "Test Drive" mini-mode that runs the full AnimationState loop.
   control, live preview refresh, and control grouping.
 
 #### Tasks
-- [ ] **Camera presets bar** below the preview canvas:
-  - `Full` (default): current position `(0.4, 1.5, 3.2)` looking at `(0, 1.1, 0)`
-  - `Face`: `(0.0, 2.0, 1.5)` looking at `(0, 1.8, 0)`
-  - `Side`: `(3.0, 1.5, 0.5)` looking at `(0, 1.0, 0)`
-  - Camera tween: lerp over 0.4s between positions.
-- [ ] **Animation preview toggle**: small chip row: `Idle | Walk | Run | Dance`
-  Each calls `animateCreature(rig, { state, time })` in the preview RAF loop.
-- [ ] **Test Drive mini-mode**: clicking "Test Drive" button expands the preview to
-  fullscreen (or a larger modal), enables WASD preview control of the creature in a
-  small arena (same `generateSandboxArena` room), and shows the creature in motion.
-  Press Esc / Back to return to creator.
-- [ ] **Preset gallery row**: 6 curated DNA presets shown as small 60×60px preview
-  thumbnails at the bottom of the card. Clicking one loads that DNA as a starting point.
-  Rendered into `<canvas>` elements offline and cached.
-- [ ] **Share / Load DNA field**: small text input at bottom of card. "Export" button
-  copies `dnaToBase64(dna)` to clipboard. Text input + "Import" button calls
-  `base64ToDna(value)` and loads it.
+- [x] **Camera presets bar** below preview: Full / Face / Side buttons with 0.1 lerp per frame.
+- [x] **Animation preview toggle**: Idle / Walk / Run / Hit chips.
+- [x] **Share / Load DNA**: Import text field + ⬇ Load button; error highlight on bad input.
+- [ ] **Test Drive mini-mode**: fullscreen arena preview (deferred — needs arena setup).
+- [ ] **Preset gallery row**: 6 curated thumbnails (deferred — needs offline rendering).
 
 ---
 

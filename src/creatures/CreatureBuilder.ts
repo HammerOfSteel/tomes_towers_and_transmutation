@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import type { CreatureDNA, PropId, EarShape } from './CreatureDNA';
 import { SUBRACE_DEFS } from './CreatureDNA';
 import { makeFaceTexture, type FaceSpec } from './CanvasFace';
+import { makeSkinTexture } from './CanvasSkin';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -62,6 +63,16 @@ function _m(color: number, dna: CreatureDNA, overrides?: Partial<CreatureDNA['ma
     clearcoat: mat.clearcoat,
     clearcoatRoughness: mat.clearcoatRoughness,
   });
+}
+
+/** Primary body material — includes skin pattern texture when set. */
+function _bodyMat(dna: CreatureDNA, overrides?: Partial<CreatureDNA['material']>): THREE.MeshPhysicalMaterial {
+  const mat = _m(dna.colors.primary, dna, overrides);
+  const c = dna.colors;
+  if (c.pattern !== 'none') {
+    mat.map = makeSkinTexture(c.primary, c.patternColor, c.pattern, c.patternScale, c.patternOpacity);
+  }
+  return mat;
 }
 
 function _free(meshes: THREE.Mesh[], textures?: THREE.Texture[]): () => void {
@@ -125,7 +136,7 @@ function _props(
   props: PropId[], head: THREE.Group | undefined, torso: THREE.Group | undefined,
   dna: CreatureDNA, ms: THREE.Mesh[],
 ): void {
-  const pm = _m(dna.colors.primary,   dna);
+  const pm = _bodyMat(dna);
   const sm = _m(dna.colors.secondary, dna);
 
   if (props.includes('horns_small') && head) {
@@ -323,7 +334,7 @@ function _props(
 
 function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
   const o = (dna as any).outfit ?? { top: 'none', legs: 'none', over: 'none' };
-  const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
+  const pm = _bodyMat(dna), sm = _m(dna.colors.secondary, dna);
 
   // ─ Top ───────────────────────────────────────────────────────────────
   if (o.top === 'tunic') {
@@ -424,7 +435,7 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = {};
   const p = dna.proportions;
   const [tx, ty] = p.torso;
-  const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
+  const pm = _bodyMat(dna), sm = _m(dna.colors.secondary, dna);
 
   const root = new THREE.Group();
   root.scale.setScalar(p.global);
@@ -515,7 +526,7 @@ function _quad(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = {};
   const p = dna.proportions;
   const [tx, , tz] = p.torso;
-  const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
+  const pm = _bodyMat(dna), sm = _m(dna.colors.secondary, dna);
 
   const root  = new THREE.Group(); root.scale.setScalar(p.global);
   const torso = new THREE.Group(); torso.position.y = 0.95; bones.torso = torso; root.add(torso);
@@ -563,7 +574,7 @@ function _quad(dna: CreatureDNA): CreatureRig {
 function _amoeba(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { blobs: [] };
   const p = dna.proportions;
-  const pm = _m(dna.colors.primary, dna), sm2 = _m(dna.colors.secondary, dna);
+  const pm = _bodyMat(dna), sm2 = _m(dna.colors.secondary, dna);
 
   const root  = new THREE.Group(); root.scale.setScalar(p.global);
   const torso = new THREE.Group(); torso.position.y = 0.7; bones.torso = torso; root.add(torso);
@@ -596,7 +607,7 @@ function _avian(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = {};
   const p = dna.proportions;
   const [tx, ty] = p.torso;
-  const pm = _m(dna.colors.primary, dna);
+  const pm = _bodyMat(dna);
 
   const root  = new THREE.Group(); root.scale.setScalar(p.global);
   const torso = new THREE.Group(); torso.position.y = 0.8; bones.torso = torso; root.add(torso);
@@ -645,7 +656,7 @@ function _avian(dna: CreatureDNA): CreatureRig {
 function _serpent(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { segments: [] };
   const p = dna.proportions;
-  const pm = _m(dna.colors.primary, dna), sm = _m(dna.colors.secondary, dna);
+  const pm = _bodyMat(dna), sm = _m(dna.colors.secondary, dna);
 
   const root = new THREE.Group(); root.scale.setScalar(p.global);
   const n = Math.round(Math.max(5, Math.min(14, p.segmentCount)));
