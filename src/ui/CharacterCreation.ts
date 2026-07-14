@@ -59,6 +59,9 @@ const PROP_DEFS: PropDef[] = [
   { id: 'tail_stub',   label: 'Tail (stub)'},
   { id: 'tail_long',   label: 'Tail (long)'},
   { id: 'aura',        label: 'Aura'       },
+  { id: 'hair_short',  label: 'Hair (S)'   },
+  { id: 'hair_long',   label: 'Hair (L)'   },
+  { id: 'hair_bun',    label: 'Hair (bun)' },
 ];
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -302,7 +305,9 @@ export class CharacterCreation {
     this._scaleSlider.value   = String(d.proportions.global);
     this._scaleVal.textContent = d.proportions.global.toFixed(2);
     for (const { prop, slider, val } of this._morphInputs) {
-      const v = ((d.proportions as any)[prop] as number) ?? 1.0;
+      const v: number = prop === 'torso_y'
+        ? d.proportions.torso[1]
+        : (((d.proportions as any)[prop] as number) ?? 1.0);
       slider.value = String(v); val.textContent = v.toFixed(2);
     }
     this._eyeInput.value      = numToHex(d.face.eyeColor);
@@ -557,13 +562,20 @@ export class CharacterCreation {
       { label: 'Hips',      prop: 'hipWidth',      min: '0.5', max: '2.0', step: '0.05' },
       { label: 'Belly',     prop: 'bellySize',     min: '0.0', max: '1.5', step: '0.05' },
       { label: 'Neck W',    prop: 'neckThickness', min: '0.5', max: '1.8', step: '0.05' },
+      { label: 'Torso H',   prop: 'torso_y',       min: '0.5', max: '2.0', step: '0.05' },
+      { label: 'Leg L',     prop: 'legLength',     min: '0.4', max: '2.0', step: '0.05' },
     ] as const) {
       const mRow = document.createElement('div'); mRow.className = 'cc-row';
       const mLbl = document.createElement('span'); mLbl.className = 'cc-row-lbl'; mLbl.textContent = md.label + ':';
       const mSlider = document.createElement('input'); mSlider.type = 'range';
       mSlider.className = 'cc-slider'; mSlider.min = md.min; mSlider.max = md.max; mSlider.step = md.step;
       const mVal = document.createElement('span'); mVal.className = 'cc-slider-val';
-      mSlider.oninput = () => { (this._dna.proportions as any)[md.prop] = +mSlider.value; mVal.textContent = (+mSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
+      mSlider.oninput = () => {
+        const v = +mSlider.value;
+        if (md.prop === 'torso_y') { this._dna.proportions.torso[1] = v; }
+        else { (this._dna.proportions as any)[md.prop] = v; }
+        mVal.textContent = v.toFixed(2); this._preview?.setDNA(this._dna);
+      };
       mRow.append(mLbl, mSlider, mVal); this._morphWrap.appendChild(mRow);
       this._morphInputs.push({ prop: md.prop, slider: mSlider, val: mVal });
     }

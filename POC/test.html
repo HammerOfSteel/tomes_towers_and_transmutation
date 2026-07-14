@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Procedural Princess Engine</title>
+    <style>
+        body { margin: 0; background: #2c3e50; overflow: hidden; font-family: sans-serif; }
+        #gui { position: absolute; top: 10px; right: 10px; }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        { "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+            "lil-gui": "https://unpkg.com/lil-gui@0.19.0/dist/lil-gui.esm.min.js"
+        }}
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+        import GUI from 'lil-gui';
+
+        // --- ENGINE ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        camera.position.set(0, 1.5, 4);
+
+        scene.add(new THREE.DirectionalLight(0xffffff, 2), new THREE.AmbientLight(0xffffff, 0.6));
+
+        // --- CHARACTER CLASS ---
+        class PrincessDoll {
+            constructor() {
+                this.group = new THREE.Group();
+                this.params = { hairStyle: 'Buns', dressColor: 0xff69b4, skinColor: 0xffd1b3, anim: 'Idle' };
+                this.parts = {};
+                this.build();
+            }
+
+            build() {
+                this.group.clear();
+                // Torso & Skirt
+                this.parts.torso = this.createSegment(0.4, 0.5, 0.3, this.params.dressColor, [0, 1.0, 0]);
+                this.parts.skirt = this.createPart(new THREE.ConeGeometry(0.6, 0.7, 16), this.params.dressColor, [0, 0.4, 0]);
+                
+                // Head & Face
+                this.parts.head = this.createPart(new THREE.SphereGeometry(0.35, 32, 32), this.params.skinColor, [0, 1.6, 0]);
+                this.addFace();
+                this.addHair();
+
+                // Limbs (Segmented: Thigh/Shin, Bicep/Forearm)
+                this.parts.lLeg = this.createLimb([-0.2, 0.7, 0], true);
+                this.parts.rLeg = this.createLimb([0.2, 0.7, 0], true);
+                this.parts.lArm = this.createLimb([-0.4, 1.3, 0], false);
+                this.parts.rArm = this.createLimb([0.4, 1.3, 0], false);
+                
+                scene.add(this.group);
+            }
+
+            createPart(geo, color, pos) {
+                const mesh = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ color }));
+                mesh.position.set(...pos);
+                this.group.add(mesh);
+                return mesh;
+            }
+
+            createSegment(w, h, d, color, pos) {
+                return this.createPart(new RoundedBoxGeometry(w, h, d, 3, 0.1), color, pos);
+            }
+
+            addFace() {
+                const eye = new THREE.SphereGeometry(0.05);
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+                const e1 = new THREE.Mesh(eye, eyeMat); e1.position.set(-0.1, 1.7, 0.3);
+                const e2 = new THREE.Mesh(eye, eyeMat); e2.position.set(0.1, 1.7, 0.3);
+                const mouth = this.createPart(new THREE.TorusGeometry(0.05, 0.02, 8, 16, Math.PI), 0xff0000, [0, 1.55, 0.3]);
+                this.group.add(e1, e2, mouth);
+            }
+
+            addHair() {
+                const hairGeo = this.params.hairStyle === 'Buns' ? 
+                                new THREE.SphereGeometry(0.2, 16, 16) : new THREE.BoxGeometry(0.5, 0.3, 0.5);
+                const h1 = this.createPart(hairGeo, 0x8b4513, [-0.3, 1.8, 0]);
+                const h2 = this.createPart(hairGeo, 0x8b4513, [0.3, 1.8, 0]);
+                this.group.add(h1, h2);
+            }
+
+            createLimb(pos, isLeg) {
+                const upper = new THREE.Group();
+                upper.position.set(...pos);
+                const upperPart = this.createSegment(0.15, 0.4, 0.15, this.params.skinColor, [0, -0.2, 0]);
+                const lowerPart = this.createSegment(0.12, 0.4, 0.12, this.params.skinColor, [0, -0.6, 0]);
+                upper.add(upperPart, lowerPart);
+                this.group.add(upper);
+                return upper;
+            }
+        }
+
+        const doll = new PrincessDoll();
+
+        // --- GUI ---
+        const gui = new GUI();
+        gui.add(doll.params, 'hairStyle', ['Buns', 'Bob']).onChange(() => doll.build());
+        gui.add(doll.params, 'anim', ['Idle', 'Walk']);
+        gui.add({ Randomize: () => { 
+            doll.params.dressColor = Math.random() * 0xffffff; 
+            doll.build(); 
+        }}, 'Randomize');
+
+        // --- ANIMATION ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.005;
+            if (doll.params.anim === 'Walk') {
+                doll.parts.lLeg.rotation.x = Math.sin(time) * 0.5;
+                doll.parts.rLeg.rotation.x = -Math.sin(time) * 0.5;
+                doll.parts.lArm.rotation.x = -Math.sin(time) * 0.5;
+                doll.parts.rArm.rotation.x = Math.sin(time) * 0.5;
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
