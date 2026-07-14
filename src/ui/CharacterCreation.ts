@@ -11,11 +11,11 @@ import {
   type SubRace, type OutfitTopId, type OutfitLegsId, type OutfitOverId,
   type EyeShape, type BrowStyle, type SkinPattern,
   DEFAULT_PLAYER_DNA, dnaForArchetype, dnaForSubRace, cloneDNA,
-  numToHex, hexToNum, dnaToBase64,
+  numToHex, hexToNum, dnaToBase64, base64ToDna,
   BIPED_SUBRACES, SUBRACE_DEFS, ARCHETYPE_FACE_ALLOW, ARCHETYPE_PROP_ALLOW,
 } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
-import { animateCreature }                 from '@/creatures/CreatureAnimator';
+import { animateCreature, type AnimState } from '@/creatures/CreatureAnimator';
 import { randomDNA, mutateDNA }            from '@/creatures/CreatureRandomiser';
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -108,6 +108,16 @@ const CC_CSS = `
 .cc-dna-btn:hover { background: rgba(80,48,160,.1); color: #a080e0; border-color: #4a3870; }
 .cc-dna-btn.cc-dna-btn--roll { background: rgba(90,60,160,.12); border-color: #4a3070; color: #c0a0f0; font-size: .8rem; }
 .cc-dna-btn.cc-dna-btn--roll:hover { background: rgba(110,70,200,.25); color: #e0d0ff; }
+.cc-cam-row { display: flex; gap: 4px; width: 100%; }
+.cc-cam-btn { flex: 1; background: transparent; border: 1px solid #2a1850; border-radius: 3px;
+  color: #5a4880; font-size: .66rem; cursor: pointer; padding: 3px 4px; font-family: inherit;
+  letter-spacing: .03em; transition: all .12s; }
+.cc-cam-btn:hover, .cc-cam-btn--on { background: rgba(80,48,160,.15); color: #a080e0; border-color: #4a3870; }
+.cc-anim-row { display: flex; gap: 4px; width: 100%; }
+.cc-import-wrap { display: flex; gap: 4px; width: 100%; margin-top: 2px; }
+.cc-import-input { flex: 1; background: #07060f; border: 1px solid #2e1f50; border-radius: 3px;
+  color: #a090c0; font-size: .65rem; padding: 4px 7px; font-family: monospace; min-width: 0;
+  transition: border-color .15s; }
 .cc-controls-col { flex: 1 1 280px; min-width: 230px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 82vh; }
 .cc-label { font-size: .76rem; color: #7a6a99; letter-spacing: .08em; text-transform: uppercase; display: block; margin-bottom: 4px; }
 .cc-name-input { width: 100%; box-sizing: border-box;
@@ -181,6 +191,10 @@ class CharacterPreview {
   private _drag  = false;
   private _prevX = 0;
   private _rotYStart = 0;
+  private _animState: AnimState = 'idle';
+  private _camPosTarget   = new THREE.Vector3(0.4, 1.5, 3.2);
+  private _camLookTarget  = new THREE.Vector3(0, 1.1, 0);
+  private _camLookCurrent = new THREE.Vector3(0, 1.1, 0);
 
   constructor(canvas: HTMLCanvasElement, dna: CreatureDNA) {
     this._renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -212,6 +226,15 @@ class CharacterPreview {
 
   setDNA(dna: CreatureDNA): void { this._build(dna); }
 
+  setAnimState(s: AnimState): void { this._animState = s; }
+  setCamera(preset: 'full' | 'face' | 'side'): void {
+    switch (preset) {
+      case 'full': this._camPosTarget.set(0.4, 1.5, 3.2); this._camLookTarget.set(0, 1.1, 0); break;
+      case 'face': this._camPosTarget.set(0.0, 2.0, 1.5); this._camLookTarget.set(0, 1.8, 0); break;
+      case 'side': this._camPosTarget.set(3.0, 1.5, 0.5); this._camLookTarget.set(0, 1.0, 0); break;
+    }
+  }
+
   startLoop(): void {
     if (this._rafId !== null) return;
     const tick = () => {
@@ -221,8 +244,11 @@ class CharacterPreview {
         this._rig.root.rotation.y = this._rotY;
         const t = performance.now() * 0.001;
         this._rig.root.position.y = Math.sin(t * 1.2) * 0.016;
-        animateCreature(this._rig, { state: 'idle', time: t });
+        animateCreature(this._rig, { state: this._animState, time: t });
       }
+      this._camera.position.lerp(this._camPosTarget, 0.1);
+      this._camLookCurrent.lerp(this._camLookTarget, 0.1);
+      this._camera.lookAt(this._camLookCurrent);
       this._renderer.render(this._scene, this._camera);
     };
     tick();
@@ -278,6 +304,9 @@ export class CharacterCreation {
   private _scaleSlider!:    HTMLInputElement;
   private _scaleVal!:       HTMLElement;
   private _eyeInput!:       HTMLInputElement;
+  private _bodyPatternChips = new Map<SkinPattern, HTMLElement>();
+  private _bodyPatternColorRow!:   HTMLElement;
+  private _bodyPatternColorInput!: HTMLInputElement;
 
   constructor(
     private readonly _onStart: (cfg: CharacterConfig) => void,
@@ -332,8 +361,9 @@ export class CharacterCreation {
     this._browStyleChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.browStyle));
     this._skinPatternChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.face.skinPattern));
     this._markColorInput.value = numToHex(d.face.markColor);
-    this._markColorRow.style.display = d.face.skinPattern !== 'none' ? 'flex' : 'none';
-
+    this._markColorRow.style.display = d.face.skinPattern !== 'none' ? 'flex' : 'none';    this._bodyPatternChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.colors.pattern));
+    this._bodyPatternColorInput.value = numToHex(d.colors.patternColor);
+    this._bodyPatternColorRow.style.display = d.colors.pattern !== 'none' ? 'flex' : 'none';
     this._archChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.archetype));
     this._subRaceChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.subRace));
     this._subRaceRow.style.display = d.archetype === 'biped' ? 'flex' : 'none';
@@ -383,6 +413,32 @@ export class CharacterCreation {
     previewCol.className = 'cc-preview-col';
     const canvas = document.createElement('canvas');
     canvas.className = 'cc-preview-canvas';
+    // Camera preset buttons
+    const camRow = document.createElement('div'); camRow.className = 'cc-cam-row';
+    const camBtns = new Map<'full'|'face'|'side', HTMLElement>();
+    for (const [lbl, preset] of [['⬜ Full','full'],['👁 Face','face'],['◀ Side','side']] as [string, 'full'|'face'|'side'][]) {
+      const b = document.createElement('button'); b.className = 'cc-cam-btn'; b.textContent = lbl;
+      b.onclick = () => {
+        this._preview?.setCamera(preset);
+        camBtns.forEach((el, k) => el.classList.toggle('cc-cam-btn--on', k === preset));
+      };
+      camBtns.set(preset, b); camRow.appendChild(b);
+    }
+    camBtns.get('full')?.classList.add('cc-cam-btn--on');
+
+    // Animation state chips
+    const animRow = document.createElement('div'); animRow.className = 'cc-anim-row';
+    const animChips = new Map<AnimState, HTMLElement>();
+    for (const [lbl, state] of [['Idle','idle'],['Walk','walk'],['Run','run'],['Hit','hit']] as [string, AnimState][]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip cc-chip--sm'; chip.textContent = lbl;
+      chip.onclick = () => {
+        this._preview?.setAnimState(state);
+        animChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === state));
+      };
+      animChips.set(state, chip); animRow.appendChild(chip);
+    }
+    animChips.get('idle')?.classList.add('cc-chip--on');
+
     const hint = document.createElement('div'); hint.className = 'cc-drag-hint'; hint.textContent = 'Drag to rotate';
     const dnaBtn = document.createElement('button'); dnaBtn.className = 'cc-dna-btn'; dnaBtn.textContent = '📋 Copy DNA';
     dnaBtn.onclick = () => {
@@ -400,7 +456,22 @@ export class CharacterCreation {
       this._syncControls();
       this._preview?.setDNA(this._dna);
     };
-    previewCol.append(canvas, hint, rollBtn, mutateBtn, dnaBtn);
+
+    // Import DNA
+    const importWrap = document.createElement('div'); importWrap.className = 'cc-import-wrap';
+    const importInput = document.createElement('input');
+    importInput.type = 'text'; importInput.className = 'cc-import-input'; importInput.placeholder = 'Paste DNA code…';
+    const importBtn = document.createElement('button'); importBtn.className = 'cc-dna-btn'; importBtn.textContent = '⬇ Load';
+    importBtn.onclick = () => {
+      try {
+        const dna = base64ToDna(importInput.value.trim());
+        this._dna = dna; this._syncControls(); this._preview?.setDNA(dna);
+        importInput.value = ''; importInput.style.borderColor = '';
+      } catch { importInput.style.borderColor = '#c04040'; }
+    };
+    importWrap.append(importInput, importBtn);
+
+    previewCol.append(canvas, camRow, animRow, hint, rollBtn, mutateBtn, dnaBtn, importWrap);
 
     // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
@@ -493,6 +564,34 @@ export class CharacterCreation {
     this._emissiveVal = document.createElement('span'); this._emissiveVal.className = 'cc-slider-val';
     this._emissiveSlider.oninput = () => { this._dna.colors.emissiveIntensity = +this._emissiveSlider.value; this._emissiveVal.textContent = (+this._emissiveSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
     emRow.append(emLbl, this._emissiveSlider, this._emissiveVal); palSec.appendChild(emRow);
+
+    // Body skin pattern (CC-7)
+    const bpRow = document.createElement('div'); bpRow.className = 'cc-row';
+    const bpLbl = document.createElement('span'); bpLbl.className = 'cc-row-lbl'; bpLbl.textContent = 'Body pattern:';
+    const bpChips = document.createElement('div'); bpChips.className = 'cc-chips';
+    const bodyPatternChips = new Map<SkinPattern, HTMLElement>();
+    for (const sp of ['none','stripes','spots','scales','gradient','cracks','fur'] as SkinPattern[]) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip cc-chip--sm'; chip.textContent = sp;
+      chip.onclick = () => {
+        this._dna.colors.pattern = sp;
+        bodyPatternChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === sp));
+        bpColorRow.style.display = sp !== 'none' ? 'flex' : 'none';
+        this._preview?.setDNA(this._dna);
+      };
+      bodyPatternChips.set(sp, chip); bpChips.appendChild(chip);
+    }
+    bpRow.append(bpLbl, bpChips); palSec.appendChild(bpRow);
+
+    // Body pattern color (shown when pattern active)
+    const bpColorRow = document.createElement('div'); bpColorRow.className = 'cc-row'; bpColorRow.style.display = 'none';
+    const bpcLbl = document.createElement('span'); bpcLbl.className = 'cc-row-lbl'; bpcLbl.textContent = 'Pattern color:';
+    const bpcInput = document.createElement('input'); bpcInput.type = 'color'; bpcInput.className = 'cc-color-input';
+    bpcInput.addEventListener('input', () => { this._dna.colors.patternColor = hexToNum(bpcInput.value); this._preview?.setDNA(this._dna); });
+    bpColorRow.append(bpcLbl, bpcInput); palSec.appendChild(bpColorRow);
+    // Store refs for _syncControls
+    this._bodyPatternChips = bodyPatternChips;
+    this._bodyPatternColorRow = bpColorRow;
+    this._bodyPatternColorInput = bpcInput;
 
     // Face
     const faceSec = this._makeSection('Face');
