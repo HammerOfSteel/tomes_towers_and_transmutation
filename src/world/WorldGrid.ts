@@ -6,7 +6,7 @@
  * than adding more parallel arrays.
  */
 
-export type BiomeId = 'bog' | 'grass' | 'forest' | 'highland' | 'rocky';
+export type BiomeId = 'bog' | 'grass' | 'forest' | 'highland' | 'rocky' | 'water';
 
 /**
  * Feature = a geographic/man-made overlay on the tile (roads, rivers).

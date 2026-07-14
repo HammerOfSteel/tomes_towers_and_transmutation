@@ -53,6 +53,9 @@ const BIOME: readonly [number, number, number][] = [
   [0.44, 0.41, 0.30],   // 4  rocky upland
 ];
 
+const BIOME_RIVER: [number, number, number]       = [0.18, 0.38, 0.62]; // blue channel
+const BIOME_WATER: [number, number, number]       = [0.14, 0.26, 0.48]; // deep water
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type BuildingType = 'greenhouse';
@@ -71,12 +74,13 @@ interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: n
 
 export class OverworldScene {
   // ── Visual geometry (built in constructor, never rebuilt)
-  private readonly _terrain: THREE.Mesh;
-  private readonly _tower:   THREE.Group;
-  private readonly _trees:   TreeEntry[] = [];
-  private readonly _rocks:   RockEntry[] = [];
-  private readonly _ruins:   THREE.Group[] = [];
-  private readonly _enemies: SlimeEnemy[]  = [];
+  private readonly _terrain:   THREE.Mesh;
+  private readonly _tower:     THREE.Group;
+  private readonly _waterMesh: THREE.Mesh | null;
+  private readonly _trees:     TreeEntry[] = [];
+  private readonly _rocks:     RockEntry[] = [];
+  private readonly _ruins:     THREE.Group[] = [];
+  private readonly _enemies:   SlimeEnemy[]  = [];
 
   readonly buildingEntrances: BuildingEntrance[] = [];
 
@@ -110,8 +114,9 @@ export class OverworldScene {
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
-    this._terrain = this._buildTerrain();
-    this._tower   = this._buildTower();
+    this._terrain   = this._buildTerrain();
+    this._waterMesh = this._buildWaterMesh();
+    this._tower     = this._buildTower();
 
     this._plantTrees(rand);
     this._placeRocks(rand);
@@ -143,6 +148,7 @@ export class OverworldScene {
 
     // Add visuals
     this.scene.add(this._terrain, this._tower);
+    if (this._waterMesh) this.scene.add(this._waterMesh);
     for (const tr of this._trees)   this.scene.add(tr.group);
     for (const rk of this._rocks)   this.scene.add(rk.mesh);
     for (const ru of this._ruins)   this.scene.add(ru);
@@ -159,6 +165,7 @@ export class OverworldScene {
     this._staticBodies = [];
 
     this.scene.remove(this._terrain, this._tower);
+    if (this._waterMesh) this.scene.remove(this._waterMesh);
     for (const tr of this._trees)   this.scene.remove(tr.group);
     for (const rk of this._rocks)   this.scene.remove(rk.mesh);
     for (const ru of this._ruins)   this.scene.remove(ru);
@@ -184,6 +191,10 @@ export class OverworldScene {
     this.exit();
     (this._terrain.geometry as THREE.BufferGeometry).dispose();
     (this._terrain.material as THREE.Material).dispose();
+    if (this._waterMesh) {
+      this._waterMesh.geometry.dispose();
+      (this._waterMesh.material as THREE.Material).dispose();
+    }
     this._freeGroup(this._tower);
     for (const tr of this._trees) this._freeGroup(tr.group);
     for (const rk of this._rocks) {
@@ -314,7 +325,21 @@ export class OverworldScene {
 
         // Subtle per-tile brightness variation (avoids repetitive flat look)
         const v = 0.92 + ((col * 29 + row * 19) % 18) / 200;
-        const [rb, gb, bb] = BIOME[H];
+
+        // Biome/feature-aware colour selection
+        const cell = this._wg.get(col, row);
+        let biomeRgb: [number, number, number];
+        if (cell.biome === 'water') {
+          biomeRgb = BIOME_WATER;
+        } else if (cell.feature === 'river') {
+          biomeRgb = BIOME_RIVER;
+        } else if (cell.feature === 'river_bank') {
+          const b = BIOME[H];
+          biomeRgb = [b[0] * 0.88, b[1] * 0.80, b[2] * 0.68];
+        } else {
+          biomeRgb = BIOME[H];
+        }
+        const [rb, gb, bb] = biomeRgb;
         const tr = rb * v, tg = gb * v, tb = bb * v;
 
         // ── TOP face (normal +Y) ─────────────────────────────────────────
@@ -394,6 +419,56 @@ export class OverworldScene {
    * All cylinders are rotated π/8 so their flat faces align to cardinal axes
    * (i.e. flat-face normals point N/S/E/W/NE/NW/SE/SW).
    */
+
+  /**
+   * Build a single semi-transparent water mesh for all river / water-biome tiles.
+   * Each qualifying tile gets a flat quad placed at `elevation × SH + 0.05`
+   * (just above the terrain top face).  All quads are merged into one
+   * BufferGeometry → one draw call, `depthWrite:false` prevents z-fighting.
+   */
+  private _buildWaterMesh(): THREE.Mesh | null {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    const pos: number[] = [];
+    const idx: number[] = [];
+
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        const cell = this._wg.get(col, row);
+        if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+
+        const wx  = (col - GHW) * T;
+        const wz  = (row - GHH) * T;
+        const wy  = cell.elevation * SH + 0.05;
+
+        const base = pos.length / 3;
+        pos.push(
+          wx,     wy, wz,
+          wx + T, wy, wz,
+          wx + T, wy, wz + T,
+          wx,     wy, wz + T,
+        );
+        idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+      }
+    }
+
+    if (pos.length === 0) return null;
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+
+    return new THREE.Mesh(
+      geo,
+      new THREE.MeshLambertMaterial({
+        color:      0x3a6aaa,
+        transparent: true,
+        opacity:     0.78,
+        depthWrite:  false,
+      }),
+    );
+  }
+
   private _buildTower(): THREE.Group {
     const grp = new THREE.Group();
     const m   = (hex: number) => new THREE.MeshLambertMaterial({ color: hex });
