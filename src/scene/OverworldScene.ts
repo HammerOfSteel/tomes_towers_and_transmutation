@@ -32,20 +32,15 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { mulberry32 } from '@/core/prng';
-import { createNoise2D, fbm } from '@/core/SimplexNoise';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
+import type { WorldGrid } from '@/world/WorldGrid';
+import type { WorldGenConfig } from '@/world/WorldGenConfig';
 
-// ── Grid constants ────────────────────────────────────────────────────────────
+// ── Fixed rendering constants (independent of world size) ─────────────────────
 
-const GW  = 51;               // grid columns
-const GH  = 51;               // grid rows
-const GHW = (GW - 1) / 2;    // 25 — centre column
-const GHH = (GH - 1) / 2;    // 25 — centre row
 const T   = 2;                // tile side length in world units (= interior cell)
 const SH  = 0.55;             // world-unit height increment per level
-const MLV = 4;                // max height level index (0 = ground, 4 = highland)
-const FR  = 7;                // flat-zone radius in tiles around tower
 
 // ── Biome vertex colours [r, g, b] for height levels 0–4 ─────────────────────
 //   Slightly darker at night-ish palette to match the dungeon interior mood.
@@ -89,8 +84,13 @@ export class OverworldScene {
   private _groundBody:   RAPIER.RigidBody | null = null;
   private _staticBodies: RAPIER.RigidBody[] = [];
 
-  // ── Height data (used during construction for object placement)
-  private readonly _grid: Uint8Array; // [row * GW + col] → level 0–4
+  // ── World grid (passed in; built by WorldGenerator externally)
+  private readonly _wg:  WorldGrid;
+  private readonly _GW:  number;
+  private readonly _GH:  number;
+  private readonly _GHW: number;
+  private readonly _GHH: number;
+  private readonly _FR:  number;   // flat-zone radius in tiles (~28% of half-width)
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -98,18 +98,24 @@ export class OverworldScene {
     private readonly scene:   THREE.Scene,
     private readonly physics: PhysicsWorld,
     private readonly player:  PlayerController,
-    seed: number,
+    worldGrid: WorldGrid,
+    config: WorldGenConfig,
   ) {
-    const rand  = mulberry32(seed ^ 0xA5_F0_3C_12);
-    const noise = createNoise2D(seed ^ 0x5E_A1_9D_7B);
+    this._wg  = worldGrid;
+    this._GW  = worldGrid.width;
+    this._GH  = worldGrid.height;
+    this._GHW = (worldGrid.width  - 1) / 2;
+    this._GHH = (worldGrid.height - 1) / 2;
+    this._FR  = Math.round(this._GHW * 0.28);
 
-    this._grid    = this._buildGrid(noise);
+    const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
+
     this._terrain = this._buildTerrain();
     this._tower   = this._buildTower();
 
     this._plantTrees(rand);
     this._placeRocks(rand);
-    this._spawnCamps(rand);
+    this._spawnCamps(rand, config.enemyCampCount);
     this._addRuins(rand);
   }
 
@@ -119,11 +125,8 @@ export class OverworldScene {
   enter(): void {
     // Flat base plane covers level-0 tiles and acts as the underfloor.
     this._groundBody = this.physics.createGroundPlane(0);
-    // Per-tile box colliders for elevated terrain: each box is a solid block from
-    // y=0 to y=level*SH, so the top surface is perfectly flat and exactly matches
-    // the visual tile height.  This avoids the triangulated-slope artefact of a
-    // heightfield where adjacent tiles share interpolated corner vertices.
-    this._staticBodies.push(this._createTileBoxColliders());
+    // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
+    this._staticBodies.push(this._createTerrainCollider());
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
     this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
@@ -217,48 +220,36 @@ export class OverworldScene {
   /**
    * Build a Rapier heightfield collider that mirrors the visual tile grid.
    *
-   * Rapier heightfield convention (verified from type definitions):
-   *   – heights are stored **column-major**: heights[col_j * (nrows+1) + row_i]
-   *   – rows span the X axis  (row_i  → world x)
-   *   – columns span the Z axis (col_j  → world z)
-   *   – the field is centred at the body's translation
+   * Rapier heightfield convention (column-major):
+   *   heights[gridRow * GW + gridCol] = elevation * SH
+   *   nrows = GW − 1  (X direction, tile columns)
+   *   ncols = GH − 1  (Z direction, tile rows)
+   *   scale = { x: (GW−1)*T, y: 1.0, z: (GH−1)*T }
    *
-   * Our mapping:
-   *   row_i  = gridCol  (x-direction, 0..50)
-   *   col_j  = gridRow  (z-direction, 0..50)
-   *   heights[gridRow * (nrows+1) + gridCol] = grid[gridRow*GW + gridCol] * SH
-   *   scale  = { x: (GW-1)*T=100, y: 1.0, z: (GH-1)*T=100 }
-   *
-   * This gives world-space vertex positions:
-   *   x = -50 + gridCol*2 = (gridCol-25)*2  ✓
-   *   z = -50 + gridRow*2 = (gridRow-25)*2  ✓
+   * World-space vertex positions produced:
+   *   x = −(GW−1)*T/2 + gridCol*T = (gridCol − GHW)*T  ✓
+   *   z = −(GH−1)*T/2 + gridRow*T = (gridRow − GHH)*T  ✓
    */
-  private _createTileBoxColliders(): RAPIER.RigidBody {
-    // One fixed body; one cuboid collider per elevated tile.
-    // Cuboid half-extents: (T/2, level*SH/2, T/2) centred at the tile centre
-    // and at height level*SH/2 so its top surface sits at exactly level*SH.
-    // Level-0 tiles are covered by the ground plane added in enter().
-    const body = this.physics.rapierWorld.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed(),
-    );
+  private _createTerrainCollider(): RAPIER.RigidBody {
+    const { _GW: GW, _GH: GH } = this;
+    const heights = new Float32Array(GW * GH);
 
     for (let row = 0; row < GH; row++) {
       for (let col = 0; col < GW; col++) {
-        const level = this._grid[row * GW + col];
-        if (level === 0) continue;
-
-        const cx    = (col - GHW) * T + T * 0.5;
-        const cz    = (row - GHH) * T + T * 0.5;
-        const halfH = level * SH * 0.5;
-
-        this.physics.rapierWorld.createCollider(
-          RAPIER.ColliderDesc.cuboid(T * 0.5, halfH, T * 0.5)
-            .setTranslation(cx, halfH, cz),
-          body,
-        );
+        heights[row * GW + col] = this._wg.get(col, row).elevation * SH;
       }
     }
 
+    const body = this.physics.rapierWorld.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed(),
+    );
+    this.physics.rapierWorld.createCollider(
+      RAPIER.ColliderDesc.heightfield(
+        GW - 1, GH - 1, heights,
+        new RAPIER.Vector3((GW - 1) * T, 1.0, (GH - 1) * T),
+      ),
+      body,
+    );
     return body;
   }
 
@@ -269,36 +260,6 @@ export class OverworldScene {
     );
     this.physics.rapierWorld.createCollider(desc, body);
     this._staticBodies.push(body);
-  }
-
-  /** Build the integer height grid from seeded simplex noise. */
-  private _buildGrid(noise: (x: number, y: number) => number): Uint8Array {
-    const grid = new Uint8Array(GW * GH);
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        const dc = col - GHW;
-        const dr = row - GHH;
-        const tR = Math.sqrt(dc * dc + dr * dr); // tile-space radius from centre
-
-        // Normalised fbm noise → 0..1
-        const nx  = dc / GW;
-        const nz  = dr / GH;
-        const raw = (fbm(noise, nx * 3.8, nz * 3.8, 4) + 1) * 0.5;
-        let level = Math.min(MLV, Math.floor(raw * (MLV + 1)));
-
-        // Smooth flatness gradient: levels fade to 0 within FR tiles of centre
-        const flatness = Math.max(0, 1 - tR / FR);
-        level = Math.round(level * (1 - flatness));
-
-        // Outer rim bias: terrain rises toward the map edge (bowl effect)
-        const rimBias = Math.max(0, (tR - 20) / 9);
-        level = Math.min(MLV, Math.round(level + rimBias * 1.8));
-
-        grid[row * GW + col] = level;
-      }
-    }
-    return grid;
   }
 
   /**
@@ -315,6 +276,7 @@ export class OverworldScene {
    * All vertex-order derivations verified with the right-hand rule.
    */
   private _buildTerrain(): THREE.Mesh {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     const pos: number[] = [];
     const nrm: number[] = [];
     const clr: number[] = [];
@@ -322,7 +284,7 @@ export class OverworldScene {
 
     /** Height level of a (possibly out-of-bounds) tile. */
     const lvl = (c: number, r: number): number =>
-      (c < 0 || c >= GW || r < 0 || r >= GH) ? 0 : this._grid[r * GW + c];
+      this._wg.get(c, r).elevation;
 
     /**
      * Append a quad face to the buffers.
@@ -538,21 +500,23 @@ export class OverworldScene {
   // ── Tree placement ─────────────────────────────────────────────────────────
 
   private _plantTrees(rand: () => number): void {
-    const W  = GW * T;   // 102
-    const H  = GH * T;   // 102
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
+    const W  = GW * T;
+    const H  = GH * T;
+    const treeInner = FR * T + 5;
+    const treeOuter = GHW * T * 0.88;
     const pts = poissonDisk(W, H, 5.5, rand);
 
     for (const [px, pz] of pts) {
       const wx = px - W / 2;
       const wz = pz - H / 2;
       const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < FR * T + 5 || d > 44) continue;   // outside flat zone, inside grid edge
+      if (d < treeInner || d > treeOuter) continue;
 
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
-      if (c < 0 || c >= GW || r < 0 || r >= GH) continue;
 
-      const level = this._grid[r * GW + c];
+      const level = this._wg.get(c, r).elevation;
       if (level < 1) continue;   // no trees on bog
 
       const tree = this._makeTree(rand);
@@ -600,21 +564,23 @@ export class OverworldScene {
   // ── Rock placement ─────────────────────────────────────────────────────────
 
   private _placeRocks(rand: () => number): void {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
     const W  = GW * T;
     const H  = GH * T;
+    const rockInner = FR * T + 6;
+    const rockOuter = GHW * T * 0.92;
     const pts = poissonDisk(W, H, 8, rand);
 
     for (const [px, pz] of pts) {
       const wx = px - W / 2;
       const wz = pz - H / 2;
       const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < FR * T + 6 || d > 46) continue;
+      if (d < rockInner || d > rockOuter) continue;
 
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
-      if (c < 0 || c >= GW || r < 0 || r >= GH) continue;
 
-      const level = this._grid[r * GW + c];
+      const level = this._wg.get(c, r).elevation;
       const wy    = level * SH;
       const radius = 0.48 + rand() * 0.84;
 
@@ -634,18 +600,23 @@ export class OverworldScene {
 
   // ── Enemy camps ────────────────────────────────────────────────────────────
 
-  private _spawnCamps(rand: () => number): void {
+  private _spawnCamps(rand: () => number, campCount: number): void {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     const W  = GW * T;
     const H  = GH * T;
-    const pts = poissonDisk(W, H, 26, rand);
+    // Scale camp ring proportionally to world half-extent.
+    const campInner   = GHW * T * 0.56;
+    const campOuter   = GHW * T * 0.88;
+    const campSpacing = Math.max(26, Math.round(GW * T * 0.255));
+    const pts = poissonDisk(W, H, campSpacing, rand);
     let camps = 0;
 
     for (const [px, pz] of pts) {
-      if (camps >= 5) break;
+      if (camps >= campCount) break;
       const wx = px - W / 2;
       const wz = pz - H / 2;
       const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < 28 || d > 44) continue;
+      if (d < campInner || d > campOuter) continue;
 
       const count = 3 + Math.floor(rand() * 3);
       for (let i = 0; i < count; i++) {
@@ -656,7 +627,7 @@ export class OverworldScene {
 
         const c = Math.floor(ex / T + GHW);
         const r = Math.floor(ez / T + GHH);
-        const level = (c >= 0 && c < GW && r >= 0 && r < GH) ? this._grid[r * GW + c] : 0;
+        const level = this._wg.get(c, r).elevation;
 
         this._enemies.push(new SlimeEnemy(
           new THREE.Vector3(ex, level * SH + 0.9, ez),
@@ -671,20 +642,24 @@ export class OverworldScene {
   // ── Ruined greenhouse structures ───────────────────────────────────────────
 
   private _addRuins(rand: () => number): void {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     const W  = GW * T;
     const H  = GH * T;
-    const pts = poissonDisk(W, H, 45, rand);
+    const ruinInner   = GHW * T * 0.60;
+    const ruinOuter   = GHW * T * 0.88;
+    const ruinSpacing = Math.max(45, Math.round(GW * T * 0.441));
+    const pts = poissonDisk(W, H, ruinSpacing, rand);
 
     for (const [px, pz] of pts) {
       if (this.buildingEntrances.length >= 2) break;
       const wx = px - W / 2;
       const wz = pz - H / 2;
       const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < 30 || d > 44) continue;
+      if (d < ruinInner || d > ruinOuter) continue;
 
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
-      const level = (c >= 0 && c < GW && r >= 0 && r < GH) ? this._grid[r * GW + c] : 0;
+      const level = this._wg.get(c, r).elevation;
       const wy = level * SH;
 
       this._ruins.push(this._makeRuin(wx, wy, wz, rand));
