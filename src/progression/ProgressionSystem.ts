@@ -130,6 +130,12 @@ export class ProgressionSystem {
     return true;
   }
 
+  /** Directly increase a stat by `amount` without spending a stat point.
+   *  Used for starting boon grants and external boosts. */
+  boostStat(stat: keyof PlayerStats, amount: number): void {
+    this._stats[stat] = Math.max(1, this._stats[stat] + amount);
+  }
+
   // ── Derived stat helpers ───────────────────────────────────────────────
 
   /** Base max HP boosted by Vitality: 10 + (vitality − 1) × 5. */

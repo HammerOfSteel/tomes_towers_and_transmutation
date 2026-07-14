@@ -11,6 +11,10 @@ import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { MainMenu } from '@/ui/MainMenu';
+import { CharacterCreation } from '@/ui/CharacterCreation';
+import type { CharacterConfig } from '@/ui/CharacterCreation';
+import { DevSandbox } from '@/ui/DevSandbox';
+import { generateSandboxArena } from '@/levels/SandboxArena';
 import { DeathScreen } from '@/ui/DeathScreen';
 import { VictoryBanner } from '@/ui/VictoryBanner';
 import { EditMode } from '@/editor/EditMode';
@@ -27,6 +31,7 @@ import { OverworldScene } from '@/scene/OverworldScene';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
+import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import { TalentSystem } from '@/progression/TalentSystem';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
@@ -222,8 +227,8 @@ async function main() {
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
-  /** Shared start-game logic — called by main menu onPlay and by tests. */
-  function startGame(seed?: number): void {
+  /** Shared start-game logic — called by character creation onStart and by tests. */
+  function startGame(seed?: number, cfg?: CharacterConfig): void {
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
@@ -233,14 +238,156 @@ async function main() {
     sceneManager.resetCleared();
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
+
+    // ── Apply starting boon ────────────────────────────────────────────
+    if (cfg?.boon === 'tome') {
+      progression.grantSpell('flame_dart');
+    } else if (cfg?.boon === 'blood') {
+      // +6 vitality → derivedMaxHp = 10 + 6*5 = 40 (+30 HP)
+      progression.boostStat('vitality', 6);
+    } else if (cfg?.boon === 'swift') {
+      // +7 swiftness → dodge CD mult ≈ 0.65, speed mult ≈ 1.28
+      progression.boostStat('swiftness', 7);
+    }
+
     gameLoop.start();
   }
 
   /** XP kill tracker — grants XP for each new kill registered. */
   let prevKillCount = 0;
 
+  // ── Character creation screen ─────────────────────────────────────────────
+  let _sandboxUi: DevSandbox | null = null;
+
+  const charCreation = new CharacterCreation(
+    // onStart — boon was chosen, now actually start the game
+    (cfg) => {
+      mainMenu.hide();
+      startGame(undefined, cfg);
+    },
+    // onBack — return to the save slot modal (just show it again)
+    () => {
+      mainMenu.show();
+    },
+  );
+
+  // ── Sandbox mode helpers ──────────────────────────────────────────────────
+
+  function startSandbox(): void {
+    mainMenu.hide();
+    gameMode = 'interior';
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+    const plan = generateSandboxArena();
+    sceneManager.loadDungeon(plan);
+    gameLoop.start();
+
+    // Build sandbox UI
+    _sandboxUi?.dispose();
+    _sandboxUi = new DevSandbox({
+      onGrantSpell: (id) => progression.grantSpell(id),
+      onSetActiveSpell: (id) => {
+        progression.grantSpell(id);
+        progression.equipSpell(id, 1);
+      },
+      onGrantAllSpells: () => {
+        for (const id of ['magic_bolt','flame_dart','intimidate','nova_burst','chain_arc','void_rift','battle_hymn','mass_animate']) {
+          progression.grantSpell(id);
+        }
+      },
+      onSpawnEnemies: (n) => {
+        const playerPos = player.group.position;
+        const angle0 = Math.random() * Math.PI * 2;
+        for (let i = 0; i < n; i++) {
+          const angle = angle0 + (i / n) * Math.PI * 2;
+          const r = 4 + Math.random() * 2;
+          const pos = new THREE.Vector3(
+            playerPos.x + Math.cos(angle) * r,
+            1.5,
+            playerPos.z + Math.sin(angle) * r,
+          );
+          const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+          scene.add(en.group);
+          sceneManager.addEnemy(en);
+        }
+      },
+      onKillAllEnemies: () => {
+        sceneManager.getActiveEnemies().forEach(e => {
+          if (!e.isDead) e.health.takeDamage(9999);
+        });
+      },
+      getProcGenStats: (type, seed) => {
+        try {
+          if (type === 'tower') {
+            const plan = generateTower(seed);
+            const roomIds = [...plan.rooms.keys()];
+            const byFloor = new Map<number, number>();
+            for (const bp of plan.rooms.values()) {
+              byFloor.set(bp.floor, (byFloor.get(bp.floor) ?? 0) + 1);
+            }
+            const floors = [...byFloor.entries()].sort((a, b) => a[0] - b[0]);
+            return [
+              `Seed:      ${seed}`,
+              `Rooms:     ${plan.rooms.size}`,
+              `Start:     ${plan.startRoomId}`,
+              '',
+              'Floor breakdown:',
+              ...floors.map(([f, c]) => `  Floor ${f.toString().padStart(2)}: ${c} room(s)`),
+              '',
+              'Room IDs:',
+              ...roomIds.map(id => `  ${id}`),
+            ].join('\n');
+          } else if (type === 'dungeon') {
+            const plan = generateDungeon(seed, 5); // 5 floors for preview
+            const roomIds = [...plan.rooms.keys()];
+            return [
+              `Seed:  ${seed}`,
+              `Rooms: ${plan.rooms.size}`,
+              `Start: ${plan.startRoomId}`,
+              '',
+              'Room IDs:',
+              ...roomIds.map(id => `  ${id}`),
+            ].join('\n');
+          } else {
+            // overworld — just describe the seed
+            return [
+              `Seed:        ${seed}`,
+              `Biomes:      5 (bog, forest, highland, coastal, plains)`,
+              `Grid:        64×64 heightfield`,
+              `Settlements: procedural (seed-derived)`,
+              '',
+              'Note: the overworld generates as a live scene.',
+              'It cannot be previewed as a static blueprint.',
+            ].join('\n');
+          }
+        } catch (e) {
+          return `Error: ${String(e)}`;
+        }
+      },
+      onClose: () => {
+        _sandboxUi?.hide();
+        gameLoop.stop();
+        sceneManager.unloadCurrentRoom();
+        mainMenu.show();
+      },
+    });
+    _sandboxUi.show();
+  }
+
   const mainMenu = new MainMenu({
-    onPlay: () => startGame(),
+    onPlay: (slotId) => {
+      const raw = localStorage.getItem(`ttt_save_${slotId}`);
+      const isNewGame = !raw;
+      if (isNewGame) {
+        // New save — show character creation before starting
+        mainMenu.hide();
+        charCreation.show(slotId);
+      } else {
+        // Continuing existing save — skip character creation
+        mainMenu.hide();
+        startGame();
+      }
+    },
+    onDevLab: () => startSandbox(),
   });
 
   // ── Test / debug hook (dev builds only) ──────────────────────────────────

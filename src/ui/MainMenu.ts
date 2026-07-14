@@ -158,6 +158,8 @@ const LORE_PAGES: LorePage[] = [
 export interface MainMenuOptions {
   /** Called when the player picks a save slot. */
   onPlay: (slotId: number) => void;
+  /** Called when the Dev Lab button is clicked (only visible in dev mode). */
+  onDevLab?: () => void;
 }
 
 // ── MainMenu class ────────────────────────────────────────────────────────
@@ -174,6 +176,7 @@ export class MainMenu {
   private _lorePage = 0;
   private _prevBtn: HTMLButtonElement | null = null;
   private _nextBtn: HTMLButtonElement | null = null;
+  private _devLabBtn: HTMLButtonElement | null = null;
   private _audio: HTMLAudioElement | null = null;
   private _trackIdx = 0;
   private _shuffling = false;
@@ -229,11 +232,16 @@ export class MainMenu {
     title.textContent = 'For Princesses';
     const nav = mkEl('nav', 'mm-nav');
     const navSep = mkEl('span', 'mm-nav-sep');
+    // Dev Lab button — only shown when dev mode is enabled
+    const devLabBtn = mkBtn('Dev Lab', 'mm-btn mm-btn--dev', () => this.opts.onDevLab?.());
+    devLabBtn.style.display = localStorage.getItem('ttt_dev_mode') === 'true' ? '' : 'none';
+    this._devLabBtn = devLabBtn;
     nav.append(
       mkBtn('Play',     'mm-btn', () => { this._renderSaveSlots(); this._openModal('mm-play'); }),
       mkBtn('Settings', 'mm-btn', () => this._openModal('mm-settings')),
       mkBtn('Controls', 'mm-btn', () => this._openModal('mm-controls')),
       mkBtn('Lore',     'mm-btn', () => { this._setLorePage(0); this._openModal('mm-lore'); }),
+      devLabBtn,
       navSep,
       this._buildMusicPlayer(),
     );
@@ -415,6 +423,10 @@ export class MainMenu {
     const devToggle = card.querySelector<HTMLInputElement>('#mm-dev-toggle')!;
     devToggle.addEventListener('change', () => {
       localStorage.setItem('ttt_dev_mode', String(devToggle.checked));
+      // Show / hide the Dev Lab nav button in real-time
+      if (this._devLabBtn) {
+        this._devLabBtn.style.display = devToggle.checked ? '' : 'none';
+      }
     });
 
     modal.appendChild(card);
@@ -859,6 +871,10 @@ const MM_CSS = `
   transform: translateY(-2px);
 }
 .mm-btn:active { transform: translateY(1px); }
+.mm-btn--dev {
+  border-color: #3a2860; color: #9060d0; font-size: 14px; padding: 11px 28px;
+}
+.mm-btn--dev:hover { border-color: #7040c0; color: #d0a0ff; box-shadow: 0 0 16px rgba(120,60,200,.3); }
 
 /* ── Gallery frame ───────────────────────────────────────────────────────── */
 .mm-gallery {

@@ -115,12 +115,16 @@ import * as THREE from 'three';
 function makeEnemy(x: number, z: number): {
   worldPosition: THREE.Vector3;
   isDead: boolean;
+  hp: number;
+  maxHp: number;
   takeDamage: ReturnType<typeof vi.fn>;
   forceFlee: ReturnType<typeof vi.fn>;
 } {
   return {
     worldPosition: new THREE.Vector3(x, 0, z),
     isDead: false,
+    hp: 10,
+    maxHp: 10,
     takeDamage: vi.fn(() => 1),
     forceFlee: vi.fn(),
   };
