@@ -253,6 +253,153 @@ class AoeVfx {
   }
 }
 
+// ── NovaWave — multi-ring "pebble in pond" ripple effect for nova_burst ───────
+//
+//  Five concentric rings expand outward from the cast point like water ripples.
+//  Inner echoes start slightly later and reach a smaller maximum radius.
+//  When the primary wave front sweeps past an enemy position a "splash" callback
+//  fires so SpellSystem can spawn a SparkBurst there.
+
+interface _RingStage {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  delay: number;
+  maxR: number;
+  expandDur: number;
+  baseOpacity: number;
+}
+
+class NovaWave {
+  readonly mesh: THREE.Group;
+  private readonly _flash: THREE.Mesh;
+  private _remaining: number;
+  private _elapsed = 0;
+  private readonly _center: THREE.Vector3;
+  private readonly _hitEnemies = new Set<Damageable>();
+  private _prevWaveFront = 0;
+  private readonly _stages: _RingStage[];
+
+  constructor(
+    pos: THREE.Vector3,
+    maxRadius: number,
+    color: number,
+    readonly duration: number,
+    private readonly onSplash: (splashPos: THREE.Vector3) => void,
+  ) {
+    // Total lifetime = duration + a little extra so inner echoes fully fade
+    this._remaining = duration + 0.45;
+    this._center = new THREE.Vector3(pos.x, 0, pos.z);
+    this.mesh = new THREE.Group();
+    this.mesh.position.set(pos.x, 0.06, pos.z);
+
+    // Five ring stages: primary + 4 echo ripples
+    const stageParams = [
+      { delayFrac: 0.00, maxRFrac: 1.00, durFrac: 1.00, tube: 0.016, opacity: 1.00 },
+      { delayFrac: 0.16, maxRFrac: 0.74, durFrac: 0.92, tube: 0.014, opacity: 0.75 },
+      { delayFrac: 0.32, maxRFrac: 0.52, durFrac: 0.84, tube: 0.012, opacity: 0.55 },
+      { delayFrac: 0.48, maxRFrac: 0.33, durFrac: 0.76, tube: 0.010, opacity: 0.40 },
+      { delayFrac: 0.64, maxRFrac: 0.17, durFrac: 0.68, tube: 0.009, opacity: 0.28 },
+    ];
+
+    this._stages = stageParams.map(p => {
+      const ringRadius  = maxRadius * p.maxRFrac;
+      const tubeRadius  = Math.max(0.06, ringRadius * p.tube);
+      const geo = new THREE.TorusGeometry(ringRadius, tubeRadius, 6, 64);
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: p.opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const ring = new THREE.Mesh(geo, mat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.scale.setScalar(0.001);
+      this.mesh.add(ring);
+      return {
+        mesh: ring, mat,
+        delay:       p.delayFrac * duration,
+        maxR:        ringRadius,
+        expandDur:   p.durFrac   * duration,
+        baseOpacity: p.opacity,
+      };
+    });
+
+    // Central blast flash disc (bright white, fades in ~0.25s)
+    const flashGeo = new THREE.CircleGeometry(maxRadius * 0.4, 40);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._flash = new THREE.Mesh(flashGeo, flashMat);
+    this._flash.rotation.x = -Math.PI / 2;
+    this.mesh.add(this._flash);
+  }
+
+  get expired(): boolean { return this._remaining <= 0; }
+
+  update(dt: number, targets: (Damageable & { worldPosition?: THREE.Vector3 })[]): void {
+    if (this.expired) return;
+    this._remaining -= dt;
+    this._elapsed   += dt;
+
+    // ── Primary wave front — drives splash detection ──────────────────────
+    const primary = this._stages[0];
+    const primaryAge = this._elapsed - primary.delay; // always 0 for first stage
+    const primaryT   = Math.min(1, Math.max(0, primaryAge / primary.expandDur));
+    const waveFront  = primary.maxR * primaryT;
+
+    // Splash: enemies crossed by the advancing wave front this frame
+    for (const t of targets) {
+      if (this._hitEnemies.has(t) || t.isDead || !t.worldPosition) continue;
+      const dx = t.worldPosition.x - this._center.x;
+      const dz = t.worldPosition.z - this._center.z;
+      const d  = Math.sqrt(dx * dx + dz * dz);
+      if (d > this._prevWaveFront && d <= waveFront) {
+        this._hitEnemies.add(t);
+        this.onSplash(new THREE.Vector3(t.worldPosition.x, 0.5, t.worldPosition.z));
+      }
+    }
+    this._prevWaveFront = waveFront;
+
+    // ── Animate each ring stage ───────────────────────────────────────────
+    for (const stage of this._stages) {
+      const age = this._elapsed - stage.delay;
+      if (age <= 0) { stage.mesh.scale.setScalar(0.001); continue; }
+
+      const t = Math.min(1, age / stage.expandDur); // 0→1 within expansion
+
+      // Scale from 0 → 1 (torus baked at maxR, scale=1 is full size)
+      stage.mesh.scale.setScalar(Math.max(0.001, t));
+
+      // Gentle wave-height: ring rises and falls like a real wave crest
+      stage.mesh.position.y = Math.sin(t * Math.PI) * 0.22 * (1 - t * 0.6);
+
+      // Opacity: hold until 65% then fade; also fade at total end
+      const holdFade  = t < 0.65 ? 1.0 : 1.0 - (t - 0.65) / 0.35;
+      const endFade   = this._remaining < 0.2 ? this._remaining / 0.2 : 1.0;
+      stage.mat.opacity = stage.baseOpacity * holdFade * endFade;
+    }
+
+    // ── Central flash fades quickly ────────────────────────────────────────
+    (this._flash.material as THREE.MeshBasicMaterial).opacity =
+      Math.max(0, 0.65 * (1 - this._elapsed * 4.5));
+  }
+
+  dispose(): void {
+    this.mesh.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        (child.material as THREE.Material).dispose();
+      }
+    });
+  }
+}
+
 // ── LightningBolt — jagged midpoint-displaced tube with crawling flicker ──────
 //    Replaces the old straight CylinderGeometry ChainSegment
 
@@ -697,6 +844,7 @@ interface CooldownEntry { remaining: number; duration: number; }
 export class SpellSystem {
   private readonly _projectiles: Projectile[]  = [];
   private readonly _aoeVfx: AoeVfx[]           = [];
+  private readonly _novaWaves: NovaWave[]       = [];
   private readonly _bolts: LightningBolt[]      = [];
   private readonly _sparks: SparkBurst[]        = [];
   private readonly _zones: ZoneEntity[]         = [];
@@ -816,6 +964,17 @@ export class SpellSystem {
       }
     }
 
+    // Nova burst wave ripples (need targets for splash detection)
+    for (let i = this._novaWaves.length - 1; i >= 0; i--) {
+      const w = this._novaWaves[i];
+      w.update(dt, targets ?? []);
+      if (w.expired) {
+        scene.remove(w.mesh);
+        w.dispose();
+        this._novaWaves.splice(i, 1);
+      }
+    }
+
     // Lightning bolts
     for (let i = this._bolts.length - 1; i >= 0; i--) {
       const b = this._bolts[i];
@@ -917,13 +1076,16 @@ export class SpellSystem {
     scene.add(primaryBolt.mesh);
     this._bolts.push(primaryBolt);
 
-    // Hit detection: nearest enemy within 2.0u of the cursor
+    // Hit detection: nearest enemy within 2.8u of cursor (XZ only — ignores
+    // terrain height differences which would skew 3D distance in the overworld).
     const hitTargets = new Set<Damageable>();
     let initialHit: (Damageable & { worldPosition?: THREE.Vector3 }) | null = null;
-    let bestDist = 2.0;
+    let bestDist = 2.8;
     for (const t of targets) {
       if (t.isDead || !t.worldPosition) continue;
-      const d = aimTarget.distanceTo(t.worldPosition);
+      const dx = aimTarget.x - t.worldPosition.x;
+      const dz = aimTarget.z - t.worldPosition.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
       if (d < bestDist) { bestDist = d; initialHit = t; }
     }
 
@@ -995,7 +1157,34 @@ export class SpellSystem {
     const radius = def.radius * aoeRMult;
     const vfxDur = def.aoeVfxDuration ?? 0.8;
 
-    // Expanding ring VFX
+    if (spellId === 'nova_burst') {
+      // ── Nova Burst: multi-ring water-ripple wave effect ──────────────────
+      // The wave ripples outward; when the front reaches an enemy a splash
+      // SparkBurst fires at their position for the "pebble in pond" feel.
+      const wave = new NovaWave(
+        origin, radius, def.color, vfxDur,
+        (splashPos) => this._addSpark(splashPos, def.color, 4.5, scene),
+      );
+      scene.add(wave.mesh);
+      this._novaWaves.push(wave);
+      // Central detonation sparks
+      this._addSpark(origin, def.color, 9.0, scene);
+      this._addSpark(origin, 0xffffff, 6.5, scene);
+      // Instant AOE damage (damage is immediate; ripples are purely visual)
+      const novaDmg = Math.round(def.damage * dmgMult);
+      if (novaDmg > 0) {
+        for (const t of targets) {
+          if (t.isDead || !t.worldPosition) continue;
+          if (origin.distanceTo(t.worldPosition) < radius + 0.4) {
+            const applied = t.takeDamage(novaDmg);
+            if (applied > 0) onHit?.(t, applied);
+          }
+        }
+      }
+      return;
+    }
+
+    // ── Generic AOE ring VFX (intimidate, mass_animate) ──────────────────
     const vfx = new AoeVfx(origin, radius, def.color, vfxDur);
     scene.add(vfx.mesh);
     this._aoeVfx.push(vfx);
@@ -1011,12 +1200,6 @@ export class SpellSystem {
         }
       }
       return;
-    }
-
-    if (spellId === 'nova_burst') {
-      // Two overlapping spark bursts — gold + white for bright explosion
-      this._addSpark(origin, def.color, 8.5, scene);
-      this._addSpark(origin, 0xffffff, 6.0, scene);
     }
 
     if (spellId === 'mass_animate') {
