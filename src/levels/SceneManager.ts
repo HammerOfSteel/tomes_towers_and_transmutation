@@ -150,6 +150,12 @@ export class SceneManager {
     return this.activeEnemies;
   }
 
+  /** Directly add a pre-constructed SlimeEnemy to the active enemies list.
+   *  Used by the Dev Sandbox to spawn enemies without a blueprint spawn entry. */
+  addEnemy(enemy: SlimeEnemy): void {
+    this.activeEnemies.push(enemy);
+  }
+
   /** World-positioned interactables for the currently loaded room.
    *  Returns an empty array if no room is active. */
   getActiveInteractables(): WorldInteractable[] {
