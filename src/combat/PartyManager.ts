@@ -9,6 +9,8 @@ import type { SlimeEnemy } from '@/enemy/SlimeEnemy';
 export class PartyManager {
   /** Maximum number of followers allowed. Updated dynamically via Dominion stat. */
   maxSize: number;
+  /** Damage multiplier applied to follower attacks (set by Battle Hymn spell). Resets to 1.0 after hymn expires. */
+  followerDamageMult = 1.0;
 
   private readonly _members: SlimeEnemy[] = [];
 

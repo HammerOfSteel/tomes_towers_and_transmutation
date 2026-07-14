@@ -9,14 +9,24 @@ import type { ProgressionSystem } from '@/progression/ProgressionSystem';
 // ── Spell metadata ────────────────────────────────────────────────────────
 
 const SPELL_LABEL: Record<string, string> = {
-  magic_bolt: 'Magic Bolt',
-  flame_dart: 'Flame Dart',
-  intimidate:  'Intimidate',
+  magic_bolt:   'Magic Bolt',
+  flame_dart:   'Flame Dart',
+  intimidate:   'Intimidate',
+  nova_burst:   'Nova Burst',
+  chain_arc:    'Chain Arc',
+  void_rift:    'Void Rift',
+  battle_hymn:  'Battle Hymn',
+  mass_animate: 'Mass Animate',
 };
 const SPELL_DESC: Record<string, string> = {
-  magic_bolt: 'A focused bolt of arcane energy.',
-  flame_dart: 'A conjured dart of living fire.',
-  intimidate:  'AOE cry that sends nearby creatures fleeing. (Dev spell)',
+  magic_bolt:   'A focused bolt of arcane energy.',
+  flame_dart:   'A conjured dart of living fire.',
+  intimidate:   'AOE cry that sends nearby creatures fleeing. (Dev spell)',
+  nova_burst:   'Player-centred radial explosion. 12u radius · 8 dmg · 15s cooldown.',
+  chain_arc:    'Lightning bolt that bounces up to 3 times. Each bounce −15% damage. 5s cooldown.',
+  void_rift:    'Stationary DoT zone at cursor. 3 dmg/s for 8 seconds. 12s cooldown.',
+  battle_hymn:  'Aura buff: recruited minions deal +50% damage for 12s. 20s cooldown.',
+  mass_animate: 'Raises dead enemy corpses as temporary skeletal minions. [Conductor tier 2] 30s cooldown.',
 };
 
 // ── CSS ───────────────────────────────────────────────────────────────────

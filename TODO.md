@@ -346,24 +346,37 @@ Reach level 10. Spend stat points. Buy 5 talent nodes across ≥2 paths; trigger
 ### 7.5a — Research & Planning Sprint
 - [ ] Survey Three.js material options: `MeshLambertMaterial` (current) vs `MeshStandardMaterial` (PBR, roughness/metalness) vs `MeshPhysicalMaterial` (clearcoat/transmission) vs custom `ShaderMaterial`. Benchmark frame-time cost of each upgrade path.
 - [ ] Research canvas-based procedural texture generation (`OffscreenCanvas` 256×256 → `THREE.CanvasTexture`) for: stone, wood grain, moss, cloth, and sky.
-- [ ] Evaluate `THREE.EffectComposer` post-processing passes (bloom on emissives, subtle vignette, film grain). Gate behind a settings toggle — off by default for performance.
+- [ ] Evaluate `THREE.EffectComposer` post-processing passes (bloom on emissives, SSAO, subtle vignette, film grain). Gate behind a settings toggle — off by default for performance. Research SSAO specifically — it is the single highest-impact pass for making procedural primitives read as physical objects (soft contact shadows in corners where objects touch the ground).
+- [ ] Research `BokehPass` (DoF/tilt-shift) for the miniature diorama aesthetic: heavy foreground/background blur with a narrow sharp band forces the eye to perceive the scene as a toy. Benchmark GPU cost — gate behind its own settings toggle.
+- [ ] Research `THREE.ACESFilmicToneMapping` + exposure boost as a zero-cost colour-grading step (produces punchy, saturated colours like the concept art).
+- [ ] Research CSG libraries (`three-csg-ts`): subtract/union basic primitives to generate cauldrons, arched doorways, goblets in code. Evaluate cost model — generate once at level load and cache the `BufferGeometry` result.
+- [ ] Research Forward Kinematics rig patterns for Three.js: nested `THREE.Group` hierarchy as joints; rotating a parent group moves all child meshes. Document pivot-offset convention (shift mesh so rotation origin is at the joint, not mesh centre).
+- [ ] Search terms to cover: *Forward Kinematics Three.js*, *Procedural Walk Cycles Math*, *three-csg-ts*, *THREE.InstancedMesh BufferGeometry optimisation*, *MeshPhysicalMaterial clearcoat*, *SSAO Three.js EffectComposer*, *Dynamic CanvasTexture Three.js*, *Builder Pattern TypeScript game dev*.
 - [ ] Compile findings + upgrade plan into ARCHITECTURE.md visual section.
 
-### 7.5b — Material System Overhaul
+### 7.5b — Geometry & Material Pipeline
 - [ ] `src/rendering/MaterialLibrary.ts`: singleton factory — `MaterialLibrary.get('stone_wall')` returns a cached instance. All game code calls this instead of inline `new THREE.Mesh*Material`.
+- [ ] `src/rendering/GeometryCache.ts`: singleton cache for expensive procedural geometry. `GeometryCache.get(key, buildFn)` — calls `buildFn()` once, stores the `BufferGeometry`, returns same reference on subsequent calls. Used by CSG results, lathe spires, and rounded furniture so the generation cost is paid once at level load only.
+- [ ] **`RoundedBoxGeometry` utility** (`src/rendering/RoundedBoxGeometry.ts`): bevelled box with configurable `bevelRadius` and `bevelSegments`. Replace all raw `BoxGeometry` walls, furniture, and props — eliminates the sharp digital-edge look that makes primitives read as computer graphics rather than toy miniatures.
+- [ ] **CSG integration** (`three-csg-ts`): write `src/rendering/ProceduralProps.ts` with factory functions for complex shapes built via subtract/union. Initial props: `buildCauldron()` (cylinder − sphere for the hollow bowl + torus rim), `buildGoblet()` (lathe spline + cylinder stem), `buildArch()` (box − cylinder for archway opening). All results stored in `GeometryCache`.
 - [ ] Upgrade interior wall/floor/pillar materials to `MeshStandardMaterial` (roughness 0.85, metalness 0.05 for stone; roughness 0.7, metalness 0.0 for wood).
 - [ ] **Procedural stone texture** (OffscreenCanvas 256×256): Voronoi-ish cell boundaries drawn as dark cracks on a mid-grey base; random hue ±5° per cell; output as `CanvasTexture` used as `map`.
 - [ ] **Procedural wood grain** (OffscreenCanvas 256×256): stacked sine-wave stripes + circular knot rings; warm brown palette.
 - [ ] **Moss overlay**: second canvas pass with stipple green spots; intensity controlled by `moistness` param (higher for lower floors + greenhouse).
 - [ ] **Emissive rune glyphs**: cauldron + lectern get an `emissiveMap` canvas with procedurally drawn angular rune shapes (jagged polylines), colour-tinted per fixture type.
 
-### 7.5c — Dynamic Lighting Upgrade
+### 7.5c — Lighting, Tonemapping & Post-Processing
 - [ ] `src/rendering/LightingSystem.ts`: manages all dynamic light creation/update/disposal. Register lights by type (torch, ambient, spell, boss).
-- [ ] Replace flat ambient with `THREE.HemisphereLight` (warm sky / cool ground split) + `THREE.DirectionalLight` per scene.
+- [ ] Replace flat ambient with `THREE.HemisphereLight` (warm sky / cool ground split) + `THREE.DirectionalLight` per scene. Warm directional key light (`#ffe5b4`) + cool blue-purple hemisphere fill — dual-tone lighting mimics cozy sunlight in a dusty tower room.
+- [ ] **ACESFilmic tonemapping**: set `renderer.toneMapping = THREE.ACESFilmicToneMapping` and `renderer.toneMappingExposure = 1.2`. Zero-cost pass that gives rich punchy colours matching the concept art.
 - [ ] Per-room torch `THREE.PointLight` (intensity 1.2, distance 8, decay 2): positioned at each torch fixture; flicker via `sin(t × flickerFreq + phaseOffset) × 0.18` where freq and phase are per-torch values from mulberry32.
 - [ ] Spell-cast light pulse: on any cast, spawn `PointLight` at origin, decay intensity 2→0 over 0.4s. Color = spell's visual color.
 - [ ] Scene ambiance presets: dungeon = dim orange; library = warm amber; observatory = cold blue-white; exterior night = near-black + moonblue; greenhouse = soft green.
-- [ ] `EffectComposer` (optional toggle): bloom on emissive surfaces + vignette pass. Off by default.
+- [ ] **`EffectComposer` pipeline** (settings toggle, off by default):
+  - **SSAOPass**: screen-space ambient occlusion — adds soft dark contact shadows where objects touch the ground and in corners. Radius 0.4, bias 0.01. This is the single highest-impact pass for the toy/clay aesthetic.
+  - **BloomPass**: bloom on emissive surfaces (strength 0.4, threshold 0.8).
+  - **Vignette pass**: subtle edge darkening.
+  - **BokehPass** (separate toggle, off by default): DoF tilt-shift — blur foreground/background sharply, keep a narrow focus band at the play-field level. Forces the brain to read the scene as a miniature diorama.
 
 ### 7.5d — Particle System
 - [ ] `src/rendering/ParticleSystem.ts`: pooled `THREE.Points` emitter. `emit(config: ParticleConfig)` — position, velocity spread (cone angle + speed), color (start/end), lifetime, size. Pool capped at 1 024 particles; oldest recycled.
@@ -374,12 +387,27 @@ Reach level 10. Spend stat points. Buy 5 talent nodes across ≥2 paths; trigger
 - [ ] Torch fire: 8 orange/yellow rising particles per torch per frame; lifetime 0.5s, upward drift.
 
 ### 7.5e — Character & Enemy Visual Polish
-- [ ] `src/rendering/CharacterBuilder.ts`: modular mesh-layering system. Character = base body capsule + separate head geometry + arm segments + optional accessory slots. Each segment has its own `MaterialLibrary` entry.
-- [ ] **Character Creation Screen** (Main Menu → New Game): adjust body proportions (height scale, width slider), head shape (round / angular / elongated — different `SphereGeometry` detail params), skin color (HSL picker → MaterialLibrary hue), robe color, hair (procedural spline curves as `TubeGeometry` from scalp control points).
+- [ ] **Forward Kinematics bone rig** (`src/rendering/CharacterRig.ts`): `createBone(geometry, material, pivotOffset: THREE.Vector3)` helper — wraps a mesh in a `THREE.Group` and offsets the mesh so rotating the group acts as a proper joint. Build full skeleton hierarchy: `Root (Group) → Torso → [Head, L_Shoulder → L_Elbow, R_Shoulder → R_Elbow, Hips → L_Thigh → L_Shin, R_Thigh → R_Shin]`. Each joint is a `THREE.Group`; attach `RoundedBoxGeometry` / `SphereGeometry` limb meshes as children. Rapier capsule drives `Root.position` each frame; internal bones remain free for animation.
+- [ ] `src/rendering/CharacterBuilder.ts`: modular mesh-layering system built on top of `CharacterRig`. Character = rig skeleton + `MaterialLibrary` entries per segment + optional accessory slots. Target API: `new CharacterBuilder().torso('rounded').head('anime_round').weapon('wand').build()`.
+- [ ] **Canvas face pipeline** (`src/rendering/FaceCanvas.ts`): create a hidden 256×256 `OffscreenCanvas`. Write `drawEyes(ctx, state)` and `drawMouth(ctx, state)` using arcs, paths, and filled bezier curves. Apply as `THREE.CanvasTexture` on the head geometry's `map`. `Expression` component with states `idle | walking | hurt | casting | surprised` — on state change redraw the canvas and set `texture.needsUpdate = true`. Keep canvas size ≤ 256×256 to avoid frame stutter.
+- [ ] **Character Creation Screen** (Main Menu → New Game): adjust body proportions (height scale, width slider), head shape (round / angular / elongated — different `SphereGeometry` detail params), skin color (HSL picker → MaterialLibrary hue), robe color, hair (procedural spline curves as `TubeGeometry` from scalp control points). Live preview uses the FK rig.
+- [ ] **Velocity-driven slime vertex shader**: replace static `SphereGeometry` with a high-vertex-density sphere and a custom `ShaderMaterial`. Uniform `uVelocity: Vector3` fed from Rapier rigid body each frame. Fragment: reads velocity magnitude → displaces vertices in the velocity direction (stretch) and orthogonally contracts (squish conservation). Squish on landing: spike `uVelocity` to −Y for one frame on ground contact. Cached base geometry via `GeometryCache`.
+- [ ] **`LatheGeometry` prop generator** (`src/rendering/LatheProps.ts`): define 2D spline control points as arrays of `[r, y]` pairs; pass to `THREE.LatheGeometry` to spin into revolution solids. Initial shapes: `buildPotion(color)` (bulbous bottle + narrow neck + cork), `buildVase()` (wide belly taper), `buildSpire()` (tower turret tip). Results cached in `GeometryCache`. Replace placeholder cylinder props in BlueprintRenderer.
 - [ ] **Slime personality variants**: `bold` = two small spike `ConeGeometry` protrusions; `gentle` = slightly translucent material (opacity 0.85) + softer pastel; `curious` = two small extra eye-sphere bulges on the body surface; `lonely` = darker hue + thin dragging tendril `TubeGeometry`.
 - [ ] Enemy biome tinting: slimes in bog = muddy brown lerp; forest = mossy green; highlands = grey-blue. Applied in `SlimeEnemy` based on spawn biome tag from `OverworldScene`.
 
-### 7.5f — Environment & Sky
+### 7.5f — Procedural Animation Math
+
+**Goal:** Make characters breathe, walk, and act using only math — no keyframe data or external animation libraries.
+
+- [ ] **Idle breather**: in the render loop, apply `Math.sin(t × 1.2) × 0.025` to `Torso.scale.y` and `Math.sin(t × 1.2) × 0.012` to `Root.position.y`. Shoulder bones get a gentle counter-oscillation at half amplitude to simulate breathing weight. Frequency and phase offset seeded per character from mulberry32 so no two characters breathe in sync.
+- [ ] **Procedural walk cycle**: read `PlayerController` velocity magnitude from Rapier KCC each frame. If `|velocity| > 0.1`, compute `walkPhase = t × walkFreq` where `walkFreq` scales linearly with speed. Apply: `L_Thigh.rotation.x = Math.sin(walkPhase) × strideAmp; R_Thigh.rotation.x = Math.sin(walkPhase + Math.PI) × strideAmp` (opposing legs). Arm bones get counter-phase swing: `L_Shoulder.rotation.x = Math.sin(walkPhase + Math.PI) × armAmp`. When velocity drops below 0.1, lerp all bone rotations back to 0 at a damping rate of `8 × delta`.
+- [ ] **Cast pose**: on spell cast start, tween the casting arm shoulder from `rotation.x = 0` to `rotation.x = −1.1` (raised) over 0.12s; on cast end, tween back over 0.25s. Implement as a self-contained micro-tween: `{ from, to, duration, elapsed, bone, axis, onDone }` updated in the render loop. No external dependency needed (~30 lines).
+- [ ] **Melee swing**: on melee attack, tween the weapon arm from `rotation.z = 0` to `rotation.z = 1.8` (full horizontal sweep) over `0.18s`, then return over `0.12s`.
+- [ ] **Hurt flinch**: on taking damage, apply an immediate `Root.rotation.y += randSign × 0.3`; decay rotation back to 0 over `0.3s` (exponential: `rot × 0.85` per frame). Simultaneously trigger `Expression` → `hurt`.
+- [ ] Apply the same idle-breath and walk-cycle math to recruited slime followers using their existing `updateAsFollower()` velocity — slimes should wobble and stretch as they run.
+
+### 7.5g — Environment & Sky
 - [ ] **Procedural skybox** (`THREE.SphereGeometry` large inverted): canvas-drawn sky dome — gradient `#0a0018` to `#000008`; 800 seeded star points (mulberry32) of varying brightness; per-star twinkle via `sin(t × freq + phase)` where freq/phase seeded per star index.
 - [ ] **Moon billboard**: procedural canvas circle with crater pockmarks (dark filled arcs); rendered as `PlaneGeometry` that always faces camera (`mesh.lookAt(camera.position)` each frame).
 - [ ] **Foliage sway shader**: trees use `ShaderMaterial` with uniform `uTime`; vertex X/Z offset += `sin(uTime × 0.8 + worldPos.x × 0.4) × 0.06` for vertices above a height threshold.
@@ -388,12 +416,18 @@ Reach level 10. Spend stat points. Buy 5 talent nodes across ≥2 paths; trigger
 
 **Phase 7.5 Tests:**
 - `MaterialLibrary.get('stone_wall')` twice → same object reference (singleton).
+- `GeometryCache.get('cauldron', buildFn)` twice → same `BufferGeometry` reference; `buildFn` called exactly once.
+- `RoundedBoxGeometry`: all vertex normals point within the outer bounding volume (no sharp normals at corners from raw box seam).
+- CSG `buildCauldron()`: returns a valid `BufferGeometry` with >0 vertices; no NaN in position attributes.
+- Canvas face texture: `drawEyes` and `drawMouth` execute without throwing; `texture.needsUpdate` is set to `true` after an `Expression` state change.
+- Walk cycle: at velocity 0.0, all bone rotations ≈ 0 after damping settles. At velocity 5.0, `L_Thigh.rotation.x` and `R_Thigh.rotation.x` have opposing signs.
+- Micro-tween: tween from 0→1 over 0.5s — after 0.25s elapsed, value is within ±0.05 of 0.5 (easing tolerance).
 - Particle pool: emitting 1025 particles recycles oldest, no crash, pool.length stays at 1024.
 - Sky stars: positions deterministic — same seed produces identical star positions on two runs.
 - Foliage shader: GLSL compiles without error; mesh appears in render (visual assertion).
 
 **Phase 7.5 Playtest:**  
-Walk through all 11 tower floors, greenhouse, and all 3 exterior biomes. Every surface must have visible texture detail. Torches flicker visibly. Spell casts leave a light trace. Slime deaths produce satisfying particle bursts. Character creation screen must show live preview of all adjustments.
+Walk through all 11 tower floors, greenhouse, and all 3 exterior biomes. Every surface must have visible texture detail. Torches flicker visibly. Spell casts leave a light trace. Slime deaths produce satisfying particle bursts. Character creation screen must show live preview of all adjustments. Player character visibly breathes at rest. Walk cycle animates clearly on movement. Character raises casting arm on spell cast. Slimes stretch visibly on fast movement and squish on landing. Potion props have recognisable lathe-curve silhouettes. Toggle DoF in settings — scene reads as miniature diorama. Toggle SSAO — objects gain contact shadow weight.
 
 ---
 
