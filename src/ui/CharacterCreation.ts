@@ -248,6 +248,7 @@ export class CharacterCreation {
   private _outfitLegsChips = new Map<OutfitLegsId, HTMLElement>();
   private _outfitOverChips = new Map<OutfitOverId, HTMLElement>();
   private _outfitSec!: HTMLElement;
+  private _morphWrap!: HTMLElement;
   private _morphInputs: Array<{ prop: string; slider: HTMLInputElement; val: HTMLElement }> = [];
   private _primaryInput!:   HTMLInputElement;
   private _secondaryInput!: HTMLInputElement;
@@ -316,7 +317,8 @@ export class CharacterCreation {
     this._outfitTopChips.forEach((el, id) => el.classList.toggle('cc-chip--on',  id === d.outfit.top));
     this._outfitLegsChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.legs));
     this._outfitOverChips.forEach((el, id) => el.classList.toggle('cc-chip--on', id === d.outfit.over));
-    this._outfitSec.style.display = d.archetype === 'biped' ? 'flex' : 'none';
+    this._outfitSec.style.display  = d.archetype === 'biped' ? 'flex' : 'none';
+    this._morphWrap.style.display  = d.archetype === 'biped' ? 'flex' : 'none';
   }
 
   // ── DOM builder ──────────────────────────────────────────────────────────
@@ -547,7 +549,9 @@ export class CharacterCreation {
     this._scaleVal = document.createElement('span'); this._scaleVal.className = 'cc-slider-val';
     this._scaleSlider.oninput = () => { this._dna.proportions.global = +this._scaleSlider.value; this._scaleVal.textContent = (+this._scaleSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
     scRow.append(scLbl, this._scaleSlider, this._scaleVal); scaleSec.appendChild(scRow);
-    // CC-3 morph sliders
+    // CC-3 morph sliders — biped-only, wrapped for easy show/hide
+    this._morphWrap = document.createElement('div');
+    this._morphWrap.style.cssText = 'display:flex;flex-direction:column;gap:7px;';
     for (const md of [
       { label: 'Shoulders', prop: 'shoulderWidth', min: '0.5', max: '2.0', step: '0.05' },
       { label: 'Hips',      prop: 'hipWidth',      min: '0.5', max: '2.0', step: '0.05' },
@@ -560,9 +564,10 @@ export class CharacterCreation {
       mSlider.className = 'cc-slider'; mSlider.min = md.min; mSlider.max = md.max; mSlider.step = md.step;
       const mVal = document.createElement('span'); mVal.className = 'cc-slider-val';
       mSlider.oninput = () => { (this._dna.proportions as any)[md.prop] = +mSlider.value; mVal.textContent = (+mSlider.value).toFixed(2); this._preview?.setDNA(this._dna); };
-      mRow.append(mLbl, mSlider, mVal); scaleSec.appendChild(mRow);
+      mRow.append(mLbl, mSlider, mVal); this._morphWrap.appendChild(mRow);
       this._morphInputs.push({ prop: md.prop, slider: mSlider, val: mVal });
     }
+    scaleSec.appendChild(this._morphWrap);
 
     ctrlCol.append(nameWrap, archSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
     main.append(previewCol, ctrlCol);
