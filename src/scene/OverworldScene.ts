@@ -166,7 +166,8 @@ export class OverworldScene {
   update(dt: number): void {
     const pos = this.player.group.position;
     for (const en of this._enemies) {
-      if (en.isDead) continue;
+      // Always call update even when dead so the death animation can run.
+      // SlimeEnemy.update() handles state==='dead' by ticking _tickDeathAnim.
       if (en.isRecruited) {
         en.updateAsFollower(pos, this._enemies, dt);
       } else {
