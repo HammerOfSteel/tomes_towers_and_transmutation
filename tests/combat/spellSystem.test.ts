@@ -81,12 +81,24 @@ vi.mock('three', () => {
     MeshStandardMaterial: vi.fn(() => makeMaterial()),
     MeshBasicMaterial: vi.fn(() => makeMaterial()),
     PointsMaterial: vi.fn(() => makeMaterial()),
+    ShaderMaterial: vi.fn(() => ({
+      ...makeMaterial(),
+      uniforms: {
+        uProgress:  { value: 0 },
+        uMaxR:      { value: 0 },
+        uBandHalf:  { value: 0 },
+        uColor:     { value: {} },
+        uAlpha:     { value: 1 },
+        uWallDists: { value: new Float32Array(24) },
+      },
+    })),
     Color: vi.fn(() => ({})),
     // Geometry
     SphereGeometry: vi.fn(() => makeGeometry()),
     TorusGeometry: vi.fn(() => makeGeometry()),
     CylinderGeometry: vi.fn(() => makeGeometry()),
     CircleGeometry: vi.fn(() => makeGeometry()),
+    PlaneGeometry: vi.fn(() => makeGeometry()),
     TubeGeometry: vi.fn(() => makeGeometry()),
     BufferGeometry: vi.fn(() => makeGeometry()),
     IcosahedronGeometry: vi.fn(() => makeGeometry()),
@@ -166,10 +178,14 @@ describe('SpellSystem', () => {
   });
 
   // ── nova_burst AOE range ───────────────────────────────────────────────
+  // Damage is now deferred: takeDamage fires when the wave front reaches each
+  // enemy.  Tick the system forward past the full duration to flush all hits.
   it('nova_burst hits enemies within 12u radius', () => {
     const close = makeEnemy(5, 0);   // 5u away
     const edge  = makeEnemy(11, 0);  // 11u away — within range
     sys.cast('nova_burst', origin, aim, [close, edge], scene);
+    // Advance past full duration so wave front reaches radius=12
+    sys.update(2.0, scene);
     expect(close.takeDamage).toHaveBeenCalled();
     expect(edge.takeDamage).toHaveBeenCalled();
   });
@@ -177,6 +193,7 @@ describe('SpellSystem', () => {
   it('nova_burst does NOT hit enemies beyond 12u radius', () => {
     const far = makeEnemy(15, 0);   // 15u away
     sys.cast('nova_burst', origin, aim, [far], scene);
+    sys.update(2.0, scene);
     expect(far.takeDamage).not.toHaveBeenCalled();
   });
 
@@ -184,6 +201,7 @@ describe('SpellSystem', () => {
     const dead = makeEnemy(2, 0);
     (dead as { isDead: boolean }).isDead = true;
     sys.cast('nova_burst', origin, aim, [dead], scene);
+    sys.update(2.0, scene);
     expect(dead.takeDamage).not.toHaveBeenCalled();
   });
 
