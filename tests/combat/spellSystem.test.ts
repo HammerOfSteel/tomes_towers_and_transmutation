@@ -89,6 +89,7 @@ vi.mock('three', () => {
     CircleGeometry: vi.fn(() => makeGeometry()),
     TubeGeometry: vi.fn(() => makeGeometry()),
     BufferGeometry: vi.fn(() => makeGeometry()),
+    IcosahedronGeometry: vi.fn(() => makeGeometry()),
     BufferAttribute: vi.fn(() => makeBufferAttr()),
     // Points / curves
     Points: vi.fn(() => makePoints()),

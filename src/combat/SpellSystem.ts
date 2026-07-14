@@ -58,6 +58,7 @@ class Projectile {
   private static readonly TRAIL_N = 5;
   private timer = PROJECTILE_LIFETIME;
   private _hit = false;
+  private _hitPos: THREE.Vector3 | null = null;
 
   constructor(
     private readonly pos: THREE.Vector3,
@@ -115,6 +116,12 @@ class Projectile {
 
   get expired(): boolean { return this._hit || this.timer <= 0; }
 
+  /** World position where the projectile struck an enemy (null if it timed out). */
+  get hitPos(): THREE.Vector3 | null { return this._hitPos; }
+
+  /** The spell's primary colour, used for impact VFX. */
+  get spellColor(): number { return this.def.color; }
+
   update(dt: number): void {
     if (this.expired) return;
     this.timer -= dt;
@@ -144,6 +151,7 @@ class Projectile {
         const applied = target.takeDamage(dmg);
         if (applied > 0) this.onHit?.(target, applied);
         if (this.bouncesLeft > 0) this.onChain?.(this.pos.clone(), target, this.bouncesLeft);
+        this._hitPos = this.pos.clone();
         this._hit = true;
         return;
       }
@@ -284,6 +292,16 @@ class LightningBolt {
   }
 
   get expired(): boolean { return this._timer <= 0; }
+
+  /** Update the far endpoint so the bolt stretches to follow a moving projectile. */
+  setEndpoint(to: THREE.Vector3): void {
+    this._to.copy(to);
+  }
+
+  /** Prevent the bolt from expiring — call each frame while a live projectile trails it. */
+  keepAlive(): void {
+    this._timer = 0.45;
+  }
 
   update(dt: number): void {
     if (this.expired) return;
@@ -674,6 +692,9 @@ export class SpellSystem {
   private _hymn: HymnAura | null               = null;
   private readonly _cooldowns = new Map<string, CooldownEntry>();
 
+  // Chain arc: trailing bolts that dynamically follow their projectile
+  private readonly _chainTrails: Array<{ bolt: LightningBolt; proj: Projectile }> = [];
+
   // ── Public query ─────────────────────────────────────────────────────────
 
   /** 0 = ready, 1 = just cast; decreases to 0 over cooldown duration. */
@@ -761,11 +782,25 @@ export class SpellSystem {
       cd.remaining = Math.max(0, cd.remaining - dt);
     }
 
-    // Projectiles
+    // Chain arc trailing bolts — update endpoints to follow their projectile
+    for (let i = this._chainTrails.length - 1; i >= 0; i--) {
+      const ct = this._chainTrails[i];
+      if (ct.proj.expired) {
+        this._chainTrails.splice(i, 1); // bolt fades naturally in _bolts
+      } else {
+        ct.bolt.setEndpoint(ct.proj.mesh.position);
+        ct.bolt.keepAlive();
+      }
+    }
+
+    // Projectiles — also spawn impact VFX when they expire
     for (let i = this._projectiles.length - 1; i >= 0; i--) {
       const p = this._projectiles[i];
       p.update(dt);
       if (p.expired) {
+        // Impact or wall-fizzle spark burst
+        const impactPos = p.hitPos ?? p.mesh.position;
+        this._addSpark(impactPos, p.spellColor, p.hitPos ? 7.0 : 4.0, scene);
         scene.remove(p.mesh);
         p.dispose();
         this._projectiles.splice(i, 1);
@@ -883,12 +918,6 @@ export class SpellSystem {
     // Origin conjuring spark
     this._addSpark(spawnPos, def.color, 3.5, scene);
 
-    // Initial bolt flash from caster outward
-    const boltEnd  = spawnPos.clone().addScaledVector(dir, 1.8);
-    const initBolt = new LightningBolt(spawnPos, boltEnd, def.color);
-    scene.add(initBolt.mesh);
-    this._bolts.push(initBolt);
-
     const proj = new Projectile(
       spawnPos, dir, targets, def, dmgMult, onHit,
       (hitPos, hitTarget, bouncesLeft) => this._doChainBounce(hitPos, hitTarget, targets, def, dmgMult * 0.85, scene, onHit, bouncesLeft),
@@ -896,6 +925,12 @@ export class SpellSystem {
     );
     scene.add(proj.mesh);
     this._projectiles.push(proj);
+
+    // Trailing bolt that stretches from cast origin to the flying projectile
+    const trailBolt = new LightningBolt(spawnPos, spawnPos.clone().addScaledVector(dir, 0.4), def.color);
+    scene.add(trailBolt.mesh);
+    this._bolts.push(trailBolt);
+    this._chainTrails.push({ bolt: trailBolt, proj });
   }
 
   private _doChainBounce(
