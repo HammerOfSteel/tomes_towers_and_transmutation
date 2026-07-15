@@ -60,8 +60,8 @@ export class FloatingDialogue3D {
     this._camera   = opts.camera;
     this._renderer = opts.renderer;
 
-    // Just in front of the fire, close to camera so text appears at a good size
-    this._group.position.set(0, 1.7, 2.6);
+    // Close to camera so text feels intimate, but planes are small so it doesn't dominate
+    this._group.position.set(0, 1.7, 3.2);
 
     this._root = document.createElement('div');
     this._root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:100;';
@@ -181,12 +181,12 @@ export class FloatingDialogue3D {
 
   private _addSpeech(text: string, speaker: string): void {
     const tex  = this._makeSpeechTex(text, speaker);
-    const h    = 0.65;
-    const w    = h * (1024 / 256);   // 2.6 units wide
+    const h    = 0.30;
+    const w    = h * (1024 / 256);   // 1.2 units wide
     const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     mesh.renderOrder = 999;
-    const baseY = 0.52;
+    const baseY = 0.30;
     mesh.position.set(0, baseY, 0);
     this._group.add(mesh);
     this._meshes.push({
@@ -196,10 +196,10 @@ export class FloatingDialogue3D {
   }
 
   private _addChoices(choices: string[]): void {
-    const cellW  = 1.05;
-    const cellH  = 0.32;
-    const gapX   = 0.07;
-    const gapY   = 0.09;
+    const cellW  = 0.55;
+    const cellH  = 0.17;
+    const gapX   = 0.05;
+    const gapY   = 0.06;
     const cols   = 2;
     const totalW = cols * cellW + (cols - 1) * gapX;
 
@@ -207,7 +207,7 @@ export class FloatingDialogue3D {
       const col   = idx % cols;
       const row   = Math.floor(idx / cols);
       const x     = -totalW / 2 + col * (cellW + gapX) + cellW / 2;
-      const baseY = -(row * (cellH + gapY)) - 0.18;
+      const baseY = -(row * (cellH + gapY)) - 0.10;
 
       const tex  = this._makeChoiceTex(text);
       const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
