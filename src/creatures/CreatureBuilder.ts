@@ -11,6 +11,7 @@ import { makeFaceTexture, type FaceSpec } from './CanvasFace';
 import { makeSkinTexture } from './CanvasSkin';
 import { flatShade, wobbleVertices } from './meshUtils';
 import { dressFlaredProfile, robeLayeredProfile, skirtGatheredProfile, addHemFolds } from './profileCurves';
+import { buildSeamMesh } from './sdfBlend';
 import { SnakeLocomotion } from './SnakeLocomotion';
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -469,13 +470,13 @@ function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
   }
 
   // ── CC-11: LatheGeometry garments ─────────────────────────────────────
-  if (o.top === 'dress_flared' || o.legs === 'dress_flared') {
+  if (o.top === 'dress_flared') {
     const pts = dressFlaredProfile(1.08, 0.16, 0.32, 0.10);
     const geo = new THREE.LatheGeometry(pts, 12);
     const dress = new THREE.Mesh(geo, sm);
     dress.position.y = 0.56; torso.add(dress); ms.push(dress);
   }
-  if (o.top === 'dress_layered' || o.legs === 'dress_layered') {
+  if (o.top === 'dress_layered') {
     const pts = robeLayeredProfile(1.04, 0.22);
     const geo = new THREE.LatheGeometry(pts, 12);
     const robe = new THREE.Mesh(geo, sm);
@@ -566,9 +567,33 @@ function _biped(dna: CreatureDNA): CreatureRig {
 
   _props(dna.props, head, undefined, dna, ms);
 
+  // CC-12: SDF seam meshes — smooth-blend the neck→torso and head→neck joints
+  {
+    const neckBaseY  = 1.62 * ty;                        // neck group position (= neckM centre)
+    const torsoTopY  = 1.38 * ty;                        // torso body cylinder centre
+    const headCentreY = neckBaseY + 0.065 + 0.22 * p.headSize; // head group in torso space
+    const neckTopY   = neckBaseY + 0.065 * p.neckLength; // top cap of neckM
+
+    const seamNT = new THREE.Mesh(
+      buildSeamMesh(
+        { x: 0, y: neckBaseY,  z: 0 }, { x: 0, y: torsoTopY,   z: 0 },
+        0.085 * nt, 0.19 * tx * sw, { blendK: 0.20 },
+      ), pm,
+    );
+    torso.add(seamNT); ms.push(seamNT);
+
+    const seamHN = new THREE.Mesh(
+      buildSeamMesh(
+        { x: 0, y: neckTopY,   z: 0 }, { x: 0, y: headCentreY, z: 0 },
+        0.07 * nt, p.headSize * 0.40, { blendK: 0.18 },
+      ), pm,
+    );
+    torso.add(seamHN); ms.push(seamHN);
+  }
+
   // Legs — hidden when a full-length over garment or skirt is worn
   const _ot = (dna as any).outfit ?? { top: 'none', legs: 'none', over: 'none' };
-  const _hideLegs = dna.props.includes('robe') || _ot.over === 'robe_full' || _ot.legs === 'robe_skirt' || _ot.legs === 'skirt';
+  const _hideLegs = dna.props.includes('robe') || _ot.over === 'robe_full' || _ot.over === 'robe_layered' || _ot.legs === 'robe_skirt' || _ot.legs === 'skirt' || _ot.top === 'dress_flared' || _ot.top === 'dress_layered';
   const legLL = p.legLength ?? 1.0;
   if (!_hideLegs) {
     for (const s of [-1, 1] as const) {

@@ -41,6 +41,9 @@ import { animateCreature } from '@/creatures/CreatureAnimator';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
 import { LevelUpBanner } from '@/ui/LevelUpBanner';
+import { QuestLog } from '@/ui/QuestLog';
+import { DiscoveryTracker } from '@/world/DiscoveryTracker';
+import { checkQuestFulfillment } from '@/world/QuestDef';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -122,7 +125,15 @@ async function main() {
     minimap?.dispose();
     minimap = new OWMinimap(worldData);
     minimap.hide(); // hidden until exterior mode is entered
-    return new OverworldScene(scene, physics, player, worldData);
+    const ow = new OverworldScene(scene, physics, player, worldData);
+    ow.onQuestGiven = (quest) => {
+      questLog.addQuest(quest);
+      // Refresh minimap pins from all active quests
+      minimap?.setQuestPins(
+        questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
+      );
+    };
+    return ow;
   }
 
   function switchToExterior(): void {
@@ -132,6 +143,11 @@ async function main() {
     sceneManager.unloadCurrentRoom();
     if (!overworld) {
       overworld = _makeOverworld(currentSeed);
+    }
+    // Mark last visited dungeon as cleared (enter = cleared, simplification for now)
+    if (_activeDungeonId !== null) {
+      discoveryTracker.markDungeonCleared(_activeDungeonId);
+      _activeDungeonId = null;
     }
     gameMode = 'exterior';
     overworld.enter();
@@ -157,7 +173,11 @@ async function main() {
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
 
   // ── Progression & interactables ───────────────────────────────────────────
-  const progression   = new ProgressionSystem();
+  const progression      = new ProgressionSystem();
+  const questLog         = new QuestLog();
+  const discoveryTracker = new DiscoveryTracker();
+  let _activeDungeonId: number | null = null;
+  let _questCheckTimer = 0;
   const talentSystem  = new TalentSystem();
   const talentTree    = new TalentTree();
   const statPanel     = new StatPanel();
@@ -659,6 +679,24 @@ async function main() {
         party.pruneDead();
         tamingGame.update(dt);
 
+        // Quest fulfillment check (throttled to 1 Hz)
+        _questCheckTimer -= dt;
+        if (_questCheckTimer <= 0) {
+          _questCheckTimer = 1.0;
+          const _pp  = player.group.position;
+          const _gc  = overworld.worldToGrid(_pp.x, _pp.z);
+          for (const q of questLog.getActive()) {
+            if (!q.fulfilled && checkQuestFulfillment(q, _gc.col, _gc.row, discoveryTracker.clearedDungeons)) {
+              questLog.markFulfilled(q.id);
+              progression.grantXP(q.reward.xp);
+              // Refresh minimap pins
+              minimap?.setQuestPins(
+                questLog.getActive().map(aq => ({ col: aq.target.col, row: aq.target.row })),
+              );
+            }
+          }
+        }
+
         // Update minimap player position (convert world → tile coords)
         if (minimap?.isVisible()) {
           const _pp  = player.group.position;
@@ -752,6 +790,8 @@ async function main() {
             const dngHandle = overworld.nearDungeonEntrance(player.group.position);
             if (dngHandle) {
               // Enter a seeded dungeon whose floor count was set at world-gen time
+              _activeDungeonId = dngHandle.entry.id;
+              discoveryTracker.markDungeonFound(dngHandle.entry.id);
               const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
               overworld.exit();
               gameMode = 'interior';

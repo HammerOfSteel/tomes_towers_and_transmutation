@@ -18,7 +18,9 @@ import { npcDna, npcName }   from './NPCDnaGenerator';
 import { generateGreeting, generateQuestHint } from './NPCDialogue';
 import type { DialogueContext }                 from './NPCDialogue';
 import type { HistoryEvent }                    from './WorldHistory';
-import type { SettlementEntry }                 from './WorldData';
+import type { SettlementEntry, DungeonEntry }   from './WorldData';
+import { generateQuest }                        from './QuestDef';
+import type { QuestDef, QuestContext }          from './QuestDef';
 
 // ── FSM state ─────────────────────────────────────────────────────────────────
 
@@ -124,12 +126,19 @@ export class NPCEntity {
   private readonly _homeWz:   number;
   private readonly _seed:     number;
   private readonly _ctx:      DialogueContext;
+  private readonly _settlement: SettlementEntry;
+  private readonly _dungeons:   DungeonEntry[];
+  private readonly _nearbyEvents: HistoryEvent[];
 
   // FSM
   private _state:      NPCState = 'idle';
   private _target:     THREE.Vector3 | null = null;
   private _idleTimer:  number = 0;
   private _frameCount: number = 0;
+  private _questGiven: boolean = false;
+
+  /** Optional callback fired once when this NPC hands out a quest. */
+  onQuestGiven?: (quest: QuestDef) => void;
 
   // [E] prompt label
   private _label:      HTMLDivElement | null = null;
@@ -146,6 +155,7 @@ export class NPCEntity {
     nearestDungeonName?: string,
     nearestDungeonDir?:  'north' | 'south' | 'east' | 'west',
     nearestRiverDir?:    'north' | 'south' | 'east' | 'west',
+    dungeons:            DungeonEntry[] = [],
   ) {
     this._seed   = (col * 73856093) ^ (row * 19349663) ^ settlement.seed;
     this._homeWx = worldX;
@@ -167,6 +177,9 @@ export class NPCEntity {
     this._idleTimer = IDLE_MIN + rand() * (IDLE_MAX - IDLE_MIN);
 
     // Dialogue context
+    this._settlement = settlement;
+    this._dungeons   = dungeons;
+    this._nearbyEvents = nearbyEvents;
     this._ctx = {
       npcName:            this.name,
       npcRole:            role,
@@ -219,6 +232,22 @@ export class NPCEntity {
         const questHint = generateQuestHint(this._ctx, this._seed ^ 0xFF);
         const lines     = questHint ? `${greeting}\n\n${questHint}` : greeting;
         _showDialogue(this.name, lines);
+
+        // Generate and deliver a quest on first interaction (quest-giving roles only)
+        if (!this._questGiven && this.onQuestGiven) {
+          const qctx: QuestContext = {
+            npcName:      this.name,
+            npcRole:      this.role,
+            settlement:   this._settlement,
+            dungeons:     this._dungeons,
+            nearbyEvents: this._nearbyEvents,
+          };
+          const quest = generateQuest(qctx, this._seed ^ 0xAB_CD_EF);
+          if (quest) {
+            this._questGiven = true;
+            this.onQuestGiven(quest);
+          }
+        }
       }
       // Return to wander once player moves away
       if (dist2 > AGGRO_RANGE * AGGRO_RANGE) {

@@ -40,6 +40,12 @@ export class OWMinimap {
 
   /** Whether the minimap is currently visible. */
   private _visible = true;
+  private _questPins: Array<{ col: number; row: number }> = [];
+
+  /** Update the quest target pins shown on the minimap. */
+  setQuestPins(pins: Array<{ col: number; row: number }>): void {
+    this._questPins = [...pins];
+  }
 
   constructor(worldData: WorldData) {
     const { grid, settlements, dungeons } = worldData;
@@ -198,6 +204,19 @@ export class OWMinimap {
     ctx.arc(x, y, 3, 0, Math.PI * 2);
     ctx.fillStyle = '#44ddff';
     ctx.fill();
+
+    // Quest target pins (gold marker)
+    for (const pin of this._questPins) {
+      const px = this._cx(pin.col);
+      const py = this._cy(pin.row);
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffcc44';
+      ctx.fill();
+      ctx.strokeStyle = '#aa8800';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 
   show(): void {

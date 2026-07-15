@@ -119,6 +119,9 @@ export class OverworldScene {
   private readonly _GHH: number;
   private readonly _FR:  number;   // flat-zone radius in tiles (~28% of half-width)
 
+  /** Optional callback fired when an NPC generates and gives a quest to the player. */
+  onQuestGiven?: (quest: import('@/world/QuestDef').QuestDef) => void;
+
   // ── Constructor ───────────────────────────────────────────────────────────
 
   constructor(
@@ -1337,7 +1340,10 @@ export class OverworldScene {
           nearDungeonName,
           nearDungeonDir,
           nearRiverDir,
+          dungeons,
         ));
+        const npc = this._npcs[this._npcs.length - 1]!;
+        if (this.onQuestGiven) npc.onQuestGiven = this.onQuestGiven;
         // Raise to terrain height (settlement zone is flattened to lv)
         this._npcs[this._npcs.length - 1]!.group.position.y = lv * SH;
       }

@@ -8,12 +8,16 @@
 export class DiscoveryTracker {
   discoveredDungeons:    Set<number> = new Set();
   discoveredSettlements: Set<number> = new Set();
+  /** Dungeons the player has entered at least once (treated as "cleared"). */
+  clearedDungeons:       Set<number> = new Set();
 
   markDungeonFound(id: number): void    { this.discoveredDungeons.add(id); }
   markSettlementFound(id: number): void { this.discoveredSettlements.add(id); }
+  markDungeonCleared(id: number): void  { this.clearedDungeons.add(id); }
 
   isDungeonFound(id: number): boolean    { return this.discoveredDungeons.has(id); }
   isSettlementFound(id: number): boolean { return this.discoveredSettlements.has(id); }
+  isDungeonCleared(id: number): boolean  { return this.clearedDungeons.has(id); }
 
   serialize(): string {
     return JSON.stringify({

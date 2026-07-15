@@ -12,9 +12,9 @@ export type SubRace    =
   | 'undead' | 'draconic' | 'celestial';
 export type EarShape   = 'none' | 'round' | 'pointed' | 'large';
 export type HeadStyle  = 'normal' | 'large' | 'small' | 'elongated';
-export type OutfitTopId  = 'none' | 'tunic' | 'robe_top' | 'armor_chest' | 'wrap';
-export type OutfitLegsId = 'none' | 'trousers' | 'skirt' | 'shorts' | 'loincloth' | 'robe_skirt';
-export type OutfitOverId = 'none' | 'robe_full' | 'cape' | 'cloak';
+export type OutfitTopId  = 'none' | 'tunic' | 'robe_top' | 'armor_chest' | 'wrap' | 'dress_flared' | 'dress_layered';
+export type OutfitLegsId = 'none' | 'trousers' | 'skirt' | 'shorts' | 'loincloth' | 'robe_skirt' | 'skirt_gathered' | 'skirt_long';
+export type OutfitOverId = 'none' | 'robe_full' | 'cape' | 'cloak' | 'robe_layered';
 export type FaceType   = 'cute' | 'angry' | 'cyclops' | 'blank' | 'skull' | 'compound'
   | 'cherubic' | 'gaunt' | 'cat' | 'lizard' | 'bird' | 'insect' | 'demon' | 'ancient';
 export type MouthType  = 'smile' | 'frown' | 'beak' | 'fangs' | 'none';

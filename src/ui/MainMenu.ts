@@ -448,6 +448,34 @@ export class MainMenu {
           <span id="mm-wg-villages-val" class="mm-setting-val">${wg.villageCount}</span>
         </div>
       </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">River Paths</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-rivers" class="mm-slider" min="2" max="8" value="${wg.riverCount}">
+          <span id="mm-wg-rivers-val" class="mm-setting-val">${wg.riverCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Towns</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-towns" class="mm-slider" min="0" max="4" value="${wg.townCount}">
+          <span id="mm-wg-towns-val" class="mm-setting-val">${wg.townCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">City</label>
+        <div class="mm-setting-ctl">
+          <label class="mm-toggle">
+            <input type="checkbox" id="mm-wg-city" ${wg.hasCity ? 'checked' : ''}>
+            <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+          </label>
+        </div>
+      </div>
+      <div class="mm-setting-row mm-setting-row--share">
+        <button id="mm-wg-share" class="mm-slot-btn" title="Copy world config to clipboard">Share Config</button>
+        <input type="text" id="mm-wg-load-input" class="mm-text-input mm-text-input--share" placeholder="Paste config code…">
+        <button id="mm-wg-load" class="mm-slot-btn">Load</button>
+      </div>
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
@@ -522,6 +550,38 @@ export class MainMenu {
     mkSlider('#mm-wg-dungeons', '#mm-wg-dungeons-val', 'dungeonCount');
     mkSlider('#mm-wg-camps',    '#mm-wg-camps-val',    'enemyCampCount');
     mkSlider('#mm-wg-villages', '#mm-wg-villages-val', 'villageCount');
+    mkSlider('#mm-wg-rivers',   '#mm-wg-rivers-val',   'riverCount');
+    mkSlider('#mm-wg-towns',    '#mm-wg-towns-val',    'townCount');
+
+    const cityToggle = card.querySelector<HTMLInputElement>('#mm-wg-city')!;
+    cityToggle.addEventListener('change', () => { wg.hasCity = cityToggle.checked; saveWg(); });
+
+    const shareBtn = card.querySelector<HTMLButtonElement>('#mm-wg-share')!;
+    shareBtn.addEventListener('click', () => {
+      try {
+        const encoded = btoa(JSON.stringify(wg));
+        navigator.clipboard.writeText(encoded).catch(() => {
+          prompt('Copy config code:', encoded);
+        });
+      } catch { /* ignore */ }
+    });
+
+    const loadInput = card.querySelector<HTMLInputElement>('#mm-wg-load-input')!;
+    const loadBtn   = card.querySelector<HTMLButtonElement>('#mm-wg-load')!;
+    loadBtn.addEventListener('click', () => {
+      try {
+        const raw  = loadInput.value.trim();
+        const parsed = JSON.parse(atob(raw)) as Partial<WorldGenConfig>;
+        Object.assign(wg, parsed);
+        saveWg();
+        loadInput.value = '';
+        loadBtn.textContent = '✓';
+        setTimeout(() => { loadBtn.textContent = 'Load'; }, 1500);
+      } catch {
+        loadInput.style.outline = '2px solid #f44';
+        setTimeout(() => { loadInput.style.outline = ''; }, 1200);
+      }
+    });
 
     modal.appendChild(card);
     return modal;
