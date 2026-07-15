@@ -144,8 +144,6 @@ function _injectCSS(): void {
     .ngo-card:hover {
       color: #ffaa00;
       text-shadow: 0 2px 15px rgba(255, 170, 0, 0.6);
-      letter-spacing: 1px;
-      transform: scale(1.05);
     }
     /* ◈ amber decorators on hover */
     .ngo-card::before, .ngo-card::after {
