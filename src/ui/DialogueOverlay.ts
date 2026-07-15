@@ -40,9 +40,9 @@ function _injectCSS(): void {
       pointer-events: none;
     }
 
-    /* ── Speech panel: top of screen so wizard words hang above the scene ── */
+    /* ── Speech panel: fixed to viewport top so it's always visible ── */
     .ngo-speech {
-      position: absolute;
+      position: fixed;
       top: 8%; left: 50%;
       transform: translate(-50%, 0);
       width: 90%; max-width: 720px;
@@ -106,17 +106,16 @@ function _injectCSS(): void {
       letter-spacing: 1px;
     }
 
-    /* ── Choice buttons: bottom of screen (player response area) ── */
+    /* ── Choice buttons: fixed to viewport bottom (bulletproof regardless of container) ── */
     .ngo-choices {
-      position: absolute;
-      top: auto;
-      bottom: 6%; left: 50%;
+      position: fixed;
+      bottom: 4%; left: 50%;
       transform: translate(-50%, 0);
       width: 90%; max-width: 800px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 6px;
       padding: 0;
       pointer-events: none;
     }
@@ -125,13 +124,13 @@ function _injectCSS(): void {
       width: 100%;
       background: transparent;
       border: none;
-      padding: 10px 40px;
+      padding: 6px 30px;
       cursor: pointer;
       color: rgba(255, 255, 255, 0.5);
       font-family: inherit;
-      font-size: 1.15rem;
+      font-size: 1.05rem;
       text-align: center;
-      line-height: 1.45;
+      line-height: 1.4;
       pointer-events: auto;
       opacity: 0;
       transform: translateY(14px);
