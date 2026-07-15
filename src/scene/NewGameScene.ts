@@ -59,6 +59,9 @@ export class NewGameScene {
   private _nodOffset = 0;
   private _nodVel    = 0;
 
+  // Dialogue tick hook (set by FloatingDialogue3D)
+  private _dialogueTick: ((t: number) => void) | null = null;
+
   // Mouse drag look-around (POC style — direct camera.rotation manipulation)
   private _lookTgtX   = 0;
   private _lookTgtY   = 0;
@@ -692,8 +695,21 @@ export class NewGameScene {
     // ── user frame callback ───────────────────────────────────────────────────
     this.onFrame?.(dt);
 
+    // ── floating dialogue tick ────────────────────────────────────────────────
+    if (this._dialogueTick) this._dialogueTick(t);
+
     // ── render ────────────────────────────────────────────────────────────────
     this._renderer.render(this._scene, this._camera);
+  }
+
+  // ── public accessors for FloatingDialogue3D ───────────────────────────────
+
+  get scene():    THREE.Scene              { return this._scene; }
+  get camera():   THREE.PerspectiveCamera  { return this._camera; }
+  get renderer(): THREE.WebGLRenderer      { return this._renderer; }
+
+  setDialogueTick(fn: (t: number) => void): void {
+    this._dialogueTick = fn;
   }
 }
 

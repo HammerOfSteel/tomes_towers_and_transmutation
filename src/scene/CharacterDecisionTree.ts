@@ -10,7 +10,7 @@
  * PHASE 3 — stat allocation (2 × 4-choice questions, always)
  */
 
-import type { DialogueOverlay } from '@/ui/DialogueOverlay';
+import type { IDialogue } from '@/ui/IDialogue';
 
 // ── public types ──────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ export const STAT_DISPLAY: Record<StatBonus, string> = {
 // ── decision tree ─────────────────────────────────────────────────────────────
 
 export class CharacterDecisionTree {
-  async run(overlay: DialogueOverlay): Promise<ConversationResult> {
+  async run(overlay: IDialogue): Promise<ConversationResult> {
     // ── PHASE 1: taxonomic assessment ──────────────────────────────────────────
     await overlay.speak(
       "Ah! You're awake. Excellent. My notes got completely ruined by a spilled " +

@@ -13,7 +13,7 @@
  */
 
 import { NewGameScene }            from '@/scene/NewGameScene';
-import { DialogueOverlay }         from '@/ui/DialogueOverlay';
+import { FloatingDialogue3D }      from '@/ui/FloatingDialogue3D';
 import { CharacterDecisionTree,
          CHAR_MANIFEST_MAP }       from '@/scene/CharacterDecisionTree';
 import { randomWizardDef }         from '@/characters/wizardManifest';
@@ -28,7 +28,7 @@ import type { StatBonus }          from '@/scene/CharacterDecisionTree';
 export class NewGameFlow {
   private _container: HTMLElement | null = null;
   private _scene:     NewGameScene | null = null;
-  private _overlay:   DialogueOverlay | null = null;
+  private _overlay:   FloatingDialogue3D | null = null;
 
   /**
    * Run the full campfire intro and return a CharacterConfig.
@@ -49,11 +49,18 @@ export class NewGameFlow {
 
     // ── 2. Create scene + overlay ─────────────────────────────────────────────
     const scene   = new NewGameScene();
-    const overlay = new DialogueOverlay();
+    const overlay = new FloatingDialogue3D({
+      scene:    scene.scene,
+      camera:   scene.camera,
+      renderer: scene.renderer,
+    });
     const tree    = new CharacterDecisionTree();
 
     this._scene   = scene;
     this._overlay = overlay;
+
+    // Register floating-dialogue tick so it runs inside the scene’s RAF loop
+    scene.setDialogueTick((t) => overlay.tick(t));
 
     scene.mount(host);
     overlay.mount(host);
