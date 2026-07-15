@@ -39,23 +39,31 @@ function _injectCSS(): void {
       pointer-events: none;
     }
 
-    /* ── Speech panel: centred on screen (POC style) ── */
+    /* ── Speech panel: top of screen so wizard words hang above the scene ── */
     .ngo-speech {
       position: absolute;
-      top: 45%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 90%; max-width: 800px;
+      top: 8%; left: 50%;
+      transform: translate(-50%, 0);
+      width: 90%; max-width: 720px;
       text-align: center;
       padding: 0;
       background: none;
       border: none;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 1.5s ease;
+      transition: opacity 1.5s ease, transform 1.5s ease;
     }
     .ngo-speech.ngo--visible {
       opacity: 1;
+      transform: translate(-50%, 0);
       pointer-events: auto;
+    }
+    /* Wizard-fade: speech gently dissolves upward while player reads choices */
+    .ngo-speech.ngo--faded {
+      opacity: 0 !important;
+      transform: translate(-50%, -10px) !important;
+      transition: opacity 2s ease, transform 2s ease !important;
+      pointer-events: none !important;
     }
 
     .ngo-speaker {
@@ -97,10 +105,10 @@ function _injectCSS(): void {
       letter-spacing: 1px;
     }
 
-    /* ── Choice buttons: centred column, transparent (POC style) ── */
+    /* ── Choice buttons: lower screen so they never overlap the speech ── */
     .ngo-choices {
       position: absolute;
-      top: 45%; left: 50%;
+      top: 60%; left: 50%;
       transform: translate(-50%, -50%);
       width: 90%; max-width: 800px;
       display: flex;
@@ -200,6 +208,7 @@ export class DialogueOverlay {
   private _cursor:    HTMLElement;
   private _choices:   HTMLElement;
   private _toast:     HTMLElement;
+  private _speechFadeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     _injectCSS();
@@ -262,6 +271,12 @@ export class DialogueOverlay {
    */
   speak(text: string, speaker = '— The Wizard'): Promise<void> {
     return new Promise<void>((resolve) => {
+      // Cancel any pending wizard-fade and reset
+      if (this._speechFadeTimer !== null) {
+        clearTimeout(this._speechFadeTimer);
+        this._speechFadeTimer = null;
+      }
+      this._speech.classList.remove('ngo--faded');
       this._speaker.textContent = speaker;
       this._textEl.textContent  = '';
       this._textEl.appendChild(this._cursor);
@@ -312,10 +327,10 @@ export class DialogueOverlay {
     return new Promise<number>((resolve) => {
       this._choices.innerHTML = '';
 
-      // Move speech panel up to make room if it's visible
-      if (this._speech.classList.contains('ngo--visible')) {
-        const rowHeight = Math.ceil(choices.length / 2);
-        this._speech.style.bottom = `${rowHeight * 68 + 20}px`;
+      // Cancel any existing fade timer (new line coming in)
+      if (this._speechFadeTimer !== null) {
+        clearTimeout(this._speechFadeTimer);
+        this._speechFadeTimer = null;
       }
 
       choices.forEach((text, idx) => {
@@ -331,13 +346,23 @@ export class DialogueOverlay {
         card.addEventListener('click', () => { pickChoice(idx); }, { once: true });
       });
 
+      // Wizard-fade: speech dissolves ~4s after the last choice card appears (POC feel)
+      const lastCardDelay = (choices.length - 1) * 80 + 60 + 300;
+      this._speechFadeTimer = setTimeout(() => {
+        this._speech.classList.add('ngo--faded');
+        this._speechFadeTimer = null;
+      }, lastCardDelay + 4000);
+
       const pickChoice = (idx: number) => {
         document.removeEventListener('keydown', onKey);
+        if (this._speechFadeTimer !== null) {
+          clearTimeout(this._speechFadeTimer);
+          this._speechFadeTimer = null;
+        }
         const cards = Array.from(this._choices.querySelectorAll('.ngo-card')) as HTMLElement[];
         cards[idx]?.classList.add('ngo--selected');
         setTimeout(() => {
           this._choices.innerHTML = '';
-          this._speech.style.bottom = '';
           resolve(idx);
         }, 420);
       };
@@ -360,8 +385,11 @@ export class DialogueOverlay {
 
   clear(): void {
     this._choices.innerHTML = '';
-    this._speech.classList.remove('ngo--visible');
-    this._speech.style.bottom = '';
+    if (this._speechFadeTimer !== null) {
+      clearTimeout(this._speechFadeTimer);
+      this._speechFadeTimer = null;
+    }
+    this._speech.classList.remove('ngo--visible', 'ngo--faded');
   }
 }
 
