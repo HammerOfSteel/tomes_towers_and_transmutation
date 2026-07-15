@@ -9,13 +9,11 @@
  *   3. For each edge, run A* pathfinding on the WorldGrid with a terrain-aware
  *      cost function that avoids water, prefers valleys, penalises steep slopes,
  *      and cheaply re-uses existing road tiles.
- *   4. Apply Douglas–Peucker simplification to remove zigzag staircase artefacts
- *      from the 8-directional A* output — the simplified waypoint list is what
- *      gets stored for Catmull–Rom ribbon rendering.
- *   5. Fall back to Bresenham straight line if A* cannot find a path.
+ *   4. 4-directional movement only — roads are always axis-aligned (no diagonals)
+ *      to match the isometric grid aesthetic.
+ *   5. Fall back to an L-shaped rectilinear path if A* cannot find a route.
  *
- * Returns both a flat tile list (for grid marking / minimap) and the per-edge
- * simplified paths (for smooth ribbon mesh rendering in OverworldScene).
+ * Returns a flat tile list (for grid marking and flat-tile rendering).
  */
 
 import type { WorldGrid }    from './WorldGrid';
@@ -31,10 +29,8 @@ export type GridPath = GridPt[];
 
 /** Return value of buildInterSettlementRoads. */
 export interface InterRoadResult {
-  /** Flat deduplicated tile list — used for WorldGrid marking and minimap. */
+  /** Flat deduplicated tile list — used for WorldGrid marking and flat-tile rendering. */
   tiles:  RoadSegment[];
-  /** One simplified path per road edge — used for Catmull–Rom ribbon rendering. */
-  paths:  GridPath[];
 }
 
 // ── Min-heap priority queue ───────────────────────────────────────────────────
@@ -78,10 +74,9 @@ class MinHeap {
 
 // ── A* pathfinding ────────────────────────────────────────────────────────────
 
-/** 8-directional moves: [dCol, dRow, baseCost] */
+/** 4-directional moves only — keeps roads axis-aligned for the isometric grid aesthetic. */
 const DIRS: [number, number, number][] = [
   [ 0,  1, 1.0],  [ 0, -1, 1.0],  [ 1,  0, 1.0],  [-1,  0, 1.0],
-  [ 1,  1, 1.414], [ 1, -1, 1.414], [-1,  1, 1.414], [-1, -1, 1.414],
 ];
 
 /** Terrain-aware movement cost from (fc, fr) to (tc, tr). */
@@ -115,7 +110,8 @@ function _moveCost(
 }
 
 function _heuristic(c1: number, r1: number, c2: number, r2: number): number {
-  return Math.sqrt((c2 - c1) ** 2 + (r2 - r1) ** 2);
+  // Manhattan distance — admissible and consistent for 4-directional movement
+  return Math.abs(c2 - c1) + Math.abs(r2 - r1);
 }
 
 /**
@@ -181,24 +177,21 @@ function _aStar(
   return []; // no path found
 }
 
-// ── Bresenham fallback ────────────────────────────────────────────────────────
+// ── L-shape fallback ────────────────────────────────────────────────────────────────
 
-function _bresenham(
+/**
+ * Axis-aligned L-shaped path: horizontal leg first, then vertical.
+ * Used as a fallback when A* cannot find a route.
+ */
+function _lShape(
   c1: number, r1: number,
   c2: number, r2: number,
 ): { col: number; row: number }[] {
   const pts: { col: number; row: number }[] = [];
-  let x = c1, y = r1;
-  const dx = Math.abs(c2 - c1), dy = Math.abs(r2 - r1);
-  const sx = c1 < c2 ? 1 : -1, sy = r1 < r2 ? 1 : -1;
-  let err = dx - dy;
-  for (;;) {
-    pts.push({ col: x, row: y });
-    if (x === c2 && y === r2) break;
-    const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; x += sx; }
-    if (e2 <  dx) { err += dx; y += sy; }
-  }
+  const cStep = c1 <= c2 ? 1 : -1;
+  for (let c = c1; c !== c2 + cStep; c += cStep) pts.push({ col: c, row: r1 });
+  const rStep = r1 <= r2 ? 1 : -1;
+  for (let r = r1 + rStep; r !== r2 + rStep; r += rStep) pts.push({ col: c2, row: r });
   return pts;
 }
 
@@ -263,39 +256,6 @@ function _addLoopEdges(
   return candidates.slice(0, count).map(([, a, b]) => [a, b] as [number, number]);
 }
 
-// ── Douglas–Peucker path simplification ──────────────────────────────────────
-
-/**
- * Perpendicular distance from point `pt` to the line segment [a, b] in grid
- * space.  Used by the DP simplification below.
- */
-function _perpDist(pt: GridPt, a: GridPt, b: GridPt): number {
-  const dx = b.col - a.col, dz = b.row - a.row;
-  const len2 = dx * dx + dz * dz;
-  if (len2 === 0) return Math.hypot(pt.col - a.col, pt.row - a.row);
-  const t = Math.max(0, Math.min(1, ((pt.col - a.col) * dx + (pt.row - a.row) * dz) / len2));
-  return Math.hypot(pt.col - a.col - t * dx, pt.row - a.row - t * dz);
-}
-
-/**
- * Douglas–Peucker polyline simplification.
- * `eps` ≈ 2.5 tiles removes the 8-directional staircase while preserving turns.
- */
-function _dpSimplify(path: GridPath, eps = 2.5): GridPath {
-  if (path.length <= 2) return path;
-  let maxD = 0, idx = 0;
-  for (let i = 1; i < path.length - 1; i++) {
-    const d = _perpDist(path[i]!, path[0]!, path[path.length - 1]!);
-    if (d > maxD) { maxD = d; idx = i; }
-  }
-  if (maxD > eps) {
-    const L = _dpSimplify(path.slice(0, idx + 1), eps);
-    const R = _dpSimplify(path.slice(idx),         eps);
-    return [...L.slice(0, -1), ...R];
-  }
-  return [path[0]!, path[path.length - 1]!];
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface SettlementCentre {
@@ -306,14 +266,13 @@ export interface SettlementCentre {
 /**
  * Build inter-settlement roads connecting all settlements on the WorldGrid.
  *
- * Returns both the full tile list (for grid marking) and the simplified
- * per-edge paths (for smooth ribbon rendering in OverworldScene).
+ * Returns the flat tile list (for grid marking and flat-tile rendering).
  */
 export function buildInterSettlementRoads(
   settlements: { plan: SettlementCentre }[],
   grid: WorldGrid,
 ): InterRoadResult {
-  if (settlements.length < 2) return { tiles: [], paths: [] };
+  if (settlements.length < 2) return { tiles: [] };
 
   const centres: Centre[] = settlements.map(s => ({
     col: s.plan.centerCol,
@@ -327,18 +286,13 @@ export function buildInterSettlementRoads(
 
   const seen   = new Set<string>();
   const tiles: RoadSegment[] = [];
-  const paths:  GridPath[]   = [];
 
   for (const [ai, bi] of edges) {
     const a = centres[ai]!, b = centres[bi]!;
-    const raw = _aStar(grid, a.col, a.row, b.col, b.row);
-    const full = raw.length > 1 ? raw : _bresenham(a.col, a.row, b.col, b.row);
+    const raw  = _aStar(grid, a.col, a.row, b.col, b.row);
+    const full = raw.length > 1 ? raw : _lShape(a.col, a.row, b.col, b.row);
 
-    // Simplified path for ribbon rendering
-    const simple = _dpSimplify(full);
-    paths.push(simple);
-
-    // Full tile set for grid marking
+    // Full tile set for grid marking and flat-tile rendering
     for (const { col, row } of full) {
       if (col < 0 || col >= grid.width || row < 0 || row >= grid.height) continue;
       const k = `${col},${row}`;
@@ -346,6 +300,6 @@ export function buildInterSettlementRoads(
     }
   }
 
-  return { tiles, paths };
+  return { tiles };
 }
 

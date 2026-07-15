@@ -11,7 +11,7 @@ import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldGrid }      from './WorldGrid';
 import type { DungeonType }    from './DungeonType';
 import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
-import type { GridPath }        from './RoadGenerator';
+
 
 // ── Entity record types ────────────────────────────────────────────────────────
 
@@ -48,6 +48,4 @@ export interface WorldData {
   settlements: SettlementEntry[];
   /** Road tiles connecting settlements across the overworld (A* routed). */
   interRoads:      RoadSegment[];
-  /** Per-edge simplified paths for Catmull–Rom ribbon rendering. */
-  interRoadPaths:  GridPath[];
 }
