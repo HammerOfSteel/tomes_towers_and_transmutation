@@ -110,7 +110,7 @@ export function placeSettlements(
       const id      = entries.length + 1;
       const eSeed   = (seed ^ (id * 0x9E37_79B9)) >>> 0;
       const plan    = planSettlement('city', cand.col, cand.row, eSeed, grid);
-      applySettlementToGrid(plan, grid);
+      applySettlementToGrid(plan, grid, id);
       placements.push({ col: cand.col, row: cand.row, type: 'city' });
       entries.push({ id, seed: eSeed, plan });
       break;
@@ -124,7 +124,7 @@ export function placeSettlements(
       const id    = entries.length + 1;
       const eSeed = (seed ^ (id * 0x9E37_79B9)) >>> 0;
       const plan  = planSettlement('town', cand.col, cand.row, eSeed, grid);
-      applySettlementToGrid(plan, grid);
+      applySettlementToGrid(plan, grid, id);
       placements.push({ col: cand.col, row: cand.row, type: 'town' });
       entries.push({ id, seed: eSeed, plan });
       break;
@@ -138,7 +138,7 @@ export function placeSettlements(
       const id    = entries.length + 1;
       const eSeed = (seed ^ (id * 0x9E37_79B9)) >>> 0;
       const plan  = planSettlement('village', cand.col, cand.row, eSeed, grid);
-      applySettlementToGrid(plan, grid);
+      applySettlementToGrid(plan, grid, id);
       placements.push({ col: cand.col, row: cand.row, type: 'village' });
       entries.push({ id, seed: eSeed, plan });
       break;

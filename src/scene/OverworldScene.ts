@@ -650,8 +650,13 @@ export class OverworldScene {
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
 
-      const level = this._wg.get(c, r).elevation;
-      if (level < 1) continue;   // no trees on bog
+      const cell = this._wg.get(c, r);
+      if (cell.elevation < 1)           continue;   // no trees on bog/water
+      if (cell.feature === 'road')      continue;   // no trees on roads
+      if (cell.feature === 'road_dirt') continue;
+      if (cell.content  !== 'empty')    continue;   // no trees on buildings/entrances
+      if (cell.settlementId > 0)        continue;   // no trees inside settlement zones
+      const level = cell.elevation;
 
       const tree = this._makeTree(rand);
       tree.position.set(wx, level * SH, wz);
@@ -714,8 +719,13 @@ export class OverworldScene {
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
 
-      const level = this._wg.get(c, r).elevation;
-      const wy    = level * SH;
+      const cell = this._wg.get(c, r);
+      if (cell.feature === 'road')      continue;   // no rocks on roads
+      if (cell.feature === 'road_dirt') continue;
+      if (cell.content  !== 'empty')    continue;   // no rocks on buildings
+      if (cell.settlementId > 0)        continue;   // no rocks inside settlement zones
+      const level  = cell.elevation;
+      const wy     = level * SH;
       const radius = 0.48 + rand() * 0.84;
 
       const grey  = 0x58 + Math.floor(rand() * 0x18);
