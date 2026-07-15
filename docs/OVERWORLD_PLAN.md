@@ -2,6 +2,7 @@
 
 > **Branch:** `improve_and_extend_overworld`
 > **Starting from:** The 51×51 tile (100×100 world-unit) heightmap in `OverworldScene.ts`
+> **Status: ✅ ALL PHASES COMPLETE (OW-1 through OW-8)**
 >
 > The overworld is currently a single small sandbox: a procedural terrain with three biomes,
 > some trees, rocks, an enemy camp, the tower, and a ruined greenhouse. This plan expands it
@@ -78,20 +79,19 @@ Inspired by Gemini's research and Amit Patel's (RedBlobGames) waterfall model:
 
 ## Current State Gap Table
 
-| Gap | Impact | Phase |
-|-----|--------|-------|
-| World is 100×100 world-units — one glance covers it all | Player has nowhere to explore | OW-1 |
-| No generator config — every new game is identical (same seed hardcoded) | No replayability | OW-1 |
-| No world gen dev settings in main menu | Can't tune parameters for testing | OW-1 |
-| No rivers or lakes — terrain feels sterile | Missing landmark navigation | OW-2 |
-| Only one dungeon entrance (the tower) | Nothing to discover | OW-3 |
-| No village/city buildings | World feels uninhabited | OW-4 / OW-5 |
-| No settlements — nowhere to be "somewhere" | No sense of civilization | OW-5 |
-| No NPC inhabitants | World feels dead | OW-6 |
-| No minimap | Player gets lost, can't track discoveries | OW-7 |
-| World history is blank — NPCs have nothing to say | Dialogue system has no context | OW-8 |
+| Gap | Impact | Phase | Status |
+|-----|--------|-------|--------|
+| World is 100×100 world-units — one glance covers it all | Player has nowhere to explore | OW-1 | ✅ Fixed — configurable 128/256/512 tile world |
+| No generator config — every new game is identical (same seed hardcoded) | No replayability | OW-1 | ✅ Fixed — `WorldGenConfig` + seed input + base64 share |
+| No world gen dev settings in main menu | Can't tune parameters for testing | OW-1 | ✅ Fixed — Settings modal "World Generation" section |
+| No rivers or lakes — terrain feels sterile | Missing landmark navigation | OW-2 | ✅ Fixed — `HydrologyGenerator`, `_buildWaterMesh()` |
+| Only one dungeon entrance (the tower) | Nothing to discover | OW-3 | ✅ Fixed — `DungeonPlacer`, `DungeonType`, typed entrances |
+| No village/city buildings | World feels uninhabited | OW-4 / OW-5 | ✅ Fixed — `BuildingGenerator`, 10 building types |
+| No settlements — nowhere to be "somewhere" | No sense of civilization | OW-5 | ✅ Fixed — `SettlementGenerator`, villages/towns/city |
+| No NPC inhabitants | World feels dead | OW-6 | ✅ Fixed — `NPCEntity` wander/idle/interact FSM + dialogue |
+| No minimap | Player gets lost, can't track discoveries | OW-7 | ✅ Fixed — `OWMinimap.ts` |
+| World history is blank — NPCs have nothing to say | Dialogue system has no context | OW-8 | ✅ Fixed — `WorldHistory.ts` + `NPCDialogue.ts` context |
 
----
 
 ## Implementation Phases
 

@@ -18,6 +18,7 @@ import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
 import { buildInterSettlementRoads } from './RoadGenerator';
 import { simulateWorldHistory }      from './WorldHistory';
+import { placeResourceNodes }         from './ResourceNodePlacer';
 
 const MLV = 4;
 
@@ -99,7 +100,11 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
     }
   }
 
-  return { config: cfg, grid, dungeons, settlements, interRoads,
-           history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, interRoads }, seed) };
+  const partial = { config: cfg, grid, dungeons, settlements, interRoads,
+                    resourceNodes: [] as import('./ResourceNodePlacer').ResourceNodeRecord[],
+                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, interRoads,
+                      resourceNodes: [] }, seed) };
+  partial.resourceNodes = placeResourceNodes(partial);
+  return partial;
 }
 

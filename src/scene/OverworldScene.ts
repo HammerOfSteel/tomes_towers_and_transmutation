@@ -30,7 +30,7 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
-import { SlimeEnemy } from '@/enemy/SlimeEnemy';
+import { SlimeEnemy, createSlimeBodyIM } from '@/enemy/SlimeEnemy';
 import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -44,6 +44,8 @@ import { OWMinimap }                   from '@/ui/OWMinimap';
 import { NPCEntity }                   from '@/world/NPCEntity';
 import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
+import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
+import { SpatialHash }                 from '@/core/SpatialHash';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -100,9 +102,31 @@ export class OverworldScene {
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
+  /** Phase 7h — spatial hash for O(1) hostile-enemy proximity lookups. */
+  private readonly _hostileHash = new SpatialHash<SlimeEnemy>(8);
+  /** Phase 7h.2 — one draw call for all slime bodies (128 slots; enemies never exceed that). */
+  private readonly _slimeIM: THREE.InstancedMesh = createSlimeBodyIM(128);
+
+  // ── Asset-upgraded geometry (added async after construction) ──────────────
+  /** Ground-clutter props (grass, flowers, mushrooms) from nature-kit. */
+  private _clutter:     THREE.Group[] = [];
+  /** River tile GLBs replacing the procedural water mesh. */
+  private _riverGroups: THREE.Group[] = [];
+  /** GLB road-tile groups replacing the flat InstancedMesh roads. */
+  private _roadTileGroups: THREE.Group[] = [];
+  /** True while this scene's groups are live in the THREE.Scene. */
+  private _isInScene = false;
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
   private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
+
+  // ── Resource nodes (Phase 7e) ─────────────────────────────────────────────
+  private _resourceGroups:  THREE.Group[] = [];
+  private readonly _nodeRecords: ResourceNodeRecord[] = [];
+  /** Remaining respawn time per node index (seconds). 0 = harvested and ready to respawn. */
+  private _respawnTimers: number[] = [];
+  /** Proxy radius in WU within which a node is considered "near". */
+  private static readonly NODE_INTERACT_DIST = 4.5;
 
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
@@ -151,6 +175,7 @@ export class OverworldScene {
     this._placeDungeonEntrances(worldData.dungeons, rand);
     this._buildSettlements(worldData);
     this._spawnSettlementNPCs(worldData);
+    this._buildResourceNodes(worldData.resourceNodes ?? []);
     this._minimap = new OWMinimap(worldData);
     this._minimap.hide(); // shown only while overworld is active
   }
@@ -159,6 +184,7 @@ export class OverworldScene {
 
   /** Add geometry to scene and register physics colliders. */
   enter(): void {
+    this._isInScene = true;
     this._minimap.show();
     // Flat base plane covers level-0 tiles and acts as the underfloor.
     this._groundBody = this.physics.createGroundPlane(0);
@@ -186,13 +212,27 @@ export class OverworldScene {
     for (const rk of this._rocks)        this.scene.add(rk.mesh);
     for (const ru of this._ruins)        this.scene.add(ru);
     for (const en of this._enemies)      this.scene.add(en.group);
+    this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
+    for (const cl of this._clutter)       this.scene.add(cl);
+    for (const rg of this._resourceGroups) this.scene.add(rg);
+    // River tile groups supersede the procedural water mesh when present
+    if (this._riverGroups.length > 0) {
+      if (this._waterMesh) this._waterMesh.visible = false;
+      for (const rg of this._riverGroups) this.scene.add(rg);
+    }
+    // GLB road tiles supersede the procedural InstancedMesh roads when present
+    if (this._roadTileGroups.length > 0) {
+      for (const rm of this._roadMeshes) rm.visible = false;
+      for (const rg of this._roadTileGroups) this.scene.add(rg);
+    }
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
   exit(): void {
+    this._isInScene = false;
     this._minimap.hide();
     if (this._groundBody) {
       this.physics.rapierWorld.removeRigidBody(this._groundBody);
@@ -208,9 +248,16 @@ export class OverworldScene {
     for (const rk of this._rocks)        this.scene.remove(rk.mesh);
     for (const ru of this._ruins)        this.scene.remove(ru);
     for (const en of this._enemies)      this.scene.remove(en.group);
+    this.scene.remove(this._slimeIM);   // Phase 7h.2
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
+    for (const cl of this._clutter)        this.scene.remove(cl);
+    for (const rg of this._riverGroups)    this.scene.remove(rg);
+    for (const rg of this._roadTileGroups) this.scene.remove(rg);
+    for (const rg of this._resourceGroups) this.scene.remove(rg);
+    if (this._waterMesh) this._waterMesh.visible = true; // restore for next enter
+    for (const rm of this._roadMeshes) rm.visible = true; // restore
   }
 
   /** Per-frame enemy AI tick. */
@@ -218,16 +265,39 @@ export class OverworldScene {
     const pos = this.player.group.position;
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
+
+    // ── Phase 7h: rebuild hostile-enemy spatial hash once per frame ─────────
+    this._hostileHash.clear();
+    for (const en of this._enemies) {
+      if (!en.isDead && !en.isRecruited) this._hostileHash.insert(en);
+    }
+
     for (const en of this._enemies) {
       // Always call update even when dead so the death animation can run.
       // SlimeEnemy.update() handles state==='dead' by ticking _tickDeathAnim.
       if (en.isRecruited) {
-        en.updateAsFollower(pos, this._enemies, dt);
+        en.updateAsFollower(pos, this._hostileHash, dt);
       } else {
         en.update(pos, dt);
       }
     }
     for (const npc of this._npcs) npc.update(dt, pos, inputE);
+
+    // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
+    this._syncSlimeIM();
+
+    // Tick resource node respawn timers
+    for (let i = 0; i < this._respawnTimers.length; i++) {
+      if (this._respawnTimers[i]! > 0) {
+        this._respawnTimers[i]! -= dt;
+        if (this._respawnTimers[i]! <= 0) {
+          this._respawnTimers[i] = 0;
+          // Restore mesh visibility
+          const grp = this._resourceGroups[i];
+          if (grp) grp.visible = true;
+        }
+      }
+    }
   }
 
   /** Full teardown — disposes GPU resources. */
@@ -249,6 +319,8 @@ export class OverworldScene {
     for (const ru of this._ruins)        this._freeGroup(ru);
     for (const en of this._enemies)       en.dispose(this.physics);
     for (const npc of this._npcs)          npc.dispose();
+    (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
+    (this._slimeIM.material as THREE.Material).dispose();
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
     for (const bg of this._buildingGroups) this._freeGroup(bg);
     for (const rm of this._roadMeshes) {
@@ -256,9 +328,679 @@ export class OverworldScene {
       (rm.material as THREE.Material).dispose();
     }
     this._roadMeshes = [];
+    for (const cl of this._clutter)       this._freeGroup(cl);
+    this._clutter = [];
+    for (const rg of this._riverGroups)   this._freeGroup(rg);
+    for (const rg of this._roadTileGroups) this._freeGroup(rg);
+    this._roadTileGroups = [];
+    this._riverGroups = [];
+    for (const rg of this._resourceGroups) this._freeGroup(rg);
+    this._resourceGroups = [];
   }
 
-  // ── Trigger queries ───────────────────────────────────────────────────────
+  // ── Asset upgrade ─────────────────────────────────────────────────────────
+
+  /**
+   * Swap every procedural tree group's children for a real GLB model loaded
+   * from the Kenney nature-kit.  Safe to call fire-and-forget: if any model
+   * fails to load the procedural fallback geometry remains for that tree.
+   * Physics colliders are keyed by world position and are NOT affected.
+   */
+  async upgradeTreesWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const TREE_MODELS = [
+      '/assets/nature/tree_default.glb',
+      '/assets/nature/tree_cone.glb',
+      '/assets/nature/tree_blocks.glb',
+      '/assets/nature/tree_detailed.glb',
+    ];
+
+    await loader.preload(TREE_MODELS);
+
+    for (const tr of this._trees) {
+      // Deterministic model selection from world position (no extra RNG needed)
+      const hash  = Math.abs((Math.round(tr.px * 17) ^ Math.round(tr.pz * 31)));
+      const idx   = hash % TREE_MODELS.length;
+      const model = loader.getClone(TREE_MODELS[idx]);
+      if (!model) continue;
+
+      // Kenney nature-kit uses 1-unit tiles; our world tile is T=2 WU, and
+      // the trees should be roughly 4–5 WU tall to match the procedural ones.
+      model.scale.setScalar(3.0);
+
+      // The group already has the correct world position + random Y rotation;
+      // just replace the visual children, leaving transform intact.
+      tr.group.clear();
+      tr.group.add(model);
+    }
+
+    // Expose a flag the Playwright test layer can read
+    (this.scene as any).__assetTreesLoaded = true;
+  }
+
+  // ── Phase 1.2 — Rock upgrade ────────────────────────────────────────────
+
+  /**
+   * Replace DodecahedronGeometry rocks with Kenney nature-kit rock GLBs.
+   * Three size tiers mapped from procedural radius.
+   */
+  async upgradeRocksWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const SMALL  = [
+      '/assets/nature/rock_smallA.glb', '/assets/nature/rock_smallB.glb',
+      '/assets/nature/rock_smallC.glb', '/assets/nature/rock_smallD.glb',
+      '/assets/nature/rock_smallE.glb', '/assets/nature/rock_smallF.glb',
+    ];
+    const LARGE  = [
+      '/assets/nature/rock_largeA.glb', '/assets/nature/rock_largeB.glb',
+      '/assets/nature/rock_largeC.glb', '/assets/nature/rock_largeD.glb',
+      '/assets/nature/rock_largeE.glb', '/assets/nature/rock_largeF.glb',
+    ];
+    const TALL   = [
+      '/assets/nature/rock_tallA.glb',  '/assets/nature/rock_tallB.glb',
+      '/assets/nature/rock_tallC.glb',  '/assets/nature/rock_tallD.glb',
+      '/assets/nature/rock_tallE.glb',  '/assets/nature/rock_tallF.glb',
+    ];
+    await loader.preload([...SMALL, ...LARGE, ...TALL]);
+
+    for (const rk of this._rocks) {
+      // Pick pool based on procedural radius
+      const pool = rk.r < 0.7 ? SMALL : rk.r < 1.1 ? LARGE : TALL;
+      const hash  = Math.abs((Math.round(rk.px * 13) ^ Math.round(rk.pz * 29)));
+      const model = loader.getClone(pool[hash % pool.length]!);
+      if (!model) continue;
+      // Scale so the GLB rock matches the procedural rock's radius.
+      // Kenney rocks are ~0.5 WU in their native 1-unit scale.
+      model.scale.setScalar(rk.r * 2.0);
+      // Preserve Y rotation from the original mesh for natural variation
+      model.rotation.y = rk.mesh.rotation.y;
+      // Blank the original geometry so the Mesh no longer draws its
+      // DodecahedronGeometry self, while still acting as a positioned container.
+      rk.mesh.geometry = new THREE.BufferGeometry();
+      rk.mesh.clear();
+      rk.mesh.add(model);
+    }
+    (this.scene as any).__assetRocksLoaded = true;
+  }
+
+  // ── Phase 1.3 — Ground clutter ──────────────────────────────────────────
+
+  /**
+   * Scatter nature-kit grass, flowers and mushrooms across the world.
+   * Props are stored in `_clutter` and added to the scene immediately if
+   * the scene is already active.
+   */
+  async addGroundClutter(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+
+    const GRASS    = ['/assets/nature/grass.glb', '/assets/nature/grass_large.glb'];
+    const FLOWERS  = [
+      '/assets/nature/flower_redA.glb',    '/assets/nature/flower_purpleA.glb',
+      '/assets/nature/flower_yellowA.glb',
+    ];
+    const MUSHROOM = ['/assets/nature/mushroom_red.glb', '/assets/nature/mushroom_tan.glb'];
+    await loader.preload([...GRASS, ...FLOWERS, ...MUSHROOM]);
+
+    const W  = GW * T;
+    const H  = GH * T;
+    // Poisson disk with generous spacing — we only want visual accents
+    const rand = mulberry32(0xC1_07_7E_42);
+    const pts  = poissonDisk(W, H, 6.5, rand);
+
+    for (const [px, pz] of pts) {
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const c  = Math.floor(wx / T + GHW);
+      const r  = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+
+      if (cell.feature !== 'none')  continue; // don't clutter roads/rivers
+      if (cell.content  !== 'empty') continue;
+      if (cell.settlementId > 0)    continue;
+
+      const lv = cell.elevation;
+      const wy = lv * SH;
+
+      // Choose prop type by biome + hash
+      const hash = Math.abs((Math.round(wx * 11) ^ Math.round(wz * 23)));
+      let path: string;
+      if (cell.biome === 'forest' || lv >= 2) {
+        path = lv >= 3
+          ? MUSHROOM[hash % MUSHROOM.length]!
+          : GRASS[hash % GRASS.length]!;
+      } else if (lv === 1) {
+        path = (hash % 3 === 0)
+          ? FLOWERS[hash % FLOWERS.length]!
+          : GRASS[hash % GRASS.length]!;
+      } else {
+        continue; // no clutter on bog/water tiles
+      }
+
+      const model = loader.getClone(path);
+      if (!model) continue;
+      model.scale.setScalar(1.4);
+      model.rotation.y = (hash % 8) * Math.PI / 4;
+      const grp = new THREE.Group();
+      grp.position.set(wx, wy, wz);
+      grp.add(model);
+      this._clutter.push(grp);
+    }
+
+    if (this._isInScene) {
+      for (const cl of this._clutter) this.scene.add(cl);
+    }
+    (this.scene as any).__assetClutterLoaded = true;
+  }
+
+  // ── Phase 1.4 — River tiles ─────────────────────────────────────────────
+
+  /**
+   * Replace the procedural semi-transparent water mesh with Kenney nature-kit
+   * river tile GLBs.  Tile type is selected by looking at N/S/E/W river
+   * neighbours (classic 4-bit auto-tiling).
+   */
+  async replaceWaterWithRiverTiles(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+
+    const PATHS = [
+      '/assets/nature/ground_riverStraight.glb',
+      '/assets/nature/ground_riverBend.glb',
+      '/assets/nature/ground_riverCorner.glb',
+      '/assets/nature/ground_riverEnd.glb',
+      '/assets/nature/ground_riverCross.glb',
+      '/assets/nature/ground_riverSplit.glb',
+      '/assets/nature/ground_riverTile.glb',
+    ];
+    await loader.preload(PATHS);
+
+    const isRiver = (col: number, row: number) =>
+      this._wg.get(col, row).feature === 'river';
+
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        if (!isRiver(col, row)) continue;
+
+        const n = isRiver(col, row - 1) ? 1 : 0;  // north (−Z)
+        const s = isRiver(col, row + 1) ? 1 : 0;  // south (+Z)
+        const e = isRiver(col + 1, row) ? 1 : 0;  // east  (+X)
+        const w = isRiver(col - 1, row) ? 1 : 0;  // west  (−X)
+        const count = n + s + e + w;
+
+        // Pick GLB path and Y-rotation
+        let path: string;
+        let rotY = 0;
+
+        if (count === 4) {
+          path = '/assets/nature/ground_riverCross.glb';
+        } else if (count === 3) {
+          path = '/assets/nature/ground_riverSplit.glb';
+          // Rotate so the "closed" side faces the missing neighbour
+          if (!n) rotY = Math.PI;
+          else if (!s) rotY = 0;
+          else if (!e) rotY = Math.PI / 2;
+          else         rotY = -Math.PI / 2;
+        } else if (count === 2) {
+          if ((n && s) || (e && w)) {
+            path = '/assets/nature/ground_riverStraight.glb';
+            rotY = (e && w) ? Math.PI / 2 : 0;
+          } else {
+            path = '/assets/nature/ground_riverBend.glb';
+            // Bend: rotate so the open ends face the river neighbours
+            if      (n && e) rotY = 0;
+            else if (e && s) rotY = Math.PI / 2;
+            else if (s && w) rotY = Math.PI;
+            else             rotY = -Math.PI / 2;  // w && n
+          }
+        } else if (count === 1) {
+          path = '/assets/nature/ground_riverEnd.glb';
+          if      (s) rotY = 0;
+          else if (e) rotY = Math.PI / 2;
+          else if (n) rotY = Math.PI;
+          else        rotY = -Math.PI / 2;
+        } else {
+          path = '/assets/nature/ground_riverTile.glb'; // isolated tile
+        }
+
+        const model = loader.getClone(path);
+        if (!model) continue;
+
+        // Kenney river tiles are 1-unit. Scale to fill our T=2 tile.
+        model.scale.setScalar(T);
+        model.rotation.y = rotY;
+
+        const wx = (col - GHW) * T + T / 2;  // tile centre x
+        const wz = (row - GHH) * T + T / 2;  // tile centre z
+        const wy = this._wg.get(col, row).elevation * SH;
+
+        const grp = new THREE.Group();
+        grp.position.set(wx, wy, wz);
+        grp.add(model);
+        this._riverGroups.push(grp);
+      }
+    }
+
+    // Activate in scene if already running
+    if (this._isInScene) {
+      if (this._waterMesh) this._waterMesh.visible = false;
+      for (const rg of this._riverGroups) this.scene.add(rg);
+    }
+    (this.scene as any).__assetRiverLoaded = true;
+  }
+
+  // ── Phase 1.5 — Tower upgrade ───────────────────────────────────────────
+
+  /**
+   * Replace the procedural cylinder tower with stacked castle-kit modules
+   * (tower-square-base → mid × 3 → top).  Physics collider unchanged.
+   */
+  async upgradeTowerWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const BASE   = '/assets/castle/tower-square-base.glb';
+    const MID    = '/assets/castle/tower-square-mid.glb';
+    const MID_W  = '/assets/castle/tower-square-mid-windows.glb';
+    const MID_D  = '/assets/castle/tower-square-mid-door.glb';
+    const TOP    = '/assets/castle/tower-square-top.glb';
+    const ROOF   = '/assets/castle/tower-square-roof.glb';
+
+    await loader.preload([BASE, MID, MID_W, MID_D, TOP, ROOF]);
+
+    // Kenney castle tower modules are exactly 1 × 1.01 × 1 WU native.
+    // Scale S = 2 fills a T=2 game tile footprint and gives ~2.02 WU per module.
+    // The module origin sits at the BOTTOM face, so stacking interval = 1.01 × S.
+    const S       = 2.0;
+    const tileH   = 1.01 * S;  // ≈ 2.02 WU per module – correct stacking interval
+
+    // Layer order bottom → top: base, door-mid, plain-mid, window-mid, plain-mid, top, roof
+    const layers: Array<string> = [BASE, MID_D, MID, MID_W, MID, TOP, ROOF];
+    const modules = layers.map(path => loader.getClone(path));
+    if (modules.some(m => !m)) return;
+
+    this._tower.clear();
+    modules.forEach((m, i) => {
+      m!.scale.setScalar(S);
+      m!.position.set(0, i * tileH, 0);
+      this._tower.add(m!);
+    });
+    (this.scene as any).__assetTowerLoaded = true;
+  }
+
+  // ── Phase 2 — Settlement decoration ────────────────────────────────────────
+
+  /**
+   * Scatter town-kit props (lanterns, fountains, stalls, hedges, banners,
+   * carts) around each settlement using the settlement road-tile positions
+   * stored in WorldGrid.  Props are added directly to the scene so they
+   * appear immediately when `enter()` has already been called.
+   *
+   * Strategy: for every settlement, pull its road-edge tiles (tiles that
+   * are adjacent to at least one non-road walkable tile) and place a random
+   * prop there.  The fountain goes at the settlement centre tile.
+   */
+  async upgradeSettlementsWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+    worldData: import('@/world/WorldData').WorldData,
+  ): Promise<void> {
+    const { settlements } = worldData;
+    if (!settlements || settlements.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Props to preload
+    const LANTERN   = '/assets/town/lantern.glb';
+    const FOUNTAIN  = '/assets/town/fountain-round.glb';
+    const STALL_G   = '/assets/town/stall-green.glb';
+    const STALL_R   = '/assets/town/stall-red.glb';
+    const HEDGE     = '/assets/town/hedge.glb';
+    const HEDGE_L   = '/assets/town/hedge-large.glb';
+    const BANNER_G  = '/assets/town/banner-green.glb';
+    const BANNER_R  = '/assets/town/banner-red.glb';
+    const CART      = '/assets/town/cart.glb';
+    const CART_H    = '/assets/town/cart-high.glb';
+    const FENCE     = '/assets/town/fence.glb';
+
+    await loader.preload([
+      LANTERN, FOUNTAIN, STALL_G, STALL_R, HEDGE, HEDGE_L,
+      BANNER_G, BANNER_R, CART, CART_H, FENCE,
+    ]);
+
+    const _decor: THREE.Group[] = [];
+
+    const addProp = (path: string, wx: number, wy: number, wz: number, rotY = 0, s = 1.8) => {
+      const m = loader.getClone(path);
+      if (!m) return;
+      m.scale.setScalar(s);
+      m.rotation.y = rotY;
+      const g = new THREE.Group();
+      g.position.set(wx, wy, wz);
+      g.add(m);
+      _decor.push(g);
+    };
+
+    for (const entry of settlements) {
+      const { plan } = entry;
+      const { centerCol: cc, centerRow: cr } = plan;
+      const centreElev = this._wg.get(cc, cr).elevation;
+      const centreWy   = centreElev * SH;
+
+      // ── Fountain at settlement centre ──────────────────────────────────
+      const fwx = (cc - GHW) * T;
+      const fwz = (cr - GHH) * T;
+      addProp(FOUNTAIN, fwx, centreWy, fwz, 0, 2.0);
+
+      // ── Lanterns at road-tile corners ──────────────────────────────────
+      // Sample every 3rd road tile, put a lantern at alternating corners.
+      const roads = plan.roads ?? [];
+      let roadIdx = 0;
+      const lanternInterval = Math.max(2, Math.floor(roads.length / 8));
+
+      for (const r of roads) {
+        roadIdx++;
+        if (roadIdx % lanternInterval !== 0) continue;
+        // Check if this road tile is on the settlement perimeter
+        const n = this._wg.get(r.col, r.row - 1);
+        const s2 = this._wg.get(r.col, r.row + 1);
+        const e2 = this._wg.get(r.col + 1, r.row);
+        const w2 = this._wg.get(r.col - 1, r.row);
+        const isEdge = n.feature !== 'road' || s2.feature !== 'road' ||
+                       e2.feature !== 'road' || w2.feature !== 'road';
+        if (!isEdge) continue;
+
+        const lx = (r.col - GHW) * T + T * 0.35;
+        const lz = (r.row - GHH) * T + T * 0.35;
+        const ly = centreElev * SH;
+        const hash = Math.abs((r.col * 17) ^ (r.row * 31));
+        addProp(LANTERN, lx, ly, lz, hash * 0.4, 1.6);
+      }
+
+      // ── Perimeter hedges/fences / stalls / carts ──────────────────────
+      // Place stalls and carts near roads using a hash to pick type.
+      let stallCount = 0;
+      const maxStalls = plan.type === 'city' ? 6 : plan.type === 'town' ? 3 : 1;
+
+      for (const r of roads) {
+        if (stallCount >= maxStalls) break;
+        const hash = Math.abs((r.col * 13) ^ (r.row * 7));
+        if (hash % 6 !== 0) continue;   // sparse
+
+        const rx = (r.col - GHW) * T + (((hash >> 2) % 3) - 1) * T * 0.3;
+        const rz = (r.row - GHH) * T + (((hash >> 4) % 3) - 1) * T * 0.3;
+        const ry = centreElev * SH;
+        const rotY = (hash % 4) * (Math.PI / 2);
+
+        if (hash % 3 === 0) {
+          addProp(hash % 2 === 0 ? STALL_G : STALL_R, rx, ry, rz, rotY, 1.8);
+        } else if (hash % 3 === 1) {
+          addProp(hash % 2 === 0 ? CART : CART_H, rx, ry, rz, rotY, 1.8);
+        } else {
+          addProp(hash % 2 === 0 ? BANNER_G : BANNER_R, rx, ry, rz, rotY, 1.8);
+        }
+        stallCount++;
+      }
+
+      // ── Hedges along settlement perimeter ─────────────────────────────
+      for (const r of roads) {
+        const hash = Math.abs((r.col * 19) ^ (r.row * 23));
+        if (hash % 10 !== 0) continue;  // ~10% of road-edge tiles
+
+        const n2 = this._wg.get(r.col, r.row - 1);
+        const isEdge2 = n2.feature !== 'road';
+        if (!isEdge2) continue;
+
+        const hx = (r.col - GHW) * T - T * 0.4;
+        const hz = (r.row - GHH) * T - T * 0.4;
+        const hy = centreElev * SH;
+        addProp(hash % 2 === 0 ? HEDGE : HEDGE_L, hx, hy, hz, 0, 1.8);
+      }
+    }
+
+    // Add to scene if active
+    for (const g of _decor) {
+      this._clutter.push(g);
+      if (this._isInScene) this.scene.add(g);
+    }
+    (this.scene as any).__assetSettlementLoaded = true;
+  }
+
+  // ── Phase 2b — Modular building upgrade ────────────────────────────────────
+
+  /**
+   * Replace all procedural `generateBuilding()` groups with modular-kit
+   * assemblies from the Kenney Retro Fantasy Kit (buildings/ pack).
+   *
+   * Strategy: clear the existing `_buildingGroups`, assemble fresh GLB-based
+   * groups for every building in every settlement, and add them back to the
+   * scene if it is currently active.
+   */
+  async upgradeBuildingsWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+    worldData: import('@/world/WorldData').WorldData,
+  ): Promise<void> {
+    const {
+      assembleBuilding,
+      BUILDING_PRELOAD_PATHS,
+    } = await import('@/world/buildings/AssetBuildingAssembler');
+
+    await loader.preload([...BUILDING_PRELOAD_PATHS]);
+
+    const { settlements } = worldData;
+    if (!settlements || settlements.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Remove old procedural building groups from scene and free GPU resources.
+    if (this._isInScene) {
+      for (const bg of this._buildingGroups) this.scene.remove(bg);
+    }
+    for (const bg of this._buildingGroups) this._freeGroup(bg);
+    (this._buildingGroups as THREE.Group[]).length = 0;
+
+    // Assemble new GLB buildings for each settlement's plan.
+    for (const entry of settlements) {
+      const { plan } = entry;
+
+      for (const b of plan.buildings) {
+        const wx = (b.col - GHW) * T;
+        const wz = (b.row - GHH) * T;
+        const lv = this._wg.get(b.col, b.row).elevation;
+        const wy = lv * SH;
+
+        const grp = assembleBuilding(loader, b.type, b.seed);
+        grp.position.set(wx, wy, wz);
+        grp.rotation.y = b.rotation;
+
+        this._buildingGroups.push(grp);
+        if (this._isInScene) this.scene.add(grp);
+      }
+    }
+
+    (this.scene as any).__assetBuildingsLoaded = true;
+  }
+
+  // ── Phase 2c — Road tile upgrade ───────────────────────────────────────────
+
+  /**
+   * Replace the flat cobblestone InstancedMesh road tiles with proper Kenney
+   * town-kit road GLBs (settlement interior) and nature-kit ground-path GLBs
+   * (inter-settlement dirt roads).
+   *
+   * A 4-bit neighbour bitmask drives auto-tiling:
+   *   bit 0 = North, bit 1 = South, bit 2 = East, bit 3 = West
+   * Missing variants fall back to road.glb / ground_pathStraight.glb.
+   */
+  async upgradeRoadsWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+    worldData: import('@/world/WorldData').WorldData,
+  ): Promise<void> {
+    const ROAD        = '/assets/town/road.glb';
+    const ROAD_CORNER = '/assets/town/road-corner.glb';
+    const PATH        = '/assets/nature/ground_pathStraight.glb';
+    const PATH_BEND   = '/assets/nature/ground_pathBend.glb';
+    const PATH_CROSS  = '/assets/nature/ground_pathCross.glb';
+
+    await loader.preload([ROAD, ROAD_CORNER, PATH, PATH_BEND, PATH_CROSS]);
+
+    const { settlements, interRoads } = worldData;
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Build a fast lookup of which (col, row) cells are road tiles.
+    const roadSet = new Set<string>();
+    if (settlements) {
+      for (const { plan } of settlements) {
+        for (const r of plan.roads) roadSet.add(`${r.col},${r.row}`);
+      }
+    }
+    const interSet = new Set<string>();
+    for (const r of interRoads ?? []) interSet.add(`${r.col},${r.row}`);
+
+    // ── Town road GLB tiles (settlement interiors) ──────────────────────
+    const settlementRoadsSeen = new Set<string>();
+    const roadGroups: THREE.Group[] = [];
+
+    if (settlements) {
+      for (const { plan } of settlements) {
+        const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
+        const wy = centreElev * SH + 0.02;
+
+        for (const r of plan.roads) {
+          const key = `${r.col},${r.row}`;
+          if (settlementRoadsSeen.has(key)) continue;
+          settlementRoadsSeen.add(key);
+
+          // 4-bit neighbour mask: N=1, S=2, E=4, W=8
+          const n = roadSet.has(`${r.col},${r.row - 1}`) ? 1 : 0;
+          const s = roadSet.has(`${r.col},${r.row + 1}`) ? 2 : 0;
+          const e = roadSet.has(`${r.col + 1},${r.row}`) ? 4 : 0;
+          const w = roadSet.has(`${r.col - 1},${r.row}`) ? 8 : 0;
+          const mask = n | s | e | w;
+
+          const wx = (r.col - GHW) * T;
+          const wz = (r.row - GHH) * T;
+
+          // Choose tile + rotation
+          let path = ROAD;
+          let rotY = 0;
+
+          // Two adjacent perpendicular neighbours → corner
+          if      (mask === (1 | 4))  { path = ROAD_CORNER; rotY = 0; }          // N+E
+          else if (mask === (2 | 4))  { path = ROAD_CORNER; rotY =  Math.PI / 2; }  // S+E
+          else if (mask === (2 | 8))  { path = ROAD_CORNER; rotY =  Math.PI; }    // S+W
+          else if (mask === (1 | 8))  { path = ROAD_CORNER; rotY = -Math.PI / 2; }  // N+W
+          // E–W straight (or single E/W)
+          else if ((mask & (1 | 2)) === 0 && (mask & (4 | 8)) !== 0) {
+            path = ROAD; rotY = Math.PI / 2;
+          }
+          // N–S straight (or single N/S) — default rotY=0
+
+          const clone = loader.getClone(path);
+          if (!clone) continue;
+          clone.scale.setScalar(T);
+          clone.rotation.y = rotY;
+          const g = new THREE.Group();
+          g.position.set(wx, wy, wz);
+          g.add(clone);
+          roadGroups.push(g);
+        }
+      }
+    }
+
+    // Ground-path GLB tiles (inter-settlement dirt roads)
+    const pathSeen = new Set<string>();
+
+    for (const r of interRoads ?? []) {
+      const key = `${r.col},${r.row}`;
+      if (pathSeen.has(key)) continue;
+      pathSeen.add(key);
+
+      const n = interSet.has(`${r.col},${r.row - 1}`) ? 1 : 0;
+      const s = interSet.has(`${r.col},${r.row + 1}`) ? 2 : 0;
+      const e = interSet.has(`${r.col + 1},${r.row}`) ? 4 : 0;
+      const w = interSet.has(`${r.col - 1},${r.row}`) ? 8 : 0;
+      const mask = n | s | e | w;
+
+      const wx = (r.col - GHW) * T;
+      const wz = (r.row - GHH) * T;
+      const wy = this._wg.get(r.col, r.row).elevation * SH + 0.02;
+
+      let path = PATH;
+      let rotY = 0;
+
+      // Bend (2 perpendicular neighbours)
+      if      (mask === (1 | 4))  { path = PATH_BEND; rotY =  0; }
+      else if (mask === (2 | 4))  { path = PATH_BEND; rotY =  Math.PI / 2; }
+      else if (mask === (2 | 8))  { path = PATH_BEND; rotY =  Math.PI; }
+      else if (mask === (1 | 8))  { path = PATH_BEND; rotY = -Math.PI / 2; }
+      // 4-way cross
+      else if (mask === 15)       { path = PATH_CROSS; rotY = 0; }
+      // E–W straight
+      else if ((mask & (1 | 2)) === 0 && (mask & (4 | 8)) !== 0) {
+        path = PATH; rotY = Math.PI / 2;
+      }
+
+      const clone = loader.getClone(path);
+      if (!clone) continue;
+      clone.scale.setScalar(T);
+      clone.rotation.y = rotY;
+      const g = new THREE.Group();
+      g.position.set(wx, wy, wz);
+      g.add(clone);
+      roadGroups.push(g);
+    }
+
+    // Hide old procedural road meshes; add new GLB groups.
+    if (this._isInScene) {
+      for (const rm of this._roadMeshes) rm.visible = false;
+      for (const rg of roadGroups) this.scene.add(rg);
+    }
+    for (const rg of roadGroups) this._roadTileGroups.push(rg);
+
+    (this.scene as any).__assetRoadsLoaded = true;
+  }
+
+  // ── Phase 3 — Dungeon entrance upgrade ─────────────────────────────────────
+
+  /**
+   * Replace the procedural dungeon entrance meshes with Kenney dungeon-kit
+   * GLBs.  Each entrance gets a gate GLB with a matching rotY and the
+   * procedural group's children are swapped out (the group itself stays, so
+   * world-space position / physics trigger radius is unchanged).
+   */
+  async upgradeDungeonEntrancesWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const GATE       = '/assets/dungeon/gate.glb';
+    const GATE_DOOR  = '/assets/dungeon/gate-door.glb';
+    const GATE_BARS  = '/assets/dungeon/gate-metal-bars.glb';
+    const CORRIDOR_E = '/assets/dungeon/corridor-end.glb';
+    const STAIRS     = '/assets/dungeon/stairs.glb';
+
+    await loader.preload([GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS]);
+
+    // Cycle through entrance variants for variety
+    const variants = [GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS];
+
+    for (let i = 0; i < this._dungeonGroups.length; i++) {
+      const grp = this._dungeonGroups[i]!;
+      const path = variants[i % variants.length]!;
+      const model = loader.getClone(path);
+      if (!model) continue;
+
+      // Kenney dungeon tiles are ~4-unit squares at native scale.
+      // Scale down to fit nicely at ground level (~2.5 WU wide).
+      model.scale.setScalar(0.65);
+      model.rotation.y = (i % 4) * (Math.PI / 2);
+
+      grp.clear();
+      grp.add(model);
+    }
+    (this.scene as any).__assetDungeonLoaded = true;
+  }
 
   /** True when the player is close enough to the tower door to press E.
    *  Radius 6.5 — larger than the tower capsule (4.5) + player radius (0.35),
@@ -761,6 +1503,18 @@ export class OverworldScene {
 
       this._rocks.push({ mesh, px: wx, py: wy + radius * 0.5, pz: wz, r: radius });
     }
+  }
+
+  // ── Phase 7h.2 — InstancedMesh sync ──────────────────────────────────────
+
+  private _syncSlimeIM(): void {
+    const im = this._slimeIM;
+    const n  = this._enemies.length;
+    for (let i = 0; i < n; i++) {
+      this._enemies[i]!.writeToIM(im, i);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
   }
 
   // ── Enemy camps ────────────────────────────────────────────────────────────
@@ -1363,4 +2117,109 @@ export class OverworldScene {
       }
     }
   }
+
+  // ── Resource nodes (Phase 7e) ─────────────────────────────────────────────
+
+  private _buildResourceNodes(nodes: ResourceNodeRecord[]): void {
+    for (const node of nodes) {
+      const grp = this._makeNodeMesh(node);
+      grp.position.set(node.wx, 0.12, node.wz);
+      this._resourceGroups.push(grp);
+      this._nodeRecords.push(node);
+      this._respawnTimers.push(0);
+    }
+  }
+
+  private _makeNodeMesh(node: ResourceNodeRecord): THREE.Group {
+    const grp = new THREE.Group();
+    if (node.type === 'ore') {
+      // Grey/metallic pebble cluster — 4 small icosahedra
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x888899, roughness: 0.55, metalness: 0.6,
+        emissive: 0x334455, emissiveIntensity: 0.12,
+      });
+      const sizes = [0.28, 0.22, 0.34, 0.18];
+      const offsets = [[0,0],[0.35,0.1],[-0.28,0.14],[0.12,0.3]];
+      for (let i = 0; i < 4; i++) {
+        const geo = new THREE.IcosahedronGeometry(sizes[i]!, 0);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(offsets[i]![0]!, sizes[i]! * 0.5, offsets[i]![1]!);
+        m.rotation.set(Math.random(), Math.random(), Math.random());
+        m.castShadow = true;
+        grp.add(m);
+      }
+    } else if (node.type === 'timber') {
+      // Felled log — horizontal cylinder with flat endcaps
+      const logMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.9, metalness: 0.0 });
+      const ringMat = new THREE.MeshStandardMaterial({ color: 0x9b6843, roughness: 0.8, metalness: 0.0 });
+      const logGeo = new THREE.CylinderGeometry(0.22, 0.25, 1.2, 10);
+      const log = new THREE.Mesh(logGeo, logMat);
+      log.rotation.z = Math.PI / 2;
+      log.position.y = 0.24;
+      log.castShadow = true;
+      grp.add(log);
+      // Ring cross-section end
+      const ringGeo = new THREE.CircleGeometry(0.22, 10);
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(0.6, 0.24, 0);
+      grp.add(ring);
+    } else {
+      // Essence blossom — glowing flower sphere cluster
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xcc77ff,
+        emissive: 0x8833cc,
+        emissiveIntensity: 0.9,
+        roughness: 0.3,
+        metalness: 0.1,
+      });
+      const stemMat = new THREE.MeshStandardMaterial({ color: 0x447766, roughness: 0.8 });
+      const positions = [[0,0],[0.3,0.1],[-0.25,0.2]];
+      for (const [ox, oz] of positions) {
+        const stemGeo = new THREE.CylinderGeometry(0.03, 0.04, 0.45, 5);
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+        stem.position.set(ox!, 0.22, oz!);
+        grp.add(stem);
+        const blosGeo = new THREE.SphereGeometry(0.14, 7, 6);
+        const blos = new THREE.Mesh(blosGeo, mat);
+        blos.position.set(ox!, 0.48, oz!);
+        grp.add(blos);
+      }
+    }
+    return grp;
+  }
+
+  /**
+   * Find the nearest harvestable resource node within interact range.
+   * Returns null if no node is close enough or all nearby nodes are on
+   * respawn cooldown (invisible).
+   */
+  nearResourceNode(pos: THREE.Vector3): { node: ResourceNodeRecord; index: number } | null {
+    const D2 = OverworldScene.NODE_INTERACT_DIST * OverworldScene.NODE_INTERACT_DIST;
+    let bestDist = D2 + 1;
+    let best: { node: ResourceNodeRecord; index: number } | null = null;
+    for (let i = 0; i < this._nodeRecords.length; i++) {
+      if (!this._resourceGroups[i]!.visible) continue; // on cooldown
+      const nr = this._nodeRecords[i]!;
+      const dx = pos.x - nr.wx;
+      const dz = pos.z - nr.wz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestDist) { bestDist = d2; best = { node: nr, index: i }; }
+    }
+    return best;
+  }
+
+  /**
+   * Mark node as harvested: hide its mesh and start the 180s respawn timer.
+   * Returns the node's `baseYield` so the caller can apply the Cunning
+   * multiplier to get the final resource amount.
+   */
+  harvestNode(index: number): number {
+    const grp = this._resourceGroups[index];
+    if (!grp) return 0;
+    grp.visible = false;
+    this._respawnTimers[index] = 180;
+    return this._nodeRecords[index]?.baseYield ?? 1;
+  }
 }
+

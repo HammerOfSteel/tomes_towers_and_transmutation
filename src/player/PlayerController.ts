@@ -6,8 +6,9 @@ import { PALETTE } from '@/shaders/palette';
 import { rapierToThreeInto } from '@/physics/helpers';
 import { HealthComponent } from '@/combat/Health';
 import type { CreatureDNA } from '@/creatures/CreatureDNA';
-import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { buildCreature, computeQuadNaturalFootY, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature } from '@/creatures/CreatureAnimator';
+import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 
 // ── Capsule dimensions ─────────────────────────────────────────────────────
 
@@ -156,6 +157,9 @@ export class PlayerController {
 
   // DNA-based creature rig (replaces bodyMesh/headMesh visually when applied)
   private _creatureRig: CreatureRig | null = null;
+  private _walkCtrl: ProceduralWalkController | null = null;
+  /** Scratch vector for floor-level position passed to walk controller. */
+  private readonly _floorPos = new THREE.Vector3();
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
@@ -175,10 +179,22 @@ export class PlayerController {
       this.group.remove(this._creatureRig.root);
       this._creatureRig.dispose();
     }
+    this._walkCtrl = null;
     this.bodyMesh.visible = false;
     this.headMesh.visible = false;
     this._creatureRig = buildCreature(dna);
     this._creatureRig.root.scale.setScalar(dna.proportions.global);
+    if (dna.archetype !== 'biped') {
+      const wc = new ProceduralWalkController(this._creatureRig);
+      if (wc.isApplicable) {
+        const natFootY = wc.naturalFootY;
+        this._creatureRig.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - natFootY;
+        this._walkCtrl = wc;
+      } else {
+        this._creatureRig.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS)
+          - computeQuadNaturalFootY(this._creatureRig);
+      }
+    }
     this.group.add(this._creatureRig.root);
   }
 
@@ -444,21 +460,27 @@ export class PlayerController {
     // DNA rig animation (runs alongside hidden bodyMesh/headMesh logic)
     if (this._creatureRig) {
       const t = performance.now() * 0.001;
-      // Serpent trail: run BEFORE animateCreature so the sway overlay (+=) layers on top.
-      if (this._creatureRig.snakeLoco) {
-        this._creatureRig.snakeLoco.update(
-          this._creatureRig.root,
-          this._creatureRig.bones.segments ?? [],
-        );
-      }
-      if (this.flashTimer > 0) {
-        animateCreature(this._creatureRig, { state: 'hit', time: t, timeSinceHit: PLAYER_IFRAME - this.flashTimer });
-      } else if (hSpeed > RUN_SPEED * 0.5) {
-        animateCreature(this._creatureRig, { state: 'run',  time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
-      } else if (hSpeed > 0.3) {
-        animateCreature(this._creatureRig, { state: 'walk', time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+      if (this._walkCtrl) {
+        // Pass rig root world position — ProceduralWalk uses root-local foot offsets.
+        this._creatureRig.root.getWorldPosition(this._floorPos);
+        this._walkCtrl.update(dt, this._floorPos, this.facingAngle);
       } else {
-        animateCreature(this._creatureRig, { state: 'idle', time: t });
+        // Serpent trail: run BEFORE animateCreature so the sway overlay (+=) layers on top.
+        if (this._creatureRig.snakeLoco) {
+          this._creatureRig.snakeLoco.update(
+            this._creatureRig.root,
+            this._creatureRig.bones.segments ?? [],
+          );
+        }
+        if (this.flashTimer > 0) {
+          animateCreature(this._creatureRig, { state: 'hit', time: t, timeSinceHit: PLAYER_IFRAME - this.flashTimer });
+        } else if (hSpeed > RUN_SPEED * 0.5) {
+          animateCreature(this._creatureRig, { state: 'run',  time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+        } else if (hSpeed > 0.3) {
+          animateCreature(this._creatureRig, { state: 'walk', time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+        } else {
+          animateCreature(this._creatureRig, { state: 'idle', time: t });
+        }
       }
     }
 

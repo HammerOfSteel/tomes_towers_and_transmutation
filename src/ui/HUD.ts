@@ -98,6 +98,25 @@ const HUD_CSS = `
   z-index: 100; user-select: none; pointer-events: none;
 }
 
+/* ── Resource strip (bottom-left, below spell bar) ── */
+#hud-resources {
+  position: fixed; bottom: 20px; left: 16px;
+  display: flex; flex-direction: column; gap: 3px;
+  z-index: 100; user-select: none; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+#hud-resources.hud-res--visible { opacity: 1; }
+.hud-res-row {
+  display: flex; align-items: center; gap: 5px;
+}
+.hud-res-icon {
+  font-size: 13px; line-height: 1;
+}
+.hud-res-count {
+  font-family: monospace; font-size: 11px; color: #8bbfcc;
+  min-width: 28px;
+}
+
 .hud-slot {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 7px 16px 6px;
@@ -199,6 +218,9 @@ export class HUD {
   private _tooltipTimer: ReturnType<typeof setTimeout> | null = null;
   /** Current spell IDs in each slot — read by tooltip closures */
   private _slotSpells: (string | null)[] = [null, null, null, null];
+  /** Resource strip (Phase 7e) */
+  private readonly _resRoot: HTMLElement;
+  private readonly _resCounts: Record<string, HTMLElement> = {};
 
   constructor() {
     this._ensureStyles();
@@ -342,6 +364,30 @@ export class HUD {
       return slot;
     });
     document.body.appendChild(this.barRoot);
+
+    // ── Resource strip ──────────────────────────────────────────────────
+    this._resRoot = document.createElement('div');
+    this._resRoot.id = 'hud-resources';
+    const RES_DEFS: Array<{ type: string; icon: string }> = [
+      { type: 'gold',    icon: '🪙' },
+      { type: 'ore',     icon: '⛏️' },
+      { type: 'timber',  icon: '🪵' },
+      { type: 'essence', icon: '✨' },
+    ];
+    for (const { type, icon } of RES_DEFS) {
+      const row   = document.createElement('div');
+      row.className = 'hud-res-row';
+      const iconEl  = document.createElement('span');
+      iconEl.className = 'hud-res-icon';
+      iconEl.textContent = icon;
+      const countEl = document.createElement('span');
+      countEl.className = 'hud-res-count';
+      countEl.textContent = '0';
+      this._resCounts[type] = countEl;
+      row.append(iconEl, countEl);
+      this._resRoot.appendChild(row);
+    }
+    document.body.appendChild(this._resRoot);
   }
 
   update(
@@ -402,8 +448,24 @@ export class HUD {
   dispose(): void {
     this.root.remove();
     this.barRoot.remove();
+    this._resRoot.remove();
     this._tooltip.remove();
     if (this._tooltipTimer) clearTimeout(this._tooltipTimer);
+  }
+
+  /** Update resource counts shown in the bottom-left strip.
+   *  Call this whenever inventory changes (via Inventory.onChange).
+   *  Pass null to hide the strip entirely (e.g. when interior). */
+  setResources(data: { gold: number; ore: number; timber: number; essence: number } | null): void {
+    if (!data) {
+      this._resRoot.classList.remove('hud-res--visible');
+      return;
+    }
+    this._resRoot.classList.add('hud-res--visible');
+    (Object.keys(data) as Array<keyof typeof data>).forEach(key => {
+      const el = this._resCounts[key];
+      if (el) el.textContent = String(data[key]);
+    });
   }
 
   // ── Tooltip helpers ───────────────────────────────────────────────────

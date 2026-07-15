@@ -3,10 +3,11 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
 import { PALETTE } from '@/shaders/palette';
+import { MaterialLibrary } from '@/rendering/MaterialLibrary';
+import { buildCauldron } from '@/rendering/ProceduralProps';
 
 // ── Visual constants ──────────────────────────────────────────────────────
 
-const WALL_COLOR = PALETTE.STONE_MID;
 const FLOOR_COLORS: Record<FloorType, number> = {
   stone: PALETTE.STONE_DARK,
   grass: 0x2a5a22,
@@ -14,7 +15,6 @@ const FLOOR_COLORS: Record<FloorType, number> = {
   wood:  0x6b4a2a,
 };
 const DOOR_FRAME_COLOR = 0x5a5870;
-const INTERACTABLE_COLOR = PALETTE.WOOD_BROWN;
 const STAIR_COLOR = 0x4a4a62;          // slightly lighter stone for step faces
 const STAIR_UP_GLOW = 0xff9933;        // warm amber — climbing toward light
 const STAIR_DOWN_GLOW = 0x4488ff;      // cool blue — descending into depth
@@ -187,12 +187,24 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
   const { cellSize, wallHeight, width, depth } = bp;
 
-  // ── Shared materials ──────────────────────────────────────────────────
-  const wallMat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
-  const floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLORS[bp.floorType ?? 'stone'] });
+  // ── Shared materials (from MaterialLibrary — NOT added to dispose list) ─
+  // Library materials are shared across rooms; they must NOT be disposed on
+  // room unload.  Only one-off per-room materials go into `materials[]`.
+  const floorType = bp.floorType ?? 'stone';
+  const wallMat = floorType === 'wood'
+    ? MaterialLibrary.get('wood_dark')
+    : MaterialLibrary.get('stone_wall');
+  const floorMat = ((): THREE.Material => {
+    if (floorType === 'wood')  return MaterialLibrary.get('wood_plank');
+    if (floorType === 'grass') return new THREE.MeshLambertMaterial({ color: FLOOR_COLORS.grass });
+    if (floorType === 'dirt')  return new THREE.MeshLambertMaterial({ color: FLOOR_COLORS.dirt });
+    return MaterialLibrary.get('stone_floor');
+  })();
+  // Push locally-created floor materials so they're disposed with the room
+  if (floorType === 'grass' || floorType === 'dirt') materials.push(floorMat);
   const frameMat = new THREE.MeshLambertMaterial({ color: DOOR_FRAME_COLOR });
-  const itemMat = new THREE.MeshLambertMaterial({ color: INTERACTABLE_COLOR });
-  materials.push(wallMat, floorMat, frameMat, itemMat);
+  const itemMat  = MaterialLibrary.get('wood_dark');
+  materials.push(frameMat);
 
   // ── Floor ─────────────────────────────────────────────────────────────
   const floorW = width * cellSize;
@@ -348,50 +360,23 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
       );
 
     } else if (item.type === 'cauldron') {
-      // Large iron cauldron: squat sphere body on three stubby legs, emissive glow
-      const cauldronMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+      // Better cauldron via ProceduralProps (lathe profile + GeometryCache)
+      const cauldronMat = MaterialLibrary.get('cauldron_iron');
       const glowMat     = new THREE.MeshBasicMaterial({ color: 0x44ff88, opacity: 0.7, transparent: true });
-      materials.push(cauldronMat, glowMat);
-      // Body
-      const bodyGeo = new THREE.SphereGeometry(1.1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.65);
-      geometries.push(bodyGeo);
-      const body = new THREE.Mesh(bodyGeo, cauldronMat);
-      body.position.set(ix, 0.65, iz);
-      body.castShadow = true;
-      group.add(body);
-      // Rim ring
-      const rimGeo = new THREE.TorusGeometry(1.1, 0.08, 8, 20);
-      geometries.push(rimGeo);
-      const rim = new THREE.Mesh(rimGeo, cauldronMat);
-      rim.position.set(ix, 1.3, iz);
-      rim.rotation.x = Math.PI / 2;
-      group.add(rim);
-      // Glowing liquid surface
-      const liquidGeo = new THREE.CircleGeometry(0.95, 16);
-      liquidGeo.rotateX(-Math.PI / 2);
-      geometries.push(liquidGeo);
-      const liquid = new THREE.Mesh(liquidGeo, glowMat);
-      liquid.position.set(ix, 1.31, iz);
-      group.add(liquid);
-      // Three legs
-      for (let li = 0; li < 3; li++) {
-        const angle = (li / 3) * Math.PI * 2;
-        const legGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.65, 6);
-        geometries.push(legGeo);
-        const leg = new THREE.Mesh(legGeo, cauldronMat);
-        leg.position.set(ix + Math.cos(angle) * 0.8, 0.32, iz + Math.sin(angle) * 0.8);
-        group.add(leg);
-      }
+      materials.push(glowMat);
+      const cauldronGroup = buildCauldron(cauldronMat, glowMat);
+      cauldronGroup.position.set(ix, 0, iz);
+      group.add(cauldronGroup);
       bodies.push(physics.createStaticBox(
-        new THREE.Vector3(ix, 0.65, iz),
-        new THREE.Vector3(1.1, 0.65, 1.1),
+        new THREE.Vector3(ix, 0.75, iz),
+        new THREE.Vector3(1.1, 0.75, 1.1),
       ));
 
     } else if (item.type === 'telescope') {
       // Brass telescope on a pivot mount
       const brassMat  = new THREE.MeshLambertMaterial({ color: 0xcc8800 });
-      const darkMat   = new THREE.MeshLambertMaterial({ color: 0x333322 });
-      materials.push(brassMat, darkMat);
+      const darkMat   = MaterialLibrary.get('cauldron_iron');
+      materials.push(brassMat);
       // Pedestal
       const pedGeo = new THREE.CylinderGeometry(0.25, 0.32, 1.1, 8);
       geometries.push(pedGeo);

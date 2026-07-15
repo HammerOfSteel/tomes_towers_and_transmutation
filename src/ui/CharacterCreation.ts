@@ -13,6 +13,7 @@ import {
   DEFAULT_PLAYER_DNA, dnaForArchetype, dnaForSubRace, cloneDNA,
   numToHex, hexToNum, dnaToBase64, base64ToDna,
   BIPED_SUBRACES, SUBRACE_DEFS, ARCHETYPE_FACE_ALLOW, ARCHETYPE_PROP_ALLOW,
+  DOG_DNA, CAT_DNA,
 } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature, type AnimState } from '@/creatures/CreatureAnimator';
@@ -525,6 +526,27 @@ export class CharacterCreation {
     }
     archSec.append(subRaceLabel, this._subRaceRow);
 
+    // Quick Presets — notable archetypes with curated DNA
+    const presetSec = document.createElement('div'); presetSec.className = 'cc-section';
+    const presetTitle = document.createElement('div'); presetTitle.className = 'cc-section-title'; presetTitle.textContent = 'Quick Presets';
+    const presetChips = document.createElement('div'); presetChips.className = 'cc-chips';
+    const PRESETS = [
+      { label: '🐶 Dog', dna: DOG_DNA },
+      { label: '🐱 Cat', dna: CAT_DNA },
+    ] as const;
+    for (const p of PRESETS) {
+      const chip = document.createElement('div'); chip.className = 'cc-chip';
+      chip.textContent = p.label;
+      chip.onclick = () => {
+        this._dna = cloneDNA(p.dna);
+        this._subRaceRow.style.display = 'none';
+        this._syncControls();
+        this._preview?.setDNA(this._dna);
+      };
+      presetChips.appendChild(chip);
+    }
+    presetSec.append(presetTitle, presetChips);
+
     // Boon
     const boonSec = document.createElement('div'); boonSec.className = 'cc-section';
     const boonTitle = document.createElement('div'); boonTitle.className = 'cc-section-title'; boonTitle.textContent = 'Boon';
@@ -759,7 +781,7 @@ export class CharacterCreation {
     }
     scaleSec.appendChild(this._morphWrap);
 
-    ctrlCol.append(nameWrap, archSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
+    ctrlCol.append(nameWrap, archSec, presetSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
     main.append(previewCol, ctrlCol);
 
     // Actions

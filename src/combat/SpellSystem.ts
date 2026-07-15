@@ -7,6 +7,11 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 // ── VFX PRNG — deterministic, never Math.random() ────────────────────────────
 const _vfxRand = mulberry32(0xF00DCAFE);
 
+/** Phase 7h.4 — max 512 active particles across all SparkBursts.
+ *  Each burst holds SparkBurst.COUNT=22 points, so cap = floor(512/22) = 23 bursts.
+ *  Oldest burst is evicted (removed from scene) when the cap is hit. */
+const MAX_SPARK_BURSTS = Math.floor(512 / 22); // 23
+
 // ── Spell definitions ─────────────────────────────────────────────────────────
 
 export type SpellType = 'projectile' | 'aoe' | 'chain' | 'zone' | 'buff';
@@ -971,6 +976,14 @@ export class SpellSystem {
   /** Whether Battle Hymn aura is currently active. */
   get battleHymnActive(): boolean { return !!this._hymn && !this._hymn.expired; }
 
+  /**
+   * Returns the primary visual hex colour for a spell (0xRRGGBB).
+   * Useful for creating matching light pulses on cast.
+   */
+  getSpellColor(spellId: string): number {
+    return (SPELL_DEFS as Record<string, { color: number }>)[spellId]?.color ?? 0xffffff;
+  }
+
   // ── Cast ─────────────────────────────────────────────────────────────────
 
   /**
@@ -1131,6 +1144,12 @@ export class SpellSystem {
   }
 
   private _addSpark(pos: THREE.Vector3, color: number, speed: number, scene: THREE.Scene): void {
+    // Phase 7h.4: evict oldest burst if we'd exceed the 512-particle budget
+    if (this._sparks.length >= MAX_SPARK_BURSTS) {
+      const oldest = this._sparks.shift()!;
+      scene.remove(oldest.mesh);
+      oldest.dispose();
+    }
     const burst = new SparkBurst(pos, color, speed);
     scene.add(burst.mesh);
     this._sparks.push(burst);

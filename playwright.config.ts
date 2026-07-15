@@ -17,6 +17,9 @@ export default defineConfig({
     ['html', { outputFolder: 'tests/e2e/report', open: 'never' }],
   ],
 
+  // Per-test timeout — WASM init + game start + asset loads can take ~50 s.
+  timeout: 90_000,
+
   use: {
     baseURL:        'http://localhost:5173',
     browserName:    'chromium',

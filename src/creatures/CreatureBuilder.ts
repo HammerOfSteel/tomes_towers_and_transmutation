@@ -24,10 +24,16 @@ export interface CreatureBones {
   armR?:      THREE.Group;
   legL?:      THREE.Group;
   legR?:      THREE.Group;
+  legLKnee?:  THREE.Group;
+  legRKnee?:  THREE.Group;
   frontLegL?: THREE.Group;
   frontLegR?: THREE.Group;
   backLegL?:  THREE.Group;
   backLegR?:  THREE.Group;
+  frontLegLKnee?: THREE.Group;
+  frontLegRKnee?: THREE.Group;
+  backLegLKnee?:  THREE.Group;
+  backLegRKnee?:  THREE.Group;
   tail?:      THREE.Group;
   wingL?:     THREE.Group;
   wingR?:     THREE.Group;
@@ -63,6 +69,35 @@ export function buildCreature(dna: CreatureDNA): CreatureRig {
     case 'serpent':   return _serpent(dna);
     default:          return _biped(dna);
   }
+}
+
+/**
+ * Compute the natural foot height (unscaled root-local Y) for a quad rig.
+ * Works for both 2-bone (knee groups) and legacy 1-bone skeletons.
+ * This is the Y target for foot placement when the creature stands at rest.
+ */
+export function computeQuadNaturalFootY(rig: CreatureRig): number {
+  const hipFL  = rig.bones.frontLegL;
+  if (!hipFL) return 0.33;
+  const torsoY = rig.bones.torso?.position.y ?? 0.95;
+  const hipLocalY = torsoY + hipFL.position.y;  // hip Y above root (unscaled)
+  const kneeFL = rig.bones.frontLegLKnee;
+  if (kneeFL) {
+    // 2-bone: paw is a child of kneeGroup
+    let pawY = 0;
+    kneeFL.children.forEach(child => {
+      if (child instanceof THREE.Mesh && child.position.y < pawY) pawY = child.position.y;
+    });
+    if (pawY === 0) pawY = -(Math.abs(kneeFL.position.y) * (25 / 27));
+    return hipLocalY + kneeFL.position.y + pawY;
+  }
+  // 1-bone fallback: paw is a direct child of hip
+  let pawY = 0;
+  hipFL.children.forEach(child => {
+    if (child instanceof THREE.Mesh && child.position.y < pawY) pawY = child.position.y;
+  });
+  if (pawY === 0) pawY = -0.52;
+  return hipLocalY + pawY;
 }
 
 // ── Material / dispose helpers ────────────────────────────────────────────────
@@ -596,15 +631,29 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const _hideLegs = dna.props.includes('robe') || _ot.over === 'robe_full' || _ot.over === 'robe_layered' || _ot.legs === 'robe_skirt' || _ot.legs === 'skirt' || _ot.top === 'dress_flared' || _ot.top === 'dress_layered';
   const legLL = p.legLength ?? 1.0;
   if (!_hideLegs) {
+    // Two-bone chain: thigh (L1) + knee group + shin (L2) + foot.
+    // L1 + L2 = 0.66*legLL — same total reach as the old single-bone leg.
+    const L1_leg = 0.32 * legLL;  // thigh
+    const L2_leg = 0.34 * legLL;  // shin
     for (const s of [-1, 1] as const) {
       const hip = new THREE.Group();
       hip.position.set(s * 0.13 * tx * hw, 0.70 * ty, 0);
-      const leg  = new THREE.Mesh(new THREE.CylinderGeometry(0.085 * p.limbWidth, 0.072 * p.limbWidth, 0.60 * legLL, 7), sm);
-      leg.position.y = -0.30 * legLL; hip.add(leg); ms.push(leg);
+      // Upper leg (thigh)
+      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.082 * p.limbWidth, 0.070 * p.limbWidth, L1_leg, 7), sm);
+      thigh.position.y = -L1_leg / 2; hip.add(thigh); ms.push(thigh);
+      // Knee group (pivot at bottom of thigh)
+      const kneeGroup = new THREE.Group();
+      kneeGroup.position.y = -L1_leg;
+      hip.add(kneeGroup);
+      if (s === -1) bones.legLKnee = kneeGroup; else bones.legRKnee = kneeGroup;
+      // Shin
+      const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.070 * p.limbWidth, 0.058 * p.limbWidth, L2_leg, 7), sm);
+      shin.position.y = -L2_leg / 2; kneeGroup.add(shin); ms.push(shin);
+      // Foot
       const footGeo = new THREE.SphereGeometry(0.09 * p.limbWidth, 6, 4);
       footGeo.scale(1.5, 0.55, 1.9);
       const foot = new THREE.Mesh(footGeo, pm);
-      foot.position.set(0.02, -0.66 * legLL, 0.04); hip.add(foot); ms.push(foot);
+      foot.position.set(0.02, -L2_leg, 0.04); kneeGroup.add(foot); ms.push(foot);
       torso.add(hip);
       if (s === -1) bones.legL = hip; else bones.legR = hip;
     }
@@ -631,18 +680,34 @@ function _quad(dna: CreatureDNA): CreatureRig {
   body.rotation.x = Math.PI / 2; torso.add(body); ms.push(body);
 
   const legDefs = [
-    { x: -0.28 * tx, z:  0.4 * tz, k: 'frontLegL' as const },
-    { x:  0.28 * tx, z:  0.4 * tz, k: 'frontLegR' as const },
-    { x: -0.28 * tx, z: -0.4 * tz, k: 'backLegL'  as const },
-    { x:  0.28 * tx, z: -0.4 * tz, k: 'backLegR'  as const },
+    { x: -0.28 * tx, z:  0.4 * tz, k: 'frontLegL' as const, kk: 'frontLegLKnee' as const },
+    { x:  0.28 * tx, z:  0.4 * tz, k: 'frontLegR' as const, kk: 'frontLegRKnee' as const },
+    { x: -0.28 * tx, z: -0.4 * tz, k: 'backLegL'  as const, kk: 'backLegLKnee'  as const },
+    { x:  0.28 * tx, z: -0.4 * tz, k: 'backLegR'  as const, kk: 'backLegRKnee'  as const },
   ];
+  // Two-bone leg chain: upper (hip→knee) + lower (knee→paw).
+  // L1 + L2 = 0.52 * limbLength — same total reach as the old single-bone leg.
+  const L1 = 0.27 * p.limbLength;  // upper leg (thigh / humerus)
+  const L2 = 0.25 * p.limbLength;  // lower leg (shin / radius)
   for (const d of legDefs) {
     const hip = new THREE.Group(); hip.position.set(d.x, -0.1, d.z);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * p.limbWidth, 0.065 * p.limbWidth, 0.5 * p.limbLength, 7), sm);
-    leg.position.y = -0.25 * p.limbLength; hip.add(leg); ms.push(leg);
-    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.1 * p.limbWidth, 7, 5), pm);
-    paw.position.y = -0.52 * p.limbLength; paw.scale.set(1.3, 0.65, 1.5); hip.add(paw); ms.push(paw);
     torso.add(hip); bones[d.k] = hip;
+
+    // Upper leg
+    const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.080 * p.limbWidth, 0.068 * p.limbWidth, L1, 7), sm);
+    upperLeg.position.y = -L1 / 2; hip.add(upperLeg); ms.push(upperLeg);
+
+    // Knee group (pivot at bottom of upper leg)
+    const kneeGroup = new THREE.Group(); kneeGroup.position.y = -L1;
+    hip.add(kneeGroup); bones[d.kk] = kneeGroup;
+
+    // Lower leg
+    const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.065 * p.limbWidth, 0.055 * p.limbWidth, L2, 7), sm);
+    lowerLeg.position.y = -L2 / 2; kneeGroup.add(lowerLeg); ms.push(lowerLeg);
+
+    // Paw (paw center at -L2 in knee-local = -(L1+L2) = -0.52*ll in hip-local)
+    const paw = new THREE.Mesh(new THREE.SphereGeometry(0.1 * p.limbWidth, 7, 5), pm);
+    paw.position.y = -L2; paw.scale.set(1.3, 0.65, 1.5); kneeGroup.add(paw); ms.push(paw);
   }
 
   const neck = new THREE.Group(); neck.position.set(0, 0.3, 0.5 * tz); neck.rotation.x = -0.7;

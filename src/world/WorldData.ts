@@ -12,6 +12,7 @@ import type { WorldGrid }      from './WorldGrid';
 import type { DungeonType }    from './DungeonType';
 import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
 import type { WorldHistoryResult }          from './WorldHistory';
+import type { ResourceNodeRecord }          from './ResourceNodePlacer';
 
 
 // ── Entity record types ────────────────────────────────────────────────────────
@@ -51,4 +52,6 @@ export interface WorldData {
   interRoads:      RoadSegment[];
   /** World history simulation result (50-turn). Populated by WorldGenerator. */
   history?:        WorldHistoryResult;
+  /** Harvestable resource nodes scattered across the overworld. Phase 7e. */
+  resourceNodes:   ResourceNodeRecord[];
 }
