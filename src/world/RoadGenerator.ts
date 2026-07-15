@@ -5,20 +5,37 @@
  * Algorithm:
  *   1. Build a Minimum Spanning Tree (Prim's) on the settlement centres so every
  *      settlement is reachable.
- *   2. Add a few extra short connections (10–15 % of discarded edges) to create
- *      loops, preventing the map from feeling completely linear.
+ *   2. Add a few extra short connections to create loops.
  *   3. For each edge, run A* pathfinding on the WorldGrid with a terrain-aware
  *      cost function that avoids water, prefers valleys, penalises steep slopes,
  *      and cheaply re-uses existing road tiles.
- *   4. Fall back to Bresenham straight line if A* cannot find a path within the
- *      iteration budget.
+ *   4. Apply Douglas–Peucker simplification to remove zigzag staircase artefacts
+ *      from the 8-directional A* output — the simplified waypoint list is what
+ *      gets stored for Catmull–Rom ribbon rendering.
+ *   5. Fall back to Bresenham straight line if A* cannot find a path.
  *
- * The result is a flat list of RoadSegment {col, row} tiles that the caller
- * adds to WorldData and marks on the grid.
+ * Returns both a flat tile list (for grid marking / minimap) and the per-edge
+ * simplified paths (for smooth ribbon mesh rendering in OverworldScene).
  */
 
 import type { WorldGrid }    from './WorldGrid';
 import type { RoadSegment }  from './SettlementGenerator';
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+/** One waypoint in a road path. */
+export type GridPt = { col: number; row: number };
+
+/** A simplified road path (one per road edge between settlements). */
+export type GridPath = GridPt[];
+
+/** Return value of buildInterSettlementRoads. */
+export interface InterRoadResult {
+  /** Flat deduplicated tile list — used for WorldGrid marking and minimap. */
+  tiles:  RoadSegment[];
+  /** One simplified path per road edge — used for Catmull–Rom ribbon rendering. */
+  paths:  GridPath[];
+}
 
 // ── Min-heap priority queue ───────────────────────────────────────────────────
 
@@ -246,6 +263,39 @@ function _addLoopEdges(
   return candidates.slice(0, count).map(([, a, b]) => [a, b] as [number, number]);
 }
 
+// ── Douglas–Peucker path simplification ──────────────────────────────────────
+
+/**
+ * Perpendicular distance from point `pt` to the line segment [a, b] in grid
+ * space.  Used by the DP simplification below.
+ */
+function _perpDist(pt: GridPt, a: GridPt, b: GridPt): number {
+  const dx = b.col - a.col, dz = b.row - a.row;
+  const len2 = dx * dx + dz * dz;
+  if (len2 === 0) return Math.hypot(pt.col - a.col, pt.row - a.row);
+  const t = Math.max(0, Math.min(1, ((pt.col - a.col) * dx + (pt.row - a.row) * dz) / len2));
+  return Math.hypot(pt.col - a.col - t * dx, pt.row - a.row - t * dz);
+}
+
+/**
+ * Douglas–Peucker polyline simplification.
+ * `eps` ≈ 2.5 tiles removes the 8-directional staircase while preserving turns.
+ */
+function _dpSimplify(path: GridPath, eps = 2.5): GridPath {
+  if (path.length <= 2) return path;
+  let maxD = 0, idx = 0;
+  for (let i = 1; i < path.length - 1; i++) {
+    const d = _perpDist(path[i]!, path[0]!, path[path.length - 1]!);
+    if (d > maxD) { maxD = d; idx = i; }
+  }
+  if (maxD > eps) {
+    const L = _dpSimplify(path.slice(0, idx + 1), eps);
+    const R = _dpSimplify(path.slice(idx),         eps);
+    return [...L.slice(0, -1), ...R];
+  }
+  return [path[0]!, path[path.length - 1]!];
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface SettlementCentre {
@@ -256,40 +306,46 @@ export interface SettlementCentre {
 /**
  * Build inter-settlement roads connecting all settlements on the WorldGrid.
  *
- * @returns A flat array of road tile positions (unique, deduped).
- *          The caller is responsible for marking these on the grid and storing
- *          them in WorldData.
+ * Returns both the full tile list (for grid marking) and the simplified
+ * per-edge paths (for smooth ribbon rendering in OverworldScene).
  */
 export function buildInterSettlementRoads(
   settlements: { plan: SettlementCentre }[],
   grid: WorldGrid,
-): RoadSegment[] {
-  if (settlements.length < 2) return [];
+): InterRoadResult {
+  if (settlements.length < 2) return { tiles: [], paths: [] };
 
   const centres: Centre[] = settlements.map(s => ({
     col: s.plan.centerCol,
     row: s.plan.centerRow,
   }));
 
-  // Connectivity: MST + a few loop edges (≈15 % extra)
+  // Connectivity: MST + a few loop edges (≈40 % extra)
   const mst   = _buildMST(centres);
   const loops = _addLoopEdges(centres, mst, Math.max(1, Math.floor(settlements.length * 0.4)));
   const edges = [...mst, ...loops];
 
-  const seen  = new Set<string>();
-  const roads: RoadSegment[] = [];
+  const seen   = new Set<string>();
+  const tiles: RoadSegment[] = [];
+  const paths:  GridPath[]   = [];
 
   for (const [ai, bi] of edges) {
     const a = centres[ai]!, b = centres[bi]!;
     const raw = _aStar(grid, a.col, a.row, b.col, b.row);
-    const tiles = raw.length > 1 ? raw : _bresenham(a.col, a.row, b.col, b.row);
+    const full = raw.length > 1 ? raw : _bresenham(a.col, a.row, b.col, b.row);
 
-    for (const { col, row } of tiles) {
+    // Simplified path for ribbon rendering
+    const simple = _dpSimplify(full);
+    paths.push(simple);
+
+    // Full tile set for grid marking
+    for (const { col, row } of full) {
       if (col < 0 || col >= grid.width || row < 0 || row >= grid.height) continue;
       const k = `${col},${row}`;
-      if (!seen.has(k)) { seen.add(k); roads.push({ col, row }); }
+      if (!seen.has(k)) { seen.add(k); tiles.push({ col, row }); }
     }
   }
 
-  return roads;
+  return { tiles, paths };
 }
+
