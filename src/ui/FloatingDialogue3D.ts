@@ -28,6 +28,16 @@ interface _Rec {
   choiceIdx:     number;
 }
 
+// ── shatter particle ────────────────────────────────────────────────────────────
+
+interface _Particle {
+  mesh:  THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  vx:    number;
+  vy:    number;
+  age:   number;
+  ttl:   number;
+}
+
 // ── class ─────────────────────────────────────────────────────────────────────
 
 export class FloatingDialogue3D {
@@ -46,6 +56,10 @@ export class FloatingDialogue3D {
   private _isDragging  = false;
   private _dragStartX  = 0;
   private _dragStartY  = 0;
+
+  // Shatter particles (spawned on choice click)
+  private _particles: _Particle[] = [];
+  private _prevTime   = -1;
 
   // DOM blackout div for scene fade transitions
   private readonly _root:     HTMLElement;
@@ -161,6 +175,10 @@ export class FloatingDialogue3D {
   // ── tick (call every frame) ───────────────────────────────────────────────
 
   tick(time: number): void {
+    // Delta time (capped so a tab-switch can't explode physics)
+    const dt = this._prevTime < 0 ? 0.016 : Math.min(time - this._prevTime, 0.1);
+    this._prevTime = time;
+
     // Always face the camera (billboard)
     this._group.lookAt(this._camera.position);
 
@@ -172,6 +190,23 @@ export class FloatingDialogue3D {
       r.mesh.material.opacity += (r.targetOpacity - r.mesh.material.opacity) * 0.06;
       // Gentle vertical float
       r.mesh.position.y = r.baseY + Math.sin(time * 1.5 + r.phase) * 0.025;
+    }
+
+    // Shatter particles
+    for (let i = this._particles.length - 1; i >= 0; i--) {
+      const p = this._particles[i];
+      p.age += dt;
+      const t = p.age / p.ttl;
+      p.mesh.material.opacity = 0.85 * (1 - t * t);  // ease-out
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.vy -= 0.35 * dt;  // gentle gravity
+      if (p.age >= p.ttl) {
+        this._group.remove(p.mesh);
+        p.mesh.material.dispose();
+        p.mesh.geometry.dispose();
+        this._particles.splice(i, 1);
+      }
     }
 
     this._updateHover();
@@ -186,7 +221,7 @@ export class FloatingDialogue3D {
     const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     mesh.renderOrder = 999;
-    const baseY = 0.30;
+    const baseY = 0.40;
     mesh.position.set(0, baseY, 0);
     this._group.add(mesh);
     this._meshes.push({
@@ -198,8 +233,8 @@ export class FloatingDialogue3D {
   private _addChoices(choices: string[]): void {
     const cellW  = 0.55;
     const cellH  = 0.17;
-    const gapX   = 0.05;
-    const gapY   = 0.06;
+    const gapX   = 0.12;
+    const gapY   = 0.14;
     const cols   = 2;
     const totalW = cols * cellW + (cols - 1) * gapX;
 
@@ -207,7 +242,7 @@ export class FloatingDialogue3D {
       const col   = idx % cols;
       const row   = Math.floor(idx / cols);
       const x     = -totalW / 2 + col * (cellW + gapX) + cellW / 2;
-      const baseY = -(row * (cellH + gapY)) - 0.10;
+      const baseY = -(row * (cellH + gapY)) - 0.14;
 
       const tex  = this._makeChoiceTex(text);
       const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
@@ -317,7 +352,13 @@ export class FloatingDialogue3D {
       r.mesh.material.dispose();
       r.mesh.geometry.dispose();
     }
+    for (const p of this._particles) {
+      this._group.remove(p.mesh);
+      p.mesh.material.dispose();
+      p.mesh.geometry.dispose();
+    }
     this._meshes        = [];
+    this._particles     = [];
     this._resolveChoice = null;
     this._hoveredMesh   = null;
   }
@@ -375,13 +416,52 @@ export class FloatingDialogue3D {
     const rec = this._meshes.find(r => r.mesh === this._hoveredMesh);
     if (!rec?.isChoice) return;
 
-    const idx     = rec.choiceIdx;
-    const resolve = this._resolveChoice;
+    const idx       = rec.choiceIdx;
+    const resolve   = this._resolveChoice;
+    const clickedMesh = rec.mesh;
     this._resolveChoice = null;
     this._hoveredMesh   = null;
     this._renderer.domElement.style.cursor = 'default';
 
+    this._spawnShatter(clickedMesh);
     this._meshes.filter(r => r.isChoice).forEach(r => { r.targetOpacity = 0; });
     setTimeout(() => { this._purge(); resolve(idx); }, 380);
   };
+
+  private _spawnShatter(clicked: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>): void {
+    const COUNT = 14;
+    const w  = clicked.geometry.parameters.width;
+    const h  = clicked.geometry.parameters.height;
+    const cx = clicked.position.x;
+    const cy = clicked.position.y;
+
+    for (let i = 0; i < COUNT; i++) {
+      const size   = 0.010 + Math.random() * 0.018;
+      const aspect = 0.3 + Math.random() * 1.5;
+      const mat    = new THREE.MeshBasicMaterial({
+        color:       Math.random() < 0.35 ? 0xffbb44 : 0xffffff,
+        transparent: true, opacity: 0.85,
+        depthWrite:  false, depthTest: false,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size * aspect), mat);
+      mesh.renderOrder = 1000;
+      // Start scattered within the card's face
+      mesh.position.set(
+        cx + (Math.random() - 0.5) * w * 0.7,
+        cy + (Math.random() - 0.5) * h * 0.7,
+        0.005,
+      );
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.15 + Math.random() * 0.45;
+      const ttl   = 0.45 + Math.random() * 0.25;
+      this._group.add(mesh);
+      this._particles.push({
+        mesh,
+        vx:  Math.cos(angle) * speed,
+        vy:  Math.sin(angle) * speed * 0.7 + 0.08,
+        age: 0,
+        ttl,
+      });
+    }
+  }
 }
