@@ -263,10 +263,6 @@ export class DialogueOverlay {
   // ── speech ────────────────────────────────────────────────────────────────
 
   /**
-   * Typewriter-animate the given text. Speaker name shown above.
-   * Returns a promise that resolves when complete (or skipped).
-   */
-  /**
    * Show wizard speech with a POC-style fade-in.
    * If text is already visible it fades out first, then fades in the new line.
    * Resolves after the CSS fade-in completes so choices appear naturally after.
@@ -310,11 +306,14 @@ export class DialogueOverlay {
     return new Promise<number>((resolve) => {
       this._choices.innerHTML = '';
 
-      // Cancel any existing fade timer (new line coming in)
+      // Cancel any pending fade timer
       if (this._speechFadeTimer !== null) {
         clearTimeout(this._speechFadeTimer);
         this._speechFadeTimer = null;
       }
+
+      // Fade speech out immediately so only choices are visible
+      this._speech.classList.add('ngo--faded');
 
       choices.forEach((text, idx) => {
         const card = _el('div', 'ngo-card');
@@ -328,13 +327,6 @@ export class DialogueOverlay {
 
         card.addEventListener('click', () => { pickChoice(idx); }, { once: true });
       });
-
-      // Wizard-fade: speech dissolves ~4s after the last choice card appears (POC feel)
-      const lastCardDelay = (choices.length - 1) * 80 + 60 + 300;
-      this._speechFadeTimer = setTimeout(() => {
-        this._speech.classList.add('ngo--faded');
-        this._speechFadeTimer = null;
-      }, lastCardDelay + 4000);
 
       const pickChoice = (idx: number) => {
         document.removeEventListener('keydown', onKey);
