@@ -91,14 +91,18 @@ export class NewGameScene {
   onFrame?: (dt: number) => void;
 
   constructor() {
-    // ── renderer ──────────────────────────────────────────────────────────────
+    // Match r128 colour rendering: disable sRGB→linear conversion for material colours
+    // This is exactly how the POC (r128) rendered — same values = same result
+    THREE.ColorManagement.enabled = false;
+
+    // ── renderer ───────────────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this._renderer.shadowMap.enabled    = true;
     this._renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
     this._renderer.outputColorSpace     = THREE.SRGBColorSpace;
     this._renderer.toneMapping          = THREE.ACESFilmicToneMapping;
-    this._renderer.toneMappingExposure  = 1.2; // POC value — intensities compensated below
+    this._renderer.toneMappingExposure  = 1.2; // exact POC value
     this._canvas = this._renderer.domElement;
 
     // ── scene ─────────────────────────────────────────────────────────────────
@@ -130,11 +134,10 @@ export class NewGameScene {
   // ── scene builders ─────────────────────────────────────────────────────────
 
   private _buildLighting(): void {
-    // Ambient moonlight — POC value × π (r170 removed legacy lights, this restores the brightness)
-    this._scene.add(new THREE.AmbientLight(0x2a3045, 1.3));
+    // Exact POC values — ColorManagement.enabled=false makes r170 match r128
+    this._scene.add(new THREE.AmbientLight(0x2a3045, 0.4));
 
-    // Directional moonlight — POC value × π
-    const moon = new THREE.DirectionalLight(0x4a5b82, 1.9);
+    const moon = new THREE.DirectionalLight(0x4a5b82, 0.6);
     moon.position.set(-10, 15, -10);
     moon.castShadow = true;
     moon.shadow.mapSize.width  = 1024;
@@ -252,8 +255,8 @@ export class NewGameScene {
       });
     }
 
-    // Fire point light — POC value (2) × π = 6.28 for r170 physical lighting
-    const pl = new THREE.PointLight(FIRE_COLOR, 6.3, 15);
+    // Exact POC fire light
+    const pl = new THREE.PointLight(FIRE_COLOR, 2, 15);
     pl.position.set(0, 1, 0);
     pl.castShadow = true;
     pl.shadow.mapSize.set(512, 512);
@@ -609,7 +612,7 @@ export class NewGameScene {
 
     // ── fire light flicker (POC style) ────────────────────────────────────────
     if (this._fireLight) {
-      this._fireLight.intensity  = 5.7 + Math.sin(t * 15) * 0.63 + Math.random() * 0.63; // POC 1.8/0.2 × π
+      this._fireLight.intensity  = 1.8 + Math.sin(t * 15) * 0.2 + Math.random() * 0.2; // exact POC flicker
       this._fireLight.position.x = Math.sin(t * 5) * 0.05;
       this._fireLight.position.z = Math.cos(t * 6) * 0.05;
     }
