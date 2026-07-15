@@ -27,7 +27,7 @@ function _injectCSS(): void {
       position: absolute; inset: 0;
       pointer-events: none;
       z-index: 10;
-      font-family: 'Georgia', 'Palatino Linotype', serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     /* Full-screen fade to black */
@@ -39,129 +39,143 @@ function _injectCSS(): void {
       pointer-events: none;
     }
 
-    /* Speech panel ─────────────────────────────────── */
+    /* ── Speech panel: centred on screen (POC style) ── */
     .ngo-speech {
       position: absolute;
-      bottom: 0; left: 50%;
-      transform: translateX(-50%);
-      width: min(560px, 72vw);
-      padding: 11px 18px 14px;
-      background: rgba(4, 6, 16, 0.78);
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(100, 80, 180, 0.20);
-      border-bottom: none;
-      border-radius: 8px 8px 0 0;
+      top: 45%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%; max-width: 800px;
+      text-align: center;
+      padding: 0;
+      background: none;
+      border: none;
       pointer-events: none;
       opacity: 0;
-      transform: translateX(-50%) translateY(8px);
-      transition: opacity 0.35s ease, transform 0.35s ease;
+      transition: opacity 1.5s ease;
     }
     .ngo-speech.ngo--visible {
       opacity: 1;
-      transform: translateX(-50%) translateY(0);
       pointer-events: auto;
     }
+
     .ngo-speaker {
-      font-size: 10px;
-      letter-spacing: 0.12em;
+      color: rgba(255, 170, 0, 0.7);
+      font-weight: 300;
+      font-size: 0.9rem;
       text-transform: uppercase;
-      color: rgba(160, 140, 220, 0.7);
-      margin-bottom: 5px;
+      letter-spacing: 4px;
+      margin-bottom: 15px;
+      display: block;
     }
     .ngo-text {
-      font-size: 14px;
-      line-height: 1.55;
-      color: #e8e0d4;
+      font-size: 1.4rem;
+      font-weight: 300;
+      font-style: italic;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.95);
       min-height: 2em;
+      margin: 0;
+      text-shadow: 0 4px 15px rgba(0,0,0,1), 0 2px 5px rgba(0,0,0,0.8);
     }
     .ngo-cursor {
       display: inline-block;
-      width: 2px; height: 1.1em;
-      background: rgba(200, 180, 255, 0.8);
+      width: 2px; height: 1.2em;
+      background: rgba(255, 255, 255, 0.55);
       vertical-align: text-bottom;
       animation: ngo-blink 0.9s step-end infinite;
-      margin-left: 2px;
+      margin-left: 3px;
+      font-style: normal;
     }
     @keyframes ngo-blink { 0%,100%{ opacity:1 } 50%{ opacity:0 } }
 
     /* Skip hint */
     .ngo-skip-hint {
-      font-size: 9px;
-      color: rgba(140, 130, 160, 0.45);
-      text-align: right;
-      margin-top: 4px;
+      font-size: 10px;
+      color: rgba(255, 170, 0, 0.25);
+      text-align: center;
+      margin-top: 14px;
+      letter-spacing: 1px;
     }
 
-    /* Choice cards ─────────────────────────────────── */
+    /* ── Choice buttons: centred column, transparent (POC style) ── */
     .ngo-choices {
       position: absolute;
-      bottom: 0; left: 50%;
-      transform: translateX(-50%);
-      width: min(560px, 72vw);
+      top: 45%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%; max-width: 800px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 0 0 8px 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 0;
       pointer-events: none;
     }
 
     .ngo-card {
-      flex: 1 1 calc(50% - 3px);
-      min-width: 180px;
-      padding: 9px 13px;
-      background: rgba(8, 10, 24, 0.78);
-      border: 1px solid rgba(100, 80, 180, 0.25);
-      border-radius: 6px;
+      width: 100%;
+      background: transparent;
+      border: none;
+      padding: 10px 40px;
       cursor: pointer;
-      color: #d8d0e8;
-      font-size: 13px;
-      line-height: 1.4;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: inherit;
+      font-size: 1.15rem;
+      text-align: center;
+      line-height: 1.45;
       pointer-events: auto;
       opacity: 0;
-      transform: translateY(12px);
-      transition: background 0.15s, border-color 0.15s, transform 0.22s ease, opacity 0.22s ease;
+      transform: translateY(14px);
+      transition: color 0.4s cubic-bezier(0.2,0,0.2,1),
+                  letter-spacing 0.4s cubic-bezier(0.2,0,0.2,1),
+                  opacity 0.22s ease,
+                  transform 0.22s ease;
       user-select: none;
+      position: relative;
+      text-shadow: 0 2px 5px rgba(0,0,0,0.8);
     }
     .ngo-card:hover {
-      background: rgba(20, 18, 50, 0.90);
-      border-color: rgba(160, 130, 255, 0.55);
+      color: #ffaa00;
+      text-shadow: 0 2px 15px rgba(255, 170, 0, 0.6);
+      letter-spacing: 1px;
+      transform: scale(1.05);
     }
+    /* ◈ amber decorators on hover */
+    .ngo-card::before, .ngo-card::after {
+      content: '◈';
+      position: absolute;
+      opacity: 0;
+      color: #ffaa00;
+      transition: all 0.4s ease;
+      font-size: 0.85rem;
+      top: 50%; transform: translateY(-50%);
+    }
+    .ngo-card::before { left:  8px; }
+    .ngo-card::after  { right: 8px; }
+    .ngo-card:hover::before { left:  2px; opacity: 1; }
+    .ngo-card:hover::after  { right: 2px; opacity: 1; }
+
     .ngo-card.ngo--card-in {
       opacity: 1;
       transform: translateY(0);
     }
     .ngo-card.ngo--selected {
-      background: rgba(60, 40, 130, 0.65);
-      border-color: rgba(180, 150, 255, 0.8);
-      animation: ngo-shimmer 0.45s ease-out forwards;
-    }
-    @keyframes ngo-shimmer {
-      0%   { box-shadow: 0 0 0 rgba(140,100,255,0); }
-      40%  { box-shadow: 0 0 18px rgba(140,100,255,0.6); }
-      100% { box-shadow: 0 0 0 rgba(140,100,255,0); }
-    }
-    .ngo-card-key {
-      display: inline-block;
-      width: 17px; height: 17px;
-      line-height: 17px; text-align: center;
-      font-size: 10px; font-family: monospace;
-      background: rgba(80, 60, 150, 0.5);
-      border-radius: 3px;
-      margin-right: 7px;
-      color: rgba(200, 180, 255, 0.8);
-      vertical-align: middle;
+      color: #ffaa00;
+      opacity: 0.65;
     }
 
-    /* Stat toast ───────────────────────────────────── */
+    /* Hide numbered key boxes — pure POC look */
+    .ngo-card-key { display: none; }
+
+    /* ── Stat toast ── */
     .ngo-toast {
       position: absolute;
       bottom: 28px; right: 28px;
       padding: 10px 18px;
-      background: rgba(4, 6, 16, 0.88);
-      border: 1px solid rgba(180, 150, 255, 0.35);
+      background: rgba(4, 6, 16, 0.85);
+      border: 1px solid rgba(255, 170, 0, 0.3);
       border-radius: 6px;
-      color: #d0c8f8;
-      font-size: 14px;
+      color: rgba(255, 200, 100, 0.9);
+      font-size: 13px;
       pointer-events: none;
       opacity: 0;
       transform: translateY(6px);

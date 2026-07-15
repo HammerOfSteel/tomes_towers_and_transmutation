@@ -98,7 +98,7 @@ export class NewGameScene {
     this._renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
     this._renderer.outputColorSpace     = THREE.SRGBColorSpace;
     this._renderer.toneMapping          = THREE.ACESFilmicToneMapping;
-    this._renderer.toneMappingExposure  = 1.2;
+    this._renderer.toneMappingExposure  = 1.6;
     this._canvas = this._renderer.domElement;
 
     // ── scene ─────────────────────────────────────────────────────────────────
@@ -130,8 +130,8 @@ export class NewGameScene {
   // ── scene builders ─────────────────────────────────────────────────────────
 
   private _buildLighting(): void {
-    // Ambient moonlight (cool blue-grey)
-    this._scene.add(new THREE.AmbientLight(0x2a3045, 0.4));
+    // Ambient moonlight (cool blue-grey) — boosted slightly for r170 colour space
+    this._scene.add(new THREE.AmbientLight(0x2a3045, 0.6));
 
     // Directional moonlight — soft blue, casts shadows
     const moon = new THREE.DirectionalLight(0x4a5b82, 0.6);
@@ -252,13 +252,18 @@ export class NewGameScene {
       });
     }
 
-    // Fire point light
-    const pl = new THREE.PointLight(FIRE_COLOR, 2, 15);
+    // Fire point light — stronger than POC base to compensate for r170 colour space
+    const pl = new THREE.PointLight(FIRE_COLOR, 4.5, 20);
     pl.position.set(0, 1, 0);
     pl.castShadow = true;
     pl.shadow.mapSize.set(512, 512);
     this._scene.add(pl);
     this._fireLight = pl;
+
+    // Warm fill from camera side — simulates fire glow on the player/wizard side
+    const fill = new THREE.PointLight(0xff6600, 1.5, 22);
+    fill.position.set(0, 2, 5);
+    this._scene.add(fill);
   }
 
   private _buildGround(): void {

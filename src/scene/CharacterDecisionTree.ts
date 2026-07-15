@@ -78,17 +78,16 @@ export class CharacterDecisionTree {
   async run(overlay: DialogueOverlay): Promise<ConversationResult> {
     // ── PHASE 1: taxonomic assessment ──────────────────────────────────────────
     await overlay.speak(
-      'Ah! You\'re awake. Excellent. I\'d love to get right back to my transmutations, ' +
-      'but the Tower Census requires I log all incoming guests. My notes got completely ' +
-      'ruined by a spilled potion of frog-breath, so you\'ll have to remind me... ' +
-      'what exactly are you? My eyesight isn\'t what it used to be.',
+      "Ah! You're awake. Excellent. My notes got completely ruined by a spilled " +
+      "potion of frog-breath, so you'll have to remind me... " +
+      "what exactly are you? My eyesight isn't what it used to be.",
     );
 
     const species = await overlay.choose([
       '"I\'m a human, you senile old bat. Open this door."',
-      '*(Rattle your bones aggressively)* "Do I look like I have any skin left?"',
-      '*(Hiss, baring fangs)* "Touch my tail and you lose a finger. I work alone."',
-      '*(Squelch indignantly)* "We… are… squishy… we are legion…"',
+      '(Rattle your bones aggressively) "Do I look like I have any skin left?"',
+      '(Hiss, baring fangs) "Touch my tail and you lose a finger."',
+      '(Squelch indignantly) "We... are... squishy... we are legion..."',
     ]);
 
     // ── PHASE 2: backstory ──────────────────────────────────────────────────────
