@@ -40,6 +40,7 @@ import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
+import type { GridPath }               from '@/world/RoadGenerator';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -93,7 +94,7 @@ export class OverworldScene {
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
-  private _roadMesh: THREE.InstancedMesh | null = null;
+  private _roadMeshes: THREE.Mesh[] = [];
 
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
@@ -165,7 +166,7 @@ export class OverworldScene {
     // Add visuals
     this.scene.add(this._terrain, this._tower);
     if (this._waterMesh)  this.scene.add(this._waterMesh);
-    if (this._roadMesh)   this.scene.add(this._roadMesh);
+    for (const rm of this._roadMeshes) this.scene.add(rm);
     for (const tr of this._trees)        this.scene.add(tr.group);
     for (const rk of this._rocks)        this.scene.add(rk.mesh);
     for (const ru of this._ruins)        this.scene.add(ru);
@@ -185,7 +186,7 @@ export class OverworldScene {
 
     this.scene.remove(this._terrain, this._tower);
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
-    if (this._roadMesh)   this.scene.remove(this._roadMesh);
+    for (const rm of this._roadMeshes) this.scene.remove(rm);
     for (const tr of this._trees)        this.scene.remove(tr.group);
     for (const rk of this._rocks)        this.scene.remove(rk.mesh);
     for (const ru of this._ruins)        this.scene.remove(ru);
@@ -227,11 +228,11 @@ export class OverworldScene {
     for (const en of this._enemies)       en.dispose(this.physics);
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
     for (const bg of this._buildingGroups) this._freeGroup(bg);
-    if (this._roadMesh) {
-      this._roadMesh.geometry.dispose();
-      (this._roadMesh.material as THREE.Material).dispose();
-      this._roadMesh.dispose();
+    for (const rm of this._roadMeshes) {
+      rm.geometry.dispose();
+      (rm.material as THREE.Material).dispose();
     }
+    this._roadMeshes = [];
   }
 
   // ── Trigger queries ───────────────────────────────────────────────────────
@@ -1106,12 +1107,16 @@ export class OverworldScene {
     if (!settlements || settlements.length === 0) return;
 
     const { _GHW: GHW, _GHH: GHH } = this;
-    const roadTex  = cobblestoneTexture(2, 2);
-    const roadMat  = new THREE.MeshLambertMaterial({ map: roadTex, color: 0x8a7a68 });
 
-    // Collect all road tile positions from all settlements
-    const roadPositions: THREE.Vector3[] = [];
-    const roadSeen = new Set<string>();
+    // ── Settlement interior road tiles — flat instanced planes ────────────
+    // PlaneGeometry laid flat removes box-side seams; 8% oversizing fills gaps.
+    const sqTex  = cobblestoneTexture(2, 2);
+    const sqMat  = new THREE.MeshLambertMaterial({ map: sqTex, color: 0xb09878 });
+    const sqGeo  = new THREE.PlaneGeometry(T * 1.08, T * 1.08);
+    sqGeo.rotateX(-Math.PI / 2); // lie flat
+
+    const sqPositions: THREE.Vector3[] = [];
+    const sqSeen = new Set<string>();
 
     for (const entry of settlements) {
       const { plan } = entry;
@@ -1122,54 +1127,127 @@ export class OverworldScene {
         const wz = (b.row - GHH) * T;
         const lv = this._wg.get(b.col, b.row).elevation;
         const wy = lv * SH;
-
         const grp = generateBuilding(b.type, b.seed);
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
       }
 
-      // Collect road tiles (deduplicated across all settlements)
+      // Collect settlement road tiles (deduplicated)
       for (const r of plan.roads) {
-        const key = `${r.col},${r.row}`;
-        if (roadSeen.has(key)) continue;
-        roadSeen.add(key);
+        const k = `${r.col},${r.row}`;
+        if (sqSeen.has(k)) continue;
+        sqSeen.add(k);
         const wx = (r.col - GHW) * T;
         const wz = (r.row - GHH) * T;
         const lv = this._wg.get(r.col, r.row).elevation;
-        const wy = lv * SH + 0.04;
-        roadPositions.push(new THREE.Vector3(wx, wy, wz));
+        sqPositions.push(new THREE.Vector3(wx, lv * SH + 0.02, wz));
       }
     }
 
-    // Also include inter-settlement roads (A*-routed between settlement centres)
-    const interRoads = worldData.interRoads ?? [];
-    for (const r of interRoads) {
-      const key = `${r.col},${r.row}`;
-      if (roadSeen.has(key)) continue;
-      roadSeen.add(key);
-      const wx = (r.col - GHW) * T;
-      const wz = (r.row - GHH) * T;
-      const lv = this._wg.get(r.col, r.row).elevation;
-      const wy = lv * SH + 0.04;
-      roadPositions.push(new THREE.Vector3(wx, wy, wz));
+    if (sqPositions.length > 0) {
+      const im = new THREE.InstancedMesh(sqGeo, sqMat, sqPositions.length);
+      im.frustumCulled = false;
+      const mtx = new THREE.Matrix4();
+      for (let i = 0; i < sqPositions.length; i++) {
+        const p = sqPositions[i]!;
+        mtx.makeTranslation(p.x, p.y, p.z);
+        im.setMatrixAt(i, mtx);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      this._roadMeshes.push(im);
+    }
+    sqGeo.dispose(); // geo is owned by InstancedMesh — dispose the template copy
+
+    // ── Inter-settlement roads — smooth Catmull–Rom ribbon meshes ─────────
+    const paths = worldData.interRoadPaths ?? [];
+    if (paths.length > 0) {
+      const dirtMat = new THREE.MeshLambertMaterial({ color: 0x9e7d52, side: THREE.DoubleSide });
+      for (const path of paths) {
+        const ribbon = this._buildRoadRibbon(path, dirtMat, T * 0.9);
+        if (ribbon) this._roadMeshes.push(ribbon);
+      }
+    }
+  }
+
+  /**
+   * Build a smooth ribbon mesh for a single road path (inter-settlement road).
+   *
+   * - Converts grid waypoints to world-space positions sampled at terrain height.
+   * - Fits a Catmull–Rom spline through the waypoints.
+   * - Extrudes a flat ribbon of the given `width` perpendicular to the tangent
+   *   at each sample point.
+   */
+  private _buildRoadRibbon(
+    path:  GridPath,
+    mat:   THREE.Material,
+    width: number,
+  ): THREE.Mesh | null {
+    if (path.length < 2) return null;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Convert simplified waypoints to world coords, sampling terrain height.
+    const pts = path.map(({ col, row }) => {
+      const c  = Math.max(0, Math.min(this._GW - 1, col));
+      const r  = Math.max(0, Math.min(this._GH - 1, row));
+      const wx = (col - GHW) * T;
+      const wz = (row - GHH) * T;
+      const wy = this._wg.get(c, r).elevation * SH + 0.06;
+      return new THREE.Vector3(wx, wy, wz);
+    });
+
+    // Catmull–Rom through the key waypoints (tension 0.5 for natural curves).
+    const curve   = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+    // Sample density: 6 points per simplified segment for smoothness.
+    const nSample = Math.max(16, path.length * 6);
+    const samples = curve.getPoints(nSample);
+
+    // Build ribbon geometry
+    const positions: number[] = [];
+    const uvs:       number[] = [];
+    const indices:   number[] = [];
+    let uDist = 0;
+
+    const up  = new THREE.Vector3(0, 1, 0);
+    const tan = new THREE.Vector3();
+
+    for (let i = 0; i < samples.length; i++) {
+      const p    = samples[i]!;
+      const prev = samples[Math.max(0, i - 1)]!;
+      const next = samples[Math.min(samples.length - 1, i + 1)]!;
+
+      tan.subVectors(next, prev).normalize();
+      // Perpendicular in the XZ plane (road lies flat)
+      const perpX = -tan.z;
+      const perpZ =  tan.x;
+
+      if (i > 0) uDist += p.distanceTo(samples[i - 1]!);
+      const uv = uDist / (width * 2);
+
+      positions.push(
+        p.x + perpX * (-width / 2), p.y, p.z + perpZ * (-width / 2),
+        p.x + perpX * ( width / 2), p.y, p.z + perpZ * ( width / 2),
+      );
+      uvs.push(0, uv, 1, uv);
+
+      if (i > 0) {
+        const b = (i - 1) * 2;
+        indices.push(b, b + 2, b + 1,  b + 1, b + 2, b + 3);
+      }
     }
 
-    // Build road InstancedMesh — one quad per road tile
-    if (roadPositions.length > 0) {
-      const roadGeo  = new THREE.BoxGeometry(T, 0.08, T);
-      const roadIM   = new THREE.InstancedMesh(roadGeo, roadMat, roadPositions.length);
-      roadIM.frustumCulled = false;
-      const m = new THREE.Matrix4();
-      for (let i = 0; i < roadPositions.length; i++) {
-        const p = roadPositions[i];
-        m.makeTranslation(p.x, p.y, p.z);
-        roadIM.setMatrixAt(i, m);
-      }
-      roadIM.instanceMatrix.needsUpdate = true;
-      // Cast to Mesh to satisfy the _roadMesh: THREE.Mesh type
-      this._roadMesh = roadIM;
-    }
+    void up; // used for reference only; perpendicular is XZ-projected
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    return mesh;
   }
 
   // ── Utility ───────────────────────────────────────────────────────────────
