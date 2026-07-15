@@ -13,10 +13,11 @@
  * instantiates THREE.Groups.
  */
 
-import { mulberry32 }             from '@/core/prng';
-import type { WorldGrid }         from './WorldGrid';
-import type { BuildingType }      from './buildings/BuildingTypes';
-import { generateSettlementName } from './SettlementNameGenerator';
+import { mulberry32 }                          from '@/core/prng';
+import type { WorldGrid }                       from './WorldGrid';
+import type { BuildingType }                    from './buildings/BuildingTypes';
+import { BUILDING_SPECS }                       from './buildings/BuildingTypes';
+import { generateSettlementName }               from './SettlementNameGenerator';
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -106,6 +107,37 @@ function _valid(grid: WorldGrid, col: number, row: number): boolean {
   if (cell.biome === 'water')                 return false;
   if (cell.feature === 'river')               return false;
   if (cell.content === 'dungeon_entrance')    return false;
+  return true;
+}
+
+/**
+ * True if the candidate building at (col, row) does NOT overlap any already-
+ * placed building, accounting for each building's tile footprint + padding.
+ *
+ * footprint[0] = width tiles (along col axis)
+ * footprint[1] = depth tiles (along row axis)
+ */
+function _noOverlap(
+  placed:  PlacedBuilding[],
+  col:     number,
+  row:     number,
+  type:    BuildingType,
+  padding: number = 1,
+): boolean {
+  const [fw, fd] = BUILDING_SPECS[type].footprint;
+  const hW = Math.ceil(fw / 2);
+  const hD = Math.ceil(fd / 2);
+
+  for (const b of placed) {
+    const [bw, bd] = BUILDING_SPECS[b.type].footprint;
+    const bhW = Math.ceil(bw / 2);
+    const bhD = Math.ceil(bd / 2);
+    // AABB overlap test with padding gap
+    if (
+      Math.abs(col - b.col) < hW  + bhW + padding &&
+      Math.abs(row - b.row) < hD  + bhD + padding
+    ) return false;
+  }
   return true;
 }
 
@@ -224,7 +256,8 @@ function _planTown(
       if (mi >= MIX.length) break;
       const col = cc + step;
       const row = cr + side * 3;
-      if (!_valid(grid, col, row)) continue;
+      const btype = MIX[mi]!;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) continue;
       buildings.push({
         type:     MIX[mi++],
         col, row,
@@ -240,7 +273,8 @@ function _planTown(
       if (mi >= MIX.length) break;
       const col = cc + side * 3;
       const row = cr + step;
-      if (!_valid(grid, col, row)) continue;
+      const btype = MIX[mi]!;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) continue;
       buildings.push({
         type:     MIX[mi++],
         col, row,
@@ -318,7 +352,8 @@ function _planCity(
       if (mi >= QUADRANT_MIX.length) break;
       const col = cc + qsc * (6 + (bi % 3) * 4);
       const row = cr + qsr * (6 + Math.floor(bi / 3) * 4);
-      if (!_valid(grid, col, row)) { mi++; continue; }
+      const btype = QUADRANT_MIX[mi]!;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) { mi++; continue; }
       buildings.push({
         type:     QUADRANT_MIX[mi++],
         col, row,

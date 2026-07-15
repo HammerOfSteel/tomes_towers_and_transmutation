@@ -10,7 +10,7 @@
 import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldGrid }      from './WorldGrid';
 import type { DungeonType }    from './DungeonType';
-import type { SettlementPlan } from './SettlementGenerator';
+import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
 
 // ── Entity record types ────────────────────────────────────────────────────────
 
@@ -45,4 +45,6 @@ export interface WorldData {
   dungeons:    DungeonEntry[];
   /** Placed settlements (villages, towns, city).  Populated by SettlementPlacer. */
   settlements: SettlementEntry[];
+  /** Road tiles connecting settlements across the overworld (A* routed). */
+  interRoads:  RoadSegment[];
 }
