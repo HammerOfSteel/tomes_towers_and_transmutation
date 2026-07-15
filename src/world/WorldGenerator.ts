@@ -17,6 +17,7 @@ import { generateHydrology }   from './HydrologyGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
 import { buildInterSettlementRoads } from './RoadGenerator';
+import { simulateWorldHistory }      from './WorldHistory';
 
 const MLV = 4;
 
@@ -98,6 +99,7 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
     }
   }
 
-  return { config: cfg, grid, dungeons, settlements, interRoads };
+  return { config: cfg, grid, dungeons, settlements, interRoads,
+           history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, interRoads }, seed) };
 }
 

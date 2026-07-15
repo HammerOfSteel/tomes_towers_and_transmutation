@@ -40,6 +40,10 @@ import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
+import { OWMinimap }                   from '@/ui/OWMinimap';
+import { NPCEntity }                   from '@/world/NPCEntity';
+import type { NPCRole }               from '@/world/NPCDnaGenerator';
+import { eventsNear }                  from '@/world/WorldHistory';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -94,6 +98,8 @@ export class OverworldScene {
   private readonly _dungeonGroups:  THREE.Group[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
   private _roadMeshes: THREE.Mesh[] = [];
+  private _minimap!:   OWMinimap;
+  private readonly _npcs: NPCEntity[] = [];
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
   private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
@@ -141,12 +147,16 @@ export class OverworldScene {
     this._addRuins(rand);
     this._placeDungeonEntrances(worldData.dungeons, rand);
     this._buildSettlements(worldData);
+    this._spawnSettlementNPCs(worldData);
+    this._minimap = new OWMinimap(worldData);
+    this._minimap.hide(); // shown only while overworld is active
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /** Add geometry to scene and register physics colliders. */
   enter(): void {
+    this._minimap.show();
     // Flat base plane covers level-0 tiles and acts as the underfloor.
     this._groundBody = this.physics.createGroundPlane(0);
     // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
@@ -175,10 +185,12 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.add(en.group);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const bg of this._buildingGroups) this.scene.add(bg);
+    for (const npc of this._npcs)         npc.addToScene(this.scene);
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
   exit(): void {
+    this._minimap.hide();
     if (this._groundBody) {
       this.physics.rapierWorld.removeRigidBody(this._groundBody);
       this._groundBody = null;
@@ -195,11 +207,14 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.remove(en.group);
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
+    for (const npc of this._npcs)          npc.removeFromScene(this.scene);
   }
 
   /** Per-frame enemy AI tick. */
-  update(dt: number): void {
+  update(dt: number, inputE = false): void {
     const pos = this.player.group.position;
+    const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
+    this._minimap.updatePlayer(col, row);
     for (const en of this._enemies) {
       // Always call update even when dead so the death animation can run.
       // SlimeEnemy.update() handles state==='dead' by ticking _tickDeathAnim.
@@ -209,10 +224,12 @@ export class OverworldScene {
         en.update(pos, dt);
       }
     }
+    for (const npc of this._npcs) npc.update(dt, pos, inputE);
   }
 
   /** Full teardown — disposes GPU resources. */
   dispose(): void {
+    this._minimap.dispose();
     this.exit();
     (this._terrain.geometry as THREE.BufferGeometry).dispose();
     (this._terrain.material as THREE.Material).dispose();
@@ -228,6 +245,7 @@ export class OverworldScene {
     }
     for (const ru of this._ruins)        this._freeGroup(ru);
     for (const en of this._enemies)       en.dispose(this.physics);
+    for (const npc of this._npcs)          npc.dispose();
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
     for (const bg of this._buildingGroups) this._freeGroup(bg);
     for (const rm of this._roadMeshes) {
@@ -1231,6 +1249,98 @@ export class OverworldScene {
         this._roadMeshes.push(im2);
       }
       dirtGeo.dispose();
+    }
+  }
+
+  // ── NPC spawning ──────────────────────────────────────────────────────────
+
+  private _spawnSettlementNPCs(worldData: WorldData): void {
+    const { settlements, dungeons, history } = worldData;
+    if (!settlements || settlements.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+    const histEvents = history?.events ?? [];
+
+    // Role distributions per settlement type
+    const VILLAGE_ROLES: NPCRole[] = ['citizen','citizen','citizen','merchant','guard'];
+    const TOWN_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith'];
+    const CITY_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','scholar'];
+
+    for (const entry of settlements) {
+      const { plan, seed } = entry;
+      const { centerCol: cc, centerRow: cr } = plan;
+      const wx0 = (cc - GHW) * T;
+      const wz0 = (cr - GHH) * T;
+      const lv  = this._wg.get(cc, cr).elevation;
+
+      const roleList = plan.type === 'city' ? CITY_ROLES
+                     : plan.type === 'town' ? TOWN_ROLES
+                     :                         VILLAGE_ROLES;
+
+      // Find nearest dungeon + direction
+      let nearDungeonName: string | undefined;
+      let nearDungeonDir:  'north' | 'south' | 'east' | 'west' | undefined;
+      let bestDist2 = Infinity;
+      for (const d of dungeons) {
+        const dc = d.col - cc, dr = d.row - cr;
+        const d2 = dc * dc + dr * dr;
+        if (d2 < bestDist2) {
+          bestDist2      = d2;
+          nearDungeonName = d.name;
+          nearDungeonDir  = Math.abs(dr) > Math.abs(dc)
+            ? (dr < 0 ? 'north' : 'south')
+            : (dc < 0 ? 'west'  : 'east');
+        }
+      }
+
+      // Find nearest river + direction
+      let nearRiverDir: 'north' | 'south' | 'east' | 'west' | undefined;
+      const RIVER_SCAN = 20;
+      outerRiver:
+      for (let dist = 1; dist <= RIVER_SCAN; dist++) {
+        for (let d = -dist; d <= dist; d++) {
+          for (const [dc, dr] of [[d,-dist],[d,dist],[-dist,d],[dist,d]] as [number,number][]) {
+            const c2 = cc + dc, r2 = cr + dr;
+            const cell = this._wg.get(c2, r2);
+            if (cell.feature === 'river' || cell.biome === 'water') {
+              nearRiverDir = Math.abs(dr) > Math.abs(dc)
+                ? (dr < 0 ? 'north' : 'south')
+                : (dc < 0 ? 'west'  : 'east');
+              break outerRiver;
+            }
+          }
+        }
+      }
+
+      // Nearby history events (60-tile radius)
+      const nearby = eventsNear(histEvents, cc, cr, 60);
+
+      // Spawn NPCs scattered around the settlement centre
+      const rand = mulberry32(seed ^ 0x4E_50_43_00);
+      const npcCount = Math.min(roleList.length, plan.population > 0 ? Math.min(roleList.length, plan.population) : roleList.length);
+
+      for (let i = 0; i < npcCount; i++) {
+        const role   = roleList[i]!;
+        const angle  = (i / npcCount) * Math.PI * 2 + rand() * 0.5;
+        const radius = 2 + rand() * 6;
+        const npcWx  = wx0 + Math.cos(angle) * radius;
+        const npcWz  = wz0 + Math.sin(angle) * radius;
+        const npcCol = Math.round(npcWx / T + GHW);
+        const npcRow = Math.round(npcWz / T + GHH);
+
+        this._npcs.push(new NPCEntity(
+          npcCol, npcRow,
+          npcWx, npcWz,
+          role,
+          entry,
+          nearby,
+          nearDungeonName,
+          nearDungeonDir,
+          nearRiverDir,
+        ));
+        // Raise to terrain height (settlement zone is flattened to lv)
+        this._npcs[this._npcs.length - 1]!.group.position.y = lv * SH;
+      }
     }
   }
 

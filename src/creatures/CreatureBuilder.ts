@@ -9,6 +9,8 @@ import type { CreatureDNA, PropId, EarShape } from './CreatureDNA';
 import { SUBRACE_DEFS } from './CreatureDNA';
 import { makeFaceTexture, type FaceSpec } from './CanvasFace';
 import { makeSkinTexture } from './CanvasSkin';
+import { flatShade, wobbleVertices } from './meshUtils';
+import { dressFlaredProfile, robeLayeredProfile, skirtGatheredProfile, addHemFolds } from './profileCurves';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -38,9 +40,18 @@ export interface CreatureRig {
   dispose(): void;
 }
 
+// ── CC-13: Material pool — one material instance per color×role per build ─────
+// Reset at the start of each buildCreature() call so different creatures never
+// share material objects (allowing independent color changes / disposal).
+
+let _matPool: Map<string, THREE.MeshPhysicalMaterial> = new Map();
+
+function _clearMatPool(): void { _matPool = new Map(); }
+
 // ── Entry ─────────────────────────────────────────────────────────────────────
 
 export function buildCreature(dna: CreatureDNA): CreatureRig {
+  _clearMatPool();
   switch (dna.archetype) {
     case 'quadruped': return _quad(dna);
     case 'amoeba':    return _amoeba(dna);
@@ -54,7 +65,11 @@ export function buildCreature(dna: CreatureDNA): CreatureRig {
 
 function _m(color: number, dna: CreatureDNA, overrides?: Partial<CreatureDNA['material']>): THREE.MeshPhysicalMaterial {
   const mat = { ...dna.material, ...overrides };
-  return new THREE.MeshPhysicalMaterial({
+  // Build a cache key — unique per color + all material params that differ
+  const key = `${color}_${mat.roughness}_${mat.metalness}_${mat.clearcoat}_${mat.clearcoatRoughness}`;
+  const cached = _matPool.get(key);
+  if (cached) return cached;
+  const result = flatShade(new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(color),
     emissive: new THREE.Color(dna.colors.emissive),
     emissiveIntensity: dna.colors.emissiveIntensity,
@@ -62,7 +77,15 @@ function _m(color: number, dna: CreatureDNA, overrides?: Partial<CreatureDNA['ma
     metalness: mat.metalness,
     clearcoat: mat.clearcoat,
     clearcoatRoughness: mat.clearcoatRoughness,
-  });
+  }));
+  _matPool.set(key, result);
+  return result;
+}
+
+/** Wobble a geometry in-place with strength scaled by dna.colors.primary. */
+function _wobble(geo: THREE.BufferGeometry, strength: number, dna: CreatureDNA, salt = 0): THREE.BufferGeometry {
+  wobbleVertices(geo, strength, (dna.colors.primary ^ salt) >>> 0);
+  return geo;
 }
 
 /** Primary body material — includes skin pattern texture when set. */
@@ -261,14 +284,20 @@ function _props(
   }
   if (props.includes('mane') && torso) {
     const mm = _m(dna.colors.secondary, dna, { roughness: 0.95, clearcoat: 0, metalness: 0 });
-    const neckY = torso === null ? 1.5 : 1.45;
+    const neckY = 1.45;
+    const maneGeo = new THREE.CylinderGeometry(0.028, 0.018, 0.22, 4);
+    const maneIm  = new THREE.InstancedMesh(maneGeo, mm, 8);
+    const mtxM = new THREE.Matrix4(), posM = new THREE.Vector3(), quatM = new THREE.Quaternion(), scaleM = new THREE.Vector3(1, 1, 1);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.018, 0.22, 4), mm);
-      strand.position.set(Math.cos(a) * 0.19, neckY, Math.sin(a) * 0.19);
-      strand.rotation.z = Math.cos(a) * 0.5; strand.rotation.x = Math.sin(a) * 0.3;
-      torso.add(strand); ms.push(strand);
+      posM.set(Math.cos(a) * 0.19, neckY, Math.sin(a) * 0.19);
+      quatM.setFromEuler(new THREE.Euler(Math.sin(a) * 0.3, 0, Math.cos(a) * 0.5));
+      mtxM.compose(posM, quatM, scaleM);
+      maneIm.setMatrixAt(i, mtxM);
     }
+    maneIm.instanceMatrix.needsUpdate = true;
+    torso.add(maneIm);
+    ms.push({ geometry: maneGeo, material: mm } as unknown as THREE.Mesh);
   }
   if (props.includes('feather_crest') && head) {
     const fcm = _m(dna.colors.secondary, dna, { roughness: 0.8, metalness: 0 });
@@ -289,11 +318,18 @@ function _props(
   }
   if (props.includes('scale_ridges') && torso) {
     const sm2 = _m(dna.colors.secondary, dna, { roughness: 0.65 });
+    const ridgeGeo = new THREE.ConeGeometry(0.036, 0.10, 4);
+    const ridgeIm  = new THREE.InstancedMesh(ridgeGeo, sm2, 5);
+    const mtxR = new THREE.Matrix4();
     for (let i = 0; i < 5; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.036, 0.10 + i * 0.012, 4), sm2);
-      spike.position.set(0, 0.85 - i * 0.22, -0.14); spike.rotation.x = 0.25;
-      torso.add(spike); ms.push(spike);
+      mtxR.makeRotationX(0.25);
+      mtxR.setPosition(0, 0.85 - i * 0.22, -0.14);
+      ridgeIm.setMatrixAt(i, mtxR);
     }
+    ridgeIm.instanceMatrix.needsUpdate = true;
+    torso.add(ridgeIm);
+    // push a dummy Mesh placeholder so _free() can dispose the geometry
+    ms.push({ geometry: ridgeGeo, material: sm2 } as unknown as THREE.Mesh);
   }
   if (props.includes('tentacles') && torso) {
     const tentm = _m(dna.colors.secondary, dna, { roughness: 0.9, clearcoat: 0, metalness: 0 });
@@ -428,6 +464,38 @@ function _outfit(dna: CreatureDNA, torso: THREE.Group, ms: THREE.Mesh[]): void {
       new THREE.MeshPhysicalMaterial({ color: new THREE.Color(dna.colors.secondary), roughness: 0.88, metalness: 0, clearcoat: 0.1 }));
     hood.position.set(0, 1.73, -0.06); hood.rotation.x = 0.3; torso.add(hood); ms.push(hood);
   }
+
+  // ── CC-11: LatheGeometry garments ─────────────────────────────────────
+  if (o.top === 'dress_flared' || o.legs === 'dress_flared') {
+    const pts = dressFlaredProfile(1.08, 0.16, 0.32, 0.10);
+    const geo = new THREE.LatheGeometry(pts, 12);
+    const dress = new THREE.Mesh(geo, sm);
+    dress.position.y = 0.56; torso.add(dress); ms.push(dress);
+  }
+  if (o.top === 'dress_layered' || o.legs === 'dress_layered') {
+    const pts = robeLayeredProfile(1.04, 0.22);
+    const geo = new THREE.LatheGeometry(pts, 12);
+    const robe = new THREE.Mesh(geo, sm);
+    robe.position.y = 0.60; torso.add(robe); ms.push(robe);
+  }
+  if (o.legs === 'skirt_gathered') {
+    const pts = addHemFolds(skirtGatheredProfile(0.56, 0.24), 6, 0.028);
+    const geo = new THREE.LatheGeometry(pts, 12);
+    const skirt = new THREE.Mesh(geo, sm);
+    skirt.position.y = 0.58; torso.add(skirt); ms.push(skirt);
+  }
+  if (o.legs === 'skirt_long') {
+    const pts = dressFlaredProfile(0.90, 0.22, 0.34, 0.06);
+    const geo = new THREE.LatheGeometry(pts, 12);
+    const skirt = new THREE.Mesh(geo, sm);
+    skirt.position.y = 0.56; torso.add(skirt); ms.push(skirt);
+  }
+  if (o.over === 'robe_layered') {
+    const pts = robeLayeredProfile(1.12, 0.24);
+    const geo = new THREE.LatheGeometry(pts, 12);
+    const robe = new THREE.Mesh(geo, sm);
+    robe.position.y = 0.56; torso.add(robe); ms.push(robe);
+  }
 }
 // ── Biped ─────────────────────────────────────────────────────────────────────
 
@@ -450,14 +518,14 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const nt = p.neckThickness  ?? 1.0;
 
   // Body cylinder (chest / upper torso)
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19 * tx * sw, 0.245 * tx * hw, 0.52 * ty, 10), pm);
+  const body = new THREE.Mesh(_wobble(new THREE.CylinderGeometry(0.19 * tx * sw, 0.245 * tx * hw, 0.52 * ty, 10), 0.014, dna, 2), pm);
   body.position.y = 1.38 * ty; torso.add(body); ms.push(body);
   if (bz > 0.3) {
     const belly = new THREE.Mesh(new THREE.SphereGeometry(0.19 * tx * bz, 8, 6), pm);
     belly.scale.z = 1.35; belly.position.set(0, 1.18 * ty, 0.09); torso.add(belly); ms.push(belly);
   }
   // Pelvis — compact waist-to-hip connector (hip joints now raised to 0.70*ty)
-  const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.245 * tx * hw, 0.21 * tx * hw, 0.42 * ty, 10), pm);
+  const pelvis = new THREE.Mesh(_wobble(new THREE.CylinderGeometry(0.245 * tx * hw, 0.21 * tx * hw, 0.42 * ty, 10), 0.014, dna, 3), pm);
   pelvis.position.y = 0.91 * ty; torso.add(pelvis); ms.push(pelvis);
 
   // Legacy props
@@ -478,7 +546,7 @@ function _biped(dna: CreatureDNA): CreatureRig {
   // Neck + Head
   const neck = new THREE.Group();
   neck.position.y = 1.62 * ty; bones.neck = neck; torso.add(neck);
-  const neckM = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * nt, 0.085 * nt, 0.13 * p.neckLength, 8), pm);
+  const neckM = new THREE.Mesh(_wobble(new THREE.CylinderGeometry(0.07 * nt, 0.085 * nt, 0.13 * p.neckLength, 8), 0.008, dna, 4), pm);
   neck.add(neckM); ms.push(neckM);
 
   const head = new THREE.Group();
@@ -487,7 +555,7 @@ function _biped(dna: CreatureDNA): CreatureRig {
   const srDef = (dna.subRace && dna.subRace !== 'none') ? SUBRACE_DEFS[dna.subRace] : null;
   const headScale = srDef?.headStyle === 'large' ? 1.18 : srDef?.headStyle === 'small' ? 0.82 : srDef?.headStyle === 'elongated' ? 1.0 : 1.0;
   head.scale.setScalar(headScale);
-  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize), pm); head.add(hm); ms.push(hm);
+  const hm = new THREE.Mesh(_wobble(_headgeo(dna.face.type, p.headSize), 0.018, dna, 1), pm); head.add(hm); ms.push(hm);
   const { tex, plane } = _faceplane(dna, p.headSize);
   head.add(plane); ms.push(plane);
   // Sub-race ears

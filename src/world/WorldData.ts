@@ -11,6 +11,7 @@ import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldGrid }      from './WorldGrid';
 import type { DungeonType }    from './DungeonType';
 import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
+import type { WorldHistoryResult }          from './WorldHistory';
 
 
 // ── Entity record types ────────────────────────────────────────────────────────
@@ -48,4 +49,6 @@ export interface WorldData {
   settlements: SettlementEntry[];
   /** Road tiles connecting settlements across the overworld (A* routed). */
   interRoads:      RoadSegment[];
+  /** World history simulation result (50-turn). Populated by WorldGenerator. */
+  history?:        WorldHistoryResult;
 }
