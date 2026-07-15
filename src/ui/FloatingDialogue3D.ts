@@ -60,8 +60,8 @@ export class FloatingDialogue3D {
     this._camera   = opts.camera;
     this._renderer = opts.renderer;
 
-    // Halfway between camera (z ≈ 4.5) and fire (z = 0), at eye height
-    this._group.position.set(0, 1.5, 1.7);
+    // Just in front of the fire, close to camera so text appears at a good size
+    this._group.position.set(0, 1.7, 2.6);
 
     this._root = document.createElement('div');
     this._root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:100;';
@@ -181,11 +181,12 @@ export class FloatingDialogue3D {
 
   private _addSpeech(text: string, speaker: string): void {
     const tex  = this._makeSpeechTex(text, speaker);
-    const h    = 0.52;
-    const w    = h * (1024 / 256);   // 2.08 units wide
-    const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+    const h    = 0.65;
+    const w    = h * (1024 / 256);   // 2.6 units wide
+    const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
-    const baseY = 0.5;
+    mesh.renderOrder = 999;
+    const baseY = 0.52;
     mesh.position.set(0, baseY, 0);
     this._group.add(mesh);
     this._meshes.push({
@@ -195,10 +196,10 @@ export class FloatingDialogue3D {
   }
 
   private _addChoices(choices: string[]): void {
-    const cellW  = 0.88;
-    const cellH  = 0.28;
-    const gapX   = 0.06;
-    const gapY   = 0.08;
+    const cellW  = 1.05;
+    const cellH  = 0.32;
+    const gapX   = 0.07;
+    const gapY   = 0.09;
     const cols   = 2;
     const totalW = cols * cellW + (cols - 1) * gapX;
 
@@ -209,8 +210,9 @@ export class FloatingDialogue3D {
       const baseY = -(row * (cellH + gapY)) - 0.18;
 
       const tex  = this._makeChoiceTex(text);
-      const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+      const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(cellW, cellH), mat);
+      mesh.renderOrder = 999;
       mesh.position.set(x, baseY, 0);
       this._group.add(mesh);
       this._meshes.push({
