@@ -21,6 +21,7 @@ import * as THREE from 'three';
 
 interface _Rec {
   mesh:          THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  group:         THREE.Group;
   baseY:         number;
   phase:         number;
   targetOpacity: number;
@@ -45,8 +46,9 @@ export class FloatingDialogue3D {
   private readonly _camera:   THREE.Camera;
   private readonly _renderer: THREE.WebGLRenderer;
 
-  // 3-D group that holds all text planes, positioned between camera and fire
-  private readonly _group     = new THREE.Group();
+  // Speech floats near the wizard's head; choices hang close in front of the player
+  private readonly _speechGroup = new THREE.Group();
+  private readonly _choiceGroup = new THREE.Group();
   private readonly _raycaster = new THREE.Raycaster();
   private readonly _mouse     = new THREE.Vector2();
 
@@ -74,8 +76,10 @@ export class FloatingDialogue3D {
     this._camera   = opts.camera;
     this._renderer = opts.renderer;
 
-    // Close to camera so text feels intimate, but planes are small so it doesn't dominate
-    this._group.position.set(0, 1.7, 3.2);
+    // Speech appears above/beside the wizard (wizard at x=1,y=0,z=-2; head ~y=2)
+    this._speechGroup.position.set(0.7, 2.4, 0.0);
+    // Choices hang very close to the camera — feel within arm's reach
+    this._choiceGroup.position.set(0, 1.4, 3.8);
 
     this._root = document.createElement('div');
     this._root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:100;';
@@ -90,7 +94,8 @@ export class FloatingDialogue3D {
   mount(container: HTMLElement): void {
     container.style.position = container.style.position || 'relative';
     container.appendChild(this._root);
-    this._scene.add(this._group);
+    this._scene.add(this._speechGroup);
+    this._scene.add(this._choiceGroup);
     const c = this._renderer.domElement;
     c.addEventListener('mousedown', this._onMouseDown);
     c.addEventListener('mousemove', this._onMouseMove);
@@ -99,7 +104,8 @@ export class FloatingDialogue3D {
 
   unmount(): void {
     this._root.remove();
-    this._scene.remove(this._group);
+    this._scene.remove(this._speechGroup);
+    this._scene.remove(this._choiceGroup);
     this._disposeAll();
     const c = this._renderer.domElement;
     c.removeEventListener('mousedown', this._onMouseDown);
@@ -179,11 +185,13 @@ export class FloatingDialogue3D {
     const dt = this._prevTime < 0 ? 0.016 : Math.min(time - this._prevTime, 0.1);
     this._prevTime = time;
 
-    // Always face the camera (billboard)
-    this._group.lookAt(this._camera.position);
+    // Billboard each group independently toward the camera
+    this._speechGroup.lookAt(this._camera.position);
+    this._choiceGroup.lookAt(this._camera.position);
 
-    // Gentle group sway
-    this._group.position.x = Math.sin(time * 0.4) * 0.04;
+    // Gentle independent sways
+    this._speechGroup.position.x = 0.7 + Math.sin(time * 0.35) * 0.03;
+    this._choiceGroup.position.x =       Math.sin(time * 0.45) * 0.02;
 
     for (const r of this._meshes) {
       // Opacity lerp
@@ -202,7 +210,7 @@ export class FloatingDialogue3D {
       p.mesh.position.y += p.vy * dt;
       p.vy -= 0.35 * dt;  // gentle gravity
       if (p.age >= p.ttl) {
-        this._group.remove(p.mesh);
+        this._choiceGroup.remove(p.mesh);
         p.mesh.material.dispose();
         p.mesh.geometry.dispose();
         this._particles.splice(i, 1);
@@ -216,25 +224,27 @@ export class FloatingDialogue3D {
 
   private _addSpeech(text: string, speaker: string): void {
     const tex  = this._makeSpeechTex(text, speaker);
-    const h    = 0.30;
-    const w    = h * (1024 / 256);   // 1.2 units wide
+    // Speech plane: bigger since it sits far out near the wizard
+    const h    = 0.90;
+    const w    = h * (1024 / 256);   // 3.6 units wide
     const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
     mesh.renderOrder = 999;
-    const baseY = 0.40;
+    const baseY = 0.0;
     mesh.position.set(0, baseY, 0);
-    this._group.add(mesh);
+    this._speechGroup.add(mesh);
     this._meshes.push({
-      mesh, baseY, isChoice: false, choiceIdx: -1,
+      mesh, group: this._speechGroup, baseY, isChoice: false, choiceIdx: -1,
       targetOpacity: 1, phase: Math.random() * Math.PI * 2,
     });
   }
 
   private _addChoices(choices: string[]): void {
-    const cellW  = 0.55;
-    const cellH  = 0.17;
-    const gapX   = 0.12;
-    const gapY   = 0.14;
+    // Choice planes: small and close — feel within arm's reach
+    const cellW  = 0.40;
+    const cellH  = 0.13;
+    const gapX   = 0.08;
+    const gapY   = 0.08;
     const cols   = 2;
     const totalW = cols * cellW + (cols - 1) * gapX;
 
@@ -242,16 +252,16 @@ export class FloatingDialogue3D {
       const col   = idx % cols;
       const row   = Math.floor(idx / cols);
       const x     = -totalW / 2 + col * (cellW + gapX) + cellW / 2;
-      const baseY = -(row * (cellH + gapY)) - 0.14;
+      const baseY = -(row * (cellH + gapY)) - 0.04;
 
       const tex  = this._makeChoiceTex(text);
       const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(cellW, cellH), mat);
       mesh.renderOrder = 999;
       mesh.position.set(x, baseY, 0);
-      this._group.add(mesh);
+      this._choiceGroup.add(mesh);
       this._meshes.push({
-        mesh, baseY, isChoice: true, choiceIdx: idx,
+        mesh, group: this._choiceGroup, baseY, isChoice: true, choiceIdx: idx,
         targetOpacity: 1, phase: Math.random() * Math.PI * 2,
       });
     });
@@ -336,7 +346,7 @@ export class FloatingDialogue3D {
     for (let i = this._meshes.length - 1; i >= 0; i--) {
       const r = this._meshes[i];
       if (r.targetOpacity === 0 && r.mesh.material.opacity < 0.08) {
-        this._group.remove(r.mesh);
+        r.group.remove(r.mesh);
         r.mesh.material.map?.dispose();
         r.mesh.material.dispose();
         r.mesh.geometry.dispose();
@@ -347,13 +357,13 @@ export class FloatingDialogue3D {
 
   private _disposeAll(): void {
     for (const r of this._meshes) {
-      this._group.remove(r.mesh);
+      r.group.remove(r.mesh);
       r.mesh.material.map?.dispose();
       r.mesh.material.dispose();
       r.mesh.geometry.dispose();
     }
     for (const p of this._particles) {
-      this._group.remove(p.mesh);
+      this._choiceGroup.remove(p.mesh);
       p.mesh.material.dispose();
       p.mesh.geometry.dispose();
     }
@@ -454,7 +464,7 @@ export class FloatingDialogue3D {
       const angle = Math.random() * Math.PI * 2;
       const speed = 0.15 + Math.random() * 0.45;
       const ttl   = 0.45 + Math.random() * 0.25;
-      this._group.add(mesh);
+      this._choiceGroup.add(mesh);
       this._particles.push({
         mesh,
         vx:  Math.cos(angle) * speed,
