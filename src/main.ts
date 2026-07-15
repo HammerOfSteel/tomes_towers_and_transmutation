@@ -28,6 +28,7 @@ import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
 import { buildWorldData } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
@@ -106,6 +107,7 @@ async function main() {
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
+  let minimap:   OWMinimap | null = null;
   // Rigs spawned via the Creature Lab sandbox — animated each tick.
   const _spawnedRigs: Array<{ rig: CreatureRig; born: number }> = [];
   const party = new PartyManager(5);
@@ -116,6 +118,10 @@ async function main() {
     worldGenConfig = loadWorldGenConfig();
     const cfg       = { ...worldGenConfig, seed };
     const worldData = buildWorldData(seed, cfg);
+    // Rebuild minimap for the new world
+    minimap?.dispose();
+    minimap = new OWMinimap(worldData);
+    minimap.hide(); // hidden until exterior mode is entered
     return new OverworldScene(scene, physics, player, worldData);
   }
 
@@ -129,6 +135,7 @@ async function main() {
     }
     gameMode = 'exterior';
     overworld.enter();
+    minimap?.show();
     // Spawn just south of the tower door, high enough that the KCC capsule
     // starts above the heightfield surface and falls cleanly to ground.
     player.teleport(new THREE.Vector3(0, 1.5, 8));
@@ -139,6 +146,7 @@ async function main() {
   function switchToInterior(roomId?: string): void {
     overworld?.exit();
     gameMode = 'interior';
+    minimap?.hide();
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
     sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
   }
@@ -230,6 +238,16 @@ async function main() {
       player.teleport(new THREE.Vector3(0, 1.5, 0));
       wasRoomCleared = false;
     },
+    // ── Overworld (available when in exterior mode) ──────────────────────────
+    getFlyMode:    () => player.flyMode,
+    onFlyMode:     (v) => { player.flyMode = v; },
+    getSettlements: () => gameMode === 'exterior'
+      ? (overworld?.getSettlementPositions() ?? [])
+      : [],
+    onFastTravel:  (pos) => {
+      if (gameMode !== 'exterior') switchToExterior();
+      player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z));
+    },
   });
 
   // ── Spell book ──────────────────────────────────────────────────────────
@@ -237,8 +255,9 @@ async function main() {
 
   // ── Pause menu ───────────────────────────────────────────────────────────
   const pauseMenu = new PauseMenu({
-    onOpenEditor: () => editMode.toggle(),
+    onOpenEditor:   () => editMode.toggle(),
     onOpenDevPanel: () => devPanel.open(),
+    onOpenStats:    () => statPanel.open(progression),
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
@@ -247,6 +266,8 @@ async function main() {
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
+    minimap?.dispose();
+    minimap = null;
     gameMode = 'interior';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     const plan = generateTower(currentSeed);
@@ -637,6 +658,13 @@ async function main() {
         overworld.update(dt);
         party.pruneDead();
         tamingGame.update(dt);
+
+        // Update minimap player position (convert world → tile coords)
+        if (minimap?.isVisible()) {
+          const _pp  = player.group.position;
+          const _gc  = overworld.worldToGrid(_pp.x, _pp.z);
+          minimap.updatePlayer(_gc.col, _gc.row);
+        }
 
         // Update exterior interaction prompt
         const _pos = player.group.position;

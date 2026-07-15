@@ -232,6 +232,10 @@ export class PlayerController {
     );
   }
 
+  /** Dev fly mode — disables gravity and lets the player soar freely.
+   *  Space = ascend, F (dodge key) = descend, WASD = 2.5× normal speed. */
+  flyMode = false;
+
   update(input: InputState, dt: number): void {
     // ── 1. TIMERS ──────────────────────────────────────────────────────────
     this.health.tick(dt);
@@ -240,6 +244,39 @@ export class PlayerController {
     this.dodgeCooldown = Math.max(0, this.dodgeCooldown - dt);
     this.flashTimer = Math.max(0, this.flashTimer - dt);
     const wasGrounded = this.isGrounded;
+
+    // ── FLY MODE (dev cheat — overworld only) ──────────────────────────────
+    if (this.flyMode) {
+      const FLY_H = RUN_SPEED * 2.5;  // fast horizontal glide
+      const FLY_V = RUN_SPEED * 2.0;  // vertical ascent/descent speed
+      const md = calculateMoveDirection(input);
+      this.velocity.x = lerp(this.velocity.x, md.x * FLY_H, ACCEL_GROUND * dt);
+      this.velocity.z = lerp(this.velocity.z, md.z * FLY_H, ACCEL_GROUND * dt);
+      // Space = ascend, F/dodge key = descend, neither = gently level off
+      if (input.jump)       this.velocity.y = FLY_V;
+      else if (input.dodge) this.velocity.y = -FLY_V;
+      else                  this.velocity.y = lerp(this.velocity.y, 0, 8 * dt);
+
+      const cur = this.body.translation();
+      this.body.setNextKinematicTranslation({
+        x: cur.x + this.velocity.x * dt,
+        y: cur.y + this.velocity.y * dt,
+        z: cur.z + this.velocity.z * dt,
+      });
+      rapierToThreeInto(this.body.translation(), this._pos);
+      this.group.position.copy(this._pos);
+
+      const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      if (hSpeed > 0.4) {
+        this.facingAngle = lerpAngle(
+          this.facingAngle,
+          Math.atan2(this.velocity.x, this.velocity.z),
+          TURN_SPEED_GROUND * dt,
+        );
+        this.group.rotation.y = this.facingAngle;
+      }
+      return; // skip normal physics
+    }
 
     // ── 1b. DODGE-ROLL ─────────────────────────────────────────────────────
     const dodgeJustPressed = input.dodge && !this.lastDodgeInput;

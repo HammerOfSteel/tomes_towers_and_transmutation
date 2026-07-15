@@ -96,6 +96,9 @@ export class OverworldScene {
   private readonly _buildingGroups: THREE.Group[] = [];
   private _roadMeshes: THREE.Mesh[] = [];
 
+  /** Cached for fast-travel — populated in _buildSettlements(). */
+  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
+
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
 
@@ -266,6 +269,22 @@ export class OverworldScene {
   }
 
   getActiveEnemies(): SlimeEnemy[] { return this._enemies; }
+
+  /** Returns all settlements with their world-space position for fast travel. */
+  getSettlementPositions(): Array<{ name: string; worldPos: { x: number; y: number; z: number } }> {
+    return this._settlementPositions.map(s => ({
+      name:     s.name,
+      worldPos: { x: s.worldPos.x, y: s.worldPos.y, z: s.worldPos.z },
+    }));
+  }
+
+  /** Convert a world-space (x, z) position to the nearest grid (col, row). */
+  worldToGrid(x: number, z: number): { col: number; row: number } {
+    return {
+      col: Math.round(x / T + this._GHW),
+      row: Math.round(z / T + this._GHH),
+    };
+  }
 
   // ── Private builders ──────────────────────────────────────────────────────
 
@@ -1107,6 +1126,18 @@ export class OverworldScene {
     if (!settlements || settlements.length === 0) return;
 
     const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Cache world-space positions for fast travel
+    for (const entry of settlements) {
+      const { plan } = entry;
+      const wx = (plan.centerCol - GHW) * T;
+      const wz = (plan.centerRow - GHH) * T;
+      const wy = this._wg.get(plan.centerCol, plan.centerRow).elevation * SH + 2.0;
+      this._settlementPositions.push({
+        name:     plan.name,
+        worldPos: new THREE.Vector3(wx, wy, wz),
+      });
+    }
 
     // ── Settlement interior road tiles — flat instanced planes ────────────
     // PlaneGeometry laid flat removes box-side seams; 8% oversizing fills gaps.

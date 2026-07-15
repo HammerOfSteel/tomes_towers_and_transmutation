@@ -41,6 +41,16 @@ export interface DevPanelOptions {
   onForceFlee: () => void;
   /** Teleport to a room by its blueprint ID. Closes the panel. */
   onTeleport: (roomId: string) => void;
+
+  // ── Overworld-only (wired when gameMode === 'exterior') ──────────────────
+  /** Enable / disable fly mode (overworld only). */
+  onFlyMode?: (enabled: boolean) => void;
+  /** Return current fly mode state. */
+  getFlyMode?: () => boolean;
+  /** Return all settlements with name + world position for fast travel. */
+  getSettlements?: () => Array<{ name: string; worldPos: { x: number; y: number; z: number } }>;
+  /** Teleport player directly to a world-space position (fast travel). */
+  onFastTravel?: (pos: { x: number; y: number; z: number }) => void;
 }
 
 // ── Room list ─────────────────────────────────────────────────────────────
@@ -163,6 +173,16 @@ const DP_CSS = `
   transition: color .1s, border-color .1s, background .1s;
 }
 .dp-room-btn:hover { background: rgba(90,80,180,.14); border-color: #7a7acc; color: #c0c0ff; }
+
+/* ── Fast travel location buttons ── */
+.dp-loc-btn {
+  padding: 5px 13px;
+  background: rgba(0,0,0,.35); border: 1px solid #1a2e1a;
+  border-radius: 3px; color: #3a7a3a;
+  font-family: monospace; font-size: 10px; cursor: pointer;
+  transition: color .1s, border-color .1s, background .1s;
+}
+.dp-loc-btn:hover { background: rgba(50,140,50,.14); border-color: #66cc66; color: #aaffaa; }
 `;
 
 // ── DevPanel class ────────────────────────────────────────────────────────
@@ -219,6 +239,10 @@ export class DevPanel {
       this._buildCombat(),
       this._buildTeleport(),
     );
+    // Overworld section is optional (shown in exterior mode only)
+    if (this._opts.getSettlements) {
+      card.appendChild(this._buildOverworld());
+    }
 
     this._overlay.appendChild(card);
   }
@@ -357,7 +381,7 @@ export class DevPanel {
   }
 
   private _buildTeleport(): HTMLElement {
-    const sec = this._section('✦  Teleport');
+    const sec = this._section('✦  Teleport  (interior)');
     const rooms = document.createElement('div');
     rooms.className = 'dp-rooms';
     for (const [id, label] of ROOMS) {
@@ -368,6 +392,55 @@ export class DevPanel {
       rooms.appendChild(b);
     }
     sec.appendChild(rooms);
+    return sec;
+  }
+
+  private _buildOverworld(): HTMLElement {
+    const sec = this._section('✦  Overworld');
+
+    // Fly mode toggle
+    if (this._opts.onFlyMode && this._opts.getFlyMode) {
+      const flyOn  = this._opts.getFlyMode();
+      const flyRow = document.createElement('div');
+      flyRow.className = 'dp-toggle-row' + (flyOn ? ' dp-on' : '');
+      const flyInfo = document.createElement('div');
+      flyInfo.className = 'dp-toggle-info';
+      const flyName = document.createElement('div');
+      flyName.className = 'dp-toggle-name';
+      flyName.textContent = 'Fly Mode';
+      const flySub = document.createElement('div');
+      flySub.className = 'dp-toggle-sub';
+      flySub.textContent = 'Space=up  F=down  2.5\u00d7 speed';
+      flyInfo.append(flyName, flySub);
+      const flyCb = document.createElement('input');
+      flyCb.type = 'checkbox'; flyCb.className = 'dp-toggle-cb'; flyCb.checked = flyOn;
+      flyCb.onchange = () => {
+        flyRow.classList.toggle('dp-on', flyCb.checked);
+        this._opts.onFlyMode!(flyCb.checked);
+      };
+      flyRow.append(flyInfo, flyCb);
+      sec.appendChild(flyRow);
+    }
+
+    // Fast travel buttons
+    if (this._opts.getSettlements && this._opts.onFastTravel) {
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-family:monospace;font-size:9px;color:#3a5a3a;margin-top:4px;';
+      lbl.textContent = 'Fast Travel';
+      sec.appendChild(lbl);
+      const locs = document.createElement('div');
+      locs.className = 'dp-rooms';
+      const settlements = this._opts.getSettlements();
+      for (const s of settlements) {
+        const b = document.createElement('button');
+        b.className = 'dp-loc-btn';
+        b.textContent = s.name;
+        b.onclick = () => { this._opts.onFastTravel!(s.worldPos); this.close(); };
+        locs.appendChild(b);
+      }
+      sec.appendChild(locs);
+    }
+
     return sec;
   }
 
