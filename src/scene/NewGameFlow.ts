@@ -12,6 +12,7 @@
  *   startGame(undefined, cfg);
  */
 
+import campfireLullabyUrl          from '../../assets/intro_scene/campfire_lullaby.mp3?url';
 import { NewGameScene }            from '@/scene/NewGameScene';
 import { FloatingDialogue3D }      from '@/ui/FloatingDialogue3D';
 import { CharacterDecisionTree,
@@ -29,6 +30,7 @@ export class NewGameFlow {
   private _container: HTMLElement | null = null;
   private _scene:     NewGameScene | null = null;
   private _overlay:   FloatingDialogue3D | null = null;
+  private _music:     HTMLAudioElement  | null = null;
 
   /**
    * Run the full campfire intro and return a CharacterConfig.
@@ -72,7 +74,8 @@ export class NewGameFlow {
 
     // ── 4. Fade in from black (1.2 s) ─────────────────────────────────────────
     await overlay.fadeIn(1200);
-
+    // ── 4b. Begin music fade-in concurrently with scene load ─────────────────
+    this._fadeInMusic();
     // Ensure environment + wizard are loaded before proceeding
     await Promise.all([envLoadPromise, wizardLoadPromise]);
 
@@ -107,7 +110,8 @@ export class NewGameFlow {
     scene.runExitSequence();        // intentionally not awaited — fade overlaps
     await _pause(1200);             // let wizard get moving before fade
 
-    // ── 10. Fade to black ────────────────────────────────────────────────────
+    // ── 10. Fade to black (music out concurrently) ───────────────────────
+    this._fadeOutMusic(2000);
     await overlay.fadeOut(1800);
 
     // ── 11. Build CharacterConfig ─────────────────────────────────────────────
@@ -127,6 +131,7 @@ export class NewGameFlow {
   }
 
   dispose(): void {
+    this._fadeOutMusic(800);
     this._scene?.unmount();
     this._scene?.dispose();
     this._overlay?.unmount();
@@ -134,6 +139,38 @@ export class NewGameFlow {
     this._scene     = null;
     this._overlay   = null;
     this._container = null;
+  }
+
+  // ── music helpers ───────────────────────────────────────────────────────────
+
+  private _fadeInMusic(targetVol = 0.45, durationMs = 5000): void {
+    const audio   = new Audio(campfireLullabyUrl);
+    audio.loop    = true;
+    audio.volume  = 0;
+    this._music   = audio;
+    audio.play().catch(() => { /* autoplay policy — silent fail */ });
+
+    const step  = 50;
+    const delta = targetVol / (durationMs / step);
+    const id = setInterval(() => {
+      if (!this._music) { clearInterval(id); return; }
+      this._music.volume = Math.min(targetVol, this._music.volume + delta);
+      if (this._music.volume >= targetVol) clearInterval(id);
+    }, step);
+  }
+
+  private _fadeOutMusic(durationMs = 2000): void {
+    if (!this._music) return;
+    const audio    = this._music;
+    this._music    = null;
+    if (durationMs <= 0) { audio.pause(); return; }
+    const startVol = audio.volume;
+    const step     = 50;
+    const delta    = startVol / (durationMs / step);
+    const id = setInterval(() => {
+      audio.volume = Math.max(0, audio.volume - delta);
+      if (audio.volume <= 0) { audio.pause(); clearInterval(id); }
+    }, step);
   }
 }
 
