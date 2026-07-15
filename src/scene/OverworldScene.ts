@@ -579,7 +579,181 @@ export class OverworldScene {
     (this.scene as any).__assetTowerLoaded = true;
   }
 
-  // ── Trigger queries ───────────────────────────────────────────────────────
+  // ── Phase 2 — Settlement decoration ────────────────────────────────────────
+
+  /**
+   * Scatter town-kit props (lanterns, fountains, stalls, hedges, banners,
+   * carts) around each settlement using the settlement road-tile positions
+   * stored in WorldGrid.  Props are added directly to the scene so they
+   * appear immediately when `enter()` has already been called.
+   *
+   * Strategy: for every settlement, pull its road-edge tiles (tiles that
+   * are adjacent to at least one non-road walkable tile) and place a random
+   * prop there.  The fountain goes at the settlement centre tile.
+   */
+  async upgradeSettlementsWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+    worldData: import('@/world/WorldData').WorldData,
+  ): Promise<void> {
+    const { settlements } = worldData;
+    if (!settlements || settlements.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    // Props to preload
+    const LANTERN   = '/assets/town/lantern.glb';
+    const FOUNTAIN  = '/assets/town/fountain-round.glb';
+    const STALL_G   = '/assets/town/stall-green.glb';
+    const STALL_R   = '/assets/town/stall-red.glb';
+    const HEDGE     = '/assets/town/hedge.glb';
+    const HEDGE_L   = '/assets/town/hedge-large.glb';
+    const BANNER_G  = '/assets/town/banner-green.glb';
+    const BANNER_R  = '/assets/town/banner-red.glb';
+    const CART      = '/assets/town/cart.glb';
+    const CART_H    = '/assets/town/cart-high.glb';
+    const FENCE     = '/assets/town/fence.glb';
+
+    await loader.preload([
+      LANTERN, FOUNTAIN, STALL_G, STALL_R, HEDGE, HEDGE_L,
+      BANNER_G, BANNER_R, CART, CART_H, FENCE,
+    ]);
+
+    const _decor: THREE.Group[] = [];
+
+    const addProp = (path: string, wx: number, wy: number, wz: number, rotY = 0, s = 1.8) => {
+      const m = loader.getClone(path);
+      if (!m) return;
+      m.scale.setScalar(s);
+      m.rotation.y = rotY;
+      const g = new THREE.Group();
+      g.position.set(wx, wy, wz);
+      g.add(m);
+      _decor.push(g);
+    };
+
+    for (const entry of settlements) {
+      const { plan } = entry;
+      const { centerCol: cc, centerRow: cr } = plan;
+      const centreElev = this._wg.get(cc, cr).elevation;
+      const centreWy   = centreElev * SH;
+
+      // ── Fountain at settlement centre ──────────────────────────────────
+      const fwx = (cc - GHW) * T;
+      const fwz = (cr - GHH) * T;
+      addProp(FOUNTAIN, fwx, centreWy, fwz, 0, 2.0);
+
+      // ── Lanterns at road-tile corners ──────────────────────────────────
+      // Sample every 3rd road tile, put a lantern at alternating corners.
+      const roads = plan.roads ?? [];
+      let roadIdx = 0;
+      const lanternInterval = Math.max(2, Math.floor(roads.length / 8));
+
+      for (const r of roads) {
+        roadIdx++;
+        if (roadIdx % lanternInterval !== 0) continue;
+        // Check if this road tile is on the settlement perimeter
+        const n = this._wg.get(r.col, r.row - 1);
+        const s2 = this._wg.get(r.col, r.row + 1);
+        const e2 = this._wg.get(r.col + 1, r.row);
+        const w2 = this._wg.get(r.col - 1, r.row);
+        const isEdge = n.feature !== 'road' || s2.feature !== 'road' ||
+                       e2.feature !== 'road' || w2.feature !== 'road';
+        if (!isEdge) continue;
+
+        const lx = (r.col - GHW) * T + T * 0.35;
+        const lz = (r.row - GHH) * T + T * 0.35;
+        const ly = centreElev * SH;
+        const hash = Math.abs((r.col * 17) ^ (r.row * 31));
+        addProp(LANTERN, lx, ly, lz, hash * 0.4, 1.6);
+      }
+
+      // ── Perimeter hedges/fences / stalls / carts ──────────────────────
+      // Place stalls and carts near roads using a hash to pick type.
+      let stallCount = 0;
+      const maxStalls = plan.type === 'city' ? 6 : plan.type === 'town' ? 3 : 1;
+
+      for (const r of roads) {
+        if (stallCount >= maxStalls) break;
+        const hash = Math.abs((r.col * 13) ^ (r.row * 7));
+        if (hash % 6 !== 0) continue;   // sparse
+
+        const rx = (r.col - GHW) * T + (((hash >> 2) % 3) - 1) * T * 0.3;
+        const rz = (r.row - GHH) * T + (((hash >> 4) % 3) - 1) * T * 0.3;
+        const ry = centreElev * SH;
+        const rotY = (hash % 4) * (Math.PI / 2);
+
+        if (hash % 3 === 0) {
+          addProp(hash % 2 === 0 ? STALL_G : STALL_R, rx, ry, rz, rotY, 1.8);
+        } else if (hash % 3 === 1) {
+          addProp(hash % 2 === 0 ? CART : CART_H, rx, ry, rz, rotY, 1.8);
+        } else {
+          addProp(hash % 2 === 0 ? BANNER_G : BANNER_R, rx, ry, rz, rotY, 1.8);
+        }
+        stallCount++;
+      }
+
+      // ── Hedges along settlement perimeter ─────────────────────────────
+      for (const r of roads) {
+        const hash = Math.abs((r.col * 19) ^ (r.row * 23));
+        if (hash % 10 !== 0) continue;  // ~10% of road-edge tiles
+
+        const n2 = this._wg.get(r.col, r.row - 1);
+        const isEdge2 = n2.feature !== 'road';
+        if (!isEdge2) continue;
+
+        const hx = (r.col - GHW) * T - T * 0.4;
+        const hz = (r.row - GHH) * T - T * 0.4;
+        const hy = centreElev * SH;
+        addProp(hash % 2 === 0 ? HEDGE : HEDGE_L, hx, hy, hz, 0, 1.8);
+      }
+    }
+
+    // Add to scene if active
+    for (const g of _decor) {
+      this._clutter.push(g);
+      if (this._isInScene) this.scene.add(g);
+    }
+    (this.scene as any).__assetSettlementLoaded = true;
+  }
+
+  // ── Phase 3 — Dungeon entrance upgrade ─────────────────────────────────────
+
+  /**
+   * Replace the procedural dungeon entrance meshes with Kenney dungeon-kit
+   * GLBs.  Each entrance gets a gate GLB with a matching rotY and the
+   * procedural group's children are swapped out (the group itself stays, so
+   * world-space position / physics trigger radius is unchanged).
+   */
+  async upgradeDungeonEntrancesWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const GATE       = '/assets/dungeon/gate.glb';
+    const GATE_DOOR  = '/assets/dungeon/gate-door.glb';
+    const GATE_BARS  = '/assets/dungeon/gate-metal-bars.glb';
+    const CORRIDOR_E = '/assets/dungeon/corridor-end.glb';
+    const STAIRS     = '/assets/dungeon/stairs.glb';
+
+    await loader.preload([GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS]);
+
+    // Cycle through entrance variants for variety
+    const variants = [GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS];
+
+    for (let i = 0; i < this._dungeonGroups.length; i++) {
+      const grp = this._dungeonGroups[i]!;
+      const path = variants[i % variants.length]!;
+      const model = loader.getClone(path);
+      if (!model) continue;
+
+      // Kenney dungeon tiles are ~4-unit squares at native scale.
+      // Scale down to fit nicely at ground level (~2.5 WU wide).
+      model.scale.setScalar(0.65);
+      model.rotation.y = (i % 4) * (Math.PI / 2);
+
+      grp.clear();
+      grp.add(model);
+    }
+    (this.scene as any).__assetDungeonLoaded = true;
+  }
 
   /** True when the player is close enough to the tower door to press E.
    *  Radius 6.5 — larger than the tower capsule (4.5) + player radius (0.35),

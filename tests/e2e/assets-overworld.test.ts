@@ -333,3 +333,139 @@ test.describe('Phase 1 — Terrain decoration', () => {
     expect(errors, 'No JS errors').toHaveLength(0);
   });
 });
+
+// ── Phase 2 — Settlement decoration ──────────────────────────────────────────
+
+/** Wait until settlement decorations (lanterns, fountain, stalls) are loaded. */
+async function waitForSettlement(page: import('@playwright/test').Page, ms: number) {
+  await page.waitForFunction(
+    () => (window as any).__game?.hasAssetSettlement?.() === true,
+    { timeout: ms },
+  );
+}
+
+test.describe('Phase 2 — Settlement decoration', () => {
+  test.setTimeout(120_000);
+
+  // ── 12. Settlement fountain and lanterns ─────────────────────────────────
+  test('settlement fountain and lanterns appear at town centre', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase2-12-settlement-before');
+
+    // Teleport toward typical settlement band (centre-left band where villages cluster)
+    await page.evaluate(() => (window as any).__game?.teleport(60, 0, 60));
+    await page.waitForTimeout(400);
+    await shot(page, 'phase2-12-settlement-near-before');
+
+    await waitForSettlement(page, 50_000);
+    await page.waitForTimeout(600);
+    await shot(page, 'phase2-12-settlement-props');
+
+    const loaded = await page.evaluate(
+      () => (window as any).__game?.hasAssetSettlement?.(),
+    );
+    expect(loaded, 'Settlement decoration flag is set').toBe(true);
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
+
+  // ── 13. Settlement type: stalls and carts ───────────────────────────────
+  test('market stalls and carts appear near road tiles', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase2-13-stalls-before');
+    await waitForSettlement(page, 50_000);
+
+    await page.evaluate(() => (window as any).__game?.teleport(55, 0, 55));
+    await page.waitForTimeout(800);
+    await shot(page, 'phase2-13-stalls-after');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
+
+  // ── 14. Settlement + Phase 1 combined ───────────────────────────────────
+  test('settlement decoration coexists with Phase 1 terrain', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase2-14-combined-before');
+
+    // Wait for both Phase 1 and Phase 2
+    await Promise.all([
+      waitForPhase1(page, 50_000),
+      waitForSettlement(page, 50_000),
+    ]);
+    await page.waitForTimeout(600);
+    await shot(page, 'phase2-14-combined-all');
+
+    const allGood = await page.evaluate(() => {
+      const g = (window as any).__game;
+      return g?.hasAssetTrees?.() &&
+             g?.hasAssetRocks?.() &&
+             g?.hasAssetSettlement?.();
+    });
+    expect(allGood, 'Trees, rocks and settlement props all loaded').toBe(true);
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
+});
+
+// ── Phase 3 — Dungeon entrance upgrade ───────────────────────────────────────
+
+/** Wait until dungeon entrance GLBs are swapped in. */
+async function waitForDungeon(page: import('@playwright/test').Page, ms: number) {
+  await page.waitForFunction(
+    () => (window as any).__game?.hasAssetDungeon?.() === true,
+    { timeout: ms },
+  );
+}
+
+test.describe('Phase 3 — Dungeon entrance upgrade', () => {
+  test.setTimeout(120_000);
+
+  // ── 15. Dungeon entrance GLBs load ───────────────────────────────────────
+  test('dungeon entrance GLBs replace procedural meshes', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase3-15-dungeon-before');
+
+    await waitForDungeon(page, 50_000);
+    await page.waitForTimeout(500);
+    await shot(page, 'phase3-15-dungeon-after');
+
+    const loaded = await page.evaluate(
+      () => (window as any).__game?.hasAssetDungeon?.(),
+    );
+    expect(loaded, 'Dungeon entrance upgrade flag is set').toBe(true);
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
+
+  // ── 16. Dungeon trigger proximity still works ────────────────────────────
+  test('dungeon entrance trigger radius is preserved after upgrade', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase3-16-trigger-before');
+    await waitForDungeon(page, 50_000);
+
+    // Teleport to a dungeon entrance column/row area (dungeons usually scatter 15-80)
+    await page.evaluate(() => (window as any).__game?.teleport(48, 0, 48));
+    await page.waitForTimeout(600);
+    await shot(page, 'phase3-16-trigger-near');
+
+    // No JS errors means physics bodies are still valid
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
+});

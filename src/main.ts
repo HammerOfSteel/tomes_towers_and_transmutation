@@ -151,6 +151,12 @@ async function main() {
     ow.upgradeTowerWithAssets(assetLoader).catch((e) =>
       console.warn('[main] tower upgrade failed:', e),
     );
+    ow.upgradeSettlementsWithAssets(assetLoader, worldData).catch((e) =>
+      console.warn('[main] settlement decoration failed:', e),
+    );
+    ow.upgradeDungeonEntrancesWithAssets(assetLoader).catch((e) =>
+      console.warn('[main] dungeon entrance upgrade failed:', e),
+    );
     return ow;
   }
 
@@ -549,10 +555,12 @@ async function main() {
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
       hasAssetTrees:   () => !!(scene as any).__assetTreesLoaded,
-      hasAssetRocks:   () => !!(scene as any).__assetRocksLoaded,
-      hasAssetClutter: () => !!(scene as any).__assetClutterLoaded,
-      hasAssetRiver:   () => !!(scene as any).__assetRiverLoaded,
-      hasAssetTower:   () => !!(scene as any).__assetTowerLoaded,
+      hasAssetRocks:       () => !!(scene as any).__assetRocksLoaded,
+      hasAssetClutter:     () => !!(scene as any).__assetClutterLoaded,
+      hasAssetRiver:       () => !!(scene as any).__assetRiverLoaded,
+      hasAssetTower:       () => !!(scene as any).__assetTowerLoaded,
+      hasAssetSettlement:  () => !!(scene as any).__assetSettlementLoaded,
+      hasAssetDungeon:     () => !!(scene as any).__assetDungeonLoaded,
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────

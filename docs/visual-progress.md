@@ -61,16 +61,50 @@ All Phase 0 and Phase 1 tests save screenshots with the prefix `assets-`.
 
 ---
 
-## Phase 2 — Buildings  _(planned)_
+## Phase 2 — Settlement Decoration
 
-Building assembly with `retro-fantasy-kit` walls, roofs, floors and town-kit
-decorations (lanterns, fountains, hedges).
+Town-kit props scattered around settlements: lanterns at road corners, a fountain
+at the settlement centre (towns / cities), market stalls and carts along roads,
+hedges along the settlement perimeter, and coloured banners near market areas.
+
+### 12. Settlement fountain and lanterns
+| File | Description |
+|------|-------------|
+| `assets-phase2-12-settlement-before.png` | Settlement before prop decoration |
+| `assets-phase2-12-settlement-near-before.png` | Close to settlement centre before load |
+| `assets-phase2-12-settlement-props.png` | Fountain + lanterns visible at town centre |
+
+### 13. Market stalls and carts
+| File | Description |
+|------|-------------|
+| `assets-phase2-13-stalls-before.png` | Before stalls and carts loaded |
+| `assets-phase2-13-stalls-after.png` | Stalls + carts scattered near road tiles |
+
+### 14. Phase 1 + Phase 2 combined
+| File | Description |
+|------|-------------|
+| `assets-phase2-14-combined-before.png` | Before any assets |
+| `assets-phase2-14-combined-all.png` | All Phase 1 terrain + Phase 2 settlement props |
 
 ---
 
-## Phase 3 — Dungeon Interior  _(planned)_
+## Phase 3 — Dungeon Entrance Upgrade
 
-Dungeon corridor and room GLBs from the dungeon kit replacing procedural blocks.
+Kenney dungeon-kit GLBs (`gate.glb`, `gate-door.glb`, `gate-metal-bars.glb`,
+`corridor-end.glb`, `stairs.glb`) replace the procedural entrance meshes.
+Physics trigger radius is unchanged — only the visual group children are swapped.
+
+### 15. Dungeon entrance GLBs
+| File | Description |
+|------|-------------|
+| `assets-phase3-15-dungeon-before.png` | Procedural entrance before upgrade |
+| `assets-phase3-15-dungeon-after.png` | GLB entrance after upgrade |
+
+### 16. Dungeon trigger proximity
+| File | Description |
+|------|-------------|
+| `assets-phase3-16-trigger-before.png` | Before teleporting to dungeon entrance |
+| `assets-phase3-16-trigger-near.png` | Player near upgraded entrance |
 
 ---
 
