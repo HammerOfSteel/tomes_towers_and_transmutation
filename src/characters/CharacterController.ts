@@ -25,13 +25,18 @@ export type CharAnimState = 'idle' | 'walk' | 'run' | 'attack' | 'hit' | 'die';
 
 /** Ordered candidate names for each state.  First match wins. */
 const STATE_CLIP_NAMES: Record<CharAnimState, readonly string[]> = {
-  idle:   ['Idle', 'idle', 'Stand', 'T-Pose', 'TPose', 'Rest'],
-  walk:   ['Walk', 'walk', 'WalkForward', 'Walk_N', 'Walking', 'Move'],
-  run:    ['Run', 'run', 'RunForward', 'Run_N', 'Running', 'Sprint'],
+  // KayKit names first (Idle_A, Running_A, Walking_A), then generic names.
+  // NOTE: 'T-Pose' intentionally omitted — the rig has an exact 'T-Pose' clip
+  // which would otherwise win the idle exact-match pass.
+  idle:   ['Idle_A', 'Idle_B', 'Idle', 'idle', 'Stand', 'Rest'],
+  walk:   ['Walking_A', 'Walking_B', 'Walking_C', 'Walk', 'walk',
+           'WalkForward', 'Walk_N', 'Walking', 'Move'],
+  run:    ['Running_A', 'Running_B', 'Run', 'run', 'RunForward',
+           'Run_N', 'Running', 'Sprint'],
   attack: ['Attack', 'attack', 'AttackMelee', 'Attack_1', 'Attack1',
            'AttackCombo', 'Slash', 'Strike'],
-  hit:    ['Hit', 'hit', 'Hurt', 'Damage', 'TakeHit', 'HitReact'],
-  die:    ['Death', 'Die', 'die', 'Dead', 'Dying', 'Fall'],
+  hit:    ['Hit_A', 'Hit_B', 'Hit', 'hit', 'Hurt', 'Damage', 'TakeHit', 'HitReact'],
+  die:    ['Death_A', 'Death_B', 'Death', 'Die', 'die', 'Dead', 'Dying', 'Fall'],
 };
 
 /**
@@ -135,11 +140,15 @@ export class CharacterController {
     if (!clip) return;   // No matching clip — keep whatever is playing
 
     const nextAction = this._mixer.clipAction(clip);
+    // Always ensure the action loops and never freezes on the last frame
+    nextAction.setLoop(THREE.LoopRepeat, Infinity);
+    nextAction.clampWhenFinished = false;
 
     if (this._currentAction && this._currentAction !== nextAction) {
       if (crossFadeSec > 0) {
         nextAction.reset().play();
-        this._currentAction.crossFadeTo(nextAction, crossFadeSec, true);
+        // warping=false: don't adjust playback speed — prevents timeScale → 0 freeze
+        this._currentAction.crossFadeTo(nextAction, crossFadeSec, false);
       } else {
         this._currentAction.stop();
         nextAction.reset().play();

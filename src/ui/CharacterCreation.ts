@@ -21,6 +21,7 @@ import { randomDNA, mutateDNA }            from '@/creatures/CreatureRandomiser'
 import { loadWorldGenConfig }              from '@/world/WorldGenConfig';
 import type { CharModelDef }               from '@/characters/charManifest';
 import { AssetCharBrowser }               from '@/ui/AssetCharBrowser';
+import { loadCharModel }                  from '@/characters/CharacterLoader';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -196,7 +197,8 @@ class CharacterPreview {
   private readonly _renderer: THREE.WebGLRenderer;
   private readonly _scene:    THREE.Scene;
   private readonly _camera:   THREE.PerspectiveCamera;
-  private _rig:   CreatureRig | null = null;
+  private _rig:        CreatureRig | null = null;
+  private _assetGroup: THREE.Group  | null = null;
   private _rafId: number | null = null;
   private _rotY  = 0;
   private _drag  = false;
@@ -237,6 +239,27 @@ class CharacterPreview {
 
   setDNA(dna: CreatureDNA): void { this._build(dna); }
 
+  /** Display a loaded asset model instead of the procedural rig. */
+  setAssetScene(group: THREE.Group): void {
+    if (this._rig)        { this._scene.remove(this._rig.root); }
+    if (this._assetGroup) { this._scene.remove(this._assetGroup); }
+    this._assetGroup = group;
+    // Auto-fit: centre + scale to fill the preview area
+    const box  = new THREE.Box3().setFromObject(group);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale  = maxDim > 0.01 ? 2.2 / maxDim : 1;
+    group.scale.setScalar(scale);
+    // Recompute after scaling, lift feet to y=0
+    box.setFromObject(group);
+    group.position.y = -box.min.y;
+    // Reset horizontal to centre
+    group.position.x = 0;
+    group.position.z = 0;
+    this._scene.add(group);
+    this.startLoop();
+  }
+
   setAnimState(s: AnimState): void { this._animState = s; }
   setCamera(preset: 'full' | 'face' | 'side'): void {
     switch (preset) {
@@ -256,6 +279,9 @@ class CharacterPreview {
         const t = performance.now() * 0.001;
         this._rig.root.position.y = Math.sin(t * 1.2) * 0.016;
         animateCreature(this._rig, { state: this._animState, time: t });
+      }
+      if (this._assetGroup) {
+        this._assetGroup.rotation.y = this._rotY;
       }
       this._camera.position.lerp(this._camPosTarget, 0.1);
       this._camLookCurrent.lerp(this._camLookTarget, 0.1);
@@ -357,7 +383,18 @@ export class CharacterCreation {
       this._assetBrowser = new AssetCharBrowser(
         this._assetBrowserSec,
         wg.charPacks,
-        (def) => { this._assetModel = def; },
+        (def) => {
+          this._assetModel = def;
+          // Load and show the model in the preview canvas
+          if (this._preview) {
+            loadCharModel(def)
+              .then((loaded) => {
+                this._preview?.setAssetScene(loaded.scene);
+                this._assetCanvasHint.style.display = 'none';
+              })
+              .catch((err) => console.warn('[CharCreation] preview load failed:', err));
+          }
+        },
       );
     }
     this._assetNameInput.value = '';
@@ -370,9 +407,10 @@ export class CharacterCreation {
     if (!isAsset) {
       this._syncControls();
       this._preview.startLoop();
-    } else {
-      this._preview.stopLoop();
     }
+    // In asset mode the loop is started by setAssetScene when a model is selected.
+    // Stop any existing procedural loop to clear the canvas.
+    if (isAsset) this._preview.stopLoop();
   }
 
   hide(): void {
