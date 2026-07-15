@@ -29,62 +29,16 @@ import type { LoadedWizard }     from '@/characters/WizardLoader';
 const ENV_OFFSET  = new THREE.Vector3(-1.87, -0.03, -1.54);
 
 // Camera: sitting behind the fire (+Z = deeper into the scene).
-// Looking from Z≈-2.74 across the fire (Z=0) toward the wizard side (Z≈2.6).
+// Looking from Z≈-2.74 across the fire (Z=0) toward the wizard's face.
 const CAM_POS   = new THREE.Vector3(0, 0.82, -2.74);
-const CAM_LOOK  = new THREE.Vector3(0, 0.62,  1.26);
+const CAM_LOOK  = new THREE.Vector3(0, 1.15,  1.26);
 
 // Wizard positions (Z=+ is deeper into scene, away from camera)
-const WIZ_IDLE  = new THREE.Vector3(0, 0, 2.6);   // resting pos across fire
-const WIZ_START = new THREE.Vector3(0, 0, 11);    // enters from the dark beyond
+const WIZ_IDLE  = new THREE.Vector3(0, 0, 3.8);   // resting pos across fire
+const WIZ_START = new THREE.Vector3(0, 0, 12);    // enters from the dark beyond
 
 const FIRE_COLOR  = 0xff7018;
 const FIRE_POS    = new THREE.Vector3(0, 0.1, 0);
-
-// ── fire ShaderMaterial ───────────────────────────────────────────────────────
-
-const _fireVert = /* glsl */`
-  uniform float uTime;
-  varying vec2  vUv;
-
-  // Hash-based pseudo-noise
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  float noise(vec2 p) {
-    vec2 i = floor(p); vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0*f);
-    return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
-               mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
-  }
-
-  void main() {
-    vUv = uv;
-    vec3 pos = position;
-    // Waver strongest at tip (high uv.y), none at base
-    float sway = noise(vec2(uv.y * 3.0 + uTime * 2.5, uTime * 1.3)) - 0.5;
-    pos.x += sway * 0.08 * uv.y;
-    pos.z += sway * 0.06 * uv.y;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const _fireFrag = /* glsl */`
-  uniform float uTime;
-  varying vec2  vUv;
-
-  void main() {
-    // Base colour: deep red at bottom → bright yellow-white at tip
-    vec3 bot = vec3(0.95, 0.15, 0.02);   // deep orange-red
-    vec3 mid = vec3(1.0,  0.55, 0.05);   // vivid orange
-    vec3 tip = vec3(1.0,  0.95, 0.5);    // pale yellow
-    vec3 col = mix(bot, mid, smoothstep(0.0, 0.5, vUv.y));
-    col = mix(col, tip, smoothstep(0.4, 1.0, vUv.y));
-
-    // Alpha: full at base, fade to nothing at tip; also vignette the sides
-    float sideAlpha = 1.0 - pow(abs(vUv.x * 2.0 - 1.0), 2.0);
-    float alpha = sideAlpha * (1.0 - smoothstep(0.6, 1.0, vUv.y));
-
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
 
 // ── main class ────────────────────────────────────────────────────────────────
 
@@ -94,10 +48,35 @@ export class NewGameScene {
   private _camera:    THREE.PerspectiveCamera;
   private _canvas:    HTMLCanvasElement;
 
-  // Campfire
-  private _fireMeshes: THREE.Mesh[]   = [];
-  private _fireLight:  THREE.PointLight;
-  private _embers:     THREE.Points;
+  // Campfire — sphere-blob fire system
+  private _flameBlobs: THREE.Mesh[]          = [];
+  private _smokePuffs: THREE.Mesh[]          = [];
+  private _fireLight:  THREE.PointLight | null = null;
+  private _embers:     THREE.Points | null     = null;
+
+  // Mouse drag look-around
+  private _lookTgtX   = 0;   // target pitch offset
+  private _lookTgtY   = 0;   // target yaw offset
+  private _lookCurX   = 0;   // smoothed pitch
+  private _lookCurY   = 0;   // smoothed yaw
+  private _isDragging = false;
+  private _prevMX     = 0;
+  private _prevMY     = 0;
+  private readonly _onMouseDown = (e: MouseEvent) => {
+    this._isDragging = true;
+    this._prevMX = e.clientX;
+    this._prevMY = e.clientY;
+  };
+  private readonly _onMouseUp = () => { this._isDragging = false; };
+  private readonly _onMouseMove = (e: MouseEvent) => {
+    if (!this._isDragging) return;
+    const dx = e.clientX - this._prevMX;
+    const dy = e.clientY - this._prevMY;
+    this._lookTgtY = Math.max(-0.65, Math.min(0.65,  this._lookTgtY - dx * 0.003));
+    this._lookTgtX = Math.max(-0.25, Math.min(0.35,  this._lookTgtX - dy * 0.003));
+    this._prevMX = e.clientX;
+    this._prevMY = e.clientY;
+  };
 
   // Wizard
   private _wizard:         LoadedWizard | null = null;
@@ -120,8 +99,11 @@ export class NewGameScene {
     // ── renderer ──────────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this._renderer.shadowMap.enabled = true;
-    this._renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+    this._renderer.shadowMap.enabled    = true;
+    this._renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
+    this._renderer.outputColorSpace     = THREE.SRGBColorSpace;
+    this._renderer.toneMapping          = THREE.ACESFilmicToneMapping;
+    this._renderer.toneMappingExposure  = 0.85;
     this._canvas = this._renderer.domElement;
 
     // ── scene ─────────────────────────────────────────────────────────────────
@@ -138,14 +120,7 @@ export class NewGameScene {
     this._buildStars();
     this._buildCampfire();
 
-    // Cache references set in _buildCampfire
-    this._fireLight = this._scene.children.find(
-      c => c instanceof THREE.PointLight,
-    ) as THREE.PointLight;
-
-    this._embers = this._scene.children.find(
-      c => c instanceof THREE.Points,
-    ) as THREE.Points;
+    // _fireLight and _embers assigned directly inside _buildCampfire()
   }
 
   // ── async environment loader ───────────────────────────────────────────────
@@ -239,69 +214,107 @@ export class NewGameScene {
   }
 
   private _buildCampfire(): void {
-    const fireMat = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 } },
-      vertexShader:   _fireVert,
-      fragmentShader: _fireFrag,
-      transparent:  true,
-      depthWrite:   false,
-      side:         THREE.DoubleSide,
+    // ── flame blob materials ──────────────────────────────────────────────────
+    const matOrange = new THREE.MeshStandardMaterial({
+      color: 0xff5500, emissive: 0xff3300, emissiveIntensity: 1.8,
+      roughness: 0.3, transparent: true, opacity: 0.88, depthWrite: false,
     });
+    const matYellow = new THREE.MeshStandardMaterial({
+      color: 0xffbb00, emissive: 0xff9900, emissiveIntensity: 2.2,
+      roughness: 0.2, transparent: true, opacity: 0.82, depthWrite: false,
+    });
+    const flameGeo = new THREE.SphereGeometry(0.26, 7, 7);
 
-    // Three flame layers — different sizes/phases, staggered azimuth
-    const layers = [
-      { rTop: 0.01, rBot: 0.22, h: 0.55, y: 0.08 },   // outer base
-      { rTop: 0.01, rBot: 0.15, h: 0.80, y: 0.05 },   // mid
-      { rTop: 0.01, rBot: 0.08, h: 1.05, y: 0.03 },   // inner tall
-    ];
-    for (const l of layers) {
-      const geo  = new THREE.ConeGeometry(l.rBot, l.h, 8, 6, true);
-      // Flip so wide end is at bottom (ConeGeometry tip points +Y by default)
-      geo.rotateX(Math.PI);
-      // Re-center so base (wide end) sits at y=0 of the mesh
-      geo.translate(0, l.h / 2, 0);
-      const mesh = new THREE.Mesh(geo, fireMat.clone());
-      mesh.position.set(FIRE_POS.x, FIRE_POS.y + l.y, FIRE_POS.z);
-      this._scene.add(mesh);
-      this._fireMeshes.push(mesh);
+    for (let i = 0; i < 18; i++) {
+      const mat  = (i % 3 === 0) ? matYellow.clone() : matOrange.clone();
+      const blob = new THREE.Mesh(flameGeo, mat);
+      const bx   = (Math.random() - 0.5) * 0.55;
+      const bz   = (Math.random() - 0.5) * 0.55;
+      blob.position.set(
+        FIRE_POS.x + bx,
+        FIRE_POS.y + Math.random() * 1.1,
+        FIRE_POS.z + bz,
+      );
+      blob.userData = {
+        baseX:     FIRE_POS.x + bx * 0.5,
+        baseZ:     FIRE_POS.z + bz * 0.5,
+        maxY:      1.1 + Math.random() * 0.7,
+        speed:     0.016 + Math.random() * 0.022,
+        wobbleSpd: 2.0  + Math.random() * 3.5,
+        wobbleOff: Math.random() * Math.PI * 2,
+      };
+      this._scene.add(blob);
+      this._flameBlobs.push(blob);
     }
 
-    // Base ember glow disc
-    const discGeo = new THREE.CircleGeometry(0.28, 12);
-    discGeo.rotateX(-Math.PI / 2);
-    const discMat = new THREE.MeshBasicMaterial({
-      color: 0xff4400, transparent: true, opacity: 0.7,
-    });
-    this._scene.add(new THREE.Mesh(discGeo, discMat));
+    // ── smoke puffs ───────────────────────────────────────────────────────────
+    const smokeGeo = new THREE.SphereGeometry(0.24, 6, 6);
+    for (let i = 0; i < 12; i++) {
+      const smokeMat = new THREE.MeshBasicMaterial({
+        color: 0x444444, transparent: true, opacity: 0.09, depthWrite: false,
+      });
+      const puff = new THREE.Mesh(smokeGeo, smokeMat);
+      const bx   = (Math.random() - 0.5) * 0.35;
+      const bz   = (Math.random() - 0.5) * 0.35;
+      puff.position.set(
+        FIRE_POS.x + bx,
+        FIRE_POS.y + 0.7 + Math.random() * 2.2,
+        FIRE_POS.z + bz,
+      );
+      puff.scale.setScalar(0.5 + Math.random() * 0.6);
+      puff.userData = {
+        baseX:  FIRE_POS.x + bx,
+        baseZ:  FIRE_POS.z + bz,
+        maxY:   3.8 + Math.random() * 1.5,
+        speed:  0.007 + Math.random() * 0.010,
+        driftX: (Math.random() - 0.5) * 0.005,
+        driftZ: (Math.random() - 0.5) * 0.004,
+        phase:  Math.random() * Math.PI * 2,
+      };
+      this._scene.add(puff);
+      this._smokePuffs.push(puff);
+    }
 
-    // PointLight — the only real illumination
-    const pl = new THREE.PointLight(FIRE_COLOR, 3.2, 14, 2);
-    pl.position.set(FIRE_POS.x, FIRE_POS.y + 0.45, FIRE_POS.z);
-    pl.castShadow = true;
-    pl.shadow.mapSize.set(512, 512);
-    pl.shadow.camera.near = 0.2;
-    pl.shadow.camera.far  = 14;
-    this._scene.add(pl);
-
-    // Ascending embers
-    const eCount = 35;
+    // ── hot ember sparks ──────────────────────────────────────────────────────
+    const eCount = 30;
     const ePos   = new Float32Array(eCount * 3);
     for (let i = 0; i < eCount; i++) {
-      ePos[i * 3]     = (Math.random() - 0.5) * 0.4;
-      ePos[i * 3 + 1] = Math.random() * 1.2;
-      ePos[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
+      ePos[i * 3]     = FIRE_POS.x + (Math.random() - 0.5) * 0.45;
+      ePos[i * 3 + 1] = FIRE_POS.y + Math.random() * 1.1;
+      ePos[i * 3 + 2] = FIRE_POS.z + (Math.random() - 0.5) * 0.45;
     }
     const eGeo = new THREE.BufferGeometry();
     eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
     const eMat = new THREE.PointsMaterial({
-      color: 0xffaa33, size: 0.035, sizeAttenuation: true,
-      transparent: true, opacity: 0.8,
+      color: 0xffcc44, size: 0.038, sizeAttenuation: true,
+      transparent: true, opacity: 0.9,
     });
-    this._scene.add(new THREE.Points(eGeo, eMat));
+    this._embers = new THREE.Points(eGeo, eMat);
+    this._scene.add(this._embers);
 
-    // Very faint warm ambient so the ground doesn't go pure black
-    const ambient = new THREE.AmbientLight(0x100806, 0.06);
-    this._scene.add(ambient);
+    // ── glowing coal base disc ────────────────────────────────────────────────
+    const discGeo = new THREE.CircleGeometry(0.32, 10);
+    discGeo.rotateX(-Math.PI / 2);
+    this._scene.add(new THREE.Mesh(discGeo,
+      new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.65 })));
+
+    // ── fire point light ──────────────────────────────────────────────────────
+    const pl = new THREE.PointLight(FIRE_COLOR, 4.5, 16, 2);
+    pl.position.set(FIRE_POS.x, FIRE_POS.y + 0.5, FIRE_POS.z);
+    pl.castShadow = true;
+    pl.shadow.mapSize.set(512, 512);
+    pl.shadow.camera.near = 0.2;
+    pl.shadow.camera.far  = 16;
+    this._scene.add(pl);
+    this._fireLight = pl;
+
+    // Soft fill from the camera side so the wizard's front face isn't black
+    const fill = new THREE.PointLight(0x553322, 0.6, 18);
+    fill.position.set(0, 2.2, -4.0);
+    this._scene.add(fill);
+
+    // Floor ambient — barely enough to see the ground
+    this._scene.add(new THREE.AmbientLight(0x120a08, 0.10));
   }
 
   /** Fallback forest — dark silhouettes used only if forest_2 GLTF fails to load. */
@@ -350,6 +363,10 @@ export class NewGameScene {
     `;
     container.appendChild(this._canvas);
 
+    this._canvas.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup',   this._onMouseUp);
+    window.addEventListener('mousemove', this._onMouseMove);
+
     this._resizeObserver = new ResizeObserver(() => this._resize());
     this._resizeObserver.observe(container);
     this._resize();
@@ -361,6 +378,10 @@ export class NewGameScene {
   unmount(): void {
     this._stopRAF();
     this._clock.stop();
+    this._canvas.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mouseup',   this._onMouseUp);
+    window.removeEventListener('mousemove', this._onMouseMove);
+    this._isDragging = false;
     this._resizeObserver?.disconnect();
     this._resizeObserver = null;
     this._canvas.remove();
@@ -506,15 +527,54 @@ export class NewGameScene {
 
     // ── fire flicker ──────────────────────────────────────────────────────────
     if (this._fireLight) {
-      const flicker = 2.4 + Math.sin(t * 7.3) * 0.5 + Math.sin(t * 11.7) * 0.3
-                        + Math.sin(t * 17.1) * 0.15;
+      const flicker = 3.2 + Math.sin(t * 7.3) * 0.6 + Math.sin(t * 11.7) * 0.4
+                          + Math.sin(t * 19.3) * 0.18 + Math.random() * 0.15;
       this._fireLight.intensity = flicker;
+      this._fireLight.position.x = FIRE_POS.x + Math.sin(t * 6.1) * 0.04;
+      this._fireLight.position.z = FIRE_POS.z + Math.cos(t * 5.3) * 0.04;
     }
 
-    // Update fire shader uniforms
-    for (const mesh of this._fireMeshes) {
-      const mat = mesh.material as THREE.ShaderMaterial;
-      mat.uniforms['uTime'].value = t;
+    // ── flame blob animation ──────────────────────────────────────────────────
+    for (const blob of this._flameBlobs) {
+      const d = blob.userData as {
+        baseX: number; baseZ: number; maxY: number;
+        speed: number; wobbleSpd: number; wobbleOff: number;
+      };
+      blob.position.y += d.speed;
+      const ratio = blob.position.y / d.maxY;
+      blob.position.x = d.baseX + Math.sin(t * d.wobbleSpd + d.wobbleOff) * 0.18 * ratio;
+      blob.position.z = d.baseZ + Math.cos(t * d.wobbleSpd * 0.7 + d.wobbleOff) * 0.18 * ratio;
+      const s = Math.max(0.04, 1.0 - ratio);
+      blob.scale.set(s, s * 1.5, s);
+      if (blob.position.y > d.maxY) {
+        blob.position.y = FIRE_POS.y + 0.05 + Math.random() * 0.15;
+        blob.position.x = d.baseX + (Math.random() - 0.5) * 0.08;
+        blob.position.z = d.baseZ + (Math.random() - 0.5) * 0.08;
+        blob.scale.setScalar(1);
+      }
+    }
+
+    // ── smoke puff animation ──────────────────────────────────────────────────
+    const SMOKE_FLOOR = FIRE_POS.y + 0.7;
+    for (const puff of this._smokePuffs) {
+      const d = puff.userData as {
+        baseX: number; baseZ: number; maxY: number;
+        speed: number; driftX: number; driftZ: number; phase: number;
+      };
+      puff.position.y += d.speed;
+      puff.position.x += d.driftX + Math.sin(t * 0.4 + d.phase) * 0.0018;
+      puff.position.z += d.driftZ;
+      const lifeRatio = Math.max(0, (puff.position.y - SMOKE_FLOOR) / (d.maxY - SMOKE_FLOOR));
+      puff.scale.setScalar(0.5 + lifeRatio * 2.2);
+      (puff.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.10 * (1 - lifeRatio));
+      if (puff.position.y > d.maxY) {
+        puff.position.set(
+          d.baseX + (Math.random() - 0.5) * 0.28,
+          SMOKE_FLOOR + Math.random() * 0.25,
+          d.baseZ + (Math.random() - 0.5) * 0.28,
+        );
+        puff.scale.setScalar(0.5 + Math.random() * 0.4);
+      }
     }
 
     // ── embers ────────────────────────────────────────────────────────────────
@@ -522,13 +582,14 @@ export class NewGameScene {
       const pos = (this._embers.geometry as THREE.BufferGeometry)
         .getAttribute('position') as THREE.BufferAttribute;
       const arr = pos.array as Float32Array;
-      const EMBER_SPEED = 0.22;
+      const EMBER_SPEED = 0.24;
       for (let i = 0; i < arr.length / 3; i++) {
         arr[i * 3 + 1] += EMBER_SPEED * dt;
-        if (arr[i * 3 + 1] > 1.4) {
-          arr[i * 3 + 1] = 0;
-          arr[i * 3]     = (Math.random() - 0.5) * 0.3;
-          arr[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+        arr[i * 3]     += Math.sin(t * 3.1 + i) * 0.001;  // gentle side drift
+        if (arr[i * 3 + 1] > 1.6) {
+          arr[i * 3 + 1] = FIRE_POS.y;
+          arr[i * 3]     = FIRE_POS.x + (Math.random() - 0.5) * 0.35;
+          arr[i * 3 + 2] = FIRE_POS.z + (Math.random() - 0.5) * 0.35;
         }
       }
       pos.needsUpdate = true;
@@ -551,12 +612,17 @@ export class NewGameScene {
       this._nodOffset = 0; this._nodVel = 0;
     }
 
+    // ── mouse look lerp ───────────────────────────────────────────────────────
+    this._lookCurX += (this._lookTgtX - this._lookCurX) * 0.06;
+    this._lookCurY += (this._lookTgtY - this._lookCurY) * 0.06;
+
+    const LOOK_DIST = 4.5;
     const finalY = CAM_POS.y + breatheY + this._nodOffset;
     const finalX = CAM_POS.x + breatheX;
     this._camera.position.set(finalX, finalY, CAM_POS.z);
     this._camera.lookAt(
-      CAM_LOOK.x + breatheX * 0.3,
-      CAM_LOOK.y + breatheY * 0.2,
+      CAM_LOOK.x + breatheX * 0.3 + this._lookCurY * LOOK_DIST,
+      CAM_LOOK.y + breatheY * 0.2 + this._lookCurX * LOOK_DIST,
       CAM_LOOK.z,
     );
 
