@@ -105,11 +105,11 @@ function _injectCSS(): void {
       letter-spacing: 1px;
     }
 
-    /* ── Choice buttons: lower screen so they never overlap the speech ── */
+    /* ── Choice buttons: bottom of screen (player response area) ── */
     .ngo-choices {
       position: absolute;
-      top: 60%; left: 50%;
-      transform: translate(-50%, -50%);
+      bottom: 6%; left: 50%;
+      transform: translate(-50%, 0);
       width: 90%; max-width: 800px;
       display: flex;
       flex-direction: column;
