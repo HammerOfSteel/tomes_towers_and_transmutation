@@ -199,7 +199,9 @@ class CharacterPreview {
   private readonly _camera:   THREE.PerspectiveCamera;
   private _rig:        CreatureRig | null = null;
   private _assetGroup: THREE.Group  | null = null;
+  private _assetMixer: THREE.AnimationMixer | null = null;
   private _rafId: number | null = null;
+  private _prevTime = 0;
   private _rotY  = 0;
   private _drag  = false;
   private _prevX = 0;
@@ -239,24 +241,55 @@ class CharacterPreview {
 
   setDNA(dna: CreatureDNA): void { this._build(dna); }
 
-  /** Display a loaded asset model instead of the procedural rig. */
-  setAssetScene(group: THREE.Group): void {
-    if (this._rig)        { this._scene.remove(this._rig.root); }
+  /**
+   * Display a loaded asset model instead of the procedural rig.
+   * Plays the first idle-looking clip if the model has one.
+   */
+  setAssetScene(
+    group: THREE.Group,
+    mixer: THREE.AnimationMixer | null,
+    clips: THREE.AnimationClip[],
+  ): void {
+    if (this._rig)        { this._scene.remove(this._rig.root); this._rig = null; }
     if (this._assetGroup) { this._scene.remove(this._assetGroup); }
+    if (this._assetMixer) { this._assetMixer.stopAllAction(); this._assetMixer = null; }
+
     this._assetGroup = group;
+
+    // updateMatrixWorld so Box3.setFromObject gets correct world-space bounds
+    // even though the group hasn't been added to the scene yet.
+    group.updateMatrixWorld(true);
+
     // Auto-fit: centre + scale to fill the preview area
     const box  = new THREE.Box3().setFromObject(group);
     const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     const scale  = maxDim > 0.01 ? 2.2 / maxDim : 1;
     group.scale.setScalar(scale);
-    // Recompute after scaling, lift feet to y=0
+
+    // Recompute after scaling so feet land at y=0
+    group.updateMatrixWorld(true);
     box.setFromObject(group);
     group.position.y = -box.min.y;
-    // Reset horizontal to centre
     group.position.x = 0;
     group.position.z = 0;
+
     this._scene.add(group);
+
+    // Drive animation if the model has clips — prefer idle, fall back to first
+    if (mixer && clips.length > 0) {
+      this._assetMixer = mixer;
+      const IDLE_PREFER = ['Idle_A', 'Idle_B', 'Idle', 'idle', 'Stand', 'Rest'];
+      const idleClip = IDLE_PREFER.map(n => THREE.AnimationClip.findByName(clips, n)).find(Boolean)
+                    ?? clips[0];
+      if (idleClip) {
+        const action = mixer.clipAction(idleClip);
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.clampWhenFinished = false;
+        action.play();
+      }
+    }
+
     this.startLoop();
   }
 
@@ -271,18 +304,24 @@ class CharacterPreview {
 
   startLoop(): void {
     if (this._rafId !== null) return;
+    this._prevTime = performance.now();
     const tick = () => {
       this._rafId = requestAnimationFrame(tick);
+      const now = performance.now();
+      const dt  = Math.min((now - this._prevTime) * 0.001, 0.1);
+      this._prevTime = now;
+
       if (!this._drag) this._rotY += 0.007;
       if (this._rig) {
         this._rig.root.rotation.y = this._rotY;
-        const t = performance.now() * 0.001;
+        const t = now * 0.001;
         this._rig.root.position.y = Math.sin(t * 1.2) * 0.016;
         animateCreature(this._rig, { state: this._animState, time: t });
       }
       if (this._assetGroup) {
         this._assetGroup.rotation.y = this._rotY;
       }
+      this._assetMixer?.update(dt);
       this._camera.position.lerp(this._camPosTarget, 0.1);
       this._camLookCurrent.lerp(this._camLookTarget, 0.1);
       this._camera.lookAt(this._camLookCurrent);
@@ -301,7 +340,7 @@ class CharacterPreview {
     window.addEventListener('pointerup', () => { this._drag = false; });
   }
 
-  dispose(): void { this.stopLoop(); this._rig?.dispose(); this._renderer.dispose(); }
+  dispose(): void { this.stopLoop(); this._assetMixer?.stopAllAction(); this._rig?.dispose(); this._renderer.dispose(); }
 }
 
 // ── CharacterCreation ─────────────────────────────────────────────────────────
@@ -389,7 +428,7 @@ export class CharacterCreation {
           if (this._preview) {
             loadCharModel(def)
               .then((loaded) => {
-                this._preview?.setAssetScene(loaded.scene);
+                this._preview?.setAssetScene(loaded.scene, loaded.mixer, loaded.clips);
                 this._assetCanvasHint.style.display = 'none';
               })
               .catch((err) => console.warn('[CharCreation] preview load failed:', err));

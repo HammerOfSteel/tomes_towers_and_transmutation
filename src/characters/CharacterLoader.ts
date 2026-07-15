@@ -145,10 +145,13 @@ export async function loadCharModel(def: CharModelDef): Promise<LoadedChar> {
   const clonedScene = skeletonClone(entry.scene) as THREE.Group;
   _enableShadows(clonedScene);
 
-  // ── 2b. Axis-up correction for FBX packs exported Z-up ──────────────────
-  // These packs were authored / exported with Z as the world-up axis.
-  // Rotating -90° on X converts them to Three.js Y-up convention.
-  const Z_UP_PACKS = new Set(['animal_plushies', 'adventure', 'fantasy_heroes']);
+  // ── 2b. Axis-up correction for FBX packs with Z-up geometry ──────────────
+  // animal_plushies FBX files declare Y-up in their metadata but the actual
+  // vertex geometry is Z-up, so we must apply the correction manually.
+  // adventure / fantasy_heroes FBX files have a proper UpAxis=Z entry that
+  // FBXLoader reads and corrects automatically — do NOT rotate those or the
+  // model ends up double-rotated (flat on the ground).
+  const Z_UP_PACKS = new Set(['animal_plushies']);
   if (Z_UP_PACKS.has(def.packId)) {
     clonedScene.rotation.x = -Math.PI / 2;
     clonedScene.updateMatrix();
