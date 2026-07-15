@@ -36,6 +36,13 @@ export class SceneManager {
   /** Callback invoked when the player walks through a null-target door (world exit). */
   onExitTrigger: (() => void) | null = null;
 
+  /**
+   * Callback invoked every time a new room finishes loading (after enemies are
+   * spawned and the player is repositioned).  Receives the newly active Blueprint
+   * and the Three.js Scene.  Use this to add per-room lights via LightingSystem.
+   */
+  onRoomLoaded: ((bp: Blueprint, scene: THREE.Scene) => void) | null = null;
+
   // Transition state machine
   private transitionState: TransitionState = 'idle';
   private fadeTimer = 0;
@@ -378,5 +385,8 @@ export class SceneManager {
     }
 
     this.triggerCooldown = TRIGGER_COOLDOWN;
+
+    // Notify listeners (e.g. LightingSystem) that a room has been loaded
+    this.onRoomLoaded?.(bp, this.scene);
   }
 }

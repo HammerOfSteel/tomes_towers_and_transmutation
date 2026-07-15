@@ -5,6 +5,7 @@ import { rapierToThreeInto } from '@/physics/helpers';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { SlimePersonality } from '@/interactables/TamingGame';
 import { mulberry32 } from '@/core/prng';
+import type { SpatialHash } from '@/core/SpatialHash';
 
 // VFX PRNG — deterministic, never Math.random()
 const _slimeRand = mulberry32(0xBAADF00D);
@@ -43,17 +44,55 @@ const FOLLOW_SPEED = 3.5;          // following movement speed
 const FOLLOWER_AGGRO_RANGE = 7.0;  // radius at which a follower attacks nearby hostiles
 const FOLLOWER_ATTACK_SPEED = 4.5; // move speed when chasing a target
 const FOLLOWER_ATTACK_DAMAGE = 1;  // damage per follower strike
+/** Phase 7h.3 — beyond this distance from the player, skip Rapier KCC and use
+ *  direct kinematic steering only (no collision response). Saves ~1 ms/frame
+ *  for 20 out-of-range followers since KCC is the costliest per-entity call. */
+const FOLLOWER_SIMPLIFIED_DIST = 30; // world units
+const GUARD_AGGRO_RANGE = 9.0;      // guards patrol a wider area around the perch
+const GUARD_STATION_DIST = 2.5;     // max WU from perch before guard walks back
 const TAME_REACT_DURATION = 0.9;   // how long a tame-reaction colour flash lasts
 
 // Visual
-const SLIME_COLOR     = 0x44bb55;
-const SLIME_HIT_COLOR = 0xffffff;
+const SLIME_COLOR      = 0x44bb55;
+const SLIME_HIT_COLOR  = 0xffffff;
 const SLIME_FLEE_COLOR    = 0xffdd44; // yellow when fleeing
 const SLIME_RECRUIT_COLOR = 0x9955ff; // purple when recruited
+const SLIME_GUARD_COLOR   = 0xffaa22; // amber/gold when guarding a Watch Perch
+
+// ── InstancedMesh scratch objects (reused every frame, no GC) ─────────────
+const _imTmpV3 = new THREE.Vector3();
+const _imTmpQ  = new THREE.Quaternion();
+const _imTmpE  = new THREE.Euler();
+const _imTmpM4 = new THREE.Matrix4();
+const _imZeroM = new THREE.Matrix4().makeScale(0, 0, 0);
+const _imTmpC  = new THREE.Color();
+
+// ── InstancedMesh factory ─────────────────────────────────────────────────
+
+/**
+ * Create a shared InstancedMesh for all slime bodies.
+ * One draw call regardless of minion count.
+ * Caller is responsible for calling `slime.writeToIM(im, idx)` every frame.
+ */
+export function createSlimeBodyIM(maxInstances: number): THREE.InstancedMesh {
+  const geo = new THREE.SphereGeometry(SLIME_RADIUS, 12, 8);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: false });
+  const im  = new THREE.InstancedMesh(geo, mat, maxInstances);
+  im.castShadow = true;
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // Disable frustum culling — the base geometry bounding sphere is tiny (radius
+  // SLIME_RADIUS at origin), so the default culling would hide all instances the
+  // moment the camera moves away from world origin.
+  im.frustumCulled = false;
+  // Hide all slots by default
+  for (let i = 0; i < maxInstances; i++) im.setMatrixAt(i, _imZeroM);
+  im.instanceMatrix.needsUpdate = true;
+  return im;
+}
 
 // ── FSM ────────────────────────────────────────────────────────────────
 
-export type EnemyState = 'idle' | 'alert' | 'chase' | 'attack' | 'flee' | 'recruited' | 'dead';
+export type EnemyState = 'idle' | 'alert' | 'chase' | 'attack' | 'flee' | 'recruited' | 'guard' | 'dead';
 
 // ── SlimeEnemy ────────────────────────────────────────────────────────────
 
@@ -215,8 +254,27 @@ export class SlimeEnemy implements Damageable {
    */
   recruit(): void {
     this.state = 'recruited';
+    this._guardPos = null;
     (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_RECRUIT_COLOR);
   }
+
+  /** True while this slime is stationed at a Watch Perch. */
+  get isGuarding(): boolean { return this.state === 'guard'; }
+
+  /**
+   * Assign this slime to guard a Watch Perch at `perchPos`.
+   * The slime moves to the perch and defends it instead of following the player.
+   * Call `recruit()` to return to normal follow mode.
+   */
+  assignGuard(perchPos: THREE.Vector3): void {
+    this.state = 'guard';
+    this._guardPos = perchPos.clone();
+    this._followerTarget = null;
+    (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_GUARD_COLOR);
+  }
+
+  // Guard position (non-null while state === 'guard')
+  private _guardPos: THREE.Vector3 | null = null;
 
   takeDamage(amount: number): number {
     return this.health.takeDamage(amount);
@@ -226,6 +284,11 @@ export class SlimeEnemy implements Damageable {
   get worldPosition(): THREE.Vector3 {
     return this.group.position;
   }
+
+  /** SpatialHash interface — world X coordinate. */
+  get worldX(): number { return this.group.position.x; }
+  /** SpatialHash interface — world Z coordinate. */
+  get worldZ(): number { return this.group.position.z; }
 
   // ── Update ────────────────────────────────────────────────────────────────
 
@@ -418,25 +481,31 @@ export class SlimeEnemy implements Damageable {
    * @param enemies    All active enemies in the scene — followers will aggro hostiles within range
    * @param dt         Frame delta
    */
-  updateAsFollower(playerPos: THREE.Vector3, enemies: readonly SlimeEnemy[], dt: number): void {
+  updateAsFollower(playerPos: THREE.Vector3, hostileHash: SpatialHash<SlimeEnemy>, dt: number): void {
     if (this.isDead) { this._tickDeathAnim(dt); return; }
+    if (this.state === 'guard') { this._tickGuard(hostileHash, dt); return; }
     if (this.state !== 'recruited') return;
 
     this.health.tick(dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
 
-    // ── Follower aggro — scan for nearby hostile enemies ───────────────────
+    // ── Follower aggro — spatial hash lookup (Phase 7h) ───────────────────
     // Clear dead/recruited target
     if (this._followerTarget && (this._followerTarget.isDead || this._followerTarget.isRecruited)) {
       this._followerTarget = null;
     }
-    // Search for new target if we don't have one
+    // Search for new target via hash — O(constant cells) instead of O(n)
     if (!this._followerTarget) {
-      let closestDist = FOLLOWER_AGGRO_RANGE;
-      for (const en of enemies) {
-        if (en === this || en.isDead || en.isRecruited) continue;
-        const d = en.worldPosition.distanceTo(this._pos);
-        if (d < closestDist) { closestDist = d; this._followerTarget = en; }
+      const candidates = hostileHash.queryRadius(
+        this._pos.x, this._pos.z, FOLLOWER_AGGRO_RANGE,
+      );
+      let closestD2 = FOLLOWER_AGGRO_RANGE * FOLLOWER_AGGRO_RANGE + 1;
+      for (const en of candidates) {
+        if (en === this) continue;
+        const dx = en.worldX - this._pos.x;
+        const dz = en.worldZ - this._pos.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < closestD2) { closestD2 = d2; this._followerTarget = en; }
       }
     }
 
@@ -472,23 +541,34 @@ export class SlimeEnemy implements Damageable {
       }
       // Bounce toward player if far behind
       this.bounceTimer = Math.max(0, this.bounceTimer - dt);
-      const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
-      this.kcc.computeColliderMovement(this.collider, desired);
-      const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
-      if (isGrounded) {
-        this.verticalVelocity = GROUND_PUSH;
-        if (dist > FOLLOW_DISTANCE + 2 && this.bounceTimer === 0) {
-          this.verticalVelocity = BOUNCE_VEL * 0.8;
-          this.bounceTimer = BOUNCE_INTERVAL;
-        }
+
+      // Phase 7h.3 — skip full KCC for followers too far from the player
+      if (dist > FOLLOWER_SIMPLIFIED_DIST) {
+        const cur = this.body.translation();
+        this.body.setNextKinematicTranslation({
+          x: cur.x + vx * dt,
+          y: Math.max(cur.y - 0.05, 0.9),
+          z: cur.z + vz * dt,
+        });
       } else {
-        this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+        const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
+        this.kcc.computeColliderMovement(this.collider, desired);
+        const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
+        if (isGrounded) {
+          this.verticalVelocity = GROUND_PUSH;
+          if (dist > FOLLOW_DISTANCE + 2 && this.bounceTimer === 0) {
+            this.verticalVelocity = BOUNCE_VEL * 0.8;
+            this.bounceTimer = BOUNCE_INTERVAL;
+          }
+        } else {
+          this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+        }
+        const actual = this.kcc.computedMovement();
+        const cur = this.body.translation();
+        this.body.setNextKinematicTranslation({
+          x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
+        });
       }
-      const actual = this.kcc.computedMovement();
-      const cur = this.body.translation();
-      this.body.setNextKinematicTranslation({
-        x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
-      });
       rapierToThreeInto(this.body.translation(), this._pos);
       this.group.position.copy(this._pos);
       // Follower idle breathing (purple tint held)
@@ -499,20 +579,30 @@ export class SlimeEnemy implements Damageable {
       return;
     }
 
-    // Physics step for aggro-chase branch
-    const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
-    this.kcc.computeColliderMovement(this.collider, desired);
-    const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
-    if (isGrounded) {
-      this.verticalVelocity = GROUND_PUSH;
+    // Physics step for aggro-chase branch (Phase 7h.3: skip KCC when distant)
+    const playerDist = playerPos.distanceTo(this._pos);
+    if (playerDist > FOLLOWER_SIMPLIFIED_DIST) {
+      const cur = this.body.translation();
+      this.body.setNextKinematicTranslation({
+        x: cur.x + vx * dt,
+        y: Math.max(cur.y - 0.05, 0.9),
+        z: cur.z + vz * dt,
+      });
     } else {
-      this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+      const desired = { x: vx * dt, y: this.verticalVelocity * dt, z: vz * dt };
+      this.kcc.computeColliderMovement(this.collider, desired);
+      const isGrounded = this.kcc.computedGrounded() && this.verticalVelocity <= 0.1;
+      if (isGrounded) {
+        this.verticalVelocity = GROUND_PUSH;
+      } else {
+        this.verticalVelocity = Math.max(this.verticalVelocity - 20 * dt, -20);
+      }
+      const actual = this.kcc.computedMovement();
+      const cur = this.body.translation();
+      this.body.setNextKinematicTranslation({
+        x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
+      });
     }
-    const actual = this.kcc.computedMovement();
-    const cur = this.body.translation();
-    this.body.setNextKinematicTranslation({
-      x: cur.x + actual.x, y: cur.y + actual.y, z: cur.z + actual.z,
-    });
     rapierToThreeInto(this.body.translation(), this._pos);
     this.group.position.copy(this._pos);
     // Scale lerp when attacking
@@ -522,7 +612,100 @@ export class SlimeEnemy implements Damageable {
     this.bodyMesh.scale.z += (1.0 - this.bodyMesh.scale.z) * lerpT;
   }
 
+  /**
+   * Per-frame update for a guard slime (state === 'guard').
+   * The slime:
+   *  1. Attacks any hostile enemy within GUARD_AGGRO_RANGE of the perch.
+   *  2. Returns to the perch position when far away and not in combat.
+   *  3. Never follows the player.
+   */
+  private _tickGuard(hostileHash: SpatialHash<SlimeEnemy>, dt: number): void {
+    if (!this._guardPos) return;
+
+    this.health.tick(dt);
+    this.attackTimer = Math.max(0, this.attackTimer - dt);
+
+    // Clear dead/recruited target
+    if (this._followerTarget && (this._followerTarget.isDead || this._followerTarget.isRecruited)) {
+      this._followerTarget = null;
+    }
+    // Search for hostiles near the perch
+    if (!this._followerTarget) {
+      const candidates = hostileHash.queryRadius(
+        this._guardPos.x, this._guardPos.z, GUARD_AGGRO_RANGE,
+      );
+      let closestD2 = GUARD_AGGRO_RANGE * GUARD_AGGRO_RANGE + 1;
+      for (const en of candidates) {
+        if (en === this) continue;
+        const dx = en.worldX - this._guardPos.x;
+        const dz = en.worldZ - this._guardPos.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < closestD2) { closestD2 = d2; this._followerTarget = en; }
+      }
+    }
+
+    let vx = 0;
+    let vz = 0;
+
+    if (this._followerTarget) {
+      // Chase hostile and attack
+      const toTarget = this._followerTarget.worldPosition.clone().sub(this._pos);
+      const dist = toTarget.length();
+      if (dist > SLIME_ATTACK_RANGE) {
+        const dir = toTarget.normalize();
+        vx = dir.x * FOLLOWER_ATTACK_SPEED;
+        vz = dir.z * FOLLOWER_ATTACK_SPEED;
+        this.group.rotation.y = Math.atan2(vx, vz);
+      } else if (this.attackTimer <= 0) {
+        this._followerTarget.takeDamage(FOLLOWER_ATTACK_DAMAGE);
+        this.attackTimer = SLIME_ATTACK_COOLDOWN;
+        this.verticalVelocity = BOUNCE_VEL * 0.6;
+        this.bodyMesh.scale.set(0.8, 0.9, 0.8);
+      }
+    } else {
+      // Return to station when outside GUARD_STATION_DIST
+      const dx = this._guardPos.x - this._pos.x;
+      const dz = this._guardPos.z - this._pos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > GUARD_STATION_DIST) {
+        const speed = Math.min(FOLLOW_SPEED, (dist - 1.0) * 3);
+        vx = (dx / dist) * speed;
+        vz = (dz / dist) * speed;
+        this.group.rotation.y = Math.atan2(vx, vz);
+      } else {
+        // Idle at perch — amber breathing
+        const breath = Math.sin(Date.now() * 0.0018) * 0.04;
+        this.bodyMesh.scale.y = REST_SCALE_Y + breath;
+        this.bodyMesh.scale.x = 1.0 - breath * 0.3;
+        this.bodyMesh.scale.z = 1.0 - breath * 0.3;
+        // Apply physics translate only (keep grounded)
+        const cur = this.body.translation();
+        this.body.setNextKinematicTranslation({
+          x: cur.x, y: Math.max(cur.y - 0.05, 0.9), z: cur.z,
+        });
+        rapierToThreeInto(this.body.translation(), this._pos);
+        this.group.position.copy(this._pos);
+        return;
+      }
+    }
+
+    // Physics translate (use simplified steering — guards need no KCC overhead)
+    const cur = this.body.translation();
+    this.body.setNextKinematicTranslation({
+      x: cur.x + vx * dt,
+      y: Math.max(cur.y - 0.05, 0.9),
+      z: cur.z + vz * dt,
+    });
+    rapierToThreeInto(this.body.translation(), this._pos);
+    this.group.position.copy(this._pos);
+    const lerpT = Math.min(1, SCALE_LERP * dt);
+    this.bodyMesh.scale.x += (1.0 - this.bodyMesh.scale.x) * lerpT;
+    this.bodyMesh.scale.y += (REST_SCALE_Y - this.bodyMesh.scale.y) * lerpT;
+    this.bodyMesh.scale.z += (1.0 - this.bodyMesh.scale.z) * lerpT;
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
+
 
   private doAttack(): void {
     this.attackTimer = SLIME_ATTACK_COOLDOWN;
@@ -545,12 +728,8 @@ export class SlimeEnemy implements Damageable {
     this.state = 'dead';
     this._deathTimer = DEATH_ANIM_DURATION;
 
-    // Make body transparent for fade-out and force material recompile
-    const mat = this.bodyMesh.material as THREE.MeshLambertMaterial;
-    mat.transparent = true;
-    mat.opacity = 1.0;
-    mat.color.setHex(SLIME_COLOR);
-    mat.needsUpdate = true; // required when changing transparent after first render
+    // Reset colour and show body for Phase 1 pop squash
+    (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_COLOR);
 
     // Initial pop squash — very flat, spread wide
     this.bodyMesh.scale.set(1.9, 0.06, 1.9);
@@ -634,15 +813,36 @@ export class SlimeEnemy implements Damageable {
     }
   }
 
+  /**
+   * Write this slime's current body transform and colour into an InstancedMesh slot.
+   * Call once per frame after update() has run.
+   * @param im   The shared slime InstancedMesh owned by OverworldScene.
+   * @param idx  Stable index for this slime (its position in the enemies array).
+   */
+  writeToIM(im: THREE.InstancedMesh, idx: number): void {
+    if (!this.bodyMesh.visible) {
+      im.setMatrixAt(idx, _imZeroM);
+      return;
+    }
+    const p  = this.group.position;
+    const by = this.bodyMesh.position.y;
+    _imTmpE.set(0, this.group.rotation.y, this.bodyMesh.rotation.z, 'YZX');
+    _imTmpQ.setFromEuler(_imTmpE);
+    _imTmpV3.set(p.x, p.y + by, p.z);
+    _imTmpM4.compose(_imTmpV3, _imTmpQ, this.bodyMesh.scale);
+    im.setMatrixAt(idx, _imTmpM4);
+    im.setColorAt!(idx, _imTmpC.set((this.bodyMesh.material as THREE.MeshLambertMaterial).color));
+  }
+
   private static buildMesh(): { group: THREE.Group; bodyMesh: THREE.Mesh } {
     const group = new THREE.Group();
-    // Flattened sphere — scale Y down to make it look squishy
+    // Flattened sphere — scratch mesh for state tracking; NOT added to group
+    // (rendering is done via InstancedMesh managed by OverworldScene).
     const geo = new THREE.SphereGeometry(SLIME_RADIUS, 12, 8);
     const mat = new THREE.MeshLambertMaterial({ color: SLIME_COLOR });
     const bodyMesh = new THREE.Mesh(geo, mat);
     bodyMesh.scale.y = 0.55;
-    bodyMesh.castShadow = true;
-    group.add(bodyMesh);
+    // bodyMesh is intentionally NOT added to group — IM handles rendering.
     return { group, bodyMesh };
   }
 }

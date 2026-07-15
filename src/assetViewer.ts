@@ -10,6 +10,10 @@
 
 import * as THREE from 'three';
 import { AssetLoader } from '@/assets/AssetLoader';
+import {
+  assembleBuilding,
+  BUILDING_PRELOAD_PATHS,
+} from '@/world/buildings/AssetBuildingAssembler';
 
 // ── Scene setup ───────────────────────────────────────────────────────────────
 
@@ -30,7 +34,7 @@ scene.background = new THREE.Color(0x2e4a2e);
 
 // Isometric-style camera looking down at an angle
 const camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 400);
-camera.position.set(0, 22, 32);
+camera.position.set(0, 28, 40);
 camera.lookAt(0, 0, 0);
 
 // Lighting — key light + fill + hemisphere so PBR diffuse shows correctly
@@ -42,16 +46,16 @@ sun.position.set(12, 22, 10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.near = 1;
-sun.shadow.camera.far  = 120;
-sun.shadow.camera.left = -30;
-sun.shadow.camera.right = 30;
-sun.shadow.camera.top  = 30;
-sun.shadow.camera.bottom = -30;
+sun.shadow.camera.far  = 150;
+sun.shadow.camera.left = -50;
+sun.shadow.camera.right = 50;
+sun.shadow.camera.top  = 50;
+sun.shadow.camera.bottom = -50;
 scene.add(sun);
 
 // Ground plane
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(120, 80),
+  new THREE.PlaneGeometry(200, 120),
   new THREE.MeshLambertMaterial({ color: 0x3a6b3a }),
 );
 ground.rotation.x = -Math.PI / 2;
@@ -82,6 +86,14 @@ const GROUPS: { title: string; items: [string, string, number][] }[] = [
     ],
   },
   {
+    title: 'Nature — paths',
+    items: [
+      ['path-straight', '/assets/nature/ground_pathStraight.glb', 4.0],
+      ['path-bend',     '/assets/nature/ground_pathBend.glb',     4.0],
+      ['path-cross',    '/assets/nature/ground_pathCross.glb',    4.0],
+    ],
+  },
+  {
     title: 'Nature — river',
     items: [
       ['riverStraight', '/assets/nature/ground_riverStraight.glb', 4.0],
@@ -98,11 +110,27 @@ const GROUPS: { title: string; items: [string, string, number][] }[] = [
     ],
   },
   {
-    title: 'Town — deco',
+    title: 'Town — roads',
     items: [
-      ['cart',         '/assets/town/cart.glb',          2.2],
-      ['hedge',        '/assets/town/hedge.glb',         2.2],
-      ['banner-green', '/assets/town/banner-green.glb',  2.2],
+      ['road',        '/assets/town/road.glb',        2.2],
+      ['road-corner', '/assets/town/road-corner.glb', 2.2],
+      ['road-bend',   '/assets/town/road-bend.glb',   2.2],
+    ],
+  },
+  {
+    title: 'Buildings — walls',
+    items: [
+      ['wall',        '/assets/buildings/wall.glb',        2.0],
+      ['wall-window', '/assets/buildings/wall-window.glb', 2.0],
+      ['wall-door',   '/assets/buildings/wall-door.glb',   2.0],
+    ],
+  },
+  {
+    title: 'Buildings — roofs',
+    items: [
+      ['roof',        '/assets/buildings/roof.glb',        2.0],
+      ['roof-corner', '/assets/buildings/roof-corner.glb', 2.0],
+      ['roof-edge',   '/assets/buildings/roof-edge.glb',   2.0],
     ],
   },
   {
@@ -136,7 +164,7 @@ const loader = new AssetLoader();
 const statusEl = document.getElementById('status')!;
 
 let loaded = 0;
-const total = GROUPS.reduce((s, g) => s + g.items.length, 0);
+const totalPieces = GROUPS.reduce((s, g) => s + g.items.length, 0);
 
 async function buildScene() {
   for (let gi = 0; gi < GROUPS.length; gi++) {
@@ -173,11 +201,63 @@ async function buildScene() {
       }
 
       loaded++;
-      statusEl.textContent = `Loading… ${loaded}/${total} (${path.split('/').pop()})`;
+      statusEl.textContent = `Loading… ${loaded}/${totalPieces} (${path.split('/').pop()})`;
     }
   }
+}
 
-  statusEl.textContent = `✓ All ${total} assets loaded`;
+// ── Assembled building examples ───────────────────────────────────────────────
+
+/**
+ * Show fully-assembled buildings in a second row below the tile grid.
+ * This is the ground-truth visual verification for the modular assembler.
+ */
+async function buildAssembledExamples() {
+  await loader.preload([...BUILDING_PRELOAD_PATHS]);
+
+  const EXAMPLES: Array<{ label: string; type: Parameters<typeof assembleBuilding>[1]; seed: number }> = [
+    { label: 'cottage',      type: 'cottage',      seed: 1 },
+    { label: 'inn',          type: 'inn',           seed: 2 },
+    { label: 'smithy',       type: 'smithy',        seed: 3 },
+    { label: 'tavern',       type: 'tavern',        seed: 4 },
+    { label: 'guard_tower',  type: 'guard_tower',   seed: 5 },
+    { label: 'market_stall', type: 'market_stall',  seed: 6 },
+    { label: 'city_hall',    type: 'city_hall',     seed: 7 },
+    { label: 'well',         type: 'well',          seed: 8 },
+    { label: 'market_cross', type: 'market_cross',  seed: 9 },
+  ];
+
+  const exColSpacing = 14;
+  const exRowZ = 22; // place assembled buildings behind (south of) the tile grid
+  const exStartX = -((EXAMPLES.length - 1) / 2) * exColSpacing;
+
+  for (let i = 0; i < EXAMPLES.length; i++) {
+    const ex = EXAMPLES[i]!;
+    const cx = exStartX + i * exColSpacing;
+
+    try {
+      const grp = assembleBuilding(loader, ex.type, ex.seed);
+      grp.position.set(cx, 0, exRowZ);
+      scene.add(grp);
+      labelData.push({ obj: grp, text: `[${ex.label}]` });
+    } catch (e) {
+      const fb = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 3, 2),
+        new THREE.MeshLambertMaterial({ color: 0xff3333 }),
+      );
+      fb.position.set(cx, 1.5, exRowZ);
+      scene.add(fb);
+      labelData.push({ obj: fb, text: `❌ ${ex.label}` });
+    }
+  }
+}
+
+// ── Main startup ──────────────────────────────────────────────────────────────
+
+async function main() {
+  await buildScene();
+  await buildAssembledExamples();
+  statusEl.textContent = `✓ All assets + ${9} assembled buildings loaded`;
   (window as any).__assetViewerReady = true;
 }
 
@@ -209,4 +289,4 @@ renderer.setAnimationLoop(() => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 (window as any).__viewerCamera = camera;
-buildScene();
+main();

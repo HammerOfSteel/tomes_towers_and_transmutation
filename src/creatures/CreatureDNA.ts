@@ -315,3 +315,39 @@ export const ARCHETYPE_PROP_ALLOW: Record<Archetype, PropId[]> = {
   avian:     ['wings_bat','crown','tail_stub','tail_long','feather_crest','fin_dorsal','lantern','scale_ridges'],
   serpent:   ['tail_long','horns_small','crown','aura','fin_dorsal','scale_ridges','tentacles','carapace'],
 };
+
+// ── Preset DNA ───────────────────────────────────────────────────────────────
+
+/** Golden-retriever-inspired quad — robust, warm colouring, happy face.
+ *  Longer legs (limbLength 1.25) so the analytical IK knee bend is clearly visible. */
+export const DOG_DNA: CreatureDNA = (() => {
+  const d = dnaForArchetype('quadruped');
+  d.colors = { primary: 0xc2410c, secondary: 0x7c2d12, emissive: 0x3a0f00,
+               emissiveIntensity: 0.02, pattern: 'none', patternColor: 0x7c2d12,
+               patternScale: 1.0, patternOpacity: 0.0 };
+  d.proportions = { ...d.proportions,
+    torso: [0.9, 0.65, 1.3], headSize: 1.05, limbLength: 1.25, limbWidth: 1.1,
+    neckLength: 1.2, tailLength: 1.0, shoulderWidth: 1.1, hipWidth: 1.0 };
+  d.face = { type: 'cute', eyeColor: 0x4a2800, mouthType: 'smile',
+             expression: 'happy', eyeShape: 'round', skinPattern: 'none',
+             markColor: 0x7c2d12, browStyle: 'none' };
+  d.props = ['tail_long'];
+  return d;
+})();
+
+/** Sleek tabby-inspired quad — smaller body, long slender legs, slit eyes, stripes.
+ *  Higher limbLength (1.40) gives the slinky feline silhouette. */
+export const CAT_DNA: CreatureDNA = (() => {
+  const d = dnaForArchetype('quadruped');
+  d.colors = { primary: 0xf59e0b, secondary: 0x92400e, emissive: 0x301800,
+               emissiveIntensity: 0.02, pattern: 'stripes', patternColor: 0x78350f,
+               patternScale: 0.8, patternOpacity: 0.50 };
+  d.proportions = { ...d.proportions,
+    global: 0.80, torso: [0.7, 0.55, 1.1], headSize: 0.85, limbLength: 1.40,
+    limbWidth: 0.65, neckLength: 1.4, tailLength: 1.6, shoulderWidth: 0.90, hipWidth: 0.85 };
+  d.face = { type: 'cat', eyeColor: 0x34d399, mouthType: 'smile',
+             expression: 'neutral', eyeShape: 'slit', skinPattern: 'stripes',
+             markColor: 0x78350f, browStyle: 'none' };
+  d.props = ['tail_long'];
+  return d;
+})();

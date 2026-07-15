@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Dog & Cat Walking (IK)</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #1e1e24;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 12px;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        h1 { margin: 0 0 5px 0; font-size: 1.2rem; color: #4ade80; }
+        p { margin: 0; font-size: 0.9rem; color: #a1a1aa; }
+    </style>
+    <!-- Load Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="ui-overlay">
+        <h1>Procedural Quadruped IK</h1>
+        <p>Isometric View • Math-driven animation • No keyframes</p>
+        <p style="margin-top: 10px; color: #fbbf24; font-weight: bold;">🖱️ Click an animal to select</p>
+        <p style="color: #fbbf24; font-weight: bold;">⌨️ Use WASD / Arrows to move</p>
+    </div>
+    
+    <div id="canvas-container"></div>
+
+    <script>
+        const container = document.getElementById('canvas-container');
+        
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#87CEEB');
+        scene.fog = new THREE.Fog('#87CEEB', 20, 100);
+
+        // Isometric Camera Setup (Orthographic)
+        const aspect = window.innerWidth / window.innerHeight;
+        const d = 8; // View size
+        const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+        camera.position.set(20, 20, 20); // High angle
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.left = -15;
+        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.camera.top = 15;
+        dirLight.shadow.camera.bottom = -15;
+        scene.add(dirLight);
+
+        // Ground Plane
+        const groundGeo = new THREE.PlaneGeometry(100, 100);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: '#4ade80', 
+            roughness: 0.8,
+            metalness: 0.1
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- NEW: Input & Selection Setup ---
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+        let selectedAnimal = null;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Visual indicator for selected animal
+        const selectionRing = new THREE.Mesh(
+            new THREE.RingGeometry(1.2, 1.4, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+        );
+        selectionRing.rotation.x = -Math.PI / 2;
+        selectionRing.position.y = 0.05;
+        selectionRing.visible = false;
+        scene.add(selectionRing);
+
+        window.addEventListener('pointerdown', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            selectedAnimal = null;
+            
+            // Find if we clicked an animal
+            for(let i = 0; i < intersects.length; i++) {
+                let obj = intersects[i].object;
+                while(obj.parent && obj.parent !== scene) {
+                    if (obj.parent === dog.group) { selectedAnimal = dog; break; }
+                    if (obj.parent === cat.group) { selectedAnimal = cat; break; }
+                    obj = obj.parent;
+                }
+                if(selectedAnimal) break;
+            }
+
+            dog.isSelected = (selectedAnimal === dog);
+            cat.isSelected = (selectedAnimal === cat);
+        });
+
+        // Custom 2-Bone Analytical IK Solver
+        function solve2BoneIK(rootNode, midNode, targetPos, L1, L2, poleDirWorld) {
+            const rootPos = new THREE.Vector3();
+            rootNode.getWorldPosition(rootPos);
+
+            // Vector from hip/shoulder to foot target
+            const dir = new THREE.Vector3().subVectors(targetPos, rootPos);
+            let d = dir.length();
+            
+            // Prevent hyper-extension (clamp distance to max reach)
+            d = Math.max(0.01, Math.min(d, L1 + L2 - 0.001));
+            dir.normalize();
+
+            // Law of Cosines to find knee offset distances
+            const x = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
+            const y = Math.sqrt(Math.max(0, L1 * L1 - x * x));
+
+            // Calculate bend direction (knee/elbow axis)
+            // poleDir determines if knees bend forward or elbows bend backward
+            const right = new THREE.Vector3().crossVectors(poleDirWorld, dir).normalize();
+            if (right.lengthSq() < 0.01) right.set(1, 0, 0); // Fallback
+            const ortho = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+            // The exact position of the knee/elbow in 3D space
+            const kneePos = rootPos.clone()
+                .add(dir.clone().multiplyScalar(x))
+                .add(ortho.clone().multiplyScalar(y));
+
+            // Orient the bones
+            rootNode.lookAt(kneePos);
+            midNode.position.copy(rootNode.worldToLocal(kneePos.clone()));
+            
+            // Update midNode's world matrix so lookAt works correctly
+            midNode.updateWorldMatrix(true, false);
+            
+            // Point lower leg at target
+            const midNodeWorld = new THREE.Vector3();
+            midNode.getWorldPosition(midNodeWorld);
+            
+            // Temporary object to calculate local rotation for the midNode
+            const dummy = new THREE.Object3D();
+            dummy.position.copy(midNodeWorld);
+            dummy.lookAt(targetPos);
+            midNode.quaternion.copy(dummy.quaternion);
+            
+            // Convert world quaternion to local quaternion for the mid node
+            const parentWorldQuat = new THREE.Quaternion();
+            rootNode.getWorldQuaternion(parentWorldQuat);
+            midNode.quaternion.premultiply(parentWorldQuat.invert());
+        }
+
+        class AnimalRig {
+            constructor(options) {
+                this.options = options;
+                this.group = new THREE.Group();
+                scene.add(this.group);
+
+                // Body Mesh
+                const bodyGeo = new THREE.BoxGeometry(options.bodyW, options.bodyH, options.bodyL);
+                const mat = new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.7 });
+                this.bodyMesh = new THREE.Mesh(bodyGeo, mat);
+                this.bodyMesh.castShadow = true;
+                this.bodyMesh.receiveShadow = true;
+                this.group.add(this.bodyMesh);
+                
+                // Add specific animal details (Head & Tail)
+                this.buildDetails(mat);
+
+                this.legs = [];
+                // Define 4 corners for legs. Note: Three.js -Z is forward.
+                const w = options.bodyW * 0.45;
+                const l = options.bodyL * 0.45;
+                
+                const legConfigs = [
+                    { name: 'FL', localAttach: new THREE.Vector3(-w, -options.bodyH/2, -l), pole: new THREE.Vector3(0,0,1), pair: 0 }, // Front bends backward (+Z)
+                    { name: 'BR', localAttach: new THREE.Vector3(w, -options.bodyH/2, l),  pole: new THREE.Vector3(0,0,-1), pair: 0 }, // Back bends forward (-Z)
+                    { name: 'FR', localAttach: new THREE.Vector3(w, -options.bodyH/2, -l),  pole: new THREE.Vector3(0,0,1), pair: 1 },
+                    { name: 'BL', localAttach: new THREE.Vector3(-w, -options.bodyH/2, l), pole: new THREE.Vector3(0,0,-1), pair: 1 }
+                ];
+
+                legConfigs.forEach(cfg => {
+                    // Create Upper Leg (Root)
+                    const upperNode = new THREE.Group();
+                    this.bodyMesh.add(upperNode);
+                    upperNode.position.copy(cfg.localAttach);
+
+                    const upperGeo = new THREE.CylinderGeometry(options.legThick, options.legThick*0.8, options.legL1, 8);
+                    upperGeo.translate(0, 0, -options.legL1 / 2); // Translate along -Z for lookAt alignment
+                    upperGeo.rotateX(Math.PI / 2); // Align cylinder along -Z axis
+                    const upperMesh = new THREE.Mesh(upperGeo, mat);
+                    upperMesh.castShadow = true;
+                    upperNode.add(upperMesh);
+
+                    // Create Lower Leg (Mid)
+                    const lowerNode = new THREE.Group();
+                    upperNode.add(lowerNode);
+                    
+                    const lowerGeo = new THREE.CylinderGeometry(options.legThick*0.8, options.legThick*0.6, options.legL2, 8);
+                    lowerGeo.translate(0, 0, -options.legL2 / 2);
+                    lowerGeo.rotateX(Math.PI / 2);
+                    const lowerMesh = new THREE.Mesh(lowerGeo, mat);
+                    lowerMesh.castShadow = true;
+                    lowerNode.add(lowerMesh);
+
+                    // Create a detached paw mesh to sit firmly on the ground
+                    const pawGeo = new THREE.BoxGeometry(options.legThick*1.5, options.legThick, options.legThick*1.5);
+                    const pawMesh = new THREE.Mesh(pawGeo, mat);
+                    pawMesh.castShadow = true;
+                    scene.add(pawMesh);
+
+                    this.legs.push({
+                        config: cfg,
+                        upper: upperNode,
+                        lower: lowerNode,
+                        paw: pawMesh,
+                        worldTarget: new THREE.Vector3(),
+                        stepStart: new THREE.Vector3(),
+                        stepEnd: new THREE.Vector3(),
+                        isStepping: false
+                    });
+                });
+
+                // Initialization
+                this.gaitTime = 0;
+                this.cycleDuration = options.cycleDuration || 0.6; 
+                
+                // Character Controller State (Replacing strict circle math)
+                this.position = new THREE.Vector3(options.startX || 0, options.restHeight, options.startZ || 0);
+                this.rotationY = options.startRot || 0;
+                this.currentSpeed = options.speed;
+                this.currentTurnSpeed = options.speed / options.pathRadius;
+                this.isSelected = false;
+            }
+
+            buildDetails(mat) {
+                const opt = this.options;
+                // Head Group
+                const headGroup = new THREE.Group();
+                headGroup.position.set(0, opt.bodyH/2 + opt.headS/2, -opt.bodyL/2 - opt.headS/4);
+                this.bodyMesh.add(headGroup);
+
+                const headGeo = new THREE.BoxGeometry(opt.headS, opt.headS, opt.headS);
+                const head = new THREE.Mesh(headGeo, mat);
+                head.castShadow = true;
+                headGroup.add(head);
+
+                // Snout (Points decisively forward along -Z so we know which way is front)
+                const snoutGeo = new THREE.BoxGeometry(opt.headS * 0.7, opt.headS * 0.5, opt.headS * 0.7);
+                const snout = new THREE.Mesh(snoutGeo, mat);
+                snout.position.set(0, -opt.headS * 0.15, -opt.headS * 0.7);
+                snout.castShadow = true;
+                headGroup.add(snout);
+
+                // Tail
+                const tailGeo = new THREE.CylinderGeometry(opt.legThick*0.6, opt.legThick*0.2, opt.tailL, 8);
+                tailGeo.translate(0, opt.tailL/2, 0);
+                const tail = new THREE.Mesh(tailGeo, mat);
+                tail.position.set(0, opt.bodyH/2, opt.bodyL/2);
+                tail.rotation.x = Math.PI / 4; // Angle up and back
+                tail.castShadow = true;
+                this.bodyMesh.add(tail);
+            }
+
+            predictMatrix(timeOffset) {
+                // Predict where the body will be in X seconds linearly
+                const predRot = this.rotationY + (this.currentTurnSpeed * timeOffset);
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotationY);
+                const predPos = this.position.clone().add(forward.multiplyScalar(this.currentSpeed * timeOffset));
+                
+                const matrix = new THREE.Matrix4();
+                matrix.makeRotationY(predRot);
+                matrix.setPosition(predPos);
+                return matrix;
+            }
+
+            update(dt) {
+                // 1. Controller Logic (Manual vs Auto)
+                let targetSpeed = 0;
+                let targetTurn = 0;
+
+                if (this.isSelected) {
+                    // Manual WASD Control
+                    if (keys['w'] || keys['arrowup']) targetSpeed = this.options.speed * 1.5;
+                    if (keys['s'] || keys['arrowdown']) targetSpeed = -this.options.speed * 0.8;
+                    if (keys['a'] || keys['arrowleft']) targetTurn = 3.0;
+                    if (keys['d'] || keys['arrowright']) targetTurn = -3.0;
+                } else {
+                    // Auto Circular Wandering
+                    targetSpeed = this.options.speed;
+                    targetTurn = this.options.speed / this.options.pathRadius;
+                }
+
+                // Smooth speed acceleration/deceleration
+                this.currentSpeed = THREE.MathUtils.lerp(this.currentSpeed, targetSpeed, dt * 5);
+                this.currentTurnSpeed = THREE.MathUtils.lerp(this.currentTurnSpeed, targetTurn, dt * 10);
+
+                // 2. Move Body
+                this.rotationY += this.currentTurnSpeed * dt;
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotationY);
+                this.position.add(forward.clone().multiplyScalar(this.currentSpeed * dt));
+                this.position.y = this.options.restHeight;
+
+                this.bodyMesh.position.copy(this.position);
+                this.bodyMesh.rotation.y = this.rotationY;
+                this.bodyMesh.updateMatrixWorld(true);
+
+                // 3. Gait Phase & Smoothing
+                // Drive animation based on actual speed (prevents moonwalking if stuck)
+                const speedFactor = Math.abs(this.currentSpeed) / this.options.speed;
+                if (speedFactor > 0.05) {
+                    this.gaitTime += dt * speedFactor;
+                }
+
+                const cycle = (this.gaitTime / this.cycleDuration) % 1.0;
+                const activePair = cycle < 0.5 ? 0 : 1;
+                const phaseProgress = (cycle % 0.5) * 2.0; 
+                
+                // Easing for smoother leg swing (smoothstep-like curve)
+                const easeProgress = 0.5 - Math.cos(phaseProgress * Math.PI) * 0.5;
+
+                const futureMat = this.predictMatrix(this.cycleDuration / 2);
+
+                this.legs.forEach(leg => {
+                    if (leg.config.pair === activePair) {
+                        if (!leg.isStepping) {
+                            leg.isStepping = true;
+                            leg.stepStart.copy(leg.worldTarget);
+                            
+                            const idealLocal = leg.config.localAttach.clone();
+                            idealLocal.y = -this.options.restHeight;
+                            leg.stepEnd = idealLocal.applyMatrix4(futureMat);
+                            leg.stepEnd.y = 0; 
+                        }
+
+                        // Apply Eased Lerp for horizontal movement
+                        leg.worldTarget.lerpVectors(leg.stepStart, leg.stepEnd, easeProgress);
+                        leg.worldTarget.y = Math.sin(phaseProgress * Math.PI) * this.options.stepHeight;
+                    } else {
+                        if (leg.isStepping) {
+                            leg.isStepping = false;
+                            leg.worldTarget.copy(leg.stepEnd);
+                            leg.worldTarget.y = 0;
+                        }
+                    }
+
+                    // 4. IK Math
+                    const poleDirWorld = leg.config.pole.clone().transformDirection(this.bodyMesh.matrixWorld);
+                    solve2BoneIK(leg.upper, leg.lower, leg.worldTarget, this.options.legL1, this.options.legL2, poleDirWorld);
+
+                    leg.paw.position.copy(leg.worldTarget);
+                    const euler = new THREE.Euler().setFromQuaternion(this.bodyMesh.quaternion);
+                    euler.x = 0; euler.z = 0;
+                    leg.paw.quaternion.setFromEuler(euler);
+                });
+            }
+        }
+
+        // Create the Dog (Larger, robust, higher steps)
+        const dog = new AnimalRig({
+            color: '#c2410c', // Rusty orange/brown
+            bodyW: 0.8, bodyH: 0.6, bodyL: 1.4,
+            headS: 0.5, tailL: 0.6,
+            legThick: 0.12, legL1: 0.7, legL2: 0.7,
+            restHeight: 1.4,
+            pathRadius: 6,
+            speed: 1.8, // Linear speed
+            cycleDuration: 0.6,
+            stepHeight: 0.3,
+            startX: 6, startZ: 0, startRot: 0 // Initialize on circle
+        });
+
+        // Create the Cat (Smaller, thinner, slinks, faster cadence)
+        const cat = new AnimalRig({
+            color: '#f59e0b', // Amber/Yellow
+            bodyW: 0.4, bodyH: 0.4, bodyL: 1.1,
+            headS: 0.35, tailL: 0.8,
+            legThick: 0.08, legL1: 0.5, legL2: 0.5,
+            restHeight: 1.0,
+            pathRadius: 4,
+            speed: 2.2, // Linear speed
+            cycleDuration: 0.45,
+            stepHeight: 0.15,
+            startX: -4, startZ: 0, startRot: Math.PI
+        });
+
+        // Initialize leg targets on first frame to prevent snapping from origin
+        [dog, cat].forEach(animal => {
+            const initMatrix = animal.predictMatrix(0);
+            animal.legs.forEach(leg => {
+                const idealLocal = leg.config.localAttach.clone();
+                idealLocal.y = -animal.options.restHeight;
+                leg.worldTarget = idealLocal.applyMatrix4(initMatrix);
+                leg.worldTarget.y = 0;
+                leg.stepEnd.copy(leg.worldTarget);
+                leg.stepStart.copy(leg.worldTarget);
+            });
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Cap delta time to prevent giant steps if window loses focus
+            const dt = Math.min(clock.getDelta(), 0.1); 
+            
+            dog.update(dt);
+            cat.update(dt);
+
+            if (selectedAnimal) {
+                selectionRing.visible = true;
+                selectionRing.position.set(selectedAnimal.position.x, 0.05, selectedAnimal.position.z);
+            } else {
+                selectionRing.visible = false;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize for isometric camera
+        window.addEventListener('resize', () => {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.left = -d * aspect;
+            camera.right = d * aspect;
+            camera.top = d;
+            camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start!
+        animate();
+    </script>
+</body>
+</html>

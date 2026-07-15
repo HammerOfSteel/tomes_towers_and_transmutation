@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tile Sandbox — TTT</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0e1014;
+      color: #e0e0e0;
+      font: 13px/1.4 'Segoe UI', system-ui, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    #app {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left palette ────────────────────────────────────── */
+    #palette {
+      width: 210px;
+      flex-shrink: 0;
+      background: #161a20;
+      border-right: 1px solid #2a2f38;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Tab strip */
+    #palette-header {
+      display: flex;
+      border-bottom: 1px solid #2a2f38;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 7px 4px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #556;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      cursor: pointer;
+    }
+    .tab-btn:hover { color: #889; }
+    .tab-btn.active { color: #7abadd; border-bottom-color: #44aaff; }
+
+    /* Search box */
+    #tile-search {
+      width: calc(100% - 14px);
+      margin: 5px 7px 3px;
+      padding: 5px 8px;
+      background: #111520;
+      border: 1px solid #2a3040;
+      border-radius: 4px;
+      color: #ccd;
+      font: 12px inherit;
+      outline: none;
+      flex-shrink: 0;
+    }
+    #tile-search:focus { border-color: #44aaff; }
+    #tile-search::placeholder { color: #445; }
+
+    #palette-scroll, #creation-scroll, #code-palette-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 3px 0 8px;
+    }
+
+    /* Code-mode palette cards */
+    .code-section-hdr {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #4a8a6a;
+      padding: 8px 10px 3px;
+      border-top: 1px solid #1a2830;
+    }
+    .code-section-hdr:first-child { border-top: none; }
+    .code-item-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: calc(100% - 14px);
+      margin: 2px 7px;
+      padding: 6px 8px;
+      background: #111c14;
+      border: 1px solid #1e3020;
+      border-radius: 4px;
+      color: #99cc88;
+      font: 11px inherit;
+      cursor: pointer;
+      text-align: left;
+      transition: background .12s, border-color .12s;
+    }
+    .code-item-btn:hover { background: #162018; border-color: #3a6040; }
+    .code-item-btn.selected { background: #1a3018; border-color: #44884a; color: #aaddaa; }
+    .code-item-btn .ci-icon { font-size: 16px; flex-shrink: 0; }
+    .code-item-btn .ci-name { font-weight: 700; }
+    .code-item-btn .ci-desc { font-size: 9px; color: #557755; display: block; margin-top: 1px; }
+    .code-item-btn .ci-footprint { font-size: 9px; color: #446644; margin-left: auto; flex-shrink: 0; }
+    #palette-scroll::-webkit-scrollbar, #creation-scroll::-webkit-scrollbar { width: 5px; }
+    #palette-scroll::-webkit-scrollbar-track, #creation-scroll::-webkit-scrollbar-track { background: #111; }
+    #palette-scroll::-webkit-scrollbar-thumb, #creation-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+    /* Creation folder tree */
+    .creat-folder {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      color: #77aacc;
+      font-weight: 700;
+    }
+    .creat-folder:hover { background: #1a2030; }
+    .cf-arrow {
+      display: inline-block;
+      font-size: 8px;
+      color: #445;
+      transition: transform .15s;
+      flex-shrink: 0;
+    }
+    .cf-count { margin-left: auto; font-size: 10px; color: #334; }
+
+    .creat-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+    }
+    .creat-item:hover { background: #1a2030; border-left-color: #335; }
+    .ci-thumb {
+      width: 32px;
+      height: 22px;
+      object-fit: cover;
+      border-radius: 3px;
+      flex-shrink: 0;
+      background: #111720;
+    }
+    .ci-no-thumb { display: block; }
+    .ci-name {
+      flex: 1;
+      font-size: 12px;
+      color: #bbc;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ci-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+    .creat-item:hover .ci-actions { opacity: 1; }
+    .ci-btn {
+      padding: 2px 3px;
+      background: none;
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .ci-btn:hover { background: #2a3040; }
+
+    .creat-empty {
+      padding: 20px 12px;
+      color: #334;
+      font-size: 12px;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    .cat-header {
+      padding: 6px 9px 3px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-top: 4px;
+    }
+
+    .tile-btn {
+      display: block;
+      width: 100%;
+      padding: 4px 10px 4px 12px;
+      text-align: left;
+      background: none;
+      border: none;
+      border-left: 2px solid transparent;
+      color: #aaa;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background .08s;
+    }
+
+    .tile-btn:hover { background: #1e2430; color: #ddd; }
+    .tile-btn.selected { background: #1a2e42; border-left-color: #44aaff; color: #cce; font-weight: 600; }
+
+    /* ── Collapsible pack sections ─────────────────────────── */
+    .pack-header {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 9px 7px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: capitalize;
+      letter-spacing: .04em;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid #252a38;
+      margin-top: 4px;
+      color: #bbc;
+    }
+    .pack-header:hover { background: rgba(255,255,255,0.05); }
+    .ph-arrow { font-size: 8px; color: #445; transition: transform .15s; flex-shrink: 0; }
+    .ph-icon  { font-size: 14px; line-height: 1; }
+    .ph-name  { flex: 1; }
+    .ph-count { font-size: 10px; color: #445; padding: 1px 5px; background: #1a1f2a; border-radius: 8px; }
+
+    .subcat-hdr {
+      padding: 3px 14px 2px 12px;
+      font-size: 10px;
+      color: #4a5a6a;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-top: 2px;
+    }
+
+    /* Mode btn highlight colours */
+    #mode-erase.active  { background: #3d1a1a; border-color: #aa4444; color: #f88; }
+    #mode-line.active   { background: #1a2d3d; border-color: #4488cc; color: #8cf; }
+    #mode-rect.active   { background: #2d2a1a; border-color: #aa8844; color: #fc8; }
+
+    /* ── Center viewport ──────────────────────────────────── */
+    #viewport-wrap {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    #c3d {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #annotation-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      opacity: 1;
+    }
+
+    #annotation-canvas.active {
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+
+    #hud {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.7);
+      color: #cce;
+      font-size: 12px;
+      padding: 4px 14px;
+      border-radius: 5px;
+      display: flex;
+      gap: 18px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #hud .dim { color: #778; margin-right: -10px; }
+
+    /* ── Right tools panel ──────────────────────────────── */
+    #tools-panel {
+      width: 210px;
+      flex-shrink: 0;
+      background: #161a20;
+      border-left: 1px solid #2a2f38;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 8px;
+      gap: 8px;
+    }
+
+    #tools-panel::-webkit-scrollbar { width: 5px; }
+    #tools-panel::-webkit-scrollbar-track { background: #111; }
+    #tools-panel::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+    .panel-section {
+      background: #1c2030;
+      border-radius: 6px;
+      padding: 8px 9px;
+      border: 1px solid #242838;
+    }
+
+    .panel-section h3 {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #7a9aaa;
+      margin-bottom: 7px;
+    }
+
+    .tool-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .tool-btn {
+      flex: 1 1 auto;
+      padding: 4px 6px;
+      background: #252a38;
+      border: 1px solid #333a4a;
+      border-radius: 4px;
+      color: #bbb;
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      text-align: center;
+      transition: background .1s;
+    }
+
+    .tool-btn:hover { background: #303848; color: #eee; }
+    .tool-btn.active { background: #1a3d5c; border-color: #44aaff; color: #9df; font-weight: 600; }
+
+    /* Save Creation button */
+    .save-btn {
+      display: block;
+      width: 100%;
+      margin-top: 5px;
+      padding: 6px 8px;
+      background: #1a3040;
+      border: 1px solid #2a5070;
+      border-radius: 4px;
+      color: #7ad;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: background .1s;
+    }
+    .save-btn:hover { background: #1e4060; color: #adf; }
+
+    /* Save/Edit modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-backdrop.hidden { display: none; }
+    .modal-dialog {
+      background: #1c2130;
+      border: 1px solid #2a3550;
+      border-radius: 10px;
+      padding: 22px 24px;
+      width: 330px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    }
+    .modal-dialog h2 { font-size: 15px; color: #cce; font-weight: 700; }
+    .modal-field { display: flex; flex-direction: column; gap: 4px; }
+    .modal-field label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: #556;
+    }
+    .modal-field input {
+      background: #121822;
+      border: 1px solid #2a3550;
+      border-radius: 5px;
+      color: #ccd;
+      font: 13px inherit;
+      padding: 7px 9px;
+      outline: none;
+    }
+    .modal-field input:focus { border-color: #44aaff; }
+    .modal-field small { font-size: 10px; color: #446; }
+    .modal-thumb { text-align: center; }
+    .modal-count { font-size: 11px; color: #556; text-align: right; }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-btns button {
+      padding: 6px 16px; border-radius: 5px; font: inherit; font-size: 12px;
+      cursor: pointer; border: 1px solid #3a4050;
+    }
+    #sm-save-btn { background: #1a4a70; color: #9df; border-color: #44aaff; font-weight: 600; }
+    #sm-save-btn:hover { background: #1e5888; }
+    #sm-cancel-btn { background: #252a38; color: #888; }
+    #sm-cancel-btn:hover { background: #303848; }
+
+    .floor-display {
+      flex: 1;
+      text-align: center;
+      color: #cce;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 28px;
+    }
+
+    .swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      flex-shrink: 0;
+    }
+    .swatch:hover { border-color: #999; }
+    .swatch.active { border-color: #fff; box-shadow: 0 0 4px rgba(255,255,255,.4); }
+
+    .size-btn {
+      width: 26px;
+      height: 22px;
+      background: #252a38;
+      border: 1px solid #333a4a;
+      border-radius: 3px;
+      color: #aaa;
+      font: 11px sans-serif;
+      cursor: pointer;
+      text-align: center;
+      line-height: 20px;
+    }
+    .size-btn.active { background: #1a3d5c; border-color: #44aaff; color: #9df; }
+
+    .pen-row { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+
+    kbd {
+      display: inline-block;
+      padding: 1px 4px;
+      font: 10px monospace;
+      background: #252a38;
+      border: 1px solid #444;
+      border-radius: 3px;
+      color: #888;
+    }
+
+    /* ── Status bar ──────────────────────────────────────── */
+    #status-bar {
+      height: 22px;
+      line-height: 22px;
+      background: #0a0c10;
+      border-top: 1px solid #2a2f38;
+      padding: 0 12px;
+      font-size: 11px;
+      color: #667;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Left: Tiles / Creations (tabbed) ───────────────── -->
+    <aside id="palette">
+      <div id="palette-header">
+        <button class="tab-btn active" id="tab-tiles">Tiles</button>
+        <button class="tab-btn"        id="tab-creations">My Creations</button>
+      </div>
+      <!-- Tile palette (Kenney GLB mode) -->
+      <input id="tile-search" type="search" placeholder="Search tiles…" autocomplete="off"/>
+      <div id="palette-scroll"><!-- populated by JS --></div>
+      <!-- Code palette (procedural code-first mode) -->
+      <div id="code-palette-scroll" style="display:none"><!-- populated by JS --></div>
+      <!-- Creations library -->
+      <div id="creation-scroll" style="display:none"><!-- populated by JS --></div>
+    </aside>
+
+    <!-- ── Center: 3D viewport + annotation overlay ────────── -->
+    <main id="viewport-wrap">
+      <canvas id="c3d"></canvas>
+      <canvas id="annotation-canvas"></canvas>
+      <div id="hud">
+        <span id="hud-mode">Place</span>
+        <span id="hud-tile">— none —</span>
+        <span id="hud-floor">Floor 0</span>
+        <span id="hud-rot">0°</span>
+      </div>
+    </main>
+
+    <!-- ── Right: Tools panel ───────────────────────────────── -->
+    <aside id="tools-panel">
+
+      <div class="panel-section">
+        <h3>Asset Mode</h3>
+        <div class="tool-row" style="margin-bottom:6px">
+          <button class="tool-btn" id="sb-code-btn">💻 Code</button>
+          <button class="tool-btn" id="sb-asset-btn">🎨 Kenney</button>
+        </div>
+        <div id="sb-packs-wrap" style="display:flex;flex-direction:column;gap:4px">
+          <!-- Pack toggle labels populated by JS -->
+        </div>
+        <div style="font-size:9px;color:#2a3545;margin-top:5px;line-height:1.5">Same-provider rule: Kenney only.<br>★ = recommended pack</div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Mode</h3>
+        <div class="tool-row">
+          <button class="tool-btn active" id="mode-pencil">✏ Paint <kbd>P</kbd></button>
+          <button class="tool-btn"        id="mode-erase">⌫ Erase <kbd>X</kbd></button>
+        </div>
+        <div class="tool-row" style="margin-top:4px">
+          <button class="tool-btn" id="mode-line">╱ Line <kbd>L</kbd></button>
+          <button class="tool-btn" id="mode-rect">▭ Rect <kbd>B</kbd></button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Rotation <kbd>R</kbd> cycles</h3>
+        <div class="tool-row" id="rot-btns">
+          <button class="tool-btn active" data-rot="0">0°</button>
+          <button class="tool-btn"        data-rot="90">90°</button>
+          <button class="tool-btn"        data-rot="180">180°</button>
+          <button class="tool-btn"        data-rot="270">270°</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Tile Offset <kbd>↑↓←→</kbd></h3>
+        <div id="offset-display" style="text-align:center;font-size:10px;color:#778;margin-bottom:6px;font-family:monospace">X: 0.00  Z: 0.00</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:4px">
+          <div></div>
+          <button class="tool-btn" id="off-z-minus" style="padding:3px;font-size:15px;line-height:1">↑</button>
+          <div></div>
+          <button class="tool-btn" id="off-x-minus" style="padding:3px;font-size:15px;line-height:1">←</button>
+          <button class="tool-btn" id="off-reset"   style="padding:2px;font-size:9px;line-height:1.4">Reset</button>
+          <button class="tool-btn" id="off-x-plus"  style="padding:3px;font-size:15px;line-height:1">→</button>
+          <div></div>
+          <button class="tool-btn" id="off-z-plus"  style="padding:3px;font-size:15px;line-height:1">↓</button>
+          <div></div>
+        </div>
+        <div style="text-align:center;font-size:9px;color:#334">step 0.25 WU — use for non-grid tiles</div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Floor  <kbd>Q</kbd>↓  <kbd>E</kbd>↑</h3>
+        <div class="tool-row">
+          <button class="tool-btn" id="floor-down" style="flex:0 0 28px">↓</button>
+          <div class="floor-display" id="floor-display">0</div>
+          <button class="tool-btn" id="floor-up"   style="flex:0 0 28px">↑</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Actions</h3>
+        <div class="tool-row">
+          <button class="tool-btn" id="btn-undo">Undo <kbd>Ctrl+Z</kbd></button>
+          <button class="tool-btn" id="btn-clear">Clear All</button>
+        </div>
+        <button class="save-btn" id="btn-save-creation">💾 Save Creation…</button>
+      </div>
+
+      <div class="panel-section">
+        <h3>Camera</h3>
+        <div class="tool-row">
+          <button class="tool-btn" data-cam="iso">Iso</button>
+          <button class="tool-btn" data-cam="top">Top</button>
+          <button class="tool-btn" data-cam="front">Front</button>
+          <button class="tool-btn" data-cam="side">Side</button>
+        </div>
+      </div>
+
+      <!-- ── Slime IM Lab ──────────────────────────────────────── -->
+      <div class="panel-section" id="slime-lab-section">
+        <h3>Slime IM Lab</h3>
+        <div class="tool-row" style="align-items:center;gap:6px">
+          <label style="font-size:12px;white-space:nowrap;color:#aaa">Count</label>
+          <input id="slime-count" type="number" min="1" max="128" value="20"
+                 style="width:60px;padding:3px 6px;background:#1a1e26;border:1px solid #333;color:#e0e0e0;border-radius:4px;font-size:12px"/>
+        </div>
+        <div class="tool-row" style="margin-top:6px">
+          <button class="tool-btn" id="btn-spawn-slimes">Spawn</button>
+          <button class="tool-btn" id="btn-clear-slimes">Clear</button>
+        </div>
+        <div id="slime-stats" data-testid="slime-stats"
+             style="margin-top:8px;font-size:11px;color:#8fa;line-height:1.7;padding:6px 0;min-height:52px">
+          No slimes spawned.
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Annotation <kbd>A</kbd></h3>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:7px;cursor:pointer;font-size:12px">
+          <input type="checkbox" id="annot-toggle"/>
+          Enable drawing
+        </label>
+        <div class="pen-row" id="pen-colors" style="margin-bottom:5px">
+          <!-- swatches added by JS -->
+        </div>
+        <div class="pen-row" id="pen-sizes">
+          <!-- size buttons added by JS -->
+        </div>
+        <button class="tool-btn" id="btn-clear-annot" style="width:100%;margin-top:7px">Clear Drawing</button>
+      </div>
+
+    </aside>
+  </div>
+
+  <div id="status-bar">Initialising sandbox…</div>
+
+  <!-- ── Save / Edit Creation modal ─────────────────────────── -->
+  <div id="save-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-dialog">
+      <h2 id="sm-title">Save Creation</h2>
+      <div class="modal-field">
+        <label for="sm-name">Name</label>
+        <input id="sm-name" type="text" placeholder="e.g. Stone Cottage" maxlength="60"/>
+      </div>
+      <div class="modal-field">
+        <label for="sm-folder">Folder (optional)</label>
+        <input id="sm-folder" type="text" placeholder="e.g. houses/cozy" maxlength="80"/>
+        <small>Use / for sub-folders. Leave blank to place at root.</small>
+      </div>
+      <div class="modal-thumb" id="sm-thumb"></div>
+      <div class="modal-count" id="sm-count"></div>
+      <div class="modal-btns">
+        <button id="sm-cancel-btn">Cancel</button>
+        <button id="sm-save-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/sandbox.ts"></script>
+</body>
+</html>

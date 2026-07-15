@@ -1,7 +1,7 @@
 // ── PartyManager ──────────────────────────────────────────────────────────────
 //
 //  Tracks the player's recruited monster minions.
-//  Phase 6 cap: 5 followers.  Phase 7 will raise this to 20.
+//  Phase 7g cap: 20 followers (raised from 5).
 
 import type * as THREE from 'three';
 import type { SlimeEnemy } from '@/enemy/SlimeEnemy';
@@ -71,11 +71,11 @@ export class PartyManager {
    */
   updateFollowers(
     playerPos: THREE.Vector3,
-    enemies: readonly SlimeEnemy[],
+    hostileHash: import('@/core/SpatialHash').SpatialHash<SlimeEnemy>,
     dt: number,
   ): void {
     for (const member of this._members) {
-      if (!member.isDead) member.updateAsFollower(playerPos, enemies, dt);
+      if (!member.isDead) member.updateAsFollower(playerPos, hostileHash, dt);
     }
   }
 }

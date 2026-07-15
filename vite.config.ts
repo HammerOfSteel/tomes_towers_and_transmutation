@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         main:        path.resolve(__dirname, 'index.html'),
         assetViewer: path.resolve(__dirname, 'asset-viewer.html'),
+        sandbox:     path.resolve(__dirname, 'sandbox.html'),
       },
     },
   },

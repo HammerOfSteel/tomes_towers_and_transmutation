@@ -107,6 +107,9 @@ function _walkBiped(b: B, t: number, run: boolean): void {
   if (b.armR)  b.armR.rotation.x  = -Math.cos(ph) * str;
   if (b.legL)  b.legL.rotation.x  = -Math.cos(ph) * str;
   if (b.legR)  b.legR.rotation.x  =  Math.cos(ph) * str;
+  // Knee bends on the forward swing — shin pulls back naturally during foot clearance
+  if (b.legLKnee) b.legLKnee.rotation.x = Math.min(0, -Math.cos(ph)) * str * 0.48;
+  if (b.legRKnee) b.legRKnee.rotation.x = Math.min(0,  Math.cos(ph)) * str * 0.48;
   if (b.wingL) b.wingL.rotation.z =  Math.cos(ph * 1.5) * (run ? 0.6 : 0.25);
   if (b.wingR) b.wingR.rotation.z = -Math.cos(ph * 1.5) * (run ? 0.6 : 0.25);
   if (b.head)  b.head.rotation.x  = -bob * 3;

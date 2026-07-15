@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import { Pane } from 'tweakpane';
 import type { CreatureDNA, Archetype, FaceType, MouthType } from '@/creatures/CreatureDNA';
-import { dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64 } from '@/creatures/CreatureDNA';
+import { dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64, DOG_DNA, CAT_DNA } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature } from '@/creatures/CreatureAnimator';
 
@@ -433,7 +433,10 @@ export class DevSandbox {
 
     const hint = document.createElement('div');
     hint.className = 'ds-hint';
-    hint.textContent = 'Enemies spawn in a ring around the player. Max 20 per spawn. Use spells from the Spell tab to test interactions.';
+    hint.innerHTML =
+      'Enemies spawn in a ring around the player. Max 20 per spawn.<br>' +
+      'Use spells from the <b>Spell</b> tab to test interactions.<br>' +
+      'To spawn <b>quadrupeds, avians, serpents</b> etc. — switch to the <b>🧬 Creature</b> tab, pick an archetype, then click <b>⚡ Spawn in Arena</b>.';
 
     wrap.append(spawnSec, hint);
     return wrap;
@@ -631,7 +634,35 @@ export class DevSandbox {
     }
     archSec.append(archTitle, archRow);
 
-    // ── Preview canvas ─────────────────────────────────────────────────────
+    // ── Quick presets ──────────────────────────────────────────────────────
+    const presetSec = document.createElement('div');
+    presetSec.className = 'ds-section';
+    const presetTitle = document.createElement('div');
+    presetTitle.className = 'ds-section-title';
+    presetTitle.textContent = 'Quick Presets';
+    const presetRow = document.createElement('div');
+    presetRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;';
+
+    const presets: Array<{ label: string; dna: () => typeof DOG_DNA }> = [
+      { label: '🐕 Dog', dna: () => cloneDNA(DOG_DNA) },
+      { label: '🐈 Cat', dna: () => cloneDNA(CAT_DNA) },
+    ];
+    for (const p of presets) {
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn';
+      btn.textContent = p.label;
+      btn.onclick = () => {
+        this._creatureDna = p.dna();
+        // Sync archetype highlight
+        archRow.querySelectorAll<HTMLButtonElement>('.ds-btn').forEach(b => {
+          b.classList.toggle('ds-btn--accent', b.dataset.archId === this._creatureDna.archetype);
+        });
+        this._rebuildLabRig();
+        this._syncLabPane();
+      };
+      presetRow.appendChild(btn);
+    }
+    presetSec.append(presetTitle, presetRow);
     const prevSec = document.createElement('div');
     prevSec.className = 'ds-section';
     const cv = document.createElement('canvas');
@@ -708,7 +739,7 @@ export class DevSandbox {
     actRow.append(spawnBtn, copyBtn);
     actSec.appendChild(actRow);
 
-    wrap.append(archSec, prevSec, paneSec, actSec);
+    wrap.append(archSec, presetSec, prevSec, paneSec, actSec);
     return wrap;
   }
 

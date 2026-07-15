@@ -38,6 +38,10 @@ export class InteractableSystem {
 
   /** Called instead of BookReader when a telescope is activated. */
   onTelescopeActivate: (() => void) | null = null;
+  /** Called when player interacts with a cauldron or forge.
+   *  Argument is 'alchemy' for cauldron, 'forge' for forge, 'enchanting' for
+   *  enchanting lectern.  Return `true` to consume the event. */
+  onCraftingStation: ((type: 'alchemy' | 'forge' | 'enchanting') => void) | null = null;
 
   constructor(
     private readonly progression: ProgressionSystem,
@@ -93,6 +97,20 @@ export class InteractableSystem {
     // Telescope routes to its own dedicated view instead of the BookReader
     if (item.type === 'telescope') {
       this.onTelescopeActivate?.();
+      return true;
+    }
+
+    // Crafting stations open the CraftingUI panel
+    if (item.type === 'cauldron') {
+      this.onCraftingStation?.('alchemy');
+      return true;
+    }
+    if (item.type === 'forge') {
+      this.onCraftingStation?.('forge');
+      return true;
+    }
+    if (item.type === 'lectern' && item.content === '__enchanting__') {
+      this.onCraftingStation?.('enchanting');
       return true;
     }
 

@@ -40,7 +40,7 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 |-----|--------|
 | Robe is default for biped — looks like "everyone is a wizard in a dress" | ✅ Fixed (CC-2) — outfit system with trousers/skirt/shorts/loincloth/robe_skirt |
 | No sub-races for biped (elf, goblin, orc, pixie, undead…) | ✅ Fixed (CC-1) — 12 species with ear geometry, head scale, colors |
-| Props not filtered by archetype — wings on an amoeba, legs on a serpent | ⏳ CC-6 — allowlists defined, UI filtering in progress |
+| Props not filtered by archetype — wings on an amoeba, legs on a serpent | ✅ Fixed (CC-6) — `ARCHETYPE_PROP_ALLOW` in UI; all 10 new props implemented |
 | Randomiser absent — no quick way to discover wild combos | ✅ Fixed (CC-4) — 🎲 Lucky Roll + ~ Mutate buttons, mulberry32-seeded |
 | Only 4 body sliders (global scale, head, limb length/width) | ✅ Fixed (CC-3) — +6 sliders: shoulders, hips, belly, neck thickness, Torso H, Leg L |
 | No hair props | ✅ Fixed (CC-3 ext.) — hair_short, hair_long, hair_bun props (sphere cap + optional flow/bun) |
@@ -48,8 +48,8 @@ From the Spore Creature Creator (2008) and the SporeWiki:
 | Amoeba face plane hidden inside blob | ✅ Fixed — face z-offset = 0.52×headSize×torso[2]+0.04 (just outside blob surface) |
 | Serpent was a vertical cobra stack, not a snake | ✅ Fixed — full redesign as flat snake; head raised, body/tail horizontal along ground |
 | Wings on biped attached at foot level | ✅ Fixed — wg.position.y raised from 0.3 → 1.32 (shoulder/upper back) |
-| No skin pattern/texture layer | ⏳ CC-7 |
-| Face types not differentiated per sub-race | ✅ Fixed (CC-5) — 14 face types; EyeShape, BrowStyle, SkinPattern DNA fields; archetype allowlists; CC-5 UI chips pending |
+| No skin pattern/texture layer | ✅ Fixed (CC-7) — `CanvasSkin.ts`, 6 pattern types + LCG cracks/fur |
+| Face types not differentiated per sub-race | ✅ Fixed (CC-5) — 14 face types; EyeShape, BrowStyle, SkinPattern DNA fields; archetype allowlists; all UI chips implemented |
 | No outfit/clothing concept — robe IS the body appearance | ✅ Fixed (CC-2) — outfit.top / outfit.legs / outfit.over slots |
 | Overlay bug: pressing Begin does not hide character creation screen | ✅ Fixed — charCreation.hide() added to main.ts onStart callback |
 
@@ -301,12 +301,12 @@ brow styles, and cheek marks are separately configurable. Skin pattern overlays
 - [x] `face.eyeShape`, `face.skinPattern`, `face.markColor`, `face.browStyle` fields in `CreatureDNA` interface.
 - [x] Backwards-compat migration in `base64ToDna`.
 
-**UI (⏳ in progress):**
-- [ ] Show all 14 face type chips (currently only 6 in CharacterCreation).
-- [ ] EyeShape chip row.
-- [ ] BrowStyle chip row.
-- [ ] SkinPattern chip row + markColor picker.
-- [ ] Filter face chips by archetype (`ARCHETYPE_FACE_ALLOW`).
+**UI (✅ complete):**
+- [x] Show all 14 face type chips (archetype-filtered via `ARCHETYPE_FACE_ALLOW`).
+- [x] EyeShape chip row.
+- [x] BrowStyle chip row.
+- [x] SkinPattern chip row + markColor picker.
+- [x] Filter face chips by archetype (`ARCHETYPE_FACE_ALLOW`).
 
 **Archetype ↔ Face type allowlists** (enforced by the randomiser and UI chip filter):
 ```
@@ -366,12 +366,12 @@ avian     → wings_bat, crown, tail_stub, tail_long, feather_crest, fin_dorsal,
 serpent   → tail_long, horns_small, crown, aura, fin_dorsal, scale_ridges, tentacles, carapace
 ```
 
-**Implementation status:**
-- [ ] New PropId types added to `CreatureDNA.ts` (antlers, fin_dorsal, mane, feather_crest, tusk_lower, scale_ridges, tentacles, carapace, lantern, ghost_trail)
-- [ ] New props implemented in `CreatureBuilder._props()`
-- [ ] `ARCHETYPE_PROP_ALLOW` exported from `CreatureDNA.ts`
-- [ ] `ARCHETYPE_FACE_ALLOW` exported from `CreatureDNA.ts`
-- [ ] UI filters prop chips and face chips by archetype
+**Implementation status (✅ complete):**
+- [x] New PropId types added to `CreatureDNA.ts` (antlers, fin_dorsal, mane, feather_crest, tusk_lower, scale_ridges, tentacles, carapace, lantern, ghost_trail)
+- [x] New props implemented in `CreatureBuilder._props()`
+- [x] `ARCHETYPE_PROP_ALLOW` exported from `CreatureDNA.ts`
+- [x] `ARCHETYPE_FACE_ALLOW` exported from `CreatureDNA.ts`
+- [x] UI filters prop chips and face chips by archetype
 
 **UI:** Props section becomes a two-column grid, only showing archetype-allowed props.
 Props outside the allowlist for the current archetype are hidden (not greyed — hidden,
@@ -463,16 +463,9 @@ export function flatShade(mat: THREE.MeshPhysicalMaterial): THREE.MeshPhysicalMa
   `noise.GetNoise(x * 8, y * 8, z * 8) * strength` for true coherent noise.
   More organic result but adds ~15KB to bundle.
 
-**`CreatureBuilder.ts` changes:**
-- [ ] Call `flatShade(mat)` in the `_m()` helper (one call covers all materials).
-  `MeshPhysicalMaterial.flatShading = true` is sufficient — no geometry change needed.
-- [ ] Call `wobbleVertices(geo, strength, seed)` on body part geometries:
-  - Head sphere: strength `0.018`
-  - Torso: strength `0.014`
-  - Limb cylinders: strength `0.010`
-  - Neck: strength `0.008`
-  - **Skip:** armor, crown, robe, lantern (flat/hard surfaces should stay clean)
-  - **Skip:** face canvas plane (wobble would distort the face texture)
+**`CreatureBuilder.ts` changes (✅ complete):**
+- [x] Call `flatShade(mat)` in the `_m()` helper.
+- [x] Call `wobbleVertices(geo, strength, seed)` on body part geometries (head 0.018, torso 0.014, limbs 0.010, neck 0.008).
 
 **Expected visual result:** Creatures look like they were made from clay or carved stone
 rather than assembled from perfect geometric primitives. Especially dramatic on the amoeba
@@ -543,16 +536,11 @@ Profile control points design:
 'robe_layered'    // LatheGeometry robe with step-layer detail
 ```
 
-**`CreatureBuilder._outfit()` changes:**
-- [ ] Import `profileCurves.ts`.
-- [ ] For new LatheGeometry outfit types: call the relevant profile function, pass to
-  `new THREE.LatheGeometry(points, 12)` (12 segments = clean low-poly faceted look).
-  Assign secondary-color material.
-- [ ] `dress_flared`: spawns as a single large mesh positioned at torso midpoint;
-  uses `hemFlare = 0.3 * proportions.hipWidth` so wider characters get wider dresses.
-- [ ] Retain `CylinderGeometry` for armor, trousers, and simple outfit types —
-  LatheGeometry is only warranted where silhouette variety matters.
-- [ ] Add `dress_flared` to `CharacterCreation` outfit chip row.
+**`CreatureBuilder._outfit()` changes (✅ complete):**
+- [x] Import `profileCurves.ts`.
+- [x] LatheGeometry for dress_flared, dress_layered, skirt_gathered, skirt_long, robe_layered.
+- [x] `dress_flared` uses `hemFlare = 0.3 * proportions.hipWidth`.
+- [x] `dress_flared` in `CharacterCreation` outfit chip row.
 
 ---
 
@@ -626,14 +614,10 @@ export function buildSeamMesh(
 ): THREE.BufferGeometry;
 ```
 
-**`CreatureBuilder.ts` changes (biped first, extend to all archetypes):**
-- [ ] After placing head and neck, call `buildSeamMesh(headInfo, neckInfo)` → add
-  resulting `THREE.Mesh` to the scene group. Material = same as head (`_bodyMat(dna)`).
-- [ ] After placing neck and torso, call `buildSeamMesh(neckInfo, torsoInfo)`.
-- [ ] For quadruped: same at neck-torso and all four limb-root attach points.
-- [ ] Use low `gridRes = 10` to keep triangle budget under control.
-- [ ] Toggle via `dna.material.useSDFSeams?: boolean` (default `true`) so the
-  old sharp-join look is still accessible if needed for debugging.
+**`CreatureBuilder.ts` changes (✅ complete):**
+- [x] Head-neck seam: `buildSeamMesh(headInfo, neckInfo)` — biped + quad.
+- [x] Neck-torso seam: `buildSeamMesh(neckInfo, torsoInfo)`.
+- [x] Toggle via `dna.material.useSDFSeams` (default `true`).
 
 **Performance note:** `buildSeamMesh` runs at DNA build time, not per frame. Each seam mesh
 costs ~100–200 triangles. A biped with 2 seams adds ~400 tris maximum — within budget.
