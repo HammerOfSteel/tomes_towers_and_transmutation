@@ -106,16 +106,15 @@ function _injectCSS(): void {
       letter-spacing: 1px;
     }
 
-    /* ── Choice buttons: fixed to viewport bottom (bulletproof regardless of container) ── */
+    /* ── Choice buttons: 2×2 grid anchored to viewport bottom ── */
     .ngo-choices {
       position: fixed;
       bottom: 4%; left: 50%;
       transform: translate(-50%, 0);
-      width: 90%; max-width: 800px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
+      width: 92%; max-width: 960px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
       padding: 0;
       pointer-events: none;
     }
@@ -280,7 +279,8 @@ export class DialogueOverlay {
         this._speaker.textContent = speaker;
         this._textEl.textContent  = text;
         this._speech.classList.add('ngo--visible');
-        setTimeout(resolve, 1500); // wait for CSS fade-in to complete
+        // 1.5 s fade-in + 3 s reading time before choices appear
+        setTimeout(resolve, 4500);
       };
 
       if (this._speech.classList.contains('ngo--visible')) {
