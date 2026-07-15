@@ -65,17 +65,68 @@ export function planSettlement(
   }
 }
 
-/** Write road and building markers back to WorldGrid cells. */
-export function applySettlementToGrid(plan: SettlementPlan, grid: WorldGrid): void {
-  for (const road of plan.roads) {
-    grid.set(road.col, road.row, { feature: 'road' });
+/**
+ * Write settlement data back to WorldGrid.
+ *
+ * Pipeline:
+ *   1. Mark the settlement outskirts zone so tree/rock spawners skip it.
+ *   2. Flatten terrain under each building's footprint to prevent buildings
+ *      straddling elevation steps.
+ *   3. Mark road tiles (feature: 'road').
+ *   4. Mark building tiles (content: 'building').
+ */
+export function applySettlementToGrid(
+  plan: SettlementPlan,
+  grid: WorldGrid,
+  id:   number,
+): void {
+  const GW = grid.width, GH = grid.height;
+  const cc = plan.centerCol, cr = plan.centerRow;
+
+  // ── 1. Mark outskirts zone (prevents nature spawning inside settlement) ────
+  const zoneR = plan.type === 'city' ? 16 : plan.type === 'town' ? 12 : 8;
+  for (let dc = -zoneR; dc <= zoneR; dc++) {
+    for (let dr = -zoneR; dr <= zoneR; dr++) {
+      if (dc * dc + dr * dr > zoneR * zoneR) continue;
+      const c = cc + dc, r = cr + dr;
+      if (c >= 0 && c < GW && r >= 0 && r < GH) {
+        grid.set(c, r, { settlementId: id });
+      }
+    }
   }
+
+  // ── 2. Flatten terrain under each building footprint ──────────────────────
+  //  Pick the tile's own elevation as the target so it stays within the
+  //  1-2 range chosen by SettlementPlacer.  Skips water / river tiles.
+  for (const b of plan.buildings) {
+    const targetElev = grid.get(b.col, b.row).elevation;
+    const [bw, bd]   = BUILDING_SPECS[b.type].footprint;
+    const hw = Math.ceil(bw / 2);
+    const hd = Math.ceil(bd / 2);
+    for (let dc = -hw; dc <= hw; dc++) {
+      for (let dr = -hd; dr <= hd; dr++) {
+        const c = b.col + dc, r = b.row + dr;
+        const cell = grid.get(c, r);
+        if (cell.biome !== 'water' && cell.feature !== 'river') {
+          grid.set(c, r, { elevation: targetElev });
+        }
+      }
+    }
+  }
+
+  // ── 3. Mark road tiles ────────────────────────────────────────────────────
+  for (const road of plan.roads) {
+    grid.set(road.col, road.row, { feature: 'road', settlementId: id });
+  }
+
+  // ── 4. Mark building tiles ────────────────────────────────────────────────
   for (let i = 0; i < plan.buildings.length; i++) {
-    const b = plan.buildings[i];
+    const b = plan.buildings[i]!;
     grid.set(b.col, b.row, {
-      content:    'building',
-      buildingId: i + 1,
-      walkable:   false,
+      content:      'building',
+      buildingId:   i + 1,
+      settlementId: id,
+      walkable:     false,
     });
   }
 }
@@ -89,6 +140,7 @@ function _valid(grid: WorldGrid, col: number, row: number): boolean {
   if (cell.biome === 'water')                 return false;
   if (cell.feature === 'river')               return false;
   if (cell.content === 'dungeon_entrance')    return false;
+  if (cell.elevation < 1)                     return false;  // no buildings on bog/level-0
   return true;
 }
 

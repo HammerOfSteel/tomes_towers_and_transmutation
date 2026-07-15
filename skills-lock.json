@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "skills": {
+    "camera-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/camera-systems/SKILL.md",
+      "computedHash": "e055f1558463ff68c7875c4930bbb3f40fe1f3c26b5e109f368e425ee6d17a28"
+    },
+    "dialogue-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/dialogue-systems/SKILL.md",
+      "computedHash": "6fd94d6c147785f30ce12afd7ee72ec434b2367456de85cadf16735874e2832b"
+    },
+    "game-ai": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-ai/SKILL.md",
+      "computedHash": "5fe6658701bdb8caf8c7723a612894750a3a786c67d98ba51a86c5c442539857"
+    },
+    "game-feel": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-feel/SKILL.md",
+      "computedHash": "48f7e9eb81c8fb177e1c26f54fc0e8c3f1b818d2905332c7ee53b16aa7b7a975"
+    },
+    "game-jam": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/workflows/game-jam/SKILL.md",
+      "computedHash": "dca08915dc419aff93e6b4ddf364ef497abf8f563507a58447af0e21a1c01768"
+    },
+    "game-ui-ux": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-ui-ux/SKILL.md",
+      "computedHash": "63b4cbefc49de3c92020fc47cbad97cf5be1b05077514e03c4dc032756f47c29"
+    },
+    "input-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/input-systems/SKILL.md",
+      "computedHash": "e4090fc22e153f19eb8d0ef65b0309519079e58bdf26e3626454aa4b4affce11"
+    },
+    "level-design": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/level-design/SKILL.md",
+      "computedHash": "59f5f9ba341902f57319ce52b5e469c0b73be61a268ab18491e0794fdb32ce06"
+    },
+    "performance-optimization": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/performance-optimization/SKILL.md",
+      "computedHash": "bc211b20c41be3687a057cc535384b32d55ea3e9d03b0d57a35dfdedf82a57ca"
+    },
+    "physics-tuning": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/physics-tuning/SKILL.md",
+      "computedHash": "ea6313644e4da8f977cb2e36d9623f7feaa45d47f3557c6d021d82c53f489187"
+    },
+    "pixijs-rendering": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-engines/pixijs-rendering/SKILL.md",
+      "computedHash": "03883cfb070af3a4e556a44c97142839a0f21df141e65aeb78c70a081f69817a"
+    },
+    "platformer": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/genres/platformer/SKILL.md",
+      "computedHash": "0f9d80262d297ecb8cb079ff79fa4d8ee2f9c90e280b7e703316067dc6deaf0b"
+    },
+    "procedural-gen": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/procedural-gen/SKILL.md",
+      "computedHash": "0c56ecd5185800b36fdae23e03b88ae752ca5d8253182ce406972bc4479c4f4f"
+    },
+    "router": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "router/SKILL.md",
+      "computedHash": "c5c1b731c1ed953030b3275c9cce5337b10ded07784a0aa0bc4a37e5559b5a8f"
+    },
+    "rpg": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/genres/rpg/SKILL.md",
+      "computedHash": "f20196e48e06455695ac05cd66dc1627525272a0088527d13d5d06b44f058168"
+    },
+    "save-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/save-systems/SKILL.md",
+      "computedHash": "1bb21f29989a3fd02007f42de2228d07d283b1b9e6133f535542000e3b50c4d5"
+    },
+    "shader-programming": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/shader-programming/SKILL.md",
+      "computedHash": "02bd53f76a98fca65945c5dcc7192d5794f1342c9fea82837a3250a8616b1f16"
+    },
+    "survival-crafting": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/genres/survival-crafting/SKILL.md",
+      "computedHash": "3d8bbba3e8d32bee226c4adc91d9da5e52710151571ca148b538f88ac356a7ea"
+    },
+    "threejs-gltf-loading": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-engines/threejs-gltf-loading/SKILL.md",
+      "computedHash": "c80645c5841ebc8862580d4c9255a7ceacdbeee4a7d387deb33abd0d7a9cb986"
+    },
+    "threejs-materials-lighting": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-engines/threejs-materials-lighting/SKILL.md",
+      "computedHash": "8addf2e45ddb5569ac0433990f5d9a9ea3dcf3706c0e92af6e63ace0c8b764b9"
+    },
+    "threejs-scene-setup": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-engines/threejs-scene-setup/SKILL.md",
+      "computedHash": "0515a36b717c19b7bd4d6dd7fe6bc691c69133852aecddd1307ec260a4b294e8"
+    },
+    "tower-defense": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/genres/tower-defense/SKILL.md",
+      "computedHash": "1181b7086718e78dfe6ef26131d8af589f93330e59c4a20797fe6de468d937af"
+    }
+  }
+}

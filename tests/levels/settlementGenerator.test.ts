@@ -97,7 +97,7 @@ describe('applySettlementToGrid', () => {
   it('marks building cells as content=building', () => {
     const g    = flatGrid(64);
     const plan = planSettlement('village', 32, 32, 0xABCD, g);
-    applySettlementToGrid(plan, g);
+    applySettlementToGrid(plan, g, 1);
     const bldgCells = plan.buildings.filter(b => {
       const cell = g.get(b.col, b.row);
       return cell.content === 'building';
@@ -108,7 +108,7 @@ describe('applySettlementToGrid', () => {
   it('marks road cells as feature=road', () => {
     const g    = flatGrid(64);
     const plan = planSettlement('town', 32, 32, 0xDEAD, g);
-    applySettlementToGrid(plan, g);
+    applySettlementToGrid(plan, g, 1);
     for (const r of plan.roads) {
       // Road cell must have feature road
       const cell = g.get(r.col, r.row);
