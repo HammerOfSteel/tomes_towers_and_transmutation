@@ -1142,6 +1142,19 @@ export class OverworldScene {
       }
     }
 
+    // Also include inter-settlement roads (A*-routed between settlement centres)
+    const interRoads = worldData.interRoads ?? [];
+    for (const r of interRoads) {
+      const key = `${r.col},${r.row}`;
+      if (roadSeen.has(key)) continue;
+      roadSeen.add(key);
+      const wx = (r.col - GHW) * T;
+      const wz = (r.row - GHH) * T;
+      const lv = this._wg.get(r.col, r.row).elevation;
+      const wy = lv * SH + 0.04;
+      roadPositions.push(new THREE.Vector3(wx, wy, wz));
+    }
+
     // Build road InstancedMesh — one quad per road tile
     if (roadPositions.length > 0) {
       const roadGeo  = new THREE.BoxGeometry(T, 0.08, T);

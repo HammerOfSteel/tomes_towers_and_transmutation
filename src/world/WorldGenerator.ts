@@ -16,6 +16,7 @@ import { createNoise2D, fbm }  from '@/core/SimplexNoise';
 import { generateHydrology }   from './HydrologyGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
+import { buildInterSettlementRoads } from './RoadGenerator';
 
 const MLV = 4;
 
@@ -81,7 +82,22 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   const cfg         = { ...config, seed };
   const grid        = buildWorldGrid(seed, cfg);
   const dungeons    = placeDungeons(grid, cfg, seed);
+  // placeSettlements calls applySettlementToGrid internally, so by the time
+  // we build inter-settlement roads the grid already has settlement road tiles
+  // marked — A* will cheaply reuse them.
   const settlements = placeSettlements(grid, cfg, seed);
-  return { config: cfg, grid, dungeons, settlements };
+
+  // Build terrain-aware inter-settlement roads (MST + A*).
+  const interRoads = buildInterSettlementRoads(settlements, grid);
+
+  // Mark inter-settlement road tiles on the grid so the overworld mesh picks them up.
+  for (const r of interRoads) {
+    const cell = grid.get(r.col, r.row);
+    if (cell.feature === 'none' || cell.feature === 'road_dirt') {
+      grid.set(r.col, r.row, { feature: 'road' });
+    }
+  }
+
+  return { config: cfg, grid, dungeons, settlements, interRoads };
 }
 
