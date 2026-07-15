@@ -134,10 +134,22 @@ async function main() {
         questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
       );
     };
-    // Fire-and-forget: swap procedural trees for GLB assets when ready.
-    // On failure (e.g. first load, offline) the procedural fallback stays.
+    // Fire-and-forget: swap procedural geometry for GLB assets when ready.
+    // Each upgrade is independent — a failure in one doesn't block the others.
     ow.upgradeTreesWithAssets(assetLoader).catch((e) =>
       console.warn('[main] tree asset upgrade failed:', e),
+    );
+    ow.upgradeRocksWithAssets(assetLoader).catch((e) =>
+      console.warn('[main] rock asset upgrade failed:', e),
+    );
+    ow.addGroundClutter(assetLoader).catch((e) =>
+      console.warn('[main] ground clutter failed:', e),
+    );
+    ow.replaceWaterWithRiverTiles(assetLoader).catch((e) =>
+      console.warn('[main] river tile upgrade failed:', e),
+    );
+    ow.upgradeTowerWithAssets(assetLoader).catch((e) =>
+      console.warn('[main] tower upgrade failed:', e),
     );
     return ow;
   }
@@ -536,11 +548,11 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
-      /**
-       * True when the overworld tree asset upgrade has completed.
-       * Used by Playwright tests to wait for GLB trees to be in the scene.
-       */
-      hasAssetTrees: () => !!(scene as any).__assetTreesLoaded,
+      hasAssetTrees:   () => !!(scene as any).__assetTreesLoaded,
+      hasAssetRocks:   () => !!(scene as any).__assetRocksLoaded,
+      hasAssetClutter: () => !!(scene as any).__assetClutterLoaded,
+      hasAssetRiver:   () => !!(scene as any).__assetRiverLoaded,
+      hasAssetTower:   () => !!(scene as any).__assetTowerLoaded,
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────

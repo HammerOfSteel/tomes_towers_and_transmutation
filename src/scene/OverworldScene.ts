@@ -101,6 +101,14 @@ export class OverworldScene {
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
 
+  // ── Asset-upgraded geometry (added async after construction) ──────────────
+  /** Ground-clutter props (grass, flowers, mushrooms) from nature-kit. */
+  private _clutter:     THREE.Group[] = [];
+  /** River tile GLBs replacing the procedural water mesh. */
+  private _riverGroups: THREE.Group[] = [];
+  /** True while this scene's groups are live in the THREE.Scene. */
+  private _isInScene = false;
+
   /** Cached for fast-travel — populated in _buildSettlements(). */
   private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
 
@@ -159,6 +167,7 @@ export class OverworldScene {
 
   /** Add geometry to scene and register physics colliders. */
   enter(): void {
+    this._isInScene = true;
     this._minimap.show();
     // Flat base plane covers level-0 tiles and acts as the underfloor.
     this._groundBody = this.physics.createGroundPlane(0);
@@ -189,10 +198,17 @@ export class OverworldScene {
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
+    for (const cl of this._clutter)       this.scene.add(cl);
+    // River tile groups supersede the procedural water mesh when present
+    if (this._riverGroups.length > 0) {
+      if (this._waterMesh) this._waterMesh.visible = false;
+      for (const rg of this._riverGroups) this.scene.add(rg);
+    }
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
   exit(): void {
+    this._isInScene = false;
     this._minimap.hide();
     if (this._groundBody) {
       this.physics.rapierWorld.removeRigidBody(this._groundBody);
@@ -211,6 +227,9 @@ export class OverworldScene {
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
+    for (const cl of this._clutter)        this.scene.remove(cl);
+    for (const rg of this._riverGroups)    this.scene.remove(rg);
+    if (this._waterMesh) this._waterMesh.visible = true; // restore for next enter
   }
 
   /** Per-frame enemy AI tick. */
@@ -256,6 +275,10 @@ export class OverworldScene {
       (rm.material as THREE.Material).dispose();
     }
     this._roadMeshes = [];
+    for (const cl of this._clutter)     this._freeGroup(cl);
+    this._clutter = [];
+    for (const rg of this._riverGroups) this._freeGroup(rg);
+    this._riverGroups = [];
   }
 
   // ── Asset upgrade ─────────────────────────────────────────────────────────
@@ -297,6 +320,263 @@ export class OverworldScene {
 
     // Expose a flag the Playwright test layer can read
     (this.scene as any).__assetTreesLoaded = true;
+  }
+
+  // ── Phase 1.2 — Rock upgrade ────────────────────────────────────────────
+
+  /**
+   * Replace DodecahedronGeometry rocks with Kenney nature-kit rock GLBs.
+   * Three size tiers mapped from procedural radius.
+   */
+  async upgradeRocksWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const SMALL  = [
+      '/assets/nature/rock_smallA.glb', '/assets/nature/rock_smallB.glb',
+      '/assets/nature/rock_smallC.glb', '/assets/nature/rock_smallD.glb',
+      '/assets/nature/rock_smallE.glb', '/assets/nature/rock_smallF.glb',
+    ];
+    const LARGE  = [
+      '/assets/nature/rock_largeA.glb', '/assets/nature/rock_largeB.glb',
+      '/assets/nature/rock_largeC.glb', '/assets/nature/rock_largeD.glb',
+      '/assets/nature/rock_largeE.glb', '/assets/nature/rock_largeF.glb',
+    ];
+    const TALL   = [
+      '/assets/nature/rock_tallA.glb',  '/assets/nature/rock_tallB.glb',
+      '/assets/nature/rock_tallC.glb',  '/assets/nature/rock_tallD.glb',
+      '/assets/nature/rock_tallE.glb',  '/assets/nature/rock_tallF.glb',
+    ];
+    await loader.preload([...SMALL, ...LARGE, ...TALL]);
+
+    for (const rk of this._rocks) {
+      // Pick pool based on procedural radius
+      const pool = rk.r < 0.7 ? SMALL : rk.r < 1.1 ? LARGE : TALL;
+      const hash  = Math.abs((Math.round(rk.px * 13) ^ Math.round(rk.pz * 29)));
+      const model = loader.getClone(pool[hash % pool.length]!);
+      if (!model) continue;
+      // Scale so the GLB rock matches the procedural rock's radius.
+      // Kenney rocks are ~0.5 WU in their native 1-unit scale.
+      model.scale.setScalar(rk.r * 2.0);
+      // Preserve Y rotation from the original mesh for natural variation
+      model.rotation.y = rk.mesh.rotation.y;
+      // Replace procedural mesh children with GLB
+      rk.mesh.clear();
+      rk.mesh.add(model);
+    }
+    (this.scene as any).__assetRocksLoaded = true;
+  }
+
+  // ── Phase 1.3 — Ground clutter ──────────────────────────────────────────
+
+  /**
+   * Scatter nature-kit grass, flowers and mushrooms across the world.
+   * Props are stored in `_clutter` and added to the scene immediately if
+   * the scene is already active.
+   */
+  async addGroundClutter(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+
+    const GRASS    = ['/assets/nature/grass.glb', '/assets/nature/grass_large.glb'];
+    const FLOWERS  = [
+      '/assets/nature/flower_redA.glb',    '/assets/nature/flower_purpleA.glb',
+      '/assets/nature/flower_yellowA.glb',
+    ];
+    const MUSHROOM = ['/assets/nature/mushroom_red.glb', '/assets/nature/mushroom_tan.glb'];
+    await loader.preload([...GRASS, ...FLOWERS, ...MUSHROOM]);
+
+    const W  = GW * T;
+    const H  = GH * T;
+    // Poisson disk with generous spacing — we only want visual accents
+    const rand = mulberry32(0xC1_07_7E_42);
+    const pts  = poissonDisk(W, H, 6.5, rand);
+
+    for (const [px, pz] of pts) {
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const c  = Math.floor(wx / T + GHW);
+      const r  = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+
+      if (cell.feature !== 'none')  continue; // don't clutter roads/rivers
+      if (cell.content  !== 'empty') continue;
+      if (cell.settlementId > 0)    continue;
+
+      const lv = cell.elevation;
+      const wy = lv * SH;
+
+      // Choose prop type by biome + hash
+      const hash = Math.abs((Math.round(wx * 11) ^ Math.round(wz * 23)));
+      let path: string;
+      if (cell.biome === 'forest' || lv >= 2) {
+        path = lv >= 3
+          ? MUSHROOM[hash % MUSHROOM.length]!
+          : GRASS[hash % GRASS.length]!;
+      } else if (lv === 1) {
+        path = (hash % 3 === 0)
+          ? FLOWERS[hash % FLOWERS.length]!
+          : GRASS[hash % GRASS.length]!;
+      } else {
+        continue; // no clutter on bog/water tiles
+      }
+
+      const model = loader.getClone(path);
+      if (!model) continue;
+      model.scale.setScalar(1.4);
+      model.rotation.y = (hash % 8) * Math.PI / 4;
+      const grp = new THREE.Group();
+      grp.position.set(wx, wy, wz);
+      grp.add(model);
+      this._clutter.push(grp);
+    }
+
+    if (this._isInScene) {
+      for (const cl of this._clutter) this.scene.add(cl);
+    }
+    (this.scene as any).__assetClutterLoaded = true;
+  }
+
+  // ── Phase 1.4 — River tiles ─────────────────────────────────────────────
+
+  /**
+   * Replace the procedural semi-transparent water mesh with Kenney nature-kit
+   * river tile GLBs.  Tile type is selected by looking at N/S/E/W river
+   * neighbours (classic 4-bit auto-tiling).
+   */
+  async replaceWaterWithRiverTiles(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+
+    const PATHS = [
+      '/assets/nature/ground_riverStraight.glb',
+      '/assets/nature/ground_riverBend.glb',
+      '/assets/nature/ground_riverCorner.glb',
+      '/assets/nature/ground_riverEnd.glb',
+      '/assets/nature/ground_riverCross.glb',
+      '/assets/nature/ground_riverSplit.glb',
+      '/assets/nature/ground_riverTile.glb',
+    ];
+    await loader.preload(PATHS);
+
+    const isRiver = (col: number, row: number) =>
+      this._wg.get(col, row).feature === 'river';
+
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        if (!isRiver(col, row)) continue;
+
+        const n = isRiver(col, row - 1) ? 1 : 0;  // north (−Z)
+        const s = isRiver(col, row + 1) ? 1 : 0;  // south (+Z)
+        const e = isRiver(col + 1, row) ? 1 : 0;  // east  (+X)
+        const w = isRiver(col - 1, row) ? 1 : 0;  // west  (−X)
+        const count = n + s + e + w;
+
+        // Pick GLB path and Y-rotation
+        let path: string;
+        let rotY = 0;
+
+        if (count === 4) {
+          path = '/assets/nature/ground_riverCross.glb';
+        } else if (count === 3) {
+          path = '/assets/nature/ground_riverSplit.glb';
+          // Rotate so the "closed" side faces the missing neighbour
+          if (!n) rotY = Math.PI;
+          else if (!s) rotY = 0;
+          else if (!e) rotY = Math.PI / 2;
+          else         rotY = -Math.PI / 2;
+        } else if (count === 2) {
+          if ((n && s) || (e && w)) {
+            path = '/assets/nature/ground_riverStraight.glb';
+            rotY = (e && w) ? Math.PI / 2 : 0;
+          } else {
+            path = '/assets/nature/ground_riverBend.glb';
+            // Bend: rotate so the open ends face the river neighbours
+            if      (n && e) rotY = 0;
+            else if (e && s) rotY = Math.PI / 2;
+            else if (s && w) rotY = Math.PI;
+            else             rotY = -Math.PI / 2;  // w && n
+          }
+        } else if (count === 1) {
+          path = '/assets/nature/ground_riverEnd.glb';
+          if      (s) rotY = 0;
+          else if (e) rotY = Math.PI / 2;
+          else if (n) rotY = Math.PI;
+          else        rotY = -Math.PI / 2;
+        } else {
+          path = '/assets/nature/ground_riverTile.glb'; // isolated tile
+        }
+
+        const model = loader.getClone(path);
+        if (!model) continue;
+
+        // Kenney river tiles are 1-unit. Scale to fill our T=2 tile.
+        model.scale.setScalar(T);
+        model.rotation.y = rotY;
+
+        const wx = (col - GHW) * T + T / 2;  // tile centre x
+        const wz = (row - GHH) * T + T / 2;  // tile centre z
+        const wy = this._wg.get(col, row).elevation * SH;
+
+        const grp = new THREE.Group();
+        grp.position.set(wx, wy, wz);
+        grp.add(model);
+        this._riverGroups.push(grp);
+      }
+    }
+
+    // Activate in scene if already running
+    if (this._isInScene) {
+      if (this._waterMesh) this._waterMesh.visible = false;
+      for (const rg of this._riverGroups) this.scene.add(rg);
+    }
+    (this.scene as any).__assetRiverLoaded = true;
+  }
+
+  // ── Phase 1.5 — Tower upgrade ───────────────────────────────────────────
+
+  /**
+   * Replace the procedural cylinder tower with stacked castle-kit modules
+   * (tower-square-base → mid × 3 → top).  Physics collider unchanged.
+   */
+  async upgradeTowerWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const MODELS = [
+      '/assets/castle/tower-square-base.glb',
+      '/assets/castle/tower-square-mid.glb',
+      '/assets/castle/tower-square-top.glb',
+      '/assets/castle/tower-square-roof.glb',
+    ];
+    await loader.preload(MODELS);
+
+    const base  = loader.getClone('/assets/castle/tower-square-base.glb');
+    const mid1  = loader.getClone('/assets/castle/tower-square-mid.glb');
+    const mid2  = loader.getClone('/assets/castle/tower-square-mid.glb');
+    const mid3  = loader.getClone('/assets/castle/tower-square-mid.glb');
+    const top   = loader.getClone('/assets/castle/tower-square-top.glb');
+    const roof  = loader.getClone('/assets/castle/tower-square-roof.glb');
+
+    if (!base || !mid1 || !mid2 || !mid3 || !top || !roof) return;
+
+    // Kenney tower modules are 4-unit wide × 4-unit tall at native scale.
+    // Our tower should be ~9 WU wide → scale factor ≈ 2.25.
+    const S = 2.25;
+    const tileH = 4 * S;  // height of one module in WU ≈ 9
+
+    [base, mid1, mid2, mid3, top, roof].forEach(m => m.scale.setScalar(S));
+
+    base.position.set(0, 0,          0);
+    mid1.position.set(0, tileH,      0);
+    mid2.position.set(0, tileH * 2,  0);
+    mid3.position.set(0, tileH * 3,  0);
+    top .position.set(0, tileH * 4,  0);
+    roof.position.set(0, tileH * 5,  0);
+
+    this._tower.clear();
+    this._tower.add(base, mid1, mid2, mid3, top, roof);
+    (this.scene as any).__assetTowerLoaded = true;
   }
 
   // ── Trigger queries ───────────────────────────────────────────────────────

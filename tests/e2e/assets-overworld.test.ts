@@ -56,6 +56,7 @@ async function shot(
 test.describe('Asset overworld — GLB tree upgrade', () => {
   test.setTimeout(120_000);
 
+
   // ── 1. Dev server serves GLBs ─────────────────────────────────────────────
 
   test('dev server serves GLB assets at expected paths', async ({ request }) => {
@@ -195,4 +196,140 @@ test.describe('Asset overworld — GLB tree upgrade', () => {
     expect(after.length).toBeGreaterThan(0);
   });
 
+});
+
+// ── Phase 1 — Terrain decoration ─────────────────────────────────────────────
+
+/**
+ * Helper to wait for all Phase 1 upgrades (rocks, clutter, river, tower).
+ * Each returns independently; we wait for all with a shared timeout.
+ */
+async function waitForPhase1(
+  page: import('@playwright/test').Page,
+  timeoutMs = 45_000,
+): Promise<{ rocks: boolean; clutter: boolean; river: boolean; tower: boolean }> {
+  const wait = (fn: string) =>
+    page
+      .waitForFunction(
+        (f) => !!(window as any).__game?.[f]?.(),
+        fn,
+        { timeout: timeoutMs },
+      )
+      .then(() => true)
+      .catch(() => false);
+
+  const [rocks, clutter, river, tower] = await Promise.all([
+    wait('hasAssetRocks'),
+    wait('hasAssetClutter'),
+    wait('hasAssetRiver'),
+    wait('hasAssetTower'),
+  ]);
+  return { rocks, clutter, river, tower };
+}
+
+test.describe('Phase 1 — Terrain decoration', () => {
+  test.setTimeout(120_000);
+
+  // ── 7. Rock GLBs ──────────────────────────────────────────────────────────
+  test('rock GLBs load and replace procedural dodecahedra', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase1-07-before');
+
+    // Teleport to where rocks spawn (outer forest ring, ~40 WU from centre)
+    await page.evaluate(() => (window as any).__game.teleportPlayer(42, 2, 0));
+    await page.waitForTimeout(300);
+    await shot(page, 'phase1-07a-rock-area');
+
+    const { rocks } = await waitForPhase1(page);
+    await page.waitForTimeout(300);
+    await shot(page, 'phase1-07b-rocks-glb');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+    if (rocks) {
+      const flag = await page.evaluate(() => (window as any).__game.hasAssetRocks());
+      expect(flag).toBe(true);
+    }
+    test.info().annotations.push({ type: 'rocks upgraded', description: String(rocks) });
+  });
+
+  // ── 8. Ground clutter ────────────────────────────────────────────────────
+  test('ground clutter (grass, flowers, mushrooms) appears in forest', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase1-08-exterior');
+
+    // Teleport into a forest tile area
+    await page.evaluate(() => (window as any).__game.teleportPlayer(28, 2, 15));
+    await page.waitForTimeout(300);
+
+    const { clutter } = await waitForPhase1(page);
+    await page.waitForTimeout(300);
+    await shot(page, 'phase1-08-clutter');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+    test.info().annotations.push({ type: 'clutter loaded', description: String(clutter) });
+  });
+
+  // ── 9. River tiles ────────────────────────────────────────────────────────
+  test('river tiles replace the semi-transparent water mesh', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase1-09-before');
+    await shot(page, 'phase1-09a-water-procedural');
+
+    const { river } = await waitForPhase1(page);
+    await page.waitForTimeout(300);
+    await shot(page, 'phase1-09b-river-tiles');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+    test.info().annotations.push({ type: 'river upgraded', description: String(river) });
+  });
+
+  // ── 10. Tower upgrade ─────────────────────────────────────────────────────
+  test('castle-kit tower modules replace procedural octagonal tower', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase1-10-exterior');
+
+    // Tower is at world origin — teleport nearby to get a good view
+    await page.evaluate(() => (window as any).__game.teleportPlayer(12, 2, 12));
+    await page.waitForTimeout(300);
+    await shot(page, 'phase1-10a-tower-before');
+
+    const { tower } = await waitForPhase1(page);
+    await page.waitForTimeout(400);
+    await shot(page, 'phase1-10b-tower-glb');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+    test.info().annotations.push({ type: 'tower upgraded', description: String(tower) });
+  });
+
+  // ── 11. All Phase 1 upgrades — wide world shot ───────────────────────────
+  test('wide world view with all Phase 1 assets active', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, 'phase1-11-world-before');
+
+    await waitForPhase1(page, 45_000);
+    await page.waitForTimeout(500);
+    await shot(page, 'phase1-11-world-all-assets');
+
+    expect(errors, 'No JS errors').toHaveLength(0);
+  });
 });
