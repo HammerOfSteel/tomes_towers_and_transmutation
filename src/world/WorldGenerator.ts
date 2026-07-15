@@ -88,7 +88,7 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   const settlements = placeSettlements(grid, cfg, seed);
 
   // Build terrain-aware inter-settlement roads (MST + A* + DP simplification).
-  const { tiles: interRoads, paths: interRoadPaths } = buildInterSettlementRoads(settlements, grid);
+  const { tiles: interRoads } = buildInterSettlementRoads(settlements, grid);
 
   // Mark inter-settlement road tiles on the grid so the overworld mesh picks them up.
   for (const r of interRoads) {
@@ -98,6 +98,6 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
     }
   }
 
-  return { config: cfg, grid, dungeons, settlements, interRoads, interRoadPaths };
+  return { config: cfg, grid, dungeons, settlements, interRoads };
 }
 

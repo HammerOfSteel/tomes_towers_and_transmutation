@@ -40,7 +40,6 @@ import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
-import type { GridPath }               from '@/world/RoadGenerator';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -1188,97 +1187,41 @@ export class OverworldScene {
       im.instanceMatrix.needsUpdate = true;
       this._roadMeshes.push(im);
     }
-    sqGeo.dispose(); // geo is owned by InstancedMesh — dispose the template copy
+    sqGeo.dispose();
 
-    // ── Inter-settlement roads — smooth Catmull–Rom ribbon meshes ─────────
-    const paths = worldData.interRoadPaths ?? [];
-    if (paths.length > 0) {
-      const dirtMat = new THREE.MeshLambertMaterial({ color: 0x9e7d52, side: THREE.DoubleSide });
-      for (const path of paths) {
-        const ribbon = this._buildRoadRibbon(path, dirtMat, T * 0.9);
-        if (ribbon) this._roadMeshes.push(ribbon);
+    // ── Inter-settlement roads — axis-aligned flat dirt tile planes ──────
+    const interRoads = worldData.interRoads ?? [];
+    if (interRoads.length > 0) {
+      const dirtGeo = new THREE.PlaneGeometry(T * 1.15, T * 1.15);
+      dirtGeo.rotateX(-Math.PI / 2);
+      const dirtMat  = new THREE.MeshLambertMaterial({ color: 0x7d5e3c });
+      const dirtPos: THREE.Vector3[] = [];
+      const dirtSeen = new Set<string>();
+
+      for (const r of interRoads) {
+        const k = `${r.col},${r.row}`;
+        if (dirtSeen.has(k)) continue;
+        dirtSeen.add(k);
+        const wx = (r.col - GHW) * T;
+        const wz = (r.row - GHH) * T;
+        const wy = this._wg.get(r.col, r.row).elevation * SH + 0.01;
+        dirtPos.push(new THREE.Vector3(wx, wy, wz));
       }
-    }
-  }
 
-  /**
-   * Build a smooth ribbon mesh for a single road path (inter-settlement road).
-   *
-   * - Converts grid waypoints to world-space positions sampled at terrain height.
-   * - Fits a Catmull–Rom spline through the waypoints.
-   * - Extrudes a flat ribbon of the given `width` perpendicular to the tangent
-   *   at each sample point.
-   */
-  private _buildRoadRibbon(
-    path:  GridPath,
-    mat:   THREE.Material,
-    width: number,
-  ): THREE.Mesh | null {
-    if (path.length < 2) return null;
-
-    const { _GHW: GHW, _GHH: GHH } = this;
-
-    // Convert simplified waypoints to world coords, sampling terrain height.
-    const pts = path.map(({ col, row }) => {
-      const c  = Math.max(0, Math.min(this._GW - 1, col));
-      const r  = Math.max(0, Math.min(this._GH - 1, row));
-      const wx = (col - GHW) * T;
-      const wz = (row - GHH) * T;
-      const wy = this._wg.get(c, r).elevation * SH + 0.06;
-      return new THREE.Vector3(wx, wy, wz);
-    });
-
-    // Catmull–Rom through the key waypoints (tension 0.5 for natural curves).
-    const curve   = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
-    // Sample density: 6 points per simplified segment for smoothness.
-    const nSample = Math.max(16, path.length * 6);
-    const samples = curve.getPoints(nSample);
-
-    // Build ribbon geometry
-    const positions: number[] = [];
-    const uvs:       number[] = [];
-    const indices:   number[] = [];
-    let uDist = 0;
-
-    const up  = new THREE.Vector3(0, 1, 0);
-    const tan = new THREE.Vector3();
-
-    for (let i = 0; i < samples.length; i++) {
-      const p    = samples[i]!;
-      const prev = samples[Math.max(0, i - 1)]!;
-      const next = samples[Math.min(samples.length - 1, i + 1)]!;
-
-      tan.subVectors(next, prev).normalize();
-      // Perpendicular in the XZ plane (road lies flat)
-      const perpX = -tan.z;
-      const perpZ =  tan.x;
-
-      if (i > 0) uDist += p.distanceTo(samples[i - 1]!);
-      const uv = uDist / (width * 2);
-
-      positions.push(
-        p.x + perpX * (-width / 2), p.y, p.z + perpZ * (-width / 2),
-        p.x + perpX * ( width / 2), p.y, p.z + perpZ * ( width / 2),
-      );
-      uvs.push(0, uv, 1, uv);
-
-      if (i > 0) {
-        const b = (i - 1) * 2;
-        indices.push(b, b + 2, b + 1,  b + 1, b + 2, b + 3);
+      if (dirtPos.length > 0) {
+        const im2 = new THREE.InstancedMesh(dirtGeo, dirtMat, dirtPos.length);
+        im2.frustumCulled = false;
+        const mtx2 = new THREE.Matrix4();
+        for (let i = 0; i < dirtPos.length; i++) {
+          const p = dirtPos[i]!;
+          mtx2.makeTranslation(p.x, p.y, p.z);
+          im2.setMatrixAt(i, mtx2);
+        }
+        im2.instanceMatrix.needsUpdate = true;
+        this._roadMeshes.push(im2);
       }
+      dirtGeo.dispose();
     }
-
-    void up; // used for reference only; perpendicular is XZ-projected
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.frustumCulled = false;
-    return mesh;
   }
 
   // ── Utility ───────────────────────────────────────────────────────────────

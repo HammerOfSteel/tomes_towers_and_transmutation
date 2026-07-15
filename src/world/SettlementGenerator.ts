@@ -82,24 +82,6 @@ export function applySettlementToGrid(plan: SettlementPlan, grid: WorldGrid): vo
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
-/** Bresenham line: returns all [col, row] pairs on the integer grid line. */
-function _line(c1: number, r1: number, c2: number, r2: number): [number, number][] {
-  const pts: [number, number][] = [];
-  let x = c1, y = r1;
-  const dx = Math.abs(c2 - c1), dy = Math.abs(r2 - r1);
-  const sx = c1 < c2 ? 1 : -1;
-  const sy = r1 < r2 ? 1 : -1;
-  let err = dx - dy;
-  while (true) {
-    pts.push([x, y]);
-    if (x === c2 && y === r2) break;
-    const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; x += sx; }
-    if (e2 <  dx) { err += dx; y += sy; }
-  }
-  return pts;
-}
-
 /** True if a tile is safe to build on (no water, no dungeon, within bounds). */
 function _valid(grid: WorldGrid, col: number, row: number): boolean {
   if (col < 1 || col >= grid.width - 1 || row < 1 || row >= grid.height - 1) return false;
@@ -141,71 +123,82 @@ function _noOverlap(
   return true;
 }
 
-/** Build roads between center and each building, deduplicated via a Set. */
-function _addSpokes(
-  centerCol: number, centerRow: number,
-  buildings: PlacedBuilding[],
-  out: RoadSegment[],
-): void {
-  const seen = new Set<string>();
-  for (const b of buildings) {
-    for (const [c, r] of _line(centerCol, centerRow, b.col, b.row)) {
-      const key = `${c},${r}`;
-      if (!seen.has(key)) { seen.add(key); out.push({ col: c, row: r }); }
-    }
-  }
-}
-
 // ── Village ───────────────────────────────────────────────────────────────────
 
 function _planVillage(
   cc: number, cr: number, seed: number, grid: WorldGrid, name: string,
 ): SettlementPlan {
-  const rand  = mulberry32(seed ^ 0xA5_B7_C3_D1);
+  const rand = mulberry32(seed ^ 0xA5_B7_C3_D1);
+  const GW   = grid.width, GH = grid.height;
   const buildings: PlacedBuilding[] = [];
-  const roads:     RoadSegment[]    = [];
+  const roadSet   = new Set<string>();
 
-  // Focal feature at center
+  // ── Cross path: 1 tile wide, ±4 tiles from centre ──────────────────────────
+  const VL = 4;
+  for (let i = -VL; i <= VL; i++) {
+    const c = cc + i; if (c >= 0 && c < GW) roadSet.add(`${c},${cr}`);
+    const r = cr + i; if (r >= 0 && r < GH) roadSet.add(`${cc},${r}`);
+  }
+  // Short lane stubs at each arm end so corner buildings have road access
+  for (const dc of [-VL, VL]) {
+    for (let dr = 1; dr <= 3; dr++) {
+      const c = cc + dc;
+      if (c >= 0 && c < GW) {
+        if (cr - dr >= 0)  roadSet.add(`${c},${cr - dr}`);
+        if (cr + dr < GH)  roadSet.add(`${c},${cr + dr}`);
+      }
+    }
+  }
+
+  // ── Focal feature at centre ─────────────────────────────────────────────────
   const focalType: BuildingType = rand() < 0.6 ? 'well' : 'market_cross';
   if (_valid(grid, cc, cr)) {
-    buildings.push({ type: focalType, col: cc, row: cr, rotation: rand() * Math.PI * 2, seed: (seed ^ 0x11) >>> 0 });
+    buildings.push({ type: focalType, col: cc, row: cr, rotation: 0, seed: (seed ^ 0x11) >>> 0 });
   }
 
-  // Ring of cottages / occasional smithy — generous radius so buildings don't crowd each other.
-  // Ring radius 5-7 tiles (10-14 WU center-to-center) gives ~9-13 WU between adjacent cottages.
-  const N   = 4 + Math.floor(rand() * 4);  // 4-7 buildings (was 6-10, too many caused overlap)
-  // inn removed: footprint [3,4] doesn't fit reliably in a 5-tile ring
-  const MIX: BuildingType[] = ['smithy', 'cottage', 'cottage', 'cottage', 'cottage', 'market_stall', 'cottage', 'cottage'];
-  const baseR = 6 + Math.floor(rand() * 2);  // 6 or 7 tiles (was 5-7, 5 was too tight)
+  // ── Building placement: 3-tile setback from cross paths ────────────────────
+  const MIX: BuildingType[] = [
+    'smithy', 'cottage', 'cottage', 'market_stall',
+    'cottage', 'cottage', 'cottage', 'cottage',
+  ];
+  let mi = 0;
 
-  for (let i = 0; i < N; i++) {
-    const angle   = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.4;
-    const rJitter = (rand() - 0.5) * 0.8;  // reduced jitter
-    const R       = baseR + rJitter;
-    const col     = Math.round(cc + Math.cos(angle) * R);
-    const row     = Math.round(cr + Math.sin(angle) * R);
-    const btype   = MIX[i % MIX.length] ?? 'cottage';
-    if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
-    buildings.push({
-      type:     btype,
-      col, row,
-      rotation: angle + Math.PI + (rand() - 0.5) * 0.35,
-      seed:     (seed ^ ((i + 1) * 0x9E37)) >>> 0,
-    });
-  }
-
-  // Spoke roads from center to each building
-  _addSpokes(cc, cr, buildings, roads);
-
-  // Ring road connecting buildings in a circuit (village lane)
-  const roadSet = new Set<string>(roads.map(r => `${r.col},${r.row}`));
-  const bldgs   = buildings.slice(1); // skip focal feature
-  for (let i = 0; i < bldgs.length; i++) {
-    const a = bldgs[i]!, b = bldgs[(i + 1) % bldgs.length]!;
-    for (const [c, r] of _line(a.col, a.row, b.col, b.row)) {
-      const key = `${c},${r}`;
-      if (!roadSet.has(key)) { roadSet.add(key); roads.push({ col: c, row: r }); }
+  // Along E-W path: north side (rotation=0, faces south), south side (rotation=π, faces north)
+  for (const step of [-VL, 0, VL] as const) {
+    for (const side of [-1, 1] as const) {
+      if (mi >= MIX.length) break;
+      const col   = cc + step;
+      const row   = cr + side * 3;
+      const btype = MIX[mi]!;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 1)) continue;
+      buildings.push({
+        type:     btype, col, row,
+        rotation: side < 0 ? 0 : Math.PI,
+        seed:     (seed ^ (mi * 0x9E37)) >>> 0,
+      });
+      mi++;
     }
+    if (mi >= MIX.length) break;
+  }
+
+  // Along N-S path at centre row: west (rotation=π/2, faces east), east (rotation=-π/2, faces west)
+  for (const side of [-1, 1] as const) {
+    if (mi >= MIX.length) break;
+    const col   = cc + side * 3;
+    const btype = MIX[mi]!;
+    if (!_valid(grid, col, cr) || !_noOverlap(buildings, col, cr, btype, 1)) continue;
+    buildings.push({
+      type:     btype, col, row: cr,
+      rotation: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+      seed:     (seed ^ (mi * 0x9E37)) >>> 0,
+    });
+    mi++;
+  }
+
+  const roads: RoadSegment[] = [];
+  for (const key of roadSet) {
+    const [c, r] = key.split(',').map(Number);
+    roads.push({ col: c!, row: r! });
   }
 
   return { type: 'village', name, centerCol: cc, centerRow: cr, buildings, roads,
@@ -358,7 +351,7 @@ function _planCity(
       buildings.push({
         type:     QUADRANT_MIX[mi++],
         col, row,
-        rotation: (rand() - 0.5) * 0.4,
+        rotation: qsr < 0 ? 0 : Math.PI,
         seed:     (seed ^ (mi * 0x5C3D)) >>> 0,
       });
     }
