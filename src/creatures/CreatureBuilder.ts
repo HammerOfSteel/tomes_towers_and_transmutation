@@ -11,6 +11,7 @@ import { makeFaceTexture, type FaceSpec } from './CanvasFace';
 import { makeSkinTexture } from './CanvasSkin';
 import { flatShade, wobbleVertices } from './meshUtils';
 import { dressFlaredProfile, robeLayeredProfile, skirtGatheredProfile, addHemFolds } from './profileCurves';
+import { SnakeLocomotion } from './SnakeLocomotion';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -34,9 +35,11 @@ export interface CreatureBones {
 }
 
 export interface CreatureRig {
-  root:     THREE.Group;
-  bones:    CreatureBones;
-  faceTex?: THREE.CanvasTexture;
+  root:       THREE.Group;
+  bones:      CreatureBones;
+  faceTex?:   THREE.CanvasTexture;
+  /** Present only for serpent-archetype creatures. */
+  snakeLoco?: SnakeLocomotion;
   dispose(): void;
 }
 
@@ -721,52 +724,55 @@ function _avian(dna: CreatureDNA): CreatureRig {
 
 // Flat snake: all segments lie horizontal. Head is raised; body & tail hug the ground.
 // Chained parent-child layout so rotation.y on each segment animates as a lateral body wave.
+// Segment spacing used by both the builder and SnakeLocomotion — must match.
+const SNAKE_SEGMENT_SPACING = 0.30;
+
 function _serpent(dna: CreatureDNA): CreatureRig {
   const ms: THREE.Mesh[] = [], bones: CreatureBones = { segments: [] };
-  const p = dna.proportions;
+  const p  = dna.proportions;
   const pm = _bodyMat(dna), sm = _m(dna.colors.secondary, dna);
 
   const root = new THREE.Group(); root.scale.setScalar(p.global);
-  const n = Math.round(Math.max(5, Math.min(14, p.segmentCount)));
+  const n    = Math.round(Math.max(5, Math.min(14, p.segmentCount)));
 
-  let parent: THREE.Object3D = root;
-
+  // ── Flat segment hierarchy ────────────────────────────────────────────────
+  //  All segments are DIRECT children of root (not a parent→child chain).
+  //  SnakeLocomotion.update() drives their positions each frame via the
+  //  follow-en-trail algorithm, so initial positions are just a straight line.
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
     const r = Math.max(0.035, (0.26 - t * 0.16) * p.torso[0]);
     const g = new THREE.Group();
 
-    // Capsule lies flat — long axis along Z
-    const seg = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.28, 5, 8), i % 2 ? sm : pm);
+    // Initial resting position: straight line along -Z from root
+    g.position.set(0, 0, -i * SNAKE_SEGMENT_SPACING);
+
+    // Capsule mesh: long axis along Z (x-rotation of 90°), elevated above ground
+    const bodyY = 0.13 - t * 0.06;   // head/neck higher, tail lower
+    const seg   = new THREE.Mesh(new THREE.CapsuleGeometry(r, 0.26, 5, 8), i % 2 ? sm : pm);
     seg.rotation.x = Math.PI / 2;
+    seg.position.y = bodyY;
 
-    if (i === 0) {
-      g.position.set(0, 0.32, 0);          // head raised above ground
-    } else if (i === 1) {
-      g.position.set(0, -0.14, -0.30);     // neck drops, steps back in -Z
-    } else if (i === 2) {
-      g.position.set(0, -0.10, -0.32);     // transition to ground level
-    } else {
-      g.position.set(0, -0.02, -0.34 - t * 0.06);  // body/tail flat, slight taper
-    }
-
-    g.add(seg); parent.add(g);
+    g.add(seg); root.add(g);   // FLAT — all direct children of root
     bones.segments!.push(g); ms.push(seg);
     if (i === 0) bones.torso = g;
-    parent = g;
   }
 
-  // Head on first segment — nose tilts upward (snake raising head to look ahead)
+  // Head on first segment — nose tilts upward (snake raising its head)
   const headNeck = new THREE.Group();
-  headNeck.position.y = 0.22;
-  headNeck.rotation.x = 0.25;    // +x → face (+Z) tilts toward +Y (nose up)
+  headNeck.position.y = 0.40;   // elevated above the capsule body
+  headNeck.rotation.x = 0.25;   // face tilts slightly skyward
   bones.segments![0].add(headNeck);
 
   const head = new THREE.Group(); bones.head = head;
-  const hm = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.80), pm); head.add(hm); ms.push(hm);
-  const { tex, plane } = _faceplane(dna, p.headSize * 0.80); head.add(plane); ms.push(plane);
+  const hm   = new THREE.Mesh(_headgeo(dna.face.type, p.headSize * 0.80), pm);
+  head.add(hm); ms.push(hm);
+  const { tex, plane } = _faceplane(dna, p.headSize * 0.80);
+  head.add(plane); ms.push(plane);
   headNeck.add(head);
 
   _props(dna.props, head, bones.torso, dna, ms);
-  return { root, bones, faceTex: tex, dispose: _free(ms, [tex]) };
+
+  const snakeLoco = new SnakeLocomotion(n, SNAKE_SEGMENT_SPACING);
+  return { root, bones, faceTex: tex, snakeLoco, dispose: _free(ms, [tex]) };
 }

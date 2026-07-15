@@ -444,6 +444,13 @@ export class PlayerController {
     // DNA rig animation (runs alongside hidden bodyMesh/headMesh logic)
     if (this._creatureRig) {
       const t = performance.now() * 0.001;
+      // Serpent trail: run BEFORE animateCreature so the sway overlay (+=) layers on top.
+      if (this._creatureRig.snakeLoco) {
+        this._creatureRig.snakeLoco.update(
+          this._creatureRig.root,
+          this._creatureRig.bones.segments ?? [],
+        );
+      }
       if (this.flashTimer > 0) {
         animateCreature(this._creatureRig, { state: 'hit', time: t, timeSinceHit: PLAYER_IFRAME - this.flashTimer });
       } else if (hSpeed > RUN_SPEED * 0.5) {
