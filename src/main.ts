@@ -432,8 +432,11 @@ async function main() {
       progression.boostStat('swiftness', 7);
     }
 
-    // Apply DNA-based player character appearance
-    if (cfg?.dna) {
+    // Apply player character appearance — asset model takes priority over DNA
+    if (cfg?.assetModel) {
+      player.applyAssetModel(cfg.assetModel).catch((e) =>
+        console.error('[main] failed to load asset model:', e));
+    } else if (cfg?.dna) {
       player.applyDNA(cfg.dna);
     }
 

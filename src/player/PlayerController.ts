@@ -9,6 +9,9 @@ import type { CreatureDNA } from '@/creatures/CreatureDNA';
 import { buildCreature, computeQuadNaturalFootY, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature } from '@/creatures/CreatureAnimator';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
+import type { CharModelDef } from '@/characters/charManifest';
+import { loadCharModel } from '@/characters/CharacterLoader';
+import { CharacterController } from '@/characters/CharacterController';
 
 // ── Capsule dimensions ─────────────────────────────────────────────────────
 
@@ -160,6 +163,8 @@ export class PlayerController {
   private _walkCtrl: ProceduralWalkController | null = null;
   /** Scratch vector for floor-level position passed to walk controller. */
   private readonly _floorPos = new THREE.Vector3();
+  /** Asset-model character controller (mutually exclusive with _creatureRig). */
+  private _charController: CharacterController | null = null;
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
@@ -196,6 +201,45 @@ export class PlayerController {
       }
     }
     this.group.add(this._creatureRig.root);
+  }
+
+  /**
+   * Swap the player's visual for a loaded GLB/FBX asset model.
+   * Physics capsule is unchanged. Returns a promise that resolves once loaded.
+   */
+  async applyAssetModel(def: CharModelDef): Promise<void> {
+    // Remove previous asset model if any
+    if (this._charController) {
+      this.group.remove(this._charController.scene);
+      this._charController.dispose();
+      this._charController = null;
+    }
+    // Remove procedural rig if any
+    if (this._creatureRig) {
+      this.group.remove(this._creatureRig.root);
+      this._creatureRig.dispose();
+      this._creatureRig = null;
+      this._walkCtrl = null;
+    }
+    this.bodyMesh.visible = false;
+    this.headMesh.visible = false;
+
+    const loaded = await loadCharModel(def);
+    this._charController = new CharacterController(loaded);
+
+    // Scale and position the model so feet sit at the capsule bottom
+    const scene = this._charController.scene;
+    // Most KayKit models are ~2 units tall — fit them to our capsule height
+    const box = new THREE.Box3().setFromObject(scene);
+    const modelH = box.max.y - box.min.y;
+    const targetH = (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) * 2;
+    const scale = modelH > 0.01 ? targetH / modelH : 1;
+    scene.scale.setScalar(scale);
+    // Recompute after scaling
+    box.setFromObject(scene);
+    scene.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - box.min.y;
+
+    this.group.add(scene);
   }
 
   /** Instantly reposition both the physics body and the visual mesh.
@@ -482,6 +526,17 @@ export class PlayerController {
           animateCreature(this._creatureRig, { state: 'idle', time: t });
         }
       }
+    }
+
+    // Asset model animation — drive CharacterController state from movement
+    if (this._charController) {
+      const nextState = this.flashTimer > 0
+        ? 'hit'
+        : hSpeed > RUN_SPEED * 0.5 ? 'run'
+        : hSpeed > 0.3             ? 'walk'
+        : 'idle';
+      this._charController.setState(nextState);
+      this._charController.update(dt);
     }
 
     // Shadow blob tracks position, shrinks with height

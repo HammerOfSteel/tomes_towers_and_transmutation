@@ -283,6 +283,11 @@ export class CharacterCreation {
   private _slotId    = 0;
   private _assetModel: CharModelDef | null = null;
   private _assetBrowser: AssetCharBrowser | null = null;
+  // Pane references assigned in _build(), toggled in show()
+  private _ctrlCol!:        HTMLElement;
+  private _assetPane!:      HTMLElement;
+  private _assetBrowserSec!: HTMLElement;
+  private _assetNameInput!: HTMLInputElement;
 
   // Control refs (populated in _build)
   private _nameInput!: HTMLInputElement;
@@ -329,12 +334,28 @@ export class CharacterCreation {
     this._slotId = slotId;
     this._dna    = cloneDNA(DEFAULT_PLAYER_DNA);
     this._boon   = 'tome';
+    this._assetModel = null;
+
+    // Re-evaluate charMode every time the screen opens (settings may have changed)
+    const wg = loadWorldGenConfig();
+    const isAsset = wg.charMode === 'asset';
+    this._ctrlCol.style.display  = isAsset ? 'none' : '';
+    this._assetPane.style.display = isAsset ? '' : 'none';
+    if (isAsset && !this._assetBrowser) {
+      this._assetBrowser = new AssetCharBrowser(
+        this._assetBrowserSec,
+        wg.charPacks,
+        (def) => { this._assetModel = def; },
+      );
+    }
+    this._assetNameInput.value = '';
+
     this._overlay.style.display = 'flex';
     requestAnimationFrame(() => this._overlay.classList.add('cc-open'));
     const canvas = this._overlay.querySelector<HTMLCanvasElement>('.cc-preview-canvas')!;
     if (!this._preview) this._preview = new CharacterPreview(canvas, this._dna);
     else                this._preview.setDNA(this._dna);
-    this._syncControls();
+    if (!isAsset) this._syncControls();
     this._preview.startLoop();
   }
 
@@ -484,6 +505,7 @@ export class CharacterCreation {
     // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
     ctrlCol.className = 'cc-controls-col';
+    this._ctrlCol = ctrlCol;
 
     // Name
     const nameWrap = document.createElement('div'); nameWrap.className = 'cc-section';
@@ -795,6 +817,7 @@ export class CharacterCreation {
     const assetPane = document.createElement('div');
     assetPane.className = 'cc-controls-col';
     assetPane.style.display = 'none';
+    this._assetPane = assetPane;
 
     const assetNameWrap = document.createElement('div'); assetNameWrap.className = 'cc-section';
     const assetNameLbl  = document.createElement('label'); assetNameLbl.className = 'cc-label'; assetNameLbl.textContent = 'Name';
@@ -803,6 +826,7 @@ export class CharacterCreation {
     assetNameInput.type = 'text'; assetNameInput.id = 'cc-asset-name';
     assetNameInput.className = 'cc-name-input';
     assetNameInput.placeholder = 'Enter a name…'; assetNameInput.maxLength = 24;
+    this._assetNameInput = assetNameInput;
     assetNameWrap.append(assetNameLbl, assetNameInput);
 
     const assetBrowserSec = document.createElement('div');
@@ -811,6 +835,7 @@ export class CharacterCreation {
     const assetBrowserTitle = document.createElement('div');
     assetBrowserTitle.className = 'cc-section-title'; assetBrowserTitle.textContent = 'Choose Character';
     assetBrowserSec.appendChild(assetBrowserTitle);
+    this._assetBrowserSec = assetBrowserSec;
 
     const assetBoonSec = boonSec.cloneNode(true) as HTMLElement;
     // Re-wire onclick for the cloned boon cards
