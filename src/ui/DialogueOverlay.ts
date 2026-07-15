@@ -44,13 +44,13 @@ function _injectCSS(): void {
       position: absolute;
       bottom: 0; left: 50%;
       transform: translateX(-50%);
-      width: min(720px, 86vw);
-      padding: 18px 26px 22px;
-      background: rgba(4, 6, 16, 0.84);
-      backdrop-filter: blur(6px);
-      border: 1px solid rgba(100, 80, 180, 0.22);
+      width: min(560px, 72vw);
+      padding: 11px 18px 14px;
+      background: rgba(4, 6, 16, 0.78);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(100, 80, 180, 0.20);
       border-bottom: none;
-      border-radius: 10px 10px 0 0;
+      border-radius: 8px 8px 0 0;
       pointer-events: none;
       opacity: 0;
       transform: translateX(-50%) translateY(8px);
@@ -62,15 +62,15 @@ function _injectCSS(): void {
       pointer-events: auto;
     }
     .ngo-speaker {
-      font-size: 12px;
+      font-size: 10px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: rgba(160, 140, 220, 0.7);
-      margin-bottom: 8px;
+      margin-bottom: 5px;
     }
     .ngo-text {
-      font-size: 17px;
-      line-height: 1.65;
+      font-size: 14px;
+      line-height: 1.55;
       color: #e8e0d4;
       min-height: 2em;
     }
@@ -86,10 +86,10 @@ function _injectCSS(): void {
 
     /* Skip hint */
     .ngo-skip-hint {
-      font-size: 11px;
-      color: rgba(140, 130, 160, 0.5);
+      font-size: 9px;
+      color: rgba(140, 130, 160, 0.45);
       text-align: right;
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     /* Choice cards ─────────────────────────────────── */
@@ -97,28 +97,28 @@ function _injectCSS(): void {
       position: absolute;
       bottom: 0; left: 50%;
       transform: translateX(-50%);
-      width: min(720px, 86vw);
+      width: min(560px, 72vw);
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      padding: 0 0 12px 0;
+      gap: 6px;
+      padding: 0 0 8px 0;
       pointer-events: none;
     }
 
     .ngo-card {
-      flex: 1 1 calc(50% - 4px);
-      min-width: 220px;
-      padding: 13px 18px;
-      background: rgba(8, 10, 24, 0.80);
-      border: 1px solid rgba(100, 80, 180, 0.28);
-      border-radius: 7px;
+      flex: 1 1 calc(50% - 3px);
+      min-width: 180px;
+      padding: 9px 13px;
+      background: rgba(8, 10, 24, 0.78);
+      border: 1px solid rgba(100, 80, 180, 0.25);
+      border-radius: 6px;
       cursor: pointer;
       color: #d8d0e8;
-      font-size: 15px;
-      line-height: 1.45;
+      font-size: 13px;
+      line-height: 1.4;
       pointer-events: auto;
       opacity: 0;
-      transform: translateY(14px);
+      transform: translateY(12px);
       transition: background 0.15s, border-color 0.15s, transform 0.22s ease, opacity 0.22s ease;
       user-select: none;
     }
@@ -142,12 +142,12 @@ function _injectCSS(): void {
     }
     .ngo-card-key {
       display: inline-block;
-      width: 20px; height: 20px;
-      line-height: 20px; text-align: center;
-      font-size: 11px; font-family: monospace;
+      width: 17px; height: 17px;
+      line-height: 17px; text-align: center;
+      font-size: 10px; font-family: monospace;
       background: rgba(80, 60, 150, 0.5);
       border-radius: 3px;
-      margin-right: 9px;
+      margin-right: 7px;
       color: rgba(200, 180, 255, 0.8);
       vertical-align: middle;
     }

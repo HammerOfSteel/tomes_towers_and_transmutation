@@ -29,13 +29,13 @@ import type { LoadedWizard }     from '@/characters/WizardLoader';
 const ENV_OFFSET  = new THREE.Vector3(-1.87, -0.03, -1.54);
 
 // Camera: sitting behind the fire (+Z = deeper into the scene).
-// Looking from Z≈-2.74 across the fire (Z=0) toward the wizard's face.
+// Look slightly left toward where the wizard sits beside the fire.
 const CAM_POS   = new THREE.Vector3(0, 0.82, -2.74);
-const CAM_LOOK  = new THREE.Vector3(0, 1.15,  1.26);
+const CAM_LOOK  = new THREE.Vector3(-0.5, 1.2,  1.6);
 
-// Wizard positions (Z=+ is deeper into scene, away from camera)
-const WIZ_IDLE  = new THREE.Vector3(0, 0, 3.8);   // resting pos across fire
-const WIZ_START = new THREE.Vector3(0, 0, 12);    // enters from the dark beyond
+// Wizard positions — wizard sits to the LEFT of the fire so he's fully visible
+const WIZ_IDLE  = new THREE.Vector3(-1.5, 0, 2.8);   // resting pos beside fire
+const WIZ_START = new THREE.Vector3(-1.5, 0, 11);    // enters from the dark beyond
 
 const FIRE_COLOR  = 0xff7018;
 const FIRE_POS    = new THREE.Vector3(0, 0.1, 0);
@@ -109,6 +109,7 @@ export class NewGameScene {
     // ── scene ─────────────────────────────────────────────────────────────────
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x020408);  // near-black, slight blue
+    this._scene.fog = new THREE.FogExp2(0x020408, 0.038);  // atmospheric depth
 
     // ── camera ────────────────────────────────────────────────────────────────
     this._camera = new THREE.PerspectiveCamera(65, 1, 0.1, 80);
@@ -223,24 +224,24 @@ export class NewGameScene {
       color: 0xffbb00, emissive: 0xff9900, emissiveIntensity: 2.2,
       roughness: 0.2, transparent: true, opacity: 0.82, depthWrite: false,
     });
-    const flameGeo = new THREE.SphereGeometry(0.26, 7, 7);
+    const flameGeo = new THREE.SphereGeometry(0.11, 6, 6);
 
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 10; i++) {
       const mat  = (i % 3 === 0) ? matYellow.clone() : matOrange.clone();
       const blob = new THREE.Mesh(flameGeo, mat);
-      const bx   = (Math.random() - 0.5) * 0.55;
-      const bz   = (Math.random() - 0.5) * 0.55;
+      const bx   = (Math.random() - 0.5) * 0.28;
+      const bz   = (Math.random() - 0.5) * 0.28;
       blob.position.set(
         FIRE_POS.x + bx,
-        FIRE_POS.y + Math.random() * 1.1,
+        FIRE_POS.y + Math.random() * 0.55,
         FIRE_POS.z + bz,
       );
       blob.userData = {
         baseX:     FIRE_POS.x + bx * 0.5,
         baseZ:     FIRE_POS.z + bz * 0.5,
-        maxY:      1.1 + Math.random() * 0.7,
-        speed:     0.016 + Math.random() * 0.022,
-        wobbleSpd: 2.0  + Math.random() * 3.5,
+        maxY:      0.5 + Math.random() * 0.35,
+        speed:     0.012 + Math.random() * 0.016,
+        wobbleSpd: 2.5  + Math.random() * 3.5,
         wobbleOff: Math.random() * Math.PI * 2,
       };
       this._scene.add(blob);
@@ -248,8 +249,8 @@ export class NewGameScene {
     }
 
     // ── smoke puffs ───────────────────────────────────────────────────────────
-    const smokeGeo = new THREE.SphereGeometry(0.24, 6, 6);
-    for (let i = 0; i < 12; i++) {
+    const smokeGeo = new THREE.SphereGeometry(0.20, 5, 5);
+    for (let i = 0; i < 8; i++) {
       const smokeMat = new THREE.MeshBasicMaterial({
         color: 0x444444, transparent: true, opacity: 0.09, depthWrite: false,
       });
@@ -265,7 +266,7 @@ export class NewGameScene {
       puff.userData = {
         baseX:  FIRE_POS.x + bx,
         baseZ:  FIRE_POS.z + bz,
-        maxY:   3.8 + Math.random() * 1.5,
+        maxY:   2.8 + Math.random() * 1.2,
         speed:  0.007 + Math.random() * 0.010,
         driftX: (Math.random() - 0.5) * 0.005,
         driftZ: (Math.random() - 0.5) * 0.004,
@@ -399,10 +400,9 @@ export class NewGameScene {
     const w = await loadWizard(def);
     this._wizard = w;
     w.group.position.copy(WIZ_START);
-    // Camera is at -Z; wizard approaches from +Z, so face toward camera (-Z)
-    // Most Meshy.ai models default to facing -Z; if the wizard appears backwards,
-    // flip this to Math.PI.
-    w.group.rotation.y = 0;
+    // Wizard faces roughly toward camera (at X=0) from left side (X=-1.5);
+    // slight right turn (~15°) to make eye contact across the fire.
+    w.group.rotation.y = 0.28;
     this._scene.add(w.group);
   }
 
