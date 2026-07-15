@@ -95,21 +95,33 @@ export function applySettlementToGrid(
     }
   }
 
-  // ── 2. Flatten terrain under each building footprint ──────────────────────
-  //  Pick the tile's own elevation as the target so it stays within the
-  //  1-2 range chosen by SettlementPlacer.  Skips water / river tiles.
-  for (const b of plan.buildings) {
-    const targetElev = grid.get(b.col, b.row).elevation;
-    const [bw, bd]   = BUILDING_SPECS[b.type].footprint;
-    const hw = Math.ceil(bw / 2);
-    const hd = Math.ceil(bd / 2);
-    for (let dc = -hw; dc <= hw; dc++) {
-      for (let dr = -hd; dr <= hd; dr++) {
-        const c = b.col + dc, r = b.row + dr;
-        const cell = grid.get(c, r);
-        if (cell.biome !== 'water' && cell.feature !== 'river') {
-          grid.set(c, r, { elevation: targetElev });
-        }
+  // ── 2. Flatten inner zone to a consistent elevation plateau ────────────────
+  //   Find the modal elevation of all non-water/river tiles inside the inner
+  //   radius, then snap everything to it.  This gives buildings + roads a
+  //   seamless flat ground plane and removes height-step seams in the pavement.
+  const innerR  = Math.round(zoneR * 0.60);
+  const elevMap = new Map<number, number>();
+  for (let dc = -innerR; dc <= innerR; dc++) {
+    for (let dr = -innerR; dr <= innerR; dr++) {
+      if (dc * dc + dr * dr > innerR * innerR) continue;
+      const cell = grid.get(cc + dc, cr + dr);
+      if (cell.biome !== 'water' && cell.feature !== 'river') {
+        elevMap.set(cell.elevation, (elevMap.get(cell.elevation) ?? 0) + 1);
+      }
+    }
+  }
+  let targetElev = grid.get(cc, cr).elevation;
+  let bestCount  = 0;
+  for (const [elev, count] of elevMap) {
+    if (count > bestCount) { bestCount = count; targetElev = elev; }
+  }
+  for (let dc = -innerR; dc <= innerR; dc++) {
+    for (let dr = -innerR; dr <= innerR; dr++) {
+      if (dc * dc + dr * dr > innerR * innerR) continue;
+      const c = cc + dc, r = cr + dr;
+      const cell = grid.get(c, r);
+      if (cell.biome !== 'water' && cell.feature !== 'river') {
+        grid.set(c, r, { elevation: targetElev });
       }
     }
   }
@@ -208,40 +220,36 @@ function _planVillage(
     buildings.push({ type: focalType, col: cc, row: cr, rotation: 0, seed: (seed ^ 0x11) >>> 0 });
   }
 
-  // ── Building placement: 3-tile setback from cross paths ────────────────────
+  // ── Building placement: 8 corner/arm plots, all guaranteed clear of roads ───
+  //   Positions chosen so no plot overlaps the ±4-tile cross paths or T-stubs.
+  //   Each entry: [col_offset, row_offset, rotation_y]
   const MIX: BuildingType[] = [
     'smithy', 'cottage', 'cottage', 'market_stall',
     'cottage', 'cottage', 'cottage', 'cottage',
   ];
+  // [dc, dr, rot]  rot=0 → door +Z(S)  rot=π → door −Z(N)
+  //                rot=π/2 → door +X(E)  rot=−π/2 → door −X(W)
+  const PLOTS: [number, number, number][] = [
+    [-4, -4,  0],               // NW corner  — faces south
+    [ 4, -4,  0],               // NE corner  — faces south
+    [-4,  4,  Math.PI],         // SW corner  — faces north
+    [ 4,  4,  Math.PI],         // SE corner  — faces north
+    [-6,  0,  Math.PI / 2],     // W midpoint — faces east
+    [ 6,  0, -Math.PI / 2],     // E midpoint — faces west
+    [ 0, -6,  0],               // N midpoint — faces south (door toward centre)
+    [ 0,  6,  Math.PI],         // S midpoint — faces north (door toward centre)
+  ];
   let mi = 0;
-
-  // Along E-W path: north side (rotation=0, faces south), south side (rotation=π, faces north)
-  for (const step of [-VL, 0, VL] as const) {
-    for (const side of [-1, 1] as const) {
-      if (mi >= MIX.length) break;
-      const col   = cc + step;
-      const row   = cr + side * 3;
-      const btype = MIX[mi]!;
-      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 1)) continue;
-      buildings.push({
-        type:     btype, col, row,
-        rotation: side < 0 ? 0 : Math.PI,
-        seed:     (seed ^ (mi * 0x9E37)) >>> 0,
-      });
-      mi++;
-    }
-    if (mi >= MIX.length) break;
-  }
-
-  // Along N-S path at centre row: west (rotation=π/2, faces east), east (rotation=-π/2, faces west)
-  for (const side of [-1, 1] as const) {
-    if (mi >= MIX.length) break;
-    const col   = cc + side * 3;
+  for (let pi = 0; pi < PLOTS.length && mi < MIX.length; pi++) {
+    const [dc, dr, rot] = PLOTS[pi]!;
+    const col   = cc + dc;
+    const row   = cr + dr;
     const btype = MIX[mi]!;
-    if (!_valid(grid, col, cr) || !_noOverlap(buildings, col, cr, btype, 1)) continue;
+    if (roadSet.has(`${col},${row}`))                            continue;  // never on road
+    if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 1)) continue;
     buildings.push({
-      type:     btype, col, row: cr,
-      rotation: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+      type:     btype, col, row,
+      rotation: rot,
       seed:     (seed ^ (mi * 0x9E37)) >>> 0,
     });
     mi++;
@@ -303,6 +311,7 @@ function _planTown(
       const col = cc + step;
       const row = cr + side * 4;
       const btype = MIX[mi]!;
+      if (roadSet.has(`${col},${row}`))                                continue;  // skip road tiles
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
@@ -320,6 +329,7 @@ function _planTown(
       const col = cc + side * 4;
       const row = cr + step;
       const btype = MIX[mi]!;
+      if (roadSet.has(`${col},${row}`))                                continue;  // skip road tiles
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
@@ -399,6 +409,7 @@ function _planCity(
       const col = cc + qsc * (6 + (bi % 3) * 4);
       const row = cr + qsr * (6 + Math.floor(bi / 3) * 4);
       const btype = QUADRANT_MIX[mi]!;
+      if (roadSet.has(`${col},${row}`))                                          { mi++; continue; }  // skip road tiles
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) { mi++; continue; }
       buildings.push({
         type:     QUADRANT_MIX[mi++],
