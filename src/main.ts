@@ -11,7 +11,7 @@ import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { MainMenu } from '@/ui/MainMenu';
-import { CharacterCreation } from '@/ui/CharacterCreation';
+import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
 import type { CharacterConfig } from '@/ui/CharacterCreation';
 import { DevSandbox } from '@/ui/DevSandbox';
 import { generateSandboxArena } from '@/levels/SandboxArena';
@@ -449,18 +449,15 @@ async function main() {
   // ── Character creation screen ─────────────────────────────────────────────
   let _sandboxUi: DevSandbox | null = null;
 
-  const charCreation = new CharacterCreation(
-    // onStart — boon was chosen, now actually start the game
-    (cfg) => {
-      charCreation.hide();
-      mainMenu.hide();
-      startGame(undefined, cfg);
-    },
-    // onBack — return to the save slot modal (just show it again)
-    () => {
-      mainMenu.show();
-    },
-  );
+  const charCreation = new CharacterCreationV2();
+  charCreation.onComplete = (cfg) => {
+    charCreation.hide();
+    mainMenu.hide();
+    startGame(undefined, cfg);
+  };
+  charCreation.onBack = () => {
+    mainMenu.show();
+  };
 
   // ── Sandbox mode helpers ──────────────────────────────────────────────────
 
@@ -695,6 +692,10 @@ async function main() {
       hasAssetTower:       () => !!(scene as any).__assetTowerLoaded,
       hasAssetSettlement:  () => !!(scene as any).__assetSettlementLoaded,
       hasAssetDungeon:     () => !!(scene as any).__assetDungeonLoaded,
+      /** Open the character creation screen (slot 0 by default). */
+      openCharCreation: (slotId = 0) => charCreation.show(slotId),
+      /** Snapshot of current character creation state — for Playwright tests. */
+      getCharCreationState: () => charCreation.getState(),
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
