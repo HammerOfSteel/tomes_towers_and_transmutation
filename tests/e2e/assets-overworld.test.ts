@@ -51,29 +51,36 @@ async function shot(
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
+// Each test loads the game fresh: WASM init (~10 s) + world build + 4 GLB loads
+// can take 30–50 s on a cold run — override the global 90 s with extra headroom.
 test.describe('Asset overworld — GLB tree upgrade', () => {
+  test.setTimeout(120_000);
 
   // ── 1. Dev server serves GLBs ─────────────────────────────────────────────
 
-  test('dev server serves GLB assets at expected paths', async ({ page }) => {
-    // Hit a few known GLB files directly — expect 200, not 404
+  test('dev server serves GLB assets at expected paths', async ({ request }) => {
+    // The request fixture doesn't always resolve relative paths via baseURL —
+    // use absolute URLs to guarantee we hit the right server.
+    const BASE = 'http://localhost:5173';
     const paths = [
       '/assets/nature/tree_default.glb',
       '/assets/nature/tree_cone.glb',
       '/assets/nature/tree_blocks.glb',
       '/assets/nature/tree_detailed.glb',
-      '/assets/dungeon/floor.glb',
-      '/assets/castle/tower.glb',
+      '/assets/dungeon/corridor.glb',
+      '/assets/castle/gate.glb',
     ];
 
     for (const p of paths) {
-      const res = await page.goto(p);
-      expect(res?.status(), `expected 200 for ${p}`).toBe(200);
-      // Content-Type should indicate binary / octet-stream (GLB magic bytes)
-      const ct = res?.headers()['content-type'] ?? '';
-      expect(ct, `expected binary content-type for ${p}`).toMatch(
-        /octet-stream|model\/gltf-binary/,
-      );
+      const res  = await request.get(`${BASE}${p}`);
+      expect(res.status(), `expected 200 for ${p}`).toBe(200);
+      const body = await res.body();
+      expect(body.length, `expected non-empty body for ${p}`).toBeGreaterThan(12);
+      // GLB magic: first 4 bytes are ASCII 'glTF' (0x67 0x6C 0x54 0x46)
+      expect(body[0], `${p} byte[0]`).toBe(0x67); // 'g'
+      expect(body[1], `${p} byte[1]`).toBe(0x6C); // 'l'
+      expect(body[2], `${p} byte[2]`).toBe(0x54); // 'T'
+      expect(body[3], `${p} byte[3]`).toBe(0x46); // 'F'
     }
   });
 
@@ -104,21 +111,23 @@ test.describe('Asset overworld — GLB tree upgrade', () => {
     await loadPage(page);
     await startGame(page);
 
-    // Screenshot before any upgrade (procedural cone trees)
+    // Go exterior and teleport into the forest (trees start ~20 WU from centre)
     await page.evaluate(() => (window as any).__game.switchToExterior());
     await page.waitForTimeout(800);
+    // Move into the forest ring so trees are visible in the frame
+    await page.evaluate(() => (window as any).__game.teleportPlayer(30, 2, 0));
+    await page.waitForTimeout(300);
+
+    // Screenshot BEFORE upgrade (procedural cone trees)
     await shot(page, '02-trees-procedural');
 
-    // Wait for the GLB upgrade
+    // Wait for GLB upgrade
     const upgraded = await waitForAssetTrees(page, 30_000);
+    await page.waitForTimeout(300); // one re-render frame
 
-    // Give three.js one more frame to re-render with GLB geometry
-    await page.waitForTimeout(200);
-
-    // Screenshot after upgrade
+    // Screenshot AFTER upgrade (Kenney GLB trees)
     await shot(page, '03-trees-glb');
 
-    // Non-fatal annotation so the test always shows both screenshots in the report
     test.info().annotations.push({
       type: 'GLB upgrade completed',
       description: String(upgraded),
