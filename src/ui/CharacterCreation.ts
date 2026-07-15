@@ -18,16 +18,28 @@ import {
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature, type AnimState } from '@/creatures/CreatureAnimator';
 import { randomDNA, mutateDNA }            from '@/creatures/CreatureRandomiser';
+import { loadWorldGenConfig }              from '@/world/WorldGenConfig';
+import type { CharModelDef }               from '@/characters/charManifest';
+import { AssetCharBrowser }               from '@/ui/AssetCharBrowser';
+import { loadCharModel }                  from '@/characters/CharacterLoader';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export type StartingBoon = 'tome' | 'blood' | 'swift';
 
 export interface CharacterConfig {
-  name:   string;
-  boon:   StartingBoon;
-  slotId: number;
-  dna:    CreatureDNA;
+  name:        string;
+  boon:        StartingBoon;
+  slotId:      number;
+  dna:         CreatureDNA;
+  /** Set when charMode is 'asset' — identifies the chosen GLB/FBX model. */
+  assetModel?: CharModelDef;
+  /**
+   * Stat bonuses from the narrative character creation conversation.
+   * Applied in startGame() via progression.boostStat.
+   * Only present when the game was started via NewGameFlow.
+   */
+  statBonuses?: import('@/scene/CharacterDecisionTree').StatBonus[];
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────
@@ -103,6 +115,11 @@ const CC_CSS = `
   border-radius: 4px; cursor: grab; user-select: none; background: #0d0b18; }
 .cc-preview-canvas:active { cursor: grabbing; }
 .cc-drag-hint { font-size: .68rem; color: #3a2860; letter-spacing: .06em; text-transform: uppercase; }
+.cc-dna-controls-group { display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: center; }
+.cc-asset-canvas-hint {
+  font-size: .8rem; color: #7a6a8a; font-style: italic; text-align: center;
+  margin-top: 8px; letter-spacing: .04em;
+}
 .cc-dna-btn { background: transparent; border: 1px solid #2a1850; border-radius: 3px;
   color: #5a4880; font-size: .72rem; cursor: pointer; padding: 4px 10px; font-family: inherit;
   letter-spacing: .04em; transition: all .12s; }
@@ -186,8 +203,11 @@ class CharacterPreview {
   private readonly _renderer: THREE.WebGLRenderer;
   private readonly _scene:    THREE.Scene;
   private readonly _camera:   THREE.PerspectiveCamera;
-  private _rig:   CreatureRig | null = null;
+  private _rig:        CreatureRig | null = null;
+  private _assetGroup: THREE.Group  | null = null;
+  private _assetMixer: THREE.AnimationMixer | null = null;
   private _rafId: number | null = null;
+  private _prevTime = 0;
   private _rotY  = 0;
   private _drag  = false;
   private _prevX = 0;
@@ -227,6 +247,58 @@ class CharacterPreview {
 
   setDNA(dna: CreatureDNA): void { this._build(dna); }
 
+  /**
+   * Display a loaded asset model instead of the procedural rig.
+   * Plays the first idle-looking clip if the model has one.
+   */
+  setAssetScene(
+    group: THREE.Group,
+    mixer: THREE.AnimationMixer | null,
+    clips: THREE.AnimationClip[],
+  ): void {
+    if (this._rig)        { this._scene.remove(this._rig.root); this._rig = null; }
+    if (this._assetGroup) { this._scene.remove(this._assetGroup); }
+    if (this._assetMixer) { this._assetMixer.stopAllAction(); this._assetMixer = null; }
+
+    this._assetGroup = group;
+
+    // updateMatrixWorld so Box3.setFromObject gets correct world-space bounds
+    // even though the group hasn't been added to the scene yet.
+    group.updateMatrixWorld(true);
+
+    // Auto-fit: centre + scale to fill the preview area
+    const box  = new THREE.Box3().setFromObject(group);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale  = maxDim > 0.01 ? 2.2 / maxDim : 1;
+    group.scale.setScalar(scale);
+
+    // Recompute after scaling so feet land at y=0
+    group.updateMatrixWorld(true);
+    box.setFromObject(group);
+    group.position.y = -box.min.y;
+    group.position.x = 0;
+    group.position.z = 0;
+
+    this._scene.add(group);
+
+    // Drive animation if the model has clips — prefer idle, fall back to first
+    if (mixer && clips.length > 0) {
+      this._assetMixer = mixer;
+      const IDLE_PREFER = ['Idle_A', 'Idle_B', 'Idle', 'idle', 'Stand', 'Rest'];
+      const idleClip = IDLE_PREFER.map(n => THREE.AnimationClip.findByName(clips, n)).find(Boolean)
+                    ?? clips[0];
+      if (idleClip) {
+        const action = mixer.clipAction(idleClip);
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.clampWhenFinished = false;
+        action.play();
+      }
+    }
+
+    this.startLoop();
+  }
+
   setAnimState(s: AnimState): void { this._animState = s; }
   setCamera(preset: 'full' | 'face' | 'side'): void {
     switch (preset) {
@@ -238,15 +310,24 @@ class CharacterPreview {
 
   startLoop(): void {
     if (this._rafId !== null) return;
+    this._prevTime = performance.now();
     const tick = () => {
       this._rafId = requestAnimationFrame(tick);
+      const now = performance.now();
+      const dt  = Math.min((now - this._prevTime) * 0.001, 0.1);
+      this._prevTime = now;
+
       if (!this._drag) this._rotY += 0.007;
       if (this._rig) {
         this._rig.root.rotation.y = this._rotY;
-        const t = performance.now() * 0.001;
+        const t = now * 0.001;
         this._rig.root.position.y = Math.sin(t * 1.2) * 0.016;
         animateCreature(this._rig, { state: this._animState, time: t });
       }
+      if (this._assetGroup) {
+        this._assetGroup.rotation.y = this._rotY;
+      }
+      this._assetMixer?.update(dt);
       this._camera.position.lerp(this._camPosTarget, 0.1);
       this._camLookCurrent.lerp(this._camLookTarget, 0.1);
       this._camera.lookAt(this._camLookCurrent);
@@ -265,7 +346,7 @@ class CharacterPreview {
     window.addEventListener('pointerup', () => { this._drag = false; });
   }
 
-  dispose(): void { this.stopLoop(); this._rig?.dispose(); this._renderer.dispose(); }
+  dispose(): void { this.stopLoop(); this._assetMixer?.stopAllAction(); this._rig?.dispose(); this._renderer.dispose(); }
 }
 
 // ── CharacterCreation ─────────────────────────────────────────────────────────
@@ -276,6 +357,15 @@ export class CharacterCreation {
   private _dna:      CreatureDNA = cloneDNA(DEFAULT_PLAYER_DNA);
   private _boon:     StartingBoon = 'tome';
   private _slotId    = 0;
+  private _assetModel: CharModelDef | null = null;
+  private _assetBrowser: AssetCharBrowser | null = null;
+  // Pane references assigned in _build(), toggled in show()
+  private _ctrlCol!:        HTMLElement;
+  private _assetPane!:      HTMLElement;
+  private _assetBrowserSec!: HTMLElement;
+  private _assetNameInput!: HTMLInputElement;
+  private _dnaPreviewControls!: HTMLElement;  // camRow, animRow, DNA buttons — hidden in asset mode
+  private _assetCanvasHint!:    HTMLElement;  // "Choose a model →" visible in asset mode
 
   // Control refs (populated in _build)
   private _nameInput!: HTMLInputElement;
@@ -322,13 +412,50 @@ export class CharacterCreation {
     this._slotId = slotId;
     this._dna    = cloneDNA(DEFAULT_PLAYER_DNA);
     this._boon   = 'tome';
+    this._assetModel = null;
+
+    // Re-evaluate charMode every time the screen opens (settings may have changed)
+    const wg = loadWorldGenConfig();
+    const isAsset = wg.charMode === 'asset';
+    this._ctrlCol.style.display  = isAsset ? 'none' : '';
+    this._assetPane.style.display = isAsset ? '' : 'none';
+
+    // Show/hide DNA-only preview controls
+    this._dnaPreviewControls.style.display = isAsset ? 'none' : '';
+    this._assetCanvasHint.style.display    = isAsset ? ''     : 'none';
+
+    if (isAsset && !this._assetBrowser) {
+      this._assetBrowser = new AssetCharBrowser(
+        this._assetBrowserSec,
+        wg.charPacks,
+        (def) => {
+          this._assetModel = def;
+          // Load and show the model in the preview canvas
+          if (this._preview) {
+            loadCharModel(def)
+              .then((loaded) => {
+                this._preview?.setAssetScene(loaded.scene, loaded.mixer, loaded.clips);
+                this._assetCanvasHint.style.display = 'none';
+              })
+              .catch((err) => console.warn('[CharCreation] preview load failed:', err));
+          }
+        },
+      );
+    }
+    this._assetNameInput.value = '';
+
     this._overlay.style.display = 'flex';
     requestAnimationFrame(() => this._overlay.classList.add('cc-open'));
     const canvas = this._overlay.querySelector<HTMLCanvasElement>('.cc-preview-canvas')!;
     if (!this._preview) this._preview = new CharacterPreview(canvas, this._dna);
     else                this._preview.setDNA(this._dna);
-    this._syncControls();
-    this._preview.startLoop();
+    if (!isAsset) {
+      this._syncControls();
+      this._preview.startLoop();
+    }
+    // In asset mode the loop is started by setAssetScene when a model is selected.
+    // Stop any existing procedural loop to clear the canvas.
+    if (isAsset) this._preview.stopLoop();
   }
 
   hide(): void {
@@ -337,7 +464,7 @@ export class CharacterCreation {
     setTimeout(() => { this._overlay.style.display = 'none'; }, 250);
   }
 
-  dispose(): void { this._preview?.dispose(); this._overlay.remove(); }
+  dispose(): void { this._preview?.dispose(); this._assetBrowser?.dispose(); this._overlay.remove(); }
 
   // ── Sync all control values from _dna ───────────────────────────────────
 
@@ -472,11 +599,25 @@ export class CharacterCreation {
     };
     importWrap.append(importInput, importBtn);
 
-    previewCol.append(canvas, camRow, animRow, hint, rollBtn, mutateBtn, dnaBtn, importWrap);
+    // Group all DNA-only preview controls so we can hide them in asset mode
+    const dnaControls = document.createElement('div');
+    dnaControls.className = 'cc-dna-controls-group';
+    dnaControls.append(camRow, animRow, hint, rollBtn, mutateBtn, dnaBtn, importWrap);
+    this._dnaPreviewControls = dnaControls;
+
+    // Placeholder shown in asset mode (hidden in code mode)
+    const assetHint = document.createElement('div');
+    assetHint.className = 'cc-asset-canvas-hint';
+    assetHint.textContent = '← Choose a character';
+    assetHint.style.display = 'none';
+    this._assetCanvasHint = assetHint;
+
+    previewCol.append(canvas, dnaControls, assetHint);
 
     // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
     ctrlCol.className = 'cc-controls-col';
+    this._ctrlCol = ctrlCol;
 
     // Name
     const nameWrap = document.createElement('div'); nameWrap.className = 'cc-section';
@@ -784,14 +925,73 @@ export class CharacterCreation {
     ctrlCol.append(nameWrap, archSec, presetSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
     main.append(previewCol, ctrlCol);
 
+    // ── Asset mode pane (hidden when charMode is 'code') ──────────────────
+    const assetPane = document.createElement('div');
+    assetPane.className = 'cc-controls-col';
+    assetPane.style.display = 'none';
+    this._assetPane = assetPane;
+
+    const assetNameWrap = document.createElement('div'); assetNameWrap.className = 'cc-section';
+    const assetNameLbl  = document.createElement('label'); assetNameLbl.className = 'cc-label'; assetNameLbl.textContent = 'Name';
+    assetNameLbl.setAttribute('for', 'cc-asset-name');
+    const assetNameInput = document.createElement('input');
+    assetNameInput.type = 'text'; assetNameInput.id = 'cc-asset-name';
+    assetNameInput.className = 'cc-name-input';
+    assetNameInput.placeholder = 'Enter a name…'; assetNameInput.maxLength = 24;
+    this._assetNameInput = assetNameInput;
+    assetNameWrap.append(assetNameLbl, assetNameInput);
+
+    const assetBrowserSec = document.createElement('div');
+    assetBrowserSec.className = 'cc-section';
+    assetBrowserSec.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;';
+    const assetBrowserTitle = document.createElement('div');
+    assetBrowserTitle.className = 'cc-section-title'; assetBrowserTitle.textContent = 'Choose Character';
+    assetBrowserSec.appendChild(assetBrowserTitle);
+    this._assetBrowserSec = assetBrowserSec;
+
+    const assetBoonSec = boonSec.cloneNode(true) as HTMLElement;
+    // Re-wire onclick for the cloned boon cards
+    assetBoonSec.querySelectorAll<HTMLElement>('.cc-boon').forEach((card2, i) => {
+      const boon = BOONS[i];
+      card2.onclick = () => {
+        this._boon = boon.id;
+        assetBoonSec.querySelectorAll<HTMLElement>('.cc-boon').forEach((c, j) =>
+          c.classList.toggle('cc-boon--on', j === i));
+      };
+    });
+
+    assetPane.append(assetNameWrap, assetBrowserSec, assetBoonSec);
+    main.appendChild(assetPane);
+
+    // ── Switch between DNA and Asset pane based on charMode ───────────────
+    const wg = loadWorldGenConfig();
+    if (wg.charMode === 'asset') {
+      ctrlCol.style.display = 'none';
+      assetPane.style.display = '';
+      this._assetBrowser = new AssetCharBrowser(
+        assetBrowserSec,
+        wg.charPacks,
+        (def) => { this._assetModel = def; },
+      );
+    }
+
+    // Sync name input across panes
+    this._nameInput.addEventListener('input', () => { assetNameInput.value = this._nameInput.value; });
+    assetNameInput.addEventListener('input', () => { this._nameInput.value = assetNameInput.value; });
+
     // Actions
     const actions = document.createElement('div'); actions.className = 'cc-actions';
     const backBtn = document.createElement('button'); backBtn.className = 'cc-btn cc-btn--back'; backBtn.textContent = '← Back';
     backBtn.onclick = () => this._onBack();
     const startBtn = document.createElement('button'); startBtn.className = 'cc-btn cc-btn--start'; startBtn.textContent = 'Begin →';
     startBtn.onclick = () => {
-      const name = this._nameInput.value.trim() || 'The Transmuter';
-      this._onStart({ name, boon: this._boon, slotId: this._slotId, dna: cloneDNA(this._dna) });
+      const wgNow = loadWorldGenConfig();
+      const name  = (wgNow.charMode === 'asset' ? assetNameInput : this._nameInput).value.trim() || 'The Transmuter';
+      const base: CharacterConfig = { name, boon: this._boon, slotId: this._slotId, dna: cloneDNA(this._dna) };
+      if (wgNow.charMode === 'asset' && this._assetModel) {
+        base.assetModel = this._assetModel;
+      }
+      this._onStart(base);
     };
     actions.append(backBtn, startBtn);
     card.append(main, actions);

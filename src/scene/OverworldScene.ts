@@ -1510,6 +1510,7 @@ export class OverworldScene {
   private _syncSlimeIM(): void {
     const im = this._slimeIM;
     const n  = this._enemies.length;
+    im.count = n;   // only render the active slots; unused trailing slots stay zero-scale
     for (let i = 0; i < n; i++) {
       this._enemies[i]!.writeToIM(im, i);
     }

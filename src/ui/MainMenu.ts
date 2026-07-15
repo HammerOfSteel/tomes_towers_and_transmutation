@@ -17,6 +17,7 @@ import {
   randomiseSeed,
   KENNEY_PACKS,
 } from '@/world/WorldGenConfig';
+import { CHAR_PACKS } from '@/characters/charManifest';
 
 // ── Image pool ────────────────────────────────────────────────────────────
 
@@ -522,6 +523,30 @@ export class MainMenu {
           ).join('')}
         </div>
       </div>
+      <div class="mm-setting-divider"></div>
+      <div class="mm-setting-row mm-setting-row--section-hdr">
+        <span class="mm-setting-section-title">🎭 Characters</span>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">
+          Asset Characters
+          <span class="mm-setting-dev-hint">Off = procedural code-first DNA builder (default). On = GLB/FBX model packs.</span>
+        </label>
+        <label class="mm-toggle">
+          <input type="checkbox" id="mm-char-mode" ${wg.charMode === 'asset' ? 'checked' : ''}>
+          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div id="mm-char-packs-row" class="mm-setting-row mm-asset-packs-row" style="${wg.charMode !== 'asset' ? 'display:none' : ''}">
+        <label class="mm-setting-label">Active packs</label>
+        <div class="mm-setting-ctl mm-pack-grid">
+          ${CHAR_PACKS.map(p => `
+            <label class="mm-pack-label${p.recommended ? ' mm-pack-label--rec' : ''}" title="${p.desc} (${p.modelCount} models)">
+              <input type="checkbox" class="mm-char-pack-cb" value="${p.id}" ${wg.charPacks.includes(p.id) ? 'checked' : ''}>
+              <span>${p.icon} ${p.name}${p.recommended ? ' ★' : ''}</span>
+            </label>`).join('')}
+        </div>
+      </div>
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
@@ -615,6 +640,24 @@ export class MainMenu {
     card.querySelectorAll<HTMLInputElement>('.mm-pack-cb').forEach(cb => {
       cb.addEventListener('change', () => {
         wg.assetPacks = [...card.querySelectorAll<HTMLInputElement>('.mm-pack-cb')]
+          .filter(c => c.checked).map(c => c.value);
+        saveWg();
+      });
+    });
+
+    // ── Character mode + pack selection ──────────────────────────────────────
+    const charModeCb   = card.querySelector<HTMLInputElement>('#mm-char-mode')!;
+    const charPacksRow = card.querySelector<HTMLElement>('#mm-char-packs-row')!;
+
+    charModeCb.addEventListener('change', () => {
+      wg.charMode = charModeCb.checked ? 'asset' : 'code';
+      charPacksRow.style.display = charModeCb.checked ? '' : 'none';
+      saveWg();
+    });
+
+    card.querySelectorAll<HTMLInputElement>('.mm-char-pack-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        wg.charPacks = [...card.querySelectorAll<HTMLInputElement>('.mm-char-pack-cb')]
           .filter(c => c.checked).map(c => c.value);
         saveWg();
       });

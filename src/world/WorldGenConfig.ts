@@ -39,6 +39,17 @@ export interface WorldGenConfig {
    * Valid values: 'buildings' | 'castle' | 'dungeon' | 'nature' | 'town'
    */
   assetPacks: string[];
+  /**
+   * Character rendering mode.
+   * 'code'  — procedural DNA builder (default).
+   * 'asset' — load GLB/FBX models from the enabled character packs.
+   */
+  charMode:  'code' | 'asset';
+  /**
+   * Which character pack IDs to activate when charMode is 'asset'.
+   * Pack IDs match the folder names under public/assets/characters/.
+   */
+  charPacks: string[];
 }
 
 // ── Kenney pack catalogue (used by Settings UI + Sandbox) ────────────────────
@@ -72,6 +83,8 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   enemyCampCount: 8,
   assetMode:      'code',
   assetPacks:     ['buildings', 'nature', 'town'],
+  charMode:       'code',
+  charPacks:      ['kaykit_adventurers', 'kaykit_skeletons', 'fox', 'slime', 'goblin_pack', 'villager_npc'],
 };
 
 const LS_KEY = 'ttt_world_gen_config';
