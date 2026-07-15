@@ -18,16 +18,21 @@ import {
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature, type AnimState } from '@/creatures/CreatureAnimator';
 import { randomDNA, mutateDNA }            from '@/creatures/CreatureRandomiser';
+import { loadWorldGenConfig }              from '@/world/WorldGenConfig';
+import type { CharModelDef }               from '@/characters/charManifest';
+import { AssetCharBrowser }               from '@/ui/AssetCharBrowser';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export type StartingBoon = 'tome' | 'blood' | 'swift';
 
 export interface CharacterConfig {
-  name:   string;
-  boon:   StartingBoon;
-  slotId: number;
-  dna:    CreatureDNA;
+  name:        string;
+  boon:        StartingBoon;
+  slotId:      number;
+  dna:         CreatureDNA;
+  /** Set when charMode is 'asset' — identifies the chosen GLB/FBX model. */
+  assetModel?: CharModelDef;
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────
@@ -276,6 +281,8 @@ export class CharacterCreation {
   private _dna:      CreatureDNA = cloneDNA(DEFAULT_PLAYER_DNA);
   private _boon:     StartingBoon = 'tome';
   private _slotId    = 0;
+  private _assetModel: CharModelDef | null = null;
+  private _assetBrowser: AssetCharBrowser | null = null;
 
   // Control refs (populated in _build)
   private _nameInput!: HTMLInputElement;
@@ -337,7 +344,7 @@ export class CharacterCreation {
     setTimeout(() => { this._overlay.style.display = 'none'; }, 250);
   }
 
-  dispose(): void { this._preview?.dispose(); this._overlay.remove(); }
+  dispose(): void { this._preview?.dispose(); this._assetBrowser?.dispose(); this._overlay.remove(); }
 
   // ── Sync all control values from _dna ───────────────────────────────────
 
@@ -784,14 +791,70 @@ export class CharacterCreation {
     ctrlCol.append(nameWrap, archSec, presetSec, boonSec, palSec, faceSec, propSec, this._outfitSec, scaleSec);
     main.append(previewCol, ctrlCol);
 
+    // ── Asset mode pane (hidden when charMode is 'code') ──────────────────
+    const assetPane = document.createElement('div');
+    assetPane.className = 'cc-controls-col';
+    assetPane.style.display = 'none';
+
+    const assetNameWrap = document.createElement('div'); assetNameWrap.className = 'cc-section';
+    const assetNameLbl  = document.createElement('label'); assetNameLbl.className = 'cc-label'; assetNameLbl.textContent = 'Name';
+    assetNameLbl.setAttribute('for', 'cc-asset-name');
+    const assetNameInput = document.createElement('input');
+    assetNameInput.type = 'text'; assetNameInput.id = 'cc-asset-name';
+    assetNameInput.className = 'cc-name-input';
+    assetNameInput.placeholder = 'Enter a name…'; assetNameInput.maxLength = 24;
+    assetNameWrap.append(assetNameLbl, assetNameInput);
+
+    const assetBrowserSec = document.createElement('div');
+    assetBrowserSec.className = 'cc-section';
+    assetBrowserSec.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;';
+    const assetBrowserTitle = document.createElement('div');
+    assetBrowserTitle.className = 'cc-section-title'; assetBrowserTitle.textContent = 'Choose Character';
+    assetBrowserSec.appendChild(assetBrowserTitle);
+
+    const assetBoonSec = boonSec.cloneNode(true) as HTMLElement;
+    // Re-wire onclick for the cloned boon cards
+    assetBoonSec.querySelectorAll<HTMLElement>('.cc-boon').forEach((card2, i) => {
+      const boon = BOONS[i];
+      card2.onclick = () => {
+        this._boon = boon.id;
+        assetBoonSec.querySelectorAll<HTMLElement>('.cc-boon').forEach((c, j) =>
+          c.classList.toggle('cc-boon--on', j === i));
+      };
+    });
+
+    assetPane.append(assetNameWrap, assetBrowserSec, assetBoonSec);
+    main.appendChild(assetPane);
+
+    // ── Switch between DNA and Asset pane based on charMode ───────────────
+    const wg = loadWorldGenConfig();
+    if (wg.charMode === 'asset') {
+      ctrlCol.style.display = 'none';
+      assetPane.style.display = '';
+      this._assetBrowser = new AssetCharBrowser(
+        assetBrowserSec,
+        wg.charPacks,
+        (def) => { this._assetModel = def; },
+      );
+    }
+
+    // Sync name input across panes
+    this._nameInput.addEventListener('input', () => { assetNameInput.value = this._nameInput.value; });
+    assetNameInput.addEventListener('input', () => { this._nameInput.value = assetNameInput.value; });
+
     // Actions
     const actions = document.createElement('div'); actions.className = 'cc-actions';
     const backBtn = document.createElement('button'); backBtn.className = 'cc-btn cc-btn--back'; backBtn.textContent = '← Back';
     backBtn.onclick = () => this._onBack();
     const startBtn = document.createElement('button'); startBtn.className = 'cc-btn cc-btn--start'; startBtn.textContent = 'Begin →';
     startBtn.onclick = () => {
-      const name = this._nameInput.value.trim() || 'The Transmuter';
-      this._onStart({ name, boon: this._boon, slotId: this._slotId, dna: cloneDNA(this._dna) });
+      const wgNow = loadWorldGenConfig();
+      const name  = (wgNow.charMode === 'asset' ? assetNameInput : this._nameInput).value.trim() || 'The Transmuter';
+      const base: CharacterConfig = { name, boon: this._boon, slotId: this._slotId, dna: cloneDNA(this._dna) };
+      if (wgNow.charMode === 'asset' && this._assetModel) {
+        base.assetModel = this._assetModel;
+      }
+      this._onStart(base);
     };
     actions.append(backBtn, startBtn);
     card.append(main, actions);
