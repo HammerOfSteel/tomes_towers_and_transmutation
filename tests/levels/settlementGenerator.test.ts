@@ -30,7 +30,7 @@ function flatGrid(size = 64): WorldGrid {
 const BASE_CONFIG: WorldGenConfig = {
   seed: 42, worldSize: 128, riverCount: 2, lakeCount: 0,
   dungeonCount: 2, villageCount: 2, townCount: 1, hasCity: true, enemyCampCount: 2,
-  assetMode: 'code', assetPacks: [],
+  assetMode: 'code', assetPacks: [], charMode: 'code', charPacks: [],
 };
 
 // ── Name generator ─────────────────────────────────────────────────────────────
