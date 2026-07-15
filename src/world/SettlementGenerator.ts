@@ -173,19 +173,21 @@ function _planVillage(
 
   // Ring of cottages / occasional smithy — generous radius so buildings don't crowd each other.
   // Ring radius 5-7 tiles (10-14 WU center-to-center) gives ~9-13 WU between adjacent cottages.
-  const N   = 6 + Math.floor(rand() * 5);
-  const MIX: BuildingType[] = ['smithy', 'cottage', 'cottage', 'inn', 'cottage', 'cottage', 'cottage', 'market_stall', 'cottage', 'cottage', 'cottage'];
-  const baseR = 5 + Math.floor(rand() * 3);  // 5, 6, or 7 tiles
+  const N   = 4 + Math.floor(rand() * 4);  // 4-7 buildings (was 6-10, too many caused overlap)
+  // inn removed: footprint [3,4] doesn't fit reliably in a 5-tile ring
+  const MIX: BuildingType[] = ['smithy', 'cottage', 'cottage', 'cottage', 'cottage', 'market_stall', 'cottage', 'cottage'];
+  const baseR = 6 + Math.floor(rand() * 2);  // 6 or 7 tiles (was 5-7, 5 was too tight)
 
   for (let i = 0; i < N; i++) {
-    const angle   = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.5;
-    const rJitter = (rand() - 0.5) * 1.2;  // slight radial variation for organic feel
+    const angle   = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+    const rJitter = (rand() - 0.5) * 0.8;  // reduced jitter
     const R       = baseR + rJitter;
     const col     = Math.round(cc + Math.cos(angle) * R);
     const row     = Math.round(cr + Math.sin(angle) * R);
-    if (!_valid(grid, col, row)) continue;
+    const btype   = MIX[i % MIX.length] ?? 'cottage';
+    if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
     buildings.push({
-      type:     MIX[i % MIX.length] ?? 'cottage',
+      type:     btype,
       col, row,
       rotation: angle + Math.PI + (rand() - 0.5) * 0.35,
       seed:     (seed ^ ((i + 1) * 0x9E37)) >>> 0,
@@ -249,15 +251,14 @@ function _planTown(
   ];
   let mi = 0;
 
-  // Buildings along E-W street — setback 3 tiles, spaced every 3 steps
-  // (was 2-tile setback + 2-step spacing which caused crowding)
-  for (let step = -7; step <= 7; step += 3) {
+  // Buildings along E-W street — setback 4 tiles (from road centre), step every 4 tiles
+  for (let step = -8; step <= 8; step += 4) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
       const col = cc + step;
-      const row = cr + side * 3;
+      const row = cr + side * 4;
       const btype = MIX[mi]!;
-      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) continue;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
         col, row,
@@ -267,14 +268,14 @@ function _planTown(
     }
   }
 
-  // Buildings along N-S cross street — setback 3 tiles, spaced every 3 steps
-  for (let step = -5; step <= 5; step += 3) {
+  // Buildings along N-S cross street — setback 4 tiles, step every 4 tiles
+  for (let step = -6; step <= 6; step += 4) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
-      const col = cc + side * 3;
+      const col = cc + side * 4;
       const row = cr + step;
       const btype = MIX[mi]!;
-      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) continue;
+      if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
         col, row,
