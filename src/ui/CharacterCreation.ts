@@ -108,6 +108,11 @@ const CC_CSS = `
   border-radius: 4px; cursor: grab; user-select: none; background: #0d0b18; }
 .cc-preview-canvas:active { cursor: grabbing; }
 .cc-drag-hint { font-size: .68rem; color: #3a2860; letter-spacing: .06em; text-transform: uppercase; }
+.cc-dna-controls-group { display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: center; }
+.cc-asset-canvas-hint {
+  font-size: .8rem; color: #7a6a8a; font-style: italic; text-align: center;
+  margin-top: 8px; letter-spacing: .04em;
+}
 .cc-dna-btn { background: transparent; border: 1px solid #2a1850; border-radius: 3px;
   color: #5a4880; font-size: .72rem; cursor: pointer; padding: 4px 10px; font-family: inherit;
   letter-spacing: .04em; transition: all .12s; }
@@ -288,6 +293,8 @@ export class CharacterCreation {
   private _assetPane!:      HTMLElement;
   private _assetBrowserSec!: HTMLElement;
   private _assetNameInput!: HTMLInputElement;
+  private _dnaPreviewControls!: HTMLElement;  // camRow, animRow, DNA buttons — hidden in asset mode
+  private _assetCanvasHint!:    HTMLElement;  // "Choose a model →" visible in asset mode
 
   // Control refs (populated in _build)
   private _nameInput!: HTMLInputElement;
@@ -341,6 +348,11 @@ export class CharacterCreation {
     const isAsset = wg.charMode === 'asset';
     this._ctrlCol.style.display  = isAsset ? 'none' : '';
     this._assetPane.style.display = isAsset ? '' : 'none';
+
+    // Show/hide DNA-only preview controls
+    this._dnaPreviewControls.style.display = isAsset ? 'none' : '';
+    this._assetCanvasHint.style.display    = isAsset ? ''     : 'none';
+
     if (isAsset && !this._assetBrowser) {
       this._assetBrowser = new AssetCharBrowser(
         this._assetBrowserSec,
@@ -355,8 +367,12 @@ export class CharacterCreation {
     const canvas = this._overlay.querySelector<HTMLCanvasElement>('.cc-preview-canvas')!;
     if (!this._preview) this._preview = new CharacterPreview(canvas, this._dna);
     else                this._preview.setDNA(this._dna);
-    if (!isAsset) this._syncControls();
-    this._preview.startLoop();
+    if (!isAsset) {
+      this._syncControls();
+      this._preview.startLoop();
+    } else {
+      this._preview.stopLoop();
+    }
   }
 
   hide(): void {
@@ -500,7 +516,20 @@ export class CharacterCreation {
     };
     importWrap.append(importInput, importBtn);
 
-    previewCol.append(canvas, camRow, animRow, hint, rollBtn, mutateBtn, dnaBtn, importWrap);
+    // Group all DNA-only preview controls so we can hide them in asset mode
+    const dnaControls = document.createElement('div');
+    dnaControls.className = 'cc-dna-controls-group';
+    dnaControls.append(camRow, animRow, hint, rollBtn, mutateBtn, dnaBtn, importWrap);
+    this._dnaPreviewControls = dnaControls;
+
+    // Placeholder shown in asset mode (hidden in code mode)
+    const assetHint = document.createElement('div');
+    assetHint.className = 'cc-asset-canvas-hint';
+    assetHint.textContent = '← Choose a character';
+    assetHint.style.display = 'none';
+    this._assetCanvasHint = assetHint;
+
+    previewCol.append(canvas, dnaControls, assetHint);
 
     // ── Right column: controls ──────────────────────────────────────────────
     const ctrlCol = document.createElement('div');
