@@ -258,6 +258,47 @@ export class OverworldScene {
     this._roadMeshes = [];
   }
 
+  // ── Asset upgrade ─────────────────────────────────────────────────────────
+
+  /**
+   * Swap every procedural tree group's children for a real GLB model loaded
+   * from the Kenney nature-kit.  Safe to call fire-and-forget: if any model
+   * fails to load the procedural fallback geometry remains for that tree.
+   * Physics colliders are keyed by world position and are NOT affected.
+   */
+  async upgradeTreesWithAssets(
+    loader: import('@/assets/AssetLoader').AssetLoader,
+  ): Promise<void> {
+    const TREE_MODELS = [
+      '/assets/nature/tree_default.glb',
+      '/assets/nature/tree_cone.glb',
+      '/assets/nature/tree_blocks.glb',
+      '/assets/nature/tree_detailed.glb',
+    ];
+
+    await loader.preload(TREE_MODELS);
+
+    for (const tr of this._trees) {
+      // Deterministic model selection from world position (no extra RNG needed)
+      const hash  = Math.abs((Math.round(tr.px * 17) ^ Math.round(tr.pz * 31)));
+      const idx   = hash % TREE_MODELS.length;
+      const model = loader.getClone(TREE_MODELS[idx]);
+      if (!model) continue;
+
+      // Kenney nature-kit uses 1-unit tiles; our world tile is T=2 WU, and
+      // the trees should be roughly 4–5 WU tall to match the procedural ones.
+      model.scale.setScalar(3.0);
+
+      // The group already has the correct world position + random Y rotation;
+      // just replace the visual children, leaving transform intact.
+      tr.group.clear();
+      tr.group.add(model);
+    }
+
+    // Expose a flag the Playwright test layer can read
+    (this.scene as any).__assetTreesLoaded = true;
+  }
+
   // ── Trigger queries ───────────────────────────────────────────────────────
 
   /** True when the player is close enough to the tower door to press E.

@@ -44,6 +44,7 @@ import { LevelUpBanner } from '@/ui/LevelUpBanner';
 import { QuestLog } from '@/ui/QuestLog';
 import { DiscoveryTracker } from '@/world/DiscoveryTracker';
 import { checkQuestFulfillment } from '@/world/QuestDef';
+import { assetLoader } from '@/assets/AssetLoader';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -133,6 +134,11 @@ async function main() {
         questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
       );
     };
+    // Fire-and-forget: swap procedural trees for GLB assets when ready.
+    // On failure (e.g. first load, offline) the procedural fallback stays.
+    ow.upgradeTreesWithAssets(assetLoader).catch((e) =>
+      console.warn('[main] tree asset upgrade failed:', e),
+    );
     return ow;
   }
 
@@ -530,6 +536,11 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /**
+       * True when the overworld tree asset upgrade has completed.
+       * Used by Playwright tests to wait for GLB trees to be in the scene.
+       */
+      hasAssetTrees: () => !!(scene as any).__assetTreesLoaded,
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
