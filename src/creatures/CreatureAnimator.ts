@@ -58,8 +58,13 @@ function _idleDefault(b: B, t: number): void {
 }
 
 function _idleSerpent(b: B, t: number): void {
+  // bones.head is a deep sub-group of segment[0] — safe to set directly.
   if (b.head) { b.head.rotation.y = Math.sin(t * 0.9) * 0.22; b.head.rotation.x = Math.sin(t * 1.4) * 0.04; }
-  if (b.segments) b.segments.forEach((sg, i) => { sg.rotation.y = Math.sin(t * 1.1 + i * 0.5) * (0.08 + i * 0.01); });
+  // segments[] orientations are owned by SnakeLocomotion.update() (lookAt).
+  // Use += so the sway layers on top without overriding the base orientation.
+  if (b.segments) b.segments.forEach((sg, i) => {
+    sg.rotation.z += Math.sin(t * 1.1 + i * 0.5) * (0.04 + i * 0.006);
+  });
 }
 
 function _idleAmoeba(b: B, t: number): void {
@@ -120,12 +125,17 @@ function _walkQuad(b: B, t: number, run: boolean): void {
 }
 
 function _walkSerpent(b: B, t: number, run: boolean): void {
-  const sp = run ? 7 : 4, str = run ? 0.32 : 0.20;
-  const ph = t * sp;
-  if (b.head)   b.head.rotation.y = Math.sin(ph) * 0.18;
-  if (b.torso)  b.torso.position.y = Math.abs(Math.sin(ph)) * 0.02;
+  // SnakeLocomotion.update() drives segment positions + base Y-orientation (lookAt).
+  // We add a lateral Z-sway overlay only — using += so the lookAt base survives.
+  const sp  = run ? 8 : 5;
+  const amp = run ? 0.08 : 0.050;
+  if (b.head) {
+    b.head.rotation.z += Math.sin(t * sp) * amp * 1.5;
+    b.head.rotation.x += Math.sin(t * sp * 0.45) * 0.025;
+  }
+  if (b.torso) b.torso.position.y = Math.abs(Math.sin(t * sp)) * 0.018;
   if (b.segments) b.segments.forEach((sg, i) => {
-    sg.rotation.y = Math.sin(ph - i * 0.55) * (str * (1 + i * 0.04));
+    sg.rotation.z += Math.sin(t * sp - i * 0.55) * (amp * Math.max(0.18, 1 - i * 0.09));
   });
 }
 

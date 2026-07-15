@@ -1,8 +1,10 @@
 // ── PauseMenu ─────────────────────────────────────────────────────────────
 
 export interface PauseMenuActions {
-  onOpenEditor: () => void;
+  onOpenEditor:  () => void;
   onOpenDevPanel?: () => void;
+  /** Open the character stats sheet (available from pause menu). */
+  onOpenStats?:  () => void;
 }
 
 /** Full-screen pause overlay, opened via Escape.
@@ -58,6 +60,11 @@ export class PauseMenu {
           <span style="color:#ff9933;">⬡</span>&nbsp; Level Editor
         </button>
 
+        ${this.actions.onOpenStats ? `
+        <button class="pm-btn" data-action="stats" style="${BTN_STYLE}">
+          <span style="color:#44aaff;">✦</span>&nbsp; Character
+        </button>` : ''}
+
         ${localStorage.getItem('ttt_dev_mode') === 'true' ? `
         <button class="pm-btn" data-action="devpanel" style="${BTN_STYLE.replace('#44405a','#5a3a22').replace('#44405a','#5a3a22')}">
           <span style="color:#cc8844;">⚙</span>&nbsp; Dev Panel
@@ -86,6 +93,9 @@ export class PauseMenu {
         } else if (action === 'editor') {
           this.close();
           this.actions.onOpenEditor();
+        } else if (action === 'stats') {
+          this.close();
+          this.actions.onOpenStats?.();
         } else if (action === 'devpanel') {
           this.close();
           this.actions.onOpenDevPanel?.();

@@ -693,7 +693,7 @@ export class CharacterCreation {
       const topRow = document.createElement('div'); topRow.className = 'cc-row';
       const topLbl = document.createElement('span'); topLbl.className = 'cc-row-lbl'; topLbl.textContent = 'Top:';
       const topChips = document.createElement('div'); topChips.className = 'cc-chips';
-      for (const [id, lbl4] of [['none','None'],['tunic','Tunic'],['robe_top','Robe Top'],['armor_chest','Armor'],['wrap','Wrap']] as const) {
+      for (const [id, lbl4] of [['none','None'],['tunic','Tunic'],['robe_top','Robe Top'],['armor_chest','Armor'],['wrap','Wrap'],['dress_flared','Dress ↑'],['dress_layered','Dress ↑↑']] as const) {
         const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
         chip.onclick = () => { this._dna.outfit.top = id; this._outfitTopChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
         this._outfitTopChips.set(id, chip); topChips.appendChild(chip);
@@ -704,7 +704,7 @@ export class CharacterCreation {
       const legsRow = document.createElement('div'); legsRow.className = 'cc-row';
       const legsLbl = document.createElement('span'); legsLbl.className = 'cc-row-lbl'; legsLbl.textContent = 'Legs:';
       const legsChips = document.createElement('div'); legsChips.className = 'cc-chips';
-      for (const [id, lbl4] of [['none','None'],['trousers','Trousers'],['skirt','Skirt'],['shorts','Shorts'],['loincloth','Loincloth'],['robe_skirt','Robe Skirt']] as const) {
+      for (const [id, lbl4] of [['none','None'],['trousers','Trousers'],['skirt','Skirt'],['shorts','Shorts'],['loincloth','Loincloth'],['robe_skirt','Robe Skirt'],['skirt_gathered','Gathered Skirt'],['skirt_long','Long Skirt']] as const) {
         const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
         chip.onclick = () => { this._dna.outfit.legs = id; this._outfitLegsChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
         this._outfitLegsChips.set(id, chip); legsChips.appendChild(chip);
@@ -715,7 +715,7 @@ export class CharacterCreation {
       const overRow = document.createElement('div'); overRow.className = 'cc-row';
       const overLbl = document.createElement('span'); overLbl.className = 'cc-row-lbl'; overLbl.textContent = 'Over:';
       const overChips = document.createElement('div'); overChips.className = 'cc-chips';
-      for (const [id, lbl4] of [['none','None'],['robe_full','Robe'],['cape','Cape'],['cloak','Cloak']] as const) {
+      for (const [id, lbl4] of [['none','None'],['robe_full','Robe'],['cape','Cape'],['cloak','Cloak'],['robe_layered','Layered Robe']] as const) {
         const chip = document.createElement('div'); chip.className = 'cc-chip'; chip.textContent = lbl4;
         chip.onclick = () => { this._dna.outfit.over = id; this._outfitOverChips.forEach((el, k) => el.classList.toggle('cc-chip--on', k === id)); this._preview?.setDNA(this._dna); };
         this._outfitOverChips.set(id, chip); overChips.appendChild(chip);

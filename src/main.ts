@@ -28,6 +28,9 @@ import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { OWMinimap }      from '@/ui/OWMinimap';
+import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
+import { buildWorldData } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
@@ -38,6 +41,9 @@ import { animateCreature } from '@/creatures/CreatureAnimator';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
 import { LevelUpBanner } from '@/ui/LevelUpBanner';
+import { QuestLog } from '@/ui/QuestLog';
+import { DiscoveryTracker } from '@/world/DiscoveryTracker';
+import { checkQuestFulfillment } from '@/world/QuestDef';
 
 async function main() {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -97,16 +103,38 @@ async function main() {
   const sceneManager = new SceneManager(scene, physics, player);
   // Initial room load: generate the tower with a random seed.
   let currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
+  let worldGenConfig: WorldGenConfig = loadWorldGenConfig();
   const _initialPlan = generateTower(currentSeed);
   sceneManager.loadDungeon(_initialPlan);
 
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
+  let minimap:   OWMinimap | null = null;
   // Rigs spawned via the Creature Lab sandbox — animated each tick.
   const _spawnedRigs: Array<{ rig: CreatureRig; born: number }> = [];
   const party = new PartyManager(5);
   const tamingGame = new TamingGame(scene, cameraRig.camera);
+
+  function _makeOverworld(seed: number): OverworldScene {
+    // Always re-read so changes made in the Settings modal are picked up.
+    worldGenConfig = loadWorldGenConfig();
+    const cfg       = { ...worldGenConfig, seed };
+    const worldData = buildWorldData(seed, cfg);
+    // Rebuild minimap for the new world
+    minimap?.dispose();
+    minimap = new OWMinimap(worldData);
+    minimap.hide(); // hidden until exterior mode is entered
+    const ow = new OverworldScene(scene, physics, player, worldData);
+    ow.onQuestGiven = (quest) => {
+      questLog.addQuest(quest);
+      // Refresh minimap pins from all active quests
+      minimap?.setQuestPins(
+        questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
+      );
+    };
+    return ow;
+  }
 
   function switchToExterior(): void {
     // MUST unload dungeon first — onExitTrigger fires directly without
@@ -114,10 +142,16 @@ async function main() {
     // would otherwise stay in the scene and interfere with the overworld.
     sceneManager.unloadCurrentRoom();
     if (!overworld) {
-      overworld = new OverworldScene(scene, physics, player, currentSeed);
+      overworld = _makeOverworld(currentSeed);
+    }
+    // Mark last visited dungeon as cleared (enter = cleared, simplification for now)
+    if (_activeDungeonId !== null) {
+      discoveryTracker.markDungeonCleared(_activeDungeonId);
+      _activeDungeonId = null;
     }
     gameMode = 'exterior';
     overworld.enter();
+    minimap?.show();
     // Spawn just south of the tower door, high enough that the KCC capsule
     // starts above the heightfield surface and falls cleanly to ground.
     player.teleport(new THREE.Vector3(0, 1.5, 8));
@@ -128,6 +162,7 @@ async function main() {
   function switchToInterior(roomId?: string): void {
     overworld?.exit();
     gameMode = 'interior';
+    minimap?.hide();
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
     sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
   }
@@ -138,7 +173,11 @@ async function main() {
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
 
   // ── Progression & interactables ───────────────────────────────────────────
-  const progression   = new ProgressionSystem();
+  const progression      = new ProgressionSystem();
+  const questLog         = new QuestLog();
+  const discoveryTracker = new DiscoveryTracker();
+  let _activeDungeonId: number | null = null;
+  let _questCheckTimer = 0;
   const talentSystem  = new TalentSystem();
   const talentTree    = new TalentTree();
   const statPanel     = new StatPanel();
@@ -161,7 +200,7 @@ async function main() {
     // Unload interior, load exterior world for remote viewing
     sceneManager.unloadCurrentRoom();
     if (!overworld) {
-      overworld = new OverworldScene(scene, physics, player, currentSeed);
+      overworld = _makeOverworld(currentSeed);
     }
     overworld.enter();
     scene.background = new THREE.Color(0x4a6888);
@@ -219,6 +258,16 @@ async function main() {
       player.teleport(new THREE.Vector3(0, 1.5, 0));
       wasRoomCleared = false;
     },
+    // ── Overworld (available when in exterior mode) ──────────────────────────
+    getFlyMode:    () => player.flyMode,
+    onFlyMode:     (v) => { player.flyMode = v; },
+    getSettlements: () => gameMode === 'exterior'
+      ? (overworld?.getSettlementPositions() ?? [])
+      : [],
+    onFastTravel:  (pos) => {
+      if (gameMode !== 'exterior') switchToExterior();
+      player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z));
+    },
   });
 
   // ── Spell book ──────────────────────────────────────────────────────────
@@ -226,8 +275,9 @@ async function main() {
 
   // ── Pause menu ───────────────────────────────────────────────────────────
   const pauseMenu = new PauseMenu({
-    onOpenEditor: () => editMode.toggle(),
+    onOpenEditor:   () => editMode.toggle(),
     onOpenDevPanel: () => devPanel.open(),
+    onOpenStats:    () => statPanel.open(progression),
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
@@ -236,6 +286,8 @@ async function main() {
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
+    minimap?.dispose();
+    minimap = null;
     gameMode = 'interior';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     const plan = generateTower(currentSeed);
@@ -409,7 +461,7 @@ async function main() {
         sceneManager.unloadCurrentRoom();
         // Always recreate so the specified seed is honoured
         if (overworld) { overworld.exit(); overworld.dispose(); overworld = null; }
-        overworld = new OverworldScene(scene, physics, player, seed);
+        overworld = _makeOverworld(seed);
         overworld.enter();
         gameMode = 'exterior';
         player.teleport(new THREE.Vector3(0, 1.5, 8));
@@ -627,6 +679,31 @@ async function main() {
         party.pruneDead();
         tamingGame.update(dt);
 
+        // Quest fulfillment check (throttled to 1 Hz)
+        _questCheckTimer -= dt;
+        if (_questCheckTimer <= 0) {
+          _questCheckTimer = 1.0;
+          const _pp  = player.group.position;
+          const _gc  = overworld.worldToGrid(_pp.x, _pp.z);
+          for (const q of questLog.getActive()) {
+            if (!q.fulfilled && checkQuestFulfillment(q, _gc.col, _gc.row, discoveryTracker.clearedDungeons)) {
+              questLog.markFulfilled(q.id);
+              progression.grantXP(q.reward.xp);
+              // Refresh minimap pins
+              minimap?.setQuestPins(
+                questLog.getActive().map(aq => ({ col: aq.target.col, row: aq.target.row })),
+              );
+            }
+          }
+        }
+
+        // Update minimap player position (convert world → tile coords)
+        if (minimap?.isVisible()) {
+          const _pp  = player.group.position;
+          const _gc  = overworld.worldToGrid(_pp.x, _pp.z);
+          minimap.updatePlayer(_gc.col, _gc.row);
+        }
+
         // Update exterior interaction prompt
         const _pos = player.group.position;
         const _flee = overworld.getActiveEnemies().find(
@@ -637,8 +714,13 @@ async function main() {
         } else if (overworld.nearTowerEntrance(_pos)) {
           _setExteriorPrompt('Enter Tower');
         } else {
-          const _bld = overworld.nearBuilding(_pos);
-          _setExteriorPrompt(_bld ? _bld.label : null);
+          const _dng = overworld.nearDungeonEntrance(_pos);
+          if (_dng) {
+            _setExteriorPrompt(_dng.entry.name);
+          } else {
+            const _bld = overworld.nearBuilding(_pos);
+            _setExteriorPrompt(_bld ? _bld.label : null);
+          }
         }
       } else {
         _setExteriorPrompt(null);
@@ -705,24 +787,37 @@ async function main() {
           } else if (overworld.nearTowerEntrance(player.group.position)) {
             switchToInterior();
           } else {
-            const bld = overworld.nearBuilding(player.group.position);
-            if (bld) {
-              if (bld.type === 'greenhouse') {
-                // Load the greenhouse interior dungeon
-                const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
-                overworld.exit();
-                gameMode = 'interior';
-                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                sceneManager.loadDungeon(ghPlan);
-                player.teleport(new THREE.Vector3(0, 1.5, 8));
-              } else {
-                // Generic building — load a random dungeon floor
-                const bldSeed = currentSeed ^ 0xCAFE_BABE;
-                const bldPlan = generateDungeon(bldSeed, 1);
-                overworld.exit();
-                gameMode = 'interior';
-                scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                sceneManager.loadDungeon(bldPlan);
+            const dngHandle = overworld.nearDungeonEntrance(player.group.position);
+            if (dngHandle) {
+              // Enter a seeded dungeon whose floor count was set at world-gen time
+              _activeDungeonId = dngHandle.entry.id;
+              discoveryTracker.markDungeonFound(dngHandle.entry.id);
+              const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
+              overworld.exit();
+              gameMode = 'interior';
+              scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+              sceneManager.loadDungeon(dngPlan);
+              player.teleport(new THREE.Vector3(0, 1.5, 8));
+            } else {
+              const bld = overworld.nearBuilding(player.group.position);
+              if (bld) {
+                if (bld.type === 'greenhouse') {
+                  // Load the greenhouse interior dungeon
+                  const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  sceneManager.loadDungeon(ghPlan);
+                  player.teleport(new THREE.Vector3(0, 1.5, 8));
+                } else {
+                  // Generic building — load a random dungeon floor
+                  const bldSeed = currentSeed ^ 0xCAFE_BABE;
+                  const bldPlan = generateDungeon(bldSeed, 1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  sceneManager.loadDungeon(bldPlan);
+                }
               }
             }
           }

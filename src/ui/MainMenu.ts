@@ -3,12 +3,19 @@
 // Full-screen animated main menu with:
 //  • Concept-art masonry gallery (8 tiles, staggered cross-fade, no duplicates)
 //  • Play modal with 3 localStorage save slots
-//  • Settings modal (volume, fullscreen)
+//  • Settings modal (volume, fullscreen, world-gen parameters)
 //  • Lore modal (4-page book — Wizard's journal + Princess's account)
 //  • Controls modal
 //
 // NOTE: Concept art images are served from /concept_art/ (project root).
 //       For production builds, move that folder into /public/concept_art/.
+
+import {
+  type WorldGenConfig,
+  loadWorldGenConfig,
+  saveWorldGenConfig,
+  randomiseSeed,
+} from '@/world/WorldGenConfig';
 
 // ── Image pool ────────────────────────────────────────────────────────────
 
@@ -361,6 +368,8 @@ export class MainMenu {
 
     const musicVis = localStorage.getItem(LS_MUSIC_VISIBLE) !== 'false';
     const devOn    = localStorage.getItem('ttt_dev_mode') === 'true';
+    const wg       = loadWorldGenConfig();
+
     card.insertAdjacentHTML('beforeend', `
       <div class="mm-setting-row">
         <label class="mm-setting-label">Master Volume</label>
@@ -394,12 +403,86 @@ export class MainMenu {
           <span class="mm-toggle-track mm-toggle-track--dev"><span class="mm-toggle-thumb"></span></span>
         </label>
       </div>
+      <div class="mm-setting-divider"></div>
+      <div class="mm-setting-row mm-setting-row--section-hdr">
+        <span class="mm-setting-section-title">World Generation</span>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">World Size</label>
+        <div class="mm-setting-ctl mm-setting-ctl--radio">
+          <label class="mm-radio-label">
+            <input type="radio" name="mm-wg-size" value="128" ${wg.worldSize === 128 ? 'checked' : ''}> Standard (128)
+          </label>
+          <label class="mm-radio-label">
+            <input type="radio" name="mm-wg-size" value="256" ${wg.worldSize === 256 ? 'checked' : ''}> Large (256)
+          </label>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Seed
+          <span class="mm-setting-dev-hint">0 = random each game</span>
+        </label>
+        <div class="mm-setting-ctl mm-setting-ctl--seed">
+          <input type="number" id="mm-wg-seed" class="mm-text-input" min="0" max="4294967295" step="1" value="${wg.seed}">
+          <button id="mm-wg-rand" class="mm-slot-btn mm-slot-btn--icon" title="Randomise seed">🎲</button>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Dungeon Entrances</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-dungeons" class="mm-slider" min="2" max="12" value="${wg.dungeonCount}">
+          <span id="mm-wg-dungeons-val" class="mm-setting-val">${wg.dungeonCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Enemy Camps</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-camps" class="mm-slider" min="2" max="10" value="${wg.enemyCampCount}">
+          <span id="mm-wg-camps-val" class="mm-setting-val">${wg.enemyCampCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Villages</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-villages" class="mm-slider" min="0" max="6" value="${wg.villageCount}">
+          <span id="mm-wg-villages-val" class="mm-setting-val">${wg.villageCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">River Paths</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-rivers" class="mm-slider" min="2" max="8" value="${wg.riverCount}">
+          <span id="mm-wg-rivers-val" class="mm-setting-val">${wg.riverCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Towns</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-wg-towns" class="mm-slider" min="0" max="4" value="${wg.townCount}">
+          <span id="mm-wg-towns-val" class="mm-setting-val">${wg.townCount}</span>
+        </div>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">City</label>
+        <div class="mm-setting-ctl">
+          <label class="mm-toggle">
+            <input type="checkbox" id="mm-wg-city" ${wg.hasCity ? 'checked' : ''}>
+            <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+          </label>
+        </div>
+      </div>
+      <div class="mm-setting-row mm-setting-row--share">
+        <button id="mm-wg-share" class="mm-slot-btn" title="Copy world config to clipboard">Share Config</button>
+        <input type="text" id="mm-wg-load-input" class="mm-text-input mm-text-input--share" placeholder="Paste config code…">
+        <button id="mm-wg-load" class="mm-slot-btn">Load</button>
+      </div>
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
     footer.appendChild(mkBtn('Apply & Close', 'mm-slot-btn', () => this._closeModal('mm-settings')));
     card.appendChild(footer);
 
+    // ── Volume ──────────────────────────────────────────────────────────────
     const slider = card.querySelector<HTMLInputElement>('#mm-vol')!;
     const valEl  = card.querySelector<HTMLSpanElement>('#mm-vol-val')!;
     slider.addEventListener('input', () => {
@@ -428,6 +511,75 @@ export class MainMenu {
       // Show / hide the Dev Lab nav button in real-time
       if (this._devLabBtn) {
         this._devLabBtn.style.display = devToggle.checked ? '' : 'none';
+      }
+    });
+
+    // ── World Gen ───────────────────────────────────────────────────────────
+    const saveWg = (): void => saveWorldGenConfig(wg);
+
+    const sizeRadios = card.querySelectorAll<HTMLInputElement>('input[name="mm-wg-size"]');
+    sizeRadios.forEach(r => r.addEventListener('change', () => {
+      wg.worldSize = parseInt(r.value) as WorldGenConfig['worldSize'];
+      saveWg();
+    }));
+
+    const seedInput = card.querySelector<HTMLInputElement>('#mm-wg-seed')!;
+    seedInput.addEventListener('change', () => {
+      wg.seed = Math.max(0, Math.min(0xFFFF_FFFF, parseInt(seedInput.value) || 0));
+      seedInput.value = String(wg.seed);
+      saveWg();
+    });
+
+    const randBtn = card.querySelector<HTMLButtonElement>('#mm-wg-rand')!;
+    randBtn.addEventListener('click', () => {
+      const next = randomiseSeed(wg);
+      wg.seed = next.seed;
+      seedInput.value = String(wg.seed);
+      saveWg();
+    });
+
+    const mkSlider = (id: string, valId: string, key: keyof WorldGenConfig): void => {
+      const el  = card.querySelector<HTMLInputElement>(id)!;
+      const val = card.querySelector<HTMLSpanElement>(valId)!;
+      el.addEventListener('input', () => {
+        (wg as unknown as Record<string, unknown>)[key as string] = parseInt(el.value);
+        val.textContent = el.value;
+        saveWg();
+      });
+    };
+    mkSlider('#mm-wg-dungeons', '#mm-wg-dungeons-val', 'dungeonCount');
+    mkSlider('#mm-wg-camps',    '#mm-wg-camps-val',    'enemyCampCount');
+    mkSlider('#mm-wg-villages', '#mm-wg-villages-val', 'villageCount');
+    mkSlider('#mm-wg-rivers',   '#mm-wg-rivers-val',   'riverCount');
+    mkSlider('#mm-wg-towns',    '#mm-wg-towns-val',    'townCount');
+
+    const cityToggle = card.querySelector<HTMLInputElement>('#mm-wg-city')!;
+    cityToggle.addEventListener('change', () => { wg.hasCity = cityToggle.checked; saveWg(); });
+
+    const shareBtn = card.querySelector<HTMLButtonElement>('#mm-wg-share')!;
+    shareBtn.addEventListener('click', () => {
+      try {
+        const encoded = btoa(JSON.stringify(wg));
+        navigator.clipboard.writeText(encoded).catch(() => {
+          prompt('Copy config code:', encoded);
+        });
+      } catch { /* ignore */ }
+    });
+
+    const loadInput = card.querySelector<HTMLInputElement>('#mm-wg-load-input')!;
+    const loadBtn   = card.querySelector<HTMLButtonElement>('#mm-wg-load')!;
+    loadBtn.addEventListener('click', () => {
+      try {
+        const raw  = loadInput.value.trim();
+        const parsed = JSON.parse(atob(raw)) as Partial<WorldGenConfig>;
+        Object.assign(wg, parsed);
+        saveWg();
+        loadInput.value = '';
+        loadBtn.textContent = '✓';
+        setTimeout(() => { loadBtn.textContent = 'Load'; }, 1500);
+      } catch {
+        loadInput.style.outline = '2px solid #f44';
+        setTimeout(() => { loadInput.style.outline = ''; }, 1200);
       }
     });
 
@@ -1077,6 +1229,31 @@ const MM_CSS = `
 }
 .mm-toggle-track--dev { background: #2a1a08; border-color: #5a3a18; }
 .mm-toggle input:checked ~ .mm-toggle-track--dev { background: #cc8844; border-color: #cc8844; }
+
+/* World-gen settings section */
+.mm-setting-row--section-hdr { padding-bottom: 2px; border-bottom: none; }
+.mm-setting-section-title {
+  font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 2px;
+  color: #7a9d6c; text-transform: uppercase;
+}
+.mm-setting-ctl--radio { flex-direction: column; align-items: flex-start; gap: 6px; }
+.mm-radio-label {
+  font-family: 'IM Fell English', Georgia, serif; font-size: 13px; color: #c8bedd;
+  cursor: pointer; display: flex; align-items: center; gap: 7px;
+}
+.mm-radio-label input[type="radio"] { accent-color: #7a9d6c; cursor: pointer; }
+.mm-setting-ctl--seed { gap: 8px; }
+.mm-text-input {
+  background: #1a1628; border: 1px solid #4a4158; border-radius: 4px;
+  color: #c8bedd; font-family: monospace; font-size: 13px;
+  padding: 4px 8px; width: 110px; outline: none;
+}
+.mm-text-input:focus { border-color: #7a9d6c; }
+.mm-slot-btn--icon {
+  padding: 4px 10px; font-size: 16px; line-height: 1;
+  background: #1e2a1a; border-color: #3a5a32;
+}
+.mm-slot-btn--icon:hover { background: #2a3e24; border-color: #7a9d6c; }
 
 /* ── Controls table ──────────────────────────────────────────────────────── */
 .mm-controls-table { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
