@@ -1173,15 +1173,15 @@ export class OverworldScene {
         this._buildingGroups.push(grp);
       }
 
-      // Collect settlement road tiles (deduplicated)
+      // Collect settlement road tiles — all at centre elevation for a flat pavement
+      const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
       for (const r of plan.roads) {
         const k = `${r.col},${r.row}`;
         if (sqSeen.has(k)) continue;
         sqSeen.add(k);
         const wx = (r.col - GHW) * T;
         const wz = (r.row - GHH) * T;
-        const lv = this._wg.get(r.col, r.row).elevation;
-        sqPositions.push(new THREE.Vector3(wx, lv * SH + 0.02, wz));
+        sqPositions.push(new THREE.Vector3(wx, centreElev * SH + 0.02, wz));
       }
     }
 
