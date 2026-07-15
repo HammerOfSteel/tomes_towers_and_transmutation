@@ -15,13 +15,14 @@
  *   overlay.unmount();
  */
 
-// ── CSS injected once ─────────────────────────────────────────────────────────
+// ── CSS injected once (replaced on HMR) ─────────────────────────────────────
 
-let _cssInjected = false;
+const NGO_STYLE_ID = 'ngo-dialogue-styles';
 function _injectCSS(): void {
-  if (_cssInjected) return;
-  _cssInjected = true;
+  // Remove any stale copy first so HMR always picks up the latest rules
+  document.getElementById(NGO_STYLE_ID)?.remove();
   const style = document.createElement('style');
+  style.id = NGO_STYLE_ID;
   style.textContent = `
     .ngo-root {
       position: absolute; inset: 0;
@@ -108,6 +109,7 @@ function _injectCSS(): void {
     /* ── Choice buttons: bottom of screen (player response area) ── */
     .ngo-choices {
       position: absolute;
+      top: auto;
       bottom: 6%; left: 50%;
       transform: translate(-50%, 0);
       width: 90%; max-width: 800px;
