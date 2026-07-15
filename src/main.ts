@@ -12,6 +12,7 @@ import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { MainMenu } from '@/ui/MainMenu';
 import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
+import { NewGameFlow }          from '@/scene/NewGameFlow';
 import type { CharacterConfig } from '@/ui/CharacterCreation';
 import { DevSandbox } from '@/ui/DevSandbox';
 import { generateSandboxArena } from '@/levels/SandboxArena';
@@ -432,6 +433,22 @@ async function main() {
       progression.boostStat('swiftness', 7);
     }
 
+    // ── Apply narrative stat bonuses (from NewGameFlow conversation) ───
+    for (const bonus of cfg?.statBonuses ?? []) {
+      const BONUS_MAP: Record<string, [Parameters<typeof progression.boostStat>[0], number]> = {
+        strength:     ['power',      2],
+        agility:      ['swiftness',  2],
+        intelligence: ['attunement', 2],
+        constitution: ['vitality',   2],
+        attack_power: ['power',      3],
+        stealth:      ['cunning',    2],
+        magic_power:  ['attunement', 3],
+        max_hp:       ['vitality',   3],
+      };
+      const entry = BONUS_MAP[bonus];
+      if (entry) progression.boostStat(entry[0], entry[1]);
+    }
+
     // Apply player character appearance — asset model takes priority over DNA
     if (cfg?.assetModel) {
       player.applyAssetModel(cfg.assetModel).catch((e) =>
@@ -643,9 +660,19 @@ async function main() {
   const mainMenu = new MainMenu({
     onPlay: (slotId, isNewGame) => {
       if (isNewGame) {
-        // New save — show character creation before starting
+        // New save — run narrative campfire intro to determine character
         mainMenu.hide();
-        charCreation.show(slotId);
+        const flow = new NewGameFlow();
+        flow.play(document.body, slotId).then(cfg => {
+          flow.dispose();
+          startGame(undefined, cfg);
+        }).catch(err => {
+          console.error('[NewGameFlow] failed:', err);
+          flow.dispose();
+          // Fallback to old character creator on error
+          charCreation.show(slotId);
+          mainMenu.hide();
+        });
       } else {
         // Continuing existing save — skip character creation
         mainMenu.hide();

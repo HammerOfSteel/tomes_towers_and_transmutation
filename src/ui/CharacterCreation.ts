@@ -34,6 +34,12 @@ export interface CharacterConfig {
   dna:         CreatureDNA;
   /** Set when charMode is 'asset' — identifies the chosen GLB/FBX model. */
   assetModel?: CharModelDef;
+  /**
+   * Stat bonuses from the narrative character creation conversation.
+   * Applied in startGame() via progression.boostStat.
+   * Only present when the game was started via NewGameFlow.
+   */
+  statBonuses?: import('@/scene/CharacterDecisionTree').StatBonus[];
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────

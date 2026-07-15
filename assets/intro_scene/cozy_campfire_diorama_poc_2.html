@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cozy Campfire Diorama</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.6);
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+    </style>
+    <!-- Import Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="ui-layer">
+        <h2>Campfire Scene</h2>
+        <p>Code-First Toy Aesthetic | Click and drag to look around</p>
+    </div>
+
+    <script>
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        // Deep night sky background
+        scene.background = new THREE.Color(0x05071a); 
+        scene.fog = new THREE.FogExp2(0x05071a, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        // Position camera low, simulating a captive sitting on the ground looking at the fire
+        camera.position.set(0, 1.5, 4);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // --- MATERIALS (The "Toy/Clay" Aesthetic) ---
+        // Using MeshPhysicalMaterial to give that glossy, 3DS miniature plastic feel
+        const createToyMaterial = (colorHex, roughness = 0.5, clearcoat = 0.2, emissive = 0x000000, flatShading = false) => {
+            return new THREE.MeshPhysicalMaterial({
+                color: colorHex,
+                emissive: emissive,
+                roughness: roughness,
+                metalness: 0.05,
+                clearcoat: clearcoat,
+                clearcoatRoughness: 0.3,
+                flatShading: flatShading
+            });
+        };
+
+        const mats = {
+            ground: createToyMaterial(0x1a2e1d, 0.8, 0.0), // Dark mossy green
+            stone: createToyMaterial(0x5a5c60, 0.7, 0.1, 0x000000, true), // Flat shaded stones
+            wood: createToyMaterial(0x3d2314, 0.8, 0.0),
+            leaves: createToyMaterial(0x0f301d, 0.6, 0.2, 0x000000, true), // Flat shaded, chunky leaves
+            grass: createToyMaterial(0x274a27, 0.7, 0.1, 0x000000, true), // Flat shaded grass
+            fireBase: createToyMaterial(0xff5500, 0.2, 0.5, 0xff2200),
+            fireTip: createToyMaterial(0xffaa00, 0.2, 0.5, 0xff8800)
+        };
+
+        // --- LIGHTING ---
+        // Ambient moonlight
+        const ambientLight = new THREE.AmbientLight(0x2a3045, 0.4);
+        scene.add(ambientLight);
+
+        // Directional moonlight (soft blue)
+        const moonLight = new THREE.DirectionalLight(0x4a5b82, 0.6);
+        moonLight.position.set(-10, 15, -10);
+        moonLight.castShadow = true;
+        moonLight.shadow.mapSize.width = 1024;
+        moonLight.shadow.mapSize.height = 1024;
+        moonLight.shadow.camera.near = 0.5;
+        moonLight.shadow.camera.far = 50;
+        moonLight.shadow.camera.left = -15;
+        moonLight.shadow.camera.right = 15;
+        moonLight.shadow.camera.top = 15;
+        moonLight.shadow.camera.bottom = -15;
+        scene.add(moonLight);
+
+        // Campfire light (warm orange, flickering)
+        const fireLight = new THREE.PointLight(0xff7700, 2, 15);
+        fireLight.position.set(0, 1, 0);
+        fireLight.castShadow = true;
+        fireLight.shadow.mapSize.width = 512;
+        fireLight.shadow.mapSize.height = 512;
+        scene.add(fireLight);
+
+        // --- WORLD GENERATION ---
+
+        // 1. The Ground
+        const groundGeo = new THREE.CylinderGeometry(20, 20, 2, 32);
+        const ground = new THREE.Mesh(groundGeo, mats.ground);
+        ground.position.y = -1;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Add some chunky mounds to make the ground uneven (Hierarchical overlapping)
+        for (let i = 0; i < 15; i++) {
+            const moundGeo = new THREE.SphereGeometry(Math.random() * 2 + 1, 16, 16);
+            const mound = new THREE.Mesh(moundGeo, mats.ground);
+            mound.position.set(
+                (Math.random() - 0.5) * 30,
+                -0.5 - Math.random() * 1.5,
+                (Math.random() - 0.5) * 30
+            );
+            mound.scale.y = 0.3; // Flatten into a mound
+            mound.receiveShadow = true;
+            mound.castShadow = true;
+            scene.add(mound);
+        }
+
+        // 2. Stars (Multi-Layer Twinkling Particle System)
+        const starSystems = [];
+        for (let j = 0; j < 3; j++) {
+            const starsGeo = new THREE.BufferGeometry();
+            const starsCount = 150; // 450 total stars
+            const posArray = new Float32Array(starsCount * 3);
+            for(let i = 0; i < starsCount * 3; i+=3) {
+                posArray[i] = (Math.random() - 0.5) * 150;
+                posArray[i+1] = Math.random() * 50 + 15; // High up
+                posArray[i+2] = (Math.random() - 0.5) * 100 - 20; // Push back
+            }
+            starsGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const starsMat = new THREE.PointsMaterial({
+                size: 0.15 + (Math.random() * 0.1),
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            const starMesh = new THREE.Points(starsGeo, starsMat);
+            scene.add(starMesh);
+            starSystems.push({ mesh: starMesh, material: starsMat, phase: Math.random() * Math.PI * 2 });
+        }
+
+        // 3. Grass Generation (Low Poly Tufts)
+        const grassGeo = new THREE.ConeGeometry(0.06, 0.4, 4); // 4-sided pyramid cone
+        // Shift geometry up so it scales from the bottom
+        grassGeo.translate(0, 0.2, 0); 
+        
+        for (let i = 0; i < 60; i++) {
+            const grassGroup = new THREE.Group();
+            
+            // Randomly pick 2 to 4 blades per tuft
+            const blades = 2 + Math.floor(Math.random() * 3);
+            for (let b = 0; b < blades; b++) {
+                const blade = new THREE.Mesh(grassGeo, mats.grass);
+                blade.rotation.z = (Math.random() - 0.5) * 0.5;
+                blade.rotation.x = (Math.random() - 0.5) * 0.5;
+                blade.rotation.y = Math.random() * Math.PI;
+                blade.scale.setScalar(0.5 + Math.random() * 0.8);
+                grassGroup.add(blade);
+            }
+
+            // Scatter around the campfire, mostly in front of the trees
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 2 + Math.random() * 12;
+            grassGroup.position.set(Math.sin(angle) * radius, -0.1, Math.cos(angle) * radius);
+            grassGroup.receiveShadow = true;
+            grassGroup.castShadow = true;
+            scene.add(grassGroup);
+        }
+
+        // 4. Trees (Hierarchical Primitive Rigging - Upgraded Low Poly)
+        const createTree = (x, z, scale) => {
+            const treeGroup = new THREE.Group();
+            
+            // Trunk (Chunkier)
+            const trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 2.5, 6);
+            const trunk = new THREE.Mesh(trunkGeo, mats.wood);
+            trunk.position.y = 1.25;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            treeGroup.add(trunk);
+
+            // Foliage (Intersecting Dodecahedrons for that 3DS toy look)
+            const foliageGroup = new THREE.Group();
+            foliageGroup.position.y = 2.8;
+
+            // Clone material to give each tree a slightly different green hue
+            const treeLeafMat = mats.leaves.clone();
+            const colorVariation = (Math.random() - 0.5) * 0.08;
+            treeLeafMat.color.offsetHSL(colorVariation, 0, colorVariation * 0.5);
+
+            // Using Dodecahedron (detail level 0) makes it a chunky 12-sided polygon
+            const leafGeo = new THREE.DodecahedronGeometry(1.2, 0); 
+            
+            const mainCanopy = new THREE.Mesh(leafGeo, treeLeafMat);
+            mainCanopy.castShadow = true;
+            mainCanopy.receiveShadow = true;
+            foliageGroup.add(mainCanopy);
+
+            const sideCanopy1 = new THREE.Mesh(leafGeo, treeLeafMat);
+            sideCanopy1.position.set(0.7, -0.6, 0.6);
+            sideCanopy1.scale.set(0.8, 0.8, 0.8);
+            sideCanopy1.castShadow = true;
+            sideCanopy1.receiveShadow = true;
+            foliageGroup.add(sideCanopy1);
+
+            const sideCanopy2 = new THREE.Mesh(leafGeo, treeLeafMat);
+            sideCanopy2.position.set(-0.7, -0.4, -0.3);
+            sideCanopy2.scale.set(0.9, 0.9, 0.9);
+            sideCanopy2.castShadow = true;
+            sideCanopy2.receiveShadow = true;
+            foliageGroup.add(sideCanopy2);
+
+            const topCanopy = new THREE.Mesh(leafGeo, treeLeafMat);
+            topCanopy.position.set(0, 1.1, 0);
+            topCanopy.scale.set(0.7, 0.9, 0.7);
+            topCanopy.castShadow = true;
+            topCanopy.receiveShadow = true;
+            foliageGroup.add(topCanopy);
+
+            // Rotate canopies randomly for organic variation
+            foliageGroup.children.forEach(c => {
+                c.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            });
+
+            treeGroup.add(foliageGroup);
+            
+            treeGroup.position.set(x, -0.2, z);
+            treeGroup.scale.set(scale, scale, scale);
+            treeGroup.rotation.y = Math.random() * Math.PI * 2;
+            
+            scene.add(treeGroup);
+        };
+
+        // Deep Forest Generation (More trees, wider spread)
+        for (let i = 0; i < 120; i++) {
+            const angle = Math.random() * Math.PI * 2; 
+            // Spread trees outwards up to 40 units away
+            const radius = 5 + Math.random() * 35;
+            
+            // Clear out a larger opening in front of the camera
+            if (radius < 12 && angle > -1.0 && angle < 1.0) continue; 
+            
+            const x = Math.sin(angle) * radius;
+            const z = Math.cos(angle) * radius - 4; // Shift center back slightly
+            createTree(x, z, 0.6 + Math.random() * 0.8);
+        }
+
+        // 5. The Campfire
+        const campfireGroup = new THREE.Group();
+        scene.add(campfireGroup);
+
+        // Stones
+        const stoneGeo = new THREE.SphereGeometry(0.25, 8, 8);
+        for(let i=0; i < 10; i++) {
+            const stone = new THREE.Mesh(stoneGeo, mats.stone);
+            const angle = (i / 10) * Math.PI * 2;
+            stone.position.set(Math.cos(angle) * 0.9, 0.1, Math.sin(angle) * 0.9);
+            // Chunky deformation
+            stone.scale.set(1, 0.7 + Math.random()*0.3, 1 + Math.random()*0.2);
+            stone.rotation.y = Math.random() * Math.PI;
+            stone.rotation.z = Math.random() * 0.5;
+            stone.castShadow = true;
+            stone.receiveShadow = true;
+            campfireGroup.add(stone);
+        }
+
+        // Logs
+        const logGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.6, 8);
+        for(let i=0; i<3; i++) {
+            const log = new THREE.Mesh(logGeo, mats.wood);
+            const angle = (i / 3) * Math.PI * 2;
+            log.position.set(Math.cos(angle)*0.3, 0.2, Math.sin(angle)*0.3);
+            log.rotation.x = Math.PI / 2 - 0.3; // Lean in
+            log.rotation.z = angle;
+            log.castShadow = true;
+            log.receiveShadow = true;
+            campfireGroup.add(log);
+        }
+
+        // Fire (Animated Code-First Particles/Meshes)
+        const fireParticles = [];
+        const flameGeo = new THREE.SphereGeometry(0.3, 8, 8);
+        
+        for(let i=0; i<15; i++) {
+            // Alternate between orange and yellow fire bits
+            const mat = Math.random() > 0.5 ? mats.fireBase : mats.fireTip;
+            const flame = new THREE.Mesh(flameGeo, mat);
+            flame.position.set(
+                (Math.random() - 0.5) * 0.6,
+                Math.random() * 1.5,
+                (Math.random() - 0.5) * 0.6
+            );
+            // Store custom data for animation
+            flame.userData = {
+                baseY: flame.position.y,
+                speed: 0.02 + Math.random() * 0.03,
+                wobbleSpeed: 2 + Math.random() * 3,
+                wobbleOffset: Math.random() * Math.PI * 2,
+                maxLife: 1.5 + Math.random()
+            };
+            campfireGroup.add(flame);
+            fireParticles.push(flame);
+        }
+
+        // Floating Embers
+        const emberGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+        const emberMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const embers = [];
+        for(let i=0; i<20; i++) {
+            const ember = new THREE.Mesh(emberGeo, emberMat);
+            ember.position.set(
+                (Math.random() - 0.5) * 1.5,
+                Math.random() * 3 + 1,
+                (Math.random() - 0.5) * 1.5
+            );
+            ember.userData = {
+                life: Math.random() * 100,
+                speedY: 0.01 + Math.random() * 0.03,
+                speedX: (Math.random() - 0.5) * 0.02,
+                speedZ: (Math.random() - 0.5) * 0.02
+            };
+            scene.add(ember);
+            embers.push(ember);
+        }
+
+        // --- INTERACTION & ANIMATION ---
+        
+        // Mouse look around (Simulated first-person sway via dragging)
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let isDragging = false;
+        let previousMouseX = 0;
+        let previousMouseY = 0;
+
+        // Settings for drag controls
+        const dragSensitivity = 0.003; // How fast the camera moves
+        const maxRotationX = 0.4;      // Limit looking up and down
+        const maxRotationY = 1.0;      // Limit looking left and right
+
+        document.addEventListener('mousedown', (event) => {
+            isDragging = true;
+            previousMouseX = event.clientX;
+            previousMouseY = event.clientY;
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        document.addEventListener('mouseleave', () => {
+            isDragging = false; // Stop dragging if cursor leaves window
+        });
+
+        document.addEventListener('mousemove', (event) => {
+            if (isDragging) {
+                const deltaX = event.clientX - previousMouseX;
+                const deltaY = event.clientY - previousMouseY;
+
+                targetRotationY -= deltaX * dragSensitivity;
+                targetRotationX -= deltaY * dragSensitivity;
+
+                // Clamp rotations to keep the view restricted to sitting by the fire
+                targetRotationY = Math.max(-maxRotationY, Math.min(maxRotationY, targetRotationY));
+                targetRotationX = Math.max(-maxRotationX, Math.min(maxRotationX, targetRotationX));
+
+                previousMouseX = event.clientX;
+                previousMouseY = event.clientY;
+            }
+        });
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+            const delta = clock.getDelta();
+
+            // Camera Sway (Smooth Lerp)
+            camera.rotation.y += ( targetRotationY - camera.rotation.y ) * 0.05;
+            camera.rotation.x += ( targetRotationX - camera.rotation.x ) * 0.05;
+
+            // Star Twinkling
+            starSystems.forEach(starSystem => {
+                // Pulse opacity using sine waves with different phases
+                starSystem.material.opacity = 0.3 + (Math.sin(time * 1.5 + starSystem.phase) * 0.5 + 0.5) * 0.7;
+            });
+
+            // Fire Animation
+            fireParticles.forEach(flame => {
+                const data = flame.userData;
+                flame.position.y += data.speed;
+                
+                // Horizontal wobble
+                flame.position.x = Math.sin(time * data.wobbleSpeed + data.wobbleOffset) * 0.2 * (flame.position.y / data.maxLife);
+                flame.position.z = Math.cos(time * data.wobbleSpeed + data.wobbleOffset) * 0.2 * (flame.position.y / data.maxLife);
+
+                // Shrink as it goes up
+                const scale = Math.max(0, 1 - (flame.position.y / data.maxLife));
+                flame.scale.set(scale, scale * 1.5, scale); // Stretch vertically slightly
+
+                // Reset flame
+                if (flame.position.y > data.maxLife) {
+                    flame.position.y = 0.2;
+                    flame.position.x = (Math.random() - 0.5) * 0.4;
+                    flame.position.z = (Math.random() - 0.5) * 0.4;
+                }
+            });
+
+            // Ember Animation
+            embers.forEach(ember => {
+                ember.position.y += ember.userData.speedY;
+                ember.position.x += ember.userData.speedX + Math.sin(time + ember.userData.life) * 0.005;
+                ember.position.z += ember.userData.speedZ;
+                ember.userData.life++;
+
+                if (ember.position.y > 4) {
+                    ember.position.y = 0.5;
+                    ember.position.x = (Math.random() - 0.5) * 0.5;
+                    ember.position.z = (Math.random() - 0.5) * 0.5;
+                }
+            });
+
+            // Fire Light Flicker
+            fireLight.intensity = 1.8 + Math.sin(time * 15) * 0.2 + Math.random() * 0.2;
+            fireLight.position.x = Math.sin(time * 5) * 0.05;
+            fireLight.position.z = Math.cos(time * 6) * 0.05;
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
