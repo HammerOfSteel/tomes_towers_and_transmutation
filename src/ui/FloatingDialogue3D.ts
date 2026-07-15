@@ -324,19 +324,21 @@ export class FloatingDialogue3D {
   }
 
   private _wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
-    const words = text.split(' ');
     const lines: string[] = [];
-    let line = '';
-    for (const word of words) {
-      const test = line ? `${line} ${word}` : word;
-      if (line && ctx.measureText(test).width > maxW) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = test;
+    for (const segment of text.split('\n')) {
+      let line = '';
+      for (const word of segment.split(' ')) {
+        if (!word) continue;
+        const test = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(test).width > maxW) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
       }
+      if (line) lines.push(line);
     }
-    if (line) lines.push(line);
     return lines;
   }
 

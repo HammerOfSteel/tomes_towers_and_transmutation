@@ -115,9 +115,9 @@ export class CharacterDecisionTree {
 
     // ── PHASE 1: taxonomic assessment ─────────────────────────────────────────
     await overlay.speak(
-      "Ah! You're awake. Excellent. My notes got completely ruined by a spilled " +
-      "potion of frog-breath, so you'll have to remind me... " +
-      "what exactly are you? My eyesight isn't what it used to be.",
+      "Ah! You're awake. Excellent.\n" +
+      "My notes got ruined by a potion of frog-breath, so you'll have to remind me.\n" +
+      "What exactly are you? My eyesight isn't what it used to be.",
     );
 
     const species = await overlay.choose([
@@ -133,48 +133,43 @@ export class CharacterDecisionTree {
     if (species === 0) {
       // ── HUMAN ──────────────────────────────────────────────────────────────
       await overlay.speak(
-        "Human! Ah, yes. The fleshy, complain-y kind. Honestly I forget you lot " +
-        "exist between visits. Nothing personal. There are just so many of you " +
-        "and you all sort of blur together. Now — who's going to show up here " +
-        "furious about this?",
+        "Human! Ah, yes. The fleshy, complain-y ones.\n" +
+        "I forget you lot exist between visits. Nothing personal.\n" +
+        "Who is going to show up here furious about this?",
       );
 
       const humanChoice = await overlay.choose([
-        '"My dad. He\'s a barbarian. He flips tables as a greeting. ' +
-        'This tower will be rubble by Tuesday."',
-        '"My partner. They\'re a paladin. Very lawful. Very good. ' +
-        'Very much going to file a divine complaint about you."',
-        '"Nobody. I work alone. I am the problem and also the solution."',
-        '"My entire adventuring party. All six of them. One is a bard ' +
-        'so they\'re probably already writing a ballad about this."',
+        '"My dad. He\'s a barbarian. He flips tables as a greeting.\nThis tower will be rubble by Tuesday."',
+        '"My partner. A paladin. Very lawful, very good.\nVery much going to file a divine complaint about you."',
+        '"Nobody. I work alone.\nI am the problem and also the solution."',
+        '"My entire adventuring party. All six of them.\nOne is a bard so they\'re already writing a ballad."',
       ]);
 
       if (humanChoice === 0) {
         characterId = 'human_warrior';
         await overlay.speak(
-          "Ah. A barbarian parent. That explains the door-rattling constitution " +
-          "and the immediate aggression. I'll reinforce the gate. " +
-          "Lovely chat.",
+          "A barbarian parent. That explains the immediate aggression.\n" +
+          "I'll reinforce the gate. Lovely chat.",
         );
       } else if (humanChoice === 1) {
         characterId = 'human_paladin';
         await overlay.speak(
-          "Oh dear. A paladin. So preachy. So relentless. " +
-          "Do you know how much unsolicited divine correspondence I receive " +
-          "just from knowing a paladin? It's exhausting.",
+          "A paladin. So preachy. So relentless.\n" +
+          "I receive unsolicited divine correspondence just from knowing one.\n" +
+          "It's exhausting.",
         );
       } else if (humanChoice === 2) {
         characterId = 'rogue';
         await overlay.speak(
-          "A self-sufficient loner! How romantically tragic. " +
-          "You have the eyes of someone who has absolutely stolen something recently. " +
+          "A self-sufficient loner! How romantically tragic.\n" +
+          "You have the eyes of someone who has absolutely stolen something recently.\n" +
           "I'm not judging. I'm writing it down.",
         );
       } else {
         characterId = 'human_bard';
         await overlay.speak(
-          "A bard in the party. Wonderful. I'm going to be in a song. " +
-          "You know, I have been actively avoiding that for 140 years. " +
+          "A bard in the party. I'm going to be in a song.\n" +
+          "I've been avoiding that for 140 years.\n" +
           "It was going so well.",
         );
       }
@@ -182,138 +177,135 @@ export class CharacterDecisionTree {
     } else if (species === 1) {
       // ── UNDEAD ─────────────────────────────────────────────────────────────
       await overlay.speak(
-        "Undead! Oh, splendid. No feeding schedule, no sleep requirements, " +
-        "minimal upkeep. The economic efficiency alone is remarkable. " +
-        "Now — what flavour of undead, exactly? I like to be precise in my records.",
+        "Undead! Oh, splendid. No feeding schedule, minimal upkeep.\n" +
+        "The economic efficiency alone is remarkable.\n" +
+        "What flavour of undead, exactly? I like to be precise.",
       );
 
       const undeadChoice = await overlay.choose([
         '"Skeleton. The structural minimalist variety."',
         '"Zombie. But I\'m extremely articulate about it."',
-        '"Ghost. I\'m technically haunting you right now. ' +
-        'You didn\'t notice. That\'s fine."',
-        '"I don\'t actually know. I woke up like this. It was a Tuesday."',
+        '"Ghost. I\'m technically haunting you right now.\nYou didn\'t notice. That\'s fine."',
+        '"I don\'t actually know. I woke up like this.\nIt was a Tuesday."',
       ]);
 
       if (undeadChoice === 0) {
         characterId = 'skeleton_rogue';
         await overlay.speak(
-          "Skeleton! Efficient. Percussive when walking. Truly unsettling in doorways. " +
-          "Do you rattle? I find the rattling either charming or deeply unnerving " +
+          "Skeleton! Efficient. Percussive when walking.\n" +
+          "Do you rattle? I find it either charming or unsettling\n" +
           "depending entirely on my blood sugar level.",
         );
       } else if (undeadChoice === 1) {
         characterId = 'zombie';
         await overlay.speak(
-          "An articulate zombie! You are a genuine rarity. " +
-          "Most of the ones I meet have a one-word vocabulary " +
-          "and it isn't a particularly useful word in polite conversation.",
+          "An articulate zombie! You are a genuine rarity.\n" +
+          "Most have a one-word vocabulary.\n" +
+          "It isn't a useful word in polite conversation.",
         );
       } else if (undeadChoice === 2) {
         characterId = 'ghost';
         await overlay.speak(
-          "That DOES explain the cold spot. I blamed the north-facing windows. " +
-          "You could at least knock. Or flicker a candle. " +
-          "Something. Courtesy costs nothing, even posthumously.",
+          "That DOES explain the cold spot. I blamed the windows.\n" +
+          "You could at least knock. Or flicker a candle.\n" +
+          "Courtesy costs nothing, even posthumously.",
         );
       } else {
         characterId = 'mystery_undead';
         await overlay.speak(
-          "The mystery undead! My absolute favourite administrative category. " +
-          "We'll put 'unspecified' on the form and let future scholars " +
-          "sort it out. Very exciting. For them, I mean.",
+          "The mystery undead! My favourite administrative category.\n" +
+          "We'll put 'unspecified' on the form.\n" +
+          "Let future scholars sort it out. Very exciting. For them.",
         );
       }
 
     } else if (species === 2) {
       // ── VULPERIA ───────────────────────────────────────────────────────────
       await overlay.speak(
-        "A Vulperia! Magnificent. Mysterious, agile, radiating profound " +
-        "judgment of everything in this room. Including me, I suspect. " +
-        "The tail is an excellent touch. Now — what exactly do you DO? " +
-        "I need it for the census.",
+        "A Vulperia! Magnificent. Mysterious, agile,\n" +
+        "radiating profound judgment of everything in this room.\n" +
+        "What exactly do you do? I need it for the census.",
       );
 
       const foxChoice = await overlay.choose([
-        '"I\'m a rogue. I steal things. Quietly, professionally, ' +
-        'and with excellent taste."',
-        '"Ranger. I track things through forests and occasionally shoot them."',
-        '"I\'m a mage. Fire, mostly. I have questions about your bookshelves."',
-        '"I\'m between career phases at the moment. It\'s complicated."',
+        '"I\'m a rogue. I steal things.\nQuietly, professionally, and with excellent taste."',
+        '"Ranger. I track things through forests\nand occasionally shoot them."',
+        '"I\'m a mage. Fire, mostly.\nI have questions about your bookshelves."',
+        '"I\'m between career phases at the moment.\nIt\'s complicated."',
       ]);
 
       if (foxChoice === 0) {
         characterId = 'fox_rogue';
         await overlay.speak(
-          "The honest thief! A rare and admirable subtype. Most thieves " +
-          "insist they're something else entirely. I respect the clarity. " +
+          "The honest thief! A rare and admirable subtype.\n" +
+          "Most insist they're something else. I respect the clarity.\n" +
           "Please don't steal anything while you're here. Again.",
         );
       } else if (foxChoice === 1) {
         characterId = 'fox_ranger';
         await overlay.speak(
-          "A fox ranger tracking through forests! How aggressively on-brand. " +
-          "Do you appreciate the irony, or does it just follow you around " +
-          "like an awkward party member who won't take hints?",
+          "A fox ranger tracking through forests!\n" +
+          "How aggressively on-brand.\n" +
+          "Do you appreciate the irony, or has it become background noise?",
         );
       } else if (foxChoice === 2) {
         characterId = 'fox_mage';
         await overlay.speak(
-          "A pyromancer fox. I am choosing not to comment on that at any length. " +
-          "I will only say: please stand away from the archives " +
+          "A pyromancer fox. I'm choosing not to comment on that.\n" +
+          "Please stand away from the archives\n" +
           "and try not to sneeze.",
         );
       } else {
         characterId = 'fox_mysterious';
         await overlay.speak(
-          "Between career phases! That's just what rogues say between heists. " +
-          "It's fine. Completely relatable. I was 'between phases' " +
-          "for thirty years once. It sorted itself out eventually.",
+          "Between career phases! That's just what rogues say between heists.\n" +
+          "Completely relatable. I was 'between phases' for thirty years.\n" +
+          "It sorted itself out eventually.",
         );
       }
 
     } else {
       // ── SLIME ──────────────────────────────────────────────────────────────
       await overlay.speak(
-        "A slime! Oh, wonderful. I had another one of you through last month — " +
-        "different colour, similar energy. Tell me, is the hivemind a real thing? " +
-        "I've always wanted to ask but it never seemed polite at parties.",
+        "A slime! Oh, wonderful.\n" +
+        "I had one of you through last month, different colour, similar energy.\n" +
+        "Is the hivemind a real thing? I've always wanted to ask.",
       );
 
       const slimeChoice = await overlay.choose([
         '(Vibrate at a contemplative frequency) "Bloop."',
         '(Absorb his quill entirely) "We contain multitudes."',
-        '"The hivemind exists but I find it overstimulating. I prefer quiet."',
+        '"The hivemind exists but I find it overstimulating.\nI prefer quiet."',
         '"What\'s a hivemind? I\'m new to... all of this."',
       ]);
 
       if (slimeChoice === 0) {
         characterId = 'slime';
         await overlay.speak(
-          "Eloquent. Truly. I'm writing 'deep thinker — possible ancient entity' " +
-          "in my notes. The brevity alone suggests either centuries of wisdom " +
-          "or no opinion on the matter whatsoever. Either way: fascinating.",
+          "Eloquent. Truly.\n" +
+          "I'm writing 'deep thinker, possible ancient entity' in my notes.\n" +
+          "Either way: fascinating.",
         );
       } else if (slimeChoice === 1) {
         characterId = 'slime_arcane';
         await overlay.speak(
-          "You've absorbed my favourite quill. It had genuine sentimental value. " +
-          "I respect the power move enormously. Please — at some point — " +
-          "return it. Or don't. I'll feel it in there judging me for years.",
+          "You've absorbed my favourite quill. Sentimental value.\n" +
+          "I respect the power move enormously.\n" +
+          "Please return it. Or don't. I'll feel it judging me for years.",
         );
       } else if (slimeChoice === 2) {
         characterId = 'slime_philosopher';
         await overlay.speak(
-          "An introvert slime! The rarest configuration. I completely understand. " +
-          "I've lived alone in this tower for 140 years for nearly identical reasons. " +
+          "An introvert slime! The rarest configuration.\n" +
+          "I've lived alone in this tower for 140 years for similar reasons.\n" +
           "We should NOT talk more. This is already too much.",
         );
       } else {
         characterId = 'slime_young';
         await overlay.speak(
-          "New! How marvellous. The early chapters! Everything is still possible. " +
-          "There will be some dissolution statistically — " +
-          "but also perhaps something entirely other. Welcome to existing.",
+          "New! The early chapters! Everything is still possible.\n" +
+          "There will be some dissolution statistically.\n" +
+          "But also perhaps something entirely other. Welcome to existing.",
         );
       }
     }
@@ -322,13 +314,15 @@ export class CharacterDecisionTree {
     await _pause(500);
 
     await overlay.speak(
-      "Right then. That's the taxonomy sorted. I have just two more questions for my files. " +
-      "Completely standard procedure. You can stop staring at the door like that.",
+      "Right then. That's the taxonomy sorted.\n" +
+      "Two more questions for my files. Completely standard procedure.\n" +
+      "You can stop staring at the door like that.",
     );
 
     // Question 1 — approach to problems
     await overlay.speak(
-      "Tell me — if you encounter a stubborn jar of pickled newt eyes, how do you open it?",
+      "Tell me. If you encounter a stubborn jar of pickled newt eyes,\n" +
+      "how do you open it?",
     );
 
     const q1 = await overlay.choose([
@@ -345,15 +339,15 @@ export class CharacterDecisionTree {
 
     // Question 2 — response to adversity
     await overlay.speak(
-      "My constructs will be delivering standard tower gruel at some point this evening. " +
+      "My constructs will deliver standard tower gruel this evening.\n" +
       "What is your immediate reaction?",
     );
 
     const q2 = await overlay.choose([
       "Throw it back through the slot and demand to speak with the manager.",
-      "Accept it politely, wait for the footsteps to recede, then pick the lock and raid the pantry.",
-      "Use the residual magic in this cell to quietly transmute it into something edible.",
-      "Complain at length about the texture. Eat it anyway. Revenge requires maintaining caloric reserves.",
+      "Accept it politely, wait for the footsteps, then pick the lock and raid the pantry.",
+      "Use the residual magic in this cell to transmute it into something edible.",
+      "Complain at length about the texture. Eat it anyway. Revenge requires calories.",
     ]);
 
     const statBonusB: StatBonus = (
@@ -364,9 +358,8 @@ export class CharacterDecisionTree {
     // ── Farewell ───────────────────────────────────────────────────────────────
     await _pause(600);
     await overlay.speak(
-      "Splendid! That's everything I need. " +
-      "Well — you have fun in here. Don't touch the books on THAT shelf. " +
-      "Or that one. Or the small humming box in the corner. " +
+      "Splendid! That's everything I need.\n" +
+      "Don't touch the books on THAT shelf. Or that one.\n" +
       "I'll be upstairs. Toodles!",
     );
 
