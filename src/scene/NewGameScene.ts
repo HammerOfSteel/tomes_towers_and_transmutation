@@ -1,44 +1,32 @@
 /**
  * NewGameScene — first-person campfire scene for the narrative character creation.
  *
- * Aesthetic: near-total darkness broken only by warm campfire light.
- * A few cold stars overhead. Dense forest silhouettes. The player sits
- * on a log; the wizard stands across the fire.
+ * Aesthetic: cozy toy/diorama style ported from the POC HTML.
+ * MeshPhysicalMaterial with clearcoat gives everything that glossy miniature look.
+ * Moonlit forest clearing with procedural trees, drifting clouds, twinkling stars.
+ * Campfire has a ring of stones, logs, and scale-shrink flame particles.
  *
- * Camera is at seated eye-height (1.1 m), looking across the fire at
- * approximately face height. A gentle sine-wave "breathe" prevents
- * the scene from feeling static.
- *
- * Campfire is the ONLY significant light source. No sky, no HDR,
- * no ambient fill to speak of — just the fire.
+ * Camera sits at the fire (+Z) looking across toward the wizard who enters
+ * from the deep forest (-Z direction).
  */
 
-import * as THREE                from 'three';
-import { GLTFLoader }            from 'three/addons/loaders/GLTFLoader.js';
-import { DRACOLoader }           from 'three/addons/loaders/DRACOLoader.js';
-import type { GLTF }             from 'three/addons/loaders/GLTFLoader.js';
-import type { WizardDef }        from '@/characters/wizardManifest';
-import { loadWizard }            from '@/characters/WizardLoader';
-import type { LoadedWizard }     from '@/characters/WizardLoader';
+import * as THREE            from 'three';
+import type { WizardDef }    from '@/characters/wizardManifest';
+import { loadWizard }        from '@/characters/WizardLoader';
+import type { LoadedWizard } from '@/characters/WizardLoader';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-// The Blender campfire env was exported with the campfire sticks centred near
-// (1.87, 0.03, 1.54) in GLTF/Three.js space.  We translate the loaded group
-// by ENV_OFFSET so the fire sits at the scene origin (0,0,0).
-const ENV_OFFSET  = new THREE.Vector3(-1.87, -0.03, -1.54);
+// Camera: seated beside the fire at +Z, looking across toward -Z (forest)
+const CAM_POS     = new THREE.Vector3(0, 1.5, 4.5);
+// Default Three.js camera faces -Z — no explicit lookAt needed.
 
-// Camera: sitting behind the fire (+Z = deeper into the scene).
-// Look slightly left toward where the wizard sits beside the fire.
-const CAM_POS   = new THREE.Vector3(0, 0.82, -2.74);
-const CAM_LOOK  = new THREE.Vector3(-0.5, 1.2,  1.6);
+// Wizard: approaches from deep forest (-Z), stops to the right of the fire
+const WIZ_IDLE    = new THREE.Vector3(1.0, 0, -2.0);  // right of fire, across from camera
+const WIZ_START   = new THREE.Vector3(1.0, 0, -11);   // deep in the dark forest
 
-// Wizard positions — wizard sits to the LEFT of the fire so he's fully visible
-const WIZ_IDLE  = new THREE.Vector3(-1.5, 0, 2.8);   // resting pos beside fire
-const WIZ_START = new THREE.Vector3(-1.5, 0, 11);    // enters from the dark beyond
-
-const FIRE_COLOR  = 0xff7018;
-const FIRE_POS    = new THREE.Vector3(0, 0.1, 0);
+const SCENE_COLOR = 0x05071a;  // deep night blue (matches POC)
+const FIRE_COLOR  = 0xff7700;
 
 // ── main class ────────────────────────────────────────────────────────────────
 
@@ -48,17 +36,32 @@ export class NewGameScene {
   private _camera:    THREE.PerspectiveCamera;
   private _canvas:    HTMLCanvasElement;
 
-  // Campfire — sphere-blob fire system
-  private _flameBlobs: THREE.Mesh[]          = [];
-  private _smokePuffs: THREE.Mesh[]          = [];
-  private _fireLight:  THREE.PointLight | null = null;
-  private _embers:     THREE.Points | null     = null;
+  // Campfire — POC style: Mesh-based scale-shrink flames
+  private _fireParticles: THREE.Mesh[] = [];
+  private _fireLight:     THREE.PointLight | null = null;
+  private _emberMeshes:   Array<{
+    mesh: THREE.Mesh; vy: number; vx: number; vz: number; life: number;
+  }> = [];
 
-  // Mouse drag look-around
-  private _lookTgtX   = 0;   // target pitch offset
-  private _lookTgtY   = 0;   // target yaw offset
-  private _lookCurX   = 0;   // smoothed pitch
-  private _lookCurY   = 0;   // smoothed yaw
+  // Stars — 3 twinkling layers
+  private _starSystems: Array<{
+    mesh: THREE.Points; mat: THREE.PointsMaterial; phase: number;
+  }> = [];
+
+  // Drifting clouds
+  private _clouds: Array<{ group: THREE.Group; speed: number }> = [];
+
+  // Wizard
+  private _wizard: LoadedWizard | null = null;
+
+  // Camera breathe + nod
+  private _breatheT  = 0;
+  private _nodOffset = 0;
+  private _nodVel    = 0;
+
+  // Mouse drag look-around (POC style — direct camera.rotation manipulation)
+  private _lookTgtX   = 0;
+  private _lookTgtY   = 0;
   private _isDragging = false;
   private _prevMX     = 0;
   private _prevMY     = 0;
@@ -72,19 +75,11 @@ export class NewGameScene {
     if (!this._isDragging) return;
     const dx = e.clientX - this._prevMX;
     const dy = e.clientY - this._prevMY;
-    this._lookTgtY = Math.max(-0.65, Math.min(0.65,  this._lookTgtY - dx * 0.003));
-    this._lookTgtX = Math.max(-0.25, Math.min(0.35,  this._lookTgtX - dy * 0.003));
+    this._lookTgtY = Math.max(-1.0, Math.min(1.0,  this._lookTgtY - dx * 0.003));
+    this._lookTgtX = Math.max(-0.4, Math.min(0.4,  this._lookTgtX - dy * 0.003));
     this._prevMX = e.clientX;
     this._prevMY = e.clientY;
   };
-
-  // Wizard
-  private _wizard:         LoadedWizard | null = null;
-
-  // Camera breathe + nod
-  private _breatheT        = 0;
-  private _nodOffset        = 0;
-  private _nodVel           = 0;
 
   // Clock
   private _clock            = new THREE.Clock(false);
@@ -103,254 +98,340 @@ export class NewGameScene {
     this._renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
     this._renderer.outputColorSpace     = THREE.SRGBColorSpace;
     this._renderer.toneMapping          = THREE.ACESFilmicToneMapping;
-    this._renderer.toneMappingExposure  = 0.85;
+    this._renderer.toneMappingExposure  = 1.2;
     this._canvas = this._renderer.domElement;
 
     // ── scene ─────────────────────────────────────────────────────────────────
     this._scene = new THREE.Scene();
-    this._scene.background = new THREE.Color(0x020408);  // near-black, slight blue
-    this._scene.fog = new THREE.FogExp2(0x020408, 0.038);  // atmospheric depth
+    this._scene.background = new THREE.Color(SCENE_COLOR);
+    this._scene.fog = new THREE.FogExp2(SCENE_COLOR, 0.04);
 
     // ── camera ────────────────────────────────────────────────────────────────
-    this._camera = new THREE.PerspectiveCamera(65, 1, 0.1, 80);
+    // Default facing is -Z which looks straight across the fire — perfect.
+    this._camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
     this._camera.position.copy(CAM_POS);
-    this._camera.lookAt(CAM_LOOK);
 
     // ── synchronous scene elements ────────────────────────────────────────────
-    // (GLB environment loaded async via initEnvironment())
+    this._buildLighting();
     this._buildStars();
     this._buildCampfire();
-
-    // _fireLight and _embers assigned directly inside _buildCampfire()
   }
 
-  // ── async environment loader ───────────────────────────────────────────────
+  // ── environment (fully procedural — matches POC aesthetic) ──────────────────
 
-  /**
-   * Loads the Blender-exported campfire environment GLB.
-   * Call this before mount() for best results, or it streams in after mount.
-   */
+  /** Builds the full POC-style world: ground, trees, grass, clouds. */
   async initEnvironment(): Promise<void> {
-    const draco = new DRACOLoader();
-    draco.setDecoderPath('/draco/');
-
-    const loader = new GLTFLoader();
-    loader.setDRACOLoader(draco);
-
-    const gltf = await new Promise<GLTF>((resolve, reject) => {
-      loader.load('/assets/intro/campfire_env.glb', resolve, undefined, reject);
-    });
-    draco.dispose();
-
-    const env = gltf.scene;
-    // Re-centre so the campfire sticks sit at scene origin (0,0,0)
-    env.position.copy(ENV_OFFSET);
-
-    env.traverse((node) => {
-      const mesh = node as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow    = true;
-        mesh.receiveShadow = true;
-      }
-    });
-
-    this._scene.add(env);
-
-    // Load the forest backdrop (forest_2 GLTF) — ring it around the fire
-    await this._loadForestBackdrop(loader);
+    this._buildGround();
+    this._buildTrees();
+    this._buildGrass();
+    this._buildClouds();
   }
 
-  private async _loadForestBackdrop(loader: GLTFLoader): Promise<void> {
-    let gltf: GLTF;
-    try {
-      gltf = await new Promise<GLTF>((resolve, reject) => {
-        loader.load('/assets/intro/forest_2/scene.gltf', resolve, undefined, reject);
-      });
-    } catch {
-      // Forest is optional — fall back to procedural silhouettes
-      this._buildForest();
-      return;
-    }
+  // ── scene builders ─────────────────────────────────────────────────────────
 
-    const src = gltf.scene;
-    // Place 6 rotated copies around the fire at radius ~9
-    const radius = 9;
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * Math.PI * 2 + 0.3;
-      const clone = src.clone(true);
-      clone.scale.setScalar(0.35);
-      clone.position.set(
-        Math.cos(angle) * radius,
-        0,
-        Math.sin(angle) * radius,
-      );
-      clone.rotation.y = -angle;
-      this._scene.add(clone);
-    }
+  private _buildLighting(): void {
+    // Ambient moonlight (cool blue-grey)
+    this._scene.add(new THREE.AmbientLight(0x2a3045, 0.4));
+
+    // Directional moonlight — soft blue, casts shadows
+    const moon = new THREE.DirectionalLight(0x4a5b82, 0.6);
+    moon.position.set(-10, 15, -10);
+    moon.castShadow = true;
+    moon.shadow.mapSize.width  = 1024;
+    moon.shadow.mapSize.height = 1024;
+    moon.shadow.camera.near   = 0.5;
+    moon.shadow.camera.far    = 50;
+    moon.shadow.camera.left   = -15;
+    moon.shadow.camera.right  = 15;
+    moon.shadow.camera.top    = 15;
+    moon.shadow.camera.bottom = -15;
+    this._scene.add(moon);
   }
 
   private _buildStars(): void {
-    // Sparse, cold — just a hint of the sky. Only visible above tree canopy.
-    const count = 500;
-    const pos   = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      // Hemisphere distribution
-      const theta = Math.random() * Math.PI * 2;
-      const phi   = Math.random() * Math.PI * 0.5;  // upper hemisphere only
-      const r     = 35;
-      pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-      pos[i * 3 + 1] = r * Math.cos(phi);
-      pos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    // 3 independent twinkling layers (450 stars total)
+    for (let j = 0; j < 3; j++) {
+      const count = 150;
+      const pos   = new Float32Array(count * 3);
+      for (let i = 0; i < count * 3; i += 3) {
+        pos[i]     = (Math.random() - 0.5) * 150;
+        pos[i + 1] = Math.random() * 50 + 20;       // high up, above clouds
+        pos[i + 2] = (Math.random() - 0.5) * 100 - 20;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        size: 0.15 + Math.random() * 0.1,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const mesh = new THREE.Points(geo, mat);
+      this._scene.add(mesh);
+      this._starSystems.push({ mesh, mat, phase: Math.random() * Math.PI * 2 });
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const mat = new THREE.PointsMaterial({
-      color: 0xb0c0ff,
-      size:  0.12,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.55,
-    });
-    this._scene.add(new THREE.Points(geo, mat));
   }
 
   private _buildCampfire(): void {
-    // ── flame blob materials ──────────────────────────────────────────────────
-    const matOrange = new THREE.MeshStandardMaterial({
-      color: 0xff5500, emissive: 0xff3300, emissiveIntensity: 1.8,
-      roughness: 0.3, transparent: true, opacity: 0.88, depthWrite: false,
-    });
-    const matYellow = new THREE.MeshStandardMaterial({
-      color: 0xffbb00, emissive: 0xff9900, emissiveIntensity: 2.2,
-      roughness: 0.2, transparent: true, opacity: 0.82, depthWrite: false,
-    });
-    const flameGeo = new THREE.SphereGeometry(0.11, 6, 6);
+    const campfireGroup = new THREE.Group();
+    this._scene.add(campfireGroup);
 
+    // MeshPhysicalMaterial helper — the "toy/clay" clearcoat aesthetic
+    const toyMat = (
+      color: number, roughness = 0.5, clearcoat = 0.2,
+      emissive: number = 0, flatShading = false,
+    ) => new THREE.MeshPhysicalMaterial({
+      color, emissive, roughness, metalness: 0.05,
+      clearcoat, clearcoatRoughness: 0.3, flatShading,
+    });
+
+    // Stone ring
+    const stoneGeo = new THREE.SphereGeometry(0.25, 8, 8);
+    const stoneMat = toyMat(0x5a5c60, 0.7, 0.1, 0, true);
     for (let i = 0; i < 10; i++) {
-      const mat  = (i % 3 === 0) ? matYellow.clone() : matOrange.clone();
-      const blob = new THREE.Mesh(flameGeo, mat);
-      const bx   = (Math.random() - 0.5) * 0.28;
-      const bz   = (Math.random() - 0.5) * 0.28;
-      blob.position.set(
-        FIRE_POS.x + bx,
-        FIRE_POS.y + Math.random() * 0.55,
-        FIRE_POS.z + bz,
-      );
-      blob.userData = {
-        baseX:     FIRE_POS.x + bx * 0.5,
-        baseZ:     FIRE_POS.z + bz * 0.5,
-        maxY:      0.5 + Math.random() * 0.35,
-        speed:     0.012 + Math.random() * 0.016,
-        wobbleSpd: 2.5  + Math.random() * 3.5,
-        wobbleOff: Math.random() * Math.PI * 2,
-      };
-      this._scene.add(blob);
-      this._flameBlobs.push(blob);
+      const angle = (i / 10) * Math.PI * 2;
+      const stone = new THREE.Mesh(stoneGeo, stoneMat);
+      stone.position.set(Math.cos(angle) * 0.9, 0.1, Math.sin(angle) * 0.9);
+      stone.scale.set(1, 0.7 + Math.random() * 0.3, 1 + Math.random() * 0.2);
+      stone.rotation.set(0, Math.random() * Math.PI, Math.random() * 0.5);
+      stone.castShadow = stone.receiveShadow = true;
+      campfireGroup.add(stone);
     }
 
-    // ── smoke puffs ───────────────────────────────────────────────────────────
-    const smokeGeo = new THREE.SphereGeometry(0.20, 5, 5);
-    for (let i = 0; i < 8; i++) {
-      const smokeMat = new THREE.MeshBasicMaterial({
-        color: 0x444444, transparent: true, opacity: 0.09, depthWrite: false,
+    // Logs
+    const logGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.6, 8);
+    const logMat = toyMat(0x3d2314, 0.8, 0.1, 0, false);
+    for (let i = 0; i < 3; i++) {
+      const angle = (i / 3) * Math.PI * 2;
+      const log   = new THREE.Mesh(logGeo, logMat);
+      log.position.set(Math.cos(angle) * 0.3, 0.2, Math.sin(angle) * 0.3);
+      log.rotation.x = Math.PI / 2 - 0.3;
+      log.rotation.z = angle;
+      log.castShadow = log.receiveShadow = true;
+      campfireGroup.add(log);
+    }
+
+    // Fire particles — scale-shrink style (same as POC)
+    const flameGeo = new THREE.SphereGeometry(0.3, 8, 8);
+    const matBase  = toyMat(0xff5500, 0.2, 0.5, 0xff2200);
+    const matTip   = toyMat(0xffaa00, 0.2, 0.5, 0xff8800);
+    for (let i = 0; i < 15; i++) {
+      const flame = new THREE.Mesh(flameGeo, Math.random() > 0.5 ? matBase : matTip);
+      flame.position.set(
+        (Math.random() - 0.5) * 0.6,
+        Math.random() * 1.5,
+        (Math.random() - 0.5) * 0.6,
+      );
+      flame.userData = {
+        speed:       0.02 + Math.random() * 0.03,
+        wobbleSpeed: 2    + Math.random() * 3,
+        wobbleOff:   Math.random() * Math.PI * 2,
+        maxLife:     1.5  + Math.random(),
+      };
+      campfireGroup.add(flame);
+      this._fireParticles.push(flame);
+    }
+
+    // Embers — small box meshes that drift upward
+    const emberGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+    const emberMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+    for (let i = 0; i < 20; i++) {
+      const mesh = new THREE.Mesh(emberGeo, emberMat);
+      mesh.position.set(
+        (Math.random() - 0.5) * 1.5,
+        Math.random() * 3 + 1,
+        (Math.random() - 0.5) * 1.5,
+      );
+      this._scene.add(mesh);
+      this._emberMeshes.push({
+        mesh,
+        vy: 0.01 + Math.random() * 0.03,
+        vx: (Math.random() - 0.5) * 0.02,
+        vz: (Math.random() - 0.5) * 0.02,
+        life: Math.random() * 100,
       });
-      const puff = new THREE.Mesh(smokeGeo, smokeMat);
-      const bx   = (Math.random() - 0.5) * 0.35;
-      const bz   = (Math.random() - 0.5) * 0.35;
-      puff.position.set(
-        FIRE_POS.x + bx,
-        FIRE_POS.y + 0.7 + Math.random() * 2.2,
-        FIRE_POS.z + bz,
-      );
-      puff.scale.setScalar(0.5 + Math.random() * 0.6);
-      puff.userData = {
-        baseX:  FIRE_POS.x + bx,
-        baseZ:  FIRE_POS.z + bz,
-        maxY:   2.8 + Math.random() * 1.2,
-        speed:  0.007 + Math.random() * 0.010,
-        driftX: (Math.random() - 0.5) * 0.005,
-        driftZ: (Math.random() - 0.5) * 0.004,
-        phase:  Math.random() * Math.PI * 2,
-      };
-      this._scene.add(puff);
-      this._smokePuffs.push(puff);
     }
 
-    // ── hot ember sparks ──────────────────────────────────────────────────────
-    const eCount = 30;
-    const ePos   = new Float32Array(eCount * 3);
-    for (let i = 0; i < eCount; i++) {
-      ePos[i * 3]     = FIRE_POS.x + (Math.random() - 0.5) * 0.45;
-      ePos[i * 3 + 1] = FIRE_POS.y + Math.random() * 1.1;
-      ePos[i * 3 + 2] = FIRE_POS.z + (Math.random() - 0.5) * 0.45;
-    }
-    const eGeo = new THREE.BufferGeometry();
-    eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-    const eMat = new THREE.PointsMaterial({
-      color: 0xffcc44, size: 0.038, sizeAttenuation: true,
-      transparent: true, opacity: 0.9,
-    });
-    this._embers = new THREE.Points(eGeo, eMat);
-    this._scene.add(this._embers);
-
-    // ── glowing coal base disc ────────────────────────────────────────────────
-    const discGeo = new THREE.CircleGeometry(0.32, 10);
-    discGeo.rotateX(-Math.PI / 2);
-    this._scene.add(new THREE.Mesh(discGeo,
-      new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.65 })));
-
-    // ── fire point light ──────────────────────────────────────────────────────
-    const pl = new THREE.PointLight(FIRE_COLOR, 4.5, 16, 2);
-    pl.position.set(FIRE_POS.x, FIRE_POS.y + 0.5, FIRE_POS.z);
+    // Fire point light
+    const pl = new THREE.PointLight(FIRE_COLOR, 2, 15);
+    pl.position.set(0, 1, 0);
     pl.castShadow = true;
     pl.shadow.mapSize.set(512, 512);
-    pl.shadow.camera.near = 0.2;
-    pl.shadow.camera.far  = 16;
     this._scene.add(pl);
     this._fireLight = pl;
-
-    // Soft fill from the camera side so the wizard's front face isn't black
-    const fill = new THREE.PointLight(0x553322, 0.6, 18);
-    fill.position.set(0, 2.2, -4.0);
-    this._scene.add(fill);
-
-    // Floor ambient — barely enough to see the ground
-    this._scene.add(new THREE.AmbientLight(0x120a08, 0.10));
   }
 
-  /** Fallback forest — dark silhouettes used only if forest_2 GLTF fails to load. */
-  private _buildForest(): void {
-    const trunkMat  = new THREE.MeshBasicMaterial({ color: 0x030203 });
-    const canopyMat = new THREE.MeshBasicMaterial({ color: 0x030403 });
+  private _buildGround(): void {
+    const groundBump = this._makeGroundTexture();
+    const groundMat  = new THREE.MeshPhysicalMaterial({
+      color: 0x1a2e1d, roughness: 0.8, metalness: 0.05,
+      bumpMap: groundBump, bumpScale: 0.05,
+    });
+    const ground = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 2, 32), groundMat);
+    ground.position.y = -1;
+    ground.receiveShadow = true;
+    this._scene.add(ground);
 
-    const rings = [
-      { count: 10, radius: 7.5, heightRange: [3.0, 5.0] as [number, number] },
-      { count: 14, radius: 11,  heightRange: [4.0, 7.0] as [number, number] },
-    ];
-
-    const rand = (min: number, max: number, seed: number) =>
-      min + ((Math.sin(seed * 127.31 + 54.3) * 0.5 + 0.5) * (max - min));
-
-    for (const ring of rings) {
-      for (let i = 0; i < ring.count; i++) {
-        const angle  = (i / ring.count) * Math.PI * 2 + ring.radius * 0.07;
-        const h      = rand(...ring.heightRange, i + ring.radius);
-        const xOff   = rand(-0.6, 0.6, i * 3.7);
-        const zOff   = rand(-0.6, 0.6, i * 2.1);
-        const x      = Math.cos(angle) * ring.radius + xOff;
-        const z      = Math.sin(angle) * ring.radius + zOff;
-
-        const trunkH = h * 0.45;
-        const trunk  = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, trunkH, 5), trunkMat);
-        trunk.position.set(x, trunkH / 2, z);
-
-        const canopyH = h * 0.65;
-        const canopy  = new THREE.Mesh(new THREE.ConeGeometry(rand(0.9, 1.6, i * 5.3), canopyH, 6), canopyMat);
-        canopy.position.set(x, trunkH + canopyH * 0.42, z);
-
-        this._scene.add(trunk, canopy);
-      }
+    // Uneven mounds
+    for (let i = 0; i < 15; i++) {
+      const mound = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.random() * 2 + 1, 16, 16),
+        groundMat,
+      );
+      mound.position.set(
+        (Math.random() - 0.5) * 30,
+        -0.5 - Math.random() * 1.5,
+        (Math.random() - 0.5) * 30,
+      );
+      mound.scale.y = 0.3;
+      mound.receiveShadow = true;
+      this._scene.add(mound);
     }
+  }
+
+  private _buildTrees(): void {
+    const woodBump    = this._makeWoodTexture();
+    const leafGeo     = new THREE.DodecahedronGeometry(1.2, 0);
+    const trunkGeo    = new THREE.CylinderGeometry(0.2, 0.4, 2.5, 6);
+    const woodMat     = new THREE.MeshPhysicalMaterial({
+      color: 0x3d2314, roughness: 0.8, metalness: 0.05,
+      bumpMap: woodBump, bumpScale: 0.03, clearcoat: 0.1, clearcoatRoughness: 0.3,
+    });
+    const leafBaseMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0f301d, roughness: 0.6, metalness: 0.05,
+      clearcoat: 0.2, clearcoatRoughness: 0.3, flatShading: true,
+    });
+
+    for (let i = 0; i < 120; i++) {
+      const angle  = Math.random() * Math.PI * 2;
+      const radius = 5 + Math.random() * 35;
+      if (radius < 10) continue;
+      if (radius < 22 && angle > -1.5 && angle < 1.5) continue;
+
+      const scale = 0.6 + Math.random() * 0.8;
+      const tree  = new THREE.Group();
+
+      const trunk = new THREE.Mesh(trunkGeo, woodMat);
+      trunk.position.y = 1.25;
+      trunk.castShadow = trunk.receiveShadow = true;
+      tree.add(trunk);
+
+      // Canopy made of 4 overlapping dodecahedra (chunky toy-tree look)
+      const leafMat = leafBaseMat.clone();
+      const hv = (Math.random() - 0.5) * 0.08;
+      leafMat.color.offsetHSL(hv, 0, hv * 0.5);
+
+      const canopy = new THREE.Group();
+      canopy.position.y = 2.8;
+      const offsets: Array<[number, number, number, number]> = [
+        [0, 0, 0, 1], [0.7, -0.6, 0.6, 0.8], [-0.7, -0.4, -0.3, 0.9], [0, 1.1, 0, 0.7],
+      ];
+      for (const [cx, cy, cz, cs] of offsets) {
+        const c = new THREE.Mesh(leafGeo, leafMat);
+        c.position.set(cx, cy, cz);
+        c.scale.setScalar(cs);
+        c.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        c.castShadow = c.receiveShadow = true;
+        canopy.add(c);
+      }
+      tree.add(canopy);
+      tree.position.set(Math.sin(angle) * radius, -0.2, Math.cos(angle) * radius - 4);
+      tree.scale.setScalar(scale);
+      tree.rotation.y = Math.random() * Math.PI * 2;
+      this._scene.add(tree);
+    }
+  }
+
+  private _buildGrass(): void {
+    const grassGeo = new THREE.ConeGeometry(0.06, 0.4, 4);
+    grassGeo.translate(0, 0.2, 0);
+    const grassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x274a27, roughness: 0.7, clearcoat: 0.1,
+      clearcoatRoughness: 0.3, flatShading: true,
+    });
+    for (let i = 0; i < 60; i++) {
+      const tuft   = new THREE.Group();
+      const blades = 2 + Math.floor(Math.random() * 3);
+      for (let b = 0; b < blades; b++) {
+        const blade = new THREE.Mesh(grassGeo, grassMat);
+        blade.rotation.z = (Math.random() - 0.5) * 0.5;
+        blade.rotation.x = (Math.random() - 0.5) * 0.5;
+        blade.rotation.y = Math.random() * Math.PI;
+        blade.scale.setScalar(0.5 + Math.random() * 0.8);
+        tuft.add(blade);
+      }
+      const angle  = Math.random() * Math.PI * 2;
+      const radius = 2 + Math.random() * 12;
+      tuft.position.set(Math.sin(angle) * radius, -0.1, Math.cos(angle) * radius);
+      this._scene.add(tuft);
+    }
+  }
+
+  private _buildClouds(): void {
+    const cloudGeo = new THREE.DodecahedronGeometry(3, 0);
+    const cloudMat = new THREE.MeshPhysicalMaterial({
+      color: 0x2a354a, roughness: 1.0, flatShading: true,
+      emissive: 0x080c14,
+    });
+    for (let i = 0; i < 12; i++) {
+      const group  = new THREE.Group();
+      const clumps = 3 + Math.floor(Math.random() * 4);
+      for (let j = 0; j < clumps; j++) {
+        const clump = new THREE.Mesh(cloudGeo, cloudMat);
+        clump.position.set(
+          (Math.random() - 0.5) * 4,
+          (Math.random() - 0.5) * 1.5,
+          (Math.random() - 0.5) * 4,
+        );
+        clump.scale.setScalar(0.5 + Math.random() * 0.8);
+        clump.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        group.add(clump);
+      }
+      group.scale.set(1, 0.4, 1);
+      group.position.set(
+        (Math.random() - 0.5) * 120,
+        25 + Math.random() * 10,
+        (Math.random() - 0.5) * 80 - 10,
+      );
+      this._scene.add(group);
+      this._clouds.push({ group, speed: 0.003 + Math.random() * 0.007 });
+    }
+  }
+
+  // ── procedural textures ────────────────────────────────────────────────────
+
+  private _makeWoodTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#888';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 300; i++) {
+      ctx.globalAlpha = Math.random() * 0.4;
+      ctx.fillRect(Math.random() * 256, 0, Math.random() * 4, 256);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  private _makeGroundTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#888';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 5000; i++) {
+      ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#444';
+      ctx.globalAlpha = Math.random() * 0.3;
+      ctx.beginPath();
+      ctx.arc(Math.random() * 512, Math.random() * 512, Math.random() * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
   }
 
   // ── public API ─────────────────────────────────────────────────────────────
@@ -400,9 +481,10 @@ export class NewGameScene {
     const w = await loadWizard(def);
     this._wizard = w;
     w.group.position.copy(WIZ_START);
-    // Wizard faces roughly toward camera (at X=0) from left side (X=-1.5);
-    // slight right turn (~15°) to make eye contact across the fire.
-    w.group.rotation.y = 0.28;
+    // Meshy.ai models have +Z as visual forward. Camera is at +Z side so
+    // rotation.y = 0 makes the wizard face the camera. This also means
+    // walking from WIZ_START to WIZ_IDLE (movement in +Z) is forward. ✓
+    w.group.rotation.y = 0;
     this._scene.add(w.group);
   }
 
@@ -465,7 +547,7 @@ export class NewGameScene {
       walkAction.setLoop(THREE.LoopRepeat, Infinity);
       walkAction.play();
 
-      // Face away from camera (back toward +Z / darkness)
+      // Face away from camera into darkness (-Z direction)
       this._wizard.group.rotation.y = Math.PI;
 
       const EXIT_POS = WIZ_START.clone();
@@ -525,106 +607,84 @@ export class NewGameScene {
   private _tick(dt: number): void {
     const t = this._clock.elapsedTime;
 
-    // ── fire flicker ──────────────────────────────────────────────────────────
+    // ── fire light flicker (POC style) ────────────────────────────────────────
     if (this._fireLight) {
-      const flicker = 3.2 + Math.sin(t * 7.3) * 0.6 + Math.sin(t * 11.7) * 0.4
-                          + Math.sin(t * 19.3) * 0.18 + Math.random() * 0.15;
-      this._fireLight.intensity = flicker;
-      this._fireLight.position.x = FIRE_POS.x + Math.sin(t * 6.1) * 0.04;
-      this._fireLight.position.z = FIRE_POS.z + Math.cos(t * 5.3) * 0.04;
+      this._fireLight.intensity  = 1.8 + Math.sin(t * 15) * 0.2 + Math.random() * 0.2;
+      this._fireLight.position.x = Math.sin(t * 5) * 0.05;
+      this._fireLight.position.z = Math.cos(t * 6) * 0.05;
     }
 
-    // ── flame blob animation ──────────────────────────────────────────────────
-    for (const blob of this._flameBlobs) {
-      const d = blob.userData as {
-        baseX: number; baseZ: number; maxY: number;
-        speed: number; wobbleSpd: number; wobbleOff: number;
+    // ── fire particle animation — scale-shrink (POC style) ────────────────────
+    for (const flame of this._fireParticles) {
+      const d = flame.userData as {
+        speed: number; wobbleSpeed: number; wobbleOff: number; maxLife: number;
       };
-      blob.position.y += d.speed;
-      const ratio = blob.position.y / d.maxY;
-      blob.position.x = d.baseX + Math.sin(t * d.wobbleSpd + d.wobbleOff) * 0.18 * ratio;
-      blob.position.z = d.baseZ + Math.cos(t * d.wobbleSpd * 0.7 + d.wobbleOff) * 0.18 * ratio;
-      const s = Math.max(0.04, 1.0 - ratio);
-      blob.scale.set(s, s * 1.5, s);
-      if (blob.position.y > d.maxY) {
-        blob.position.y = FIRE_POS.y + 0.05 + Math.random() * 0.15;
-        blob.position.x = d.baseX + (Math.random() - 0.5) * 0.08;
-        blob.position.z = d.baseZ + (Math.random() - 0.5) * 0.08;
-        blob.scale.setScalar(1);
+      flame.position.y += d.speed;
+      flame.position.x  = Math.sin(t * d.wobbleSpeed + d.wobbleOff) * 0.2
+                          * (flame.position.y / d.maxLife);
+      flame.position.z  = Math.cos(t * d.wobbleSpeed + d.wobbleOff) * 0.2
+                          * (flame.position.y / d.maxLife);
+      const scale = Math.max(0, 1 - flame.position.y / d.maxLife);
+      flame.scale.set(scale, scale * 1.5, scale);
+      if (flame.position.y > d.maxLife) {
+        flame.position.y = 0.2;
+        flame.position.x = (Math.random() - 0.5) * 0.4;
+        flame.position.z = (Math.random() - 0.5) * 0.4;
       }
     }
 
-    // ── smoke puff animation ──────────────────────────────────────────────────
-    const SMOKE_FLOOR = FIRE_POS.y + 0.7;
-    for (const puff of this._smokePuffs) {
-      const d = puff.userData as {
-        baseX: number; baseZ: number; maxY: number;
-        speed: number; driftX: number; driftZ: number; phase: number;
-      };
-      puff.position.y += d.speed;
-      puff.position.x += d.driftX + Math.sin(t * 0.4 + d.phase) * 0.0018;
-      puff.position.z += d.driftZ;
-      const lifeRatio = Math.max(0, (puff.position.y - SMOKE_FLOOR) / (d.maxY - SMOKE_FLOOR));
-      puff.scale.setScalar(0.5 + lifeRatio * 2.2);
-      (puff.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.10 * (1 - lifeRatio));
-      if (puff.position.y > d.maxY) {
-        puff.position.set(
-          d.baseX + (Math.random() - 0.5) * 0.28,
-          SMOKE_FLOOR + Math.random() * 0.25,
-          d.baseZ + (Math.random() - 0.5) * 0.28,
+    // ── embers — box meshes drifting upward ───────────────────────────────────
+    for (const e of this._emberMeshes) {
+      e.mesh.position.y += e.vy;
+      e.mesh.position.x += e.vx + Math.sin(t + e.life) * 0.005;
+      e.mesh.position.z += e.vz;
+      e.life++;
+      if (e.mesh.position.y > 4) {
+        e.mesh.position.set(
+          (Math.random() - 0.5) * 0.5,
+          0.5,
+          (Math.random() - 0.5) * 0.5,
         );
-        puff.scale.setScalar(0.5 + Math.random() * 0.4);
       }
     }
 
-    // ── embers ────────────────────────────────────────────────────────────────
-    if (this._embers) {
-      const pos = (this._embers.geometry as THREE.BufferGeometry)
-        .getAttribute('position') as THREE.BufferAttribute;
-      const arr = pos.array as Float32Array;
-      const EMBER_SPEED = 0.24;
-      for (let i = 0; i < arr.length / 3; i++) {
-        arr[i * 3 + 1] += EMBER_SPEED * dt;
-        arr[i * 3]     += Math.sin(t * 3.1 + i) * 0.001;  // gentle side drift
-        if (arr[i * 3 + 1] > 1.6) {
-          arr[i * 3 + 1] = FIRE_POS.y;
-          arr[i * 3]     = FIRE_POS.x + (Math.random() - 0.5) * 0.35;
-          arr[i * 3 + 2] = FIRE_POS.z + (Math.random() - 0.5) * 0.35;
-        }
+    // ── star twinkling ────────────────────────────────────────────────────────
+    for (const s of this._starSystems) {
+      s.mat.opacity = 0.3 + (Math.sin(t * 1.5 + s.phase) * 0.5 + 0.5) * 0.7;
+    }
+
+    // ── cloud drifting ────────────────────────────────────────────────────────
+    for (const c of this._clouds) {
+      c.group.position.x += c.speed;
+      if (c.group.position.x > 70) {
+        c.group.position.x = -70;
+        c.group.position.z = (Math.random() - 0.5) * 80 - 10;
       }
-      pos.needsUpdate = true;
     }
 
     // ── wizard mixer ──────────────────────────────────────────────────────────
     this._wizard?.mixer.update(dt);
 
-    // ── camera breathe ────────────────────────────────────────────────────────
+    // ── camera breathe (subtle vertical sine) ────────────────────────────────
     this._breatheT += dt;
     const breatheY = Math.sin(this._breatheT * 0.23 * Math.PI * 2) * 0.006;
-    const breatheX = Math.sin(this._breatheT * 0.173 * Math.PI * 2) * 0.003;
 
     // ── camera nod (spring) ───────────────────────────────────────────────────
     const stiffness = 180, damping = 14;
-    const acc = -stiffness * this._nodOffset - damping * this._nodVel;
-    this._nodVel    += acc * dt;
+    this._nodVel    += (-stiffness * this._nodOffset - damping * this._nodVel) * dt;
     this._nodOffset += this._nodVel * dt;
     if (Math.abs(this._nodOffset) < 0.0002 && Math.abs(this._nodVel) < 0.001) {
       this._nodOffset = 0; this._nodVel = 0;
     }
 
-    // ── mouse look lerp ───────────────────────────────────────────────────────
-    this._lookCurX += (this._lookTgtX - this._lookCurX) * 0.06;
-    this._lookCurY += (this._lookTgtY - this._lookCurY) * 0.06;
+    // ── camera position ───────────────────────────────────────────────────────
+    this._camera.position.y = CAM_POS.y + breatheY + this._nodOffset;
 
-    const LOOK_DIST = 4.5;
-    const finalY = CAM_POS.y + breatheY + this._nodOffset;
-    const finalX = CAM_POS.x + breatheX;
-    this._camera.position.set(finalX, finalY, CAM_POS.z);
-    this._camera.lookAt(
-      CAM_LOOK.x + breatheX * 0.3 + this._lookCurY * LOOK_DIST,
-      CAM_LOOK.y + breatheY * 0.2 + this._lookCurX * LOOK_DIST,
-      CAM_LOOK.z,
-    );
+    // ── mouse look — direct rotation (POC style) ──────────────────────────────
+    this._camera.rotation.y += (this._lookTgtY - this._camera.rotation.y) * 0.05;
+    this._camera.rotation.x += (
+      (this._lookTgtX + breatheY * 0.5 + this._nodOffset) - this._camera.rotation.x
+    ) * 0.05;
 
     // ── user frame callback ───────────────────────────────────────────────────
     this.onFrame?.(dt);
