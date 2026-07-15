@@ -359,7 +359,9 @@ export class OverworldScene {
       model.scale.setScalar(rk.r * 2.0);
       // Preserve Y rotation from the original mesh for natural variation
       model.rotation.y = rk.mesh.rotation.y;
-      // Replace procedural mesh children with GLB
+      // Blank the original geometry so the Mesh no longer draws its
+      // DodecahedronGeometry self, while still acting as a positioned container.
+      rk.mesh.geometry = new THREE.BufferGeometry();
       rk.mesh.clear();
       rk.mesh.add(model);
     }

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Asset Viewer — Tomes Towers &amp; Transmutation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; color: #eee; font-family: sans-serif; }
+    #canvas-wrap { position: relative; }
+    canvas { display: block; }
+    #labels { position: absolute; top: 0; left: 0; pointer-events: none; }
+    .lbl {
+      position: absolute;
+      font-size: 11px;
+      color: #ffe;
+      text-shadow: 0 1px 3px #000;
+      transform: translate(-50%, 0);
+      white-space: nowrap;
+    }
+    #status { padding: 6px 12px; font-size: 12px; background: #111; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading assets…</div>
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <div id="labels"></div>
+  </div>
+  <script type="module" src="/src/assetViewer.ts"></script>
+</body>
+</html>

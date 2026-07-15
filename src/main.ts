@@ -77,10 +77,13 @@ async function main() {
   const input = new InputManager();
 
   // ── Lighting ──────────────────────────────────────────────────────────────
-  const ambient = new THREE.AmbientLight(0xffffff, 0.3);
-  scene.add(ambient);
+  // Hemisphere light provides sky (blue-white) + ground (dark green) fill,
+  // giving PBR (MeshStandardMaterial) GLB assets correct colour without blowing
+  // out to white.  No separate AmbientLight — hemisphere covers ambient fill.
+  const hemi = new THREE.HemisphereLight(0xb8d4e8, 0x4a6b3a, 0.9);
+  scene.add(hemi);
 
-  const keyLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
+  const keyLight = new THREE.DirectionalLight(0xfff5e0, 0.85);
   keyLight.position.set(12, 20, 12);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.setScalar(1024);

@@ -357,7 +357,7 @@ test.describe('Phase 2 — Settlement decoration', () => {
     await goExterior(page, 'phase2-12-settlement-before');
 
     // Teleport toward typical settlement band (centre-left band where villages cluster)
-    await page.evaluate(() => (window as any).__game?.teleport(60, 0, 60));
+    await page.evaluate(() => (window as any).__game?.teleportPlayer(60, 0, 60));
     await page.waitForTimeout(400);
     await shot(page, 'phase2-12-settlement-near-before');
 
@@ -382,7 +382,7 @@ test.describe('Phase 2 — Settlement decoration', () => {
     await goExterior(page, 'phase2-13-stalls-before');
     await waitForSettlement(page, 50_000);
 
-    await page.evaluate(() => (window as any).__game?.teleport(55, 0, 55));
+    await page.evaluate(() => (window as any).__game?.teleportPlayer(55, 0, 55));
     await page.waitForTimeout(800);
     await shot(page, 'phase2-13-stalls-after');
 
@@ -461,7 +461,7 @@ test.describe('Phase 3 — Dungeon entrance upgrade', () => {
     await waitForDungeon(page, 50_000);
 
     // Teleport to a dungeon entrance column/row area (dungeons usually scatter 15-80)
-    await page.evaluate(() => (window as any).__game?.teleport(48, 0, 48));
+    await page.evaluate(() => (window as any).__game?.teleportPlayer(48, 0, 48));
     await page.waitForTimeout(600);
     await shot(page, 'phase3-16-trigger-near');
 

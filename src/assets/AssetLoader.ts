@@ -30,6 +30,25 @@ function enableShadows(root: THREE.Object3D): void {
   });
 }
 
+/**
+ * Kenney asset packs ship with metallicFactor=1 on every material.
+ * Without an IBL / environment map this renders as pure white in Three.js.
+ * Clamp metalness to 0 so baseColorFactor shows correctly under scene lights.
+ */
+function fixMaterials(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      const std = mat as THREE.MeshStandardMaterial;
+      if (!std.isMeshStandardMaterial) continue;
+      std.metalness = 0;
+      std.roughness = Math.max(std.roughness, 0.6);
+    }
+  });
+}
+
 // ── AssetLoader class ─────────────────────────────────────────────────────────
 
 export class AssetLoader {
@@ -58,6 +77,7 @@ export class AssetLoader {
         (gltf) => {
           const root = gltf.scene as THREE.Group;
           enableShadows(root);
+          fixMaterials(root);
           this._cache.set(path, root);
           this._pending.delete(path);
           resolve(root);
