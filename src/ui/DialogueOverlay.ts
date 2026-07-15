@@ -284,9 +284,9 @@ export class DialogueOverlay {
       };
 
       if (this._speech.classList.contains('ngo--visible')) {
-        // Fade current line out first, then bring in the new one (POC crossfade)
+        // Fade current line out fully (1.5s transition) then bring in the new one
         this._speech.classList.remove('ngo--visible');
-        setTimeout(show, 700);
+        setTimeout(show, 1600);
       } else {
         show();
       }
