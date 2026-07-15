@@ -205,7 +205,6 @@ export class DialogueOverlay {
   private _speech:    HTMLElement;
   private _speaker:   HTMLElement;
   private _textEl:    HTMLElement;
-  private _cursor:    HTMLElement;
   private _choices:   HTMLElement;
   private _toast:     HTMLElement;
   private _speechFadeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -220,10 +219,7 @@ export class DialogueOverlay {
     this._speech = _el('div', 'ngo-speech');
     this._speaker = _el('div', 'ngo-speaker');
     this._textEl  = _el('div', 'ngo-text');
-    this._cursor  = _el('span', 'ngo-cursor');
-    const hint    = _el('div', 'ngo-skip-hint');
-    hint.textContent = 'click or space to skip';
-    this._speech.append(this._speaker, this._textEl, hint);
+    this._speech.append(this._speaker, this._textEl);
 
     this._choices = _el('div', 'ngo-choices');
     this._toast   = _el('div', 'ngo-toast');
@@ -269,48 +265,34 @@ export class DialogueOverlay {
    * Typewriter-animate the given text. Speaker name shown above.
    * Returns a promise that resolves when complete (or skipped).
    */
-  speak(text: string, speaker = '— The Wizard'): Promise<void> {
+  /**
+   * Show wizard speech with a POC-style fade-in.
+   * If text is already visible it fades out first, then fades in the new line.
+   * Resolves after the CSS fade-in completes so choices appear naturally after.
+   */
+  speak(text: string, speaker = '\u2014 The Wizard'): Promise<void> {
     return new Promise<void>((resolve) => {
-      // Cancel any pending wizard-fade and reset
+      // Cancel any pending wizard-fade
       if (this._speechFadeTimer !== null) {
         clearTimeout(this._speechFadeTimer);
         this._speechFadeTimer = null;
       }
-      this._speech.classList.remove('ngo--faded');
-      this._speaker.textContent = speaker;
-      this._textEl.textContent  = '';
-      this._textEl.appendChild(this._cursor);
-      this._speech.classList.add('ngo--visible');
 
-      let i = 0;
-      const INTERVAL = 28; // ms per character
-
-      const flush = () => {
-        this._textEl.textContent = text;
-        this._textEl.appendChild(this._cursor);
-        cleanup();
-        resolve();
+      const show = () => {
+        this._speech.classList.remove('ngo--faded');
+        this._speaker.textContent = speaker;
+        this._textEl.textContent  = text;
+        this._speech.classList.add('ngo--visible');
+        setTimeout(resolve, 1500); // wait for CSS fade-in to complete
       };
 
-      const tick = setInterval(() => {
-        if (i >= text.length) { clearInterval(tick); cleanup(); resolve(); return; }
-        this._textEl.textContent = text.slice(0, ++i);
-        this._textEl.appendChild(this._cursor);
-      }, INTERVAL);
-
-      const onSkip = () => { clearInterval(tick); flush(); };
-
-      const cleanup = () => {
-        document.removeEventListener('keydown', _skipKey);
-        this._speech.removeEventListener('click', onSkip);
-        this._cursor.remove();
-      };
-
-      const _skipKey = (e: KeyboardEvent) => {
-        if (e.code === 'Space') { e.preventDefault(); onSkip(); }
-      };
-      document.addEventListener('keydown', _skipKey, { once: true });
-      this._speech.addEventListener('click', onSkip, { once: true });
+      if (this._speech.classList.contains('ngo--visible')) {
+        // Fade current line out first, then bring in the new one (POC crossfade)
+        this._speech.classList.remove('ngo--visible');
+        setTimeout(show, 700);
+      } else {
+        show();
+      }
     });
   }
 
