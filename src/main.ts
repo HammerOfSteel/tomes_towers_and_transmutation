@@ -23,12 +23,13 @@ import { ProgressionSystem } from '@/progression/ProgressionSystem';
 import { BookReader } from '@/interactables/BookReader';
 import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
-import { DevPanel } from '@/ui/DevPanel';
+import { DevPanel, devModeEnabled } from '@/ui/DevPanel';
 import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
 import { buildWorldData } from '@/world/WorldGenerator';
@@ -146,6 +147,7 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   let minimap:   OWMinimap | null = null;
+  let owEditor:  OverworldEditor | null = null;
   // Rigs spawned via the Creature Lab sandbox — animated each tick.
   const _spawnedRigs: Array<{
     rig: CreatureRig;
@@ -186,6 +188,9 @@ async function main() {
     minimap?.dispose();
     minimap = new OWMinimap(worldData);
     minimap.hide(); // hidden until exterior mode is entered
+    // Create (or recreate) the overworld editor bound to this scene instance
+    owEditor?.dispose();
+    owEditor = new OverworldEditor(scene, cameraRig.camera, canvas);
     const ow = new OverworldScene(scene, physics, player, worldData);
     ow.onQuestGiven = (quest) => {
       questLog.addQuest(quest);
@@ -413,6 +418,8 @@ async function main() {
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
+    owEditor?.dispose();
+    owEditor = null;
     minimap?.dispose();
     minimap = null;
     gameMode = 'interior';
@@ -762,6 +769,8 @@ async function main() {
       if (!pauseMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
     } else if ((e.key === 'b' || e.key === 'B') && gameMode === 'exterior') {
       if (!pauseMenu.isOpen && !editMode.isActive) _toggleConstructionMode();
+    } else if (e.key === '\\' && gameMode === 'exterior') {
+      if (!pauseMenu.isOpen && devModeEnabled()) owEditor?.toggle();
     }
   });
 
@@ -1110,6 +1119,7 @@ async function main() {
       if (gameMode === 'interior') {
         sceneManager.update(dt, player.group.position);
       } else if (overworld) {
+        owEditor?.update();
         overworld.update(dt);
         party.pruneDead();
         tamingGame.update(dt);
