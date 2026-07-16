@@ -144,6 +144,9 @@ async function main() {
   // ── Lighting system — torch flicker, spell pulses, ambiance presets ───────
   const lighting  = new LightingSystem(scene);
   const particles = new ParticleSystem(scene);
+  // Track last floor so onRoomLoaded can detect floor changes and show the location card.
+  let _prevFloorIdx = Number.MIN_SAFE_INTEGER;
+
   sceneManager.onRoomLoaded = (bp, _s) => {
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
@@ -159,6 +162,13 @@ async function main() {
       new THREE.Vector3(cx, 1.5, cz),
       Math.min(bp.width, bp.depth) * bp.cellSize * 0.4,
     );
+    // Floor name location card — shown only when the floor index actually changes
+    // (side-room doors share the same floor index and don’t retrigger).
+    if (bp.floor !== _prevFloorIdx) {
+      _prevFloorIdx = bp.floor;
+      const floorName = getFloorDef(bp.floor)?.name;
+      if (floorName) _floorToast(floorName);
+    }
   };
   // Initial room load: generate the tower with a random seed.
   let currentSeed = Math.floor(Math.random() * 0xFFFF_FFFF);
@@ -331,6 +341,10 @@ async function main() {
     switchToExterior();
   };
 
+  // Track tower room clears for the clear_dungeon beat type (used by prologue beat 4).
+  // discoveryTracker only tracks overworld dungeons; onRoomCleared covers tower floors.
+  sceneManager.onRoomCleared = () => { _towerRoomsClearedCount++; };
+
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
 
@@ -343,6 +357,10 @@ async function main() {
   let _storyRunner: StoryRunner | null = null;
   /** True once the tower prologue act completes — unlocks the front door. */
   let _towerPrologueDone = false;
+  /** Tower room-clear counter — increments each time a room's enemies are all defeated.
+   *  Used alongside discoveryTracker.clearedDungeons.size for clear_dungeon beats
+   *  while the player is inside the tower (overworld dungeon clears are 0 in interior). */
+  let _towerRoomsClearedCount = 0;
   let _craftedItemCount = 0;
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
@@ -525,6 +543,7 @@ async function main() {
     sceneManager.resetCleared();
     sceneManager.resetVisitedFloors();
     _towerPrologueDone = false;
+    _towerRoomsClearedCount = 0;
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
 
@@ -592,7 +611,7 @@ async function main() {
       };
       _storyRunner.start({
         killCount:            sceneManager.killCount,
-        dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
+        dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
         itemsCraftedCount:    _craftedItemCount,
         floorsVisited:        sceneManager.uniqueFloorsVisited,
         playerCol:            0,
@@ -896,6 +915,33 @@ async function main() {
     // Act intros (prologue, new act) need longer display time — 3 sentences to read.
     setTimeout(() => { el.style.opacity = '0'; }, isBeat ? 3500 : 9000);
     setTimeout(() => { el.remove(); },            isBeat ? 4700 : 10200);
+  }
+
+  /** Location card — shown at the top-centre whenever the player enters a new floor. */
+  function _floorToast(name: string): void {
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      position:      'fixed',
+      top:           '18%',
+      left:          '50%',
+      transform:     'translateX(-50%)',
+      padding:       '6px 28px',
+      color:         '#b8a888',
+      fontFamily:    "'Cinzel', serif",
+      fontSize:      '13px',
+      letterSpacing: '0.18em',
+      textTransform: 'uppercase',
+      textAlign:     'center',
+      zIndex:        '399',
+      pointerEvents: 'none',
+      opacity:       '0',
+      transition:    'opacity 0.7s ease',
+    });
+    el.textContent = name;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '0.65'; });
+    setTimeout(() => { el.style.opacity = '0'; }, 3200);
+    setTimeout(() => { el.remove(); },             3900);
   }
 
   const mainMenu = new MainMenu({
@@ -1364,6 +1410,22 @@ async function main() {
       if (gameMode === 'interior') {
         hud.setTime(null);
         sceneManager.update(dt, player.group.position);
+
+        // Story runner tick — interior branch (prologue beats).
+        // Throttled to 1 Hz like the exterior branch.
+        _questCheckTimer -= dt;
+        if (_questCheckTimer <= 0 && _storyRunner) {
+          _questCheckTimer = 1.0;
+          _storyRunner.tick({
+            killCount:            sceneManager.killCount,
+            dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
+            itemsCraftedCount:    _craftedItemCount,
+            floorsVisited:        sceneManager.uniqueFloorsVisited,
+            playerCol:            0,
+            playerRow:            0,
+            nearSettlements:      [],
+          });
+        }
       } else if (overworld) {
         owEditor?.update();
         TimeSystem.instance.update(dt);
@@ -1398,7 +1460,7 @@ async function main() {
             const _nearby: string[] = []; // settlement proximity — extended when OverworldScene exposes getSettlementsNear()
             _storyRunner.tick({
               killCount:            sceneManager.killCount,
-              dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
+              dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
               itemsCraftedCount:    _craftedItemCount,
               floorsVisited:        sceneManager.uniqueFloorsVisited,
               playerCol:            _gc.col,

@@ -36,8 +36,11 @@ export class SceneManager {
   /** Callback invoked when the player walks through a null-target door (world exit). */
   onExitTrigger: (() => void) | null = null;
 
+  /** Callback invoked the first time every enemy in a room is defeated.
+   *  Used by the story runner to track tower room clears for `clear_dungeon` beats. */
+  onRoomCleared: (() => void) | null = null;
+
   /**
-   * Callback invoked every time a new room finishes loading (after enemies are
    * spawned and the player is repositioned).  Receives the newly active Blueprint
    * and the Three.js Scene.  Use this to add per-room lights via LightingSystem.
    */
@@ -322,6 +325,7 @@ export class SceneManager {
     if (this.activeEnemies.every((e) => e.isDead)) {
       this.clearedRooms.add(this.currentBpId);
       this._saveClearedRooms();
+      this.onRoomCleared?.();
     }
   }
 
