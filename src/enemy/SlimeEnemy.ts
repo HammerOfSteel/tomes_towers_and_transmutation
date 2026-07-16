@@ -30,6 +30,8 @@ const ATTACK_BOUNCE_VEL = 8.5;     // upward launch speed for attack lunge
 const ATTACK_LUNGE_SPEED = 5.5;    // forward burst speed on attack pounce
 const SCALE_LERP = 9;              // scale recovery speed (per second)
 const REST_SCALE_Y = 0.55;         // resting body Y scale (matches buildMesh)
+/** Velocity-driven stretch: stretch tall when rising fast, squash when falling. */
+const VEL_STRETCH_K = 0.045;       // scale-units per unit/s of vertical velocity
 
 // Hit / death VFX
 const HIT_JIGGLE_DURATION = 0.22;  // seconds of lateral wobble after being hit
@@ -406,6 +408,16 @@ export class SlimeEnemy implements Damageable {
       this.bodyMesh.scale.set(1.6, 0.22, 1.6);
     }
     this.wasGrounded = isGrounded;
+
+    // Velocity-driven airborne stretch — stretch tall when rising, squash when falling fast
+    if (!isGrounded && this._hitJiggle <= 0) {
+      const velStretch = this.verticalVelocity * VEL_STRETCH_K;  // positive = tall
+      const targetY = Math.max(0.18, REST_SCALE_Y + velStretch);
+      const lateralSq = Math.max(0.55, 1.0 - velStretch * 0.6); // conserve volume
+      this.bodyMesh.scale.y += (targetY    - this.bodyMesh.scale.y) * 0.25;
+      this.bodyMesh.scale.x += (lateralSq  - this.bodyMesh.scale.x) * 0.25;
+      this.bodyMesh.scale.z += (lateralSq  - this.bodyMesh.scale.z) * 0.25;
+    }
 
     // Chase bounce — hop rhythmically toward the player
     if (this.state === 'chase') {
