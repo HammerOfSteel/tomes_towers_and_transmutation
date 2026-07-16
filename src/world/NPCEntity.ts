@@ -17,6 +17,7 @@ import { mulberry32 }        from '@/core/prng';
 import type { NPCRole }      from './NPCDnaGenerator';
 import { npcDna, npcName }   from './NPCDnaGenerator';
 import { generateGreeting, generateQuestHint } from './NPCDialogue';
+import { injectHudTheme } from '@/ui/hudTheme';
 import type { DialogueContext }                 from './NPCDialogue';
 import type { HistoryEvent }                    from './WorldHistory';
 import type { SettlementEntry, DungeonEntry }   from './WorldData';
@@ -47,64 +48,92 @@ const FREEZE_DIST_SQ    = 150 * 150; // fully frozen beyond this
 let _dialoguePanel: HTMLDivElement | null = null;
 let _dialogueCloseKey: ((e: KeyboardEvent) => void) | null = null;
 
-function _showDialogue(npcName: string, lines: string): void {
+const ROLE_BADGE_LABEL: Record<string, string> = {
+  merchant:   'Merchant',
+  guard:      'Guard',
+  citizen:    'Citizen',
+  scholar:    'Scholar',
+  innkeeper:  'Innkeeper',
+  blacksmith: 'Blacksmith',
+};
+
+function _showDialogue(npcName: string, lines: string, role?: string): void {
+  injectHudTheme();
   _closeDialogue();
+
+  // Split into pages on double-newline
+  const pages = lines.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  let page = 0;
 
   const panel = document.createElement('div');
   panel.id = 'npc-dialogue';
+  panel.className = 'hud-panel hud-panel--warm';
   Object.assign(panel.style, {
-    position:    'fixed',
-    bottom:      '80px',
-    left:        '50%',
-    transform:   'translateX(-50%)',
-    width:       '440px',
-    maxWidth:    '90vw',
-    padding:     '20px 24px',
-    background:  'linear-gradient(160deg, #2a1e0f 0%, #1a1208 100%)',
-    border:      '1px solid #5a3a1a',
-    borderRadius:'4px',
-    boxShadow:   '0 4px 24px rgba(0,0,0,0.85)',
-    color:       '#e8d4a0',
-    fontFamily:  'Georgia, serif',
-    fontSize:    '14px',
-    lineHeight:  '1.6',
-    zIndex:      '200',
-    userSelect:  'none',
+    position:   'fixed',
+    bottom:     '80px',
+    left:       '50%',
+    transform:  'translateX(-50%)',
+    width:      '440px',
+    maxWidth:   '90vw',
+    zIndex:     '200',
   } as Partial<CSSStyleDeclaration>);
 
-  const title = document.createElement('div');
-  title.textContent = npcName;
-  Object.assign(title.style, {
-    fontFamily:     'Cinzel, serif',
-    fontSize:       '13px',
-    letterSpacing:  '2px',
-    textTransform:  'uppercase',
-    color:          '#c8963c',
-    marginBottom:   '10px',
-    borderBottom:   '1px solid rgba(90,60,26,0.5)',
-    paddingBottom:  '6px',
+  // Header row: name + optional role badge
+  const header = document.createElement('div');
+  header.className = 'hud-row';
+  Object.assign(header.style, {
+    marginBottom: '8px',
+    borderBottom: '1px solid var(--hud-border-warm)',
+    paddingBottom: '6px',
   } as Partial<CSSStyleDeclaration>);
-  panel.appendChild(title);
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'hud-title';
+  nameEl.textContent = npcName;
+  header.appendChild(nameEl);
+
+  if (role && ROLE_BADGE_LABEL[role]) {
+    const badge = document.createElement('span');
+    badge.className = 'ql-act-badge';
+    badge.textContent = ROLE_BADGE_LABEL[role];
+    Object.assign(badge.style, { marginLeft: '8px', verticalAlign: 'middle' } as Partial<CSSStyleDeclaration>);
+    header.appendChild(badge);
+  }
+  panel.appendChild(header);
 
   const body = document.createElement('div');
-  body.textContent = lines;
+  body.style.cssText = 'font-size:13px;line-height:1.65;white-space:pre-wrap;min-height:2.5em;';
+  body.textContent = pages[0] ?? '';
   panel.appendChild(body);
 
-  const hint = document.createElement('div');
-  hint.textContent = '[E] to dismiss';
-  Object.assign(hint.style, {
-    marginTop:  '12px',
-    fontSize:   '11px',
-    color:      '#6a5a3a',
-    fontFamily: 'monospace',
-  } as Partial<CSSStyleDeclaration>);
-  panel.appendChild(hint);
+  // Footer: page indicator + dismiss/continue button
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:12px;';
 
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:10px;letter-spacing:1px;color:var(--hud-muted);font-family:var(--hud-font-mono);';
+  hint.textContent = pages.length > 1 ? `1 / ${pages.length}` : '';
+
+  const btn = document.createElement('button');
+  btn.className = 'hud-btn';
+  btn.textContent = pages.length > 1 ? 'Continue [E]' : 'Dismiss [E]';
+  btn.addEventListener('click', () => advance());
+
+  footer.append(hint, btn);
+  panel.appendChild(footer);
   document.body.appendChild(panel);
   _dialoguePanel = panel;
 
+  const advance = () => {
+    page++;
+    if (page >= pages.length) { _closeDialogue(); return; }
+    body.textContent = pages[page];
+    hint.textContent = `${page + 1} / ${pages.length}`;
+    if (page === pages.length - 1) btn.textContent = 'Dismiss [E]';
+  };
+
   _dialogueCloseKey = (e: KeyboardEvent) => {
-    if (e.code === 'KeyE' || e.code === 'Escape') _closeDialogue();
+    if (e.code === 'KeyE' || e.code === 'Escape') advance();
   };
   window.addEventListener('keydown', _dialogueCloseKey);
 }
@@ -244,7 +273,7 @@ export class NPCEntity {
         const greeting  = generateGreeting(this._ctx, this._seed);
         const questHint = generateQuestHint(this._ctx, this._seed ^ 0xFF);
         const lines     = questHint ? `${greeting}\n\n${questHint}` : greeting;
-        _showDialogue(this.name, lines);
+        _showDialogue(this.name, lines, this.role);
 
         // Generate and deliver a quest on first interaction (quest-giving roles only)
         if (!this._questGiven && this.onQuestGiven) {
