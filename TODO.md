@@ -69,9 +69,8 @@
 
 ### DevLab Unification
 `DevSandbox` is the home. Absorb `DevPanel` into it and add:
-- [ ] **NPC / Enemy Generator tab** — repurposed `CharacterCreation` DNA builder; outputs a
-      creature config that can be saved, loaded, and spawned as a live enemy in the arena
-- [ ] **Creature test-drive** — spawn the generated enemy in sandbox and observe AI / animations
+- [x] **NPC / Enemy Generator tab** — archetype picker + 160px preview + name/HP/damage/count inputs; Save Preset system; spawns `SlimeEnemy` with DNA rig replacing the slime body
+- [x] **Creature test-drive** — spawn button in NPC Gen tab spawns the configured enemy live in the arena with chase+attack AI
 - [ ] **Wave spawner** — configure enemy type, count, and timing; run a wave in the sandbox arena
 - [ ] **Asset browser** — browse all `charManifest.ts` GLBs; click to preview and swap player model
 - [x] **Unified sidebar** — Cheats tab added to DevSandbox with full DevPanel parity (god mode, HP, instant cooldowns, kill all, force flee, teleport, fly mode, fast travel)
