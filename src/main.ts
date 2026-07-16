@@ -1184,7 +1184,7 @@ async function main() {
         sceneManager.update(dt, player.group.position);
       } else if (overworld) {
         owEditor?.update();
-        overworld.update(dt);
+        overworld.update(dt, false, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
 

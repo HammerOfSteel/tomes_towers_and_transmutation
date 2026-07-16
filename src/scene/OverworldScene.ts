@@ -41,6 +41,7 @@ import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
 import { OWMinimap }                   from '@/ui/OWMinimap';
+import { ProceduralSkybox }            from '@/rendering/ProceduralSkybox';
 import { NPCEntity }                   from '@/world/NPCEntity';
 import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
@@ -116,6 +117,8 @@ export class OverworldScene {
   private _roadTileGroups: THREE.Group[] = [];
   /** True while this scene's groups are live in the THREE.Scene. */
   private _isInScene = false;
+  private _skybox: ProceduralSkybox | null = null;
+  private _skyT    = 0;
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
   private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
@@ -186,6 +189,9 @@ export class OverworldScene {
   enter(): void {
     this._isInScene = true;
     this._minimap.show();
+    if (!this._skybox) {
+      this._skybox = new ProceduralSkybox(this.scene, 0x5a7c_f001);
+    }
     // Flat base plane covers level-0 tiles and acts as the underfloor.
     this._groundBody = this.physics.createGroundPlane(0);
     // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
@@ -234,6 +240,8 @@ export class OverworldScene {
   exit(): void {
     this._isInScene = false;
     this._minimap.hide();
+    this._skybox?.dispose();
+    this._skybox = null;
     if (this._groundBody) {
       this.physics.rapierWorld.removeRigidBody(this._groundBody);
       this._groundBody = null;
@@ -261,7 +269,11 @@ export class OverworldScene {
   }
 
   /** Per-frame enemy AI tick. */
-  update(dt: number, inputE = false): void {
+  update(dt: number, inputE = false, camera?: THREE.Camera): void {
+    this._skyT += dt;
+    if (this._skybox && camera) {
+      this._skybox.update(this._skyT, camera);
+    }
     const pos = this.player.group.position;
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
