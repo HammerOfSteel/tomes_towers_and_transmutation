@@ -324,6 +324,12 @@ async function main() {
   const _pendingBlueprints = new Set<string>();
   const consumables   = new ConsumableInventory();
   consumables.onHeal  = (amt) => { player.health.heal(amt); };
+  consumables.onChange = () => {
+    hud.setConsumables({
+      minorHealCount: consumables.getPotionCount('potion_heal_minor'),
+      majorHealCount: consumables.getPotionCount('potion_heal_major'),
+    });
+  };
   /** Potion hotkeys: [Z] = heal minor, [X] = heal major */
   window.addEventListener('keydown', (e) => {
     if (pauseMenu.isOpen || spellBook.isOpen || statPanel.visible) return;
@@ -523,6 +529,7 @@ async function main() {
     _storyRunner = null;
     _craftedItemCount = 0;
     consumables.reset();
+    hud.setConsumables({ minorHealCount: 0, majorHealCount: 0 });
     if (cfg?.characterId) {
       _storyRunner = new StoryRunner(cfg.characterId, questLog);
       _storyRunner.onBeatComplete = (text, xp, gold) => {
@@ -1618,9 +1625,13 @@ async function main() {
       progression.xpProgress,
     );
 
-    // Show resource strip in exterior mode only
+    // Show resource + potion strips in exterior mode only
     if (gameMode === 'exterior') {
       hud.setResources(inventory.snapshot());
+      hud.setConsumables({
+        minorHealCount: consumables.getPotionCount('potion_heal_minor'),
+        majorHealCount: consumables.getPotionCount('potion_heal_major'),
+      });
       // Update base-building ghost mesh position
       if (_constructionMode && _ghostMesh && overworld) {
         raycaster.setFromCamera(mouseNDC, cameraRig.camera);
@@ -1635,6 +1646,7 @@ async function main() {
       baseScene.update(dt, player.group.position);
     } else {
       hud.setResources(null);
+      hud.setConsumables(null);
     }
 
     // Cooldown sweep overlays for action bar slots

@@ -7,6 +7,9 @@
 //   • Status row: dodge-cooldown pips [F] + sprint [⇧]  (top-left)
 //   • Info row: foe count + floor label                  (top-left)
 //   • Action bar: 4 spell slots, 1–4 select active       (bottom-centre)
+//   • Potion quick-slots [Z]/[X]                         (bottom-right)
+
+import { injectHudTheme } from './hudTheme';
 
 const HUD_CSS = `
 #hud {
@@ -98,7 +101,30 @@ const HUD_CSS = `
   z-index: 100; user-select: none; pointer-events: none;
 }
 
-/* ── Resource strip (bottom-left, below spell bar) ── */
+/* ── Potion quick-slot bar ── */
+#hud-potions {
+  position: fixed; bottom: 70px; right: 16px;
+  display: flex; gap: 8px;
+  z-index: 100; user-select: none; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+#hud-potions.hud-pot--visible { opacity: 1; }
+.hud-pot-slot {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 52px; padding: 6px 4px 5px;
+  background: rgba(0,0,0,.55);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius-sm);
+}
+.hud-pot-icon  { font-size: 18px; line-height: 1; }
+.hud-pot-key   { font-family: var(--hud-font-mono); font-size: 9px; color: var(--hud-muted); letter-spacing: 1px; }
+.hud-pot-count {
+  font-family: var(--hud-font-mono); font-size: 10px; color: var(--hud-info);
+  min-width: 16px; text-align: center;
+}
+.hud-pot-slot--empty .hud-pot-icon  { opacity: 0.2; }
+.hud-pot-slot--empty .hud-pot-count { color: var(--hud-muted); }
+
 #hud-resources {
   position: fixed; bottom: 20px; left: 16px;
   display: flex; flex-direction: column; gap: 3px;
@@ -113,36 +139,42 @@ const HUD_CSS = `
   font-size: 13px; line-height: 1;
 }
 .hud-res-count {
-  font-family: monospace; font-size: 11px; color: #8bbfcc;
+  font-family: var(--hud-font-mono); font-size: 11px; color: var(--hud-info);
   min-width: 28px;
 }
 
 .hud-slot {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 7px 16px 6px;
-  background: rgba(0,0,0,.52); border: 1px solid #1a1428;
-  border-radius: 3px; min-width: 96px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 14px 5px;
+  background: rgba(0,0,0,.52); border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius-sm); min-width: 88px;
   transition: border-color .12s, box-shadow .12s;
   pointer-events: auto;
 }
 .hud-slot--active {
-  border-color: #9d7cce;
-  box-shadow: 0 0 12px rgba(157,124,206,.28);
+  border-color: var(--hud-info);
+  box-shadow: 0 0 14px rgba(68,221,255,.3), 0 0 0 1px rgba(68,221,255,.15) inset;
 }
 
 .hud-slot-num {
-  font-family: monospace; font-size: 9px; color: #2e2240; letter-spacing: 1px;
+  font-family: var(--hud-font-mono); font-size: 9px; color: var(--hud-muted-cool); letter-spacing: 1px;
   transition: color .12s;
 }
-.hud-slot--active .hud-slot-num { color: #9d7cce; }
+.hud-slot--active .hud-slot-num { color: var(--hud-info); }
+
+.hud-slot-glyph {
+  font-size: 16px; line-height: 1; opacity: 0.85;
+  transition: opacity .12s;
+}
+.hud-slot--empty .hud-slot-glyph { opacity: 0.15; }
 
 .hud-slot-name {
-  font-family: 'IM Fell English', Georgia, serif;
-  font-size: 12px; color: #2e2440; white-space: nowrap;
+  font-family: var(--hud-font-body);
+  font-size: 11px; color: var(--hud-muted-cool); white-space: nowrap;
   transition: color .12s;
 }
-.hud-slot--active .hud-slot-name { color: #c9b8e8; }
-.hud-slot--empty  .hud-slot-name { font-style: italic; color: #1e1830; }
+.hud-slot--active .hud-slot-name { color: var(--hud-info); }
+.hud-slot--empty  .hud-slot-name { font-style: italic; color: var(--hud-muted-cool); opacity: 0.4; }
 
 /* ── Cooldown sweep overlay ── */
 .hud-slot-cd {
@@ -174,7 +206,17 @@ const HUD_CSS = `
 }
 `;
 
-// ── Spell display names ───────────────────────────────────────────────────
+// ── Spell display names + glyphs ─────────────────────────────────────────
+const SPELL_GLYPH: Record<string, string> = {
+  magic_bolt:   '🔵',
+  flame_dart:   '🔥',
+  intimidate:   '💢',
+  nova_burst:   '💥',
+  chain_arc:    '⚡',
+  void_rift:    '🌀',
+  battle_hymn:  '🎵',
+  mass_animate: '💀',
+};
 const SPELL_LABEL: Record<string, string> = {
   magic_bolt:   'Magic Bolt',
   flame_dart:   'Flame Dart',
@@ -218,9 +260,15 @@ export class HUD {
   private _tooltipTimer: ReturnType<typeof setTimeout> | null = null;
   /** Current spell IDs in each slot — read by tooltip closures */
   private _slotSpells: (string | null)[] = [null, null, null, null];
-  /** Resource strip (Phase 7e) */
+  /** Resource strip */
   private readonly _resRoot: HTMLElement;
   private readonly _resCounts: Record<string, HTMLElement> = {};
+  /** Potion quick-slots */
+  private readonly _potRoot: HTMLElement;
+  private readonly _potCounts: [HTMLElement, HTMLElement] = [document.createElement('span'), document.createElement('span')];
+  private readonly _potSlots:  [HTMLElement, HTMLElement] = [document.createElement('div'), document.createElement('div')];
+  /** Slot glyph elements, updated with the spell icon */
+  private readonly _slotGlyphs: HTMLElement[] = [];
 
   constructor() {
     this._ensureStyles();
@@ -341,11 +389,16 @@ export class HUD {
       num.className = 'hud-slot-num';
       num.textContent = String(i + 1);
 
+      const glyph = document.createElement('span');
+      glyph.className = 'hud-slot-glyph';
+      glyph.textContent = '✦';
+      this._slotGlyphs.push(glyph);
+
       const name = document.createElement('span');
       name.className = 'hud-slot-name';
       name.textContent = '— empty —';
 
-      slot.append(num, name);
+      slot.append(num, glyph, name);
       this.barRoot.appendChild(slot);
       // Dynamic tooltip — reads _slotSpells at the time of hover
       this._addTooltip(
@@ -388,6 +441,27 @@ export class HUD {
       this._resRoot.appendChild(row);
     }
     document.body.appendChild(this._resRoot);
+
+    // ── Potion quick-slot bar ────────────────────────────────────────────
+    this._potRoot = document.createElement('div');
+    this._potRoot.id = 'hud-potions';
+    const POT_DEFS = [
+      { key: '[Z]', icon: '🧪', label: 'Minor Heal', slotIdx: 0 },
+      { key: '[X]', icon: '⚗️',  label: 'Major Heal', slotIdx: 1 },
+    ] as const;
+    for (const { key, icon, label, slotIdx } of POT_DEFS) {
+      const s = this._potSlots[slotIdx];
+      s.className = 'hud-pot-slot hud-pot-slot--empty';
+      const iconEl  = document.createElement('span'); iconEl.className = 'hud-pot-icon'; iconEl.textContent = icon;
+      const keyEl   = document.createElement('span'); keyEl.className  = 'hud-pot-key';  keyEl.textContent  = key;
+      const countEl = this._potCounts[slotIdx];
+      countEl.className = 'hud-pot-count'; countEl.textContent = '0';
+      const ttTitle = `${icon} ${label}`;
+      this._addTooltip(s, () => ttTitle, () => `Quick-use with ${key}`);
+      s.append(iconEl, keyEl, countEl);
+      this._potRoot.appendChild(s);
+    }
+    document.body.appendChild(this._potRoot);
   }
 
   update(
@@ -435,6 +509,9 @@ export class HUD {
         const id    = equippedSlots[i] ?? null;
         const nameEl = slotEl.querySelector('.hud-slot-name') as HTMLElement;
         nameEl.textContent = id ? (SPELL_LABEL[id] ?? id) : '— empty —';
+        if (this._slotGlyphs[i]) {
+          this._slotGlyphs[i].textContent = id ? (SPELL_GLYPH[id] ?? '✦') : '✦';
+        }
         slotEl.classList.toggle('hud-slot--empty', id === null);
       });
     }
@@ -483,6 +560,7 @@ export class HUD {
     this.root.remove();
     this.barRoot.remove();
     this._resRoot.remove();
+    this._potRoot.remove();
     this._tooltip.remove();
     if (this._tooltipTimer) clearTimeout(this._tooltipTimer);
   }
@@ -501,6 +579,38 @@ export class HUD {
       if (el) el.textContent = String(data[key]);
     });
   }
+
+  /** Update potion quick-slot counts.
+   *  Pass null to hide the bar entirely. */
+  setConsumables(data: { minorHealCount: number; majorHealCount: number } | null): void {
+    if (!data) {
+      this._potRoot.classList.remove('hud-pot--visible');
+      return;
+    }
+    this._potRoot.classList.add('hud-pot--visible');
+    const counts = [data.minorHealCount, data.majorHealCount];
+    for (let i = 0; i < 2; i++) {
+      const n = counts[i];
+      this._potCounts[i].textContent = String(n);
+      if (n > 0) {
+        this._potSlots[i].classList.remove('hud-pot-slot--empty');
+      } else {
+        this._potSlots[i].classList.add('hud-pot-slot--empty');
+      }
+    }
+  }
+
+  /** Set weather icon in the clock widget.  Provide a state key. */
+  setWeather(state: 'clear' | 'cloudy' | 'rain' | 'storm' | null): void {
+    this._pendingWeather = state;
+    // Actually applied in setTime() when the clock element exists
+    if (this._clockEl && state !== null) {
+      const icons: Record<string, string> = { clear: '☀️', cloudy: '🌥️', rain: '🌧️', storm: '⛈️' };
+      this._weatherIcon = icons[state] ?? '';
+    }
+  }
+  private _pendingWeather: string | null = null;
+  private _weatherIcon = '';
 
   // ── Tooltip helpers ───────────────────────────────────────────────────
 
