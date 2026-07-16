@@ -35,6 +35,12 @@ export class SceneManager {
   private _startRoomId: string | null = null;
   /** Callback invoked when the player walks through a null-target door (world exit). */
   onExitTrigger: (() => void) | null = null;
+  /**
+   * Called before any staircase or door transition begins.
+   * Return `false` to block the transition (e.g., locked floors during the prologue).
+   * The `direction` is `'up'` or `'down'` for staircases, `undefined` for flat doors.
+   */
+  onTransitionAttempt: ((targetId: string, direction?: 'up' | 'down') => boolean) | null = null;
 
   /** Callback invoked the first time every enemy in a room is defeated.
    *  Used by the story runner to track tower room clears for `clear_dungeon` beats. */
@@ -272,6 +278,11 @@ export class SceneManager {
         break; // exterior — delegate to caller
       }
 
+      // Allow caller to block the transition (e.g., locked floors during prologue)
+      if (this.onTransitionAttempt && !this.onTransitionAttempt(trigger.targetId, trigger.direction)) {
+        break;
+      }
+
       // Start the fade-out transition
       this.pendingBpId = trigger.targetId;
       this.pendingFromId = this.currentBpId;
@@ -298,6 +309,16 @@ export class SceneManager {
   /** Number of unique floor indices the player has visited this session. */
   get uniqueFloorsVisited(): number {
     return this._visitedFloorIndices.size;
+  }
+
+  /**
+   * Returns a mutable reference to the currently active Blueprint so callers
+   * can make one-shot live edits (e.g., removing a picked-up key item).
+   * Returns null if no room is loaded.
+   */
+  currentBlueprintForPatch(): import('@/levels/blueprint').Blueprint | null {
+    if (!this.currentBpId) return null;
+    return this.blueprints.get(this.currentBpId) ?? null;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────

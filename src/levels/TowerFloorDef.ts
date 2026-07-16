@@ -3,12 +3,21 @@
 //  Static data describing each of the 11 tower levels (B=basement, F0–F9).
 //  The TowerGenerator consumes these to produce deterministic per-floor blueprints.
 
-import type { FloorType, InteractableType } from './blueprint';
+import type { FloorType, InteractableType, Rotation } from './blueprint';
 
 export interface FixtureDef {
   type: InteractableType;
   content: string;
   spellUnlock?: string;
+}
+
+export interface ScatterEntry {
+  type: InteractableType;
+  x: number;
+  z: number;
+  rotation?: Rotation;
+  /** Short text shown when the player examines this item. Omit for decorative-only items. */
+  content?: string;
 }
 
 export interface TowerFloorDef {
@@ -52,6 +61,11 @@ export interface TowerFloorDef {
    * main hall rather than a side room (e.g. the library telescope).
    */
   chamberExtraFixture?: FixtureDef;
+  /**
+   * Explicit scatter items placed at fixed grid positions in the main chamber.
+   * Use for barrels, crates, chests, and narrative key items.
+   */
+  chamberScatter?: readonly ScatterEntry[];
 }
 
 export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
@@ -87,6 +101,24 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
         'I will explain everything when I return.\n\n' +
         '— S."',
     },
+    chamberScatter: [
+      // The central workbench — the master key rests here
+      {
+        type: 'workbench_key',
+        x: 8, z: 5,
+        content: 'A heavy iron key sits on the workbench, glowing faintly with a binding ward.\n\nThis is the master key to the tower\'s front door.',
+      },
+      // Reagent barrels against the west wall
+      { type: 'barrel', x: 3, z: 7,
+        content: 'A sealed reagent barrel. The label reads: "VOLATILE — store upright, open carefully, do not breathe directly, avoid moonlight, ESPECIALLY avoid moonlight."' },
+      { type: 'barrel', x: 3, z: 9,
+        content: 'A barrel marked with three crossed wands and the number \'47\'. You decide not to ask what happened to barrels 1 through 46.' },
+      // Crates against the east wall
+      { type: 'crate', x: 13, z: 7,
+        content: 'A reinforced crate of alchemical supplies. It hums slightly. You decide not to investigate further.' },
+      { type: 'crate', x: 13, z: 9,
+        content: 'Packed with straw and sealed with wax. The packing list inside reads only: "fragile, important, mine."' },
+    ],
   },
 
   // ── Floor 0 — Grand Entrance Hall ───────────────────────────────────────────
@@ -110,6 +142,21 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     chamberCandelabras: true,
     // NW door slot (index 2, west-facing) leads back to the overworld
     exteriorExitSlot: 2,
+    chamberScatter: [
+      // Supply barrels near the NE pillar cluster
+      { type: 'barrel', x: 13, z: 6,
+        content: 'A barrel stencilled "TOWER STORES — NON-EDIBLE (MOST)". Someone has added "probably" in smaller lettering beneath.' },
+      { type: 'barrel', x: 12, z: 12,
+        content: 'A sealed barrel of something that smells faintly of copper and overconfidence.' },
+      // Supply crates near the SW area
+      { type: 'crate', x: 3, z: 6,
+        content: 'A shipping crate. The customs form reads: "Contents: research materials of uncertain legal status. Declaration signed under protest."' },
+      { type: 'crate', x: 4, z: 11,
+        content: 'A heavy crate. You cannot lift the lid. The contents rattle in a pattern that suggests intent.' },
+      // A locked chest near the south wall
+      { type: 'chest', x: 8, z: 13,
+        content: 'A locked iron-banded chest. The keyhole has been welded shut from the outside, which seems to defeat the purpose.' },
+    ],
   },
 
   // ── Floor 1 — The Reading Galleries ────────────────────────────────────────

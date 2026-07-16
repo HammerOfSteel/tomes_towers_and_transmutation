@@ -356,6 +356,19 @@ async function main() {
     switchToExterior();
   };
 
+  // During the prologue, the player may only access floors 0 (entrance) and -1 (basement).
+  // All upward staircases are blocked until _towerPrologueDone is set.
+  sceneManager.onTransitionAttempt = (_targetId, direction) => {
+    if (direction === 'up' && !_towerPrologueDone && gameMode === 'interior') {
+      _storyToast(
+        "The staircase is sealed with an arcane ward.\nThe basement might have what you need first.",
+        'beat',
+      );
+      return false;
+    }
+    return true;
+  };
+
   // Track tower room clears for the clear_dungeon beat type (used by prologue beat 4).
   // discoveryTracker only tracks overworld dungeons; onRoomCleared covers tower floors.
   sceneManager.onRoomCleared = () => { _towerRoomsClearedCount++; };
@@ -441,6 +454,25 @@ async function main() {
   interactables.onTelescopeActivate = () => enterTelescopeMode();
   interactables.onQuestBoard = () => {
     QuestBoardUI.open(questLog, currentSeed, sceneManager.currentFloor);
+  };
+
+  /** True once the player has picked up the master key from the basement workbench. */
+  let _hasMasterKey = false;
+
+  interactables.onKeyPickup = () => {
+    if (_hasMasterKey) return; // already picked up
+    _hasMasterKey = true;
+    _storyToast(
+      'You take the master key.\nThe binding ward dissolves in your palm.',
+      'act',
+    );
+    // Remove the workbench_key from the current room so it can't be "taken" again.
+    // We do this by patching the live blueprint interactables array.
+    const bp = sceneManager.currentBlueprintForPatch();
+    if (bp) {
+      const idx = bp.interactables.findIndex(i => i.type === 'workbench_key');
+      if (idx !== -1) bp.interactables.splice(idx, 1);
+    }
   };
 
   // Crafting station handler — open the shared CraftingUI with correct recipe set

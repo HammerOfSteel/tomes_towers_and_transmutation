@@ -204,6 +204,18 @@ function buildChamber(
     }
   }
 
+  // Explicit scatter items (barrels, crates, chests, narrative key items)
+  if (def.chamberScatter) {
+    for (const s of def.chamberScatter) {
+      interactables.push({
+        x: s.x, z: s.z,
+        type: s.type,
+        rotation: s.rotation,
+        content: s.content,
+      });
+    }
+  }
+
   return {
     id: chamberId(def),
     version: BLUEPRINT_VERSION,

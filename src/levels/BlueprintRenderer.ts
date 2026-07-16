@@ -318,20 +318,95 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
       const rot = item.rotation ?? 0;
       const rotRad = THREE.MathUtils.degToRad(rot);
       const isRotated = rot === 90 || rot === 270;
-      const shelfGeo = new THREE.BoxGeometry(cellSize * 0.75, wallHeight * 0.72, cellSize * 0.28);
-      geometries.push(shelfGeo);
-      const shelf = new THREE.Mesh(shelfGeo, itemMat);
-      shelf.position.set(ix, wallHeight * 0.36, iz);
-      shelf.rotation.y = rotRad;
-      shelf.castShadow = true;
-      group.add(shelf);
+      const shelfW = cellSize * 0.78;
+      const shelfH = wallHeight * 0.72;
+      const shelfD = cellSize * 0.28;
+
+      // Frame: two side panels + top/bottom rails
+      const frameMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
+      materials.push(frameMat);
+      const sideGeo = new THREE.BoxGeometry(cellSize * 0.045, shelfH, shelfD);
+      geometries.push(sideGeo);
+      for (const sx of [-shelfW / 2 + cellSize * 0.022, shelfW / 2 - cellSize * 0.022]) {
+        const side = new THREE.Mesh(sideGeo, frameMat);
+        side.position.set(ix + (isRotated ? 0 : sx), shelfH / 2, iz + (isRotated ? sx : 0));
+        side.rotation.y = rotRad;
+        side.castShadow = true;
+        group.add(side);
+      }
+      const railGeo = new THREE.BoxGeometry(shelfW, cellSize * 0.04, shelfD);
+      geometries.push(railGeo);
+      for (const ry of [shelfH - cellSize * 0.02, cellSize * 0.02]) {
+        const rail = new THREE.Mesh(railGeo, frameMat);
+        rail.position.set(ix, ry, iz);
+        rail.rotation.y = rotRad;
+        group.add(rail);
+      }
+
+      // Two interior shelf boards
+      const boardGeo = new THREE.BoxGeometry(shelfW - cellSize * 0.06, cellSize * 0.035, shelfD - 0.04);
+      geometries.push(boardGeo);
+      for (const boardY of [shelfH * 0.36, shelfH * 0.68]) {
+        const board = new THREE.Mesh(boardGeo, frameMat);
+        board.position.set(ix, boardY, iz);
+        board.rotation.y = rotRad;
+        group.add(board);
+      }
+
+      // Book rows on each of the three compartments
+      const BOOK_COLORS = [
+        0x8b1a1a, 0x1a4a8b, 0x2a6b22, 0x8b6a1a,
+        0x5a1a6b, 0x2a4a3a, 0x7a2a1a, 0x1a3a6b,
+        0x6b4422, 0x334422, 0x1a5555, 0x882244,
+      ];
+      const posHash = (item.x * 31 + item.z * 17) | 0;
+      const compartmentYs = [shelfH * 0.18, shelfH * 0.51, shelfH * 0.83];
+      const compartmentH = [shelfH * 0.3, shelfH * 0.28, shelfH * 0.28];
+
+      for (let comp = 0; comp < 3; comp++) {
+        const usableW = shelfW - cellSize * 0.1;
+        let cursor = -usableW / 2;
+        let bookIdx = 0;
+        while (cursor < usableW / 2 - 0.05) {
+          const bW = 0.065 + ((posHash ^ (comp * 7 + bookIdx * 13)) % 7) * 0.018;
+          const bH = compartmentH[comp]! * (0.65 + ((posHash ^ (bookIdx * 23)) % 10) * 0.035);
+          const bColor = BOOK_COLORS[Math.abs((posHash + bookIdx * 3 + comp * 5)) % BOOK_COLORS.length]!;
+          const bGeo = new THREE.BoxGeometry(bW, bH, shelfD * 0.75);
+          geometries.push(bGeo);
+          const bMat = new THREE.MeshLambertMaterial({ color: bColor });
+          materials.push(bMat);
+          const book = new THREE.Mesh(bGeo, bMat);
+          const localX = cursor + bW / 2;
+          book.position.set(
+            ix + (isRotated ? 0 : localX),
+            compartmentYs[comp]! + bH / 2 - bH * 0.04,
+            iz + (isRotated ? localX : 0),
+          );
+          book.rotation.y = rotRad;
+          group.add(book);
+          cursor += bW + 0.006;
+          bookIdx++;
+        }
+      }
+
+      // Back panel (dark backing)
+      const backMat = new THREE.MeshLambertMaterial({ color: 0x2a1a0a });
+      materials.push(backMat);
+      const backGeo = new THREE.BoxGeometry(shelfW - cellSize * 0.05, shelfH - cellSize * 0.05, cellSize * 0.04);
+      geometries.push(backGeo);
+      const back = new THREE.Mesh(backGeo, backMat);
+      back.position.set(ix, shelfH / 2, iz + (isRotated ? 0 : shelfD / 2 - cellSize * 0.02));
+      back.rotation.y = rotRad;
+      group.add(back);
+
+      // Physics collider (single box for the whole unit)
       bodies.push(
         physics.createStaticBox(
-          new THREE.Vector3(ix, wallHeight * 0.36, iz),
+          new THREE.Vector3(ix, shelfH / 2, iz),
           new THREE.Vector3(
-            isRotated ? cellSize * 0.14 : cellSize * 0.375,
-            wallHeight * 0.36,
-            isRotated ? cellSize * 0.375 : cellSize * 0.14,
+            isRotated ? cellSize * 0.14 : shelfW / 2,
+            shelfH / 2,
+            isRotated ? shelfW / 2 : cellSize * 0.14,
           ),
         ),
       );
@@ -628,6 +703,67 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
         group.add(flame);
       }
       // No collision — player can walk through candelabras (decorative only)
+
+    } else if (item.type === 'workbench_key') {
+      // Stone workbench with a glowing golden key resting on top.
+      const stoneMat2 = new THREE.MeshLambertMaterial({ color: 0x666677 });
+      const keyMat    = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+      materials.push(stoneMat2, keyMat);
+
+      // Workbench counter: long stone surface with two legs
+      const counterGeo = new THREE.BoxGeometry(1.9, 0.08, 0.85);
+      geometries.push(counterGeo);
+      const counter = new THREE.Mesh(counterGeo, stoneMat2);
+      counter.position.set(ix, 0.88, iz);
+      counter.castShadow = true;
+      group.add(counter);
+
+      const baseBlockGeo = new THREE.BoxGeometry(1.9, 0.88, 0.85);
+      geometries.push(baseBlockGeo);
+      const baseBlock = new THREE.Mesh(baseBlockGeo, stoneMat2);
+      baseBlock.position.set(ix, 0.44, iz);
+      baseBlock.castShadow = true;
+      group.add(baseBlock);
+
+      // Key shaft
+      const shaftGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.42, 7);
+      geometries.push(shaftGeo);
+      const shaft = new THREE.Mesh(shaftGeo, keyMat);
+      shaft.position.set(ix, 1.1, iz);
+      shaft.rotation.z = Math.PI / 2;  // horizontal, laying flat
+      group.add(shaft);
+
+      // Key bow (ring at the grip end)
+      const bowGeo = new THREE.TorusGeometry(0.115, 0.038, 7, 14);
+      geometries.push(bowGeo);
+      const bow = new THREE.Mesh(bowGeo, keyMat);
+      bow.position.set(ix + 0.28, 1.1, iz);
+      bow.rotation.y = Math.PI / 2;
+      group.add(bow);
+
+      // Two key teeth
+      for (const [tx, ty] of [[-0.08, 0.06], [-0.04, 0.06]] as [number, number][]) {
+        const toothGeo = new THREE.BoxGeometry(0.055, 0.075, 0.04);
+        geometries.push(toothGeo);
+        const tooth = new THREE.Mesh(toothGeo, keyMat);
+        tooth.position.set(ix + tx, 1.1 - 0.055, iz + ty);
+        group.add(tooth);
+      }
+
+      // Soft golden glow disc below the key (emissive halo effect)
+      const haloDiskGeo = new THREE.CircleGeometry(0.28, 12);
+      haloDiskGeo.rotateX(-Math.PI / 2);
+      geometries.push(haloDiskGeo);
+      const haloMat = new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.45 });
+      materials.push(haloMat);
+      const halo = new THREE.Mesh(haloDiskGeo, haloMat);
+      halo.position.set(ix, 0.93, iz);
+      group.add(halo);
+
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.44, iz),
+        new THREE.Vector3(0.95, 0.44, 0.425),
+      ));
 
     } else {
       // Fallback: unknown type — render a small marker cube so it's visible in editor

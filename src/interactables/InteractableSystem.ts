@@ -26,7 +26,14 @@ const PROMPT_LABELS: Record<string, string> = {
   forge:          'forge',
   quest_board:    'notice board',
   greenhouse_orb: 'orb',
+  barrel:         'barrel',
+  crate:          'crate',
+  chest:          'chest',
+  workbench_key:  'master key',
 };
+
+/** Items that are purely decorative — no interaction prompt shown. */
+const NON_INTERACTIVE = new Set<string>(['candelabra']);
 
 /** Detects the nearest interactable within range and shows a world prompt.
  *  Call `update()` every frame, then `tryRead()` when the player presses E. */
@@ -44,6 +51,8 @@ export class InteractableSystem {
   onCraftingStation: ((type: 'alchemy' | 'forge' | 'enchanting') => void) | null = null;
   /** Called when player interacts with a quest_board fixture. */
   onQuestBoard: (() => void) | null = null;
+  /** Called when the player picks up the master key from the basement workbench. */
+  onKeyPickup: (() => void) | null = null;
 
   constructor(
     private readonly progression: ProgressionSystem,
@@ -74,6 +83,7 @@ export class InteractableSystem {
     let minDist = INTERACT_RANGE;
 
     for (const item of interactables) {
+      if (NON_INTERACTIVE.has(item.type)) continue; // skip decorative items
       this._tmp.copy(item.position);
       const dx = this._tmp.x - playerPos.x;
       const dz = this._tmp.z - playerPos.z;
@@ -99,6 +109,12 @@ export class InteractableSystem {
     // Telescope routes to its own dedicated view instead of the BookReader
     if (item.type === 'telescope') {
       this.onTelescopeActivate?.();
+      return true;
+    }
+
+    // Master key — one-time pickup
+    if (item.type === 'workbench_key') {
+      this.onKeyPickup?.();
       return true;
     }
 
@@ -162,11 +178,13 @@ export class InteractableSystem {
     // Verb depends on object type
     const verb = item.type === 'telescope'
       ? 'Use'
-      : (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type)
-        ? 'Examine'
-        : item.type === 'quest_board'
-          ? 'Browse'
-          : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
+      : item.type === 'workbench_key'
+        ? 'Take'
+        : (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type)
+          ? 'Examine'
+          : item.type === 'quest_board'
+            ? 'Browse'
+            : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
     this.promptEl.innerHTML = `<kbd style="${KBD_STYLE}">E</kbd>&nbsp; ${verb} ${label}`;
     this.promptEl.style.opacity = '1';
   }
