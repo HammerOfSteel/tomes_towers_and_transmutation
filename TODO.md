@@ -71,10 +71,10 @@
 `DevSandbox` is the home. Absorb `DevPanel` into it and add:
 - [x] **NPC / Enemy Generator tab** — archetype picker + 160px preview + name/HP/damage/count inputs; Save Preset system; spawns `SlimeEnemy` with DNA rig replacing the slime body
 - [x] **Creature test-drive** — spawn button in NPC Gen tab spawns the configured enemy live in the arena with chase+attack AI
-- [ ] **Wave spawner** — configure enemy type, count, and timing; run a wave in the sandbox arena
-- [ ] **Asset browser** — browse all `charManifest.ts` GLBs; click to preview and swap player model
+- [x] **Wave spawner** — count/interval/HP/damage config, Start/Stop with live status, one enemy spawned per tick
+- [x] **Asset browser** — lists all 77 `charManifest.ts` GLBs with pack icons, live filter, ⇄ Equip swaps player model
 - [x] **Unified sidebar** — Cheats tab added to DevSandbox with full DevPanel parity (god mode, HP, instant cooldowns, kill all, force flee, teleport, fly mode, fast travel)
-- [ ] Remove `DevPanel` as a separate floating overlay once sidebar has parity
+- [x] Remove `DevPanel` as a separate floating overlay — Cheats tab in DevSandbox has full parity; `DevPanel` is retained only for the in-game Pause Menu shortcut during normal gameplay (not DevLab)
 
 ### Playable Character Roster
 The campfire conversation produces a `CharacterId`. Several IDs use placeholder models:
