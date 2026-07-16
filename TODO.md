@@ -104,7 +104,7 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] NPC daily schedules: TimeSystem singleton (work 8-18h / wander / home 22-6h); NPCEntity varies wander radius + idle duration per phase; updated each exterior tick
 - [x] Merchant: buy/sell ore/timber/essence for gold at merchant/innkeeper NPCs (MerchantUI singleton)
 - [x] Quest board: [E] on quest_board fixture opens notice panel — active quests + 3 seeded procedural quests pinnable to QuestLog (QuestBoardUI)
-- [ ] In-game day / night cycle — lighting preset swaps at dawn / dusk
+- [x] In-game day / night cycle — DayNightSystem lerps hemi/keyLight/fog across night/dawn/day/dusk phases driven by TimeSystem.hour
 - [ ] Persistent overworld state: cleared camps stay cleared between sessions
 
 ### Emergent Spell Crafting (Phase 9)
