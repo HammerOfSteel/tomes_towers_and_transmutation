@@ -107,6 +107,11 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] In-game day / night cycle — DayNightSystem lerps hemi/keyLight/fog across night/dawn/day/dusk phases driven by TimeSystem.hour
 - [x] Persistent overworld state: cleared camps keyed by "wx:wz" in DiscoveryTracker; injected into OverworldScene.clearedCamps before enter(); saved to localStorage on camp cleared
 
+### Weather System ✅ (abbreviated)
+- [x] WeatherSystem FSM: clear → cloudy → rain → storm; seeded by day number
+- [x] Rain: 1600 Points cylinder around player, downward velocity, storm wind drift
+- [x] Storm: lightning DirectionalLight flash (80ms) + screen overlay; 1–5s interval
+
 ### Emergent Spell Crafting (Phase 9) ✅ (abbreviated)
 - [x] Combine two spells at a Cauldron — SpellForge overlay opens when slots 0+1 both equipped
 - [x] Hybrid spell properties blend from ingredients (colour, damage, speed, radius, type)
