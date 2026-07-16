@@ -107,10 +107,10 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] In-game day / night cycle — DayNightSystem lerps hemi/keyLight/fog across night/dawn/day/dusk phases driven by TimeSystem.hour
 - [x] Persistent overworld state: cleared camps keyed by "wx:wz" in DiscoveryTracker; injected into OverworldScene.clearedCamps before enter(); saved to localStorage on camp cleared
 
-### Emergent Spell Crafting (Phase 9)
-- [ ] Combine two known spells at a Cauldron to discover a hybrid spell
-- [ ] Spell properties (damage, speed, radius, colour) emerge from ingredients
-- [ ] 3-slot reagent UI: base spell + modifier + catalyst
+### Emergent Spell Crafting (Phase 9) ✅ (abbreviated)
+- [x] Combine two spells at a Cauldron — SpellForge overlay opens when slots 0+1 both equipped
+- [x] Hybrid spell properties blend from ingredients (colour, damage, speed, radius, type)
+- [x] 2-slot reagent UI with named hybrid preview; hybrid granted + auto-equipped to slot 3
 
 ### Overworld Asset Pass (lower priority — after gameplay content)
 - [ ] Replace procedural trees with KayKit nature-kit GLBs (`InstancedMesh`)
