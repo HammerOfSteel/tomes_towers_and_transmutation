@@ -574,7 +574,10 @@ async function main() {
         progression.grantXP(xp);
         if (gold > 0) inventory.add('gold', gold);
         _storyToast(text, 'beat');
-        objTracker.clear(); // beat done — next beat will set a new one
+        objTracker.clear(); // beat done — onBeatActivate fires next and will set the new one
+      };
+      _storyRunner.onBeatActivate = (title, desc) => {
+        objTracker.setObjective(title, desc, true);
       };
       _storyRunner.onActBegin = (title, intro) => {
         _storyToast(intro, 'act');
@@ -596,11 +599,7 @@ async function main() {
         playerRow:            0,
         nearSettlements:      [],
       });
-      // Show initial story objective
-      const firstStory = questLog.getActive().find(q => q.title.startsWith('[Story] '));
-      if (firstStory) {
-        objTracker.setObjective(firstStory.title.replace(/^\[Story\] /, ''), firstStory.description, true);
-      }
+      // onBeatActivate fires during start() for the first beat — no manual init needed
     }
 
     gameLoop.start();

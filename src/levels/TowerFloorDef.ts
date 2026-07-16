@@ -70,9 +70,21 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     sideRoomCount: [2, 3],
     enemiesPerRoom: 2,
     sideRoomProps: ['bookshelf', 'lectern'],
-  },
-
-  // ── Floor 0 — Grand Entrance Hall ───────────────────────────────────────────
+    chamberExtraFixture: {
+      type: 'lectern',
+      content:
+        'A reading stand holds a leather binder, tabbed and indexed in a precise hand.\n\n' +
+        'The cover reads: "CANDIDATE ARCHIVE — ACTIVE INTAKE". Your name — or rather, ' +
+        'a precise physical and behavioural description that is unmistakably you — ' +
+        'is on the first page.\n\n' +
+        'The file is thorough. He has been watching for some time.\n\n' +
+        'A folded note is tucked into the back cover:\n\n' +
+        '"If you are reading this, I underestimated you considerably. ' +
+        'The spare master key is on the central workbench. Take it. ' +
+        'I will explain everything when I return.\n\n' +
+        '— S."',
+    },
+  }, ───────────────────────────────────────────
   {
     id: 'floor_foyer',
     floorIndex: 0,
@@ -307,7 +319,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
 ];
 
 /** Player spawns on this floor at game start. */
-export const PLAYER_START_FLOOR_INDEX = 3; // Living Quarters
+export const PLAYER_START_FLOOR_INDEX = 0; // Grand Entrance Hall
 
 /** Get a floor definition by its floorIndex (-1..9). */
 export function getFloorDef(floorIndex: number): TowerFloorDef | undefined {

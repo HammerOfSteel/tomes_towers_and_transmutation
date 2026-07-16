@@ -56,6 +56,8 @@ export class StoryRunner {
 
   /** Called when a beat completes: (completionText, xp, gold) */
   onBeatComplete: ((text: string, xp: number, gold: number) => void) | null = null;
+  /** Called when a beat activates: (beatTitle, beatDescription) — use to update the objective tracker. */
+  onBeatActivate:  ((title: string, description: string) => void) | null = null;
   /** Called when an act begins: (actTitle, introText) */
   onActBegin:     ((title: string, intro: string) => void) | null = null;
   /** Called when the whole story is finished. */
@@ -130,6 +132,7 @@ export class StoryRunner {
     this._beatStartFloors   = state.floorsVisited;
 
     this._log.addQuest(this._beatToQuestDef(beat, this._currentAct()!));
+    this.onBeatActivate?.(beat.title, beat.description);
   }
 
   private _completeBeat(beat: StoryBeat, state: StoryTickState): void {
