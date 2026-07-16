@@ -88,6 +88,15 @@ const BOOKSHELF_RING = [
   { x:  4, z: 12, rotation:  0 as const },  // SW quadrant — clear of all door slots and staircase axes
 ] as const;
 
+// 4 candelabras at mid-radius cardinal positions — far enough from centre to
+// leave the main fixture visible, clear of pillar ring, door slots, and staircase axes.
+const CANDELABRA_RING = [
+  { x: CX,     z: CZ_CENTER - 4 },  // N  (8, 4)
+  { x: CX + 4, z: CZ_CENTER     },  // E  (12, 8)
+  { x: CX,     z: CZ_CENTER + 4 },  // S  (8, 12)
+  { x: CX - 4, z: CZ_CENTER     },  // W  (4, 8)
+] as const;
+
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
 function chamberId(def: TowerFloorDef): string {
@@ -185,6 +194,13 @@ function buildChamber(
         type: 'bookshelf',
         rotation: s.rotation,
       });
+    }
+  }
+
+  // Candelabra ring (optional) — 4 tall candelabras at mid-radius cardinal positions
+  if (def.chamberCandelabras) {
+    for (const c of CANDELABRA_RING) {
+      interactables.push({ x: c.x, z: c.z, type: 'candelabra' });
     }
   }
 

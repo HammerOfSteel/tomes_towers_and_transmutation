@@ -12,7 +12,8 @@ export type SpawnType = 'slime';
 export type InteractableType =
   | 'bookshelf' | 'lectern'           // original room props
   | 'cauldron'  | 'telescope'         // tower key fixtures
-  | 'forge'     | 'quest_board' | 'greenhouse_orb';
+  | 'forge'     | 'quest_board' | 'greenhouse_orb'
+  | 'barrel'    | 'crate' | 'chest' | 'candelabra'; // decorative furnishings
 export type FloorType = 'stone' | 'grass' | 'dirt' | 'wood';
 /** Clockwise rotation around the Y axis in degrees. */
 export type Rotation = 0 | 90 | 180 | 270;
@@ -107,6 +108,7 @@ const VALID_SPAWN_TYPES: SpawnType[] = ['slime'];
 const VALID_INTERACTABLE_TYPES: InteractableType[] = [
   'bookshelf', 'lectern',
   'cauldron', 'telescope', 'forge', 'quest_board', 'greenhouse_orb',
+  'barrel', 'crate', 'chest', 'candelabra',
 ];
 const VALID_FLOOR_TYPES: FloorType[] = ['stone', 'grass', 'dirt', 'wood'];
 const VALID_ROTATIONS = new Set<number>([0, 90, 180, 270]);

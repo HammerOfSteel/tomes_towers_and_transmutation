@@ -146,10 +146,25 @@ async function main() {
   const particles = new ParticleSystem(scene);
   // Track last floor so onRoomLoaded can detect floor changes and show the location card.
   let _prevFloorIdx = Number.MIN_SAFE_INTEGER;
+  // Visited rooms — rooms entered at least once get instant lighting on re-entry.
+  // First-visit rooms fade up from darkness for an exploration reveal effect.
+  const _visitedRoomIds = new Set<string>();
 
   sceneManager.onRoomLoaded = (bp, _s) => {
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
+
+    // Apply ambiance preset, then optionally override intensity for fade.
+    const preset = (bp as any).lightPreset ?? 'dungeon';
+    lighting.applyPreset(preset);
+
+    // First-visit darkness fade: room starts pitch-dark, blooms to normal over 2.2 s.
+    const isFirstVisit = !_visitedRoomIds.has(bp.id);
+    if (isFirstVisit) {
+      _visitedRoomIds.add(bp.id);
+      lighting.fadeAmbientIn(0.0, 2.2);
+    }
+
     // Torch fire particles for each torch that was just placed
     // The LightingSystem exposes torchPositions so we can mirror them.
     for (const tp of lighting.torchPositions) {
@@ -430,6 +445,15 @@ async function main() {
 
   // Crafting station handler — open the shared CraftingUI with correct recipe set
   interactables.onCraftingStation = (type) => {
+    // During the tower prologue, the wizard's stations are arcane-locked.
+    if (!_towerPrologueDone && gameMode === 'interior') {
+      const label = type === 'forge' ? 'forge' : type === 'alchemy' ? 'cauldron' : 'enchanting table';
+      _storyToast(
+        `The ${label} hums with unfamiliar wards.\n"Do not touch my equipment." — Solmor`,
+        'beat',
+      );
+      return;
+    }
     if (type === 'alchemy') {
       // If two spells are equipped, offer fusion; otherwise open crafting
       const slotA = progression.getEquippedSlot(0);
@@ -1327,6 +1351,14 @@ async function main() {
     telescopeView.updateAspect(window.innerWidth, window.innerHeight);
   });
 
+  // ── Scroll-to-zoom ───────────────────────────────────────────────────────
+  window.addEventListener('wheel', (e) => {
+    if (gameMode === 'exterior' || gameMode === 'interior') {
+      e.preventDefault();
+      cameraRig.applyScroll(e.deltaY);
+    }
+  }, { passive: false });
+
   // ── Game loop ─────────────────────────────────────────────────────────────
   const gameLoop = new GameLoop();
   gameLoop.onTick((dt) => {
@@ -1721,6 +1753,7 @@ async function main() {
     }
 
     // 8. Camera
+    cameraRig.updateZoom(dt);
     cameraRig.follow(player.group.position);
 
     // XP — grant 20 XP per kill tracked this frame

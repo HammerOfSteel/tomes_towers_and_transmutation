@@ -37,6 +37,8 @@ export interface TowerFloorDef {
   chamberPillars?: boolean;
   /** Adds 4 bookshelves pressed against the N/E/S/W walls of the chamber. */
   chamberBookshelves?: boolean;
+  /** Adds 4 candelabras at mid-radius cardinal positions inside the chamber. */
+  chamberCandelabras?: boolean;
   /**
    * If set, a door at this DOOR_SLOTS index is added with targetId=null, which
    * fires onExitTrigger when entered → returns the player to the overworld.
@@ -69,7 +71,8 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     },
     sideRoomCount: [2, 3],
     enemiesPerRoom: 2,
-    sideRoomProps: ['bookshelf', 'lectern'],
+    sideRoomProps: ['barrel', 'crate', 'bookshelf', 'lectern'],
+    chamberCandelabras: true,
     chamberExtraFixture: {
       type: 'lectern',
       content:
@@ -102,8 +105,9 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     },
     sideRoomCount: [2, 2],
     enemiesPerRoom: 1,
-    sideRoomProps: ['bookshelf'],
+    sideRoomProps: ['barrel', 'crate', 'chest', 'bookshelf'],
     chamberPillars: true,
+    chamberCandelabras: true,
     // NW door slot (index 2, west-facing) leads back to the overworld
     exteriorExitSlot: 2,
   },
@@ -127,9 +131,10 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     },
     sideRoomCount: [3, 4],
     enemiesPerRoom: 2,
-    sideRoomProps: ['bookshelf', 'lectern'],
+    sideRoomProps: ['bookshelf', 'lectern', 'candelabra', 'chest'],
     chamberPillars: true,
     chamberBookshelves: true,
+    chamberCandelabras: true,
     chamberExtraFixture: {
       type: 'telescope',
       content:
@@ -162,7 +167,8 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     },
     sideRoomCount: [2, 3],
     enemiesPerRoom: 2,
-    sideRoomProps: ['bookshelf'],
+    sideRoomProps: ['barrel', 'crate', 'bookshelf', 'chest'],
+    chamberCandelabras: true,
   },
 
   // ── Floor 3 — The Wizard's Chambers (player start) ───────────────────────────

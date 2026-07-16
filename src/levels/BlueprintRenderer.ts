@@ -497,6 +497,138 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
       group.add(chain);
       // (no physics body — player can walk under the orb)
 
+    } else if (item.type === 'barrel') {
+      const woodMat = new THREE.MeshLambertMaterial({ color: 0x8b5e3c });
+      const hoopMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+      materials.push(woodMat, hoopMat);
+      // Main stave body — slightly tapered cylinder
+      const bodyGeo = new THREE.CylinderGeometry(0.26, 0.30, 0.72, 10);
+      geometries.push(bodyGeo);
+      const body = new THREE.Mesh(bodyGeo, woodMat);
+      body.position.set(ix, 0.36, iz);
+      body.castShadow = true;
+      group.add(body);
+      // Two iron hoops
+      for (const hy of [0.18, 0.54]) {
+        const hoopGeo = new THREE.TorusGeometry(0.27, 0.025, 5, 16);
+        geometries.push(hoopGeo);
+        const hoop = new THREE.Mesh(hoopGeo, hoopMat);
+        hoop.position.set(ix, hy, iz);
+        hoop.rotation.x = Math.PI / 2;
+        group.add(hoop);
+      }
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.36, iz),
+        new THREE.Vector3(0.28, 0.36, 0.28),
+      ));
+
+    } else if (item.type === 'crate') {
+      const crateWoodMat = new THREE.MeshLambertMaterial({ color: 0xa08050 });
+      const crateTrimMat = new THREE.MeshLambertMaterial({ color: 0x6b4a22 });
+      materials.push(crateWoodMat, crateTrimMat);
+      // Box body
+      const boxGeo = new THREE.BoxGeometry(0.72, 0.72, 0.72);
+      geometries.push(boxGeo);
+      const box = new THREE.Mesh(boxGeo, crateWoodMat);
+      box.position.set(ix, 0.36, iz);
+      box.castShadow = true;
+      group.add(box);
+      // Cross brace on top face
+      for (const isX of [true, false]) {
+        const braceGeo = new THREE.BoxGeometry(
+          isX ? 0.72 : 0.055, 0.055, isX ? 0.055 : 0.72,
+        );
+        geometries.push(braceGeo);
+        const brace = new THREE.Mesh(braceGeo, crateTrimMat);
+        brace.position.set(ix, 0.725, iz);
+        group.add(brace);
+      }
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.36, iz),
+        new THREE.Vector3(0.36, 0.36, 0.36),
+      ));
+
+    } else if (item.type === 'chest') {
+      const chestMat  = new THREE.MeshLambertMaterial({ color: 0x6b3a1e });
+      const metalMat2 = new THREE.MeshLambertMaterial({ color: 0x886633 });
+      materials.push(chestMat, metalMat2);
+      const rot = item.rotation ?? 0;
+      // Base
+      const chestBaseGeo = new THREE.BoxGeometry(0.82, 0.46, 0.52);
+      geometries.push(chestBaseGeo);
+      const chestBase = new THREE.Mesh(chestBaseGeo, chestMat);
+      chestBase.position.set(ix, 0.23, iz);
+      chestBase.rotation.y = THREE.MathUtils.degToRad(rot);
+      chestBase.castShadow = true;
+      group.add(chestBase);
+      // Lid (slightly angled open)
+      const lidGeo = new THREE.BoxGeometry(0.82, 0.18, 0.52);
+      geometries.push(lidGeo);
+      const lid = new THREE.Mesh(lidGeo, chestMat);
+      lid.position.set(ix, 0.55, iz);
+      lid.rotation.y = THREE.MathUtils.degToRad(rot);
+      group.add(lid);
+      // Clasp
+      const claspGeo = new THREE.BoxGeometry(0.12, 0.08, 0.06);
+      geometries.push(claspGeo);
+      const clasp = new THREE.Mesh(claspGeo, metalMat2);
+      clasp.position.set(ix, 0.48, iz - 0.26);
+      clasp.rotation.y = THREE.MathUtils.degToRad(rot);
+      group.add(clasp);
+      bodies.push(physics.createStaticBox(
+        new THREE.Vector3(ix, 0.32, iz),
+        new THREE.Vector3(0.41, 0.32, 0.26),
+      ));
+
+    } else if (item.type === 'candelabra') {
+      const metalMat3 = new THREE.MeshLambertMaterial({ color: 0x222233 });
+      const waxMat    = new THREE.MeshLambertMaterial({ color: 0xeeddaa });
+      const flameMat  = new THREE.MeshBasicMaterial({ color: 0xff9900, opacity: 0.9, transparent: true });
+      materials.push(metalMat3, waxMat, flameMat);
+      // Base disk
+      const diskGeo = new THREE.CylinderGeometry(0.20, 0.24, 0.07, 8);
+      geometries.push(diskGeo);
+      const disk = new THREE.Mesh(diskGeo, metalMat3);
+      disk.position.set(ix, 0.035, iz);
+      group.add(disk);
+      // Central stem
+      const stemGeo = new THREE.CylinderGeometry(0.035, 0.05, 1.55, 7);
+      geometries.push(stemGeo);
+      const stem = new THREE.Mesh(stemGeo, metalMat3);
+      stem.position.set(ix, 0.84, iz);
+      stem.castShadow = true;
+      group.add(stem);
+      // Three arms fanning out at the top, each with a candle
+      const ARM_ANGLES = [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3];
+      const ARM_RADIUS = 0.30;
+      const ARM_Y = 1.42;
+      for (const angle of ARM_ANGLES) {
+        const ax = ix + Math.sin(angle) * ARM_RADIUS;
+        const az = iz + Math.cos(angle) * ARM_RADIUS;
+        // Arm rod
+        const armGeo = new THREE.CylinderGeometry(0.018, 0.018, ARM_RADIUS * 2, 5);
+        geometries.push(armGeo);
+        const armRod = new THREE.Mesh(armGeo, metalMat3);
+        armRod.position.set(ix + Math.sin(angle) * ARM_RADIUS * 0.5, ARM_Y, iz + Math.cos(angle) * ARM_RADIUS * 0.5);
+        armRod.rotation.z = Math.PI / 2;
+        armRod.rotation.y = angle;
+        group.add(armRod);
+        // Wax candle
+        const candleGeo = new THREE.CylinderGeometry(0.048, 0.048, 0.22, 6);
+        geometries.push(candleGeo);
+        const candle = new THREE.Mesh(candleGeo, waxMat);
+        candle.position.set(ax, ARM_Y + 0.11, az);
+        group.add(candle);
+        // Tiny flame tip
+        const flameGeo = new THREE.SphereGeometry(0.045, 5, 4);
+        geometries.push(flameGeo);
+        const flame = new THREE.Mesh(flameGeo, flameMat);
+        flame.position.set(ax, ARM_Y + 0.28, az);
+        flame.scale.y = 1.6;
+        group.add(flame);
+      }
+      // No collision — player can walk through candelabras (decorative only)
+
     } else {
       // Fallback: unknown type — render a small marker cube so it's visible in editor
       const unknownGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);

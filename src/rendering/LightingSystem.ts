@@ -122,6 +122,12 @@ export class LightingSystem {
   /** Total elapsed time in seconds — used for flicker phase. */
   private _t = 0;
 
+  /** Ambient fade — lerps intensity from _ambientFadeFrom → _ambientFadeTo over duration. */
+  private _ambientFadeFrom = 0;
+  private _ambientFadeTo   = 0;
+  private _ambientFadeDuration = 0;
+  private _ambientFadeElapsed  = 0;
+
   constructor(scene: THREE.Scene) {
     this._scene = scene;
     // Interior ambient fill light (separate from the global hemisphere)
@@ -194,6 +200,18 @@ export class LightingSystem {
     this._pulses.push({ light, elapsed: 0 });
   }
 
+  /**
+   * Fade the ambient light intensity from `fromIntensity` → preset normal over
+   * `duration` seconds. Call when entering an unvisited room for the first time.
+   */
+  fadeAmbientIn(fromIntensity: number, duration: number): void {
+    this._ambientFadeFrom     = fromIntensity;
+    this._ambientFadeTo       = this._ambientLight.intensity;
+    this._ambientFadeDuration = duration;
+    this._ambientFadeElapsed  = 0;
+    this._ambientLight.intensity = fromIntensity;
+  }
+
   // ── Scene preset ─────────────────────────────────────────────────────────
 
   /**
@@ -231,6 +249,15 @@ export class LightingSystem {
       } else {
         p.light.intensity = PULSE_START_INT * frac * frac; // quadratic falloff
       }
+    }
+
+    // Ambient fade-in for first-visit rooms
+    if (this._ambientFadeElapsed < this._ambientFadeDuration && this._ambientFadeDuration > 0) {
+      this._ambientFadeElapsed += dt;
+      const t = Math.min(1, this._ambientFadeElapsed / this._ambientFadeDuration);
+      // Ease-out cubic so the room "blooms" into view
+      const ease = 1 - Math.pow(1 - t, 3);
+      this._ambientLight.intensity = this._ambientFadeFrom + (this._ambientFadeTo - this._ambientFadeFrom) * ease;
     }
   }
 
