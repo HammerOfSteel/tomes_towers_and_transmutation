@@ -527,6 +527,28 @@ async function main() {
       onFlyMode:     (v) => { player.flyMode = v; },
       getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
       onFastTravel:  (pos) => { if (gameMode !== 'exterior') switchToExterior(); player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z)); },
+      onRunWave: (_count, _interval, hp, damage) => {
+        // Called once per enemy by the wave timer in DevSandbox
+        const playerPos = player.group.position;
+        const angle = Math.random() * Math.PI * 2;
+        const r = 4 + Math.random() * 2;
+        const pos = new THREE.Vector3(
+          playerPos.x + Math.cos(angle) * r, 1.5,
+          playerPos.z + Math.sin(angle) * r,
+        );
+        const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+        en.health.forceSetHp(hp);
+        (en as unknown as { _baseDamage?: number })._baseDamage = damage;
+        scene.add(en.group);
+        sceneManager.addEnemy(en);
+      },
+      onSwapPlayerModel: (path) => {
+        // applyAssetModel expects a CharModelDef — look it up from the manifest
+        import('@/characters/charManifest').then(({ CHAR_MODELS }) => {
+          const def = CHAR_MODELS.find(m => m.path === path);
+          if (def) player.applyAssetModel(def).catch((e) => console.warn('[sandbox] model swap failed:', e));
+        });
+      },
       onSpawnNPC: (dna, _name, hp, damage, count) => {
         const playerPos = player.group.position;
         const angle0 = Math.random() * Math.PI * 2;

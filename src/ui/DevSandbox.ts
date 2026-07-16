@@ -15,6 +15,7 @@ import type { CreatureDNA, Archetype, FaceType, MouthType } from '@/creatures/Cr
 import { dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64, DOG_DNA, CAT_DNA } from '@/creatures/CreatureDNA';
 import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature } from '@/creatures/CreatureAnimator';
+import { CHAR_MODELS, CHAR_PACKS } from '@/characters/charManifest';
 
 export interface DevSandboxOptions {
   onGrantSpell: (spellId: string) => void;
@@ -53,6 +54,14 @@ export interface DevSandboxOptions {
   // ── NPC Generator tab ─────────────────────────────────────────────────────
   /** Spawn a hostile enemy whose visual is driven by the given DNA. hp/damage override defaults. */
   onSpawnNPC?: (dna: CreatureDNA, name: string, hp: number, damage: number, count: number) => void;
+
+  // ── Wave Spawner tab ──────────────────────────────────────────────────────
+  /** Run a wave: spawn `count` slime enemies over `intervalSec` seconds. */
+  onRunWave?: (count: number, intervalSec: number, hp: number, damage: number) => void;
+
+  // ── Asset Browser tab ─────────────────────────────────────────────────────
+  /** Swap the player's visible model to the GLB at `path`. */
+  onSwapPlayerModel?: (path: string) => void;
 }
 
 /** A saved NPC preset (stored in DevSandbox instance memory). */
@@ -202,7 +211,7 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'cheats' | 'npcgen';
+type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'npcgen' | 'wave' | 'assets' | 'cheats';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
@@ -222,6 +231,16 @@ export class DevSandbox {
   private _npcLabRafId: number | null = null;
   private _npcLabRotY = 0;
   private _npcPresetListEl: HTMLElement | null = null;
+  // Wave spawner
+  private _waveCount = 10;
+  private _waveInterval = 0.5;
+  private _waveHp = 30;
+  private _waveDamage = 6;
+  private _waveRunning = false;
+  private _waveTimerId: ReturnType<typeof setInterval> | null = null;
+  private _waveSpawned = 0;
+  // Asset browser
+  private _assetFilter = '';
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
   private _procType: 'tower' | 'overworld' | 'dungeon' = 'tower';
@@ -249,6 +268,7 @@ export class DevSandbox {
   show(): void { this._panel.style.display = 'flex'; }
   hide(): void { this._panel.style.display = 'none'; }
   dispose(): void {
+    this._stopWave();
     this._stopLabLoop();
     this._stopNpcLabLoop();
     this._labPane?.dispose();
@@ -319,6 +339,8 @@ export class DevSandbox {
       { id: 'procgen',  label: '⚙ Proc-Gen'},
       { id: 'creature', label: '🧬 Creature'},
       { id: 'npcgen',   label: '👾 NPC Gen' },
+      { id: 'wave',     label: '🌊 Waves'   },
+      { id: 'assets',   label: '📦 Assets'  },
       { id: 'cheats',   label: '⚙ Cheats'  },
     ];
     for (const t of tabs) {
@@ -360,6 +382,8 @@ export class DevSandbox {
     if (this._activeTab === 'procgen')  body.appendChild(this._buildProcGenTab());
     if (this._activeTab === 'creature') body.appendChild(this._buildCreatureLabTab());
     if (this._activeTab === 'npcgen')   body.appendChild(this._buildNPCGenTab());
+    if (this._activeTab === 'wave')     body.appendChild(this._buildWaveTab());
+    if (this._activeTab === 'assets')   body.appendChild(this._buildAssetsTab());
     if (this._activeTab === 'cheats')   body.appendChild(this._buildCheatsTab());
   }
 
@@ -1105,6 +1129,189 @@ export class DevSandbox {
 
   private _stopNpcLabLoop(): void {
     if (this._npcLabRafId !== null) { cancelAnimationFrame(this._npcLabRafId); this._npcLabRafId = null; }
+  }
+
+  // ── Wave Spawner tab ──────────────────────────────────────────────────────
+
+  private _buildWaveTab(): HTMLElement {
+    const wrap = document.createElement('div');
+
+    const cfgSec = document.createElement('div');
+    cfgSec.className = 'ds-section';
+    const cfgTitle = document.createElement('div');
+    cfgTitle.className = 'ds-section-title';
+    cfgTitle.textContent = 'Wave Configuration';
+
+    const mkRow = (label: string, val: number, min: number, max: number, step: number, onChange: (v: number) => void) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = label + ':';
+      lbl.style.minWidth = '80px';
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'ds-input';
+      inp.min = String(min); inp.max = String(max); inp.step = String(step);
+      inp.value = String(val);
+      inp.onchange = () => { const v = Math.min(max, Math.max(min, +inp.value || min)); onChange(v); inp.value = String(v); };
+      row.append(lbl, inp);
+      return row;
+    };
+
+    cfgSec.append(cfgTitle,
+      mkRow('Count',    this._waveCount,    1, 50,   1,   v => { this._waveCount = v; }),
+      mkRow('Interval', this._waveInterval, 0.1, 5, 0.1, v => { this._waveInterval = v; }),
+      mkRow('HP',       this._waveHp,       1, 500,  1,   v => { this._waveHp = v; }),
+      mkRow('Damage',   this._waveDamage,   1, 100,  1,   v => { this._waveDamage = v; }),
+    );
+    wrap.appendChild(cfgSec);
+
+    // Status + controls
+    const ctrlSec = document.createElement('div');
+    ctrlSec.className = 'ds-section';
+    const ctrlRow = document.createElement('div');
+    ctrlRow.className = 'ds-row';
+
+    const runBtn = document.createElement('button');
+    runBtn.className = 'ds-btn ds-btn--accent';
+    runBtn.textContent = '▶ Start Wave';
+
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'ds-btn ds-btn--danger';
+    stopBtn.textContent = '■ Stop';
+    stopBtn.style.display = 'none';
+
+    const statusEl = document.createElement('div');
+    statusEl.className = 'ds-hint';
+    statusEl.style.marginTop = '6px';
+    statusEl.textContent = 'Ready';
+
+    runBtn.onclick = () => {
+      if (this._waveRunning) return;
+      this._waveRunning = true;
+      this._waveSpawned = 0;
+      runBtn.style.display = 'none';
+      stopBtn.style.display = '';
+      statusEl.textContent = `Spawning 0 / ${this._waveCount}…`;
+      this._waveTimerId = setInterval(() => {
+        if (this._waveSpawned >= this._waveCount) {
+          this._stopWave();
+          runBtn.style.display = '';
+          stopBtn.style.display = 'none';
+          statusEl.textContent = `Wave complete — ${this._waveCount} enemies spawned.`;
+          return;
+        }
+        this._waveSpawned++;
+        this._opts.onRunWave?.(1, 0, this._waveHp, this._waveDamage);
+        statusEl.textContent = `Spawning ${this._waveSpawned} / ${this._waveCount}…`;
+      }, this._waveInterval * 1000);
+    };
+
+    stopBtn.onclick = () => {
+      this._stopWave();
+      runBtn.style.display = '';
+      stopBtn.style.display = 'none';
+      statusEl.textContent = `Stopped at ${this._waveSpawned} / ${this._waveCount}.`;
+    };
+
+    ctrlRow.append(runBtn, stopBtn);
+    ctrlSec.append(ctrlRow, statusEl);
+    wrap.appendChild(ctrlSec);
+
+    const hint = document.createElement('div');
+    hint.className = 'ds-hint';
+    hint.textContent = 'Enemies spawn one at a time at the configured interval. Use Kill All in the Enemies tab to clear the arena between runs.';
+    wrap.appendChild(hint);
+
+    return wrap;
+  }
+
+  private _stopWave(): void {
+    if (this._waveTimerId !== null) { clearInterval(this._waveTimerId); this._waveTimerId = null; }
+    this._waveRunning = false;
+  }
+
+  // ── Asset Browser tab ─────────────────────────────────────────────────────
+
+  private _buildAssetsTab(): HTMLElement {
+    const wrap = document.createElement('div');
+
+    // Filter bar
+    const filterSec = document.createElement('div');
+    filterSec.className = 'ds-section';
+    const filterRow = document.createElement('div');
+    filterRow.className = 'ds-row';
+    const filterLbl = document.createElement('span');
+    filterLbl.className = 'ds-label';
+    filterLbl.textContent = 'Filter:';
+    const filterInp = document.createElement('input');
+    filterInp.type = 'text';
+    filterInp.className = 'ds-input ds-input--wide';
+    filterInp.placeholder = 'e.g. knight, archer…';
+    filterInp.value = this._assetFilter;
+    filterInp.oninput = () => { this._assetFilter = filterInp.value.toLowerCase(); renderList(); };
+    filterRow.append(filterLbl, filterInp);
+    filterSec.appendChild(filterRow);
+    wrap.appendChild(filterSec);
+
+    // Model list
+    const listSec = document.createElement('div');
+    listSec.className = 'ds-section';
+    const listTitle = document.createElement('div');
+    listTitle.className = 'ds-section-title';
+    listTitle.textContent = `${CHAR_MODELS.length} models in manifest`;
+    const listEl = document.createElement('div');
+    listEl.style.cssText = 'display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto;';
+    listSec.append(listTitle, listEl);
+    wrap.appendChild(listSec);
+
+    const renderList = () => {
+      listEl.innerHTML = '';
+      const filter = this._assetFilter;
+      const shown = filter
+        ? CHAR_MODELS.filter(m => m.name.toLowerCase().includes(filter) || m.packId.toLowerCase().includes(filter))
+        : CHAR_MODELS;
+      listTitle.textContent = `${shown.length} / ${CHAR_MODELS.length} models`;
+
+      for (const model of shown) {
+        const pack = CHAR_PACKS.find(p => p.id === model.packId);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:2px 0;';
+
+        const icon = document.createElement('span');
+        icon.textContent = pack?.icon ?? '📦';
+        icon.style.cssText = 'font-size:.9rem;min-width:18px;';
+
+        const name = document.createElement('span');
+        name.style.cssText = 'font-size:.74rem;color:#c0a0f0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        name.textContent = model.name;
+        name.title = model.path;
+
+        const swapBtn = document.createElement('button');
+        swapBtn.className = 'ds-btn';
+        swapBtn.style.cssText = 'font-size:.7rem;padding:2px 7px;flex-shrink:0;';
+        swapBtn.textContent = '⇄ Equip';
+        swapBtn.title = `Swap player to ${model.name}`;
+        swapBtn.onclick = () => {
+          this._opts.onSwapPlayerModel?.(model.path);
+          swapBtn.textContent = '✓';
+          setTimeout(() => { swapBtn.textContent = '⇄ Equip'; }, 1200);
+        };
+
+        row.append(icon, name, swapBtn);
+        listEl.appendChild(row);
+      }
+    };
+
+    renderList();
+
+    const hint = document.createElement('div');
+    hint.className = 'ds-hint';
+    hint.textContent = 'Equip swaps the player\'s visible mesh. Stats and physics are unchanged.';
+    wrap.appendChild(hint);
+
+    return wrap;
   }
 
   // ── Cheats tab ────────────────────────────────────────────────────────────
