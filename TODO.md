@@ -78,9 +78,9 @@
 
 ### Playable Character Roster
 The campfire conversation produces a `CharacterId`. Several IDs use placeholder models:
-- [ ] `human_warrior`, `human_paladin`, `human_bard` → assign proper KayKit GLBs (Barbarian, Knight, Mage/Ranger)
-- [ ] `fox_rogue`, `fox_ranger`, `fox_mage`, `fox_mysterious` → real Vulperia model (fox pack or new Meshy.ai asset)
-- [ ] `zombie`, `ghost`, `mystery_undead` → dedicated models or creative reuse of skeleton pack
+- [x] `human_warrior` → `fantasy_heroes/Knight`, `human_paladin` → `fantasy_heroes/Paladin`, `human_bard` → `adventure/Adventurer`
+- [x] `fox_rogue/ranger/mage/mysterious` → `fox/fox` (single fox model in manifest)
+- [x] `zombie` → `skeletons_free/Skeleton`, `mystery_undead` → `fantasy_heroes/Necromancer`
 - [ ] Verify all 19 `CharacterId`s animate correctly (idle, walk) via shared KayKit rig
 - [ ] Replace the two placeholder `[E]` prompt scripts with proper model files in `CHAR_MANIFEST_MAP`
 
