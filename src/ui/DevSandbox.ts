@@ -33,6 +33,22 @@ export interface DevSandboxOptions {
   /** Spawn a creature (built from DNA) in the arena. */
   onSpawnCreature: (dna: CreatureDNA) => void;
   onClose: () => void;
+
+  // ── Cheats tab (mirrors DevPanel) ─────────────────────────────────────────
+  getGodMode?: () => boolean;
+  onGodMode?: (v: boolean) => void;
+  getInstantCooldowns?: () => boolean;
+  onInstantCooldowns?: (v: boolean) => void;
+  getHpInfo?: () => { hp: number; maxHp: number };
+  onFillHp?: () => void;
+  onSetHp?: (v: number) => void;
+  onKillAllInRoom?: () => void;
+  onForceFlee?: () => void;
+  onTeleportRoom?: (roomId: string) => void;
+  getFlyMode?: () => boolean;
+  onFlyMode?: (v: boolean) => void;
+  getSettlements?: () => Array<{ name: string; worldPos: { x: number; y: number; z: number } }>;
+  onFastTravel?: (pos: { x: number; y: number; z: number }) => void;
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -174,7 +190,7 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-type TabId = 'spells' | 'enemies' | 'procgen' | 'creature';
+type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'cheats';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
@@ -274,6 +290,7 @@ export class DevSandbox {
       { id: 'enemies',  label: '⚔ Enemies' },
       { id: 'procgen',  label: '⚙ Proc-Gen'},
       { id: 'creature', label: '🧬 Creature'},
+      { id: 'cheats',   label: '⚙ Cheats'  },
     ];
     for (const t of tabs) {
       const btn = document.createElement('button');
@@ -313,6 +330,7 @@ export class DevSandbox {
     if (this._activeTab === 'enemies')  body.appendChild(this._buildEnemiesTab());
     if (this._activeTab === 'procgen')  body.appendChild(this._buildProcGenTab());
     if (this._activeTab === 'creature') body.appendChild(this._buildCreatureLabTab());
+    if (this._activeTab === 'cheats')   body.appendChild(this._buildCheatsTab());
   }
 
   // ── Spells tab ────────────────────────────────────────────────────────────
@@ -829,6 +847,158 @@ export class DevSandbox {
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
+
+  // ── Cheats tab ────────────────────────────────────────────────────────────
+
+  private _buildCheatsTab(): HTMLElement {
+    const wrap = document.createElement('div');
+    const o = this._opts;
+
+    const mk = (title: string): HTMLElement => {
+      const sec = document.createElement('div');
+      sec.className = 'ds-section';
+      const t = document.createElement('div');
+      t.className = 'ds-section-title';
+      t.textContent = title;
+      sec.appendChild(t);
+      return sec;
+    };
+
+    const mkToggle = (label: string, sub: string, get: () => boolean, set: (v: boolean) => void): HTMLElement => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:rgba(0,0,0,.25);border:1px solid #1a1228;border-radius:3px;margin-bottom:5px;';
+      const info = document.createElement('div');
+      const nm = document.createElement('div');
+      nm.style.cssText = 'font-size:.82rem;color:#c0a0f0;';
+      nm.textContent = label;
+      const sb = document.createElement('div');
+      sb.style.cssText = 'font-size:.7rem;color:#4a3860;margin-top:2px;';
+      sb.textContent = sub;
+      info.append(nm, sb);
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = get();
+      cb.style.cssText = 'accent-color:#7040cc;width:15px;height:15px;cursor:pointer;';
+      cb.onchange = () => { set(cb.checked); nm.style.color = cb.checked ? '#e0b8ff' : '#c0a0f0'; };
+      if (cb.checked) nm.style.color = '#e0b8ff';
+      row.append(info, cb);
+      return row;
+    };
+
+    // ── Princess Power ────────────────────────────────────────────────────
+    const powerSec = mk('Princess Power');
+    if (o.getGodMode && o.onGodMode) {
+      powerSec.appendChild(mkToggle('God Mode', 'Player takes no damage', o.getGodMode, o.onGodMode));
+    }
+    if (o.getHpInfo && o.onSetHp && o.onFillHp) {
+      const { hp, maxHp } = o.getHpInfo();
+      const sliderRow = document.createElement('div');
+      sliderRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:5px;';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = 'HP:';
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '1';
+      slider.max = String(maxHp);
+      slider.value = String(Math.max(1, hp));
+      slider.style.cssText = 'flex:1;accent-color:#7040cc;';
+      const val = document.createElement('span');
+      val.className = 'ds-label';
+      val.textContent = slider.value;
+      slider.oninput = () => { val.textContent = slider.value; o.onSetHp!(+slider.value); };
+      sliderRow.append(lbl, slider, val);
+      powerSec.appendChild(sliderRow);
+
+      const fillBtn = document.createElement('button');
+      fillBtn.className = 'ds-btn ds-btn--accent';
+      fillBtn.textContent = '❤ Fill HP';
+      fillBtn.onclick = () => { o.onFillHp!(); const i = o.getHpInfo!(); slider.value = String(i.maxHp); val.textContent = String(i.maxHp); };
+      powerSec.appendChild(fillBtn);
+    }
+    wrap.appendChild(powerSec);
+
+    // ── Spells ────────────────────────────────────────────────────────────
+    const spellSec = mk('Spells');
+    if (o.getInstantCooldowns && o.onInstantCooldowns) {
+      spellSec.appendChild(mkToggle('Instant Cooldowns', 'Cast every spell without waiting', o.getInstantCooldowns, o.onInstantCooldowns));
+    }
+    const allSpellsBtn = document.createElement('button');
+    allSpellsBtn.className = 'ds-btn';
+    allSpellsBtn.textContent = '✨ Grant All Spells';
+    allSpellsBtn.onclick = () => o.onGrantAllSpells();
+    spellSec.appendChild(allSpellsBtn);
+    wrap.appendChild(spellSec);
+
+    // ── Combat ────────────────────────────────────────────────────────────
+    const combatSec = mk('Combat');
+    const combatRow = document.createElement('div');
+    combatRow.className = 'ds-row';
+    if (o.onKillAllInRoom) {
+      const kb = document.createElement('button');
+      kb.className = 'ds-btn ds-btn--danger';
+      kb.textContent = '☠ Kill All';
+      kb.onclick = () => o.onKillAllInRoom!();
+      combatRow.appendChild(kb);
+    }
+    if (o.onForceFlee) {
+      const fb = document.createElement('button');
+      fb.className = 'ds-btn';
+      fb.textContent = '💛 Force Flee';
+      fb.onclick = () => o.onForceFlee!();
+      combatRow.appendChild(fb);
+    }
+    combatSec.appendChild(combatRow);
+    wrap.appendChild(combatSec);
+
+    // ── Teleport ──────────────────────────────────────────────────────────
+    if (o.onTeleportRoom) {
+      const tpSec = mk('Teleport (interior)');
+      const rooms: [string, string][] = [
+        ['cell_start', 'Cell·Start'], ['library_small', 'Library·S'],
+        ['library_large', 'Library·L'], ['corridor_ew', 'Corridor E–W'],
+        ['corridor_ns', 'Corridor N–S'],
+      ];
+      const tpRow = document.createElement('div');
+      tpRow.className = 'ds-row';
+      for (const [id, label] of rooms) {
+        const b = document.createElement('button');
+        b.className = 'ds-btn';
+        b.style.fontSize = '.72rem';
+        b.textContent = label;
+        b.onclick = () => o.onTeleportRoom!(id);
+        tpRow.appendChild(b);
+      }
+      tpSec.appendChild(tpRow);
+      wrap.appendChild(tpSec);
+    }
+
+    // ── Overworld ─────────────────────────────────────────────────────────
+    if (o.getFlyMode && o.onFlyMode) {
+      const owSec = mk('Overworld');
+      owSec.appendChild(mkToggle('Fly Mode', 'Space=up  F=down  2.5× speed', o.getFlyMode, o.onFlyMode));
+      if (o.getSettlements && o.onFastTravel) {
+        const ftLbl = document.createElement('div');
+        ftLbl.className = 'ds-section-title';
+        ftLbl.textContent = 'Fast Travel';
+        owSec.appendChild(ftLbl);
+        const ftRow = document.createElement('div');
+        ftRow.className = 'ds-row';
+        for (const s of o.getSettlements()) {
+          const b = document.createElement('button');
+          b.className = 'ds-btn';
+          b.style.fontSize = '.72rem';
+          b.textContent = s.name;
+          b.onclick = () => o.onFastTravel!(s.worldPos);
+          ftRow.appendChild(b);
+        }
+        owSec.appendChild(ftRow);
+      }
+      wrap.appendChild(owSec);
+    }
+
+    return wrap;
+  }
 
   private _ensureStyles(): void {
     if (document.getElementById('dev-sandbox-css')) return;

@@ -509,6 +509,24 @@ async function main() {
           progression.grantSpell(id);
         }
       },
+      // ── Cheats tab ──────────────────────────────────────────────────────
+      getGodMode:          () => player.health.godMode,
+      onGodMode:           (v) => { player.health.godMode = v; },
+      getInstantCooldowns: () => spells.instantCooldowns,
+      onInstantCooldowns:  (v) => { spells.instantCooldowns = v; },
+      getHpInfo:   () => ({ hp: player.health.hp, maxHp: player.health.maxHp }),
+      onFillHp:    () => { player.health.reset(); if (deathTriggered) { deathTriggered = false; deathScreen.hide(); } },
+      onSetHp:     (v) => { player.health.forceSetHp(v); if (deathTriggered && v > 0) { deathTriggered = false; deathScreen.hide(); } },
+      onKillAllInRoom: () => sceneManager.getActiveEnemies().forEach(e => { if (!e.isDead) e.health.takeDamage(9999); }),
+      onForceFlee: () => {
+        const all = gameMode === 'interior' ? sceneManager.getActiveEnemies() : (overworld?.getActiveEnemies() ?? []);
+        all.forEach(e => { if (!e.isDead) e.forceFlee(); });
+      },
+      onTeleportRoom: (roomId) => { sceneManager.loadRoomImmediate(roomId); player.teleport(new THREE.Vector3(0, 1.5, 0)); wasRoomCleared = false; },
+      getFlyMode:    () => player.flyMode,
+      onFlyMode:     (v) => { player.flyMode = v; },
+      getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
+      onFastTravel:  (pos) => { if (gameMode !== 'exterior') switchToExterior(); player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z)); },
       onSpawnEnemies: (n) => {
         const playerPos = player.group.position;
         const angle0 = Math.random() * Math.PI * 2;
