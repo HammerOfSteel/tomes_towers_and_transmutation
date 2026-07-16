@@ -231,44 +231,66 @@ export class QuestLog {
       return;
     }
 
-    // Active first, then completed
-    const sorted = [
-      ...this._quests.filter(q => !q.completed),
-      ...this._quests.filter(q => q.completed),
-    ];
+    // Split into story and world quests
+    const isStory = (q: QuestDef) => q.title.startsWith('[Story] ');
+    const active = this._quests.filter(q => !q.completed);
+    const done   = this._quests.filter(q => q.completed);
+    const storyActive  = active.filter(isStory);
+    const worldActive  = active.filter(q => !isStory(q));
+    const storyDone    = done.filter(isStory);
+    const worldDone    = done.filter(q => !isStory(q));
 
-    for (const q of sorted) {
-      const div = document.createElement('div');
-      div.className = 'ql-quest' + (q.completed ? ' ql-quest--done' : '');
+    const renderSection = (label: string, quests: QuestDef[], isStorySection: boolean) => {
+      if (quests.length === 0) return;
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'ql-section-header';
+      sectionHeader.textContent = `◆ ${label}`;
+      body.appendChild(sectionHeader);
 
-      const titleEl = document.createElement('div');
-      titleEl.className = 'ql-title';
-      titleEl.textContent = q.completed ? `✓ ${q.title}` : q.title;
-      div.appendChild(titleEl);
+      for (const q of quests) {
+        const displayTitle = isStory ? q.title.replace(/^\[Story\] /, '') : q.title;
+        const div = document.createElement('div');
+        div.className = 'ql-quest'
+          + (q.completed ? ' ql-quest--done' : '')
+          + (isStorySection && !q.completed ? ' ql-quest--story' : '');
 
-      const meta = document.createElement('div');
-      meta.className = 'ql-meta';
-      meta.textContent = `${q.type.replace(/_/g, ' ')} · given by ${q.giverName}`;
-      div.appendChild(meta);
+        const titleEl = document.createElement('div');
+        titleEl.className = 'ql-title';
+        titleEl.textContent = q.completed ? `✓ ${displayTitle}` : displayTitle;
+        div.appendChild(titleEl);
 
-      const desc = document.createElement('div');
-      desc.className = 'ql-desc';
-      desc.textContent = q.description;
-      div.appendChild(desc);
+        const meta = document.createElement('div');
+        meta.className = 'ql-meta';
+        meta.textContent = isStorySection
+          ? q.giverName  // e.g. "The Warden · Act I"
+          : `${q.type.replace(/_/g, ' ')} · ${q.giverName}`;
+        div.appendChild(meta);
 
-      const target = document.createElement('div');
-      target.className = 'ql-target';
-      target.textContent = `Target: ${q.target.label}`;
-      div.appendChild(target);
+        const desc = document.createElement('div');
+        desc.className = 'ql-desc';
+        desc.textContent = q.description;
+        div.appendChild(desc);
 
-      if (!q.completed) {
-        const rew = document.createElement('div');
-        rew.className = 'ql-reward';
-        rew.textContent = `Reward: ${q.reward.gold} gold · ${q.reward.xp} XP`;
-        div.appendChild(rew);
+        const target = document.createElement('div');
+        target.className = 'ql-target';
+        target.textContent = `Target: ${q.target.label}`;
+        div.appendChild(target);
+
+        if (!q.completed) {
+          const rew = document.createElement('div');
+          rew.className = 'ql-reward';
+          rew.textContent = `Reward: ${q.reward.gold} gold · ${q.reward.xp} XP`;
+          div.appendChild(rew);
+        }
+
+        body.appendChild(div);
       }
+    };
 
-      body.appendChild(div);
+    renderSection('YOUR STORY', storyActive, true);
+    renderSection('WORLD QUESTS', worldActive, false);
+    if (storyDone.length + worldDone.length > 0) {
+      renderSection('COMPLETED', [...storyDone, ...worldDone], false);
     }
   }
 }

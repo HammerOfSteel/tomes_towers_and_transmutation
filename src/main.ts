@@ -65,6 +65,8 @@ import { ConsumableInventory } from '@/core/ConsumableInventory';
 import { injectHudTheme } from '@/ui/hudTheme';
 import { BuffBar } from '@/ui/BuffBar';
 import { PartyStrip } from '@/ui/PartyStrip';
+import { ObjectiveTracker } from '@/ui/ObjectiveTracker';
+import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -220,11 +222,16 @@ async function main() {
     ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
     MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
     ow.onQuestGiven = (quest) => {
-      questLog.addQuest(quest);
-      // Refresh minimap pins from all active quests
-      minimap?.setQuestPins(
-        questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
-      );
+      questModal.show(quest, () => {
+        questLog.addQuest(quest);
+        // Show in objective tracker if it's a world quest
+        if (!quest.title.startsWith('[Story] ')) {
+          objTracker.setObjective(quest.title, quest.description, false);
+        }
+        minimap?.setQuestPins(
+          questLog.getActive().map(q => ({ col: q.target.col, row: q.target.row })),
+        );
+      });
     };
     // Fire-and-forget: swap procedural geometry for GLB assets when ready.
     // Each upgrade is independent — a failure in one doesn't block the others.
@@ -539,12 +546,14 @@ async function main() {
         progression.grantXP(xp);
         if (gold > 0) inventory.add('gold', gold);
         _storyToast(text, 'beat');
+        objTracker.clear(); // beat done — next beat will set a new one
       };
       _storyRunner.onActBegin = (_title, intro) => {
         _storyToast(intro, 'act');
       };
       _storyRunner.onStoryComplete = () => {
         _storyToast('Your story is complete. The world will remember this — probably.', 'act');
+        objTracker.clear();
       };
       _storyRunner.start({
         killCount:            sceneManager.killCount,
@@ -554,6 +563,11 @@ async function main() {
         playerRow:            0,
         nearSettlements:      [],
       });
+      // Show initial story objective
+      const firstStory = questLog.getActive().find(q => q.title.startsWith('[Story] '));
+      if (firstStory) {
+        objTracker.setObjective(firstStory.title.replace(/^\[Story\] /, ''), firstStory.description, true);
+      }
     }
 
     gameLoop.start();
@@ -1136,6 +1150,8 @@ async function main() {
   const hud = new HUD();
   const buffBar    = new BuffBar();
   const partyStrip = new PartyStrip();
+  const objTracker = new ObjectiveTracker();
+  const questModal = new QuestAcceptModal();
 
   // ── Exterior interaction prompt ───────────────────────────────────────────
   // Reuses the same visual style as InteractableSystem's prompt.
