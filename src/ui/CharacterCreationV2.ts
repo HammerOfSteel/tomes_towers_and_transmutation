@@ -14,7 +14,7 @@ import { loadWorldGenConfig }          from '@/world/WorldGenConfig';
 import type { CharModelDef }           from '@/characters/charManifest';
 import { AssetCharBrowser }            from '@/ui/AssetCharBrowser';
 import { loadCharModel }               from '@/characters/CharacterLoader';
-import type { CharacterConfig, StartingBoon } from '@/ui/CharacterCreation';
+import type { CharacterConfig, StartingBoon } from '@/ui/DNACreator';
 import { generateNameForSpecies }      from '@/world/NameGenerator';
 
 // ── Re-export StartingBoon so callers don't need two imports ─────────────────

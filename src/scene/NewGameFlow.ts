@@ -20,7 +20,7 @@ import { CharacterDecisionTree,
 import { randomWizardDef }         from '@/characters/wizardManifest';
 import { CHAR_MODELS }             from '@/characters/charManifest';
 import type { CharacterConfig,
-              StartingBoon }       from '@/ui/CharacterCreation';
+              StartingBoon }       from '@/ui/DNACreator';
 import { DEFAULT_PLAYER_DNA }      from '@/creatures/CreatureDNA';
 import type { StatBonus }          from '@/scene/CharacterDecisionTree';
 import { generateQualityName }     from '@/world/NameGenerator';

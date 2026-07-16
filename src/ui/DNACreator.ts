@@ -1,6 +1,6 @@
-// ── CharacterCreation ────────────────────────────────────────────────────────
+// ── DNACreator ──────────────────────────────────────────────────────────────
 //
-//  DNA-based character creation screen.  Every being type (biped, quadruped,
+//  DNA-based NPC/enemy creator (DevLab tool).  Every being type (biped, quadruped,
 //  amoeba, avian, serpent) can be chosen — the player is NOT constrained to
 //  a human shape.  Appearance is described by CreatureDNA and rendered live
 //  via CreatureBuilder in a dedicated WebGLRenderer.
@@ -368,9 +368,9 @@ class CharacterPreview {
   dispose(): void { this.stopLoop(); this._assetMixer?.stopAllAction(); this._rig?.dispose(); this._renderer.dispose(); }
 }
 
-// ── CharacterCreation ─────────────────────────────────────────────────────────
+// ── DNACreator ───────────────────────────────────────────────────────────────
 
-export class CharacterCreation {
+export class DNACreator {
   private readonly _overlay: HTMLElement;
   private _preview:  CharacterPreview | null = null;
   private _dna:      CreatureDNA = cloneDNA(DEFAULT_PLAYER_DNA);

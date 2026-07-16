@@ -14,7 +14,7 @@ import { GameMenu }  from '@/ui/GameMenu';
 import { MainMenu } from '@/ui/MainMenu';
 import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
 import { NewGameFlow }          from '@/scene/NewGameFlow';
-import type { CharacterConfig } from '@/ui/CharacterCreation';
+import type { CharacterConfig } from '@/ui/DNACreator';
 import { DevSandbox } from '@/ui/DevSandbox';
 import { generateSandboxArena } from '@/levels/SandboxArena';
 import { DeathScreen } from '@/ui/DeathScreen';
@@ -875,8 +875,9 @@ async function main() {
     });
     el.textContent = text;
     document.body.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; }, isBeat ? 3500 : 5000);
-    setTimeout(() => { el.remove(); },            isBeat ? 4700 : 6200);
+    // Act intros (prologue, new act) need longer display time — 3 sentences to read.
+    setTimeout(() => { el.style.opacity = '0'; }, isBeat ? 3500 : 9000);
+    setTimeout(() => { el.remove(); },            isBeat ? 4700 : 10200);
   }
 
   const mainMenu = new MainMenu({
