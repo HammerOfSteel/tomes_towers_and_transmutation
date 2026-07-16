@@ -53,6 +53,7 @@ import { assetLoader } from '@/assets/AssetLoader';
 import { LightingSystem } from '@/rendering/LightingSystem';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { TimeSystem } from '@/world/TimeSystem';
+import { DayNightSystem } from '@/rendering/DayNightSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
@@ -109,6 +110,9 @@ async function main() {
   keyLight.shadow.camera.top = 25;
   keyLight.shadow.camera.bottom = -25;
   scene.add(keyLight);
+
+  // ── Day/night cycle — lerps hemi + keyLight + fog by TimeSystem.hour ──────
+  const _dayNight = new DayNightSystem(hemi, keyLight, scene);
 
   // ── Floor ─────────────────────────────────────────────────────────────────
   // Floor and room geometry are now managed by SceneManager / BlueprintRenderer.
@@ -1192,6 +1196,7 @@ async function main() {
       } else if (overworld) {
         owEditor?.update();
         TimeSystem.instance.update(dt);
+        _dayNight.update(TimeSystem.instance.hour);
         overworld.update(dt, false, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
