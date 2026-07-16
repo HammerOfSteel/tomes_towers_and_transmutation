@@ -105,7 +105,7 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] Merchant: buy/sell ore/timber/essence for gold at merchant/innkeeper NPCs (MerchantUI singleton)
 - [x] Quest board: [E] on quest_board fixture opens notice panel — active quests + 3 seeded procedural quests pinnable to QuestLog (QuestBoardUI)
 - [x] In-game day / night cycle — DayNightSystem lerps hemi/keyLight/fog across night/dawn/day/dusk phases driven by TimeSystem.hour
-- [ ] Persistent overworld state: cleared camps stay cleared between sessions
+- [x] Persistent overworld state: cleared camps keyed by "wx:wz" in DiscoveryTracker; injected into OverworldScene.clearedCamps before enter(); saved to localStorage on camp cleared
 
 ### Emergent Spell Crafting (Phase 9)
 - [ ] Combine two known spells at a Cauldron to discover a hybrid spell
