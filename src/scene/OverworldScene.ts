@@ -1037,6 +1037,18 @@ export class OverworldScene {
     return null;
   }
 
+  /** Returns the name of the nearest interactable NPC within `radius` world units, or null. */
+  nearestNPC(pos: THREE.Vector3, radius = 2.8): string | null {
+    const r2 = radius * radius;
+    for (const npc of this._npcs) {
+      const np = npc.group.position;
+      const dx = pos.x - np.x;
+      const dz = pos.z - np.z;
+      if (dx * dx + dz * dz < r2) return npc.name;
+    }
+    return null;
+  }
+
   /** Returns the nearest dungeon entrance if the player is within trigger range. */
   nearDungeonEntrance(pos: THREE.Vector3): DungeonEntranceHandle | null {
     const TRIGGER_R2 = 5.0 * 5.0;

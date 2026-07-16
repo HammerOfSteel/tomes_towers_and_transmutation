@@ -60,6 +60,7 @@ import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
 import { StoryRunner }  from '@/world/StoryRunner';
+import { isDialogueOpen as isNPCDialogueOpen } from '@/world/NPCEntity';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -1287,7 +1288,8 @@ async function main() {
         hud.setTime(TimeSystem.instance.formatted);
         const _dayNum = Math.floor(TimeSystem.instance.hour / 24);
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
-        overworld.update(dt, false, cameraRig.camera);
+        const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();
+        overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
 
@@ -1347,14 +1349,20 @@ async function main() {
             if (_bld) {
               _setExteriorPrompt(_bld.label);
             } else {
-              // Watch Perch guard assignment
-              const _wp = baseScene.nearWatchPerch(_pos);
-              if (_wp && party.members.some(m => !m.isGuarding)) {
-                _setExteriorPrompt('🗼 Assign guard');
+              // NPC talk check
+              const _nearNPC = overworld.nearestNPC(_pos);
+              if (_nearNPC) {
+                _setExteriorPrompt(`Talk to ${_nearNPC}`);
               } else {
-                const _res = overworld.nearResourceNode(_pos);
-                const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
-                _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                // Watch Perch guard assignment
+                const _wp = baseScene.nearWatchPerch(_pos);
+                if (_wp && party.members.some(m => !m.isGuarding)) {
+                  _setExteriorPrompt('🗼 Assign guard');
+                } else {
+                  const _res = overworld.nearResourceNode(_pos);
+                  const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
+                  _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                }
               }
             }
           }
