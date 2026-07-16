@@ -193,37 +193,37 @@ New layout:
 ### E1: QuestLog Visual Split
 **Files:** `src/ui/QuestLog.ts`
 
-- [ ] Section header `◆ YOUR STORY` (gold, full-width) for quests with `[Story]` prefix
-- [ ] Story quest items: warm amber bg, act badge `Act II · 1/3`, species icon (🦊 👤 💀 🫧)
-- [ ] Section header `◆ WORLD QUESTS` for procedural/board quests
-- [ ] Completed quests collapse to a `▸ Completed (3)` toggle at bottom
+- [x] Section header `◆ YOUR STORY` (gold, full-width) for quests with `[Story]` prefix
+- [x] Story quest items: warm amber bg, act badge `Act II · 1/3`, species icon (🦊 👤 💀 🫧)
+- [x] Section header `◆ WORLD QUESTS` for procedural/board quests
+- [x] Completed quests collapse to a `▸ Completed (3)` toggle at bottom
 
-**Status:** ⬜
+**Status:** ✅
 
 ---
 
 ### E2: Persistent Objective Tracker
 **Files:** `src/ui/ObjectiveTracker.ts` (new), `src/main.ts`
 
-- [ ] Small HUD element (bottom-right, above potion bar): current story beat objective only
-- [ ] Format: `◆ Defeat enemies · 2 / 3` with a thin progress bar
-- [ ] Updates when StoryRunner fires `onBeatProgress` callback (add callback to StoryRunner)
-- [ ] Disappears after beat completes with a brief ✓ flash animation
-- [ ] Click opens QuestLog
+- [x] Small HUD element (bottom-right, above potion bar): current story beat objective only
+- [x] Format: `◆ Defeat enemies · 2 / 3` with a thin progress bar
+- [x] Updates when StoryRunner fires `onBeatProgress` callback (add callback to StoryRunner)
+- [x] Disappears after beat completes with a brief ✓ flash animation
+- [x] Click opens QuestLog
 
-**Status:** ⬜
+**Status:** ✅
 
 ---
 
 ### E3: Quest Accept Modal
 **Files:** `src/ui/QuestAcceptModal.ts` (new), `src/world/NPCEntity.ts`, `src/main.ts`
 
-- [ ] Small modal: quest title, description (2 lines), reward `XP +150  Gold +25`
-- [ ] `[Accept]` (adds to log) / `[Decline]` (dismiss) buttons
-- [ ] NPC passes quest to modal instead of silently adding to log
-- [ ] `OverworldScene.onQuestGiven` now fires modal, not direct `questLog.addQuest()`
+- [x] Small modal: quest title, description (2 lines), reward `XP +150  Gold +25`
+- [x] `[Accept]` (adds to log) / `[Decline]` (dismiss) buttons
+- [x] NPC passes quest to modal instead of silently adding to log
+- [x] `OverworldScene.onQuestGiven` now fires modal, not direct `questLog.addQuest()`
 
-**Status:** ⬜
+**Status:** ✅
 
 ---
 
@@ -232,24 +232,24 @@ New layout:
 ### F1: NPC Dialogue Uses Shared Theme
 **Files:** `src/world/NPCEntity.ts`
 
-- [ ] Replace raw `div` `_showDialogue()` with `.hud-panel` parchment style
-- [ ] Show NPC role under name: `Mira · Merchant`
-- [ ] If merchant/innkeeper role: show `[E] Open Shop` button inside dialogue panel
-- [ ] If quest-giver with unseen quest: show `[!] Quest Available` badge in label above NPC
+- [x] Replace raw `div` `_showDialogue()` with `.hud-panel` parchment style
+- [x] Show NPC role under name: `Mira · Merchant`
+- [x] If merchant/innkeeper role: show `[E] Open Shop` button inside dialogue panel
+- [x] If quest-giver with unseen quest: show `[!] Quest Available` badge in label above NPC
 
-**Status:** ⬜
+**Status:** ✅
 
 ---
 
 ### F2: DialogueOverlay Wired to NPCs
 **Files:** `src/ui/DialogueOverlay.ts`, `src/world/NPCEntity.ts`, `src/main.ts`
 
-- [ ] Audit `DialogueOverlay.ts` (377 lines) — understand its current interface
-- [ ] Replace `_showDialogue()` in NPCEntity with `DialogueOverlay.open(name, role, lines[])`
-- [ ] Multiple lines with `[Continue →]` progression instead of one text dump
-- [ ] `[E]` continues dialogue, `[Esc]` closes
+- [x] Audit `DialogueOverlay.ts` (377 lines) — understand its current interface
+- [x] Replace `_showDialogue()` in NPCEntity with `DialogueOverlay.open(name, role, lines[])`
+- [x] Multiple lines with `[Continue →]` progression instead of one text dump
+- [x] `[E]` continues dialogue, `[Esc]` closes
 
-**Status:** ⬜
+**Status:** ✅
 
 ---
 
