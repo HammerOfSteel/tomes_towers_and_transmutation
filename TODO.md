@@ -57,10 +57,11 @@
 
 ## In Progress 🔄
 
-### Phase 6d — Overworld Editor
-- [ ] Toolbar to place enemy camps, building entrances, resource nodes on overworld map
-- [ ] Export overworld layout to JSON (same pattern as dungeon blueprint export)
-- [ ] Load / apply saved overworld layouts in `OverworldScene`
+### Phase 6d — Overworld Editor ✅
+- [x] Toolbar to place enemy camps, building entrances, resource nodes on overworld map
+- [x] Export overworld layout to JSON (same pattern as dungeon blueprint export)
+- [x] Load / apply saved overworld layouts in `OverworldScene`
+- [x] Wire `OverworldEditor` into `main.ts` — `\` key toggles (dev mode only, exterior only)
 
 ---
 
