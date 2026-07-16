@@ -1048,6 +1048,123 @@ export class OverworldScene {
     };
   }
 
+  // ── Overworld Editor integration ──────────────────────────────────────────
+
+  /**
+   * Apply a layout exported from OverworldEditor.
+   *
+   * - `enemy_camp`        → spawn a SlimeEnemy cluster at the given position.
+   * - `building_entrance` → register a BuildingEntrance (shows [E] prompt).
+   * - `resource_node`     → add a harvestable resource node mesh + record.
+   *
+   * Safe to call multiple times; new items are appended.  Existing procedural
+   * content is untouched (the editor layout is an overlay, not a replacement).
+   *
+   * If the scene is already active (`enter()` has been called) the new meshes
+   * are added to the THREE.Scene immediately.
+   */
+  applyEditorLayout(layout: import('@/editor/OverworldEditor').OWLayout): void {
+    for (const item of layout.items) {
+      switch (item.kind) {
+        case 'enemy_camp':
+          this._spawnEditorCamp(item.wx, item.wz, item.count);
+          break;
+        case 'building_entrance':
+          this.buildingEntrances.push({
+            type:     'greenhouse',           // default type; extend OWLayout schema to add type later
+            position: new THREE.Vector3(item.wx, 0, item.wz),
+            label:    item.label,
+          });
+          break;
+        case 'resource_node':
+          this._addEditorResourceNode(item.wx, item.wz, item.type);
+          break;
+      }
+    }
+  }
+
+  /** Spawn `count` SlimeEnemies in a loose ring around (wx, wz). */
+  private _spawnEditorCamp(wx: number, wz: number, count: number): void {
+    const rand = mulberry32(
+      (Math.round(wx * 100) ^ Math.round(wz * 100)) >>> 0,
+    );
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + rand() * 0.4;
+      const r     = 2.5 + rand() * 2.0;
+      const ex    = wx + Math.cos(angle) * r;
+      const ez    = wz + Math.sin(angle) * r;
+      const spawnPos = new THREE.Vector3(ex, 0.9, ez);
+      const enemy = new SlimeEnemy(
+        spawnPos,
+        this.physics,
+        (dmg) => this.player.health.takeDamage(dmg),
+      );
+      this._enemies.push(enemy);
+      if (this._isInScene) this.scene.add(enemy.group);
+    }
+  }
+
+  /** Add a single resource node at the given world position. */
+  private _addEditorResourceNode(
+    wx: number,
+    wz: number,
+    type: 'ore' | 'timber' | 'essence',
+  ): void {
+    const idx = this._nodeRecords.length;
+
+    // Mesh — reuse the same geometry/colours as the procedural placer
+    const grp = this._buildResourceNodeMesh(wx, wz, type);
+    this._resourceGroups.push(grp);
+    this._respawnTimers.push(0);
+
+    const baseYield = type === 'ore' ? 2 : type === 'timber' ? 3 : 1;
+    this._nodeRecords.push({ wx, wz, type, baseYield, index: idx });
+
+    if (this._isInScene) this.scene.add(grp);
+  }
+
+  /**
+   * Build the visual mesh for a resource node (mirrors the code in
+   * `_buildResourceNodes` but for a single node).
+   */
+  private _buildResourceNodeMesh(
+    wx: number,
+    wz: number,
+    type: 'ore' | 'timber' | 'essence',
+  ): THREE.Group {
+    const grp = new THREE.Group();
+    grp.position.set(wx, 0, wz);
+
+    if (type === 'ore') {
+      const geo = new THREE.DodecahedronGeometry(0.55);
+      const mat = new THREE.MeshLambertMaterial({ color: 0x7a6050 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = 0.55;
+      grp.add(mesh);
+      // Crystal shard
+      const sGeo = new THREE.OctahedronGeometry(0.22);
+      const sMat = new THREE.MeshLambertMaterial({ color: 0xffa040, emissive: 0x804000 });
+      const shard = new THREE.Mesh(sGeo, sMat);
+      shard.position.set(0.2, 0.9, 0.1);
+      shard.rotation.z = 0.4;
+      grp.add(shard);
+    } else if (type === 'timber') {
+      const geo = new THREE.CylinderGeometry(0.22, 0.28, 1.2, 8);
+      const mat = new THREE.MeshLambertMaterial({ color: 0x6b3a1f });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = 0.6;
+      grp.add(mesh);
+    } else {
+      // essence
+      const geo = new THREE.SphereGeometry(0.3, 8, 8);
+      const mat = new THREE.MeshLambertMaterial({ color: 0x88eecc, emissive: 0x224433 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = 0.8;
+      grp.add(mesh);
+    }
+    return grp;
+  }
+
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**

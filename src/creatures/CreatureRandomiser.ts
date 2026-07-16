@@ -8,6 +8,7 @@ import {
   type CreatureDNA, type Archetype,
   type FaceType, type MouthType, type PropId,
   type OutfitTopId, type OutfitLegsId, type OutfitOverId,
+  type EyeShape, type SkinPattern, type BrowStyle,
   dnaForArchetype, dnaForSubRace, cloneDNA,
   BIPED_SUBRACES,
 } from './CreatureDNA';
@@ -77,11 +78,44 @@ const LEGS_POOL: OutfitLegsId[] = ['none', 'trousers', 'skirt', 'shorts', 'loinc
 const OVER_POOL: OutfitOverId[] = ['none', 'none', 'robe_full', 'cape', 'cloak'];  // none weighted heavier
 
 const FACE_POOLS: Record<Archetype, [FaceType, MouthType][]> = {
-  biped:     [['cute','smile'],['cute','smile'],['cute','fangs'],['angry','frown'],['angry','fangs'],['skull','fangs'],['compound','none']],
-  quadruped: [['angry','fangs'],['angry','frown'],['cute','smile'],['blank','none']],
-  amoeba:    [['cyclops','none'],['compound','none'],['blank','none']],
-  avian:     [['cute','beak'],['cute','beak'],['angry','beak'],['blank','none']],
-  serpent:   [['angry','fangs'],['angry','frown'],['blank','none']],
+  biped: [
+    ['cute','smile'],['cute','smile'],['cute','fangs'],
+    ['angry','frown'],['angry','fangs'],['skull','fangs'],
+    ['cherubic','smile'],['cherubic','smile'],
+    ['gaunt','frown'],['gaunt','fangs'],
+    ['demon','fangs'],['compound','none'],
+  ],
+  quadruped: [
+    ['angry','fangs'],['angry','frown'],['cute','smile'],['blank','none'],
+    ['lizard','fangs'],['cat','smile'],
+  ],
+  amoeba: [['cyclops','none'],['compound','none'],['blank','none'],['ancient','none']],
+  avian:  [['cute','beak'],['cute','beak'],['angry','beak'],['bird','beak'],['blank','none']],
+  serpent:[['angry','fangs'],['angry','frown'],['lizard','fangs'],['demon','fangs'],['blank','none']],
+};
+
+const EYE_POOLS: Record<Archetype, EyeShape[]> = {
+  biped:     ['round', 'round', 'almond', 'almond', 'star', 'void'],
+  quadruped: ['slit', 'slit', 'almond', 'round'],
+  amoeba:    ['round', 'compound', 'void'],
+  avian:     ['round', 'almond'],
+  serpent:   ['slit', 'slit', 'void'],
+};
+
+const BROW_POOLS: Record<Archetype, BrowStyle[]> = {
+  biped:     ['none', 'thin', 'thick', 'arched', 'furrowed'],
+  quadruped: ['none', 'thick', 'furrowed'],
+  amoeba:    ['none'],
+  avian:     ['none', 'thin'],
+  serpent:   ['none', 'thick'],
+};
+
+const PATTERN_POOLS: Record<Archetype, SkinPattern[]> = {
+  biped:     ['none', 'none', 'none', 'stripes', 'spots', 'gradient', 'fur'],
+  quadruped: ['none', 'none', 'stripes', 'spots', 'fur'],
+  amoeba:    ['none', 'gradient', 'cracks'],
+  avian:     ['none', 'stripes', 'gradient'],
+  serpent:   ['none', 'scales', 'scales', 'stripes'],
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -144,9 +178,13 @@ export function randomDNA(seed: number, forceArch?: Archetype): CreatureDNA {
 
   // Face
   const [faceType, mouthType] = _pick(rand, FACE_POOLS[arch]);
-  dna.face.type      = faceType;
-  dna.face.mouthType = mouthType;
-  dna.face.eyeColor  = _hsl((h1 + 0.5) % 1, 0.60 + rand() * 0.40, 0.10 + rand() * 0.20);
+  dna.face.type        = faceType;
+  dna.face.mouthType   = mouthType;
+  dna.face.eyeColor    = _hsl((h1 + 0.5) % 1, 0.60 + rand() * 0.40, 0.10 + rand() * 0.20);
+  dna.face.eyeShape    = _pick(rand, EYE_POOLS[arch]);
+  dna.face.browStyle   = _pick(rand, BROW_POOLS[arch]);
+  dna.face.skinPattern = _pick(rand, PATTERN_POOLS[arch]);
+  dna.face.markColor   = _hsl((h1 + 0.33 + rand() * 0.1) % 1, 0.5 + rand() * 0.4, 0.25 + rand() * 0.3);
 
   // Props: 0–3 from archetype pool
   const pool = PROP_POOLS[arch] ?? [];
