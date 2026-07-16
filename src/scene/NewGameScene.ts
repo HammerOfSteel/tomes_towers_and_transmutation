@@ -581,6 +581,46 @@ export class NewGameScene {
     this._nodVel    = 0;
   }
 
+  /**
+   * Trigger a one-shot gesture animation on the wizard (crossfade to a
+   * non-idle clip and back).  Call this on key speech moments.
+   * No-op if no wizard is loaded or no suitable clip is found.
+   */
+  triggerGesture(): void {
+    const w = this._wizard;
+    if (!w) return;
+    // Look for any gesture-like clip in the rig
+    const GESTURE_NAMES = ['Interact', 'Wave', 'Talk', 'Point', 'No', 'Yes', 'Taunt', 'Cheer'];
+    let gestureClip: THREE.AnimationClip | null = null;
+    for (const name of GESTURE_NAMES) {
+      const found = w.allClips.find(c =>
+        c.name.toLowerCase().includes(name.toLowerCase()),
+      );
+      if (found && found !== w.idleClip && found !== w.walkClip) {
+        gestureClip = found;
+        break;
+      }
+    }
+    if (!gestureClip) return; // no gesture clip available — silently skip
+
+    const idleAction    = w.mixer.clipAction(w.idleClip);
+    const gestureAction = w.mixer.clipAction(gestureClip);
+    gestureAction.setLoop(THREE.LoopOnce, 1);
+    gestureAction.clampWhenFinished = true;
+    gestureAction.reset();
+    idleAction.crossFadeTo(gestureAction, 0.2, true);
+    gestureAction.play();
+
+    // Listen for end and crossfade back to idle
+    const onFinished = (e: { action: THREE.AnimationAction }) => {
+      if (e.action !== gestureAction) return;
+      w.mixer.removeEventListener('finished', onFinished);
+      gestureAction.crossFadeTo(idleAction, 0.3, true);
+      idleAction.play();
+    };
+    w.mixer.addEventListener('finished', onFinished);
+  }
+
   // ── internals ──────────────────────────────────────────────────────────────
 
   private _resize(): void {

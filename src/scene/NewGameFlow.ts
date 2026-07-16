@@ -89,7 +89,12 @@ export class NewGameFlow {
     await _pause(800);
 
     // ── 7. Dialogue tree ─────────────────────────────────────────────────────
-    // Nod camera when player makes each choice
+    // Gesture on every wizard speech line; nod camera when player makes a choice
+    const origSpeak  = overlay.speak.bind(overlay);
+    overlay.speak = async (text) => {
+      scene.triggerGesture();
+      return origSpeak(text);
+    };
     const origChoose = overlay.choose.bind(overlay);
     overlay.choose = async (choices) => {
       const idx = await origChoose(choices);
@@ -99,7 +104,8 @@ export class NewGameFlow {
 
     const result = await tree.run(overlay);
 
-    // Restore unpatched choose
+    // Restore unpatched methods
+    overlay.speak  = origSpeak;
     overlay.choose = origChoose;
 
     // ── 8. Brief beat after farewell ─────────────────────────────────────────
