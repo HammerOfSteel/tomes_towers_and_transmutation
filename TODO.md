@@ -74,7 +74,7 @@
 - [ ] **Creature test-drive** — spawn the generated enemy in sandbox and observe AI / animations
 - [ ] **Wave spawner** — configure enemy type, count, and timing; run a wave in the sandbox arena
 - [ ] **Asset browser** — browse all `charManifest.ts` GLBs; click to preview and swap player model
-- [ ] **Unified sidebar** — collapse `DevPanel` floating cheat window into a tab in the sandbox sidebar
+- [x] **Unified sidebar** — Cheats tab added to DevSandbox with full DevPanel parity (god mode, HP, instant cooldowns, kill all, force flee, teleport, fly mode, fast travel)
 - [ ] Remove `DevPanel` as a separate floating overlay once sidebar has parity
 
 ### Playable Character Roster
