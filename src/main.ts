@@ -63,6 +63,8 @@ import { StoryRunner }  from '@/world/StoryRunner';
 import { isDialogueOpen as isNPCDialogueOpen } from '@/world/NPCEntity';
 import { ConsumableInventory } from '@/core/ConsumableInventory';
 import { injectHudTheme } from '@/ui/hudTheme';
+import { BuffBar } from '@/ui/BuffBar';
+import { PartyStrip } from '@/ui/PartyStrip';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -1131,6 +1133,8 @@ async function main() {
 
   // ── HUD ───────────────────────────────────────────────────────────────────
   const hud = new HUD();
+  const buffBar    = new BuffBar();
+  const partyStrip = new PartyStrip();
 
   // ── Exterior interaction prompt ───────────────────────────────────────────
   // Reuses the same visual style as InteractableSystem's prompt.
@@ -1652,6 +1656,20 @@ async function main() {
     // Cooldown sweep overlays for action bar slots
     hud.setCooldowns(
       progression.getEquippedSlots().map(id => id ? spells.cooldownFraction(id) : null),
+    );
+
+    // Buff bar — tick and update
+    consumables.tickBuffs();
+    buffBar.update(consumables.activeBuffs);
+
+    // Party strip — follower HP chips
+    partyStrip.setMembers(
+      party.members.map((m, idx) => ({
+        name: `Follower ${idx + 1}`,
+        icon: '🟣',
+        hp: m.hp,
+        maxHp: m.maxHp,
+      })),
     );
 
     // 10. Render
