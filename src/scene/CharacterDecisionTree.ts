@@ -52,25 +52,30 @@ export interface ConversationResult {
 
 /** Maps CharacterId → the charManifest model ID string. */
 export const CHAR_MANIFEST_MAP: Record<CharacterId, string> = {
+  // ── Core adventurers ─────────────────────────────────────────────────────
   rogue:             'kaykit_adventurers/Rogue',
   rogue_hooded:      'kaykit_adventurers/Rogue_Hooded',
   mage:              'kaykit_adventurers/Mage',
-  human_warrior:     'kaykit_adventurers/Rogue',           // placeholder
-  human_paladin:     'kaykit_adventurers/Rogue_Hooded',    // placeholder
-  human_bard:        'kaykit_adventurers/Mage',            // placeholder
+  // ── Human class variants ─────────────────────────────────────────────────
+  human_warrior:     'fantasy_heroes/Knight',              // armoured fighter
+  human_paladin:     'fantasy_heroes/Paladin',             // dedicated paladin
+  human_bard:        'adventure/Adventurer',               // adventurer / performer
+  // ── Skeleton / undead ────────────────────────────────────────────────────
   skeleton_mage:     'kaykit_skeletons/Skeleton_Mage',
   skeleton_rogue:    'kaykit_skeletons/Skeleton_Rogue',
-  zombie:            'kaykit_skeletons/Skeleton_Rogue',    // placeholder
-  ghost:             'kaykit_skeletons/Skeleton_Mage',     // placeholder
-  mystery_undead:    'kaykit_skeletons/Skeleton_Rogue',    // placeholder
-  fox_rogue:         'kaykit_adventurers/Rogue',
-  fox_ranger:        'kaykit_adventurers/Rogue',           // placeholder
-  fox_mage:          'kaykit_adventurers/Mage',            // placeholder
-  fox_mysterious:    'kaykit_adventurers/Rogue_Hooded',    // placeholder
+  zombie:            'skeletons_free/Skeleton',            // shambling undead
+  ghost:             'kaykit_skeletons/Skeleton_Mage',     // ethereal caster
+  mystery_undead:    'fantasy_heroes/Necromancer',         // dark caster silhouette
+  // ── Fox folk ─────────────────────────────────────────────────────────────
+  fox_rogue:         'fox/fox',
+  fox_ranger:        'fox/fox',
+  fox_mage:          'fox/fox',
+  fox_mysterious:    'fox/fox',
+  // ── Slime forms ──────────────────────────────────────────────────────────
   slime:             'slime/Slime',
-  slime_arcane:      'slime/Slime',                        // placeholder
-  slime_philosopher: 'slime/Slime',                        // placeholder
-  slime_young:       'slime/Slime',                        // placeholder
+  slime_arcane:      'slime/Slime',
+  slime_philosopher: 'slime/Slime',
+  slime_young:       'slime/Slime',
 };
 
 /** Default lore display name per character. */
