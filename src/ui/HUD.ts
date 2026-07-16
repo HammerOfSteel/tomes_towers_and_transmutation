@@ -445,7 +445,41 @@ export class HUD {
     }
   }
 
+  /**
+   * Update the in-game clock widget (shown only in exterior mode).
+   * Pass null to hide it.
+   */
+  setTime(formatted: string | null): void {
+    if (!this._clockEl) {
+      // Lazy-create the clock widget
+      const el = document.createElement('div');
+      el.style.cssText = [
+        'position:fixed;top:10px;right:16px;',
+        'background:rgba(8,6,18,0.82);border:1px solid #2a1a4a;',
+        'border-radius:4px;padding:3px 10px;',
+        'color:#c0a0e0;font:12px monospace;letter-spacing:.08em;',
+        'pointer-events:none;z-index:500;',
+        'opacity:0;transition:opacity 0.3s;',
+      ].join('');
+      document.body.appendChild(el);
+      this._clockEl = el;
+    }
+    if (!formatted) {
+      this._clockEl.style.opacity = '0';
+    } else {
+      const h = Math.floor(parseFloat(formatted));
+      const icon = h >= 5 && h < 7 ? '🌅'
+                 : h >= 7 && h < 18 ? '☀️'
+                 : h >= 18 && h < 21 ? '🌇'
+                 : '🌙';
+      this._clockEl.textContent = `${icon} ${formatted}`;
+      this._clockEl.style.opacity = '1';
+    }
+  }
+  private _clockEl: HTMLDivElement | null = null;
+
   dispose(): void {
+    this._clockEl?.remove();
     this.root.remove();
     this.barRoot.remove();
     this._resRoot.remove();

@@ -1211,11 +1211,13 @@ async function main() {
 
       // 5. Room manager / overworld — enemy AI + door trigger checks
       if (gameMode === 'interior') {
+        hud.setTime(null);
         sceneManager.update(dt, player.group.position);
       } else if (overworld) {
         owEditor?.update();
         TimeSystem.instance.update(dt);
         _dayNight.update(TimeSystem.instance.hour);
+        hud.setTime(TimeSystem.instance.formatted);
         overworld.update(dt, false, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
