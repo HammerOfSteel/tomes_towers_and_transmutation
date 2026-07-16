@@ -56,6 +56,7 @@ import { TimeSystem } from '@/world/TimeSystem';
 import { DayNightSystem } from '@/rendering/DayNightSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
+import { SpellForge }   from '@/ui/SpellForge';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -360,6 +361,18 @@ async function main() {
 
   // Crafting station handler — open the shared CraftingUI with correct recipe set
   interactables.onCraftingStation = (type) => {
+    if (type === 'alchemy') {
+      // If two spells are equipped, offer fusion; otherwise open crafting
+      const slotA = progression.getEquippedSlot(0);
+      const slotB = progression.getEquippedSlot(1);
+      if (slotA && slotB && slotA !== slotB) {
+        SpellForge.open(slotA, slotB, progression, spells, (hybridId) => {
+          // Equip the new hybrid into slot 3 automatically
+          progression.equipSpell(hybridId, 2);
+        });
+        return;
+      }
+    }
     craftingUI.toggle(type);
   };
   craftingUI.onCraft = (recipe) => {

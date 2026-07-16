@@ -44,6 +44,13 @@ const SPELL_DEFS: Record<string, SpellDef> = {
 const FALLBACK_DEF = SPELL_DEFS.magic_bolt;
 const PROJECTILE_LIFETIME = 3.0;
 
+/** Blend two hex colours by averaging each RGB channel. */
+function _blendColor(a: number, b: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  return (((ar + br) >> 1) << 16) | (((ag + bg) >> 1) << 8) | ((ab + bb) >> 1);
+}
+
 // ── Cast options ──────────────────────────────────────────────────────────────
 
 export interface CastOptions {
@@ -955,6 +962,29 @@ export class SpellSystem {
   private readonly _cooldowns = new Map<string, CooldownEntry>();
   /** When true all cooldowns are skipped — set by the dev panel. */
   instantCooldowns = false;
+
+  /**
+   * Register a hybrid spell blended from two base spells.
+   * Called by SpellForge when the player fuses two spells at a cauldron.
+   */
+  _registerHybridSpell(id: string, _name: string, baseA: string, baseB: string): void {
+    const a = (SPELL_DEFS[baseA] ?? FALLBACK_DEF) as SpellDef;
+    const b = (SPELL_DEFS[baseB] ?? FALLBACK_DEF) as SpellDef;
+    // Blend properties; type is taken from baseA for behaviour consistency
+    SPELL_DEFS[id] = {
+      type:     a.type,
+      color:    _blendColor(a.color, b.color),
+      emissive: _blendColor(a.emissive, b.emissive),
+      damage:   Math.round((a.damage + b.damage) * 0.7),
+      speed:    (a.speed + b.speed) / 2,
+      radius:   (a.radius + b.radius) / 2,
+      cooldown: (a.cooldown + b.cooldown) / 2,
+      bounces:      a.bounces   !== undefined ? Math.ceil((a.bounces + (b.bounces ?? 0)) / 2) : undefined,
+      dotDuration:  a.dotDuration  !== undefined ? (a.dotDuration + (b.dotDuration ?? 0)) / 2 : undefined,
+      aoeVfxDuration: a.aoeVfxDuration !== undefined ? (a.aoeVfxDuration + (b.aoeVfxDuration ?? 0)) / 2 : undefined,
+      buffDuration: a.buffDuration !== undefined ? (a.buffDuration + (b.buffDuration ?? 0)) / 2 : undefined,
+    };
+  }
   /** Latest PhysicsWorld reference, stored each update() for use in _fireAoe. */
   private _physics?: PhysicsWorld;
 
