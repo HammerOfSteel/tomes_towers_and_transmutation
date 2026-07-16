@@ -60,11 +60,11 @@ Enabled by **Dev Mode** toggle in Settings (amber UI).
 
 `src/ui/CharacterCreation.ts` still says "CharacterCreation" but it's purely an NPC/enemy DNA editor now.
 
-- [ ] Rename file: `src/ui/CharacterCreation.ts` → `src/ui/DNACreator.ts`
-- [ ] Rename class: `CharacterCreation` → `DNACreator`
-- [ ] Update imports: `main.ts` imports `CharacterConfig` from it; `CharacterCreationV2.ts` imports types
-- [ ] Update DevSandbox if it references the old name
-- [ ] `CharacterConfig` and `StartingBoon` types can stay in the same file (or move to a shared types file)
+- [x] Rename file: `src/ui/CharacterCreation.ts` → `src/ui/DNACreator.ts`
+- [x] Rename class: `CharacterCreation` → `DNACreator`
+- [x] Update imports: `main.ts` imports `CharacterConfig` from it; `CharacterCreationV2.ts` imports types
+- [x] Update DevSandbox if it references the old name
+- [x] `CharacterConfig` and `StartingBoon` types can stay in the same file (or move to a shared types file)
 
 ---
 
@@ -89,8 +89,8 @@ The `StoryRunner` advances them automatically via `tick()`.
 - [x] RNG character name generated from species/class pool
 
 ### Gaps (blocking or near-blocking)
-- [ ] **Intro toast duration** — prologue intro text (3 sentences) disappears in 5s; needs 8–10s or a modal
-- [ ] **`survive_wave` semantic** — 3 kills ≠ "explore floor"; replace with floor-transition trigger (new beat type `explore_floor` fires when player uses a staircase)
+- [x] **Intro toast duration** — now 9 s (fades at 9 s, removed at 10.2 s)
+- [x] **`explore_floor` beat type** — fulfils when player visits a new floor index; SceneManager tracks unique floors visited; all 12 prologue beats (p1/p2/p3 across 4 species) now use `explore_floor`
 - [ ] **Tower starting room** — player spawns in `cell_start` (a generic cell); story says "you wake in a study"; `floor_foyer` would be a better start room for new games from the campfire intro
 - [ ] **Locked front door** — story says the door is locked; no locked-door mechanic exists yet; needs a `LockedDoor` interactable that requires the master key item
 - [ ] **Master key item** — no item system for keys yet; `clear_dungeon` is used as a proxy; needs an `interact_key` beat type + key item in basement
@@ -121,7 +121,7 @@ These work but need the same quality pass as the prologue once the prologue is s
 
 ### Interactable System Improvements
 - [ ] `interact_key` beat type — pickup interactable spawns a key item, beat fulfils on pickup
-- [ ] `explore_floor` beat type — fulfils on staircase use (floor index change in SceneManager)
+- [x] `explore_floor` beat type — fulfils on staircase use (floor index change in SceneManager)
 - [ ] `read_lore` beat type — fulfils when a specific book is read (BookReader fires)
 - [ ] Locked door fixture — requires named key item to open; `LockedDoor` interactable
 

@@ -53,6 +53,10 @@ export class SceneManager {
   // Kill tracking across rooms
   private accumulatedKills = 0;
 
+  // Unique floor indices visited this session (used by the story runner's
+  // explore_floor beat type).
+  private _visitedFloorIndices = new Set<number>();
+
   // Cleared rooms — rooms where every spawned enemy was defeated.  Persisted
   // across sessions in localStorage so enemies don't respawn on revisit.
   private readonly CLEARED_KEY = 'tt3_cleared_rooms';
@@ -283,6 +287,16 @@ export class SceneManager {
     try { localStorage.removeItem(this.CLEARED_KEY); } catch { /* ignore */ }
   }
 
+  /** Reset visited-floor tracking (call when starting a new game). */
+  resetVisitedFloors(): void {
+    this._visitedFloorIndices.clear();
+  }
+
+  /** Number of unique floor indices the player has visited this session. */
+  get uniqueFloorsVisited(): number {
+    return this._visitedFloorIndices.size;
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   private _loadClearedRooms(): Set<string> {
@@ -335,6 +349,7 @@ export class SceneManager {
     this.currentRoom = renderBlueprint(bp, this.physics);
     this.currentBpId = newId;
     this._currentFloor = bp.floor;
+    this._visitedFloorIndices.add(bp.floor);
     this.scene.add(this.currentRoom.group);
 
     // ── Spawn enemies (skip if room was previously cleared) ──────────────

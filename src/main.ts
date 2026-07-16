@@ -511,6 +511,7 @@ async function main() {
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     const plan = generateTower(currentSeed);
     sceneManager.resetCleared();
+    sceneManager.resetVisitedFloors();
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
 
@@ -573,6 +574,7 @@ async function main() {
         killCount:            sceneManager.killCount,
         dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
         itemsCraftedCount:    _craftedItemCount,
+        floorsVisited:        sceneManager.uniqueFloorsVisited,
         playerCol:            0,
         playerRow:            0,
         nearSettlements:      [],
@@ -1382,6 +1384,7 @@ async function main() {
               killCount:            sceneManager.killCount,
               dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
               itemsCraftedCount:    _craftedItemCount,
+              floorsVisited:        sceneManager.uniqueFloorsVisited,
               playerCol:            _gc.col,
               playerRow:            _gc.row,
               nearSettlements:      _nearby,

@@ -35,6 +35,8 @@ export interface StoryTickState {
   dungeonsClearedCount: number;
   /** Total items crafted since game start. */
   itemsCraftedCount:    number;
+  /** Unique floor indices visited this session (tracked by SceneManager). */
+  floorsVisited:        number;
   /** Player's current overworld tile column (0 when in interior). */
   playerCol:            number;
   /** Player's current overworld tile row (0 when in interior). */
@@ -65,6 +67,7 @@ export class StoryRunner {
   private _beatStartKills    = 0;
   private _beatStartDungeons = 0;
   private _beatStartCrafts   = 0;
+  private _beatStartFloors   = 0;
 
   constructor(characterId: CharacterId, questLog: QuestLog) {
     this._line = getStoryLine(characterId);
@@ -124,6 +127,7 @@ export class StoryRunner {
     this._beatStartKills    = state.killCount;
     this._beatStartDungeons = state.dungeonsClearedCount;
     this._beatStartCrafts   = state.itemsCraftedCount;
+    this._beatStartFloors   = state.floorsVisited;
 
     this._log.addQuest(this._beatToQuestDef(beat, this._currentAct()!));
   }
@@ -168,6 +172,12 @@ export class StoryRunner {
         // progresses until WaveManager is implemented.
         // Once WaveManager exists, it can call story.forceCompleteBeat().
         return (state.killCount - this._beatStartKills) >= 3;
+
+      case 'explore_floor':
+        // Fulfils when the player visits a floor index they haven't seen
+        // before this beat was activated.  SceneManager.uniqueFloorsVisited
+        // increments each time a new bp.floor is entered.
+        return (state.floorsVisited - this._beatStartFloors) >= 1;
     }
   }
 

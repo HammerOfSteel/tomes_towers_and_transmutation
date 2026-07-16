@@ -9,6 +9,7 @@
  *   clear_dungeon   — clear any dungeon floor (tracked by SceneManager)
  *   reach_location  — get within 6 tiles of (col, row) on the overworld
  *   craft_item      — craft N items at any crafting station
+ *   explore_floor   — visit a floor index not seen before this beat started (SceneManager.uniqueFloorsVisited)
  *   survive_wave    — placeholder: fulfilled immediately until WaveManager exists
  *
  * Species → CharacterId mapping:
@@ -29,6 +30,7 @@ export type StoryObjectiveType =
   | 'clear_dungeon'
   | 'reach_location'
   | 'craft_item'
+  | 'explore_floor'
   | 'survive_wave';
 
 export interface StoryObjective {
@@ -109,7 +111,7 @@ const HUMAN_STORY: StoryQuestLine = {
           id:             'tower_p1',
           title:          'Hunger Sharpens the Mind',
           description:    "You are hungry, restless, and somewhat annoyed. Explore the ground floor. There must be a pantry key hidden somewhere in this study — a wizard this organised would not leave food inaccessible.",
-          objective:      { type: 'survive_wave', targetLabel: 'Explore the ground floor' },
+          objective:      { type: 'explore_floor', targetLabel: 'Explore the ground floor' },
           completionText: 'You find a small iron key tucked behind a loose stone. The pantry. Finally.',
           rewardXp:       30,
           rewardGold:     0,
@@ -118,7 +120,7 @@ const HUMAN_STORY: StoryQuestLine = {
           id:             'tower_p2',
           title:          'A View from Somewhere Higher',
           description:    "The ground floor is well-stocked but suffocating. There is a locked door at the top of the first staircase. Find the floor key — it must be in the study.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the upper floor key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the upper floor key' },
           completionText: "A brass key behind the bookcase. The upper floor holds a library — and a window with a view of the world outside.",
           rewardXp:       30,
           rewardGold:     0,
@@ -127,7 +129,7 @@ const HUMAN_STORY: StoryQuestLine = {
           id:             'tower_p3',
           title:          'The Wizard\'s Warning',
           description:    "In the library you find a note pinned to the telescope: 'Do not go to the basement.' This is not a request you intend to honour. The workshop floor is next — and the basement key must be up here somewhere.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the workshop key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the workshop key' },
           completionText: 'A tarnished key between two thick volumes of arcane theory. The workshop is unlocked.',
           rewardXp:       40,
           rewardGold:     0,
@@ -262,7 +264,7 @@ const UNDEAD_STORY: StoryQuestLine = {
           id:             'tower_p1',
           title:          'The Hollow Hunger',
           description:    "You do not require food in the traditional sense. But there is something in this tower drawing you — a wrongness, a residue of old magic. Explore the ground floor. Find what anchors you here.",
-          objective:      { type: 'survive_wave', targetLabel: 'Explore the ground floor' },
+          objective:      { type: 'explore_floor', targetLabel: 'Explore the ground floor' },
           completionText: "A binding circle, barely visible under the rug. Subtle. Professional. You are impressed despite yourself.",
           rewardXp:       30,
           rewardGold:     0,
@@ -271,7 +273,7 @@ const UNDEAD_STORY: StoryQuestLine = {
           id:             'tower_p2',
           title:          'Above the Binding',
           description:    "The upper floors are outside the binding's range. A locked door at the first staircase. The key is somewhere in this study — find it.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the upper floor key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the upper floor key' },
           completionText: "The library is rich with arcane texts. A note on the telescope reads: 'Do not go to the basement.' You find this suspicious.",
           rewardXp:       30,
           rewardGold:     0,
@@ -280,7 +282,7 @@ const UNDEAD_STORY: StoryQuestLine = {
           id:             'tower_p3',
           title:          'The Workshop',
           description:    "The workshop floor holds tools, half-finished experiments, and a door to the basement. The workshop key was hidden badly — behind a skull, of all things. At least someone has taste.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the workshop key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the workshop key' },
           completionText: "The basement door stands before you. Every instinct — even the undead ones — says something important is down there.",
           rewardXp:       40,
           rewardGold:     0,
@@ -415,7 +417,7 @@ const VULPERIA_STORY: StoryQuestLine = {
           id:             'tower_p1',
           title:          'Map the Territory',
           description:    "A Vulperia does not panic. A Vulperia assesses. The ground floor is your starting point. Find the pantry key — hidden somewhere in the study — and establish what resources you actually have.",
-          objective:      { type: 'survive_wave', targetLabel: 'Map the ground floor' },
+          objective:      { type: 'explore_floor', targetLabel: 'Map the ground floor' },
           completionText: "Well-stocked. Thought-out. Whoever put you here planned for a long stay. This is either comforting or alarming, depending on their intentions.",
           rewardXp:       30,
           rewardGold:     0,
@@ -424,7 +426,7 @@ const VULPERIA_STORY: StoryQuestLine = {
           id:             'tower_p2',
           title:          'Higher Ground',
           description:    "The first staircase is locked. The key is in this study — you can smell the iron. Find it, get above the fog layer, and get a proper view of what is outside.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the upper floor key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the upper floor key' },
           completionText: "The library. A telescope. And a note in controlled handwriting: 'Do not go to the basement.' The wizard has very specific rules. Noted.",
           rewardXp:       30,
           rewardGold:     0,
@@ -433,7 +435,7 @@ const VULPERIA_STORY: StoryQuestLine = {
           id:             'tower_p3',
           title:          'The Workshop',
           description:    "The workshop must hold the basement key. A Vulperia who ignores a note saying 'do not enter' is just following instinct. Find the key.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find the workshop key' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find the workshop key' },
           completionText: "The key was tucked inside a glove. An amateur's hiding spot. The workshop is open. The basement door waits.",
           rewardXp:       40,
           rewardGold:     0,
@@ -568,7 +570,7 @@ const SLIME_STORY: StoryQuestLine = {
           id:             'tower_p1',
           title:          'The Absorbing Problem of Hunger',
           description:    "You are hungry. You absorbed a candle and a bootlace. Neither helped. There is presumably food somewhere on the ground floor. Explore. Try not to absorb anything important.",
-          objective:      { type: 'survive_wave', targetLabel: 'Find something edible' },
+          objective:      { type: 'explore_floor', targetLabel: 'Find something edible' },
           completionText: "You found the pantry key inside a jar of pickled... something. You ate the jar. And the pickles. You feel much better.",
           rewardXp:       30,
           rewardGold:     0,
@@ -577,7 +579,7 @@ const SLIME_STORY: StoryQuestLine = {
           id:             'tower_p2',
           title:          'Curiosity Is an Extremely Solvent Quality',
           description:    "The first staircase has a locked door. You find a key hidden in the study — you absorbed it by accident and then carefully reconstituted it. Progress. The library above has a window.",
-          objective:      { type: 'survive_wave', targetLabel: 'Reach the library floor' },
+          objective:      { type: 'explore_floor', targetLabel: 'Reach the library floor' },
           completionText: "The library is magnificent. You absorbed one page of a book before you could stop yourself. It tasted of advanced transmutation theory. A note on the telescope says 'Do not go to the basement.' You have already forgotten reading it.",
           rewardXp:       30,
           rewardGold:     0,
@@ -586,7 +588,7 @@ const SLIME_STORY: StoryQuestLine = {
           id:             'tower_p3',
           title:          'The Workshop Smells Interesting',
           description:    "The workshop floor is full of interesting substances. You find the workshop key and resist absorbing the entire workbench. Mostly. The basement calls.",
-          objective:      { type: 'survive_wave', targetLabel: 'Explore the workshop' },
+          objective:      { type: 'explore_floor', targetLabel: 'Explore the workshop' },
           completionText: "You may have accidentally absorbed a small vial of something that was labelled 'DO NOT'. You feel fizzy. In a good way.",
           rewardXp:       40,
           rewardGold:     0,
