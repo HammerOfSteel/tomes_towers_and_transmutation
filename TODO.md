@@ -84,11 +84,11 @@ The campfire conversation produces a `CharacterId`. Several IDs use placeholder 
 - [ ] Verify all 19 `CharacterId`s animate correctly (idle, walk) via shared KayKit rig
 - [ ] Replace the two placeholder `[E]` prompt scripts with proper model files in `CHAR_MANIFEST_MAP`
 
-### Campfire Scene Polish
-- [ ] Actual animated fire mesh / particle system in the 3D intro scene (currently geometry only)
-- [ ] Ambient firefly / ember particles floating around the campfire
-- [ ] Subtle camera drift during wizard speech (lazy follow, no snap)
-- [ ] Wizard gestures on key speech moments (idle anim swap or FK nudge)
+### Campfire Scene Polish ✅
+- [x] Actual animated fire mesh / particle system — scale-shrink SphereGeometry flames + flicker PointLight (already in NewGameScene)
+- [x] Ambient ember particles floating around the campfire (20 BoxGeometry embers drifting upward)
+- [x] Subtle camera drift — breathe sine + spring nod + mouse-look lazy follow (already in NewGameScene)
+- [x] Wizard gestures on speech moments — `triggerGesture()` crossfades to Interact/Wave/Talk clip (LoopOnce) then back to Idle
 
 ### Visual Quality Pass (Phase 7.5 — abbreviated scope)
 Full 7.5 spec is preserved below for reference; prioritised subset:
