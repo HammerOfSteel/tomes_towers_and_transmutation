@@ -90,13 +90,13 @@ The campfire conversation produces a `CharacterId`. Several IDs use placeholder 
 - [x] Subtle camera drift — breathe sine + spring nod + mouse-look lazy follow (already in NewGameScene)
 - [x] Wizard gestures on speech moments — `triggerGesture()` crossfades to Interact/Wave/Talk clip (LoopOnce) then back to Idle
 
-### Visual Quality Pass (Phase 7.5 — abbreviated scope)
+### Visual Quality Pass (Phase 7.5 — abbreviated scope) ✅
 Full 7.5 spec is preserved below for reference; prioritised subset:
-- [ ] `ACESFilmicToneMapping` + exposure 1.2 on the main renderer (zero cost, high impact)
-- [ ] `HemisphereLight` warm/cool split replacing flat ambient in dungeon + overworld
-- [ ] Per-torch `PointLight` flicker in tower rooms
-- [ ] `EffectComposer`: bloom on emissives + subtle vignette (settings toggle, off by default)
-- [ ] Procedural skybox for the overworld night sky (stars, moon, no external textures)
+- [x] `ACESFilmicToneMapping` + exposure 1.2 on the main renderer
+- [x] `HemisphereLight` warm/cool split replacing flat ambient
+- [x] Per-torch `PointLight` flicker in tower rooms (LightingSystem.ts)
+- [x] `EffectComposer` with BloomEffect on emissives
+- [x] Procedural skybox — 800-star canvas dome + twinkling + moon billboard (ProceduralSkybox.ts)
 - [ ] Slime velocity-stretch shader (squash-and-stretch on landing)
 - [ ] Idle breathing on all FK-rigged characters
 
