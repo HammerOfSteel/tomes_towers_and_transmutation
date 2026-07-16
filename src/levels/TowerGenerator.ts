@@ -167,6 +167,16 @@ function buildChamber(
     },
   ];
 
+  // Optional second chamber fixture (e.g. library telescope) — placed east of centre
+  if (def.chamberExtraFixture) {
+    interactables.push({
+      x: CX + 3, z: CZ_CENTER,
+      type:       def.chamberExtraFixture.type,
+      content:    def.chamberExtraFixture.content,
+      spellUnlock: def.chamberExtraFixture.spellUnlock,
+    });
+  }
+
   // Decorative bookshelf ring (optional) — 4 shelves close to cardinal walls
   if (def.chamberBookshelves) {
     for (const s of BOOKSHELF_RING) {

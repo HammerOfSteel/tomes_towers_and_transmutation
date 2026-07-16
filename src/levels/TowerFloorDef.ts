@@ -44,6 +44,12 @@ export interface TowerFloorDef {
    * Index 0=NE-east, 1=SE-east, 2=NW-west, 3=SW-west.
    */
   exteriorExitSlot?: number;
+  /**
+   * Optional second interactable placed in the chamber at a fixed secondary
+   * position (east of centre).  Use for narrative props that must be in the
+   * main hall rather than a side room (e.g. the library telescope).
+   */
+  chamberExtraFixture?: FixtureDef;
 }
 
 export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
@@ -110,6 +116,19 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
     sideRoomProps: ['bookshelf', 'lectern'],
     chamberPillars: true,
     chamberBookshelves: true,
+    chamberExtraFixture: {
+      type: 'telescope',
+      content:
+        'A note is pinned to the eyepiece with a wax seal.\n\n' +
+        '"Do not go to the basement.\n\n' +
+        'I am asking you politely, which is unusual for me. The basement is ' +
+        'not a place for guests. It has never been a place for guests. ' +
+        'If you are reading this, you have already done considerably more ' +
+        'exploring than I intended.\n\n' +
+        'Put the note down. Go back to your room. The view from this window ' +
+        'is very nice. Focus on that.\n\n' +
+        '— Arcanist Solmor"',
+    },
   },
 
   // ── Floor 2 — The Fermentation Level ────────────────────────────────────────

@@ -148,7 +148,7 @@ const HUMAN_STORY: StoryQuestLine = {
     {
       id:    'human_act1',
       title: 'Act I — Rumours of War',
-      intro: 'Word reaches you: raiders are massing. If anyone is going to do something, it is apparently you.',,
+        intro: 'Word reaches you: raiders are massing. If anyone is going to do something, it is apparently you.',
       beats: [
         {
           id:             'human_a1b1',

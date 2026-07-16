@@ -319,7 +319,17 @@ async function main() {
     sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
   }
 
-  sceneManager.onExitTrigger = () => switchToExterior();
+  sceneManager.onExitTrigger = () => {
+    // Block the front door while the tower prologue is active.
+    if (_storyRunner && !_towerPrologueDone && gameMode === 'interior') {
+      _storyToast(
+        'The front door is sealed with heavy magic. You need the master key — it must be in the basement.',
+        'beat',
+      );
+      return;
+    }
+    switchToExterior();
+  };
 
   // ── Level editor ──────────────────────────────────────────────────────────
   const editMode = new EditMode(scene, cameraRig.camera, physics, sceneManager);
@@ -331,6 +341,8 @@ async function main() {
   let _activeDungeonId: number | null = null;
   let _questCheckTimer = 0;
   let _storyRunner: StoryRunner | null = null;
+  /** True once the tower prologue act completes — unlocks the front door. */
+  let _towerPrologueDone = false;
   let _craftedItemCount = 0;
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
@@ -512,6 +524,7 @@ async function main() {
     const plan = generateTower(currentSeed);
     sceneManager.resetCleared();
     sceneManager.resetVisitedFloors();
+    _towerPrologueDone = false;
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
 
@@ -563,8 +576,12 @@ async function main() {
         _storyToast(text, 'beat');
         objTracker.clear(); // beat done — next beat will set a new one
       };
-      _storyRunner.onActBegin = (_title, intro) => {
+      _storyRunner.onActBegin = (title, intro) => {
         _storyToast(intro, 'act');
+        // The prologue ends when the first non-prologue act begins.
+        // Unlocking here means the front door opens exactly when the story
+        // says the player found the master key.
+        if (title !== 'Prologue — The Tower') _towerPrologueDone = true;
       };
       _storyRunner.onStoryComplete = () => {
         _storyToast('Your story is complete. The world will remember this — probably.', 'act');

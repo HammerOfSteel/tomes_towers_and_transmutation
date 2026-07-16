@@ -92,11 +92,11 @@ The `StoryRunner` advances them automatically via `tick()`.
 - [x] **Intro toast duration** — now 9 s (fades at 9 s, removed at 10.2 s)
 - [x] **`explore_floor` beat type** — fulfils when player visits a new floor index; SceneManager tracks unique floors visited; all 12 prologue beats (p1/p2/p3 across 4 species) now use `explore_floor`
 - [ ] **Tower starting room** — player spawns in `cell_start` (a generic cell); story says "you wake in a study"; `floor_foyer` would be a better start room for new games from the campfire intro
-- [ ] **Locked front door** — story says the door is locked; no locked-door mechanic exists yet; needs a `LockedDoor` interactable that requires the master key item
+- [x] **Locked front door** — `_towerPrologueDone` flag blocks `onExitTrigger` during prologue; unlocks when Act I begins (`onActBegin` title ≠ prologue)
 - [ ] **Master key item** — no item system for keys yet; `clear_dungeon` is used as a proxy; needs an `interact_key` beat type + key item in basement
 
 ### Nice-to-have (not blocking)
-- [ ] Wizard's note on library telescope fixture: "Do not go to the basement"
+- [x] Wizard's note on library telescope fixture: "Do not go to the basement" — `chamberExtraFixture` on `floor_library`; signed Arcanist Solmor
 - [ ] Binding circle decal on ground floor (undead species: special lore message on interact)
 - [ ] Candidate profile page readable in basement (wizard's journals as bookshelf content)
 - [ ] Per-species flavour text on staircase transition ("You find the key. The upper floor smells of old paper.")
