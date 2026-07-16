@@ -40,6 +40,12 @@ export interface CharacterConfig {
    * Only present when the game was started via NewGameFlow.
    */
   statBonuses?: import('@/scene/CharacterDecisionTree').StatBonus[];
+  /**
+   * The CharacterId chosen during the campfire conversation.
+   * Used to start the correct species story quest line.
+   * Only present when the game was started via NewGameFlow.
+   */
+  characterId?: import('@/scene/CharacterDecisionTree').CharacterId;
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────

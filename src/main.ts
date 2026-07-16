@@ -59,6 +59,7 @@ import { AudioSystem }   from '@/audio/AudioSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
+import { StoryRunner }  from '@/world/StoryRunner';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -313,6 +314,8 @@ async function main() {
   const discoveryTracker = new DiscoveryTracker();
   let _activeDungeonId: number | null = null;
   let _questCheckTimer = 0;
+  let _storyRunner: StoryRunner | null = null;
+  let _craftedItemCount = 0;
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
   const talentSystem  = new TalentSystem();
@@ -382,6 +385,7 @@ async function main() {
     craftingUI.toggle(type);
   };
   craftingUI.onCraft = (recipe) => {
+    _craftedItemCount++;
     // Award result to inventory or progression based on result kind
     if (recipe.result.kind === 'blueprint') {
       // Store blueprint ID for construction mode to consume
@@ -498,6 +502,32 @@ async function main() {
         console.error('[main] failed to load asset model:', e));
     } else if (cfg?.dna) {
       player.applyDNA(cfg.dna);
+    }
+
+    // ── Start story quest line ─────────────────────────────────────────────
+    _storyRunner = null;
+    _craftedItemCount = 0;
+    if (cfg?.characterId) {
+      _storyRunner = new StoryRunner(cfg.characterId, questLog);
+      _storyRunner.onBeatComplete = (text, xp, gold) => {
+        progression.grantXP(xp);
+        if (gold > 0) inventory.add('gold', gold);
+        _storyToast(text, 'beat');
+      };
+      _storyRunner.onActBegin = (_title, intro) => {
+        _storyToast(intro, 'act');
+      };
+      _storyRunner.onStoryComplete = () => {
+        _storyToast('Your story is complete. The world will remember this — probably.', 'act');
+      };
+      _storyRunner.start({
+        killCount:            sceneManager.killCount,
+        dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
+        itemsCraftedCount:    _craftedItemCount,
+        playerCol:            0,
+        playerRow:            0,
+        nearSettlements:      [],
+      });
     }
 
     gameLoop.start();
@@ -762,6 +792,37 @@ async function main() {
       },
     });
     _sandboxUi.show();
+  }
+
+  // ── Story toast ──────────────────────────────────────────────────────────
+  function _storyToast(text: string, kind: 'beat' | 'act'): void {
+    const el = document.createElement('div');
+    const isBeat = kind === 'beat';
+    Object.assign(el.style, {
+      position:   'fixed',
+      bottom:     isBeat ? '90px' : '50%',
+      left:       '50%',
+      transform:  isBeat ? 'translateX(-50%)' : 'translate(-50%, 50%)',
+      maxWidth:   '480px',
+      padding:    isBeat ? '10px 20px' : '16px 28px',
+      background: isBeat ? 'rgba(20,14,6,0.88)' : 'rgba(12,8,3,0.94)',
+      border:     `1px solid ${isBeat ? '#5a3a1a' : '#c8963c'}`,
+      borderRadius: '4px',
+      color:      isBeat ? '#cbbf9a' : '#e8d4a0',
+      fontFamily: isBeat ? 'Georgia, serif' : "'Cinzel', serif",
+      fontSize:   isBeat ? '13px' : '15px',
+      lineHeight: '1.5',
+      textAlign:  'center',
+      zIndex:     '500',
+      pointerEvents: 'none',
+      opacity:    '1',
+      transition: 'opacity 1.2s ease',
+      boxShadow:  isBeat ? 'none' : '0 0 30px rgba(200,150,60,0.25)',
+    });
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; }, isBeat ? 3500 : 5000);
+    setTimeout(() => { el.remove(); },            isBeat ? 4700 : 6200);
   }
 
   const mainMenu = new MainMenu({
@@ -1245,6 +1306,19 @@ async function main() {
                 questLog.getActive().map(aq => ({ col: aq.target.col, row: aq.target.row })),
               );
             }
+          }
+
+          // Story runner tick (same 1 Hz throttle is fine)
+          if (_storyRunner) {
+            const _nearby: string[] = []; // settlement proximity — extended when OverworldScene exposes getSettlementsNear()
+            _storyRunner.tick({
+              killCount:            sceneManager.killCount,
+              dungeonsClearedCount: discoveryTracker.clearedDungeons.size,
+              itemsCraftedCount:    _craftedItemCount,
+              playerCol:            _gc.col,
+              playerRow:            _gc.row,
+              nearSettlements:      _nearby,
+            });
           }
         }
 

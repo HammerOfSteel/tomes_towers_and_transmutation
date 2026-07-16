@@ -131,6 +131,7 @@ export class NewGameFlow {
       dna:         { ...DEFAULT_PLAYER_DNA },
       assetModel:  assetModel ?? undefined,
       statBonuses: result.statBonuses,
+      characterId: result.characterId,
     };
 
     return cfg;
