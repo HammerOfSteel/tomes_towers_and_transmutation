@@ -848,13 +848,14 @@ export class SlimeEnemy implements Damageable {
 
   private static buildMesh(): { group: THREE.Group; bodyMesh: THREE.Mesh } {
     const group = new THREE.Group();
-    // Flattened sphere — scratch mesh for state tracking; NOT added to group
-    // (rendering is done via InstancedMesh managed by OverworldScene).
+    // Flattened sphere — individual mesh for dungeon rendering.
+    // Overworld rendering uses InstancedMesh (writeToIM); those groups are never
+    // added to the scene so adding bodyMesh here is safe for both contexts.
     const geo = new THREE.SphereGeometry(SLIME_RADIUS, 12, 8);
     const mat = new THREE.MeshLambertMaterial({ color: SLIME_COLOR });
     const bodyMesh = new THREE.Mesh(geo, mat);
     bodyMesh.scale.y = 0.55;
-    // bodyMesh is intentionally NOT added to group — IM handles rendering.
+    group.add(bodyMesh);
     return { group, bodyMesh };
   }
 }

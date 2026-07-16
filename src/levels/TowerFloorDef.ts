@@ -84,7 +84,9 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
         'I will explain everything when I return.\n\n' +
         '— S."',
     },
-  }, ───────────────────────────────────────────
+  },
+
+  // ── Floor 0 — Grand Entrance Hall ───────────────────────────────────────────
   {
     id: 'floor_foyer',
     floorIndex: 0,
