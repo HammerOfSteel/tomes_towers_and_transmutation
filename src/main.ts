@@ -199,6 +199,12 @@ async function main() {
     owEditor?.dispose();
     owEditor = new OverworldEditor(scene, cameraRig.camera, canvas);
     const ow = new OverworldScene(scene, physics, player, worldData);
+    // Inject already-cleared camps so they aren't re-spawned
+    ow.clearedCamps = discoveryTracker.clearedCamps;
+    ow.onCampCleared = (wx, wz) => {
+      discoveryTracker.markCampCleared(wx, wz);
+      discoveryTracker.saveToStorage();
+    };
     ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
     ow.onQuestGiven = (quest) => {
       questLog.addQuest(quest);

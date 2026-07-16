@@ -150,6 +150,10 @@ export class OverworldScene {
   onQuestGiven?: (quest: import('@/world/QuestDef').QuestDef) => void;
   /** Called when [E] is pressed on a merchant/innkeeper NPC. */
   onMerchant?: (name: string) => void;
+  /** Called when a camp (by center position) is fully cleared. */
+  onCampCleared?: (wx: number, wz: number) => void;
+  /** Set of already-cleared camp keys ("wx:wz") — injected before enter(). */
+  clearedCamps: Set<string> = new Set();
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
