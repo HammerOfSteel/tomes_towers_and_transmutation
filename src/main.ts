@@ -54,6 +54,7 @@ import { LightingSystem } from '@/rendering/LightingSystem';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { TimeSystem } from '@/world/TimeSystem';
 import { DayNightSystem } from '@/rendering/DayNightSystem';
+import { WeatherSystem } from '@/world/WeatherSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
@@ -113,7 +114,8 @@ async function main() {
   scene.add(keyLight);
 
   // ── Day/night cycle — lerps hemi + keyLight + fog by TimeSystem.hour ──────
-  const _dayNight = new DayNightSystem(hemi, keyLight, scene);
+  const _dayNight  = new DayNightSystem(hemi, keyLight, scene);
+  const _weatherSys = new WeatherSystem(scene, cameraRig.camera);
 
   // ── Floor ─────────────────────────────────────────────────────────────────
   // Floor and room geometry are now managed by SceneManager / BlueprintRenderer.
@@ -279,6 +281,7 @@ async function main() {
     }
     gameMode = 'exterior';
     overworld.enter();
+    _weatherSys.setActive(true);
     minimap?.show();
     // Spawn just south of the tower door, high enough that the KCC capsule
     // starts above the heightfield surface and falls cleanly to ground.
@@ -289,6 +292,7 @@ async function main() {
 
   function switchToInterior(roomId?: string): void {
     overworld?.exit();
+    _weatherSys.setActive(false);
     _cancelHarvest();
     gameMode = 'interior';
     minimap?.hide();
@@ -1218,6 +1222,8 @@ async function main() {
         TimeSystem.instance.update(dt);
         _dayNight.update(TimeSystem.instance.hour);
         hud.setTime(TimeSystem.instance.formatted);
+        const _dayNum = Math.floor(TimeSystem.instance.hour / 24);
+        _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         overworld.update(dt, false, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
