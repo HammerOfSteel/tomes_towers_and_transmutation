@@ -12,6 +12,7 @@
 
 import type { Inventory } from '@/core/Inventory';
 import type { ResourceType } from '@/core/Inventory';
+import { injectHudTheme } from './hudTheme';
 
 interface ShopItem {
   label: string;
@@ -35,9 +36,11 @@ export const MerchantUI = {
 
   open(merchantName: string, inventory: Inventory): void {
     this.close();
+    injectHudTheme();
 
     const panel = document.createElement('div');
     panel.id = 'merchant-ui';
+    panel.className = 'hud-panel hud-panel--warm';
     Object.assign(panel.style, {
       position:    'fixed',
       top:         '50%',
@@ -45,12 +48,6 @@ export const MerchantUI = {
       transform:   'translate(-50%, -50%)',
       width:       '400px',
       maxWidth:    '92vw',
-      background:  'linear-gradient(160deg, #1a1008 0%, #0e0a04 100%)',
-      border:      '1px solid #6a4a1a',
-      borderRadius:'6px',
-      boxShadow:   '0 8px 40px rgba(0,0,0,0.9)',
-      color:       '#e8d4a0',
-      fontFamily:  'Georgia, serif',
       fontSize:    '14px',
       zIndex:      '210',
       userSelect:  'none',

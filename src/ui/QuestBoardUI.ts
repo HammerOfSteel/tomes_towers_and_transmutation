@@ -14,6 +14,7 @@
 import type { QuestLog } from '@/ui/QuestLog';
 import { generateQuest } from '@/world/QuestDef';
 import type { QuestDef } from '@/world/QuestDef';
+import { injectHudTheme } from './hudTheme';
 
 let _panel: HTMLDivElement | null = null;
 let _closeKey: ((e: KeyboardEvent) => void) | null = null;
@@ -24,9 +25,11 @@ export const QuestBoardUI = {
 
   open(questLog: QuestLog, worldSeed: number, floor: number): void {
     this.close();
+    injectHudTheme();
 
     const panel = document.createElement('div');
     panel.id = 'quest-board-ui';
+    panel.className = 'hud-panel hud-panel--warm';
     Object.assign(panel.style, {
       position:    'fixed',
       top:         '50%',
@@ -36,12 +39,6 @@ export const QuestBoardUI = {
       maxWidth:    '94vw',
       maxHeight:   '80vh',
       overflowY:   'auto',
-      background:  'linear-gradient(160deg, #1a1208 0%, #100c04 100%)',
-      border:      '1px solid #8a5a1a',
-      borderRadius:'6px',
-      boxShadow:   '0 8px 40px rgba(0,0,0,0.9)',
-      color:       '#e8d4a0',
-      fontFamily:  'Georgia, serif',
       fontSize:    '13px',
       zIndex:      '215',
       userSelect:  'none',

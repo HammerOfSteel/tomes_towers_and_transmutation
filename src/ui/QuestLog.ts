@@ -7,6 +7,7 @@
  */
 
 import type { QuestDef } from '@/world/QuestDef';
+import { injectHudTheme } from './hudTheme';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -16,10 +17,11 @@ const CSS = `
   width: 480px; max-width: 92vw; max-height: 70vh;
   display: flex; flex-direction: column;
   background: linear-gradient(160deg, #2a1e0f 0%, #1a1208 100%);
-  border: 1px solid #5a3a1a; border-radius: 4px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.92);
-  font-family: Georgia, serif; color: #e8d4a0;
+  border: 1px solid var(--hud-border-warm); border-radius: var(--hud-radius);
+  box-shadow: var(--hud-shadow);
+  font-family: var(--hud-font-body); color: var(--hud-text);
   z-index: 300; overflow: hidden;
+  animation: hudFadeIn .18s ease;
 }
 #quest-log-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -27,11 +29,11 @@ const CSS = `
   border-bottom: 1px solid rgba(90,60,26,0.5);
 }
 #quest-log-title {
-  font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 3px;
-  text-transform: uppercase; color: #c8963c;
+  font-family: var(--hud-font-serif); font-size: 14px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--hud-gold);
 }
 #quest-log-close {
-  font-family: monospace; font-size: 11px; color: #6a5a3a;
+  font-family: var(--hud-font-mono); font-size: 11px; color: var(--hud-muted);
   background: none; border: none; cursor: default;
 }
 #quest-log-body {
@@ -40,7 +42,19 @@ const CSS = `
 }
 #quest-log-body::-webkit-scrollbar { width: 4px; }
 #quest-log-body::-webkit-scrollbar-track { background: transparent; }
-#quest-log-body::-webkit-scrollbar-thumb { background: #5a3a1a; border-radius: 2px; }
+#quest-log-body::-webkit-scrollbar-thumb { background: var(--hud-border-warm); border-radius: 2px; }
+
+.ql-section-header {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px 0 8px;
+  color: var(--hud-gold);
+  font-family: var(--hud-font-serif); font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.ql-section-header::before, .ql-section-header::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hud-border-warm), transparent);
+}
 
 .ql-quest {
   margin-bottom: 16px; padding-bottom: 14px;
@@ -48,30 +62,54 @@ const CSS = `
 }
 .ql-quest:last-child { border-bottom: none; margin-bottom: 0; }
 
-.ql-quest--done { opacity: 0.45; }
-.ql-quest--done .ql-title { text-decoration: line-through; }
+.ql-quest--story {
+  background: rgba(90,60,10,0.15);
+  border-radius: var(--hud-radius-sm);
+  padding: 8px 10px 8px;
+  margin-bottom: 12px;
+}
+.ql-quest--story .ql-title { color: var(--hud-gold-bright); }
+
+.ql-act-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: rgba(90,60,10,0.5);
+  border: 1px solid var(--hud-border-warm);
+  font-family: var(--hud-font-mono); font-size: 9px; letter-spacing: 1px;
+  color: var(--hud-gold); margin-left: 6px;
+  vertical-align: middle;
+}
+
+.ql-species-icon { margin-right: 4px; font-size: 14px; }
 
 .ql-title {
-  font-family: 'Cinzel', serif; font-size: 13px; color: #ddb86a;
-  margin-bottom: 4px;
+  font-family: var(--hud-font-serif); font-size: 13px; letter-spacing: 1px;
+  color: var(--hud-text); margin-bottom: 3px;
 }
+.ql-quest--done .ql-title { text-decoration: line-through; color: var(--hud-muted); }
+
 .ql-meta {
-  font-family: monospace; font-size: 10px; color: #6a5a3a;
-  margin-bottom: 6px;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--hud-muted); margin-bottom: 5px;
 }
-.ql-desc {
-  font-size: 13px; line-height: 1.55; color: #cbbf9a;
+
+.ql-desc { font-size: 12px; color: var(--hud-text); line-height: 1.5; margin-bottom: 5px; }
+.ql-quest--done .ql-desc { color: var(--hud-muted); }
+
+.ql-target { font-size: 11px; color: #7a8a6a; font-style: italic; margin-bottom: 3px; }
+.ql-reward { font-size: 11px; color: var(--hud-gold); }
+
+.ql-completed-toggle {
+  font-family: var(--hud-font-mono); font-size: 11px; color: var(--hud-muted);
+  background: none; border: none; cursor: pointer; width: 100%;
+  text-align: left; padding: 4px 0; margin-top: 6px;
 }
-.ql-target {
-  margin-top: 6px; font-family: monospace; font-size: 10px;
-  color: #8888aa;
-}
-.ql-reward {
-  margin-top: 6px; font-family: monospace; font-size: 10px; color: #80aa60;
-}
+.ql-completed-toggle:hover { color: var(--hud-text); }
+
 .ql-empty {
-  font-size: 13px; color: #5a4a2a; font-style: italic; text-align: center;
-  margin-top: 20px;
+  font-size: 13px; color: var(--hud-muted); font-style: italic; text-align: center;
+  padding: 20px 0;
 }
 `;
 
@@ -84,7 +122,8 @@ export class QuestLog {
   private _quests:  QuestDef[] = [];
 
   constructor() {
-    // Inject CSS once
+    // Inject shared theme + local CSS once
+    injectHudTheme();
     if (!document.getElementById('ql-style')) {
       const style = document.createElement('style');
       style.id = 'ql-style';

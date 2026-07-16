@@ -62,10 +62,12 @@ import { SpellForge }   from '@/ui/SpellForge';
 import { StoryRunner }  from '@/world/StoryRunner';
 import { isDialogueOpen as isNPCDialogueOpen } from '@/world/NPCEntity';
 import { ConsumableInventory } from '@/core/ConsumableInventory';
+import { injectHudTheme } from '@/ui/hudTheme';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
 async function main() {
+  injectHudTheme();
   // ── Renderer ───────────────────────────────────────────────────────────────
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
