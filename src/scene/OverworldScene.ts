@@ -148,6 +148,8 @@ export class OverworldScene {
 
   /** Optional callback fired when an NPC generates and gives a quest to the player. */
   onQuestGiven?: (quest: import('@/world/QuestDef').QuestDef) => void;
+  /** Called when [E] is pressed on a merchant/innkeeper NPC. */
+  onMerchant?: (name: string) => void;
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -2227,7 +2229,8 @@ export class OverworldScene {
           dungeons,
         ));
         const npc = this._npcs[this._npcs.length - 1]!;
-        if (this.onQuestGiven) npc.onQuestGiven = this.onQuestGiven;
+        if (this.onQuestGiven)  npc.onQuestGiven  = this.onQuestGiven;
+        if (this.onMerchant)    npc.onOpenMerchant = this.onMerchant;
         // Raise to terrain height (settlement zone is flattened to lv)
         this._npcs[this._npcs.length - 1]!.group.position.y = lv * SH;
       }

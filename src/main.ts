@@ -53,6 +53,7 @@ import { assetLoader } from '@/assets/AssetLoader';
 import { LightingSystem } from '@/rendering/LightingSystem';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { TimeSystem } from '@/world/TimeSystem';
+import { MerchantUI } from '@/ui/MerchantUI';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -193,6 +194,7 @@ async function main() {
     owEditor?.dispose();
     owEditor = new OverworldEditor(scene, cameraRig.camera, canvas);
     const ow = new OverworldScene(scene, physics, player, worldData);
+    ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
     ow.onQuestGiven = (quest) => {
       questLog.addQuest(quest);
       // Refresh minimap pins from all active quests

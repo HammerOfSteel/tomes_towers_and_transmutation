@@ -145,6 +145,9 @@ export class NPCEntity {
   /** Optional callback fired once when this NPC hands out a quest. */
   onQuestGiven?: (quest: QuestDef) => void;
 
+  /** Called when [E] is pressed on a merchant/innkeeper NPC. */
+  onOpenMerchant?: (name: string) => void;
+
   // [E] prompt label
   private _label:      HTMLDivElement | null = null;
   private _labelShown: boolean = false;
@@ -226,6 +229,11 @@ export class NPCEntity {
     this._updateLabel(inRange && !isDialogueOpen());
 
     if (inRange && inputE && !isDialogueOpen()) {
+      // Merchant and innkeeper roles open the shop instead of normal dialogue
+      if ((this.role === 'merchant' || this.role === 'innkeeper') && this.onOpenMerchant) {
+        this.onOpenMerchant(this.name);
+        return;
+      }
       this._state = 'interact';
     }
 
