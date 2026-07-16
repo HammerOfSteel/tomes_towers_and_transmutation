@@ -1,9 +1,22 @@
-# Creature Creator 2.0 — Improvement Plan
+# Creature Creator \u2014 NPC & Enemy Generator (DevLab Tool)
 
-> Inspired by Spore's creature creator: part categories with morph handles,
-> procedural paint layers, randomiser with weighted coherence, and a Test Drive mode.
-> Our additional pillars: fantasy sub-races, archetype-aware prop filtering, and a
-> design philosophy that zero defaults are enforced — any body can wear anything.
+> **Scope change \u2014 2026-07-16**
+>
+> The Creature Creator / DNA Builder is **no longer the player character creator**.
+> The playable character is determined by the campfire conversation (`NewGameFlow`) and
+> is always an asset GLB from `charManifest.ts`.
+>
+> The DNA builder (`CharacterCreation.ts`, `CreatureBuilder.ts`, `CreatureDNA.ts`) is
+> repurposed as an **NPC and Enemy Generator** inside the unified DevLab / Sandbox tool.
+> It lets designers (us) quickly produce procedural enemy and NPC variants, save them as
+> DNA strings or GLB configs, and spawn them live in the sandbox arena for testing.
+>
+> Active tasks are tracked in `TODO.md` \u203a DevLab Unification.
+> The implementation detail below is preserved as a reference for the generator UI work.
+
+---
+
+## What\u2019s Built (current `CharacterCreation.ts` / `CreatureBuilder.ts`)
 
 ---
 

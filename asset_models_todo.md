@@ -1,10 +1,11 @@
-# Asset Character Models — Implementation Plan
+# Asset Character Models
 
-> Branch: `asset_characters`
->
-> Mirrors the existing `assetMode` / `assetPacks` pattern in `WorldGenConfig` (environment tiles)
-> but for characters, NPCs, and enemies.  Code-first procedural mode is **unchanged** — asset
-> mode is strictly opt-in via a new Settings toggle.
+> **Superseded by `TODO.md`** (2026-07-16)
+> Character asset infrastructure is done: `charManifest.ts`, `CharacterLoader.ts`,
+> `WizardLoader.ts`, all GLBs extracted via LFS.
+> Remaining work (filling in placeholder character IDs) is tracked in
+> `TODO.md` under "Playable Character Roster".
+> Do not create new todo items here.
 
 ---
 

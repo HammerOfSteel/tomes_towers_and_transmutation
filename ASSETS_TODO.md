@@ -1,10 +1,10 @@
-# Assets v1 — Implementation Plan
+# Assets v1 — Environment Asset Integration
 
-**Branch**: `assets_v1`  
-**Goal**: Replace / augment the procedural geometry world with real asset models from the collected packs.  
-**Scope**: World environment first (outdoor terrain, buildings, dungeons, tower). Enemy/NPC visual upgrades are Phase 2 of this branch.
-
-Reference: [docs/assets_index.md](../assets_index.md) for full pack inventory.
+> **Superseded by `TODO.md`** (2026-07-16)
+> Character asset infrastructure (charManifest, WizardLoader, CharacterLoader) is done.
+> Overworld asset replacement (trees, rocks, buildings from Kenney packs) is preserved in
+> `TODO.md` under "Overworld Asset Pass" as a low-priority deferred item.
+> Do not create new todo items here.
 
 ---
 

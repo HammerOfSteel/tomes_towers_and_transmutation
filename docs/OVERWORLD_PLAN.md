@@ -1,13 +1,11 @@
 # Overworld Expansion Plan
 
-> **Branch:** `improve_and_extend_overworld`
-> **Starting from:** The 51×51 tile (100×100 world-unit) heightmap in `OverworldScene.ts`
-> **Status: ✅ ALL PHASES COMPLETE (OW-1 through OW-8)**
+> **Status: OW-1 through OW-8 COMPLETE** (2026-07-16)
+> One item remains open: **Phase 6d \u2014 Overworld Editor** (tracked in `TODO.md`).
+> This doc is a design reference. Do not create new todo items here; use `TODO.md`.
 >
-> The overworld is currently a single small sandbox: a procedural terrain with three biomes,
-> some trees, rocks, an enemy camp, the tower, and a ruined greenhouse. This plan expands it
-> into a full explorable world with rivers, lakes, dungeon entrances, villages, a city, and
-> NPC inhabitants generated using the creature creator system.
+> **Branch:** `improve_and_extend_overworld` (merged to main)
+> **Starting from:** The 51\u00d751 tile (100\u00d7100 world-unit) heightmap in `OverworldScene.ts`
 
 ---
 

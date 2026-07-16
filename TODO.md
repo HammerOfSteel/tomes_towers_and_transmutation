@@ -1,13 +1,157 @@
-# Project Roadmap: Phased Implementation
+# TODO — Tomes, Towers & Transmutation
+> Last updated: 2026-07-16
 
-## Completion Rule
+---
 
-> **A phase is complete only when:**
-> 1. All automated unit tests for core logic pass (`npm test`).
-> 2. A successful, documented manual playtest is performed.
-> 3. `ARCHITECTURE.md` is updated if any architectural decision changed.
+## Architectural Decisions (locked)
 
-Shipping a phase without all three is not shipping.
+| Decision | Detail |
+|---|---|
+| Playable character | Asset GLB only — determined by campfire conversation, never DNA builder |
+| NPC / Enemy appearance | DNA Creature Builder repurposed as a generator tool inside DevLab |
+| Sandbox + DevLab | One unified tool — extend `DevSandbox` with the lab/cheat capabilities |
+| Overworld generation | Code-first procedural; Kenney tile assets optional later, not priority |
+| Character creation UX | Campfire intro only — no UI panel labelled "Choose Your Character" |
+| Git LFS | All GLB / FBX / ZIP / MP3 tracked via LFS |
+
+---
+
+## Done ✅
+
+### Core Game (Phases 1–7)
+- Isometric sandbox, physics, WASD movement (Phase 1)
+- Real-time combat — melee sweep, spells, dodge roll, i-frames (Phase 2)
+- Modular room blueprint system + JSON schema (Phase 3)
+- Level editor (`~` key), export/import blueprints (Phase 4)
+- Full UI suite: main menu, HUD, death screen, pause menu, spell book, dev panel (Phase 4.5)
+- Procedural dungeon generation + seeded PRNG + spell discovery (Phase 5)
+- Overworld terrain with biomes, rivers, lakes, settlements, resource nodes (Phases 6a + OW-1–8)
+- Slime taming mini-game — 3-round personality song system (Phase 6b)
+- Follower AI — follow + auto-aggro (Phase 6c)
+- 11-floor procedural tower with named rooms, fixtures, telescope, observatory (Phase 6e)
+- Ruined greenhouse interior (Phase 6f)
+- XP / levelling / stat points (Phase 7b)
+- 26-node talent constellation system (Phase 7c)
+- 9 spells total (Phase 7d)
+- Resource gathering + economy (Phase 7e)
+- Crafting system — potions, equipment, enchanting (Phase 7f)
+- Base building — 4 structure types, construction mode `[B]` (Phase 7g)
+- Performance pass — InstancedMesh slimes, SpatialHash follower aggro (Phase 7h)
+
+### Campfire Intro / Character Creation
+- `FloatingDialogue3D.ts` — 3D canvas-texture speech planes + choice planes, shatter particles
+- `NewGameFlow.ts` — full campfire scene orchestration (fade-in, wizard enter/exit, music)
+- `CharacterDecisionTree.ts` — 4-species × 4-branch conversation tree → locks character + stats
+- Campfire music fade-in/out (`campfire_lullaby.mp3` via LFS)
+- `WizardLoader.ts` — 3 wizard models (toad, elf, lizard), randomly selected per new game
+- `CharacterLoader.ts` + `charManifest.ts` — typed manifest for all character GLBs
+- Stat bonuses from conversation applied to progression at game start
+- Sentence-per-line text formatting; `\n` hard line-breaks in `_wrap()`
+
+### Infrastructure
+- Git LFS migration — all GLBs / FBXs / ZIPs / MP3s tracked; force-pushed to GitHub
+- `vite-env.d.ts` — Vite `?url` import types
+- `asset_characters` branch merged to `main`
+
+---
+
+## In Progress 🔄
+
+### Phase 6d — Overworld Editor
+- [ ] Toolbar to place enemy camps, building entrances, resource nodes on overworld map
+- [ ] Export overworld layout to JSON (same pattern as dungeon blueprint export)
+- [ ] Load / apply saved overworld layouts in `OverworldScene`
+
+---
+
+## Next Up 📋
+
+### DevLab Unification
+`DevSandbox` is the home. Absorb `DevPanel` into it and add:
+- [ ] **NPC / Enemy Generator tab** — repurposed `CharacterCreation` DNA builder; outputs a
+      creature config that can be saved, loaded, and spawned as a live enemy in the arena
+- [ ] **Creature test-drive** — spawn the generated enemy in sandbox and observe AI / animations
+- [ ] **Wave spawner** — configure enemy type, count, and timing; run a wave in the sandbox arena
+- [ ] **Asset browser** — browse all `charManifest.ts` GLBs; click to preview and swap player model
+- [ ] **Unified sidebar** — collapse `DevPanel` floating cheat window into a tab in the sandbox sidebar
+- [ ] Remove `DevPanel` as a separate floating overlay once sidebar has parity
+
+### Playable Character Roster
+The campfire conversation produces a `CharacterId`. Several IDs use placeholder models:
+- [ ] `human_warrior`, `human_paladin`, `human_bard` → assign proper KayKit GLBs (Barbarian, Knight, Mage/Ranger)
+- [ ] `fox_rogue`, `fox_ranger`, `fox_mage`, `fox_mysterious` → real Vulperia model (fox pack or new Meshy.ai asset)
+- [ ] `zombie`, `ghost`, `mystery_undead` → dedicated models or creative reuse of skeleton pack
+- [ ] Verify all 19 `CharacterId`s animate correctly (idle, walk) via shared KayKit rig
+- [ ] Replace the two placeholder `[E]` prompt scripts with proper model files in `CHAR_MANIFEST_MAP`
+
+### Campfire Scene Polish
+- [ ] Actual animated fire mesh / particle system in the 3D intro scene (currently geometry only)
+- [ ] Ambient firefly / ember particles floating around the campfire
+- [ ] Subtle camera drift during wizard speech (lazy follow, no snap)
+- [ ] Wizard gestures on key speech moments (idle anim swap or FK nudge)
+
+### Visual Quality Pass (Phase 7.5 — abbreviated scope)
+Full 7.5 spec is preserved below for reference; prioritised subset:
+- [ ] `ACESFilmicToneMapping` + exposure 1.2 on the main renderer (zero cost, high impact)
+- [ ] `HemisphereLight` warm/cool split replacing flat ambient in dungeon + overworld
+- [ ] Per-torch `PointLight` flicker in tower rooms
+- [ ] `EffectComposer`: bloom on emissives + subtle vignette (settings toggle, off by default)
+- [ ] Procedural skybox for the overworld night sky (stars, moon, no external textures)
+- [ ] Slime velocity-stretch shader (squash-and-stretch on landing)
+- [ ] Idle breathing on all FK-rigged characters
+
+### Living World (Phase 8)
+- [ ] NPC daily schedules: home / work / wander states driven by a world clock
+- [ ] Merchant: buy / sell items at settlement market stall
+- [ ] Quest board: procedural fetch / slay quests from the `quest_board` fixture
+- [ ] In-game day / night cycle — lighting preset swaps at dawn / dusk
+- [ ] Persistent overworld state: cleared camps stay cleared between sessions
+
+### Emergent Spell Crafting (Phase 9)
+- [ ] Combine two known spells at a Cauldron to discover a hybrid spell
+- [ ] Spell properties (damage, speed, radius, colour) emerge from ingredients
+- [ ] 3-slot reagent UI: base spell + modifier + catalyst
+
+### Overworld Asset Pass (lower priority — after gameplay content)
+- [ ] Replace procedural trees with KayKit nature-kit GLBs (`InstancedMesh`)
+- [ ] Replace procedural rocks with Kenney rock variety set
+- [ ] Water / river tiles from Kenney nature kit
+- [ ] Settlement buildings from Kenney fantasy-town / retro-fantasy kits
+
+---
+
+## Cancelled / Out of Scope ~~
+
+- ~~Code-first playable character (DNA builder for player)~~ → player is always a conversation-determined asset GLB
+- ~~"Character Mode" settings toggle (Code / Asset)~~ → no toggle needed; asset mode is the only player mode
+- ~~Phase 10: The Destructible World~~ → deferred indefinitely; Rapier soft-body not mature
+- ~~`CharacterCreation` UI for player~~ → repurposed as NPC/enemy generator in DevLab
+
+---
+
+## Key Source Files
+
+| Area | Files |
+|---|---|
+| Campfire intro | `src/scene/NewGameFlow.ts`, `src/scene/NewGameScene.ts`, `src/scene/CharacterDecisionTree.ts` |
+| 3D dialogue | `src/ui/FloatingDialogue3D.ts`, `src/ui/IDialogue.ts` |
+| Character loading | `src/characters/CharacterLoader.ts`, `src/characters/WizardLoader.ts`, `src/characters/charManifest.ts` |
+| Overworld | `src/scene/OverworldScene.ts`, `src/world/WorldGenConfig.ts` |
+| Tower | `src/levels/TowerGenerator.ts`, `src/levels/TowerFloorDef.ts` |
+| DNA / Creature builder | `src/creatures/CreatureDNA.ts`, `src/creatures/CreatureBuilder.ts`, `src/ui/CharacterCreation.ts` |
+| DevLab / Sandbox | `src/ui/DevSandbox.ts`, `src/ui/DevPanel.ts` |
+| Core systems | `src/core/GameLoop.ts`, `src/core/InputManager.ts`, `src/physics/PhysicsWorld.ts` |
+
+---
+
+## Full Phase 7.5 Spec (reference — do not delete)
+
+> The abbreviated Visual Quality items above are the immediate targets.
+> The full spec below is preserved for when we return to a dedicated polish sprint.
+
+### Phase 7.5: Procedural Visual Quality — Making the World Come Alive
+
+**Goal:** Dramatically improve visual fidelity using only procedural geometry, shaders, and canvas-generated textures — no external asset files. The world should feel alive and handcrafted despite being entirely code-generated.
 
 ---
 

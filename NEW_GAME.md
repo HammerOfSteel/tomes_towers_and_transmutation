@@ -1,5 +1,12 @@
 # NEW_GAME: Narrative Character Creation Sequence
 
+> **Status: COMPLETE** (2026-07-16)
+> Active work tracked in `TODO.md`. This doc is now a design reference / lore record only.
+>
+> What shipped: `FloatingDialogue3D`, `NewGameFlow`, `CharacterDecisionTree` (4 species \u00d7 4 branches),
+> campfire music fade-in, `WizardLoader` (3 wizard models), `charManifest.ts`.
+> Pending: placeholder GLBs for some character IDs \u2014 see TODO.md \u203a Playable Character Roster.
+
 **Feature:** Replace the classical character selector with a first-person campfire scene where the Wizard interrogates you. Your answers determine who you are.
 
 **Design goal:** The player never sees a UI panel labelled "Choose Your Character". They experience a story scene. The character emerges from the conversation. The scene occupies ~90% of the screen at all times; dialogue chrome is minimal and cinematic.
