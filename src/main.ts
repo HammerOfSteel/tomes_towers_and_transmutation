@@ -61,6 +61,7 @@ import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
 import { StoryRunner }  from '@/world/StoryRunner';
 import { isDialogueOpen as isNPCDialogueOpen } from '@/world/NPCEntity';
+import { ConsumableInventory } from '@/core/ConsumableInventory';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -319,6 +320,14 @@ async function main() {
   let _craftedItemCount = 0;
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
+  const consumables   = new ConsumableInventory();
+  consumables.onHeal  = (amt) => { player.health.heal(amt); };
+  /** Potion hotkeys: [Z] = heal minor, [X] = heal major */
+  window.addEventListener('keydown', (e) => {
+    if (pauseMenu.isOpen || spellBook.isOpen || statPanel.visible) return;
+    if (e.code === 'KeyZ') consumables.usePotion('potion_heal_minor');
+    if (e.code === 'KeyX') consumables.usePotion('potion_heal_major');
+  });
   const talentSystem  = new TalentSystem();
   const talentTree    = new TalentTree();
   const statPanel     = new StatPanel();
@@ -389,8 +398,11 @@ async function main() {
     _craftedItemCount++;
     // Award result to inventory or progression based on result kind
     if (recipe.result.kind === 'blueprint') {
-      // Store blueprint ID for construction mode to consume
       _pendingBlueprints.add(recipe.result.id);
+    } else if (recipe.result.kind === 'potion') {
+      consumables.addPotion(recipe.result.id);
+    } else if (recipe.result.kind === 'equipment_token') {
+      consumables.addToken(recipe.result.id);
     }
     hud.setResources(inventory.snapshot());
     craftingUI.refresh();
@@ -508,6 +520,7 @@ async function main() {
     // ── Start story quest line ─────────────────────────────────────────────
     _storyRunner = null;
     _craftedItemCount = 0;
+    consumables.reset();
     if (cfg?.characterId) {
       _storyRunner = new StoryRunner(cfg.characterId, questLog);
       _storyRunner.onBeatComplete = (text, xp, gold) => {
