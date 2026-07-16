@@ -57,11 +57,7 @@
 
 ## In Progress 🔄
 
-### Phase 6d — Overworld Editor ✅
-- [x] Toolbar to place enemy camps, building entrances, resource nodes on overworld map
-- [x] Export overworld layout to JSON (same pattern as dungeon blueprint export)
-- [x] Load / apply saved overworld layouts in `OverworldScene`
-- [x] Wire `OverworldEditor` into `main.ts` — `\` key toggles (dev mode only, exterior only)
+*Nothing actively in progress — see Next Up.*
 
 ---
 
@@ -107,10 +103,17 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] In-game day / night cycle — DayNightSystem lerps hemi/keyLight/fog across night/dawn/day/dusk phases driven by TimeSystem.hour
 - [x] Persistent overworld state: cleared camps keyed by "wx:wz" in DiscoveryTracker; injected into OverworldScene.clearedCamps before enter(); saved to localStorage on camp cleared
 
-### Weather System ✅ (abbreviated)
+### Weather System ✅
 - [x] WeatherSystem FSM: clear → cloudy → rain → storm; seeded by day number
 - [x] Rain: 1600 Points cylinder around player, downward velocity, storm wind drift
 - [x] Storm: lightning DirectionalLight flash (80ms) + screen overlay; 1–5s interval
+- [x] HUD clock widget — in-game time with day-phase icon visible in exterior
+
+### AudioSystem ✅
+- [x] `src/audio/AudioSystem.ts` — Web Audio API singleton; 4 gain categories (music / sfx / ambient / ui)
+- [x] Procedural ambient tones for all scenes: dungeon, library, exterior, storm, greenhouse, observatory
+- [x] Procedural SFX: UI click, spell cast, melee impact, slime death, level-up fanfare
+- [x] Booted in `main.ts`; context resumes on first user gesture
 
 ### Emergent Spell Crafting (Phase 9) ✅ (abbreviated)
 - [x] Combine two spells at a Cauldron — SpellForge overlay opens when slots 0+1 both equipped
@@ -170,12 +173,12 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 | 4 | Level Designer (Dev Tool) | ✅ Complete |
 | 4.5 | UI Suite (Main Menu + All Game Screens) | ✅ Complete |
 | 5 | Procedural Generation & Discovery | ✅ Complete |
-| 6 | Overworld & Monster Minions | 🔄 In Progress (6d overworld-editor pending) |
+| 6 | Overworld & Monster Minions | ✅ Complete |
 | 7 | The OP Power Fantasy | ✅ Complete (7a–7h all done) |
-| 7.5 | Procedural Visual Quality | ⬜ Not started |
-| 8 | The Living World | ⬜ Not started |
-| 9 | Emergent Spell Crafting | ⬜ Not started |
-| 10 | The Destructible World | ⬜ Not started |
+| 7.5 | Procedural Visual Quality | ✅ Abbreviated scope complete |
+| 8 | The Living World | ✅ Complete |
+| 9 | Emergent Spell Crafting | ✅ Abbreviated scope complete |
+| 10 | The Destructible World | ❌ Cancelled |
 
 ---
 

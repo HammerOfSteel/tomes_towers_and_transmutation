@@ -55,6 +55,7 @@ import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { TimeSystem } from '@/world/TimeSystem';
 import { DayNightSystem } from '@/rendering/DayNightSystem';
 import { WeatherSystem } from '@/world/WeatherSystem';
+import { AudioSystem }   from '@/audio/AudioSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
@@ -116,6 +117,7 @@ async function main() {
   // ── Day/night cycle — lerps hemi + keyLight + fog by TimeSystem.hour ──────
   const _dayNight  = new DayNightSystem(hemi, keyLight, scene);
   const _weatherSys = new WeatherSystem(scene, cameraRig.camera);
+  void AudioSystem.instance; // boot singleton; context resumes on first user gesture
 
   // ── Floor ─────────────────────────────────────────────────────────────────
   // Floor and room geometry are now managed by SceneManager / BlueprintRenderer.
