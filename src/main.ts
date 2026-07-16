@@ -10,6 +10,7 @@ import { SpellSystem } from '@/combat/SpellSystem';
 import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
+import { GameMenu }  from '@/ui/GameMenu';
 import { MainMenu } from '@/ui/MainMenu';
 import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
 import { NewGameFlow }          from '@/scene/NewGameFlow';
@@ -343,7 +344,7 @@ async function main() {
   };
   /** Potion hotkeys: [Z] = heal minor, [X] = heal major */
   window.addEventListener('keydown', (e) => {
-    if (pauseMenu.isOpen || spellBook.isOpen || statPanel.visible) return;
+    if (gameMenu.isOpen || spellBook.isOpen || statPanel.visible) return;
     if (e.code === 'KeyZ') consumables.usePotion('potion_heal_minor');
     if (e.code === 'KeyX') consumables.usePotion('potion_heal_major');
   });
@@ -477,11 +478,23 @@ async function main() {
   // ── Spell book ──────────────────────────────────────────────────────────
   const spellBook = new SpellBook(progression);
 
-  // ── Pause menu ───────────────────────────────────────────────────────────
+  // ── Game Menu (ESC hub) + legacy Pause Menu ────────────────────────────
   const pauseMenu = new PauseMenu({
     onOpenEditor:   () => editMode.toggle(),
     onOpenDevPanel: () => devPanel.open(),
     onOpenStats:    () => statPanel.open(progression),
+  });
+
+  const gameMenu = new GameMenu({
+    openQuestLog:   () => questLog.show(),
+    openSpellBook:  () => spellBook.open(),
+    openStatPanel:  () => statPanel.open(progression),
+    openTalentTree: () => talentTree.open(progression, talentSystem),
+    openCrafting:   () => craftingUI.open('forge'),
+    openDevPanel:   () => devPanel.open(),
+    isDevMode:      () => devModeEnabled(),
+    onSave:         () => { /* save hook placeholder */ },
+    onQuit:         () => { gameLoop.stop(); sceneManager.unloadCurrentRoom?.(); mainMenu.show(); },
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
@@ -958,25 +971,27 @@ async function main() {
         talentTree.close();         // close talent tree → game
       } else if (controlsOverlay.isOpen) {
         controlsOverlay.hide();     // close help → game
-      } else if (pauseMenu.isOpen) {
-        pauseMenu.close();          // close menu → game
+      } else if (gameMenu.isOpen) {
+        gameMenu.close();           // close game menu → game
+      } else if (gameMenu.isOpen) {
+        pauseMenu.close();          // close legacy pause → game (safety)
       } else {
-        pauseMenu.open();           // game → menu
+        gameMenu.open();            // game → game menu
       }
     } else if (e.key === 'h' || e.key === 'H') {
-      if (!pauseMenu.isOpen && !editMode.isActive) controlsOverlay.toggle();
+      if (!gameMenu.isOpen && !editMode.isActive) controlsOverlay.toggle();
     } else if (e.key === 'k' || e.key === 'K') {
-      if (!pauseMenu.isOpen && !editMode.isActive) spellBook.toggle();
+      if (!gameMenu.isOpen && !editMode.isActive) spellBook.toggle();
     } else if (e.key === 'p' || e.key === 'P') {
-      if (!pauseMenu.isOpen && !editMode.isActive) statPanel.toggle(progression);
+      if (!gameMenu.isOpen && !editMode.isActive) statPanel.toggle(progression);
     } else if (e.key === 't' || e.key === 'T') {
-      if (!pauseMenu.isOpen && !editMode.isActive) talentTree.toggle(progression, talentSystem);
+      if (!gameMenu.isOpen && !editMode.isActive) talentTree.toggle(progression, talentSystem);
     } else if (e.key === '`' || e.key === '~') {
-      if (!pauseMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
+      if (!gameMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
     } else if ((e.key === 'b' || e.key === 'B') && gameMode === 'exterior') {
-      if (!pauseMenu.isOpen && !editMode.isActive) _toggleConstructionMode();
+      if (!gameMenu.isOpen && !editMode.isActive) _toggleConstructionMode();
     } else if (e.key === '\\' && gameMode === 'exterior') {
-      if (!pauseMenu.isOpen && devModeEnabled()) owEditor?.toggle();
+      if (!gameMenu.isOpen && devModeEnabled()) owEditor?.toggle();
     }
   });
 
@@ -1261,7 +1276,7 @@ async function main() {
     physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
-    if (!editMode.isActive && !pauseMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
+    if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
       player.update(input.state, dt);
 
