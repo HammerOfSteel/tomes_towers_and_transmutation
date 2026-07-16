@@ -22,6 +22,7 @@ import { loadWorldGenConfig }              from '@/world/WorldGenConfig';
 import type { CharModelDef }               from '@/characters/charManifest';
 import { AssetCharBrowser }               from '@/ui/AssetCharBrowser';
 import { loadCharModel }                  from '@/characters/CharacterLoader';
+import { generateNameForSpecies }         from '@/world/NameGenerator';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -94,6 +95,18 @@ const PROP_DEFS: PropDef[] = [
   { id: 'hair_long',     label: 'Hair (L)'     },
   { id: 'hair_bun',      label: 'Hair (bun)'   },
 ];
+
+// ── Archetype → generated name ────────────────────────────────────────────────
+
+function _nameForArchetype(arch: Archetype): string {
+  switch (arch) {
+    case 'biped':     return generateNameForSpecies('human');
+    case 'quadruped': return generateNameForSpecies('fox');
+    case 'amoeba':    return generateNameForSpecies('slime');
+    case 'avian':     return generateNameForSpecies('human');
+    case 'serpent':   return generateNameForSpecies('undead');
+  }
+}
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -457,6 +470,8 @@ export class CharacterCreation {
     else                this._preview.setDNA(this._dna);
     if (!isAsset) {
       this._syncControls();
+      // Auto-generate a name that fits the starting archetype
+      this._nameInput.value = _nameForArchetype(this._dna.archetype);
       this._preview.startLoop();
     }
     // In asset mode the loop is started by setAssetScene when a model is selected.
@@ -476,7 +491,8 @@ export class CharacterCreation {
 
   private _syncControls(): void {
     const d = this._dna;
-    this._nameInput.value     = '';
+    // Name is intentionally NOT reset here — it is set once in show() and preserved
+    // across appearance tweaks so the player doesn't lose what they typed.
     this._primaryInput.value   = numToHex(d.colors.primary);
     this._secondaryInput.value = numToHex(d.colors.secondary);
     this._emissiveInput.value  = numToHex(d.colors.emissive);

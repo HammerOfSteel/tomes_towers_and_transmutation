@@ -23,6 +23,7 @@ import type { CharacterConfig,
               StartingBoon }       from '@/ui/CharacterCreation';
 import { DEFAULT_PLAYER_DNA }      from '@/creatures/CreatureDNA';
 import type { StatBonus }          from '@/scene/CharacterDecisionTree';
+import { generateQualityName }     from '@/world/NameGenerator';
 
 // ── public API ────────────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export class NewGameFlow {
     const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
 
     const cfg: CharacterConfig = {
-      name:        assetModel?.name ?? 'Mysterious Stranger',
+      name:        generateQualityName(result.characterId),
       boon:        _deriveBoon(result.statBonuses),
       slotId,
       dna:         { ...DEFAULT_PLAYER_DNA },

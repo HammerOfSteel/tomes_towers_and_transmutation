@@ -15,6 +15,7 @@ import type { CharModelDef }           from '@/characters/charManifest';
 import { AssetCharBrowser }            from '@/ui/AssetCharBrowser';
 import { loadCharModel }               from '@/characters/CharacterLoader';
 import type { CharacterConfig, StartingBoon } from '@/ui/CharacterCreation';
+import { generateNameForSpecies }      from '@/world/NameGenerator';
 
 // ── Re-export StartingBoon so callers don't need two imports ─────────────────
 export type { CharacterConfig, StartingBoon };
@@ -547,6 +548,20 @@ class Preview3D {
   }
 }
 
+// ── Model def → species name helper ──────────────────────────────────────────
+
+function _nameForModelDef(def: CharModelDef): string {
+  const tags = def.tags ?? [];
+  const id   = def.id.toLowerCase();
+  if (tags.includes('skeleton') || id.includes('skeleton') || id.includes('undead') || id.includes('ghost') || id.includes('zombie'))
+    return generateNameForSpecies('undead');
+  if (tags.includes('fox') || id.includes('fox'))
+    return generateNameForSpecies('fox');
+  if (tags.includes('slime') || id.includes('slime'))
+    return generateNameForSpecies('slime');
+  return generateNameForSpecies('human');
+}
+
 // ── CharacterCreationV2 ───────────────────────────────────────────────────────
 
 export class CharacterCreationV2 {
@@ -650,6 +665,11 @@ export class CharacterCreationV2 {
     this._charBadge.textContent = def.name;
     this._charBadge.className = 'ccv2-char-badge';
     this._loadingRing.style.display = '';
+
+    // Auto-fill the name input if the player hasn't typed anything yet
+    if (!this._nameInput.value.trim()) {
+      this._nameInput.value = _nameForModelDef(def);
+    }
 
     loadCharModel(def)
       .then((loaded) => {
