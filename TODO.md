@@ -97,11 +97,11 @@ Full 7.5 spec is preserved below for reference; prioritised subset:
 - [x] Per-torch `PointLight` flicker in tower rooms (LightingSystem.ts)
 - [x] `EffectComposer` with BloomEffect on emissives
 - [x] Procedural skybox — 800-star canvas dome + twinkling + moon billboard (ProceduralSkybox.ts)
-- [ ] Slime velocity-stretch shader (squash-and-stretch on landing)
-- [ ] Idle breathing on all FK-rigged characters
+- [x] Slime velocity-stretch — airborne stretch tall when rising, squash when falling (VEL_STRETCH_K in SlimeEnemy)
+- [x] Idle breathing — already in CreatureAnimator._idleDefault (torso scale sine, head sway, arm oscillation) for all archetypes; KayKit GLB idle clips cover asset characters
 
 ### Living World (Phase 8)
-- [ ] NPC daily schedules: home / work / wander states driven by a world clock
+- [x] NPC daily schedules: TimeSystem singleton (work 8-18h / wander / home 22-6h); NPCEntity varies wander radius + idle duration per phase; updated each exterior tick
 - [ ] Merchant: buy / sell items at settlement market stall
 - [ ] Quest board: procedural fetch / slay quests from the `quest_board` fixture
 - [ ] In-game day / night cycle — lighting preset swaps at dawn / dusk
