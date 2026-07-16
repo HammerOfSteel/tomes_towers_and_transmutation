@@ -218,6 +218,7 @@ async function main() {
       discoveryTracker.saveToStorage();
     };
     ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
+    MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
     ow.onQuestGiven = (quest) => {
       questLog.addQuest(quest);
       // Refresh minimap pins from all active quests
@@ -417,7 +418,7 @@ async function main() {
     hud.setResources(inventory.snapshot());
     craftingUI.refresh();
   };
-
+  craftingUI.setBag(consumables);
   // ── Dev panel ───────────────────────────────────────────────────────────
   const devPanel = new DevPanel({
     getGodMode:          () => player.health.godMode,

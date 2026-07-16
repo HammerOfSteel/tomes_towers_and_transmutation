@@ -13,6 +13,8 @@
  */
 
 import type { Inventory } from '@/core/Inventory';
+import type { ConsumableInventory } from '@/core/ConsumableInventory';
+import { injectHudTheme } from '@/ui/hudTheme';
 import type { IngredientType } from './CraftingRecipes';
 import {
   type CraftingRecipe,
@@ -195,6 +197,9 @@ export class CraftingUI {
   private readonly _animOverlay: HTMLElement;
   private readonly _animBar: HTMLElement;
   private readonly _animText: HTMLElement;
+  /** My Bag section — shows crafted potions */
+  private readonly _bagEl: HTMLElement;
+  private _consumables: ConsumableInventory | null = null;
 
   private _station: StationType = 'alchemy';
   private _selected: CraftingRecipe | null = null;
@@ -264,7 +269,13 @@ export class CraftingUI {
     this._animOverlay.append(this._animText, track);
 
     this._panel.style.position = 'relative';
-    this._panel.append(header, this._listEl, this._detailEl, this._animOverlay);
+
+    // My Bag section
+    this._bagEl = document.createElement('div');
+    this._bagEl.className = 'cp-bag';
+    this._bagEl.style.display = 'none'; // hidden until setBag() is called
+
+    this._panel.append(header, this._listEl, this._detailEl, this._bagEl, this._animOverlay);
     document.body.appendChild(this._panel);
   }
 
@@ -276,6 +287,7 @@ export class CraftingUI {
     this._titleEl.textContent = STATION_TITLES[station];
     this._buildList();
     this._detailEl.classList.remove('cp--visible');
+    this._updateBag();
     this._panel.classList.add('cp--open');
   }
 
@@ -296,6 +308,71 @@ export class CraftingUI {
   /** Re-render ingredient slot states (call after inventory changes). */
   refresh(): void {
     if (this._selected) this._showDetail(this._selected);
+  }
+
+  /** Link a ConsumableInventory so the panel shows a My Bag section. */
+  setBag(consumables: ConsumableInventory): void {
+    injectHudTheme();
+    this._consumables = consumables;
+    consumables.onChange = () => { if (this.isOpen) this._updateBag(); };
+    this._bagEl.style.display = '';
+    this._updateBag();
+  }
+
+  private _updateBag(): void {
+    if (!this._consumables) return;
+    this._bagEl.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'hud-section-header';
+    header.textContent = '⚗ My Bag';
+    this._bagEl.appendChild(header);
+
+    const POTION_DEFS = [
+      { id: 'potion_heal_minor', label: 'Minor Heal', icon: '🧪' },
+      { id: 'potion_heal_major', label: 'Major Heal', icon: '⚗️' },
+      { id: 'potion_swiftness',  label: 'Swiftness',  icon: '💨' },
+      { id: 'potion_power',      label: 'Power',      icon: '⚔️' },
+      { id: 'potion_mystery',    label: 'Mystery',    icon: '❓' },
+    ];
+
+    let anyPotion = false;
+    for (const def of POTION_DEFS) {
+      const count = this._consumables.getPotionCount(def.id);
+      if (count <= 0) continue;
+      anyPotion = true;
+      const row = document.createElement('div');
+      row.className = 'hud-row';
+      Object.assign(row.style, { padding: '3px 0' });
+
+      const iconEl = document.createElement('span');
+      iconEl.textContent = def.icon;
+      iconEl.style.fontSize = '14px';
+
+      const labelEl = document.createElement('span');
+      labelEl.textContent = `${def.label} ×${count}`;
+      labelEl.style.cssText = `flex:1; font-family:var(--hud-font-body); font-size:12px; color:var(--hud-text);`;
+
+      const useBtn = document.createElement('button');
+      useBtn.className = 'hud-btn hud-btn-primary';
+      useBtn.textContent = 'Use';
+      useBtn.style.cssText = 'font-size:10px; padding:2px 8px;';
+      const potId = def.id;
+      useBtn.addEventListener('click', () => {
+        this._consumables?.usePotion(potId);
+        this._updateBag();
+      });
+
+      row.append(iconEl, labelEl, useBtn);
+      this._bagEl.appendChild(row);
+    }
+
+    if (!anyPotion) {
+      const empty = document.createElement('div');
+      empty.style.cssText = `font-family:var(--hud-font-body); font-size:11px; color:var(--hud-muted); font-style:italic; padding:4px 0;`;
+      empty.textContent = 'No potions in bag.';
+      this._bagEl.appendChild(empty);
+    }
   }
 
   dispose(): void {

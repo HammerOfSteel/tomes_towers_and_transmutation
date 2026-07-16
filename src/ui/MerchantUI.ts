@@ -32,6 +32,9 @@ let _panel: HTMLDivElement | null = null;
 let _closeKey: ((e: KeyboardEvent) => void) | null = null;
 
 export const MerchantUI = {
+  /** Set this to receive potion purchases. Wire to consumables.addPotion(). */
+  _onBuyPotion: null as ((potionId: string) => void) | null,
+
   get isOpen(): boolean { return _panel !== null; },
 
   open(merchantName: string, inventory: Inventory): void {
@@ -99,39 +102,59 @@ export const MerchantUI = {
     refreshGold();
     panel.appendChild(goldBar);
 
-    // Shop rows
-    const body = document.createElement('div');
-    body.style.cssText = 'padding:12px 16px;display:flex;flex-direction:column;gap:10px;';
+    // Tab bar
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex; border-bottom:1px solid var(--hud-border-warm); padding:0 16px;';
 
+    const tabContents: HTMLElement[] = [];
+    const tabBtns: HTMLButtonElement[] = [];
+
+    const TABS = ['Resources', 'Potions', 'Sell'] as const;
+
+    const switchTab = (idx: number) => {
+      tabBtns.forEach((b, i) => {
+        b.style.borderBottom = i === idx ? '2px solid var(--hud-gold)' : '2px solid transparent';
+        b.style.color = i === idx ? 'var(--hud-gold)' : 'var(--hud-muted)';
+      });
+      tabContents.forEach((c, i) => { c.style.display = i === idx ? '' : 'none'; });
+    };
+
+    for (let i = 0; i < TABS.length; i++) {
+      const btn = document.createElement('button');
+      btn.textContent = TABS[i]!;
+      btn.style.cssText = `background:none; border:none; border-bottom:2px solid transparent;
+        font-family:var(--hud-font-serif); font-size:11px; letter-spacing:1px;
+        padding:8px 14px; cursor:pointer; transition:color .12s, border-color .12s;
+        color:var(--hud-muted);`;
+      const idx = i;
+      btn.addEventListener('click', () => switchTab(idx));
+      tabBar.appendChild(btn);
+      tabBtns.push(btn);
+
+      const content = document.createElement('div');
+      content.style.cssText = 'padding:12px 16px; display:flex; flex-direction:column; gap:10px; max-height:300px; overflow-y:auto;';
+      tabContents.push(content);
+    }
+    panel.appendChild(tabBar);
+
+    // Tab 0: Resources (Buy)
     for (const item of SHOP_CATALOGUE) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;';
 
       const nameLbl = document.createElement('span');
       nameLbl.textContent = `${item.icon} ${item.label}`;
-      nameLbl.style.cssText = 'flex:1;font-size:13px;';
+      nameLbl.style.cssText = 'flex:1;font-size:13px;color:var(--hud-text);';
 
       const stockLbl = document.createElement('span');
-      stockLbl.style.cssText = 'font-size:11px;color:#7a6a40;min-width:60px;text-align:right;';
-      const refreshStock = () => {
-        stockLbl.textContent = `Own: ${inventory.get(item.resource)}`;
-      };
+      stockLbl.style.cssText = 'font-size:11px;color:var(--hud-muted);min-width:50px;text-align:right;';
+      const refreshStock = () => { stockLbl.textContent = `Own: ${inventory.get(item.resource)}`; };
       refreshStock();
 
-      // Buy button
       const buyBtn = document.createElement('button');
+      buyBtn.className = 'hud-btn';
       buyBtn.textContent = `Buy  ${item.buyPrice}g`;
-      Object.assign(buyBtn.style, {
-        background:   'rgba(60,40,10,0.7)',
-        border:       '1px solid #6a4a1a',
-        color:        '#c8a050',
-        borderRadius: '3px',
-        padding:      '4px 10px',
-        cursor:       'pointer',
-        fontFamily:   'monospace',
-        fontSize:     '11px',
-        whiteSpace:   'nowrap',
-      } as Partial<CSSStyleDeclaration>);
+      buyBtn.style.cssText = 'font-size:10px; padding:3px 8px; white-space:nowrap;';
       buyBtn.onclick = () => {
         if (inventory.get('gold') < item.buyPrice) {
           buyBtn.textContent = 'No gold!';
@@ -140,24 +163,66 @@ export const MerchantUI = {
         }
         inventory.spend('gold', item.buyPrice);
         inventory.add(item.resource, 1);
-        refreshGold();
-        refreshStock();
+        refreshGold(); refreshStock();
       };
 
-      // Sell button
+      row.append(nameLbl, stockLbl, buyBtn);
+      tabContents[0]!.appendChild(row);
+    }
+
+    // Tab 1: Potions (Buy)
+    const POTION_CATALOGUE = [
+      { id: 'potion_heal_minor', label: 'Minor Heal Potion', icon: '🧪', price: 12 },
+      { id: 'potion_heal_major', label: 'Major Heal Potion', icon: '⚗️',  price: 28 },
+      { id: 'potion_swiftness',  label: 'Swiftness Draught', icon: '💨', price: 20 },
+      { id: 'potion_power',      label: 'Power Elixir',      icon: '⚔️', price: 22 },
+    ];
+    for (const pot of POTION_CATALOGUE) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+
+      const nameLbl = document.createElement('span');
+      nameLbl.textContent = `${pot.icon} ${pot.label}`;
+      nameLbl.style.cssText = 'flex:1;font-size:13px;color:var(--hud-text);';
+
+      const buyBtn = document.createElement('button');
+      buyBtn.className = 'hud-btn hud-btn-primary';
+      buyBtn.textContent = `Buy  ${pot.price}g`;
+      buyBtn.style.cssText = 'font-size:10px; padding:3px 8px; white-space:nowrap;';
+      buyBtn.onclick = () => {
+        if (inventory.get('gold') < pot.price) {
+          buyBtn.textContent = 'No gold!';
+          setTimeout(() => { buyBtn.textContent = `Buy  ${pot.price}g`; }, 800);
+          return;
+        }
+        inventory.spend('gold', pot.price);
+        // Fire onBuyPotion callback if registered
+        MerchantUI._onBuyPotion?.(pot.id);
+        refreshGold();
+      };
+
+      row.append(nameLbl, buyBtn);
+      tabContents[1]!.appendChild(row);
+    }
+
+    // Tab 2: Sell
+    for (const item of SHOP_CATALOGUE) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+
+      const nameLbl = document.createElement('span');
+      nameLbl.textContent = `${item.icon} ${item.label}`;
+      nameLbl.style.cssText = 'flex:1;font-size:13px;color:var(--hud-text);';
+
+      const stockLbl = document.createElement('span');
+      stockLbl.style.cssText = 'font-size:11px;color:var(--hud-muted);min-width:50px;text-align:right;';
+      const refreshStock2 = () => { stockLbl.textContent = `Own: ${inventory.get(item.resource)}`; };
+      refreshStock2();
+
       const sellBtn = document.createElement('button');
+      sellBtn.className = 'hud-btn';
       sellBtn.textContent = `Sell  ${item.sellPrice}g`;
-      Object.assign(sellBtn.style, {
-        background:   'rgba(10,30,10,0.7)',
-        border:       '1px solid #2a5a2a',
-        color:        '#60a060',
-        borderRadius: '3px',
-        padding:      '4px 10px',
-        cursor:       'pointer',
-        fontFamily:   'monospace',
-        fontSize:     '11px',
-        whiteSpace:   'nowrap',
-      } as Partial<CSSStyleDeclaration>);
+      sellBtn.style.cssText = 'font-size:10px; padding:3px 8px; white-space:nowrap; color:var(--hud-success);';
       sellBtn.onclick = () => {
         if (inventory.get(item.resource) < 1) {
           sellBtn.textContent = 'None!';
@@ -166,15 +231,16 @@ export const MerchantUI = {
         }
         inventory.spend(item.resource, 1);
         inventory.add('gold', item.sellPrice);
-        refreshGold();
-        refreshStock();
+        refreshGold(); refreshStock2();
       };
 
-      row.append(nameLbl, stockLbl, buyBtn, sellBtn);
-      body.appendChild(row);
+      row.append(nameLbl, stockLbl, sellBtn);
+      tabContents[2]!.appendChild(row);
     }
 
-    panel.appendChild(body);
+    // Add all tab content divs to panel
+    for (const content of tabContents) panel.appendChild(content);
+    switchTab(0);
 
     // Footer hint
     const foot = document.createElement('div');

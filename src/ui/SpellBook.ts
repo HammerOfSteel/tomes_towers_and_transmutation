@@ -4,9 +4,21 @@
 //  Shows all known spells and lets the player assign them to 4 action slots.
 //  Slots 1–4 map to the action bar at the bottom of the HUD.
 
+import { injectHudTheme } from './hudTheme';
 import type { ProgressionSystem } from '@/progression/ProgressionSystem';
 
 // ── Spell metadata ────────────────────────────────────────────────────────
+
+const SPELL_GLYPH: Record<string, string> = {
+  magic_bolt:   '🔵',
+  flame_dart:   '🔥',
+  intimidate:   '💢',
+  nova_burst:   '💥',
+  chain_arc:    '⚡',
+  void_rift:    '🌀',
+  battle_hymn:  '🎵',
+  mass_animate: '💀',
+};
 
 const SPELL_LABEL: Record<string, string> = {
   magic_bolt:   'Magic Bolt',
@@ -42,13 +54,13 @@ const SB_CSS = `
 .sb-overlay.sb-open { opacity: 1; }
 
 .sb-card {
-  background: #0d0b13;
-  border: 1px solid #4a4158;
-  border-radius: 4px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius);
   padding: 24px 28px 20px;
   width: min(92vw, 500px);
   display: flex; flex-direction: column; gap: 20px;
-  box-shadow: 0 12px 50px rgba(0,0,0,.8), 0 0 0 1px #1a1428 inset;
+  box-shadow: var(--hud-shadow);
 }
 
 /* ── Header ── */
@@ -56,25 +68,25 @@ const SB_CSS = `
   display: flex; align-items: center; justify-content: space-between;
 }
 .sb-title {
-  font-family: 'Cinzel', serif;
+  font-family: var(--hud-font-serif);
   font-size: 17px; letter-spacing: 3px; text-transform: uppercase;
-  color: #c9b8e8;
+  color: var(--hud-text);
 }
 .sb-close {
-  background: none; border: 1px solid #3a3048;
-  color: #6a5888; font-size: 13px; cursor: pointer;
-  border-radius: 2px; padding: 4px 9px;
-  font-family: monospace;
+  background: none; border: 1px solid var(--hud-border);
+  color: var(--hud-muted); font-size: 13px; cursor: pointer;
+  border-radius: var(--hud-radius-sm); padding: 4px 9px;
+  font-family: var(--hud-font-mono);
   transition: color .12s, border-color .12s;
 }
-.sb-close:hover { color: #e2d9c8; border-color: #9d7cce; }
+.sb-close:hover { color: var(--hud-text); border-color: var(--hud-info); }
 
 /* ── Sections ── */
 .sb-section { display: flex; flex-direction: column; gap: 10px; }
 .sb-section-label {
-  font-family: 'Cinzel', serif; font-size: 8px;
+  font-family: var(--hud-font-serif); font-size: 8px;
   letter-spacing: 3px; text-transform: uppercase;
-  color: #3a2e50; border-bottom: 1px solid #1a1428;
+  color: var(--hud-muted); border-bottom: 1px solid var(--hud-border);
   padding-bottom: 5px;
 }
 
@@ -84,33 +96,33 @@ const SB_CSS = `
 .sb-slot {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   gap: 4px; padding: 9px 6px 7px;
-  background: rgba(0,0,0,.35); border: 1px solid #1e1828;
-  border-radius: 3px; cursor: pointer; position: relative;
+  background: rgba(0,0,0,.35); border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius-sm); cursor: pointer; position: relative;
   transition: border-color .12s, box-shadow .12s;
   min-width: 0;
 }
-.sb-slot:hover { border-color: #4a4158; }
+.sb-slot:hover { border-color: var(--hud-border); }
 .sb-slot--active {
-  border-color: #9d7cce;
-  box-shadow: 0 0 10px rgba(157,124,206,.22);
+  border-color: var(--hud-info);
+  box-shadow: 0 0 10px rgba(68,221,255,.22);
 }
 
 .sb-slot-num {
-  font-family: 'Cinzel', serif; font-size: 11px; font-weight: bold;
-  color: #4a3a68; line-height: 1;
+  font-family: var(--hud-font-serif); font-size: 11px; font-weight: bold;
+  color: var(--hud-muted); line-height: 1;
   transition: color .12s;
 }
-.sb-slot--active .sb-slot-num { color: #9d7cce; }
+.sb-slot--active .sb-slot-num { color: var(--hud-info); }
 
 .sb-slot-name {
-  font-family: 'IM Fell English', Georgia, serif;
-  font-size: 11px; color: #5a4e70;
+  font-family: var(--hud-font-body);
+  font-size: 11px; color: var(--hud-muted);
   text-align: center; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; max-width: 90px;
   transition: color .12s;
 }
-.sb-slot--active .sb-slot-name { color: #c9b8e8; }
-.sb-slot--empty .sb-slot-name  { font-style: italic; color: #2e2440; }
+.sb-slot--active .sb-slot-name { color: var(--hud-text); }
+.sb-slot--empty .sb-slot-name  { font-style: italic; }
 
 .sb-slot-clear {
   position: absolute; top: 2px; right: 4px;
@@ -126,28 +138,31 @@ const SB_CSS = `
 .sb-spell-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 9px 12px; background: rgba(0,0,0,.25);
-  border: 1px solid #1a1428; border-radius: 3px;
+  border: 1px solid var(--hud-border); border-radius: var(--hud-radius-sm);
+  transition: border-color .12s;
 }
+.sb-spell-row:hover { border-color: var(--hud-info); }
+.sb-spell-glyph { font-size: 18px; flex-shrink: 0; }
 .sb-spell-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .sb-spell-name {
-  font-family: 'Cinzel', serif; font-size: 13px; color: #c9b8e8;
+  font-family: var(--hud-font-serif); font-size: 13px; color: var(--hud-text);
 }
 .sb-spell-desc {
-  font-family: 'IM Fell English', Georgia, serif;
-  font-size: 11px; color: #4a3e60; font-style: italic;
+  font-family: var(--hud-font-body);
+  font-size: 11px; color: var(--hud-muted); font-style: italic;
 }
 
 /* Assign-to-slot buttons [1][2][3][4] */
 .sb-assign-row { display: flex; gap: 5px; flex-shrink: 0; }
 .sb-assign-btn {
   width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,.4); border: 1px solid #221938;
-  border-radius: 2px; color: #3a2e52;
-  font-family: monospace; font-size: 11px;
+  background: rgba(0,0,0,.4); border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius-sm); color: var(--hud-muted);
+  font-family: var(--hud-font-mono); font-size: 11px;
   cursor: pointer; transition: color .1s, border-color .1s, background .1s;
 }
-.sb-assign-btn:hover   { background: rgba(157,124,206,.15); border-color: #9d7cce; color: #c9b8e8; }
-.sb-assign-btn--active { background: rgba(157,124,206,.2); border-color: #9d7cce; color: #9d7cce; }
+.sb-assign-btn:hover   { background: rgba(68,221,255,.1); border-color: var(--hud-info); color: var(--hud-text); }
+.sb-assign-btn--active { background: rgba(68,221,255,.15); border-color: var(--hud-info); color: var(--hud-info); }
 
 /* ── Footer hint ── */
 .sb-hint {
@@ -165,6 +180,7 @@ export class SpellBook {
 
   constructor(prog: ProgressionSystem) {
     this._prog = prog;
+    injectHudTheme();
     this._ensureStyles();
 
     this._overlay = document.createElement('div');
@@ -280,6 +296,11 @@ export class SpellBook {
       const row = document.createElement('div');
       row.className = 'sb-spell-row';
 
+      // Spell glyph icon
+      const glyphEl = document.createElement('span');
+      glyphEl.className = 'sb-spell-glyph';
+      glyphEl.textContent = SPELL_GLYPH[id] ?? '✦';
+
       const info = document.createElement('div');
       info.className = 'sb-spell-info';
 
@@ -315,7 +336,7 @@ export class SpellBook {
         assignRow.appendChild(btn);
       }
 
-      row.append(info, assignRow);
+      row.append(glyphEl, info, assignRow);
       spellList.appendChild(row);
     }
     knownSection.append(knownLabel, spellList);

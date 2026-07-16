@@ -2,8 +2,7 @@
 //
 //  [P] key — full-screen stat allocation overlay.
 //  Shows the 6 core stats, current values, point cost, and effect descriptions.
-
-import type { ProgressionSystem } from '@/progression/ProgressionSystem';
+import { injectHudTheme } from './hudTheme';import type { ProgressionSystem } from '@/progression/ProgressionSystem';
 
 const STAT_INFO: Array<{
   key: keyof import('@/progression/ProgressionSystem').PlayerStats;
@@ -52,7 +51,7 @@ const STAT_INFO: Array<{
 export class StatPanel {
   private _el: HTMLDivElement | null = null;
   private _prog: ProgressionSystem | null = null;
-  private _rows: Array<{ valueEl: HTMLElement; descEl: HTMLElement }> = [];
+  private _rows: Array<{ valueEl: HTMLElement; descEl: HTMLElement; barFill: HTMLElement }> = [];
   private _pointsEl: HTMLElement | null = null;
 
   get visible(): boolean { return !!this._el; }
@@ -76,39 +75,35 @@ export class StatPanel {
   }
 
   private _build(prog: ProgressionSystem): void {
+    injectHudTheme();
     const el = document.createElement('div');
     el.id = 'stat-panel';
     Object.assign(el.style, {
       position: 'fixed', inset: '0',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(3,1,10,0.88)',
-      zIndex: '700', fontFamily: '"IM Fell English", Georgia, serif',
+      background: 'rgba(3,1,10,0.90)',
+      zIndex: '700', fontFamily: 'var(--hud-font-serif)',
     });
 
     const box = document.createElement('div');
+    box.className = 'hud-panel';
     Object.assign(box.style, {
-      background: 'rgba(8,4,20,0.97)',
-      border: '1px solid #4a3366',
-      borderRadius: '6px',
       padding: '28px 36px',
-      minWidth: '380px',
-      boxShadow: '0 0 40px rgba(100,60,200,0.3)',
+      minWidth: '400px', maxWidth: '520px',
+      boxShadow: 'var(--hud-shadow)',
     });
 
     // Title
     const title = document.createElement('div');
     title.textContent = '— Character —';
-    Object.assign(title.style, {
-      fontFamily: '"Cinzel", serif',
-      fontSize: '13px', letterSpacing: '4px',
-      color: '#9977cc', textAlign: 'center', marginBottom: '8px',
-    });
+    title.className = 'hud-title';
+    Object.assign(title.style, { marginBottom: '8px' });
 
     // Level + points row
     this._pointsEl = document.createElement('div');
     Object.assign(this._pointsEl.style, {
       fontSize: '11px', letterSpacing: '2px',
-      color: '#ffd43c', textAlign: 'center', marginBottom: '22px',
+      color: 'var(--hud-gold)', textAlign: 'center', marginBottom: '22px',
     });
     this._updatePoints(prog);
 
@@ -132,25 +127,42 @@ export class StatPanel {
       const lbl = document.createElement('span');
       lbl.textContent = info.label;
       Object.assign(lbl.style, {
-        flex: '1', fontSize: '13px', color: '#c9b8e8',
+        flex: '1', fontSize: '13px', color: 'var(--hud-text)',
       });
 
-      // Value
+      // Value + mini bar
+      const valueWrap = document.createElement('div');
+      Object.assign(valueWrap.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' });
       const valEl = document.createElement('span');
       valEl.textContent = String(prog.stats[info.key]);
       Object.assign(valEl.style, {
-        fontSize: '14px', fontFamily: 'monospace',
-        color: '#ffd43c', minWidth: '28px', textAlign: 'center',
+        fontSize: '14px', fontFamily: 'var(--hud-font-mono)',
+        color: 'var(--hud-gold)', minWidth: '28px', textAlign: 'center',
       });
+      const miniBar = document.createElement('div');
+      Object.assign(miniBar.style, {
+        width: '48px', height: '3px', borderRadius: '2px',
+        background: 'rgba(255,255,255,.08)',
+        overflow: 'hidden',
+      });
+      const miniFill = document.createElement('div');
+      Object.assign(miniFill.style, {
+        height: '100%', borderRadius: '2px',
+        background: 'var(--hud-info)',
+        width: `${Math.min(100, (prog.stats[info.key] / 20) * 100)}%`,
+        transition: 'width .2s',
+      });
+      miniBar.appendChild(miniFill);
+      valueWrap.append(valEl, miniBar);
 
       // + button
       const btn = document.createElement('button');
       btn.textContent = '+';
       Object.assign(btn.style, {
         background: 'rgba(80,40,140,0.7)',
-        border: '1px solid #6644aa',
-        borderRadius: '3px', color: '#c9b8e8',
-        fontFamily: 'monospace', fontSize: '14px',
+        border: '1px solid var(--hud-border)',
+        borderRadius: 'var(--hud-radius-sm)', color: 'var(--hud-text)',
+        fontFamily: 'var(--hud-font-mono)', fontSize: '14px',
         width: '28px', height: '28px',
         cursor: 'pointer', lineHeight: '1',
         transition: 'background 0.12s, box-shadow 0.12s',
@@ -174,29 +186,25 @@ export class StatPanel {
       const descEl = document.createElement('div');
       descEl.textContent = info.desc(prog.stats[info.key]);
       Object.assign(descEl.style, {
-        fontSize: '10px', color: '#6655aa',
+        fontSize: '10px', color: 'var(--hud-muted)',
         marginLeft: '30px', marginBottom: '6px',
       });
 
       // Outer stat-block (two rows: label row + desc row)
       const statBlock = document.createElement('div');
-      row.append(icon, lbl, valEl, btn);
+      row.append(icon, lbl, valueWrap, btn);
       statBlock.append(row, descEl);
       box.appendChild(statBlock);
 
-      this._rows.push({ valueEl: valEl, descEl });
+      this._rows.push({ valueEl: valEl, descEl, barFill: miniFill });
     });
 
     // Close button
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '× Close  [P]';
+    closeBtn.className = 'hud-btn';
     Object.assign(closeBtn.style, {
       display: 'block', margin: '18px auto 0',
-      background: 'none', border: '1px solid #3a2255',
-      borderRadius: '3px', color: '#5a4477',
-      fontFamily: '"Cinzel", serif', fontSize: '10px',
-      letterSpacing: '2px', padding: '6px 18px',
-      cursor: 'pointer',
     });
     closeBtn.addEventListener('click', () => this.close());
     box.appendChild(closeBtn);
@@ -213,8 +221,10 @@ export class StatPanel {
     STAT_INFO.forEach((info, i) => {
       const r = this._rows[i];
       if (!r || !this._prog) return;
-      r.valueEl.textContent = String(this._prog.stats[info.key]);
-      r.descEl.textContent = info.desc(this._prog.stats[info.key]);
+      const v = this._prog.stats[info.key];
+      r.valueEl.textContent = String(v);
+      r.descEl.textContent = info.desc(v);
+      r.barFill.style.width = `${Math.min(100, (v / 20) * 100)}%`;
     });
   }
 
