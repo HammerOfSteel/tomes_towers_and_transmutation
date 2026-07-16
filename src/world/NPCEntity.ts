@@ -9,6 +9,7 @@
  */
 
 import * as THREE            from 'three';
+import { TimeSystem }        from '@/world/TimeSystem';
 import { buildCreature }     from '@/creatures/CreatureBuilder';
 import type { CreatureRig }  from '@/creatures/CreatureBuilder';
 import { animateCreature }   from '@/creatures/CreatureAnimator';
@@ -32,8 +33,12 @@ const WANDER_SPEED      = 1.0;   // world units/s
 const INTERACT_RANGE    = 2.5;   // radius for [E] prompt
 const AGGRO_RANGE       = 6.0;   // NPC turns to face player within this range
 const WANDER_RADIUS_WU  = 12.0;  // max wander distance from home in world units
+const HOME_RADIUS_WU    = 2.5;   // tight radius at night (resting)
+const WORK_RADIUS_WU    = 5.0;   // near work-spot during work hours
 const IDLE_MIN          = 2.0;   // seconds
 const IDLE_MAX          = 5.5;   // seconds
+const IDLE_HOME_MIN     = 6.0;   // longer rest at night
+const IDLE_HOME_MAX     = 14.0;  // up to 14s idle when home phase
 const UPDATE_RATE_FAR   = 10;    // update every N frames beyond 80u
 const FREEZE_DIST_SQ    = 150 * 150; // fully frozen beyond this
 
@@ -282,10 +287,13 @@ export class NPCEntity {
       const tDist = Math.sqrt(tdx * tdx + tdz * tdz);
 
       if (tDist < 0.3) {
-        // Reached target → idle
+        // Reached target → idle; longer rest during home phase
+        const phase = TimeSystem.instance.schedulePhase;
+        const idleMin = phase === 'home' ? IDLE_HOME_MIN : IDLE_MIN;
+        const idleMax = phase === 'home' ? IDLE_HOME_MAX : IDLE_MAX;
         this._target    = null;
         this._state     = 'idle';
-        this._idleTimer = IDLE_MIN + (mulberry32(this._seed ^ this._frameCount)() * (IDLE_MAX - IDLE_MIN));
+        this._idleTimer = idleMin + (mulberry32(this._seed ^ this._frameCount)() * (idleMax - idleMin));
         return;
       }
 
@@ -358,8 +366,12 @@ export class NPCEntity {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private _pickWanderTarget(rand: () => number): void {
-    const angle = rand() * Math.PI * 2;
-    const dist  = rand() * WANDER_RADIUS_WU;
+    const phase  = TimeSystem.instance.schedulePhase;
+    const radius = phase === 'home' ? HOME_RADIUS_WU
+                 : phase === 'work' ? WORK_RADIUS_WU
+                 :                    WANDER_RADIUS_WU;
+    const angle  = rand() * Math.PI * 2;
+    const dist   = rand() * radius;
     this._target = new THREE.Vector3(
       this._homeWx + Math.cos(angle) * dist,
       0,

@@ -52,6 +52,7 @@ import { checkQuestFulfillment } from '@/world/QuestDef';
 import { assetLoader } from '@/assets/AssetLoader';
 import { LightingSystem } from '@/rendering/LightingSystem';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
+import { TimeSystem } from '@/world/TimeSystem';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -1184,6 +1185,7 @@ async function main() {
         sceneManager.update(dt, player.group.position);
       } else if (overworld) {
         owEditor?.update();
+        TimeSystem.instance.update(dt);
         overworld.update(dt, false, cameraRig.camera);
         party.pruneDead();
         tamingGame.update(dt);
