@@ -49,6 +49,18 @@ export interface DevSandboxOptions {
   onFlyMode?: (v: boolean) => void;
   getSettlements?: () => Array<{ name: string; worldPos: { x: number; y: number; z: number } }>;
   onFastTravel?: (pos: { x: number; y: number; z: number }) => void;
+
+  // ── NPC Generator tab ─────────────────────────────────────────────────────
+  /** Spawn a hostile enemy whose visual is driven by the given DNA. hp/damage override defaults. */
+  onSpawnNPC?: (dna: CreatureDNA, name: string, hp: number, damage: number, count: number) => void;
+}
+
+/** A saved NPC preset (stored in DevSandbox instance memory). */
+export interface NPCPreset {
+  name: string;
+  dna: CreatureDNA;
+  hp: number;
+  damage: number;
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -190,13 +202,26 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'cheats';
+type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'cheats' | 'npcgen';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
   private _bodyEl: HTMLElement | null = null;
   private _locationBarEl: HTMLElement | null = null;
   private _activeTab: TabId = 'spells';
+  private _npcPresets: NPCPreset[] = [];
+  private _npcDna: CreatureDNA = dnaForArchetype('biped');
+  private _npcName = 'Enemy';
+  private _npcHp = 40;
+  private _npcDamage = 8;
+  private _npcCount = 1;
+  private _npcLabRenderer: THREE.WebGLRenderer | null = null;
+  private _npcLabRig: CreatureRig | null = null;
+  private _npcLabScene: THREE.Scene | null = null;
+  private _npcLabCamera: THREE.PerspectiveCamera | null = null;
+  private _npcLabRafId: number | null = null;
+  private _npcLabRotY = 0;
+  private _npcPresetListEl: HTMLElement | null = null;
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
   private _procType: 'tower' | 'overworld' | 'dungeon' = 'tower';
@@ -225,9 +250,12 @@ export class DevSandbox {
   hide(): void { this._panel.style.display = 'none'; }
   dispose(): void {
     this._stopLabLoop();
+    this._stopNpcLabLoop();
     this._labPane?.dispose();
     this._labRenderer?.dispose();
     this._labRig?.dispose();
+    this._npcLabRenderer?.dispose();
+    this._npcLabRig?.dispose();
     this._panel.remove();
   }
 
@@ -290,6 +318,7 @@ export class DevSandbox {
       { id: 'enemies',  label: '⚔ Enemies' },
       { id: 'procgen',  label: '⚙ Proc-Gen'},
       { id: 'creature', label: '🧬 Creature'},
+      { id: 'npcgen',   label: '👾 NPC Gen' },
       { id: 'cheats',   label: '⚙ Cheats'  },
     ];
     for (const t of tabs) {
@@ -330,6 +359,7 @@ export class DevSandbox {
     if (this._activeTab === 'enemies')  body.appendChild(this._buildEnemiesTab());
     if (this._activeTab === 'procgen')  body.appendChild(this._buildProcGenTab());
     if (this._activeTab === 'creature') body.appendChild(this._buildCreatureLabTab());
+    if (this._activeTab === 'npcgen')   body.appendChild(this._buildNPCGenTab());
     if (this._activeTab === 'cheats')   body.appendChild(this._buildCheatsTab());
   }
 
@@ -847,6 +877,235 @@ export class DevSandbox {
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
+
+  // ── NPC Generator tab ─────────────────────────────────────────────────────
+
+  private _buildNPCGenTab(): HTMLElement {
+    const wrap = document.createElement('div');
+
+    // ── Archetype row ────────────────────────────────────────────────────
+    const archSec = document.createElement('div');
+    archSec.className = 'ds-section';
+    const archTitle = document.createElement('div');
+    archTitle.className = 'ds-section-title';
+    archTitle.textContent = 'Archetype & Appearance';
+    const archRow = document.createElement('div');
+    archRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;';
+    const archetypes: Array<{ id: Archetype; icon: string }> = [
+      { id: 'biped', icon: '🧙' }, { id: 'quadruped', icon: '🐺' },
+      { id: 'amoeba', icon: '🫧' }, { id: 'avian', icon: '🦅' }, { id: 'serpent', icon: '🐍' },
+    ];
+    for (const a of archetypes) {
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn' + (this._npcDna.archetype === a.id ? ' ds-btn--accent' : '');
+      btn.textContent = a.icon + ' ' + a.id;
+      btn.dataset.npcArchId = a.id;
+      btn.onclick = () => {
+        this._npcDna = dnaForArchetype(a.id);
+        archRow.querySelectorAll<HTMLButtonElement>('[data-npc-arch-id]').forEach(b => {
+          b.classList.toggle('ds-btn--accent', b.dataset.npcArchId === a.id);
+        });
+        this._rebuildNpcLabRig();
+      };
+      archRow.appendChild(btn);
+    }
+    archSec.append(archTitle, archRow);
+
+    // Mini preview canvas
+    const cv = document.createElement('canvas');
+    cv.width = 280; cv.height = 160;
+    cv.style.cssText = 'display:block;width:280px;height:160px;border:1px solid #2a1850;border-radius:3px;background:#0d0b18;margin-bottom:6px;';
+    archSec.appendChild(cv);
+    requestAnimationFrame(() => { this._initNpcLabRenderer(cv); this._rebuildNpcLabRig(); this._startNpcLabLoop(); });
+    wrap.appendChild(archSec);
+
+    // ── Name + Stats ─────────────────────────────────────────────────────
+    const statSec = document.createElement('div');
+    statSec.className = 'ds-section';
+    const statTitle = document.createElement('div');
+    statTitle.className = 'ds-section-title';
+    statTitle.textContent = 'Name & Stats';
+
+    const mkStatRow = (label: string, val: number, min: number, max: number, onChange: (v: number) => void) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = label + ':';
+      lbl.style.minWidth = '60px';
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'ds-input';
+      inp.min = String(min); inp.max = String(max); inp.value = String(val);
+      inp.onchange = () => { onChange(Math.min(max, Math.max(min, +inp.value || min))); inp.value = String(Math.min(max, Math.max(min, +inp.value || min))); };
+      row.append(lbl, inp);
+      return row;
+    };
+
+    // Name field
+    const nameRow = document.createElement('div');
+    nameRow.className = 'ds-row';
+    const nameLbl = document.createElement('span');
+    nameLbl.className = 'ds-label';
+    nameLbl.textContent = 'Name:';
+    nameLbl.style.minWidth = '60px';
+    const nameInp = document.createElement('input');
+    nameInp.type = 'text';
+    nameInp.className = 'ds-input ds-input--wide';
+    nameInp.value = this._npcName;
+    nameInp.oninput = () => { this._npcName = nameInp.value || 'Enemy'; };
+    nameRow.append(nameLbl, nameInp);
+
+    statSec.append(statTitle, nameRow,
+      mkStatRow('HP',     this._npcHp,     1, 500, v => { this._npcHp = v; }),
+      mkStatRow('Damage', this._npcDamage, 1, 100, v => { this._npcDamage = v; }),
+      mkStatRow('Count',  this._npcCount,  1,  20, v => { this._npcCount = v; }),
+    );
+    wrap.appendChild(statSec);
+
+    // ── Actions ──────────────────────────────────────────────────────────
+    const actSec = document.createElement('div');
+    actSec.className = 'ds-section';
+    const actRow = document.createElement('div');
+    actRow.className = 'ds-row';
+
+    const spawnBtn = document.createElement('button');
+    spawnBtn.className = 'ds-btn ds-btn--accent';
+    spawnBtn.textContent = '⚔ Spawn as Enemy';
+    spawnBtn.onclick = () => {
+      if (this._opts.onSpawnNPC) {
+        this._opts.onSpawnNPC(cloneDNA(this._npcDna), this._npcName, this._npcHp, this._npcDamage, this._npcCount);
+      }
+    };
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'ds-btn';
+    saveBtn.textContent = '💾 Save Preset';
+    saveBtn.onclick = () => {
+      const preset: NPCPreset = { name: this._npcName, dna: cloneDNA(this._npcDna), hp: this._npcHp, damage: this._npcDamage };
+      // Replace existing preset with same name
+      const idx = this._npcPresets.findIndex(p => p.name === preset.name);
+      if (idx >= 0) this._npcPresets[idx] = preset;
+      else this._npcPresets.push(preset);
+      this._renderNpcPresetList();
+      saveBtn.textContent = '✓ Saved';
+      setTimeout(() => { saveBtn.textContent = '💾 Save Preset'; }, 1200);
+    };
+
+    actRow.append(spawnBtn, saveBtn);
+    actSec.appendChild(actRow);
+    wrap.appendChild(actSec);
+
+    // ── Saved Presets ────────────────────────────────────────────────────
+    const presetSec = document.createElement('div');
+    presetSec.className = 'ds-section';
+    const presetTitle = document.createElement('div');
+    presetTitle.className = 'ds-section-title';
+    presetTitle.textContent = 'Saved Presets';
+    const presetList = document.createElement('div');
+    presetList.style.cssText = 'display:flex;flex-direction:column;gap:4px;max-height:140px;overflow-y:auto;';
+    this._npcPresetListEl = presetList;
+    presetSec.append(presetTitle, presetList);
+    wrap.appendChild(presetSec);
+    this._renderNpcPresetList();
+
+    const hint = document.createElement('div');
+    hint.className = 'ds-hint';
+    hint.textContent = 'Spawned enemies use standard slime AI (chase + attack) with custom HP/damage and DNA visual.';
+    wrap.appendChild(hint);
+
+    return wrap;
+  }
+
+  private _renderNpcPresetList(): void {
+    const list = this._npcPresetListEl;
+    if (!list) return;
+    list.innerHTML = '';
+    if (this._npcPresets.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ds-hint';
+      empty.textContent = 'No presets saved yet.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const preset of this._npcPresets) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;';
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'ds-btn';
+      loadBtn.style.fontSize = '.72rem';
+      loadBtn.textContent = '↳ Load';
+      loadBtn.onclick = () => {
+        this._npcDna = cloneDNA(preset.dna);
+        this._npcName = preset.name;
+        this._npcHp = preset.hp;
+        this._npcDamage = preset.damage;
+        this._rebuildNpcLabRig();
+        // Re-render tab to sync inputs
+        this._switchTab('npcgen');
+      };
+      const spawnBtn = document.createElement('button');
+      spawnBtn.className = 'ds-btn ds-btn--accent';
+      spawnBtn.style.fontSize = '.72rem';
+      spawnBtn.textContent = '⚔';
+      spawnBtn.title = 'Spawn this preset';
+      spawnBtn.onclick = () => {
+        if (this._opts.onSpawnNPC) {
+          this._opts.onSpawnNPC(cloneDNA(preset.dna), preset.name, preset.hp, preset.damage, this._npcCount);
+        }
+      };
+      const lbl = document.createElement('span');
+      lbl.style.cssText = 'font-size:.74rem;color:#c0a0f0;flex:1;';
+      lbl.textContent = `${preset.name}  HP:${preset.hp}  DMG:${preset.damage}`;
+      row.append(loadBtn, spawnBtn, lbl);
+      list.appendChild(row);
+    }
+  }
+
+  private _initNpcLabRenderer(cv: HTMLCanvasElement): void {
+    if (this._npcLabRenderer) return;
+    this._npcLabRenderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+    this._npcLabRenderer.setSize(280, 160);
+    this._npcLabRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this._npcLabRenderer.setClearColor(0x0d0b18);
+    this._npcLabScene  = new THREE.Scene();
+    this._npcLabCamera = new THREE.PerspectiveCamera(42, 280 / 160, 0.1, 50);
+    this._npcLabCamera.position.set(0.4, 1.4, 3.0);
+    this._npcLabCamera.lookAt(0, 1.0, 0);
+    this._npcLabScene.add(new THREE.AmbientLight(0xffe8d0, 0.6));
+    const key = new THREE.DirectionalLight(0xff8060, 1.1); key.position.set(3, 5, 3);
+    this._npcLabScene.add(key);
+    const rim = new THREE.DirectionalLight(0xff3030, 0.4); rim.position.set(-3, 2, -2);
+    this._npcLabScene.add(rim);
+  }
+
+  private _rebuildNpcLabRig(): void {
+    if (!this._npcLabScene) return;
+    if (this._npcLabRig) { this._npcLabScene.remove(this._npcLabRig.root); this._npcLabRig.dispose(); }
+    this._npcLabRig = buildCreature(this._npcDna);
+    this._npcLabScene.add(this._npcLabRig.root);
+  }
+
+  private _startNpcLabLoop(): void {
+    if (this._npcLabRafId !== null) return;
+    const tick = () => {
+      this._npcLabRafId = requestAnimationFrame(tick);
+      this._npcLabRotY += 0.012;
+      if (this._npcLabRig) {
+        this._npcLabRig.root.rotation.y = this._npcLabRotY;
+        const t = performance.now() * 0.001;
+        animateCreature(this._npcLabRig, { state: 'idle', time: t });
+      }
+      if (this._npcLabRenderer && this._npcLabScene && this._npcLabCamera) {
+        this._npcLabRenderer.render(this._npcLabScene, this._npcLabCamera);
+      }
+    };
+    tick();
+  }
+
+  private _stopNpcLabLoop(): void {
+    if (this._npcLabRafId !== null) { cancelAnimationFrame(this._npcLabRafId); this._npcLabRafId = null; }
+  }
 
   // ── Cheats tab ────────────────────────────────────────────────────────────
 

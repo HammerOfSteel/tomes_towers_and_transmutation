@@ -527,6 +527,30 @@ async function main() {
       onFlyMode:     (v) => { player.flyMode = v; },
       getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
       onFastTravel:  (pos) => { if (gameMode !== 'exterior') switchToExterior(); player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z)); },
+      onSpawnNPC: (dna, _name, hp, damage, count) => {
+        const playerPos = player.group.position;
+        const angle0 = Math.random() * Math.PI * 2;
+        for (let i = 0; i < count; i++) {
+          const angle = angle0 + (i / Math.max(count, 1)) * Math.PI * 2;
+          const r = 4 + Math.random() * 2;
+          const pos = new THREE.Vector3(
+            playerPos.x + Math.cos(angle) * r, 1.5,
+            playerPos.z + Math.sin(angle) * r,
+          );
+          const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+          // Override HP and damage
+          en.health.forceSetHp(hp);
+          (en as unknown as { _maxHp?: number })._maxHp = hp;
+          (en as unknown as { _baseDamage?: number })._baseDamage = damage;
+          // Replace slime body with DNA creature rig
+          const rig = buildCreature(dna);
+          // Hide the default slime sphere mesh; add DNA rig to the enemy group
+          en.group.children.slice().forEach(c => { c.visible = false; });
+          en.group.add(rig.root);
+          scene.add(en.group);
+          sceneManager.addEnemy(en);
+        }
+      },
       onSpawnEnemies: (n) => {
         const playerPos = player.group.position;
         const angle0 = Math.random() * Math.PI * 2;
