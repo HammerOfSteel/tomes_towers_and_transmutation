@@ -54,6 +54,7 @@ import { LightingSystem } from '@/rendering/LightingSystem';
 import { ParticleSystem } from '@/rendering/ParticleSystem';
 import { TimeSystem } from '@/world/TimeSystem';
 import { MerchantUI } from '@/ui/MerchantUI';
+import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -343,6 +344,9 @@ async function main() {
   }
 
   interactables.onTelescopeActivate = () => enterTelescopeMode();
+  interactables.onQuestBoard = () => {
+    QuestBoardUI.open(questLog, currentSeed, sceneManager.currentFloor);
+  };
 
   // Crafting station handler — open the shared CraftingUI with correct recipe set
   interactables.onCraftingStation = (type) => {

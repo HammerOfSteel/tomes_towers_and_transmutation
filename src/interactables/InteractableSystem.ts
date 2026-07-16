@@ -42,6 +42,8 @@ export class InteractableSystem {
    *  Argument is 'alchemy' for cauldron, 'forge' for forge, 'enchanting' for
    *  enchanting lectern.  Return `true` to consume the event. */
   onCraftingStation: ((type: 'alchemy' | 'forge' | 'enchanting') => void) | null = null;
+  /** Called when player interacts with a quest_board fixture. */
+  onQuestBoard: (() => void) | null = null;
 
   constructor(
     private readonly progression: ProgressionSystem,
@@ -97,6 +99,12 @@ export class InteractableSystem {
     // Telescope routes to its own dedicated view instead of the BookReader
     if (item.type === 'telescope') {
       this.onTelescopeActivate?.();
+      return true;
+    }
+
+    // Quest board opens the quest panel
+    if (item.type === 'quest_board') {
+      this.onQuestBoard?.();
       return true;
     }
 
@@ -156,7 +164,9 @@ export class InteractableSystem {
       ? 'Use'
       : (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type)
         ? 'Examine'
-        : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
+        : item.type === 'quest_board'
+          ? 'Browse'
+          : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
     this.promptEl.innerHTML = `<kbd style="${KBD_STYLE}">E</kbd>&nbsp; ${verb} ${label}`;
     this.promptEl.style.opacity = '1';
   }
