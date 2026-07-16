@@ -67,6 +67,7 @@ import { BuffBar } from '@/ui/BuffBar';
 import { PartyStrip } from '@/ui/PartyStrip';
 import { ObjectiveTracker } from '@/ui/ObjectiveTracker';
 import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
+import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
@@ -955,11 +956,15 @@ async function main() {
         statPanel.close();          // close stat panel → game
       } else if (talentTree.visible) {
         talentTree.close();         // close talent tree → game
+      } else if (controlsOverlay.isOpen) {
+        controlsOverlay.hide();     // close help → game
       } else if (pauseMenu.isOpen) {
         pauseMenu.close();          // close menu → game
       } else {
         pauseMenu.open();           // game → menu
       }
+    } else if (e.key === 'h' || e.key === 'H') {
+      if (!pauseMenu.isOpen && !editMode.isActive) controlsOverlay.toggle();
     } else if (e.key === 'k' || e.key === 'K') {
       if (!pauseMenu.isOpen && !editMode.isActive) spellBook.toggle();
     } else if (e.key === 'p' || e.key === 'P') {
@@ -1152,6 +1157,7 @@ async function main() {
   const partyStrip = new PartyStrip();
   const objTracker = new ObjectiveTracker();
   const questModal = new QuestAcceptModal();
+  const controlsOverlay = new ControlsOverlay();
 
   // ── Exterior interaction prompt ───────────────────────────────────────────
   // Reuses the same visual style as InteractableSystem's prompt.
