@@ -29,7 +29,12 @@ import { loadCharModel, getCharModelBounds } from '@/characters/CharacterLoader'
 import { ENV_ASSETS, ENV_CATEGORIES, ENV_PACKS, type EnvAssetDef } from '@/assets/envManifest';
 import { EditorCore }        from '@/editor/EditorCore';
 import { EditorSerializer }  from '@/editor/EditorSerializer';
+import { TowerFloorEditor }  from '@/editor/TowerFloorEditor';
+import { BuildingEditor }    from '@/editor/BuildingEditor';
+import { DungeonEditor }     from '@/editor/DungeonEditor';
 import type { EditorType, LevelDoc } from '@/editor/EditorSchema';
+// NOTE: OverworldEditor exists as the in-game editor (different constructor);
+// model-review overworld tab uses EditorCore directly (Phase L2 TODO).
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -929,6 +934,11 @@ let _editorDocName = 'New Floor';
 let _editorCatFilter = 'all';
 let _editorAssetText = '';
 
+// Sub-editors (created lazily when the Editor tab is first activated)
+let _towerEditor:    TowerFloorEditor | null = null;
+let _buildingEditor: BuildingEditor | null = null;
+let _dungeonEditor:  DungeonEditor | null = null;
+
 // ── Editor mode tab handler ──────────────────────────────────────────────────
 
 document.getElementById('tab-editor')?.addEventListener('click', () => {
@@ -963,12 +973,44 @@ document.getElementById('tab-editor')?.addEventListener('click', () => {
   _buildEditorAssetPanel();
   _bindEditorToolbar();
 
+  // Instantiate sub-editors (lazy — only the active one is shown)
+  const edContainer = document.getElementById('editor-inspector')!.parentElement!;
+  _towerEditor     = new TowerFloorEditor(_editorCore, _editorSerial!, edContainer);
+  // _overworldEditor: Phase L2 — uses in-game OverworldEditor (different constructor)
+  _buildingEditor  = new BuildingEditor(_editorCore, edContainer);
+  _dungeonEditor   = new DungeonEditor(_editorCore, edContainer);
+  _activateSubEditor('tower_floor');
+
   // Set default camera for editor (top-down slightly angled)
   camera.position.set(0, 20, 15);
   camera.lookAt(0, 0, 0);
   orbit.target.set(0, 0, 0);
   orbit.update();
 });
+
+// ── Sub-editor activation ─────────────────────────────────────────────────────
+
+function _activateSubEditor(type: EditorType): void {
+  // Show/hide the sub-editor-specific panels
+  const panelIds: Record<string, string> = {
+    tower_floor: 'tfe-props-panel',
+    overworld:   'ow-editor-panel',
+    building:    'building-editor-panel',
+    dungeon:     'dungeon-editor-panel',
+  };
+  Object.values(panelIds).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const activeId = panelIds[type];
+  if (activeId) {
+    const el = document.getElementById(activeId);
+    if (el) el.style.display = '';
+  }
+  // Floor list only for tower
+  const floorListPanel = document.getElementById('tfe-floor-list-panel');
+  if (floorListPanel) floorListPanel.style.display = type === 'tower_floor' ? '' : 'none';
+}
 
 // ── Sub-tab switching ─────────────────────────────────────────────────────────
 
@@ -978,6 +1020,7 @@ document.querySelectorAll<HTMLButtonElement>('.editor-sub').forEach(btn => {
     btn.classList.add('active');
     _editorType = btn.dataset['etype'] as EditorType;
     _buildEditorAssetPanel();
+    _activateSubEditor(_editorType);
   });
 });
 

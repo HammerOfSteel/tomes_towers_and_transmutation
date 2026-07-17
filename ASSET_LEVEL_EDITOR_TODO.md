@@ -4,6 +4,15 @@
 > Entry point: **http://localhost:5174/model-review.html** → new **✏️ Editor** tab
 > All editors share the same 3D viewport, asset panel, and property inspector.
 
+## Progress
+- [x] **L0 — Editor Foundation** (committed)
+- [x] **L1 — Tower Floor Editor** (committed)
+- [ ] **L2 — Overworld Editor** (existing OverworldEditor.ts has different arch; Phase L6 integration needed)
+- [x] **L3 — Building Exterior Editor** (committed, combined with L4)
+- [x] **L4 — Building Interior Editor** (committed, combined with L3)
+- [x] **L5 — Dungeon Editor** (committed)
+- [ ] **L6 — Polish & Integration** (game hot-reload, Playwright tests, scale calibration)
+
 ---
 
 ## Git Branch Setup
