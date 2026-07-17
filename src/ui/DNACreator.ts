@@ -47,6 +47,8 @@ export interface CharacterConfig {
    * Only present when the game was started via NewGameFlow.
    */
   characterId?: import('@/scene/CharacterDecisionTree').CharacterId;
+  /** Restore master key state when continuing a saved game. */
+  hasMasterKey?: boolean;
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────

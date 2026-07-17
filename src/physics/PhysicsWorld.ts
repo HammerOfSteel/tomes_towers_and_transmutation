@@ -40,6 +40,27 @@ export class PhysicsWorld {
     return body;
   }
 
+  /** Create a fixed box collider with an arbitrary orientation.
+   *  `rotation` is a THREE.Quaternion; `halfExtents` are in the body's local frame.
+   *  Used for arc wall segments that must be tangent to the circular chamber. */
+  createStaticRotatedBox(
+    position: THREE.Vector3,
+    rotation: THREE.Quaternion,
+    halfExtents: THREE.Vector3,
+  ): RAPIER.RigidBody {
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(position.x, position.y, position.z)
+      .setRotation({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w });
+    const body = this.world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+    );
+    this.world.createCollider(colliderDesc, body);
+    return body;
+  }
+
   /** Create a kinematic-position-based capsule body for the player.
    *  `halfHeight` = half the height of the cylindrical portion.
    *  `radius`     = hemisphere radius.

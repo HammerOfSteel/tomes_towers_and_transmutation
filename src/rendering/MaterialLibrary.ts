@@ -14,7 +14,7 @@
  */
 
 import * as THREE from 'three';
-import { makeStoneTexture, makeWoodGrainTexture } from '@/rendering/ProceduralTextures';
+import { makeStoneTexture, makeWoodGrainTexture, makeFloorPlanksTexture, makeAlchemyStoneTexture, makeHeraldStoneTexture, makeDampStoneTexture, makeScorchedStoneTexture, makeSealedStoneTexture, makeCelestialStoneTexture, makeGrassTexture } from '@/rendering/ProceduralTextures';
 
 // ── Named material keys ───────────────────────────────────────────────────────
 
@@ -22,6 +22,13 @@ export type MaterialName =
   // World / terrain
   | 'stone_wall'
   | 'stone_floor'
+  | 'alchemy_stone_floor'
+  | 'herald_stone_floor'
+  | 'damp_stone_floor'
+  | 'scorched_stone_floor'
+  | 'sealed_stone_floor'
+  | 'celestial_stone_floor'
+  | 'grass_floor'
   | 'wood_plank'
   | 'wood_dark'
   | 'moss'
@@ -63,8 +70,57 @@ const _builders: Record<MaterialName, Builder> = {
     metalness: 0.02,
   }),
 
+  alchemy_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeAlchemyStoneTexture(13),
+    color: 0xc09070,   // warm amber overtone
+    roughness: 0.90,
+    metalness: 0.03,
+  }),
+
+  herald_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeHeraldStoneTexture(31),
+    color: 0xa09080,   // cool-warm grey
+    roughness: 0.88,
+    metalness: 0.04,
+  }),
+
+  damp_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeDampStoneTexture(55),
+    color: 0x708060,   // dark green-grey
+    roughness: 0.95,
+    metalness: 0.02,
+  }),
+
+  scorched_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeScorchedStoneTexture(71),
+    color: 0x402018,   // dark char-brown
+    roughness: 0.98,
+    metalness: 0.04,
+  }),
+
+  sealed_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeSealedStoneTexture(89),
+    color: 0x5060a0,   // cold blue-grey
+    roughness: 0.92,
+    metalness: 0.06,
+  }),
+
+  celestial_stone_floor: () => new THREE.MeshStandardMaterial({
+    map: makeCelestialStoneTexture(97),
+    color: 0x1a1a2a,   // near-black with blue tint
+    roughness: 0.85,
+    metalness: 0.08,
+  }),
+
+  grass_floor: () => new THREE.MeshStandardMaterial({
+    map: makeGrassTexture(61),
+    color: 0x3a6828,   // saturated green
+    roughness: 0.98,
+    metalness: 0.0,
+  }),
+
   wood_plank: () => new THREE.MeshStandardMaterial({
-    map: makeWoodGrainTexture(7),
+    map: makeFloorPlanksTexture(77),
     color: 0xd4a060,
     roughness: 0.75,
     metalness: 0.0,

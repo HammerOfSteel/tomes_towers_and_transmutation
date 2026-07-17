@@ -5,6 +5,8 @@ export interface PauseMenuActions {
   onOpenDevPanel?: () => void;
   /** Open the character stats sheet (available from pause menu). */
   onOpenStats?:  () => void;
+  /** Save current game state to the active slot. */
+  onSave?:       () => void;
 }
 
 /** Full-screen pause overlay, opened via Escape.
@@ -56,6 +58,11 @@ export class PauseMenu {
           <span style="color:#44cc88;">▶</span>&nbsp; Resume
         </button>
 
+        ${this.actions.onSave ? `
+        <button class="pm-btn" data-action="save" style="${BTN_STYLE}">
+          <span style="color:#cc9944;">✦</span>&nbsp; Save Chronicle
+        </button>` : ''}
+
         <button class="pm-btn" data-action="editor" style="${BTN_STYLE}">
           <span style="color:#ff9933;">⬡</span>&nbsp; Level Editor
         </button>
@@ -90,6 +97,11 @@ export class PauseMenu {
         const action = btn.dataset['action'];
         if (action === 'resume') {
           this.close();
+        } else if (action === 'save') {
+          this.actions.onSave?.();
+          // brief visual feedback — flash button text
+          btn.textContent = '✦ Saved!';
+          setTimeout(() => { btn.innerHTML = '<span style="color:#cc9944;">✦</span>&nbsp; Save Chronicle'; }, 1400);
         } else if (action === 'editor') {
           this.close();
           this.actions.onOpenEditor();

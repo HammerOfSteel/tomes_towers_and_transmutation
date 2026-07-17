@@ -118,6 +118,10 @@ export class LightingSystem {
   private readonly _torches: TorchEntry[] = [];
   private readonly _pulses:  PulseEntry[]  = [];
   private readonly _ambientLight: THREE.AmbientLight;
+  // Mesh-based flame geometry per torch (disposed with clearTorches)
+  private readonly _flameGroups: THREE.Group[] = [];
+  private readonly _flameGeos:   THREE.BufferGeometry[] = [];
+  private readonly _flameMats:   THREE.Material[] = [];
 
   /** Total elapsed time in seconds — used for flicker phase. */
   private _t = 0;
@@ -173,10 +177,16 @@ export class LightingSystem {
     }
   }
 
-  /** Remove all torch lights from the scene (call before loading a new room). */
+  /** Remove all torch lights and flame meshes from the scene (call before loading a new room). */
   clearTorches(): void {
     for (const t of this._torches) this._scene.remove(t.light);
     this._torches.length = 0;
+    for (const g of this._flameGroups) this._scene.remove(g);
+    for (const g of this._flameGeos)   g.dispose();
+    for (const m of this._flameMats)   m.dispose();
+    this._flameGroups.length = 0;
+    this._flameGeos.length   = 0;
+    this._flameMats.length   = 0;
   }
 
   /**
@@ -283,5 +293,44 @@ export class LightingSystem {
       flickerFreq:  3 + rng() * 4,
       flickerPhase: rng() * Math.PI * 2,
     });
+    // Toy-3D mesh flame at the same position
+    const flame = this._buildTorchFlame(x, y, z);
+    this._scene.add(flame);
+    this._flameGroups.push(flame);
+  }
+
+  /** Builds a toy-3D-style mesh flame group centred at (x, y, z). */
+  private _buildTorchFlame(x: number, y: number, z: number): THREE.Group {
+    const grp = new THREE.Group();
+    grp.position.set(x, y, z);
+
+    // Main cone — orange flame body
+    const coneGeo = new THREE.ConeGeometry(0.055, 0.19, 5);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+    this._flameGeos.push(coneGeo);
+    this._flameMats.push(coneMat);
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.position.y = 0.12;
+    grp.add(cone);
+
+    // Base glow sphere — bright yellow at the wick
+    const glowGeo = new THREE.SphereGeometry(0.040, 5, 4);
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffee55 });
+    this._flameGeos.push(glowGeo);
+    this._flameMats.push(glowMat);
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.y = 0.03;
+    grp.add(glow);
+
+    // Tip spark — white-yellow pinpoint
+    const tipGeo = new THREE.SphereGeometry(0.020, 4, 3);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+    this._flameGeos.push(tipGeo);
+    this._flameMats.push(tipMat);
+    const tip = new THREE.Mesh(tipGeo, tipMat);
+    tip.position.y = 0.24;
+    grp.add(tip);
+
+    return grp;
   }
 }

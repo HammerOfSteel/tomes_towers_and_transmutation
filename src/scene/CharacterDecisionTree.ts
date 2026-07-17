@@ -318,55 +318,251 @@ export class CharacterDecisionTree {
     // ── PHASE 3: stat allocation ───────────────────────────────────────────────
     await _pause(500);
 
-    await overlay.speak(
-      "Right then. That's the taxonomy sorted.\n" +
-      "Two more questions for my files. Completely standard procedure.\n" +
-      "You can stop staring at the door like that.",
-    );
+    // Transition line adapts to species
+    const TRANSITION: readonly string[] = [
+      // human
+      "Right then. That's the paperwork sorted.\n" +
+      "Two more questions. Standard intake procedure.\n" +
+      "You can stop rattling the door.",
+      // undead
+      "Excellent. The taxonomy is resolved.\n" +
+      "Two further questions for completeness. Entirely bureaucratic.\n" +
+      "I am not stalling. The door has a timer.",
+      // vulperia
+      "Good. Classification complete.\n" +
+      "Two remaining questions. Don't look at me like that.\n" +
+      "I can feel you judging the filing system from here.",
+      // slime
+      "Wonderful. That's the naming sorted.\n" +
+      "Two small questions remain. Please try to hold a roughly consistent shape.\n" +
+      "It helps me maintain eye contact.",
+    ];
+    await overlay.speak(TRANSITION[species]);
 
-    // Question 1 — approach to problems
-    await overlay.speak(
+    // ── Q1: approaches (species-specific framing, same stat mapping) ──────────
+    const Q1_PROMPTS: readonly string[] = [
+      // human — jar of pickled newt eyes
       "Tell me. If you encounter a stubborn jar of pickled newt eyes,\n" +
       "how do you open it?",
-    );
-
-    const q1 = await overlay.choose([
-      "Smash it on the floor with the nearest heavy object.",
-      "Carefully pry the lid with a dagger. Or a claw. Or whatever's available.",
-      "Read the enchanted label backwards. That usually reverses the enchantment.",
-      "Stare at it. Very hard. Until it gives up. Everything gives up eventually.",
-    ]);
+      // undead — a sealed coffin you want OUT of
+      "Suppose you find yourself sealed inside a coffin.\n" +
+      "Inconvenient, but familiar territory for your type.\n" +
+      "How do you get out?",
+      // vulperia — an enchanted locked chest
+      "There is a locked chest. You want what's inside.\n" +
+      "The lock is enchanted. The enchantment is watching you.\n" +
+      "What do you do?",
+      // slime — a very small gap you need to get through
+      "There is a gap in the wall. Annoyingly small.\n" +
+      "Something interesting is on the other side.\n" +
+      "What is your approach?",
+    ];
+    const Q1_CHOICES: readonly (readonly [string, string, string, string])[] = [
+      // human
+      [
+        "Smash it on the floor with the nearest heavy object.",
+        "Carefully pry the lid with a dagger. Works on most enchanted lids.",
+        "Read the label backwards. That usually reverses the enchantment.",
+        "Stare at it. Very hard. Until it gives up. Everything gives up eventually.",
+      ],
+      // undead
+      [
+        "Force it open with whatever structural integrity I still have.",
+        "Feel for air gaps. There's always a way out if you're patient.",
+        "Recall the unsealing cantrip. I learned it for reasons.",
+        "Wait. I have nothing but time. The wood will rot eventually.",
+      ],
+      // vulperia
+      [
+        "Apply appropriate force in the right place. Quickly.",
+        "Study the lock's rhythm. Every enchantment has a pattern.",
+        "Engage the enchantment in polite conversation until it's confused.",
+        "Sit near it. Very visibly. Until someone else opens it out of discomfort.",
+      ],
+      // slime
+      [
+        "Push. Harder. It will yield eventually. Everything yields to sufficient pressure.",
+        "Find the edges. There is always a slightly larger gap if you look carefully.",
+        "Absorb some of the wall. Technically also getting through.",
+        "Simply exist near the gap and wait for it to become philosophically irrelevant.",
+      ],
+    ];
+    await overlay.speak(Q1_PROMPTS[species]);
+    const q1 = await overlay.choose(Q1_CHOICES[species] as unknown as string[]);
 
     const statBonusA: StatBonus = (
       ['strength', 'agility', 'intelligence', 'constitution'] as const
     )[q1];
     overlay.showStatGain(STAT_DISPLAY[statBonusA]);
 
-    // Question 2 — response to adversity
-    await overlay.speak(
+    // Brief species-aware reaction from the wizard
+    const Q1_REACTIONS: readonly (readonly [string, string, string, string])[] = [
+      // human
+      [
+        "Direct. Possibly reimbursable. We'll discuss the floor later.",
+        "A dagger! Classic. You're a 'prepared for most things' sort. Noted.",
+        "Enchanted labels! Yes. Only works if you can read them. Can you?\n" +
+        "...Of course you can. Why did I ask.",
+        "Passive stubbornness. A legitimate strategy. Slow, but legitimate.",
+      ],
+      // undead
+      [
+        "Brute persistence. Appropriate. Very on-brand for your condition.",
+        "Patience and spatial awareness. Very sensible given your, ah, timeline.",
+        "You know unsealing cantrips. You've been in a coffin before.\n" +
+        "More than once, I'd guess. The answer is always more than once.",
+        "Indefinite patience. The resting state. I respect the commitment.",
+      ],
+      // vulperia
+      [
+        "Direct action. No hesitation. The lock never saw you coming.\n" +
+        "It rarely does.",
+        "Pattern recognition. You notice everything, don't you.\n" +
+        "Everything. I've just hidden my notes.",
+        "You talked an enchantment into submission.\n" +
+        "I find this funny and also slightly alarming.",
+        "Strategic proximity. The social engineering approach.\n" +
+        "I have seen this exact technique used on me. Repeatedly.",
+      ],
+      // slime
+      [
+        "Pure persistence. I respect this. The gap had no idea what it was dealing with.",
+        "Careful observation first. Then action. Very methodical for someone\n" +
+        "without, technically, a skeleton.",
+        "You absorbed part of the wall. I'm writing 'creative problem-solver' in my notes.\n" +
+        "And also 'please don't absorb the archives'.",
+        "Philosophical approach! The gap was never really a gap.\n" +
+        "It was a state of mind. I think. The notes get unclear here.",
+      ],
+    ];
+    await overlay.speak(Q1_REACTIONS[species][q1]);
+
+    // ── Q2: adversity (species-specific framing, same stat mapping) ───────────
+    const Q2_PROMPTS: readonly string[] = [
+      // human
       "My constructs will deliver standard tower gruel this evening.\n" +
       "What is your immediate reaction?",
-    );
-
-    const q2 = await overlay.choose([
-      "Throw it back through the slot and demand to speak with the manager.",
-      "Accept it politely, wait for the footsteps, then pick the lock and raid the pantry.",
-      "Use the residual magic in this cell to transmute it into something edible.",
-      "Complain at length about the texture. Eat it anyway. Revenge requires calories.",
-    ]);
+      // undead
+      "I have been informed you technically don't require food.\n" +
+      "The gruel is arriving anyway. Old habit. What do you do with it?",
+      // vulperia
+      "The gruel is arriving. It smells. Even by your standards.\n" +
+      "Your nose is reporting a distressing number of unidentified compounds.\n" +
+      "What is your plan?",
+      // slime
+      "The gruel is arriving. It is, by strange coincidence, the exact same\n" +
+      "shade as you. This seems relevant somehow. Your response?",
+    ];
+    const Q2_CHOICES: readonly (readonly [string, string, string, string])[] = [
+      // human
+      [
+        "Throw it back through the slot and demand to speak with the manager.",
+        "Accept politely, wait for the footsteps to fade, then pick the lock and raid the pantry.",
+        "Use the residual magic in this cell to transmute it into something edible.",
+        "Complain at length about the texture. Eat it anyway. Revenge requires calories.",
+      ],
+      // undead
+      [
+        "Send it back with a note. In bone-ash ink. I carry some.",
+        "Study it. I don't need it but information about the tower's supplies is useful.",
+        "Transmute it into something I could theoretically use. Practice.",
+        "Leave it. Accept the indignity. Store the memory for later motivation.",
+      ],
+      // vulperia
+      [
+        "Return it. Loudly. With specific complaints that suggest I know where the kitchen is.",
+        "Note the timing. The delivery schedule tells me more than the gruel does.",
+        "Analyse it. There's useful information in what someone chooses to feed a prisoner.",
+        "Eat it. Complain internally. File everything for the debrief.",
+      ],
+      // slime
+      [
+        "Express strong opinions about it through the slot. Forcefully.",
+        "Absorb just enough to understand what's in it. Research purposes.",
+        "Attempt to improve it through selective absorption of the useful components.",
+        "Contemplate the existential implications of the colour match. Then eat it.",
+      ],
+    ];
+    await overlay.speak(Q2_PROMPTS[species]);
+    const q2 = await overlay.choose(Q2_CHOICES[species] as unknown as string[]);
 
     const statBonusB: StatBonus = (
       ['attack_power', 'stealth', 'magic_power', 'max_hp'] as const
     )[q2];
     overlay.showStatGain(STAT_DISPLAY[statBonusB]);
 
-    // ── Farewell ───────────────────────────────────────────────────────────────
+    // Brief species-aware farewell
+    const Q2_REACTIONS: readonly (readonly [string, string, string, string])[] = [
+      // human
+      [
+        "Confrontational. Excellent. Energy like that is hard to extinguish.\n" +
+        "I'll note 'high aggression' and 'possibly a management problem'.",
+        "A planner. Thoughtful. Slightly alarming.\n" +
+        "I'm going to check the pantry locks when you leave this cell.",
+        "Transmutation instinct! Even on gruel.\n" +
+        "I like this. The tower will have use for someone who improves what they're given.",
+        "Stoic pragmatism. You eat the gruel AND you're angry about it.\n" +
+        "Efficient. Unpleasant. Correct.",
+      ],
+      // undead
+      [
+        "Bone-ash ink. You came prepared.\n" +
+        "Either very organised or very experienced. Both concerning.",
+        "Intelligence gathering from a gruel delivery. I respect this.\n" +
+        "Not what I expected. Exactly what I should have expected.",
+        "Transmutation practice from dinner. Very dedicated.\n" +
+        "Or very bored. Possibly both. Both is fine.",
+        "Dignified resignation. The long game.\n" +
+        "You have had centuries to develop this response. It shows.",
+      ],
+      // vulperia
+      [
+        "Tactical complaint. You want me to know you know where the kitchen is.\n" +
+        "I will be moving the kitchen. It won't help.",
+        "The delivery schedule! Nobody notices the delivery schedule.\n" +
+        "You noticed immediately. I've just rethought my security arrangements.",
+        "You're analysing my provisioning choices.\n" +
+        "This is the most unsettling thing anyone has done in this cell.",
+        "Silent suffering with full note-taking.\n" +
+        "I find this somehow more threatening than the loud approach.",
+      ],
+      // slime
+      [
+        "Opinions through the slot. Clear communication.\n" +
+        "Largely incomprehensible from my end but the intent was unmistakable.",
+        "Research absorption! You ate the gruel as science.\n" +
+        "I genuinely don't know how to feel about this. I'll put 'analytical'.",
+        "Selective component extraction from dinner!\n" +
+        "That's either very advanced chemistry or very strange dining.\n" +
+        "Either way: impressive.",
+        "Existential colour contemplation, then eating.\n" +
+        "I will include this in my notes under 'exceptional self-awareness'.\n" +
+        "Or possibly 'may have identified with the gruel'. Further study needed.",
+      ],
+    ];
+    await overlay.speak(Q2_REACTIONS[species][q2]);
+
+    // ── Farewell (species-aware) ───────────────────────────────────────────────
     await _pause(600);
-    await overlay.speak(
-      "Splendid! That's everything I need.\n" +
+    const FAREWELLS: readonly string[] = [
+      // human
+      "Splendid. That's everything I need.\n" +
       "Don't touch the books on THAT shelf. Or that one.\n" +
-      "I'll be upstairs. Toodles!",
-    );
+      "I'll be upstairs. Toodles.",
+      // undead
+      "Excellent. Files updated. You have my professional respect,\n" +
+      "which I realise means little from someone who locked you in.\n" +
+      "The books on the left are for reference only. Good luck.",
+      // vulperia
+      "Perfect. Files closed.\n" +
+      "I've moved the good cheese. You won't find it.\n" +
+      "...Don't look at me like that. I'll be upstairs.",
+      // slime
+      "Wonderful. Everything noted.\n" +
+      "Please don't absorb the bookshelves. They're load-bearing, emotionally.\n" +
+      "I'll be upstairs. Take care of yourself. All of yourself.",
+    ];
+    await overlay.speak(FAREWELLS[species]);
 
     return {
       characterId,

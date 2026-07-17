@@ -37,6 +37,10 @@ export interface StoryTickState {
   itemsCraftedCount:    number;
   /** Unique floor indices visited this session (tracked by SceneManager). */
   floorsVisited:        number;
+  /** Number of named key items picked up (workbench_key / master key). */
+  keysPickedUp:         number;
+  /** Total number of books/lecterns read since game start. */
+  booksReadCount:       number;
   /** Player's current overworld tile column (0 when in interior). */
   playerCol:            number;
   /** Player's current overworld tile row (0 when in interior). */
@@ -70,6 +74,7 @@ export class StoryRunner {
   private _beatStartDungeons = 0;
   private _beatStartCrafts   = 0;
   private _beatStartFloors   = 0;
+  private _beatStartBooks    = 0;
 
   constructor(characterId: CharacterId, questLog: QuestLog) {
     this._line = getStoryLine(characterId);
@@ -130,6 +135,7 @@ export class StoryRunner {
     this._beatStartDungeons = state.dungeonsClearedCount;
     this._beatStartCrafts   = state.itemsCraftedCount;
     this._beatStartFloors   = state.floorsVisited;
+    this._beatStartBooks    = state.booksReadCount;
 
     this._log.addQuest(this._beatToQuestDef(beat, this._currentAct()!));
     this.onBeatActivate?.(beat.title, beat.description);
@@ -181,6 +187,15 @@ export class StoryRunner {
         // before this beat was activated.  SceneManager.uniqueFloorsVisited
         // increments each time a new bp.floor is entered.
         return (state.floorsVisited - this._beatStartFloors) >= 1;
+
+      case 'interact_key':
+        // Fulfils the moment the player has the master key — whether they picked
+        // it up during this beat or before it (e.g. basement visited before p4 starts).
+        return state.keysPickedUp >= 1;
+
+      case 'read_lore':
+        // Fulfils when the player opens any book or lectern since this beat activated.
+        return (state.booksReadCount - this._beatStartBooks) >= 1;
     }
   }
 

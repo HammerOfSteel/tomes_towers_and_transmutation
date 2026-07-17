@@ -103,7 +103,7 @@ describe('validateBlueprint', () => {
     expect(() =>
       validateBlueprint({
         ...VALID_BP,
-        interactables: [{ x: 0, z: 1, type: 'chest' }],
+        interactables: [{ x: 0, z: 1, type: 'dragon_egg' }],
       }),
     ).toThrow(BlueprintError);
   });

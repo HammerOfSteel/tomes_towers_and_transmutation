@@ -321,6 +321,20 @@ export class SceneManager {
     return this.blueprints.get(this.currentBpId) ?? null;
   }
 
+  /**
+   * Hide all THREE.js objects in the current room that have
+   * `userData.pickupId === pickupId`. Used to make a key item
+   * visually disappear when the player picks it up.
+   */
+  hidePickupItem(pickupId: string): void {
+    if (!this.currentRoom) return;
+    this.currentRoom.group.traverse((obj) => {
+      if (obj.userData['pickupId'] === pickupId) {
+        obj.visible = false;
+      }
+    });
+  }
+
   // ── Private ───────────────────────────────────────────────────────────────
 
   private _loadClearedRooms(): Set<string> {

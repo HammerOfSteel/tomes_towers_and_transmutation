@@ -11,10 +11,12 @@ import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { GameMenu }  from '@/ui/GameMenu';
-import { MainMenu } from '@/ui/MainMenu';
+import { MainMenu, readSaveSlot, patchSaveSlot } from '@/ui/MainMenu';
 import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
 import { NewGameFlow }          from '@/scene/NewGameFlow';
 import type { CharacterConfig } from '@/ui/DNACreator';
+import type { CharacterId, StatBonus } from '@/scene/CharacterDecisionTree';
+import { CHAR_MANIFEST_MAP }    from '@/scene/CharacterDecisionTree';
 import { DevSandbox } from '@/ui/DevSandbox';
 import { generateSandboxArena } from '@/levels/SandboxArena';
 import { DeathScreen } from '@/ui/DeathScreen';
@@ -61,6 +63,7 @@ import { MerchantUI } from '@/ui/MerchantUI';
 import { QuestBoardUI } from '@/ui/QuestBoardUI';
 import { SpellForge }   from '@/ui/SpellForge';
 import { StoryRunner }  from '@/world/StoryRunner';
+import { speciesForCharacter, type SpeciesId } from '@/world/StoryQuestLine';
 import { isDialogueOpen as isNPCDialogueOpen } from '@/world/NPCEntity';
 import { ConsumableInventory } from '@/core/ConsumableInventory';
 import { injectHudTheme } from '@/ui/hudTheme';
@@ -149,6 +152,16 @@ async function main() {
   // Visited rooms — rooms entered at least once get instant lighting on re-entry.
   // First-visit rooms fade up from darkness for an exploration reveal effect.
   const _visitedRoomIds = new Set<string>();
+  // Declared here (before onRoomLoaded / loadDungeon) to avoid temporal dead zone errors.
+  let _towerPrologueDone = false;
+  let _characterSpecies: SpeciesId | null = null;
+  /** Active save-slot index — set when onPlay fires, used by autoSave(). */
+  let _activeSlotId = 0;
+  /** Most-recently entered tower floor — kept in sync for auto-save. */
+  let _currentFloor = 0;
+  /** True once the player has physically taken the master key from the basement workbench.
+   *  Gates: front door exit, upward staircases. */
+  let _hasMasterKey = false;
 
   sceneManager.onRoomLoaded = (bp, _s) => {
     lighting.clearTorches();
@@ -165,11 +178,6 @@ async function main() {
       lighting.fadeAmbientIn(0.0, 2.2);
     }
 
-    // Torch fire particles for each torch that was just placed
-    // The LightingSystem exposes torchPositions so we can mirror them.
-    for (const tp of lighting.torchPositions) {
-      particles.addTorchFire(tp);
-    }
     // Slow ambient dust in every room
     const cx = (bp.width  * bp.cellSize) / 2;
     const cz = (bp.depth  * bp.cellSize) / 2;
@@ -181,8 +189,42 @@ async function main() {
     // (side-room doors share the same floor index and don’t retrigger).
     if (bp.floor !== _prevFloorIdx) {
       _prevFloorIdx = bp.floor;
+      _currentFloor = bp.floor;   // track for auto-save
+      autoSave();                  // save on every floor transition
       const floorName = getFloorDef(bp.floor)?.name;
       if (floorName) _floorToast(floorName);
+
+      // Per-species staircase flavour toast — only during the prologue, only on first visit.
+      if (!_towerPrologueDone && isFirstVisit && _characterSpecies) {
+        const STAIR_FLAVOUR: Partial<Record<SpeciesId, Partial<Record<number, string>>>> = {
+          human: {
+            [-1]: "The air smells of sulphur and old reagents.\nWhatever was being made down here was not for guests.",
+            [1]:  "The library is enormous. Most of these books have probably never been opened.\nYou feel a quiet obligation to fix that.",
+            [2]:  "Something is still fermenting on this level.\nThe wizard's work continues without him.",
+            [3]:  "The wizard's own chambers. Everything placed with intention.\nYou feel like you are not supposed to be here. You are probably right.",
+          },
+          undead: {
+            [-1]: "The preservation wards in here are precise — older work, but careful.\nWhoever built this knew what they were doing.",
+            [1]:  "Centuries of collected knowledge. You feel unusually at home.\nThis is your kind of room.",
+            [2]:  "The fermentation vessels remind you of certain long-term processes\nyou prefer not to name in polite company.",
+            [3]:  "A space built for solitary work. You recognise the signs.\nSomeone spent a very long time here alone.",
+          },
+          vulperia: {
+            [-1]: "Your nose catches at least a dozen distinct compounds.\nImpressive laboratory. Dangerous laboratory. Possibly both.",
+            [1]:  "The books are organised by a system you cannot immediately decode.\nYou find this personally offensive. You will work it out.",
+            [2]:  "The aromas here are intensely layered. You file several notes mentally\nand immediately regret having such a good nose.",
+            [3]:  "The wizard's sanctum. Every item placed deliberately.\nYour ears catch a distant draught from above — more to explore.",
+          },
+          slime: {
+            [-1]: "The floor here is very clean. Suspiciously clean.\nYou respect this, while remaining suspicious.",
+            [1]:  "The bookshelves are very tall. You regard them from several angles.\nReading is not technically your strength, but you are open to learning.",
+            [2]:  "The cauldrons are enormous. You briefly consider whether you could fit inside one.\nFor research purposes only.",
+            [3]:  "The carpet here is very soft. You take a moment to appreciate this.\nEveryone deserves a moment like this.",
+          },
+        };
+        const msg = STAIR_FLAVOUR[_characterSpecies]?.[bp.floor];
+        if (msg) _storyToast(msg, 'beat');
+      }
     }
   };
   // Initial room load: generate the tower with a random seed.
@@ -345,8 +387,8 @@ async function main() {
   }
 
   sceneManager.onExitTrigger = () => {
-    // Block the front door while the tower prologue is active.
-    if (_storyRunner && !_towerPrologueDone && gameMode === 'interior') {
+    // Block the front door until the player has the master key.
+    if (!_hasMasterKey && gameMode === 'interior') {
       _storyToast(
         'The front door is sealed with heavy magic. You need the master key — it must be in the basement.',
         'beat',
@@ -356,10 +398,9 @@ async function main() {
     switchToExterior();
   };
 
-  // During the prologue, the player may only access floors 0 (entrance) and -1 (basement).
-  // All upward staircases are blocked until _towerPrologueDone is set.
+  // During the prologue, upward staircases are locked until the player has the master key.
   sceneManager.onTransitionAttempt = (_targetId, direction) => {
-    if (direction === 'up' && !_towerPrologueDone && gameMode === 'interior') {
+    if (direction === 'up' && !_hasMasterKey && gameMode === 'interior') {
       _storyToast(
         "The staircase is sealed with an arcane ward.\nThe basement might have what you need first.",
         'beat',
@@ -383,13 +424,12 @@ async function main() {
   let _activeDungeonId: number | null = null;
   let _questCheckTimer = 0;
   let _storyRunner: StoryRunner | null = null;
-  /** True once the tower prologue act completes — unlocks the front door. */
-  let _towerPrologueDone = false;
   /** Tower room-clear counter — increments each time a room's enemies are all defeated.
    *  Used alongside discoveryTracker.clearedDungeons.size for clear_dungeon beats
    *  while the player is inside the tower (overworld dungeon clears are 0 in interior). */
   let _towerRoomsClearedCount = 0;
   let _craftedItemCount = 0;
+  let _booksReadCount = 0;
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
   const consumables   = new ConsumableInventory();
@@ -421,6 +461,7 @@ async function main() {
 
   const bookReader    = new BookReader();
   const interactables = new InteractableSystem(progression, bookReader);
+  bookReader.onOpen = () => { _booksReadCount++; };
   const telescopeView = new TelescopeView();
   let _telescopePrevRoomId: string | null = null;
 
@@ -456,9 +497,6 @@ async function main() {
     QuestBoardUI.open(questLog, currentSeed, sceneManager.currentFloor);
   };
 
-  /** True once the player has picked up the master key from the basement workbench. */
-  let _hasMasterKey = false;
-
   interactables.onKeyPickup = () => {
     if (_hasMasterKey) return; // already picked up
     _hasMasterKey = true;
@@ -466,13 +504,16 @@ async function main() {
       'You take the master key.\nThe binding ward dissolves in your palm.',
       'act',
     );
-    // Remove the workbench_key from the current room so it can't be "taken" again.
-    // We do this by patching the live blueprint interactables array.
+    // Hide the key meshes in the scene (the workbench stays — you took FROM it).
+    sceneManager.hidePickupItem('workbench_key');
+    // Also patch the live blueprint so the interaction prompt no longer appears.
     const bp = sceneManager.currentBlueprintForPatch();
     if (bp) {
       const idx = bp.interactables.findIndex(i => i.type === 'workbench_key');
       if (idx !== -1) bp.interactables.splice(idx, 1);
     }
+    // Auto-save: key is a significant milestone
+    autoSave();
   };
 
   // Crafting station handler — open the shared CraftingUI with correct recipe set
@@ -569,6 +610,7 @@ async function main() {
     onOpenEditor:   () => editMode.toggle(),
     onOpenDevPanel: () => devPanel.open(),
     onOpenStats:    () => statPanel.open(progression),
+    onSave:         () => autoSave(),
   });
 
   const gameMenu = new GameMenu({
@@ -584,6 +626,16 @@ async function main() {
   });
 
   // ── Main menu (shown at startup; starts the game loop on Play) ────────────
+
+  /** Write current progress to the active save slot. */
+  function autoSave(): void {
+    patchSaveSlot(_activeSlotId, {
+      floor:        _currentFloor,
+      hasMasterKey: _hasMasterKey,
+      location:     'The Tower',
+    });
+  }
+
   /** Shared start-game logic — called by character creation onStart and by tests. */
   function startGame(seed?: number, cfg?: CharacterConfig): void {
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
@@ -599,6 +651,11 @@ async function main() {
     sceneManager.resetCleared();
     sceneManager.resetVisitedFloors();
     _towerPrologueDone = false;
+    _hasMasterKey = cfg?.hasMasterKey ?? false;   // restore from save or default false
+    _currentFloor = 0;
+    _booksReadCount = 0;
+    _characterSpecies = null; // set below when cfg.characterId is known
+    _visitedRoomIds.clear();
     _towerRoomsClearedCount = 0;
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
@@ -644,6 +701,8 @@ async function main() {
     consumables.reset();
     hud.setConsumables({ minorHealCount: 0, majorHealCount: 0 });
     if (cfg?.characterId) {
+      _characterSpecies = speciesForCharacter(cfg.characterId);
+      mainMenu.setActiveSpecies(_characterSpecies);
       _storyRunner = new StoryRunner(cfg.characterId, questLog);
       _storyRunner.onBeatComplete = (text, xp, gold) => {
         progression.grantXP(xp);
@@ -670,6 +729,8 @@ async function main() {
         dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
         itemsCraftedCount:    _craftedItemCount,
         floorsVisited:        sceneManager.uniqueFloorsVisited,
+        keysPickedUp:         _hasMasterKey ? 1 : 0,
+        booksReadCount:       _booksReadCount,
         playerCol:            0,
         playerRow:            0,
         nearSettlements:      [],
@@ -699,6 +760,70 @@ async function main() {
   // ── Sandbox mode helpers ──────────────────────────────────────────────────
 
   function startSandbox(): void {
+    // Show a launcher modal offering the dev tools
+    _showDevLauncher();
+  }
+
+  function _showDevLauncher(): void {
+    const existing = document.getElementById('dev-launcher-modal');
+    if (existing) { existing.remove(); }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'dev-launcher-modal';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;',
+      'align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)',
+    ].join('');
+
+    const panel = document.createElement('div');
+    panel.style.cssText = [
+      'background:#161a20;border:1px solid #2a2f38;border-radius:10px;',
+      'padding:28px 32px;min-width:360px;color:#d0d8e8;font:13px/1.5 "Segoe UI",sans-serif',
+    ].join('');
+
+    panel.innerHTML = `
+      <h2 style="font-size:16px;font-weight:700;margin-bottom:6px;color:#d8a96a;letter-spacing:.04em">Backrooms</h2>
+      <p style="color:#7a8a9a;margin-bottom:20px;font-size:12px">Development tools — the place things get weird.</p>
+      <div style="display:flex;flex-direction:column;gap:8px" id="dev-launcher-btns"></div>
+      <button id="dev-launcher-close" style="
+        margin-top:18px;width:100%;padding:8px;background:none;border:1px solid #2a2f38;
+        border-radius:6px;color:#7a8a9a;font:inherit;font-size:12px;cursor:pointer
+      ">Cancel</button>
+    `;
+
+    const btns = [
+      { label: '✦ World Editor', desc: 'Asset Studio · Models · Tile Painter · Tower Rooms · Buildings · Library',
+        action: () => { overlay.remove(); window.open('world-editor.html', '_blank'); } },
+      { label: '⚡ Dev Panel (in-game)', desc: 'Spell Lab · Enemy Lab · Creature Creator · Cheats',
+        action: () => { overlay.remove(); _startDevPanelInGame(); } },
+    ];
+
+    const btnContainer = panel.querySelector('#dev-launcher-btns')!;
+    for (const b of btns) {
+      const el = document.createElement('button');
+      el.style.cssText = [
+        'background:#1a1e28;border:1px solid #2a2f38;border-radius:7px;',
+        'padding:10px 14px;text-align:left;cursor:pointer;color:#d0d8e8;font:inherit;',
+        'transition:background .12s,border-color .12s',
+      ].join('');
+      el.innerHTML = `
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px">${b.label}</div>
+        <div style="font-size:11px;color:#7a8a9a">${b.desc}</div>
+      `;
+      el.addEventListener('mouseover', () => { el.style.background = '#1e2535'; el.style.borderColor = '#6a9fd8'; });
+      el.addEventListener('mouseout',  () => { el.style.background = '#1a1e28'; el.style.borderColor = '#2a2f38'; });
+      el.addEventListener('click', b.action);
+      btnContainer.appendChild(el);
+    }
+
+    panel.querySelector('#dev-launcher-close')!.addEventListener('click', () => { overlay.remove(); mainMenu.show(); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); mainMenu.show(); } });
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  }
+
+  function _startDevPanelInGame(): void {
     mainMenu.hide();
     gameMode = 'interior';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
@@ -1002,12 +1127,22 @@ async function main() {
 
   const mainMenu = new MainMenu({
     onPlay: (slotId, isNewGame) => {
+      _activeSlotId = slotId;
       if (isNewGame) {
         // New save — run narrative campfire intro to determine character
         mainMenu.hide();
         const flow = new NewGameFlow();
         flow.play(document.body, slotId).then(cfg => {
           flow.dispose();
+          // Persist character identity so "Continue" can restore it
+          patchSaveSlot(slotId, {
+            characterId:  cfg.characterId,
+            boon:         cfg.boon,
+            statBonuses:  cfg.statBonuses,
+            hasMasterKey: false,
+            floor:        0,
+            location:     'The Tower',
+          });
           startGame(undefined, cfg);
         }).catch(err => {
           console.error('[NewGameFlow] failed:', err);
@@ -1017,9 +1152,33 @@ async function main() {
           mainMenu.hide();
         });
       } else {
-        // Continuing existing save — skip character creation
+        // Continuing existing save — reconstruct character config from saved data
         mainMenu.hide();
-        startGame();
+        const saved = readSaveSlot(slotId);
+        let cfg: CharacterConfig | undefined;
+        if (saved?.characterId) {
+          const charId = saved.characterId as CharacterId;
+          const manifestId = CHAR_MANIFEST_MAP[charId];
+          // Dynamically load the model list to rebuild assetModel
+          import('@/characters/charManifest').then(({ CHAR_MODELS }) => {
+            import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+              const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
+              cfg = {
+                name:         charId,
+                boon:         (saved.boon ?? 'tome') as import('@/ui/CharacterCreation').StartingBoon,
+                slotId,
+                dna:          { ...DEFAULT_PLAYER_DNA },
+                assetModel:   assetModel ?? undefined,
+                statBonuses:  (saved.statBonuses ?? []) as StatBonus[],
+                characterId:  charId,
+                hasMasterKey: saved.hasMasterKey ?? false,
+              };
+              startGame(undefined, cfg);
+            });
+          });
+        } else {
+          startGame();
+        }
       }
     },
     onDevLab: () => startSandbox(),
@@ -1485,6 +1644,8 @@ async function main() {
             dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
             itemsCraftedCount:    _craftedItemCount,
             floorsVisited:        sceneManager.uniqueFloorsVisited,
+            keysPickedUp:         _hasMasterKey ? 1 : 0,
+            booksReadCount:       _booksReadCount,
             playerCol:            0,
             playerRow:            0,
             nearSettlements:      [],
@@ -1527,6 +1688,8 @@ async function main() {
               dungeonsClearedCount: discoveryTracker.clearedDungeons.size + _towerRoomsClearedCount,
               itemsCraftedCount:    _craftedItemCount,
               floorsVisited:        sceneManager.uniqueFloorsVisited,
+              keysPickedUp:         _hasMasterKey ? 1 : 0,
+              booksReadCount:       _booksReadCount,
               playerCol:            _gc.col,
               playerRow:            _gc.row,
               nearSettlements:      _nearby,
@@ -1863,6 +2026,7 @@ async function main() {
   // Game loop is started by MainMenu.onPlay — not here.
 }
 
-main().catch(console.error);
+// Export the startup promise so unit tests can await full initialisation.
+export const _startupComplete = main().catch(console.error);
 
 

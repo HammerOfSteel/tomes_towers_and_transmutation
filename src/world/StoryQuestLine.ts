@@ -9,6 +9,8 @@
  *   clear_dungeon   — clear any dungeon floor (tracked by SceneManager)
  *   reach_location  — get within 6 tiles of (col, row) on the overworld
  *   craft_item      — craft N items at any crafting station
+ *   interact_key    — pick up the workbench_key interactable (master key in basement)
+ *   read_lore       — open and read any book/lectern at least once since this beat started
  *   explore_floor   — visit a floor index not seen before this beat started (SceneManager.uniqueFloorsVisited)
  *   survive_wave    — placeholder: fulfilled immediately until WaveManager exists
  *
@@ -31,7 +33,9 @@ export type StoryObjectiveType =
   | 'reach_location'
   | 'craft_item'
   | 'explore_floor'
-  | 'survive_wave';
+  | 'survive_wave'
+  | 'interact_key'
+  | 'read_lore';
 
 export interface StoryObjective {
   type:         StoryObjectiveType;
@@ -137,8 +141,8 @@ const HUMAN_STORY: StoryQuestLine = {
         {
           id:             'tower_p4',
           title:          'Down Into Dark',
-          description:    "The basement. The wizard said not to come here. The basement key was on the workshop bench, abandoned in haste. Descend and find a way out — and whatever else is down there.",
-          objective:      { type: 'clear_dungeon', targetLabel: 'Explore the basement' },
+          description:    "The basement. The wizard said not to come here. The basement key was on the workshop bench, abandoned in haste. Descend and find the spare master key on the workbench.",
+          objective:      { type: 'interact_key', targetLabel: 'Pick up the master key' },
           completionText: 'You find the plans. The journals. The centuries of notes. And on the workbench — the spare master key he forgot. The front door is one floor up. But the plans... the plans are extraordinary.',
           rewardXp:       100,
           rewardGold:     0,
@@ -290,8 +294,8 @@ const UNDEAD_STORY: StoryQuestLine = {
         {
           id:             'tower_p4',
           title:          'The Reason',
-          description:    "Descend. Find what the wizard did not want you to find. The basement key was on the workshop bench — left in haste. He did not intend for you to reach this.",
-          objective:      { type: 'clear_dungeon', targetLabel: 'Explore the basement' },
+          description:    "Descend. Find what the wizard did not want you to find. The basement key was on the workshop bench — left in haste. Find the spare master key on the workbench.",
+          objective:      { type: 'interact_key', targetLabel: 'Pick up the master key' },
           completionText: "Journals. Centuries of them. Notes on dozens of candidates. And a letter, freshly abandoned: 'Spare master key — workbench.' He left in a hurry. But the plans... you have been chosen for something.",
           rewardXp:       100,
           rewardGold:     0,
@@ -315,9 +319,9 @@ const UNDEAD_STORY: StoryQuestLine = {
         {
           id:             'undead_a1b2',
           title:          'Find the Source',
-          description:    "Something is causing all this. There is a dungeon nearby that smells of old magic.",
-          objective:      { type: 'clear_dungeon', targetLabel: 'Clear the ruin' },
-          completionText: "You find a ritual chamber. Someone has been very busy. Whoever did this is gone — but they left notes.",
+          description:    "Something is causing all this. There is a dungeon nearby that smells of old magic. Find the ritual chamber. They left notes.",
+          objective:      { type: 'read_lore', targetLabel: 'Read the ritual notes' },
+          completionText: "You find a ritual chamber. Someone has been very busy. Whoever did this is gone — but the notes they left behind are detailed. Uncomfortably so. They were expecting someone exactly like you.",
           rewardXp:       90,
           rewardGold:     20,
         },
@@ -443,8 +447,8 @@ const VULPERIA_STORY: StoryQuestLine = {
         {
           id:             'tower_p4',
           title:          'The Collection',
-          description:    "The basement key was abandoned on the workshop bench. He left in a hurry. Descend. Find out what the wizard was afraid you would read.",
-          objective:      { type: 'clear_dungeon', targetLabel: 'Search the basement' },
+          description:    "The basement key was abandoned on the workshop bench. He left in a hurry. Descend — and find the spare master key on the workbench.",
+          objective:      { type: 'interact_key', targetLabel: 'Pick up the master key' },
           completionText: "Plans. Profiles. Decades of surveillance notes — and one about you, with unsettling accuracy. The spare master key is on the workbench. But the files... your name appears on the first page of a very long document.",
           rewardXp:       100,
           rewardGold:     0,
@@ -596,8 +600,8 @@ const SLIME_STORY: StoryQuestLine = {
         {
           id:             'tower_p4',
           title:          'The Basement Is Full of Extremely Interesting Things',
-          description:    "The basement key was on the workbench — you absorbed it and reconstituted it immediately, you are getting better at this. Descend. Find what is down there.",
-          objective:      { type: 'clear_dungeon', targetLabel: 'Explore the basement' },
+          description:    "The basement key was on the workbench — you absorbed it and reconstituted it immediately, you are getting better at this. Descend. Find the spare master key on the workbench.",
+          objective:      { type: 'interact_key', targetLabel: 'Pick up the master key' },
           completionText: "Journals! Plans! A whole room of documents you could absorb! You restrain yourself to reading. Barely. Your name (or rather, a very detailed description of you) is on the front page. And on the workbench: the spare master key. The front door is one floor up. You are not sure you want to leave yet.",
           rewardXp:       100,
           rewardGold:     0,
@@ -637,9 +641,9 @@ const SLIME_STORY: StoryQuestLine = {
         {
           id:             'slime_a2b1',
           title:          'Process the Knowledge',
-          description:    "The absorbed information keeps suggesting you need certain materials to synthesise what you have learned. The crafting station is right there.",
-          objective:      { type: 'craft_item', count: 2, targetLabel: 'Craft 2 items' },
-          completionText: "You have made a potion. You are not certain how. The library book inside you seems pleased.",
+          description:    "The absorbed information keeps suggesting you should read more. It wants context. The library shelf is right there and nothing has stopped you yet.",
+          objective:      { type: 'read_lore', targetLabel: 'Read something in the library' },
+          completionText: "You have absorbed another text. It was a philosophical treatise on the nature of identity. You are not certain if this helped. It definitely added opinions.",
           rewardXp:       80,
           rewardGold:     20,
         },

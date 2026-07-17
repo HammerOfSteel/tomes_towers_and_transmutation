@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Poly Circular Arena</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        /* UI Styling mimicking the reference */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .hud-top-left {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #d1d5db;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .hp-bar-container {
+            width: 150px;
+            height: 6px;
+            background-color: #374151;
+            border-radius: 4px;
+            margin-top: 4px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .hp-bar-fill {
+            width: 100%;
+            height: 100%;
+            background-color: #38bdf8;
+            box-shadow: 0 0 10px #38bdf8;
+        }
+        .stamina-dots {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #0ea5e9;
+        }
+        .skill-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+        }
+        .skill-slot {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(17, 24, 39, 0.8);
+            border: 1px solid #374151;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+            font-size: 10px;
+        }
+        .skill-slot.active {
+            border-color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+            color: #e5e7eb;
+        }
+        .skill-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #3b82f6;
+            margin-bottom: 4px;
+            box-shadow: 0 0 10px #3b82f6;
+        }
+        .story-box {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background-color: rgba(17, 24, 39, 0.9);
+            border-left: 2px solid #fbbf24;
+            padding: 16px;
+            color: #9ca3af;
+            font-size: 12px;
+            border-radius: 4px;
+            backdrop-filter: blur(4px);
+        }
+        .story-title {
+            color: #fbbf24;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- WebGL Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- HTML UI Overlay matching reference image -->
+    <div class="ui-layer">
+        <div id="fade-overlay" class="fixed inset-0 bg-black z-50 pointer-events-none transition-opacity duration-1000 opacity-0"></div>
+        
+        <div class="hud-top-left">
+            <div class="flex justify-between w-[150px]">
+                <span id="ui-level">Floor 1</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-[10px]">HP</span>
+                <div class="hp-bar-container">
+                    <div class="hp-bar-fill"></div>
+                </div>
+                <span class="text-[10px]">10 / 10</span>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+                <div class="stamina-dots">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <span class="bg-gray-800 px-1 py-0.5 rounded text-[10px] text-gray-400">SHIFT SPRINT</span>
+            </div>
+            <div class="text-[10px] text-gray-500">
+                Endless Mode<br>
+                <span id="ui-room-name">▲ The Grand Entrance Hall</span>
+            </div>
+        </div>
+
+        <div class="skill-bar">
+            <div class="skill-slot active">
+                <div class="text-[10px] absolute top-1 right-1 text-gray-400">1</div>
+                <div class="skill-icon"></div>
+                <span>Magic Bolt</span>
+            </div>
+            <div class="skill-slot">
+                <div class="text-[10px] absolute top-1 right-1 text-gray-600">2</div>
+                <span>-- empty --</span>
+            </div>
+            <div class="skill-slot">
+                <div class="text-[10px] absolute top-1 right-1 text-gray-600">3</div>
+                <span>-- empty --</span>
+            </div>
+            <div class="skill-slot">
+                <div class="text-[10px] absolute top-1 right-1 text-gray-600">4</div>
+                <span>-- empty --</span>
+            </div>
+        </div>
+
+        <div class="story-box">
+            <div class="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Story Objective</div>
+            <div class="story-title">Map the Territory</div>
+            <p class="italic">A Vulperta does not panic. A Vulperta assesses. The ground floor is your starting point. Find the exit...</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+
+        // --- Core Scene Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x3a4b5c); // Soft hazy blue sky
+        scene.fog = new THREE.FogExp2(0x3a4b5c, 0.015); // Adds depth fading
+
+        // --- Camera Setup (Isometric/Tilt-shift style) ---
+        // Using a narrow FOV and pulling the camera back simulates orthographic/isometric 
+        // while retaining perspective depth for the Bokeh (blur) pass to work well.
+        const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // Post Processing (The Miniature Effect)
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bokehPass = new BokehPass(scene, camera, {
+            focus: 40.0,      
+            aperture: 0.0002, 
+            maxblur: 0.01,    
+            width: window.innerWidth,
+            height: window.innerHeight
+        });
+        composer.addPass(bokehPass);
+
+        // --- Endless Tower State & Config ---
+        let currentLevel = 1;
+        let isTransitioning = false;
+        let ARENA_RADIUS = 25;
+        const WALL_THICKNESS = 6;
+        const WALL_HEIGHT = 6;
+        const GAP_ANGLE = 0.25; 
+
+        // Seeded RNG for procedural generation
+        function mulberry32(a) {
+            return function() {
+              var t = a += 0x6D2B79F5;
+              t = Math.imul(t ^ t >>> 15, t | 1);
+              t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+              return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        const THEMES = [
+            { name: "The Grand Entrance", fog: 0x3a4b5c, floorBg: '#2d2f33', floorLine: '#1e1f22', wall: 0x7c756a, grass: 0x5a7d4a, prop1: 0x4a6d3a, prop2: 0x888c8d, light: 0xffa95c },
+            { name: "The Molten Depths", fog: 0x4a1515, floorBg: '#221111', floorLine: '#110000', wall: 0x2a2020, grass: 0x3a1a1a, prop1: 0x111111, prop2: 0xff4400, light: 0xff3300 },
+            { name: "The Crystal Spires", fog: 0x1a2b3c, floorBg: '#152535', floorLine: '#0a1525', wall: 0x7799aa, grass: 0xbbccdd, prop1: 0xffffff, prop2: 0x66ccff, light: 0x00aaff },
+            { name: "The Overgrown Ruins", fog: 0x2a3b2a, floorBg: '#1a2a1a', floorLine: '#0a1a0a', wall: 0x5a6a5a, grass: 0x3a5a2a, prop1: 0x2a8a2a, prop2: 0x6a7a6a, light: 0xaaffaa },
+            { name: "The Void Abyss", fog: 0x110022, floorBg: '#0a0011', floorLine: '#1a0033', wall: 0x221133, grass: 0x110022, prop1: 0x5500aa, prop2: 0x220044, light: 0x9900ff }
+        ];
+
+        // --- Global Scene Elements (Persist across floors) ---
+        const roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+
+        const ambientLight = new THREE.AmbientLight(0x405060, 1.5);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffedd6, 2.5);
+        sunLight.position.set(-20, 30, 20);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 100;
+        const d = 35;
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
+
+        // Player Group
+        const playerGroup = new THREE.Group();
+        const bodyGeo = new THREE.CylinderGeometry(0.3, 0.5, 1.2, 8);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc4422, flatShading: true });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.6; body.castShadow = true; playerGroup.add(body);
+        const headGeo = new THREE.OctahedronGeometry(0.4, 1);
+        const headMat = new THREE.MeshStandardMaterial({ color: 0x228833, flatShading: true });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 1.4; head.castShadow = true; playerGroup.add(head);
+        scene.add(playerGroup);
+
+        // Global Particle System
+        const particleCount = 200;
+        const particlesGeo = new THREE.BufferGeometry();
+        const particlePos = new Float32Array(particleCount * 3);
+        for(let i=0; i<particleCount*3; i+=3) {
+            particlePos[i] = (Math.random() - 0.5) * 60;
+            particlePos[i+1] = Math.random() * 5; 
+            particlePos[i+2] = (Math.random() - 0.5) * 60;
+        }
+        particlesGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
+        const particleMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1, transparent: true, opacity: 0.4 });
+        const particleSystem = new THREE.Points(particlesGeo, particleMat);
+        scene.add(particleSystem);
+
+        // --- Procedural Generation Logic ---
+        function createGridTexture(bgColor, lineColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const context = canvas.getContext('2d');
+            context.fillStyle = bgColor; context.fillRect(0, 0, 512, 512);
+            context.strokeStyle = lineColor; context.lineWidth = 4;
+            for (let i = 0; i <= 512; i += 128) {
+                context.beginPath(); context.moveTo(i, 0); context.lineTo(i, 512); context.stroke();
+                context.beginPath(); context.moveTo(0, i); context.lineTo(512, i); context.stroke();
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(10, 10);
+            return texture;
+        }
+
+        function createWallSegment(innerRad, outerRad, startAng, endAng) {
+            const shape = new THREE.Shape();
+            shape.absarc(0, 0, innerRad, startAng, endAng, false);
+            shape.absarc(0, 0, outerRad, endAng, startAng, true);
+            return shape;
+        }
+
+        function jitterGeometry(geometry, intensity=0.8) {
+            const positions = geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                const z = positions.getZ(i);
+                if (z > 0.1) {
+                    positions.setX(i, positions.getX(i) + (Math.random() - 0.5) * intensity);
+                    positions.setY(i, positions.getY(i) + (Math.random() - 0.5) * intensity);
+                    positions.setZ(i, z + (Math.random() - 0.5) * (intensity * 0.6));
+                }
+            }
+            geometry.computeVertexNormals();
+        }
+
+        // Main Room Builder
+        function buildFloor(level) {
+            // Clear previous room
+            while(roomGroup.children.length > 0){ 
+                roomGroup.remove(roomGroup.children[0]); 
+            }
+
+            const rng = mulberry32(level * 8888);
+            const themeIndex = Math.floor(rng() * THEMES.length);
+            const theme = (level === 1) ? THEMES[0] : THEMES[themeIndex]; // Floor 1 is always Standard
+            const hasDownStairs = level > 1;
+
+            // Randomize Radius (Rogue-lite variation)
+            ARENA_RADIUS = 18 + Math.floor(rng() * 12); 
+
+            // Update Environment Theme
+            scene.fog.color.setHex(theme.fog);
+            scene.background = new THREE.Color(theme.fog);
+            ambientLight.color.setHex(theme.fog);
+            sunLight.color.setHex(theme.light);
+            particleMat.color.setHex(theme.light);
+            
+            document.getElementById('ui-level').innerText = `Floor ${level}`;
+            document.getElementById('ui-room-name').innerText = `▲ ${theme.name}`;
+
+            // 1. Build Floor
+            const floorGeo = new THREE.CircleGeometry(ARENA_RADIUS, 64);
+            const floorMat = new THREE.MeshStandardMaterial({ 
+                map: createGridTexture(theme.floorBg, theme.floorLine), roughness: 0.8 
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            roomGroup.add(floor);
+
+            // 2. Build Walls (Dynamic gaps based on stairwells)
+            const extrudeSettings = { depth: WALL_HEIGHT, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: 0.5, bevelThickness: 0.5, curveSegments: 24 };
+            
+            const southStartAngle = hasDownStairs ? (Math.PI/2 + GAP_ANGLE) : Math.PI/2;
+            const southEndAngle = hasDownStairs ? (Math.PI/2 - GAP_ANGLE) : Math.PI/2;
+
+            const wallShapeRight = createWallSegment(ARENA_RADIUS, ARENA_RADIUS + WALL_THICKNESS, -Math.PI/2 + GAP_ANGLE, southEndAngle);
+            const wallShapeLeft = createWallSegment(ARENA_RADIUS, ARENA_RADIUS + WALL_THICKNESS, southStartAngle, 3*Math.PI/2 - GAP_ANGLE);
+
+            let wallGeoRight = new THREE.ExtrudeGeometry(wallShapeRight, extrudeSettings).toNonIndexed();
+            let wallGeoLeft = new THREE.ExtrudeGeometry(wallShapeLeft, extrudeSettings).toNonIndexed();
+            
+            jitterGeometry(wallGeoRight, theme.name === "The Crystal Spires" ? 0.2 : 0.8);
+            jitterGeometry(wallGeoLeft, theme.name === "The Crystal Spires" ? 0.2 : 0.8);
+
+            const wallMat = new THREE.MeshStandardMaterial({ 
+                color: theme.wall, flatShading: true, roughness: theme.name === "The Crystal Spires" ? 0.4 : 0.9 
+            });
+
+            const wallRight = new THREE.Mesh(wallGeoRight, wallMat);
+            wallRight.rotation.x = -Math.PI / 2; wallRight.castShadow = true; wallRight.receiveShadow = true;
+            roomGroup.add(wallRight);
+
+            const wallLeft = new THREE.Mesh(wallGeoLeft, wallMat);
+            wallLeft.rotation.x = -Math.PI / 2; wallLeft.castShadow = true; wallLeft.receiveShadow = true;
+            roomGroup.add(wallLeft);
+
+            // 3. Grass Rims
+            const grassMat = new THREE.MeshStandardMaterial({ color: theme.grass, roughness: 1.0, flatShading: true });
+            const rimRightGeo = new THREE.RingGeometry(ARENA_RADIUS + 0.2, ARENA_RADIUS + WALL_THICKNESS - 0.2, 32, 1, -Math.PI/2 + GAP_ANGLE, Math.PI - (hasDownStairs?GAP_ANGLE*2:GAP_ANGLE));
+            const rimRight = new THREE.Mesh(rimRightGeo, grassMat);
+            rimRight.rotation.x = -Math.PI / 2; rimRight.position.y = WALL_HEIGHT + 0.55; rimRight.receiveShadow = true;
+            roomGroup.add(rimRight);
+
+            const rimLeftGeo = new THREE.RingGeometry(ARENA_RADIUS + 0.2, ARENA_RADIUS + WALL_THICKNESS - 0.2, 32, 1, southStartAngle, Math.PI - (hasDownStairs?GAP_ANGLE*2:GAP_ANGLE));
+            const rimLeft = new THREE.Mesh(rimLeftGeo, grassMat);
+            rimLeft.rotation.x = -Math.PI / 2; rimLeft.position.y = WALL_HEIGHT + 0.55; rimLeft.receiveShadow = true;
+            roomGroup.add(rimLeft);
+
+            // 4. Scatter Decorations
+            const itemCount = Math.floor(ARENA_RADIUS * 4); // Scale density by room size
+            for (let i = 0; i < itemCount; i++) {
+                const angle = rng() * Math.PI * 2;
+                let normAngle = angle > Math.PI ? angle - Math.PI * 2 : angle;
+                
+                // Skip stairwell gaps
+                if (Math.abs(normAngle - (-Math.PI/2)) < GAP_ANGLE + 0.05) continue;
+                if (hasDownStairs && Math.abs(normAngle - (Math.PI/2)) < GAP_ANGLE + 0.05) continue;
+
+                const r = ARENA_RADIUS + 0.8 + rng() * (WALL_THICKNESS - 1.6);
+                const x = Math.cos(angle) * r; const z = Math.sin(angle) * r;
+
+                const isPrimary = rng() > 0.4;
+                let geo;
+                if (theme.name === "The Crystal Spires") geo = isPrimary ? new THREE.IcosahedronGeometry(0.8, 0) : new THREE.DodecahedronGeometry(0.5, 0);
+                else if (theme.name === "The Void Abyss") geo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+                else geo = isPrimary ? new THREE.IcosahedronGeometry(0.8, 0) : new THREE.DodecahedronGeometry(0.6, 0);
+
+                const mat = new THREE.MeshStandardMaterial({ 
+                    color: isPrimary ? theme.prop1 : theme.prop2, flatShading: true,
+                    metalness: theme.name === "The Crystal Spires" ? 0.8 : 0.1
+                });
+                
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(x, WALL_HEIGHT + 0.6 + rng() * 0.2, z);
+                mesh.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+                const scale = 0.5 + rng() * 1.5;
+                mesh.scale.set(scale, scale, scale);
+                mesh.castShadow = true; mesh.receiveShadow = true;
+                roomGroup.add(mesh);
+            }
+
+            // 5. Interior Pillars & Centerpiece
+            const numPillars = 4 + Math.floor(rng() * 4);
+            const pillarRadius = ARENA_RADIUS - 8;
+            const pillarGeo = new THREE.CylinderGeometry(0.4, 0.5, 4, 6);
+            const pillarMat = new THREE.MeshStandardMaterial({ color: theme.wall, flatShading: true });
+            
+            for (let i = 0; i < numPillars; i++) {
+                const angle = (Math.PI * 2 / numPillars) * i + (Math.PI / 4);
+                const x = Math.cos(angle) * pillarRadius; const z = Math.sin(angle) * pillarRadius;
+
+                const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+                pillar.position.set(x, 2, z); pillar.castShadow = true; pillar.receiveShadow = true;
+                roomGroup.add(pillar);
+
+                const torchLight = new THREE.PointLight(theme.light, 50, 15);
+                torchLight.position.set(x, 4.5, z); roomGroup.add(torchLight);
+
+                const fireMat = new THREE.MeshBasicMaterial({ color: theme.light });
+                const fire = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), fireMat);
+                fire.position.set(x, 4.2, z); roomGroup.add(fire);
+            }
+
+            // Center Rug
+            const rugGeo = new THREE.PlaneGeometry(6, 6);
+            const rugMat = new THREE.MeshStandardMaterial({ color: theme.prop1 }); 
+            const rug = new THREE.Mesh(rugGeo, rugMat);
+            rug.rotation.x = -Math.PI / 2; rug.position.y = 0.02; rug.receiveShadow = true;
+            roomGroup.add(rug);
+
+            // 6. Build Stairwells
+            function buildStair(dir, anglePos) {
+                const group = new THREE.Group();
+                const stepCount = 12;
+                const stepDepth = WALL_THICKNESS / stepCount;
+                const stepHeight = WALL_HEIGHT / stepCount;
+                const stairMat = new THREE.MeshStandardMaterial({ color: theme.wall, flatShading: true, roughness: 0.9 });
+                const stepGeo = new THREE.BoxGeometry(4.8, stepHeight, stepDepth);
+                
+                for(let i=0; i<stepCount; i++) {
+                    const step = new THREE.Mesh(stepGeo, stairMat);
+                    const r = ARENA_RADIUS + (i * stepDepth) + (stepDepth/2);
+                    step.position.x = Math.cos(anglePos) * r; step.position.z = Math.sin(anglePos) * r;
+                    
+                    step.position.y = (i * stepHeight * dir) + (stepHeight/2 * dir);
+                    if (dir < 0) step.position.y -= stepHeight; 
+                    
+                    step.rotation.y = -anglePos - Math.PI/2;
+                    step.castShadow = true; step.receiveShadow = true;
+                    group.add(step);
+                }
+
+                // Entrance Pillars
+                const pillarGeo = new THREE.BoxGeometry(1.2, WALL_HEIGHT + 2, 1.2);
+                jitterGeometry(pillarGeo, 0.3);
+                [-2.4, 2.4].forEach(offset => {
+                    const p = new THREE.Mesh(pillarGeo, stairMat);
+                    const pR = ARENA_RADIUS + 0.5;
+                    const pX = Math.cos(anglePos) * pR + Math.cos(anglePos + Math.PI/2) * offset;
+                    const pZ = Math.sin(anglePos) * pR + Math.sin(anglePos + Math.PI/2) * offset;
+                    p.position.set(pX, WALL_HEIGHT/2, pZ); p.rotation.y = -anglePos; p.castShadow = true;
+                    group.add(p);
+
+                    const torchLight = new THREE.PointLight(theme.light, 80, 15);
+                    torchLight.position.set(pX, WALL_HEIGHT + 1.5, pZ); group.add(torchLight);
+
+                    const fire = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), new THREE.MeshBasicMaterial({ color: theme.light }));
+                    fire.position.set(pX, WALL_HEIGHT + 1.2, pZ); group.add(fire);
+                });
+                roomGroup.add(group);
+            }
+
+            buildStair(1, -Math.PI/2); // North Up
+            if (hasDownStairs) buildStair(-1, Math.PI/2); // South Down
+        }
+
+        // Initialize First Floor
+        buildFloor(currentLevel);
+        playerGroup.position.set(0, 0, 5);
+
+
+        // --- Input & State ---
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+        const moveSpeed = 8.0;
+        window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+        const clock = new THREE.Clock();
+        const camOffset = new THREE.Vector3(25, 30, 25); 
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+
+            // 1. Move Player (Disable if transitioning)
+            if (!isTransitioning) {
+                const velocity = new THREE.Vector3(0, 0, 0);
+                if (keys.w || keys.ArrowUp) velocity.z -= 1;
+                if (keys.s || keys.ArrowDown) velocity.z += 1;
+                if (keys.a || keys.ArrowLeft) velocity.x -= 1;
+                if (keys.d || keys.ArrowRight) velocity.x += 1;
+                
+                if (velocity.length() > 0) {
+                    velocity.normalize();
+                    const targetRotation = Math.atan2(velocity.x, velocity.z);
+                    playerGroup.rotation.y = targetRotation;
+                    playerGroup.position.add(velocity.multiplyScalar(moveSpeed * dt));
+                }
+            }
+
+            // 2. Dynamic Collision Math
+            let allowedRadius = ARENA_RADIUS - 1.0; 
+            const playerAngle = Math.atan2(playerGroup.position.z, playerGroup.position.x);
+            let normPlayerAngle = playerAngle > Math.PI ? playerAngle - Math.PI * 2 : playerAngle;
+            
+            const entranceWidth = GAP_ANGLE + 0.05; 
+            let isOnUpStairs = false;
+            let isOnDownStairs = false;
+            const distFromCenterRaw = Math.sqrt(playerGroup.position.x ** 2 + playerGroup.position.z ** 2);
+
+            if (distFromCenterRaw > ARENA_RADIUS - 1.0) {
+                if (Math.abs(normPlayerAngle - (-Math.PI/2)) < entranceWidth) {
+                    allowedRadius = ARENA_RADIUS + WALL_THICKNESS - 1.0;
+                    isOnUpStairs = true;
+                    const minAngle = -Math.PI/2 - entranceWidth + 0.1;
+                    const maxAngle = -Math.PI/2 + entranceWidth - 0.1;
+                    let clampedAngle = THREE.MathUtils.clamp(normPlayerAngle, minAngle, maxAngle);
+                    if (clampedAngle !== normPlayerAngle) {
+                        playerGroup.position.x = Math.cos(clampedAngle) * distFromCenterRaw;
+                        playerGroup.position.z = Math.sin(clampedAngle) * distFromCenterRaw;
+                    }
+                } else if (currentLevel > 1 && Math.abs(normPlayerAngle - (Math.PI/2)) < entranceWidth) {
+                    allowedRadius = ARENA_RADIUS + WALL_THICKNESS - 1.0;
+                    isOnDownStairs = true;
+                    const minAngle = Math.PI/2 - entranceWidth + 0.1;
+                    const maxAngle = Math.PI/2 + entranceWidth - 0.1;
+                    let clampedAngle = THREE.MathUtils.clamp(normPlayerAngle, minAngle, maxAngle);
+                    if (clampedAngle !== normPlayerAngle) {
+                        playerGroup.position.x = Math.cos(clampedAngle) * distFromCenterRaw;
+                        playerGroup.position.z = Math.sin(clampedAngle) * distFromCenterRaw;
+                    }
+                }
+            }
+
+            const finalDist = Math.sqrt(playerGroup.position.x ** 2 + playerGroup.position.z ** 2);
+            if (finalDist > allowedRadius) {
+                const finalAngle = Math.atan2(playerGroup.position.z, playerGroup.position.x);
+                playerGroup.position.x = Math.cos(finalAngle) * allowedRadius;
+                playerGroup.position.z = Math.sin(finalAngle) * allowedRadius;
+            }
+
+            // Slope Logic
+            let targetY = 0;
+            const distFromEdge = finalDist - (ARENA_RADIUS - 0.5);
+            if (distFromEdge > 0) {
+                if (isOnUpStairs) targetY = distFromEdge * (WALL_HEIGHT / WALL_THICKNESS);
+                if (isOnDownStairs) targetY = -distFromEdge * (WALL_HEIGHT / WALL_THICKNESS);
+            }
+            playerGroup.position.y = THREE.MathUtils.lerp(playerGroup.position.y, targetY, 0.2);
+
+            // 3. Level Transitions Trigger
+            if (!isTransitioning) {
+                if (isOnUpStairs && finalDist > ARENA_RADIUS + WALL_THICKNESS - 1.5) {
+                    triggerTransition(1);
+                } else if (isOnDownStairs && finalDist > ARENA_RADIUS + WALL_THICKNESS - 1.5) {
+                    triggerTransition(-1);
+                }
+            }
+
+            // 4. Update Camera Pos
+            const targetCamPos = playerGroup.position.clone().add(camOffset);
+            camera.position.lerp(targetCamPos, isTransitioning ? 1.0 : 0.1); 
+            camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+            bokehPass.uniforms['focus'].value = camera.position.distanceTo(playerGroup.position);
+
+            // 5. Update Particles
+            const positions = particleSystem.geometry.attributes.position.array;
+            for(let i=1; i<particleCount*3; i+=3) {
+                positions[i] += dt * 0.5;
+                if (positions[i] > 6) positions[i] = 0;
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+
+            composer.render();
+        }
+
+        function triggerTransition(direction) {
+            isTransitioning = true;
+            const overlay = document.getElementById('fade-overlay');
+            overlay.style.opacity = '1'; // Fade out
+            
+            setTimeout(() => {
+                currentLevel += direction;
+                buildFloor(currentLevel);
+                
+                // Spawn player on the correct side
+                const spawnRadius = ARENA_RADIUS + WALL_THICKNESS - 2.5;
+                if (direction > 0) { // Ascended (Spawn at South Down-Stairs)
+                    playerGroup.position.set(0, 0, spawnRadius);
+                    playerGroup.rotation.y = Math.PI; 
+                } else { // Descended (Spawn at North Up-Stairs)
+                    playerGroup.position.set(0, 0, -spawnRadius);
+                    playerGroup.rotation.y = 0; 
+                }
+                playerGroup.position.y = 0; // Lerp will smooth this out
+                
+                // Snap camera to prevent wild swinging across the map
+                camera.position.copy(playerGroup.position.clone().add(camOffset));
+                camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+                
+                overlay.style.opacity = '0'; // Fade in
+                setTimeout(() => { isTransitioning = false; }, 1000);
+            }, 1000);
+        }
+
+        // Handle Resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Loop
+        animate();
+    </script>
+</body>
+</html>

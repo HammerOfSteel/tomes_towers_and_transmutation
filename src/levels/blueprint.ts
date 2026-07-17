@@ -14,8 +14,34 @@ export type InteractableType =
   | 'cauldron'  | 'telescope'         // tower key fixtures
   | 'forge'     | 'quest_board' | 'greenhouse_orb'
   | 'barrel'    | 'crate' | 'chest' | 'candelabra' // decorative furnishings
-  | 'workbench_key';                              // narrative key item (basement)
-export type FloorType = 'stone' | 'grass' | 'dirt' | 'wood';
+  | 'workbench_key'                               // narrative key item (basement)
+  // ── Alchemy / brewing ──────────────────────────────────────────────────
+  | 'potion_rack' | 'distillation_coil' | 'fermenting_vat' | 'herb_bundle'
+  // ── Smithing ───────────────────────────────────────────────────────────
+  | 'anvil' | 'cooling_trough'
+  // ── Living quarters ────────────────────────────────────────────────────
+  | 'bed' | 'wardrobe' | 'writing_desk' | 'bunk' | 'mess_table'
+  // ── Library / study ────────────────────────────────────────────────────
+  | 'reading_table' | 'globe'
+  // ── War room / strategy ────────────────────────────────────────────────
+  | 'map_table' | 'weapon_stand'
+  // ── Botanical ──────────────────────────────────────────────────────────
+  | 'plant_pot' | 'raised_planter'
+  // ── Arcane / ritual ────────────────────────────────────────────────────
+  | 'containment_ring' | 'astrolabe'
+  // ── Decorative ─────────────────────────────────────────────────────────
+  | 'banner' | 'rug';
+export type FloorType =
+  | 'stone'
+  | 'stone_alchemy'
+  | 'stone_herald'
+  | 'stone_damp'
+  | 'stone_scorched'
+  | 'stone_sealed'
+  | 'stone_celestial'
+  | 'grass'
+  | 'dirt'
+  | 'wood';
 /** Clockwise rotation around the Y axis in degrees. */
 export type Rotation = 0 | 90 | 180 | 270;
 
@@ -109,10 +135,21 @@ const VALID_SPAWN_TYPES: SpawnType[] = ['slime'];
 const VALID_INTERACTABLE_TYPES: InteractableType[] = [
   'bookshelf', 'lectern',
   'cauldron', 'telescope', 'forge', 'quest_board', 'greenhouse_orb',
-  'barrel', 'crate', 'chest', 'candelabra',
-  'workbench_key',
+  'barrel', 'crate', 'chest', 'candelabra', 'workbench_key',
+  'potion_rack', 'distillation_coil', 'fermenting_vat', 'herb_bundle',
+  'anvil', 'cooling_trough',
+  'bed', 'wardrobe', 'writing_desk', 'bunk', 'mess_table',
+  'reading_table', 'globe',
+  'map_table', 'weapon_stand',
+  'plant_pot', 'raised_planter',
+  'containment_ring', 'astrolabe',
+  'banner', 'rug',
 ];
-const VALID_FLOOR_TYPES: FloorType[] = ['stone', 'grass', 'dirt', 'wood'];
+const VALID_FLOOR_TYPES: FloorType[] = [
+  'stone', 'stone_alchemy', 'stone_herald', 'stone_damp',
+  'stone_scorched', 'stone_sealed', 'stone_celestial',
+  'grass', 'dirt', 'wood',
+];
 const VALID_ROTATIONS = new Set<number>([0, 90, 180, 270]);
 
 /** Validates a raw parsed value as a Blueprint, throwing BlueprintError on failure. */

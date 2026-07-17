@@ -3,6 +3,41 @@
 
 ---
 
+## Floor Visual Design Pass ✅ COMPLETE
+> Full per-floor plan → **[FLOOR_DESIGN_PLAN.md](FLOOR_DESIGN_PLAN.md)**
+
+### Global systems
+- [x] UV tiling fix + `makeFloorPlanksTexture` (wood floors 1, 3, 6)
+- [x] Circular border ring in `BlueprintRenderer` (per-floor trim colours)
+- [x] Torch fire mesh replacement (crossed PlaneGeometry quads + PointLight per candelabra)
+- [x] Bookshelf rotation fix in TowerGenerator (face inward per wall arc)
+
+### New textures
+- [x] `makeAlchemyStoneTexture` (F-1) · `makeHeraldStoneTexture` (F0)
+- [x] `makeDampStoneTexture` (F2) · `makeScorchedStoneTexture` (F4)
+- [x] `makeGrassTexture` (F7) · `makeSealedStoneTexture` (F8) · `makeCelestialStoneTexture` (F9)
+
+### New props
+- [x] `buildPotionRack` · `buildDistillationCoil` · `buildReadingTable` · `buildGlobe`
+- [x] `buildFermentingVat` · `buildHerbBundle` · `buildAnvil` · `buildCoolingTrough`
+- [x] `buildBunk` · `buildMessTable` · `buildMapTable` · `buildWeaponStand`
+- [x] `buildPlantPot` · `buildRaisedPlanter` · `buildAstrolabe`
+
+### Floor passes
+- [x] Floor -1 (Alchemy) — amber voronoi texture + potion rack × 2 + distillation coil + rug
+- [x] Floor 0 (Foyer) — herald flag-stone tile + grand rug + banners × 2
+- [x] Floor 1 (Library) — oak planks + reading tables × 2 + globe + rug
+- [x] Floor 2 (Brewing) — damp stone + fermenting vats × 2 + distillation coil + herb bundles × 2
+- [x] Floor 3 (Chambers) — warm planks + bed + wardrobe + writing desk + star rug
+- [x] Floor 4 (Forge) — scorched stone (heat-crack glow) + anvils × 2 + cooling troughs × 2
+- [x] Floor 5 (Barracks) — stone + bunks × 4 + mess table
+- [x] Floor 6 (War Room) — wood + map table + weapon stands × 4 + banner
+- [x] Floor 7 (Garden) — patchy grass texture + raised planters × 2 + plant pots × 6
+- [x] Floor 8 (Archive) — sealed blue-grey stone + containment ring (glowing ward)
+- [x] Floor 9 (Observatory) — celestial star-speck stone + astrolabe + globes × 2 + rug
+
+---
+
 ## Guiding Principles (locked)
 
 | Decision | Detail |
@@ -30,8 +65,8 @@ The game runs two parallel rendering tracks simultaneously. The player (and deve
 
 - [x] `assetMode` field exists in `WorldGenConfig` (`'kenney' | 'code'`)
 - [x] MainMenu Settings has a toggle and pack checkboxes
-- [ ] Make the toggle label clearer: "Environment Art: Procedural / KayKit Assets"
-- [ ] Persist `assetMode` to localStorage on every change (currently only saved when Settings closes)
+- [x] Make the toggle label clearer: "Environment Art: Procedural / KayKit Assets"
+- [x] Persist `assetMode` to localStorage on every change (already done via `saveWg()` in every `change` handler)
 
 ---
 
@@ -80,7 +115,7 @@ The `StoryRunner` advances them automatically via `tick()`.
 | tower_p1 — Explore ground floor | `survive_wave` | 3 kills | ✅ Works |
 | tower_p2 — Find upper floor key | `survive_wave` | 3 more kills | ✅ Works |
 | tower_p3 — Find workshop key | `survive_wave` | 3 more kills | ✅ Works |
-| tower_p4 — Explore the basement | `clear_dungeon` | Clear any dungeon floor | ✅ Works |
+| tower_p4 — Find the master key | `interact_key` | Pick up the workbench_key interactable | ✅ Works |
 
 ### What works
 - [x] Story runner fires prologue intro as a centered toast on game start
@@ -93,7 +128,7 @@ The `StoryRunner` advances them automatically via `tick()`.
 - [x] **`explore_floor` beat type** — fulfils when player visits a new floor index; SceneManager tracks unique floors visited; all 12 prologue beats (p1/p2/p3 across 4 species) now use `explore_floor`
 - [x] **Tower starting room** — `PLAYER_START_FLOOR_INDEX = 0`; player now spawns in the Grand Entrance Hall (floor 0) matching "Explore the ground floor" beat 1
 - [x] **Locked front door** — `_towerPrologueDone` flag blocks `onExitTrigger` during prologue; unlocks when Act I begins (`onActBegin` title ≠ prologue)
-- [ ] **Master key item** — no item system for keys yet; `clear_dungeon` is used as a proxy; needs an `interact_key` beat type + key item in basement
+- [x] **Master key item** — `interact_key` beat type added; `keysPickedUp` counter wired into `StoryRunner.tick()`; all 4 species `tower_p4` beats now use `interact_key` objective → fulfils when player picks up the `workbench_key` interactable in the basement
 
 ### Nice-to-have (not blocking)
 - [x] Wizard's note on library telescope fixture: "Do not go to the basement" — `chamberExtraFixture` on `floor_library`; signed Arcanist Solmor
@@ -120,10 +155,33 @@ These work but need the same quality pass as the prologue once the prologue is s
 - [ ] Dialogue tree for first meeting: `FloatingDialogue3D` + new `WizardDialogueTree`
 
 ### Interactable System Improvements
-- [ ] `interact_key` beat type — pickup interactable spawns a key item, beat fulfils on pickup
+- [x] `interact_key` beat type — fulfilled when player picks up the `workbench_key` interactable; wired via `onKeyPickup` callback
 - [x] `explore_floor` beat type — fulfils on staircase use (floor index change in SceneManager)
 - [ ] `read_lore` beat type — fulfils when a specific book is read (BookReader fires)
 - [ ] Locked door fixture — requires named key item to open; `LockedDoor` interactable
+
+---
+
+## World Editor (world-editor.html)
+
+A dedicated standalone editor accessible via Dev Lab → World Editor.
+
+### Completed ✅
+- [x] **Asset Studio** — pick category & type (furniture/props/structures/lighting), configure parameters via sliders, pick primary + secondary colors, Randomize, Preview in 3D viewport, Save to Library
+- [x] **Tower Room Editor** — visualise chamber floor grid, click to place/remove interactable markers by type, export as `chamberScatter` JSON, Save room layout to Library
+- [x] **Building Studio** — select building type, size sliders, seed input, Generate + Randomize using `generateBuilding()`, Save to Library
+- [x] **Library tab** — localStorage card browser for Assets / Buildings / Rooms; Load, Export JSON, Delete; bulk Export All / Import JSON
+- [x] **New ProceduralProps builders**: `buildBed`, `buildTable`, `buildChair`, `buildWardrobe`, `buildCampfire`, `buildTelescope`
+
+### Pending ⬜
+- [x] Asset Studio: thumbnail rendering (offscreen renderer captures 170×110 JPEG at save time; displayed in Library cards)
+- [ ] Tower Room Editor: render actual BlueprintRenderer geometry instead of colored block markers
+- [x] Tower Room Editor: rotation gizmo for placed items (R key rotates; Pitch/Yaw/Roll sliders in right panel)
+- [x] Tower Room Editor: drag-to-move placed items (XZ drag + Shift-drag for Y height; orbit lock during drag; right-click only deletes on-item)
+- [ ] Overworld Editor tab: integrate `OverworldEditor` camera + controls into world-editor page
+- [ ] Building Studio: custom width/depth/floors parameters fed into `generateBuilding()`
+- [ ] Save button on main menu (in-game) exports full tower layout as JSON
+- [ ] DNA Creator / Creature Creator: Spore-like body part editor — full 3D with limb drag handles, DNA randomizer, mutation, part categories (head/body/limbs/tail/wings), animation preview, save to NPC/enemy library
 
 ---
 
@@ -140,6 +198,122 @@ These work but need the same quality pass as the prologue once the prologue is s
 - [ ] Replace procedural rocks with Kenney rock variety set
 - [ ] Water / river tiles from Kenney nature kit
 - [ ] Settlement buildings from Kenney fantasy-town / retro-fantasy kits
+
+---
+
+## Phase 5 — Environment Asset Modules (World Skin System)
+
+> **Goal:** Replace every piece of code-generated Three.js geometry (box walls, cylinder trees, sphere rocks) with real 3D asset tiles from the KayKit / Kenney packs — while keeping the code-first procedural path fully functional. A single Settings toggle (`WorldGenConfig.assetMode`) switches between the two tracks. The World Editor lets you preview, curate, and test asset sets before they go live.
+
+### Why this phase matters
+The procedural geometry gives us correct *structure* (correct room radius, correct floor count, correct tree density) but looks like boxes. The KayKit/Kenney packs include sloped tiles, arched ceilings, detailed props, and lit lanterns — swapping them in will make every environment look finished without touching the gameplay logic.
+
+### 5.0 — Asset Inventory & Slot Mapping
+
+Define every "slot" in each environment — the named hooks where procedural geometry currently lives — and map each slot to the best-matching asset from the extracted packs.
+
+**Environment types and their slots:**
+
+| Environment | Slots |
+|---|---|
+| **Tower (interior)** | floor_tile, wall_straight, wall_corner, wall_inner_corner, ceiling_tile, doorway_arch, staircase, pillar, column_cap |
+| **Dungeon** | floor_tile, wall_straight, wall_corner, wall_T, ceiling_tile, doorway, arch, column, pit_edge, staircase_down |
+| **Overworld terrain** | ground_flat, ground_slope_N/S/E/W, ground_slope_corner, cliff_face, water_flat, water_edge, sand, snow |
+| **Overworld nature** | tree_oak, tree_pine, tree_dead, bush_small, bush_large, rock_small, rock_large, log, mushroom, flower |
+| **Settlement** | building_house, building_shop, building_inn, building_temple, fence_straight, fence_corner, road_straight, road_corner, market_stall |
+
+**Tasks:**
+- [ ] **5.0.1** Create `src/world/assetSlots.ts` — export an `AssetSlotMap` type: `Record<EnvironmentType, Record<SlotName, string | null>>` where the value is a `/assets/…` path or `null` (= use code geometry)
+- [ ] **5.0.2** Write a World Editor tab "**Tile Catalog**" that renders every item in `public/assets/manifest.json` in a grid with a live 3D preview thumbnail, then lets you drag it onto a slot in the slot map and Save. This replaces manual JSON editing.
+- [ ] **5.0.3** For each environment type, do a manual curation pass in the Tile Catalog: open the pack (e.g. KayKit — Dungeon → Modular), preview each wall/floor tile, assign it to the correct slot
+- [ ] **5.0.4** Verify asset scale: most KayKit assets are sized for a 1 m grid cell. Check tower floor radius (`CELL = 1.0`) vs. asset bounding box. Note any assets that need a default scale override in the slot map
+- [ ] **5.0.5** Write `src/__tests__/assetSlots.test.ts`: every slot map entry either points to a real file in `public/assets/` or is `null`; no dangling paths
+
+### 5.1 — Tower Room Asset Renderer
+
+Replace the procedural floor/wall/ceiling geometry in the tower chamber renderer with asset tiles when `assetMode === 'kenney'`.
+
+- [ ] **5.1.1** Create `src/world/TowerAssetRenderer.ts` — exports `renderTowerFloor(scene, floorDef, slotMap)` that places asset GLBs in a grid pattern matching the chamber radius; falls back to procedural geometry for any slot with `null`
+- [ ] **5.1.2** Hook into existing chamber rendering: in the procedural tower generator, after the chamber mesh is built, check `WorldGenConfig.assetMode`. If `'kenney'`, call `TowerAssetRenderer.renderTowerFloor` instead
+- [ ] **5.1.3** Implement tile instancing: use `THREE.InstancedMesh` for floor and wall tiles (same mesh, many positions) — prevents draw call explosion when placing 50+ identical floor tiles
+- [ ] **5.1.4** Sloped ceiling and arched doorways: KayKit Dungeon has arch tiles. Wire the `doorway_arch` slot to the chamber exit direction so arches face the correct staircase direction
+- [ ] **5.1.5** Wall lighting: when `assetMode === 'kenney'`, place torch/brazier assets from the `Lighting` subcat at regular intervals on walls (same positions as the procedural point lights)
+- [ ] **5.1.6** Write `src/__tests__/towerAssetRenderer.test.ts`: given a known floorDef and a slotMap with mocked paths, assert the correct number of InstancedMesh instances are created for floor and wall slots; assert no instances are created for `null` slots
+
+### 5.2 — Dungeon Asset Renderer
+
+Same approach as 5.1 but for the dungeon crawler floors.
+
+- [ ] **5.2.1** Create `src/world/DungeonAssetRenderer.ts` — renders dungeon corridor/room tiles from KayKit Dungeon pack
+- [ ] **5.2.2** KayKit Dungeon has many modular pieces (wall straight, wall corner, T-junction, pit edge). Map the dungeon grid cell type (from the BSP/random-walk generator) to the correct tile variant
+- [ ] **5.2.3** Pit / water tiles: some dungeon floors have gaps; use KayKit pit edge tiles at the correct boundary cells
+- [ ] **5.2.4** Test: given a 5×5 dungeon grid, assert correct tile variant is chosen for straight walls, corner walls, and T-junctions
+- [ ] **5.2.5** Smoke test: dungeon scene with `assetMode === 'kenney'` loads without Three.js errors (no missing texture warnings)
+
+### 5.3 — Overworld Terrain Tiles
+
+Replace the procedural heightmap mesh with tiled terrain assets and slope tiles.
+
+- [ ] **5.3.1** Catalog sloped tiles: KayKit Forest Nature Pack has slope variants (identify and list them in the slot map). Kenney Nature Kit has ground tile variants too
+- [ ] **5.3.2** Implement a `TerrainTileSelector` that maps a cell's height delta to its neighbours → outputs a tile variant name: `flat | slope_N | slope_S | slope_E | slope_W | slope_corner_NE | …`
+- [ ] **5.3.3** Create `src/world/OverworldAssetRenderer.ts` — iterates overworld heightmap grid, classifies each cell with `TerrainTileSelector`, places correct tile asset at world position
+- [ ] **5.3.4** Blend zones: cells at biome boundaries (e.g. grass→snow) should use transition tiles if the pack has them; otherwise fall back to the code-first mesh
+- [ ] **5.3.5** Water tiles: KayKit Nature + Kenney Nature both have water tiles. At cells below a water threshold, place water asset tiles; animate UV scroll on water material (shader)
+- [ ] **5.3.6** Test: `TerrainTileSelector` returns correct variant for every combination of 4-neighbour height delta patterns
+- [ ] **5.3.7** Visual QA: fly-over the overworld in the World Editor with `assetMode = 'kenney'`; verify no visible seams or z-fighting between tiles
+
+### 5.4 — Overworld Nature & Props
+
+Replace procedural trees, rocks, bushes with GLB assets using `InstancedMesh` for performance.
+
+- [ ] **5.4.1** `NatureAssetPlacer`: given a list of world positions (same positions the procedural placer would use), instantiate the correct GLB asset. Use 3-4 variants per category (tree_oak_A/B/C, rock_small/med/large) selected by seeded RNG to avoid repetition
+- [ ] **5.4.2** LOD (Level of Detail): beyond a distance threshold, replace full GLB with a billboard sprite (rendered from the GLB in the World Editor). Keeps performance on large overworlds
+- [ ] **5.4.3** Settlement buildings from Kenney Fantasy Town / Castle packs: replace procedural building boxes with real building GLBs. Building type → GLB is controlled by slot map
+- [ ] **5.4.4** Test: given 100 tree positions, assert `InstancedMesh.count === 100`; assert seeded variant selection is deterministic
+
+### 5.5 — Settings Toggle & Persistence
+
+Clean up the existing `assetMode` toggle and make it stick.
+
+- [ ] **5.5.1** Settings → Environment Art toggle: label `"Procedural (code-first)"` / `"Asset Packs (KayKit / Kenney)"` — update `GameMenu.ts` label
+- [ ] **5.5.2** Persist `assetMode` to `localStorage` immediately on every change (currently it may only save on Settings close)
+- [ ] **5.5.3** On `WorldGenConfig` load, read `assetMode` from `localStorage`; default to `'code'` if not set (so new players see working procedural world)
+- [ ] **5.5.4** When `assetMode` is toggled mid-session, trigger a scene reload for the current environment (not a full page reload — just re-run the renderer for the active floor/zone)
+- [ ] **5.5.5** Test: toggling `assetMode` in isolation updates `WorldGenConfig.assetMode`; localStorage is written; reading back returns the persisted value
+
+### 5.6 — World Editor Integration
+
+Bring asset-module authoring into the World Editor so you can see results visually before committing.
+
+- [ ] **5.6.1** World Editor — **Tile Catalog tab**: grid of all manifest entries with a 3D thumbnail, pack/subcat filter chips, a search box, and a slot-assignment panel on the right. Clicking an entry assigns it to the selected slot. Saves to `AssetSlotMap` JSON in `localStorage` (exported and checked in to source)
+- [ ] **5.6.2** Tower Room Editor — **"Asset Preview" toggle**: renders the floor using the asset slot map instead of colored boxes. Lets you see exactly what the room looks like with the real tiles before playing
+- [ ] **5.6.3** Tower Room Editor — keyboard shortcut `A` switches between asset preview and placement grid
+- [ ] **5.6.4** World Editor — **Overworld tab**: a 2D minimap of the overworld grid with a 3D viewport inset; toggle between code-first and asset-based rendering in real time
+- [ ] **5.6.5** All World Editor changes persist asset slot assignments to `localStorage` with a named preset system (e.g. "Dark Tower", "Forest Dungeon") and an Export JSON / Import JSON button
+
+### 5.7 — Tests & Quality Gates
+
+Before shipping this phase, all of the following must be green.
+
+- [ ] **5.7.1** `src/__tests__/assetSlots.test.ts` — every mapped path resolves to a real file ✓
+- [ ] **5.7.2** `src/__tests__/towerAssetRenderer.test.ts` — correct instance counts for floor/wall tiles; null-slot fallback ✓
+- [ ] **5.7.3** `src/__tests__/dungeonAssetRenderer.test.ts` — correct tile variant for every grid cell type ✓
+- [ ] **5.7.4** `src/__tests__/terrainTileSelector.test.ts` — all height-delta patterns return a valid tile name ✓
+- [ ] **5.7.5** `src/__tests__/natureAssetPlacer.test.ts` — 100 positions → InstancedMesh.count 100; seed determinism ✓
+- [ ] **5.7.6** `src/__tests__/worldGenConfig.test.ts` — `assetMode` persistence round-trip via localStorage mock ✓
+- [ ] **5.7.7** World Editor smoke test (`worldEditor.smoke.test.ts`) remains passing after Phase 5 HTML changes ✓
+- [ ] **5.7.8** `npx vitest run` passes with 0 new failures; `npx tsc --noEmit` clean ✓
+
+### Phase 5 entry criteria (start when)
+- Prologue first quest is playable end-to-end (tower → basement → key)
+- Asset manifest has been reviewed and slot assignments made in the Tile Catalog
+
+### Phase 5 exit criteria (done when)
+- `assetMode = 'kenney'` renders tower, dungeon, and overworld with no code-geometry fallback visible
+- All 5.7 tests pass
+- Settings toggle works and persists correctly
+- Performance: overworld with `assetMode = 'kenney'` renders at ≥ 60 fps on a modern laptop (profile with Chrome DevTools before marking done)
+
 
 ### Audio
 - [ ] Tower ambient: low stone hum, distant wind through arrow slits

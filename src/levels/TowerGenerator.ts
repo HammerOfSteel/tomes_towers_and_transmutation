@@ -85,7 +85,7 @@ const BOOKSHELF_RING = [
   { x: 15, z:  8, rotation: 90 as const },  // East wall (between door slots at z=5 and z=11)
   { x:  1, z:  8, rotation: 90 as const },  // West wall
   { x: 12, z:  4, rotation:  0 as const },  // NE quadrant — clear of all door slots and staircase axes
-  { x:  4, z: 12, rotation:  0 as const },  // SW quadrant — clear of all door slots and staircase axes
+  { x:  4, z: 12, rotation: 180 as const }, // SW quadrant — faces north toward center
 ] as const;
 
 // 4 candelabras at mid-radius cardinal positions — far enough from centre to
@@ -188,11 +188,13 @@ function buildChamber(
 
   // Decorative bookshelf ring (optional) — 4 shelves close to cardinal walls
   if (def.chamberBookshelves) {
-    for (const s of BOOKSHELF_RING) {
+    for (let i = 0; i < BOOKSHELF_RING.length; i++) {
+      const s = BOOKSHELF_RING[i];
       interactables.push({
         x: s.x, z: s.z,
         type: 'bookshelf',
         rotation: s.rotation,
+        ...(def.chamberBookshelfContent ? { content: def.chamberBookshelfContent[i] } : {}),
       });
     }
   }

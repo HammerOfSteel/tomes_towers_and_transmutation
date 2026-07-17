@@ -352,6 +352,6 @@ export class GameMenu {
   }
 
   private _renderDevLauncher(): void {
-    return this._renderLauncher('🛠️', 'Dev Panel', '`', 'Debug tools, sandbox, world editor.', () => { this.close(); this.actions.openDevPanel(); });
+    return this._renderLauncher('🛠️', 'Backrooms', '`', 'World Editor · Dev Panel · Debug tools.', () => { this.close(); this.actions.openDevPanel(); });
   }
 }

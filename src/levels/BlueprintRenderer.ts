@@ -4,15 +4,32 @@ import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
 import { PALETTE } from '@/shaders/palette';
 import { MaterialLibrary } from '@/rendering/MaterialLibrary';
-import { buildCauldron } from '@/rendering/ProceduralProps';
+import {
+  buildCauldron,
+  buildPotionRack, buildDistillationCoil, buildFermentingVat, buildHerbBundle,
+  buildAnvil, buildCoolingTrough,
+  buildBed, buildWardrobe, buildBunk, buildMessTable,
+  buildReadingTable, buildGlobe,
+  buildMapTable, buildWeaponStand,
+  buildPlantPot, buildRaisedPlanter,
+  buildContainmentRing, buildAstrolabe,
+  buildBanner, buildRug,
+} from '@/rendering/ProceduralProps';
 
 // ── Visual constants ──────────────────────────────────────────────────────
 
+/** Floor base tint used only for fallback MeshLambertMaterial floors. */
 const FLOOR_COLORS: Record<FloorType, number> = {
-  stone: PALETTE.STONE_DARK,
-  grass: 0x2a5a22,
-  dirt:  0x5a4020,
-  wood:  0x6b4a2a,
+  stone:           PALETTE.STONE_DARK,
+  stone_alchemy:   0x1a1a22,
+  stone_herald:    0x22201c,
+  stone_damp:      0x1a2422,
+  stone_scorched:  0x1c1410,
+  stone_sealed:    0x181820,
+  stone_celestial: 0x0e1020,
+  grass:           0x2a5a22,
+  dirt:            0x5a4020,
+  wood:            0x6b4a2a,
 };
 const DOOR_FRAME_COLOR = 0x5a5870;
 const STAIR_COLOR = 0x4a4a62;          // slightly lighter stone for step faces
@@ -72,7 +89,9 @@ function buildStaircase(
   const { x: wx, z: wz } = cellToWorld(stair.x, stair.z, bp);
   const STEPS = 7;
   const stepH = Math.min(0.36, wallHeight * 0.11);
-  const stepD = cellSize / STEPS;
+  // Span 1.8 cells so the staircase visibly projects through the wall opening
+  const STAIR_SPAN = cellSize * 1.8;
+  const stepD = STAIR_SPAN / STEPS;
   const stepW = cellSize * 1.1;  // slightly wider than one cell for easier climbing
 
   // Approach axis unit vector (direction toward wall / up the stairs)
@@ -195,13 +214,19 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
     ? MaterialLibrary.get('wood_dark')
     : MaterialLibrary.get('stone_wall');
   const floorMat = ((): THREE.Material => {
-    if (floorType === 'wood')  return MaterialLibrary.get('wood_plank');
-    if (floorType === 'grass') return new THREE.MeshLambertMaterial({ color: FLOOR_COLORS.grass });
-    if (floorType === 'dirt')  return new THREE.MeshLambertMaterial({ color: FLOOR_COLORS.dirt });
+    if (floorType === 'wood')            return MaterialLibrary.get('wood_plank');
+    if (floorType === 'grass')           return MaterialLibrary.get('grass_floor');
+    if (floorType === 'dirt')            return new THREE.MeshLambertMaterial({ color: FLOOR_COLORS.dirt });
+    if (floorType === 'stone_alchemy')   return MaterialLibrary.get('alchemy_stone_floor');
+    if (floorType === 'stone_herald')    return MaterialLibrary.get('herald_stone_floor');
+    if (floorType === 'stone_damp')      return MaterialLibrary.get('damp_stone_floor');
+    if (floorType === 'stone_scorched')  return MaterialLibrary.get('scorched_stone_floor');
+    if (floorType === 'stone_sealed')    return MaterialLibrary.get('sealed_stone_floor');
+    if (floorType === 'stone_celestial') return MaterialLibrary.get('celestial_stone_floor');
     return MaterialLibrary.get('stone_floor');
   })();
   // Push locally-created floor materials so they're disposed with the room
-  if (floorType === 'grass' || floorType === 'dirt') materials.push(floorMat);
+  if (floorType === 'dirt') materials.push(floorMat);
   const frameMat = new THREE.MeshLambertMaterial({ color: DOOR_FRAME_COLOR });
   const itemMat  = MaterialLibrary.get('wood_dark');
   materials.push(frameMat);
@@ -227,8 +252,21 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   // Door cells skip wall placement (opening left empty).
   const doorKeys = new Set(bp.doors.map((d) => `${d.x},${d.z}`));
 
+  // The single wall tile directly behind each staircase is removed so the
+  // opening is visible and the staircase clearly pokes through the wall.
+  const stairBackingKeys = new Set<string>();
+  for (const stair of bp.staircases) {
+    let sbx = 0, sbz = 0;
+    if      (stair.facing === 'north') sbz = -1;
+    else if (stair.facing === 'south') sbz =  1;
+    else if (stair.facing === 'east')  sbx =  1;
+    else                               sbx = -1;
+    stairBackingKeys.add(`${stair.x + sbx},${stair.z + sbz}`);
+  }
+
   for (const tile of bp.tiles) {
     if (doorKeys.has(`${tile.x},${tile.z}`)) continue;
+    if (stairBackingKeys.has(`${tile.x},${tile.z}`)) continue;  // staircase opening
 
     const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
     const tH = tile.h ?? wallHeight;
@@ -263,6 +301,301 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
         ),
       );
     }
+  }
+
+  // ── Corner pilasters — softens the inner silhouette of circular walls ─
+  // Where the ring makes a diagonal step, two wall tiles share a corner
+  // vertex that forms a 90° convex angle visible from inside the room.
+  // A low-poly (6-sided) cylinder at each such joint rounds the sharp angle
+  // without adding geometry along straight tile runs → no pearl-necklace.
+  // Detection: exactly one of the two straight-bridge tiles is floor
+  // (both-wall = interior corner, buried; both-floor = degenerate, skip).
+  {
+    const wallTileSet = new Set(
+      bp.tiles
+        .filter(t => t.type === 'wall' && !doorKeys.has(`${t.x},${t.z}`) && !stairBackingKeys.has(`${t.x},${t.z}`))
+        .map(t => `${t.x},${t.z}`),
+    );
+    const placedCorners = new Set<string>();
+
+    for (const tile of bp.tiles) {
+      if (tile.type !== 'wall' || doorKeys.has(`${tile.x},${tile.z}`) || stairBackingKeys.has(`${tile.x},${tile.z}`)) continue;
+      const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
+      const tH = tile.h ?? wallHeight;
+
+      for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as [number, number][]) {
+        if (!wallTileSet.has(`${tile.x + dx},${tile.z + dz}`)) continue;
+        const bridgeX = wallTileSet.has(`${tile.x + dx},${tile.z}`);
+        const bridgeZ = wallTileSet.has(`${tile.x},${tile.z + dz}`);
+        // Skip buried interior corners (both bridges are wall)
+        // and skip degenerate floating corners (both bridges are floor).
+        if (bridgeX === bridgeZ) continue;
+
+        const cx = wx + dx * cellSize * 0.5;
+        const cz = wz + dz * cellSize * 0.5;
+        const key = `${cx.toFixed(2)},${cz.toFixed(2)}`;
+        if (placedCorners.has(key)) continue;
+        placedCorners.add(key);
+
+        // 6-sided low-poly pilaster — same material as surrounding wall blocks
+        const colGeo = new THREE.CylinderGeometry(cellSize * 0.28, cellSize * 0.28, tH, 6);
+        geometries.push(colGeo);
+        const col = new THREE.Mesh(colGeo, wallMat);
+        col.position.set(cx, tH / 2, cz);
+        col.castShadow = true;
+        col.receiveShadow = true;
+        group.add(col);
+      }
+    }
+  }
+
+  // ── Wall-top decorations — themed low-poly props on top of the wall ring ─
+  {
+    const ft = floorType;
+    const floorIdx = bp.floor;
+
+    // LCG seeded from floor index — deterministic, no library needed
+    let rngSeed = ((floorIdx + 7) * 1664525 + 1013904223) >>> 0;
+    const rng = (): number => {
+      rngSeed = (rngSeed * 1664525 + 1013904223) >>> 0;
+      return rngSeed / 0x100000000;
+    };
+
+    // Collect non-door wall tiles sorted by ring angle for even distribution
+    const dkSet = new Set([...bp.doors.map(d => `${d.x},${d.z}`), ...stairBackingKeys]);
+    const wallPts: { wx: number; wz: number }[] = [];
+    for (const tile of bp.tiles) {
+      if (tile.type !== 'wall' || dkSet.has(`${tile.x},${tile.z}`)) continue;
+      const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
+      wallPts.push({ wx, wz });
+    }
+    wallPts.sort((a, b) => Math.atan2(a.wx, a.wz) - Math.atan2(b.wx, b.wz));
+
+    const tH = wallHeight;
+    const N  = wallPts.length;
+
+    // Pick every Nth tile — N~40 tiles; step=4 → ~10 props, step=2 → ~20
+    const pick = (step: number): { wx: number; wz: number }[] => {
+      const out: { wx: number; wz: number }[] = [];
+      for (let i = 0; i < N; i += step) out.push(wallPts[i]!);
+      return out;
+    };
+
+    if (ft === 'stone' && floorIdx === 5) {
+      // ── F5 Barracks: alternating merlons (classic battlements) ───────
+      const crenMat = new THREE.MeshLambertMaterial({ color: 0x666677 });
+      materials.push(crenMat);
+      for (let i = 0; i < N; i += 2) {
+        const { wx, wz } = wallPts[i]!;
+        const mGeo = new THREE.BoxGeometry(cellSize * 0.68, cellSize * 0.4, cellSize * 0.68);
+        geometries.push(mGeo);
+        const merlon = new THREE.Mesh(mGeo, crenMat);
+        merlon.position.set(wx, tH + cellSize * 0.2, wz);
+        merlon.castShadow = true;
+        group.add(merlon);
+      }
+
+    } else if (ft === 'stone_alchemy') {
+      // ── B Alchemy: retort flasks (emissive spheres) + rune slabs ─────
+      const flaskMat = new THREE.MeshBasicMaterial({ color: 0x88ffaa });
+      const runeMat  = new THREE.MeshLambertMaterial({ color: 0x2a1f3a });
+      materials.push(flaskMat, runeMat);
+      for (const { wx, wz } of pick(4)) {
+        if (rng() > 0.45) {
+          const fGeo = new THREE.SphereGeometry(0.2 + rng() * 0.06, 5, 4);
+          geometries.push(fGeo);
+          const f = new THREE.Mesh(fGeo, flaskMat);
+          f.position.set(wx, tH + 0.22, wz);
+          group.add(f);
+        } else {
+          const rGeo = new THREE.BoxGeometry(0.16, 0.36, 0.1);
+          geometries.push(rGeo);
+          const r = new THREE.Mesh(rGeo, runeMat);
+          r.position.set(wx, tH + 0.18, wz);
+          r.rotation.y = rng() * Math.PI;
+          group.add(r);
+        }
+      }
+
+    } else if (ft === 'stone_herald') {
+      // ── F0 Herald: stone finials (octahedra) ─────────────────────────
+      const finMat = new THREE.MeshLambertMaterial({ color: 0x8888aa });
+      materials.push(finMat);
+      for (const { wx, wz } of pick(4)) {
+        const fGeo = new THREE.OctahedronGeometry(0.26 + rng() * 0.08, 0);
+        geometries.push(fGeo);
+        const fin = new THREE.Mesh(fGeo, finMat);
+        fin.position.set(wx, tH + 0.26, wz);
+        fin.castShadow = true;
+        group.add(fin);
+      }
+
+    } else if (ft === 'wood' && floorIdx === 1) {
+      // ── F1 Library: stacked book clusters ────────────────────────────
+      const bookMat2 = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
+      materials.push(bookMat2);
+      for (const { wx, wz } of pick(4)) {
+        let stackY = tH;
+        const count = 2 + Math.floor(rng() * 2);
+        for (let b = 0; b < count; b++) {
+          const bH = 0.1 + rng() * 0.08;
+          const bW = 0.26 + rng() * 0.14;
+          const bGeo = new THREE.BoxGeometry(bW, bH, cellSize * 0.38);
+          geometries.push(bGeo);
+          const bk = new THREE.Mesh(bGeo, bookMat2);
+          bk.position.set(wx + (rng() - 0.5) * 0.1, stackY + bH / 2, wz + (rng() - 0.5) * 0.08);
+          bk.rotation.y = (rng() - 0.5) * 0.25;
+          bk.castShadow = true;
+          group.add(bk);
+          stackY += bH;
+        }
+      }
+
+    } else if (ft === 'stone_damp') {
+      // ── F2 Brewery: mini barrels (on side) + mushroom clusters ───────
+      const barMat  = new THREE.MeshLambertMaterial({ color: 0x5a3820 });
+      const mushMat = new THREE.MeshLambertMaterial({ color: 0xccaa88 });
+      materials.push(barMat, mushMat);
+      for (const { wx, wz } of pick(4)) {
+        if (rng() > 0.4) {
+          const bGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.3, 7);
+          geometries.push(bGeo);
+          const bar = new THREE.Mesh(bGeo, barMat);
+          bar.position.set(wx, tH + 0.18, wz);
+          bar.rotation.z = Math.PI / 2;
+          bar.rotation.y = rng() * Math.PI;
+          group.add(bar);
+        } else {
+          const capGeo3 = new THREE.SphereGeometry(0.18, 6, 4);
+          geometries.push(capGeo3);
+          const cap3 = new THREE.Mesh(capGeo3, mushMat);
+          cap3.position.set(wx, tH + 0.22, wz);
+          cap3.scale.set(1.0, 0.55, 1.0);
+          group.add(cap3);
+          const stGeo = new THREE.CylinderGeometry(0.05, 0.065, 0.16, 5);
+          geometries.push(stGeo);
+          const st = new THREE.Mesh(stGeo, mushMat);
+          st.position.set(wx, tH + 0.08, wz);
+          group.add(st);
+        }
+      }
+
+    } else if (ft === 'wood' && floorIdx === 3) {
+      // ── F3 Quarters: star/moon finials (icosahedra) ──────────────────
+      const starMat2 = new THREE.MeshLambertMaterial({ color: 0xd0e8ff });
+      materials.push(starMat2);
+      for (const { wx, wz } of pick(4)) {
+        const iGeo = new THREE.IcosahedronGeometry(0.18 + rng() * 0.1, 0);
+        geometries.push(iGeo);
+        const ico = new THREE.Mesh(iGeo, starMat2);
+        ico.position.set(wx, tH + 0.2, wz);
+        group.add(ico);
+      }
+
+    } else if (ft === 'stone_scorched') {
+      // ── F4 Forge: emissive fire bowls + slag lumps ───────────────────
+      const fireMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+      const slagMat = new THREE.MeshLambertMaterial({ color: 0x4a2210 });
+      materials.push(fireMat, slagMat);
+      for (const { wx, wz } of pick(4)) {
+        if (rng() > 0.5) {
+          const bGeo2 = new THREE.BoxGeometry(0.3, 0.18, 0.3);
+          geometries.push(bGeo2);
+          const bowl2 = new THREE.Mesh(bGeo2, fireMat);
+          bowl2.position.set(wx, tH + 0.09, wz);
+          group.add(bowl2);
+        } else {
+          const sGeo = new THREE.DodecahedronGeometry(0.2, 0);
+          geometries.push(sGeo);
+          const slag = new THREE.Mesh(sGeo, slagMat);
+          slag.position.set(wx, tH + 0.2, wz);
+          slag.rotation.y = rng() * Math.PI;
+          group.add(slag);
+        }
+      }
+
+    } else if (ft === 'wood' && floorIdx === 6) {
+      // ── F6 War Room: small trophy poles with flag patches ─────────────
+      const polMat = new THREE.MeshLambertMaterial({ color: 0x6b4422 });
+      const flgMat = new THREE.MeshLambertMaterial({ color: 0x8b1a1a, side: THREE.DoubleSide });
+      materials.push(polMat, flgMat);
+      for (const { wx, wz } of pick(4)) {
+        const pGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.56, 5);
+        geometries.push(pGeo);
+        const pol = new THREE.Mesh(pGeo, polMat);
+        pol.position.set(wx, tH + 0.28, wz);
+        group.add(pol);
+        const fGeo2 = new THREE.PlaneGeometry(0.26, 0.18);
+        geometries.push(fGeo2);
+        const flg = new THREE.Mesh(fGeo2, flgMat);
+        flg.position.set(wx + 0.13, tH + 0.47, wz);
+        group.add(flg);
+      }
+
+    } else if (ft === 'grass') {
+      // ── F7 Garden: flower clusters (low-poly icosahedra) ─────────────
+      const PETAL_COLORS = [0xff88aa, 0xffee44, 0xcc88ff, 0xff7766];
+      for (const { wx, wz } of pick(3)) {
+        const ci = Math.floor(rng() * PETAL_COLORS.length);
+        const fMat = new THREE.MeshLambertMaterial({ color: PETAL_COLORS[ci] });
+        materials.push(fMat);
+        const flGeo = new THREE.IcosahedronGeometry(0.16 + rng() * 0.1, 0);
+        geometries.push(flGeo);
+        const fl = new THREE.Mesh(flGeo, fMat);
+        fl.position.set(
+          wx + (rng() - 0.5) * 0.28,
+          tH + 0.16 + rng() * 0.12,
+          wz + (rng() - 0.5) * 0.28,
+        );
+        group.add(fl);
+      }
+
+    } else if (ft === 'stone_sealed') {
+      // ── F8 Archive: upright rune slabs + warding orbs ────────────────
+      const rslatMat = new THREE.MeshLambertMaterial({ color: 0x223355 });
+      const wardMat  = new THREE.MeshBasicMaterial({ color: 0x44aadd });
+      materials.push(rslatMat, wardMat);
+      for (const { wx, wz } of pick(4)) {
+        if (rng() > 0.5) {
+          const rsGeo = new THREE.BoxGeometry(0.13, 0.4, 0.08);
+          geometries.push(rsGeo);
+          const rs = new THREE.Mesh(rsGeo, rslatMat);
+          rs.position.set(wx, tH + 0.2, wz);
+          rs.rotation.y = rng() * Math.PI;
+          group.add(rs);
+        } else {
+          const wGeo = new THREE.SphereGeometry(0.16, 6, 5);
+          geometries.push(wGeo);
+          const wo = new THREE.Mesh(wGeo, wardMat);
+          wo.position.set(wx, tH + 0.16, wz);
+          group.add(wo);
+        }
+      }
+
+    } else if (ft === 'stone_celestial') {
+      // ── F9 Observatory: crystal formations + brass rings ─────────────
+      const cryMat = new THREE.MeshBasicMaterial({ color: 0x88eeff });
+      const briMat = new THREE.MeshLambertMaterial({ color: 0xcc9922 });
+      materials.push(cryMat, briMat);
+      for (const { wx, wz } of pick(3)) {
+        if (rng() > 0.45) {
+          const cGeo = new THREE.OctahedronGeometry(0.22 + rng() * 0.1, 0);
+          geometries.push(cGeo);
+          const cr = new THREE.Mesh(cGeo, cryMat);
+          cr.position.set(wx, tH + 0.22, wz);
+          cr.rotation.y = rng() * Math.PI;
+          group.add(cr);
+        } else {
+          const tGeo = new THREE.TorusGeometry(0.2, 0.04, 6, 12);
+          geometries.push(tGeo);
+          const tor = new THREE.Mesh(tGeo, briMat);
+          tor.position.set(wx, tH + 0.22, wz);
+          tor.rotation.x = Math.PI / 2 + (rng() - 0.5) * 0.5;
+          group.add(tor);
+        }
+      }
+    }
+    // stone + non-F5 / dirt have no wall-top decor (plain walls are fine)
   }
 
   // ── Door frames & triggers ────────────────────────────────────────────
@@ -704,8 +1037,203 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
       }
       // No collision — player can walk through candelabras (decorative only)
 
+    } else if (item.type === 'potion_rack') {
+      const frameMat2 = new THREE.MeshLambertMaterial({ color: 0x4a3a2a });
+      const glowMat2  = new THREE.MeshBasicMaterial({ color: 0x66ffaa });
+      materials.push(frameMat2, glowMat2);
+      const rack = buildPotionRack(frameMat2, glowMat2);
+      rack.position.set(ix, 0, iz);
+      rack.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(rack);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.7, iz), new THREE.Vector3(0.5, 0.7, 0.2)));
+
+    } else if (item.type === 'distillation_coil') {
+      const copperMat = new THREE.MeshLambertMaterial({ color: 0xc07840 });
+      const glassMat2 = new THREE.MeshLambertMaterial({ color: 0x88ccee, transparent: true, opacity: 0.6 });
+      materials.push(copperMat, glassMat2);
+      const coil = buildDistillationCoil(copperMat, glassMat2);
+      coil.position.set(ix, 0, iz);
+      coil.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(coil);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.5, iz), new THREE.Vector3(0.4, 0.5, 0.4)));
+
+    } else if (item.type === 'fermenting_vat') {
+      const vatMat  = new THREE.MeshLambertMaterial({ color: 0x5a3a28 });
+      const glassMat3 = new THREE.MeshLambertMaterial({ color: 0x88ee88, transparent: true, opacity: 0.5 });
+      materials.push(vatMat, glassMat3);
+      const vat = buildFermentingVat(vatMat, glassMat3);
+      vat.position.set(ix, 0, iz);
+      vat.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(vat);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.5, iz), new THREE.Vector3(0.45, 0.5, 0.45)));
+
+    } else if (item.type === 'herb_bundle') {
+      const herbMat = new THREE.MeshLambertMaterial({ color: 0x557744 });
+      materials.push(herbMat);
+      const bundle = buildHerbBundle(herbMat);
+      bundle.position.set(ix, 0, iz);
+      bundle.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(bundle);
+
+    } else if (item.type === 'anvil') {
+      const metalMat4 = new THREE.MeshLambertMaterial({ color: 0x444455 });
+      materials.push(metalMat4);
+      const anvil = buildAnvil(metalMat4);
+      anvil.position.set(ix, 0, iz);
+      anvil.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(anvil);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.45, iz), new THREE.Vector3(0.35, 0.45, 0.25)));
+
+    } else if (item.type === 'cooling_trough') {
+      const troughMat = new THREE.MeshLambertMaterial({ color: 0x336688 });
+      materials.push(troughMat);
+      const trough = buildCoolingTrough(troughMat);
+      trough.position.set(ix, 0, iz);
+      trough.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(trough);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.3, iz), new THREE.Vector3(0.6, 0.3, 0.3)));
+
+    } else if (item.type === 'bed') {
+      const bedFrameMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1a });
+      const mattressMat = new THREE.MeshLambertMaterial({ color: 0xeeddcc });
+      materials.push(bedFrameMat, mattressMat);
+      const bed = buildBed(bedFrameMat, mattressMat);
+      bed.position.set(ix, 0, iz);
+      bed.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(bed);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.25, iz), new THREE.Vector3(0.55, 0.25, 1.0)));
+
+    } else if (item.type === 'wardrobe') {
+      const wardrobeMat = new THREE.MeshLambertMaterial({ color: 0x4a3020 });
+      materials.push(wardrobeMat);
+      const wardrobe = buildWardrobe(wardrobeMat);
+      wardrobe.position.set(ix, 0, iz);
+      wardrobe.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(wardrobe);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.9, iz), new THREE.Vector3(0.5, 0.9, 0.3)));
+
+    } else if (item.type === 'writing_desk') {
+      // Simple desk: a flat surface with two angled legs
+      const deskMat = new THREE.MeshLambertMaterial({ color: 0x6b4422 });
+      materials.push(deskMat);
+      const topGeo = new THREE.BoxGeometry(1.2, 0.06, 0.65);
+      geometries.push(topGeo);
+      const top = new THREE.Mesh(topGeo, deskMat);
+      top.position.set(ix, 0.76, iz);
+      top.castShadow = true;
+      group.add(top);
+      for (const [lx, lz] of [[-0.5, -0.27], [0.5, -0.27], [-0.5, 0.27], [0.5, 0.27]] as [number, number][]) {
+        const legGeo = new THREE.BoxGeometry(0.06, 0.76, 0.06);
+        geometries.push(legGeo);
+        const leg = new THREE.Mesh(legGeo, deskMat);
+        leg.position.set(ix + lx, 0.38, iz + lz);
+        group.add(leg);
+      }
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.38, iz), new THREE.Vector3(0.6, 0.38, 0.325)));
+
+    } else if (item.type === 'bunk') {
+      const bunkMat   = new THREE.MeshLambertMaterial({ color: 0x5a3a1a });
+      const fabricMat = new THREE.MeshLambertMaterial({ color: 0xddccaa });
+      materials.push(bunkMat, fabricMat);
+      const bunk = buildBunk(bunkMat, fabricMat);
+      bunk.position.set(ix, 0, iz);
+      bunk.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(bunk);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.9, iz), new THREE.Vector3(0.5, 0.9, 1.0)));
+
+    } else if (item.type === 'mess_table') {
+      const messMat = new THREE.MeshLambertMaterial({ color: 0x5a4020 });
+      materials.push(messMat);
+      const messTable = buildMessTable(messMat);
+      messTable.position.set(ix, 0, iz);
+      messTable.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(messTable);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.38, iz), new THREE.Vector3(0.7, 0.38, 0.4)));
+
+    } else if (item.type === 'reading_table') {
+      const readMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2a });
+      materials.push(readMat);
+      const readTable = buildReadingTable(readMat);
+      readTable.position.set(ix, 0, iz);
+      readTable.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(readTable);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.38, iz), new THREE.Vector3(0.65, 0.38, 0.45)));
+
+    } else if (item.type === 'globe') {
+      const globeMat = new THREE.MeshLambertMaterial({ color: 0x335588 });
+      materials.push(globeMat);
+      const globe = buildGlobe(globeMat);
+      globe.position.set(ix, 0, iz);
+      globe.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(globe);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.6, iz), new THREE.Vector3(0.3, 0.6, 0.3)));
+
+    } else if (item.type === 'map_table') {
+      const mapMat = new THREE.MeshLambertMaterial({ color: 0x4a3a20 });
+      materials.push(mapMat);
+      const mapTable = buildMapTable(mapMat);
+      mapTable.position.set(ix, 0, iz);
+      mapTable.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(mapTable);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.42, iz), new THREE.Vector3(0.7, 0.42, 0.5)));
+
+    } else if (item.type === 'weapon_stand') {
+      const weapMat = new THREE.MeshLambertMaterial({ color: 0x444455 });
+      materials.push(weapMat);
+      const weapStand = buildWeaponStand(weapMat);
+      weapStand.position.set(ix, 0, iz);
+      weapStand.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(weapStand);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.7, iz), new THREE.Vector3(0.25, 0.7, 0.25)));
+
+    } else if (item.type === 'plant_pot') {
+      const potMat  = new THREE.MeshLambertMaterial({ color: 0x7a4a22 });
+      materials.push(potMat);
+      const pot = buildPlantPot(potMat);
+      pot.position.set(ix, 0, iz);
+      pot.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(pot);
+
+    } else if (item.type === 'raised_planter') {
+      const planterMat = new THREE.MeshLambertMaterial({ color: 0x5a3820 });
+      materials.push(planterMat);
+      const planter = buildRaisedPlanter(planterMat);
+      planter.position.set(ix, 0, iz);
+      planter.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(planter);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.45, iz), new THREE.Vector3(0.55, 0.45, 0.35)));
+
+    } else if (item.type === 'containment_ring') {
+      const containMat = new THREE.MeshLambertMaterial({ color: 0x334466, emissive: new THREE.Color(0x001133) });
+      materials.push(containMat);
+      const ring2 = buildContainmentRing(containMat);
+      ring2.position.set(ix, 0, iz);
+      group.add(ring2);
+
+    } else if (item.type === 'astrolabe') {
+      const astroMat = new THREE.MeshLambertMaterial({ color: 0xcc9922 });
+      materials.push(astroMat);
+      const astrolabe = buildAstrolabe(astroMat);
+      astrolabe.position.set(ix, 0, iz);
+      astrolabe.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(astrolabe);
+      bodies.push(physics.createStaticBox(new THREE.Vector3(ix, 0.5, iz), new THREE.Vector3(0.3, 0.5, 0.3)));
+
+    } else if (item.type === 'banner') {
+      const poleMat2  = new THREE.MeshLambertMaterial({ color: 0x886633 });
+      materials.push(poleMat2);
+      const banner = buildBanner(poleMat2, '#8b1a1a', '#eecc66');
+      banner.position.set(ix, 0, iz);
+      banner.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(banner);
+
+    } else if (item.type === 'rug') {
+      const rug = buildRug('#8b3a2a', '#ccaa44');
+      rug.position.set(ix, 0.005, iz);
+      rug.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+      group.add(rug);
+
     } else if (item.type === 'workbench_key') {
-      // Stone workbench with a glowing golden key resting on top.
       const stoneMat2 = new THREE.MeshLambertMaterial({ color: 0x666677 });
       const keyMat    = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
       materials.push(stoneMat2, keyMat);

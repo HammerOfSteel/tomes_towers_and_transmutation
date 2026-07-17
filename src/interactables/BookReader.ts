@@ -19,11 +19,15 @@ export class BookReader {
   private _open = false;
   private overlay: HTMLElement | null = null;
 
+  /** Fired once each time a book is opened: (itemType, content). */
+  onOpen: ((itemType: string, content: string) => void) | null = null;
+
   get isOpen(): boolean { return this._open; }
 
   open(content: string, itemType: string, spellUnlock?: string): void {
     if (this._open) this.close();
     this._open = true;
+    this.onOpen?.(itemType, content);
     this._buildOverlay(content, itemType, spellUnlock);
   }
 
