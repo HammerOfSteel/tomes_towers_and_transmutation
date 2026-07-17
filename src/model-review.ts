@@ -681,6 +681,7 @@ const _refFigure = (() => {
 // ── DOM refs for env mode ─────────────────────────────────────────────────────
 const envPanel      = document.getElementById('env-panel')!;
 const charsPanel    = document.getElementById('chars-panel')!;
+const editorPanel   = document.getElementById('editor-panel')!;
 const envListEl     = document.getElementById('env-list')!;
 const envCatBarEl   = document.getElementById('env-cat-bar')!;
 const envTitleEl    = document.getElementById('env-asset-title')!;
@@ -695,19 +696,76 @@ document.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.mode-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    _envMode = btn.dataset['mode'] === 'env';
-    charsPanel.style.display = _envMode ? 'none' : '';
-    envPanel.style.display   = _envMode ? '' : 'none';
-    // Add/remove reference figure from scene
-    if (_envMode) {
+    const mode = btn.dataset['mode'] ?? 'chars';
+
+    // Show/hide the three root panels
+    charsPanel.style.display  = mode === 'chars'  ? ''     : 'none';
+    envPanel.style.display    = mode === 'env'     ? ''     : 'none';
+    editorPanel.style.display = mode === 'editor'  ? 'flex' : 'none';
+
+    _envMode = mode === 'env';
+
+    if (mode === 'env') {
       if (envRefToggle.checked) scene.add(_refFigure);
-      // clear char model
       if (_currentGroup) { scene.remove(_currentGroup); _currentGroup = null; }
       _buildEnvList();
       if (_envFiltered.length > 0 && !_envCurrentDef) loadEnvAsset(_envFiltered[0]!);
     } else {
       scene.remove(_refFigure);
       if (_envGroup) { scene.remove(_envGroup); _envGroup = null; }
+    }
+
+    if (mode === 'editor') {
+      // First time activating the editor — create EditorCore and sub-editors
+      if (!_editorCore) {
+        scene.remove(_refFigure);
+        if (_envGroup) { scene.remove(_envGroup); _envGroup = null; }
+
+        _editorCore = new EditorCore({
+          canvas, scene, camera, renderer, orbit,
+          onSelectionChange: (sel) => { _updateEditorInspector(sel[0] ?? null); },
+          onStatusChange: (msg) => {
+            const statusEl = document.getElementById('ed-status-sel');
+            if (statusEl) statusEl.textContent = msg;
+          },
+        });
+
+        _editorSerial = new EditorSerializer(_editorCore, () => ({
+          ...((_editorType === 'tower_floor') ? {
+            floorIndex: 0, gridSize: 2, size: { w: 12, d: 12 }, properties: {},
+          } : {}),
+        } as Partial<LevelDoc>));
+
+        _editorCore.activate();
+        _buildEditorAssetPanel();
+        _bindEditorToolbar();
+
+        const edContainer = document.getElementById('editor-inspector')!.parentElement!;
+        _towerEditor     = new TowerFloorEditor(_editorCore, _editorSerial!, edContainer);
+        _overworldEditor = new OverworldEditor(scene, camera, canvas);
+        const owPanel    = document.getElementById('ow-editor-panel');
+        if (owPanel) {
+          owPanel.style.position = 'relative';
+          owPanel.style.top = owPanel.style.left = owPanel.style.zIndex = '';
+          owPanel.style.display = 'none';
+          edContainer.appendChild(owPanel);
+        }
+        _buildingEditor = new BuildingEditor(_editorCore, edContainer);
+        _dungeonEditor  = new DungeonEditor(_editorCore, edContainer);
+        _activateSubEditor('tower_floor');
+
+        camera.position.set(0, 20, 15);
+        camera.lookAt(0, 0, 0);
+        orbit.target.set(0, 0, 0);
+        orbit.update();
+      } else {
+        // Re-activating after switching away
+        _editorCore.activate();
+      }
+    } else if (_editorCore) {
+      // Leaving editor mode — deactivate but keep state
+      _editorCore.deactivate();
+      if (_overworldEditor?.isActive) _overworldEditor.toggle();
     }
   });
 });
@@ -940,8 +998,7 @@ _buildEnvList();
 // EDITOR MODE (Phase L0 — Foundation)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const editorPanel = document.getElementById('editor-panel')!;
-
+// editorPanel declared above alongside envPanel/charsPanel
 let _editorCore:   EditorCore | null = null;
 let _editorSerial: EditorSerializer | null = null;
 let _editorType:   EditorType = 'tower_floor';
@@ -955,64 +1012,6 @@ let _towerEditor:     TowerFloorEditor | null = null;
 let _overworldEditor: OverworldEditor  | null = null;
 let _buildingEditor:  BuildingEditor   | null = null;
 let _dungeonEditor:   DungeonEditor    | null = null;
-
-// ── Editor mode tab handler ──────────────────────────────────────────────────
-
-document.getElementById('tab-editor')?.addEventListener('click', () => {
-  if (_editorCore) return; // already active
-  // Deactivate env mode if needed
-  scene.remove(_refFigure);
-  if (_envGroup) { scene.remove(_envGroup); _envGroup = null; }
-
-  // Init editor
-  _editorCore = new EditorCore({
-    canvas, scene, camera, renderer, orbit,
-    onSelectionChange: (sel) => {
-      _updateEditorInspector(sel[0] ?? null);
-    },
-    onStatusChange: (msg) => {
-      const statusEl = document.getElementById('ed-status-sel');
-      if (statusEl) statusEl.textContent = msg;
-    },
-  });
-
-  _editorSerial = new EditorSerializer(_editorCore, () => ({
-    // Extra fields for the current editor type — filled by sub-editor logic
-    ...((_editorType === 'tower_floor') ? {
-      floorIndex: 0,
-      gridSize: 2,
-      size: { w: 12, d: 12 },
-      properties: {},
-    } : {}),
-  } as Partial<LevelDoc>));
-
-  _editorCore.activate();
-  _buildEditorAssetPanel();
-  _bindEditorToolbar();
-
-  // Instantiate sub-editors (lazy — only the active one is shown)
-  const edContainer = document.getElementById('editor-inspector')!.parentElement!;
-  _towerEditor     = new TowerFloorEditor(_editorCore, _editorSerial!, edContainer);
-  // L2: OverworldEditor uses scene/camera/canvas directly (different from EditorCore)
-  _overworldEditor = new OverworldEditor(scene, camera, canvas);
-  // Re-embed its fixed-position panel into the sidebar
-  const owPanel = document.getElementById('ow-editor-panel');
-  if (owPanel) {
-    owPanel.style.position = 'relative';
-    owPanel.style.top = owPanel.style.left = owPanel.style.zIndex = '';
-    owPanel.style.display = 'none';
-    edContainer.appendChild(owPanel);
-  }
-  _buildingEditor  = new BuildingEditor(_editorCore, edContainer);
-  _dungeonEditor   = new DungeonEditor(_editorCore, edContainer);
-  _activateSubEditor('tower_floor');
-
-  // Set default camera for editor (top-down slightly angled)
-  camera.position.set(0, 20, 15);
-  camera.lookAt(0, 0, 0);
-  orbit.target.set(0, 0, 0);
-  orbit.update();
-});
 
 // ── Sub-editor activation ─────────────────────────────────────────────────────
 
@@ -1229,7 +1228,7 @@ function _updateEditorInspector(obj: import('@/editor/EditorSchema').PlacedObjec
 (window as any).__editorReview = {
   ready:       true,
   get coreReady() { return !!_editorCore; },
-  switchToEditor: () => (document.getElementById('tab-editor') as HTMLButtonElement)?.click(),
+  switchToEditor: () => (document.getElementById('tab-editor') as HTMLButtonElement | null)?.click(),
   getObjects:   () => _editorCore?.getObjects() ?? [],
   getSpawns:    () => _editorCore?.getSpawns()  ?? [],
   getExits:     () => _editorCore?.getExits()   ?? [],
