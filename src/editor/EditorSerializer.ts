@@ -46,6 +46,24 @@ export class EditorSerializer {
     } catch { /* quota exceeded — ignore */ }
   }
 
+  /**
+   * L6: Save to game output directory via the Vite dev-server plugin endpoint.
+   * In production this is a no-op (the fetch will fail silently).
+   * The game reads from `public/editor-output/<type>/<id>.ttt-level.json`.
+   */
+  async saveToGame(doc: LevelDoc): Promise<boolean> {
+    try {
+      const res = await fetch('/api/save-level', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: doc.type, id: doc.id, content: JSON.stringify(doc, null, 2) }),
+      });
+      return res.ok;
+    } catch {
+      return false; // production build or dev server unavailable
+    }
+  }
+
   /** Load from a File object (from <input type=file>). */
   async loadFile(file: File): Promise<LevelDoc> {
     const text = await file.text();

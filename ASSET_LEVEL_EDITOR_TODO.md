@@ -7,11 +7,16 @@
 ## Progress
 - [x] **L0 — Editor Foundation** (committed)
 - [x] **L1 — Tower Floor Editor** (committed)
-- [ ] **L2 — Overworld Editor** (existing OverworldEditor.ts has different arch; Phase L6 integration needed)
+- [x] **L2 — Overworld Editor** (committed — bridged existing OverworldEditor.ts into model-review sidebar)
 - [x] **L3 — Building Exterior Editor** (committed, combined with L4)
 - [x] **L4 — Building Interior Editor** (committed, combined with L3)
 - [x] **L5 — Dungeon Editor** (committed)
-- [ ] **L6 — Polish & Integration** (game hot-reload, Playwright tests, scale calibration)
+- [x] **L6 — Polish & Integration** (committed)
+  - Vite plugin: POST /api/save-level (writes to public/editor-output/, triggers HMR)
+  - Vite plugin: POST /api/save-asset-scale (patches gameScale in envManifest.ts, HMR)
+  - Save button pushes level JSON to game output dir
+  - Environment tab 📋 button saves scale directly to envManifest.ts in dev
+  - Playwright smoke tests: tests/e2e/editor-smoke.spec.ts (25 tests across all editors)
 
 ---
 

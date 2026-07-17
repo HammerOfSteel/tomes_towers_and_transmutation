@@ -32,9 +32,8 @@ import { EditorSerializer }  from '@/editor/EditorSerializer';
 import { TowerFloorEditor }  from '@/editor/TowerFloorEditor';
 import { BuildingEditor }    from '@/editor/BuildingEditor';
 import { DungeonEditor }     from '@/editor/DungeonEditor';
+import { OverworldEditor }   from '@/editor/OverworldEditor';
 import type { EditorType, LevelDoc } from '@/editor/EditorSchema';
-// NOTE: OverworldEditor exists as the in-game editor (different constructor);
-// model-review overworld tab uses EditorCore directly (Phase L2 TODO).
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -871,8 +870,25 @@ envScaleSlider.addEventListener('input', () => {
     if (lbl) lbl.textContent = (size.y).toFixed(2) + 'm';
   }
 });
-envScaleCopy.addEventListener('click', () => {
+envScaleCopy.addEventListener('click', async () => {
   navigator.clipboard?.writeText(_envScale.toFixed(2)).catch(() => {});
+
+  // L6: also patch envManifest.ts via dev-server if running locally
+  if (_envCurrentDef) {
+    const res = await fetch('/api/save-asset-scale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetPath: _envCurrentDef.path, scale: _envScale }),
+    }).catch(() => null);
+    if (res?.ok) {
+      envScaleCopy.textContent = '✓ Saved!';
+      setTimeout(() => { envScaleCopy.textContent = '📋'; }, 1800);
+      // Update the displayed gameScale in the asset list
+      if (_envCurrentDef) _envCurrentDef = { ..._envCurrentDef, gameScale: _envScale };
+      return;
+    }
+  }
+
   envScaleCopy.textContent = '✓';
   setTimeout(() => { envScaleCopy.textContent = '📋'; }, 1200);
 });
@@ -935,9 +951,10 @@ let _editorCatFilter = 'all';
 let _editorAssetText = '';
 
 // Sub-editors (created lazily when the Editor tab is first activated)
-let _towerEditor:    TowerFloorEditor | null = null;
-let _buildingEditor: BuildingEditor | null = null;
-let _dungeonEditor:  DungeonEditor | null = null;
+let _towerEditor:     TowerFloorEditor | null = null;
+let _overworldEditor: OverworldEditor  | null = null;
+let _buildingEditor:  BuildingEditor   | null = null;
+let _dungeonEditor:   DungeonEditor    | null = null;
 
 // ── Editor mode tab handler ──────────────────────────────────────────────────
 
@@ -976,7 +993,16 @@ document.getElementById('tab-editor')?.addEventListener('click', () => {
   // Instantiate sub-editors (lazy — only the active one is shown)
   const edContainer = document.getElementById('editor-inspector')!.parentElement!;
   _towerEditor     = new TowerFloorEditor(_editorCore, _editorSerial!, edContainer);
-  // _overworldEditor: Phase L2 — uses in-game OverworldEditor (different constructor)
+  // L2: OverworldEditor uses scene/camera/canvas directly (different from EditorCore)
+  _overworldEditor = new OverworldEditor(scene, camera, canvas);
+  // Re-embed its fixed-position panel into the sidebar
+  const owPanel = document.getElementById('ow-editor-panel');
+  if (owPanel) {
+    owPanel.style.position = 'relative';
+    owPanel.style.top = owPanel.style.left = owPanel.style.zIndex = '';
+    owPanel.style.display = 'none';
+    edContainer.appendChild(owPanel);
+  }
   _buildingEditor  = new BuildingEditor(_editorCore, edContainer);
   _dungeonEditor   = new DungeonEditor(_editorCore, edContainer);
   _activateSubEditor('tower_floor');
@@ -1007,9 +1033,20 @@ function _activateSubEditor(type: EditorType): void {
     const el = document.getElementById(activeId);
     if (el) el.style.display = '';
   }
-  // Floor list only for tower
+  // Tower: show floor list
   const floorListPanel = document.getElementById('tfe-floor-list-panel');
   if (floorListPanel) floorListPanel.style.display = type === 'tower_floor' ? '' : 'none';
+
+  // Overworld: activate/deactivate the OverworldEditor (binds/unbinds its click handlers)
+  if (_overworldEditor) {
+    if (type === 'overworld' && !_overworldEditor.isActive) {
+      _overworldEditor.toggle();        // turn on
+      _editorCore?.deactivate();        // EditorCore not needed while OW editor active
+    } else if (type !== 'overworld' && _overworldEditor.isActive) {
+      _overworldEditor.toggle();        // turn off
+      if (_editorCore) _editorCore.activate();
+    }
+  }
 }
 
 // ── Sub-tab switching ─────────────────────────────────────────────────────────
@@ -1123,11 +1160,18 @@ function _bindEditorToolbar(): void {
   document.getElementById('ed-redo')?.addEventListener('click', () => _editorCore?.history.redo());
 
   // Save
-  document.getElementById('ed-save')?.addEventListener('click', () => {
+  document.getElementById('ed-save')?.addEventListener('click', async () => {
     if (!_editorCore || !_editorSerial) return;
     const doc = _editorSerial.build(_editorType, _editorDocId, _editorDocName);
     _editorSerial.download(doc);
     _editorSerial.autosave(doc);
+    // L6: also push to game output dir via dev-server plugin
+    const saved = await _editorSerial.saveToGame(doc);
+    const saveBtn = document.getElementById('ed-save');
+    if (saveBtn) {
+      saveBtn.textContent = saved ? '✓ Saved' : '💾';
+      setTimeout(() => { if (saveBtn) saveBtn.textContent = '💾'; }, 1500);
+    }
   });
 
   // Load
