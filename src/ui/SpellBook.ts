@@ -18,6 +18,9 @@ const SPELL_GLYPH: Record<string, string> = {
   void_rift:    '🌀',
   battle_hymn:  '🎵',
   mass_animate: '💀',
+  blink:        '✦',
+  levitate:     '🌊',
+  fly:          '🪶',
 };
 
 const SPELL_LABEL: Record<string, string> = {
@@ -29,6 +32,9 @@ const SPELL_LABEL: Record<string, string> = {
   void_rift:    'Void Rift',
   battle_hymn:  'Battle Hymn',
   mass_animate: 'Mass Animate',
+  blink:        'Blink',
+  levitate:     'Levitate',
+  fly:          'Fly',
 };
 const SPELL_DESC: Record<string, string> = {
   magic_bolt:   'A focused bolt of arcane energy.',
@@ -39,6 +45,9 @@ const SPELL_DESC: Record<string, string> = {
   void_rift:    'Stationary DoT zone at cursor. 3 dmg/s for 8 seconds. 12s cooldown.',
   battle_hymn:  'Aura buff: recruited minions deal +50% damage for 12s. 20s cooldown.',
   mass_animate: 'Raises dead enemy corpses as temporary skeletal minions. [Conductor tier 2] 30s cooldown.',
+  blink:        'Teleport 10u forward in your movement direction. Brief invulnerability. 8s cooldown.',
+  levitate:     'Toggle: float 1.8u above ground. Move freely while hovering. Cast again to land. 1s cooldown.',
+  fly:          'Toggle free flight. WASD = fly direction (2× speed), Space = ascend, Shift = descend. Cast again to land. 12s cooldown.',
 };
 
 // ── CSS ───────────────────────────────────────────────────────────────────
@@ -57,45 +66,52 @@ const SB_CSS = `
   background: var(--hud-bg);
   border: 1px solid var(--hud-border);
   border-radius: var(--hud-radius);
-  padding: 24px 28px 20px;
-  width: min(92vw, 500px);
-  display: flex; flex-direction: column; gap: 20px;
+  padding: 14px 18px 14px;
+  width: min(90vw, 440px);
+  max-height: min(88vh, 660px);
+  display: flex; flex-direction: column; gap: 12px;
   box-shadow: var(--hud-shadow);
+  overflow: hidden;
 }
 
 /* ── Header ── */
 .sb-header {
   display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
 }
 .sb-title {
   font-family: var(--hud-font-serif);
-  font-size: 17px; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
   color: var(--hud-text);
 }
 .sb-close {
   background: none; border: 1px solid var(--hud-border);
-  color: var(--hud-muted); font-size: 13px; cursor: pointer;
-  border-radius: var(--hud-radius-sm); padding: 4px 9px;
+  color: var(--hud-muted); font-size: 11px; cursor: pointer;
+  border-radius: var(--hud-radius-sm); padding: 3px 8px;
   font-family: var(--hud-font-mono);
   transition: color .12s, border-color .12s;
 }
 .sb-close:hover { color: var(--hud-text); border-color: var(--hud-info); }
 
 /* ── Sections ── */
-.sb-section { display: flex; flex-direction: column; gap: 10px; }
+.sb-section { display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; }
 .sb-section-label {
-  font-family: var(--hud-font-serif); font-size: 8px;
+  font-family: var(--hud-font-serif); font-size: 7px;
   letter-spacing: 3px; text-transform: uppercase;
   color: var(--hud-muted); border-bottom: 1px solid var(--hud-border);
-  padding-bottom: 5px;
+  padding-bottom: 4px;
+}
+.sb-sub-hint {
+  font-family: var(--hud-font-mono); font-size: 8px;
+  color: var(--hud-muted); letter-spacing: .5px;
 }
 
 /* ── Equipped slots row ── */
-.sb-slots-row { display: flex; gap: 8px; }
+.sb-slots-row { display: flex; gap: 6px; }
 
 .sb-slot {
   flex: 1; display: flex; flex-direction: column; align-items: center;
-  gap: 4px; padding: 9px 6px 7px;
+  gap: 3px; padding: 6px 4px 5px;
   background: rgba(0,0,0,.35); border: 1px solid var(--hud-border);
   border-radius: var(--hud-radius-sm); cursor: pointer; position: relative;
   transition: border-color .12s, box-shadow .12s;
@@ -104,11 +120,11 @@ const SB_CSS = `
 .sb-slot:hover { border-color: var(--hud-border); }
 .sb-slot--active {
   border-color: var(--hud-info);
-  box-shadow: 0 0 10px rgba(68,221,255,.22);
+  box-shadow: 0 0 8px rgba(68,221,255,.2);
 }
 
 .sb-slot-num {
-  font-family: var(--hud-font-serif); font-size: 11px; font-weight: bold;
+  font-family: var(--hud-font-serif); font-size: 10px; font-weight: bold;
   color: var(--hud-muted); line-height: 1;
   transition: color .12s;
 }
@@ -116,49 +132,55 @@ const SB_CSS = `
 
 .sb-slot-name {
   font-family: var(--hud-font-body);
-  font-size: 11px; color: var(--hud-muted);
+  font-size: 9px; color: var(--hud-muted);
   text-align: center; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; max-width: 90px;
+  white-space: nowrap; max-width: 76px;
   transition: color .12s;
 }
 .sb-slot--active .sb-slot-name { color: var(--hud-text); }
 .sb-slot--empty .sb-slot-name  { font-style: italic; }
 
 .sb-slot-clear {
-  position: absolute; top: 2px; right: 4px;
+  position: absolute; top: 2px; right: 3px;
   background: none; border: none; color: #2a1e38;
-  font-size: 9px; cursor: pointer; line-height: 1; padding: 0;
+  font-size: 8px; cursor: pointer; line-height: 1; padding: 0;
   transition: color .1s;
 }
 .sb-slot-clear:hover { color: #9d7cce; }
 
-/* ── Known spells list ── */
-.sb-spell-list { display: flex; flex-direction: column; gap: 8px; }
+/* ── Known spells list — scrollable ── */
+.sb-scroll-area {
+  overflow-y: auto; flex: 1;
+  scrollbar-width: thin; scrollbar-color: #3a2210 transparent;
+  min-height: 0;
+}
+.sb-spell-list { display: flex; flex-direction: column; gap: 5px; padding-right: 2px; }
 
 .sb-spell-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 12px; background: rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; background: rgba(0,0,0,.25);
   border: 1px solid var(--hud-border); border-radius: var(--hud-radius-sm);
   transition: border-color .12s;
 }
 .sb-spell-row:hover { border-color: var(--hud-info); }
-.sb-spell-glyph { font-size: 18px; flex-shrink: 0; }
-.sb-spell-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.sb-spell-glyph { font-size: 15px; flex-shrink: 0; }
+.sb-spell-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .sb-spell-name {
-  font-family: var(--hud-font-serif); font-size: 13px; color: var(--hud-text);
+  font-family: var(--hud-font-serif); font-size: 11px; color: var(--hud-text);
 }
 .sb-spell-desc {
   font-family: var(--hud-font-body);
-  font-size: 11px; color: var(--hud-muted); font-style: italic;
+  font-size: 9px; color: var(--hud-muted); font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* Assign-to-slot buttons [1][2][3][4] */
-.sb-assign-row { display: flex; gap: 5px; flex-shrink: 0; }
+.sb-assign-row { display: flex; gap: 4px; flex-shrink: 0; }
 .sb-assign-btn {
-  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.4); border: 1px solid var(--hud-border);
   border-radius: var(--hud-radius-sm); color: var(--hud-muted);
-  font-family: var(--hud-font-mono); font-size: 11px;
+  font-family: var(--hud-font-mono); font-size: 10px;
   cursor: pointer; transition: color .1s, border-color .1s, background .1s;
 }
 .sb-assign-btn:hover   { background: rgba(68,221,255,.1); border-color: var(--hud-info); color: var(--hud-text); }
@@ -166,8 +188,9 @@ const SB_CSS = `
 
 /* ── Footer hint ── */
 .sb-hint {
-  font-family: monospace; font-size: 9px; color: #2a1e38;
-  text-align: center; letter-spacing: 0.5px; margin-top: -6px;
+  font-family: monospace; font-size: 8px; color: #2a1e38;
+  text-align: center; letter-spacing: 0.5px; margin-top: -4px;
+  flex-shrink: 0;
 }
 `;
 
@@ -243,7 +266,11 @@ export class SpellBook {
 
     const eqLabel = document.createElement('div');
     eqLabel.className = 'sb-section-label';
-    eqLabel.textContent = 'Equipped  —  press 1 – 4 to select active slot';
+    eqLabel.textContent = 'Equipped';
+
+    const eqSubHint = document.createElement('div');
+    eqSubHint.className = 'sb-sub-hint';
+    eqSubHint.textContent = 'Press 1 – 4 to select active slot';
 
     const slotsRow = document.createElement('div');
     slotsRow.className = 'sb-slots-row';
@@ -275,7 +302,7 @@ export class SpellBook {
       slotEl.append(numEl, nameEl, clearBtn);
       slotsRow.appendChild(slotEl);
     }
-    eqSection.append(eqLabel, slotsRow);
+    eqSection.append(eqLabel, eqSubHint, slotsRow);
 
     // ── Known spells ───────────────────────────────────────────────────
     const knownSection = document.createElement('div');
@@ -341,12 +368,17 @@ export class SpellBook {
     }
     knownSection.append(knownLabel, spellList);
 
+    // Wrap known-spells in a scrollable area so the card stays within vh
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'sb-scroll-area';
+    scrollArea.appendChild(knownSection);
+
     // ── Hint ──────────────────────────────────────────────────────────
     const hint = document.createElement('div');
     hint.className = 'sb-hint';
     hint.textContent = 'Right-click to cast active spell  ·  K or Esc to close';
 
-    card.append(header, eqSection, knownSection, hint);
+    card.append(header, eqSection, scrollArea, hint);
     this._overlay.appendChild(card);
   }
 

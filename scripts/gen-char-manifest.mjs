@@ -13,10 +13,19 @@
  * self-contained and requires no hand-written companion types file.
  */
 
-import { readdirSync, writeFileSync, statSync, mkdirSync, existsSync } from 'fs';
-import { join, relative, extname, basename }                           from 'path';
+import { readFileSync, readdirSync, writeFileSync, statSync, mkdirSync, existsSync } from 'fs';
+import { join, relative, extname, basename, dirname }                  from 'path';
 import { fileURLToPath }                                               from 'url';
-
+// ── Check if a GLB has embedded animation clips ───────────────────────────────
+function glbHasAnimations(absPath) {
+  try {
+    const buf     = readFileSync(absPath);
+    if (buf.readUInt32LE(0) !== 0x46546C67) return false;
+    const jsonLen = buf.readUInt32LE(12);
+    const json    = JSON.parse(buf.slice(20, 20 + jsonLen));
+    return (json.animations || []).length > 0;
+  } catch { return false; }
+}
 const __dirname  = fileURLToPath(new URL('.', import.meta.url));
 const ROOT       = join(__dirname, '..');
 const CHAR_BASE  = join(ROOT, 'public', 'assets', 'characters');
@@ -69,7 +78,7 @@ const PACK_META = {
   animal_plushies: {
     name:        'Animal Plushies',
     icon:        '🧸',
-    desc:        'Bear, Bunny, Cat, Dog — FBX format, needs FBXLoader',
+    desc:        'Bear, Bunny, Cat, Dog — static mesh, no animations',
     roles:       ['player'],
     tags:        ['creature', 'animal', 'cute', 'quadruped'],
     recommended: false,
@@ -186,28 +195,156 @@ const PACK_META = {
     tags:        ['humanoid', 'generic', 'civilian'],
     recommended: false,
   },
+
+  // ── Enemy packs extracted / converted in Phase A/B1 ──────────────────────
+
+  monster_pack_animated: {
+    name:        'Quaternius Monsters',
+    icon:        '🐉',
+    desc:        'Bat, Dragon, Skeleton, Slime — Quaternius low-poly with embedded animations',
+    roles:       ['enemy'],
+    tags:        ['creature', 'monster', 'animated', 'quaternius'],
+    recommended: true,
+  },
+  easy_animated: {
+    name:        'Easy Animated Creatures',
+    icon:        '🕷️',
+    desc:        'Frog, Rat, Snake, Spider, Wasp — overworld creatures with embedded animations',
+    roles:       ['enemy'],
+    tags:        ['creature', 'animal', 'overworld', 'animated', 'quaternius'],
+    recommended: true,
+  },
+  cube_pets: {
+    name:        'Kenney Cube Pets',
+    icon:        '🐾',
+    desc:        '24 cube-style animal models — summons, familiars, minions',
+    roles:       ['npc'],
+    tags:        ['creature', 'animal', 'kenney', 'summon', 'familiar'],
+    recommended: true,
+  },
+
+  // ── Custom Meshy AI models (split mesh.glb + anims.glb) ──────────────────
+  // animRig is set to the sibling anims.glb — handled specially in the scanner.
+
+  meshy_dark_fay: {
+    name:        'Dark Fay',
+    icon:        '🧝',
+    desc:        'Custom Meshy AI — dark fairy, boss-tier enemy. Separate anims.glb.',
+    roles:       ['enemy'],
+    tags:        ['fae', 'humanoid', 'boss', 'meshy', 'animated'],
+    recommended: true,
+  },
+  meshy_mutated_pig_man: {
+    name:        'Pig-Man Brute',
+    icon:        '🐷',
+    desc:        'Custom Meshy AI — mutated pig humanoid, dungeon elite. Separate anims.glb.',
+    roles:       ['enemy'],
+    tags:        ['beast', 'humanoid', 'elite', 'meshy', 'animated'],
+    recommended: true,
+  },
+  meshy_vampire_fay: {
+    name:        'Vampire Fay',
+    icon:        '🧛',
+    desc:        'Custom Meshy AI — vampire fairy, boss-tier enemy. Separate anims.glb.',
+    roles:       ['enemy'],
+    tags:        ['fae', 'undead', 'boss', 'meshy', 'animated'],
+    recommended: true,
+  },
+
+  // ── Wizard characters (nested subdirs, each with mesh.glb + anims.glb) ───
+
+  wizards: {
+    name:        'Wizard Characters',
+    icon:        '🧙',
+    desc:        'Elf, Lizard, Toad wizard variants — Meshy AI models with separate animation GLBs',
+    roles:       ['npc'],
+    tags:        ['humanoid', 'mage', 'wizard', 'meshy', 'animated'],
+    recommended: true,
+  },
 };
 
 // ── filesystem scanner ────────────────────────────────────────────────────────
 
-/** Recursively collect .glb and .fbx files, skipping 'animations' and 'textures' dirs. */
+/** Recursively collect .glb and .fbx model files.
+ *
+ *  Special handling:
+ *    • 'animations' and 'textures' directories are skipped (shared rigs).
+ *    • 'anims.glb' files are skipped — they are companion animation files
+ *      referenced via animRig on the sibling mesh.glb (see buildModelDef).
+ *    • 'Textures' subdirectory inside cube_pets etc. is skipped.
+ */
 function walkModels(dir, results = []) {
   if (!existsSync(dir)) return results;
   for (const entry of readdirSync(dir).sort()) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
-      // Skip animation rig dirs and texture dirs
-      if (entry === 'animations' || entry === 'textures') continue;
+      const lc = entry.toLowerCase();
+      if (lc === 'animations' || lc === 'textures') continue;
       walkModels(full, results);
     } else {
+      // Skip companion animation files and raw texture images.
+      if (entry === 'anims.glb') continue;
       const ext = extname(entry).toLowerCase();
-      if (ext === '.glb' || ext === '.fbx') {
+      if (ext === '.glb') {
         results.push(full);
+      } else if (ext === '.fbx') {
+        // Skip FBX if a GLB with the same stem already exists in this directory.
+        // We prefer the GLB (converted) over the original FBX.
+        const glbPeer = full.replace(/\.fbx$/i, '.glb');
+        if (!existsSync(glbPeer)) results.push(full);
       }
     }
   }
   return results;
+}
+
+/**
+ * Build a model def object from an absolute path.
+ *
+ * If the filename stem is 'mesh', use the containing directory name as the
+ * human-readable stem and look for a sibling 'anims.glb' as the animRig.
+ * This handles the Meshy AI and wizard split-model convention.
+ */
+function buildModelDef(absPath, packId, meta) {
+  const relPath  = '/' + relative(join(ROOT, 'public'), absPath).replace(/\\/g, '/');
+  const rawStem  = basename(absPath, extname(absPath));
+  const fmt      = extname(absPath).toLowerCase() === '.glb' ? 'glb' : 'fbx';
+
+  // For 'mesh.glb', use the parent directory name as the display stem.
+  const isMeshFile = rawStem.toLowerCase() === 'mesh';
+  const stem       = isMeshFile ? basename(dirname(absPath)) : rawStem;
+
+  const def = {
+    id:     `${packId}/${stem}`,
+    packId,
+    name:   toDisplayName(stem),
+    path:   relPath,
+    format: fmt,
+    roles:  meta.roles,
+    tags:   meta.tags,
+  };
+
+  // Prefer pack-level animRig metadata, but for mesh.glb files auto-detect
+  // a sibling anims.glb in the same directory.
+  if (meta.animRig) {
+    def.animRig = meta.animRig;
+  } else if (isMeshFile) {
+    const siblingAnims = join(dirname(absPath), 'anims.glb');
+    if (existsSync(siblingAnims)) {
+      def.animRig = '/' + relative(join(ROOT, 'public'), siblingAnims).replace(/\\/g, '/');
+    }
+  }
+
+  if (meta.animRigB) def.animRigB = meta.animRigB;
+
+  // Determine if this model is animated:
+  //   true  → has embedded clips, OR has an animRig that supplies clips.
+  //   false → static mesh only (T-pose, needs external animation pipeline).
+  const hasEmbeddedAnims = fmt === 'glb' && glbHasAnimations(absPath);
+  def.animated = hasEmbeddedAnims || !!(def.animRig);
+
+  return def;
 }
 
 /** Convert a filename stem to a human-readable display name.
@@ -262,28 +399,11 @@ for (const packId of readdirSync(CHAR_BASE).sort()) {
     roles:       meta.roles,
     tags:        meta.tags,
     recommended: meta.recommended,
-    modelCount:  models.length,
+    modelCount:  models.length,  // anims.glb already excluded by walker
   });
 
   for (const absPath of models) {
-    const relPath = '/' + relative(join(ROOT, 'public'), absPath).replace(/\\/g, '/');
-    const stem    = basename(absPath, extname(absPath));
-    const fmt     = extname(absPath).toLowerCase() === '.glb' ? 'glb' : 'fbx';
-
-    const def = {
-      id:     `${packId}/${stem}`,
-      packId,
-      name:   toDisplayName(stem),
-      path:   relPath,
-      format: fmt,
-      roles:  meta.roles,
-      tags:   meta.tags,
-    };
-
-    if (meta.animRig)  def.animRig  = meta.animRig;
-    if (meta.animRigB) def.animRigB = meta.animRigB;
-
-    modelDefs.push(def);
+    modelDefs.push(buildModelDef(absPath, packId, meta));
   }
 }
 
@@ -340,8 +460,13 @@ export interface CharModelDef {
    * KayKit Rig_Medium_MovementBasic.glb path — provides Walk/Run clips.
    */
   animRigB?: string;
+  /**
+   * Whether this model has usable animations — either embedded clips in the
+   * GLB or a companion animRig that supplies retargetable clips.
+   * Static T-pose meshes have animated=false.
+   */
+  animated: boolean;
 }
-
 `;
 
 const TS_BODY = `\

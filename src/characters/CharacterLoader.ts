@@ -205,3 +205,23 @@ export function clearCharCache(): void {
   _cache.clear();
   _pending.clear();
 }
+
+/**
+ * Return the axis-aligned bounding box of a character model in THREE.js world
+ * units.  Uses the ORIGINAL (non-cloned) cached scene, which Three.js's GLTF
+ * loader initialises with correct world matrices — giving accurate bounds even
+ * for models whose skeleton bone-matrices encode the character's real scale
+ * (e.g. Meshy AI exports with small bind-pose geometry but large bone offsets).
+ *
+ * The GLB is loaded (and cached) as a side effect, so this is cheap to call
+ * immediately after loadCharModel.
+ */
+export async function getCharModelBounds(def: CharModelDef): Promise<THREE.Box3> {
+  const isGlb = def.format === 'glb';
+  const entry = await (isGlb ? _loadGLB(def.path) : _loadFBX(def.path));
+  // Update world matrices on the original scene so skinned mesh bounds are
+  // computed using the correct bone hierarchy.
+  entry.scene.updateMatrixWorld(true);
+  return new THREE.Box3().setFromObject(entry.scene);
+}
+

@@ -75,6 +75,8 @@ const STAGGER_MS   = 1_300;  // per-tile offset on initial start
 // LocalStorage helpers
 const lsSave   = (i: number) => `ttt_save_${i}`;
 const LS_VOL   = 'ttt_vol';
+const LS_COLOUR_BLIND = 'ttt_colour_blind';
+const LS_TEXT_SCALE   = 'ttt_text_scale';
 const NUM_SLOTS = 3;
 
 const LS_MUSIC_VISIBLE = 'ttt_music_visible';
@@ -111,6 +113,26 @@ interface SaveData {
 export function readSaveSlot(slotId: number): SaveData | null {
   const raw = localStorage.getItem(lsSave(slotId));
   return raw ? (JSON.parse(raw) as SaveData) : null;
+}
+
+// ── Accessibility helpers (exported so main.ts can apply on boot) ───────────
+export function applyColourBlindMode(on: boolean): void {
+  // Swaps the HUD CSS variables for red/green with orange/blue
+  const root = document.documentElement;
+  if (on) {
+    root.style.setProperty('--cb-hp-colour',   '#dd8800'); // orange replaces red
+    root.style.setProperty('--cb-mana-colour',  '#4488ff'); // blue replaces green
+    root.setAttribute('data-colour-blind', 'true');
+  } else {
+    root.style.removeProperty('--cb-hp-colour');
+    root.style.removeProperty('--cb-mana-colour');
+    root.removeAttribute('data-colour-blind');
+  }
+}
+
+export function applyTextScale(pct: number): void {
+  document.documentElement.style.setProperty('--ui-text-scale', `${pct / 100}`);
+  document.documentElement.style.fontSize = `${pct}%`;
 }
 
 export function patchSaveSlot(slotId: number, patch: Partial<SaveData>): void {
@@ -362,6 +384,12 @@ export interface MainMenuOptions {
   onPlay: (slotId: number, isNewGame: boolean) => void;
   /** Called when the Dev Lab button is clicked (only visible in dev mode). */
   onDevLab?: () => void;
+  /** Key rebinding hooks — if provided, the Controls modal becomes interactive. */
+  rebindControls?: {
+    getBindings: () => import('@/core/InputManager').Bindings;
+    rebind: (action: import('@/core/InputManager').RebindableAction, code: string) => void;
+    resetBindings: () => void;
+  };
 }
 
 // ── MainMenu class ────────────────────────────────────────────────────────
@@ -602,6 +630,26 @@ export class MainMenu {
         </label>
       </div>
       <div class="mm-setting-divider"></div>
+      <div class="mm-setting-row mm-setting-row--section-hdr">
+        <span class="mm-setting-section-title">Accessibility</span>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Colour-Blind Mode
+          <span class="mm-setting-dev-hint">Swaps red/green with orange/blue</span>
+        </label>
+        <label class="mm-toggle">
+          <input type="checkbox" id="mm-cb-toggle" ${localStorage.getItem(LS_COLOUR_BLIND) === 'true' ? 'checked' : ''}>
+          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">Text Scale</label>
+        <div class="mm-setting-ctl">
+          <input type="range" id="mm-text-scale" class="mm-slider" min="80" max="140" step="5" value="${parseInt(localStorage.getItem(LS_TEXT_SCALE) ?? '100')}">
+          <span id="mm-text-scale-val" class="mm-setting-val">${parseInt(localStorage.getItem(LS_TEXT_SCALE) ?? '100')}%</span>
+        </div>
+      </div>
+      <div class="mm-setting-divider"></div>
       <div class="mm-setting-row">
         <label class="mm-setting-label mm-setting-label--dev">
           Dev Mode
@@ -792,6 +840,30 @@ export class MainMenu {
       }
     });
 
+    // ── Colour-blind mode ────────────────────────────────────────────────────
+    const cbToggle = card.querySelector<HTMLInputElement>('#mm-cb-toggle');
+    if (cbToggle) {
+      // Apply on load
+      applyColourBlindMode(localStorage.getItem(LS_COLOUR_BLIND) === 'true');
+      cbToggle.addEventListener('change', () => {
+        localStorage.setItem(LS_COLOUR_BLIND, String(cbToggle.checked));
+        applyColourBlindMode(cbToggle.checked);
+      });
+    }
+
+    // ── Text scale ───────────────────────────────────────────────────────────
+    const textScaleSlider = card.querySelector<HTMLInputElement>('#mm-text-scale');
+    const textScaleVal    = card.querySelector<HTMLSpanElement>('#mm-text-scale-val');
+    if (textScaleSlider && textScaleVal) {
+      applyTextScale(parseInt(textScaleSlider.value));
+      textScaleSlider.addEventListener('input', () => {
+        const v = parseInt(textScaleSlider.value);
+        textScaleVal.textContent = `${v}%`;
+        localStorage.setItem(LS_TEXT_SCALE, String(v));
+        applyTextScale(v);
+      });
+    }
+
     // ── World Gen ───────────────────────────────────────────────────────────
     const saveWg = (): void => saveWorldGenConfig(wg);
 
@@ -906,39 +978,124 @@ export class MainMenu {
   private _buildControlsModal(): HTMLElement {
     const [modal, card] = mkModal('mm-controls', 'Tome of Controls', () => this._closeModal('mm-controls'));
 
-    const rows: [string, string][] = [
-      ['W A S D',         'Move'],
-      ['Shift',           'Run'],
-      ['Space',           'Jump'],
-      ['F',               'Dodge roll'],
-      ['Left Click',      'Melee attack'],
-      ['Right Click',     'Cast active spell'],
+    const rc = this.opts.rebindControls;
+
+    // ── Rebindable actions table (only if rebind hooks provided) ──────────
+    if (rc) {
+      const rebindSection = mkEl('div', 'mm-controls-rebind');
+      rebindSection.insertAdjacentHTML('beforeend',
+        '<div class="mm-setting-row mm-setting-row--section-hdr">' +
+        '<span class="mm-setting-section-title">Key Bindings — click a key to rebind</span></div>',
+      );
+
+      const LABELS: Record<string, string> = {
+        moveForward: 'Move Forward', moveBackward: 'Move Back',
+        moveLeft: 'Strafe Left',     moveRight: 'Strafe Right',
+        run: 'Run (hold)',           jump: 'Jump',
+        dodge: 'Dodge Roll',         interact: 'Interact',
+      };
+
+      let listeningBtn: HTMLButtonElement | null = null;
+      let listeningAction: string | null = null;
+
+      const cancelListen = (): void => {
+        if (!listeningBtn) return;
+        listeningBtn.classList.remove('mm-rebind-btn--listening');
+        listeningBtn.textContent = _codeLabel(listeningBtn.dataset['code'] ?? '');
+        listeningBtn = null;
+        listeningAction = null;
+      };
+
+      const rebindListener = (e: KeyboardEvent): void => {
+        if (!listeningAction || !listeningBtn) return;
+        e.preventDefault(); e.stopPropagation();
+        if (e.code === 'Escape') { cancelListen(); return; }
+        rc.rebind(listeningAction as import('@/core/InputManager').RebindableAction, e.code);
+        listeningBtn.dataset['code'] = e.code;
+        listeningBtn.textContent = _codeLabel(e.code);
+        cancelListen();
+        // Refresh all button labels (swap may have occurred)
+        const newB = rc.getBindings();
+        rebindSection.querySelectorAll<HTMLButtonElement>('.mm-rebind-btn').forEach(btn => {
+          const a = btn.dataset['action'] ?? '';
+          if (a in newB) {
+            btn.dataset['code'] = newB[a as import('@/core/InputManager').RebindableAction];
+            btn.textContent = _codeLabel(newB[a as import('@/core/InputManager').RebindableAction]);
+          }
+        });
+        window.removeEventListener('keydown', rebindListener, true);
+      };
+
+      const bindings = rc.getBindings();
+      for (const [action, label] of Object.entries(LABELS)) {
+        const code = bindings[action as import('@/core/InputManager').RebindableAction] ?? '';
+        const row = mkEl('div', 'mm-setting-row');
+        row.insertAdjacentHTML('beforeend', `<label class="mm-setting-label">${label}</label>`);
+        const btn = document.createElement('button');
+        btn.className = 'mm-rebind-btn';
+        btn.dataset['action'] = action;
+        btn.dataset['code'] = code;
+        btn.textContent = _codeLabel(code);
+        btn.addEventListener('click', () => {
+          cancelListen();
+          listeningBtn = btn;
+          listeningAction = action;
+          btn.classList.add('mm-rebind-btn--listening');
+          btn.textContent = 'Press a key…';
+          window.addEventListener('keydown', rebindListener, { capture: true, once: true });
+        });
+        row.appendChild(btn);
+        rebindSection.appendChild(row);
+      }
+      card.appendChild(rebindSection);
+    }
+
+    // ── Static reference rows (non-rebindable) ────────────────────────────
+    const refRows: [string, string][] = [
+      ['Left Click',     'Melee attack'],
+      ['Right Click',    'Cast active spell'],
       ['1 / 2 / 3 / 4',  'Switch spell slot'],
-      ['E',               'Interact (NPC / object / board)'],
-      ['Z',               'Use Minor Heal potion'],
-      ['X',               'Use Major Heal potion'],
-      ['Q',               'Quest log'],
-      ['K',               'Spellbook (Grimoire)'],
-      ['P',               'Character stats'],
-      ['T',               'Talent tree'],
-      ['H',               'Controls & how to play (in-game)'],
-      ['B',               'Build mode (exterior only)'],
-      ['Escape',          'Pause / close panel'],
-      ['` (tilde)',       'Level editor (dev)'],
+      ['Q / R',          'Species ability slots'],
+      ['Z / X',          'Potions'],
+      ['K',              'Spellbook (Grimoire)'],
+      ['P',              'Character stats'],
+      ['T',              'Talent tree'],
+      ['Escape',         'Pause / close panel'],
+      ['M',              'Toggle minimap (overworld)'],
+      ['J',              'Toggle objective tracker'],
     ];
 
     const table = mkEl('div', 'mm-controls-table');
-    rows.forEach(([key, action]) => {
+    table.insertAdjacentHTML('beforeend',
+      '<div class="mm-setting-row mm-setting-row--section-hdr">' +
+      '<span class="mm-setting-section-title">Reference</span></div>',
+    );
+    refRows.forEach(([key, action]) => {
       table.insertAdjacentHTML('beforeend', `
         <div class="mm-ctrl-row">
           <kbd class="mm-kbd">${key}</kbd>
           <span class="mm-ctrl-action">${action}</span>
         </div>`);
     });
+    card.appendChild(table);
 
     const footer = mkEl('div', 'mm-modal-footer');
+    if (rc) {
+      footer.appendChild(mkBtn('Reset to Defaults', 'mm-slot-btn', () => {
+        rc.resetBindings();
+        const b = rc.getBindings();
+        card.querySelectorAll<HTMLButtonElement>('.mm-rebind-btn').forEach(btn => {
+          const a = btn.dataset['action'] ?? '';
+          if (a in b) {
+            const code = b[a as import('@/core/InputManager').RebindableAction];
+            btn.dataset['code'] = code;
+            btn.textContent = _codeLabel(code);
+          }
+        });
+      }));
+    }
     footer.appendChild(mkBtn('Close', 'mm-slot-btn', () => this._closeModal('mm-controls')));
-    card.append(table, footer);
+    card.append(footer);
     modal.appendChild(card);
     return modal;
   }
@@ -1270,6 +1427,23 @@ function mkEl(tag: string, cls: string): HTMLElement {
   const e = document.createElement(tag);
   e.className = cls;
   return e;
+}
+
+/** Convert a KeyboardEvent.code string to a short display label. */
+function _codeLabel(code: string): string {
+  if (!code) return '—';
+  return code
+    .replace(/^Key/, '')
+    .replace(/^Digit/, '')
+    .replace('ArrowUp', '↑').replace('ArrowDown', '↓')
+    .replace('ArrowLeft', '←').replace('ArrowRight', '→')
+    .replace('ShiftLeft', 'L.Shift').replace('ShiftRight', 'R.Shift')
+    .replace('ControlLeft', 'L.Ctrl').replace('ControlRight', 'R.Ctrl')
+    .replace('AltLeft', 'L.Alt').replace('AltRight', 'R.Alt')
+    .replace('Space', 'Space').replace('Backquote', '`')
+    .replace('BracketLeft', '[').replace('BracketRight', ']')
+    .replace('Semicolon', ';').replace('Quote', "'")
+    .replace('Comma', ',').replace('Period', '.').replace('Slash', '/');
 }
 
 function mkBtn(label: string, cls: string, onClick: () => void): HTMLButtonElement {
@@ -1624,6 +1798,7 @@ const MM_CSS = `
 
 /* ── Controls table ──────────────────────────────────────────────────────── */
 .mm-controls-table { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
+.mm-controls-rebind { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 12px; }
 .mm-ctrl-row {
   display: flex; align-items: center; gap: 16px;
   padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04);
@@ -1638,6 +1813,24 @@ const MM_CSS = `
 .mm-ctrl-action {
   font-family: 'IM Fell English', Georgia, serif;
   font-size: 14px; color: #e2d9c8;
+}
+/* Rebind button */
+.mm-rebind-btn {
+  min-width: 90px; padding: 4px 10px;
+  background: rgba(0,0,0,.4); border: 1px solid #4a4158; border-radius: 4px;
+  font-family: monospace; font-size: 13px; color: #bfa5e6;
+  cursor: pointer; text-align: center;
+  transition: border-color .18s, background .18s;
+}
+.mm-rebind-btn:hover { border-color: #9966cc; background: rgba(120,80,180,.18); }
+.mm-rebind-btn--listening {
+  border-color: #ffdd44; color: #ffdd44;
+  background: rgba(80,60,10,.3);
+  animation: mm-rebind-pulse .7s ease-in-out infinite;
+}
+@keyframes mm-rebind-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,220,40,0); }
+  50%      { box-shadow: 0 0 0 3px rgba(255,220,40,.3); }
 }
 
 /* ── Lore / Book modal ───────────────────────────────────────────────────── */

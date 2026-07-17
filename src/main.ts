@@ -7,11 +7,14 @@ import { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PlayerController } from '@/player/PlayerController';
 import { CombatSystem } from '@/combat/CombatSystem';
 import { SpellSystem } from '@/combat/SpellSystem';
+import { AbilitySystem, applyCharacterAbilities } from '@/combat/AbilitySystem';
 import { SceneManager } from '@/levels/SceneManager';
 import { HUD } from '@/ui/HUD';
+import { DamageNumbers } from '@/ui/DamageNumbers';
+import { EnemyHealthBars } from '@/ui/EnemyHealthBars';
 import { PauseMenu } from '@/ui/PauseMenu';
 import { GameMenu }  from '@/ui/GameMenu';
-import { MainMenu, readSaveSlot, patchSaveSlot } from '@/ui/MainMenu';
+import { MainMenu, readSaveSlot, patchSaveSlot, applyColourBlindMode, applyTextScale } from '@/ui/MainMenu';
 import { CharacterCreationV2 } from '@/ui/CharacterCreationV2';
 import { NewGameFlow }          from '@/scene/NewGameFlow';
 import type { CharacterConfig } from '@/ui/DNACreator';
@@ -77,6 +80,10 @@ import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 
 async function main() {
   injectHudTheme();
+  // Apply persisted accessibility settings on boot
+  applyColourBlindMode(localStorage.getItem('ttt_colour_blind') === 'true');
+  const _savedScale = parseInt(localStorage.getItem('ttt_text_scale') ?? '100');
+  if (_savedScale !== 100) applyTextScale(_savedScale);
   // ── Renderer ───────────────────────────────────────────────────────────────
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -142,11 +149,16 @@ async function main() {
   scene.add(player.group);
 
   // ── Scene / room manager ──────────────────────────────────────────────────
-  const sceneManager = new SceneManager(scene, physics, player);
+  const sceneManager = new SceneManager(scene, physics, player, (dmg) => {
+    if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); }
+  });
 
   // ── Lighting system — torch flicker, spell pulses, ambiance presets ───────
   const lighting  = new LightingSystem(scene);
   const particles = new ParticleSystem(scene);
+  // G2: Floating combat text + enemy health bars
+  const dmgNumbers  = new DamageNumbers(cameraRig.camera, canvas);
+  const enemyBars   = new EnemyHealthBars(cameraRig.camera, canvas);
   // Track last floor so onRoomLoaded can detect floor changes and show the location card.
   let _prevFloorIdx = Number.MIN_SAFE_INTEGER;
   // Visited rooms — rooms entered at least once get instant lighting on re-entry.
@@ -396,6 +408,19 @@ async function main() {
       return;
     }
     switchToExterior();
+
+    // E2: After the prologue, trigger Solmor's first encounter the first time
+    // the player exits the tower with the master key.
+    if (_towerPrologueDone && _characterSpecies) {
+      import('@/world/SolmorDialogueTree').then(({ getSolmorStage, showSolmorEncounter, advanceSolmorStage }) => {
+        if (getSolmorStage() < 1) {
+          showSolmorEncounter(1, _characterSpecies!, () => {
+            advanceSolmorStage();
+            _storyToast('Solmor has made an offer. The world waits.', 'act');
+          });
+        }
+      });
+    }
   };
 
   // During the prologue, upward staircases are locked until the player has the master key.
@@ -433,7 +458,11 @@ async function main() {
   /** Blueprint IDs awarded from crafting, pending placement in construction mode. */
   const _pendingBlueprints = new Set<string>();
   const consumables   = new ConsumableInventory();
-  consumables.onHeal  = (amt) => { player.health.heal(amt); };
+  consumables.onHeal  = (amt) => {
+    player.health.heal(amt);
+    // G2: show heal number at player position
+    dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 2), amt, 'heal');
+  };
   consumables.onChange = () => {
     hud.setConsumables({
       minorHealCount: consumables.getPotionCount('potion_heal_minor'),
@@ -447,6 +476,11 @@ async function main() {
     if (e.code === 'KeyX') consumables.usePotion('potion_heal_major');
   });
   const talentSystem  = new TalentSystem();
+  // G3: particle burst when a talent node is purchased
+  talentSystem.onNodeBought = (_nodeId) => {
+    particles.burst(player.group.position.clone().setY(player.group.position.y + 1.2), 0xffdd44, 32, 3.5, 0.6);
+    cameraRig.punch(1.2, 0.12);
+  };
   const talentTree    = new TalentTree();
   const statPanel     = new StatPanel();
   const levelUpBanner = new LevelUpBanner();
@@ -571,7 +605,24 @@ async function main() {
       if (deathTriggered && v > 0) { deathTriggered = false; deathScreen.hide(); }
     },
     onAllSpells: () => {
-      for (const id of ['magic_bolt', 'flame_dart', 'intimidate', 'nova_burst', 'chain_arc', 'void_rift', 'battle_hymn', 'mass_animate']) progression.grantSpell(id);
+      for (const id of ['magic_bolt', 'flame_dart', 'intimidate', 'nova_burst', 'chain_arc', 'void_rift', 'battle_hymn', 'mass_animate', 'blink', 'levitate', 'fly']) progression.grantSpell(id);
+      // Also grant all abilities: Blink (Z), Levitate (X), + species Q/R
+      const charId = (_characterSpecies === 'human'    ? 'human_warrior'  :
+                      _characterSpecies === 'undead'   ? 'skeleton_mage'  :
+                      _characterSpecies === 'vulperia' ? 'fox_rogue'       :
+                      _characterSpecies === 'slime'    ? 'slime'           :
+                      'human_warrior') as import('@/scene/CharacterDecisionTree').CharacterId;
+      applyCharacterAbilities(abilities, charId);
+      _storyToast('All spells + abilities granted  ·  Q R Z X ready', 'beat');
+    },
+    onAllAbilities: () => {
+      const charId = (_characterSpecies === 'human'    ? 'human_warrior'  :
+                      _characterSpecies === 'undead'   ? 'skeleton_mage'  :
+                      _characterSpecies === 'vulperia' ? 'fox_rogue'       :
+                      _characterSpecies === 'slime'    ? 'slime'           :
+                      'human_warrior') as import('@/scene/CharacterDecisionTree').CharacterId;
+      applyCharacterAbilities(abilities, charId);
+      _storyToast('Abilities granted: Q, R (species), Z (Blink), X (Levitate)', 'beat');
     },
     onKillAll:   () => {
       sceneManager.getActiveEnemies().forEach(e => {
@@ -657,6 +708,11 @@ async function main() {
     _characterSpecies = null; // set below when cfg.characterId is known
     _visitedRoomIds.clear();
     _towerRoomsClearedCount = 0;
+    // E1: reset story tracking sets for new game
+    _eliteEnemiesKilled.clear();
+    _completedNpcDialogues.clear();
+    // E2: reset Solmor encounter stage for new game
+    import('@/world/SolmorDialogueTree').then(({ resetSolmorStage }) => resetSolmorStage());
     sceneManager.loadDungeon(plan);
     prevKillCount = 0; // reset XP kill tracker on new game
 
@@ -703,6 +759,8 @@ async function main() {
     if (cfg?.characterId) {
       _characterSpecies = speciesForCharacter(cfg.characterId);
       mainMenu.setActiveSpecies(_characterSpecies);
+      // Apply species-specific active abilities (D1/D6)
+      applyCharacterAbilities(abilities, cfg.characterId);
       _storyRunner = new StoryRunner(cfg.characterId, questLog);
       _storyRunner.onBeatComplete = (text, xp, gold) => {
         progression.grantXP(xp);
@@ -734,6 +792,8 @@ async function main() {
         playerCol:            0,
         playerRow:            0,
         nearSettlements:      [],
+        completedNpcDialogues: _completedNpcDialogues,
+        eliteEnemiesKilled: _eliteEnemiesKilled,
       });
       // onBeatActivate fires during start() for the first beat — no manual init needed
     }
@@ -743,6 +803,10 @@ async function main() {
 
   /** XP kill tracker — grants XP for each new kill registered. */
   let prevKillCount = 0;
+  /** E1/E2: Named elite enemy IDs killed this session (for defeat_elite beats). */
+  const _eliteEnemiesKilled   = new Set<string>();
+  /** E1: NPC IDs whose full dialogue has been completed (for talk_to_npc beats). */
+  const _completedNpcDialogues = new Set<string>();
 
   // ── Character creation screen ─────────────────────────────────────────────
   let _sandboxUi: DevSandbox | null = null;
@@ -843,9 +907,28 @@ async function main() {
         progression.equipSpell(id, 1);
       },
       onGrantAllSpells: () => {
-        for (const id of ['magic_bolt','flame_dart','intimidate','nova_burst','chain_arc','void_rift','battle_hymn','mass_animate']) {
+        // Grant all spells AND all abilities in one click
+        for (const id of ['magic_bolt','flame_dart','intimidate','nova_burst','chain_arc','void_rift','battle_hymn','mass_animate','blink','levitate','fly']) {
           progression.grantSpell(id);
         }
+        const charId = (_characterSpecies === 'human'    ? 'human_warrior'  :
+                        _characterSpecies === 'undead'   ? 'skeleton_mage'  :
+                        _characterSpecies === 'vulperia' ? 'fox_rogue'       :
+                        _characterSpecies === 'slime'    ? 'slime'           :
+                        'human_warrior') as import('@/scene/CharacterDecisionTree').CharacterId;
+        applyCharacterAbilities(abilities, charId);
+        _storyToast('All spells + abilities granted  ·  Q R Z X ready', 'beat');
+      },
+      onGrantAllAbilities: () => {
+        // Re-apply character abilities to ensure all slots are filled.
+        // Uses current characterId if known, falls back to human_warrior.
+        const charId = (_characterSpecies === 'human'    ? 'human_warrior'  :
+                        _characterSpecies === 'undead'   ? 'skeleton_mage'  :
+                        _characterSpecies === 'vulperia' ? 'fox_rogue'       :
+                        _characterSpecies === 'slime'    ? 'slime'           :
+                        'human_warrior') as import('@/scene/CharacterDecisionTree').CharacterId;
+        applyCharacterAbilities(abilities, charId);
+        _storyToast('Abilities granted: Q, R (species), Z (Blink), X (Levitate)', 'beat');
       },
       // ── Cheats tab ──────────────────────────────────────────────────────
       getGodMode:          () => player.health.godMode,
@@ -874,7 +957,7 @@ async function main() {
           playerPos.x + Math.cos(angle) * r, 1.5,
           playerPos.z + Math.sin(angle) * r,
         );
-        const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+        const en = new SlimeEnemy(pos, physics, (dmg: number) => { player.health.takeDamage(dmg); if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), dmg, "damage"); } });
         en.health.forceSetHp(hp);
         (en as unknown as { _baseDamage?: number })._baseDamage = damage;
         scene.add(en.group);
@@ -887,6 +970,48 @@ async function main() {
           if (def) player.applyAssetModel(def).catch((e) => console.warn('[sandbox] model swap failed:', e));
         });
       },
+      onPreviewModel: async (def) => {
+        // Load the model via CharacterLoader and place it at a fixed inspection
+        // position in the sandbox scene (2 units in front of origin, lit well).
+        const { loadCharModel } = await import('@/characters/CharacterLoader');
+        try {
+          const loaded = await loadCharModel(def);
+          // Remove previous preview object if any
+          const prevObj = scene.getObjectByName('__preview_model');
+          if (prevObj) scene.remove(prevObj);
+          // Keep a reference so we can play animations on it
+          (window as unknown as Record<string, unknown>)['__previewLoaded'] = loaded;
+
+          loaded.scene.name = '__preview_model';
+          // Scale to a reasonable inspection size (auto-fit to ~2 unit height)
+          const box    = new THREE.Box3().setFromObject(loaded.scene);
+          const height = Math.max(box.max.y - box.min.y, 0.01);
+          const scale  = 2.0 / height;
+          loaded.scene.scale.setScalar(scale);
+          // Centre on ground plane, slightly to the right of origin so player
+          // doesn't overlap with the inspected model
+          loaded.scene.position.set(4, 0, 0);
+          scene.add(loaded.scene);
+          // Start idle animation if available
+          const clips = loaded.clips.map(c => c.name);
+          if (loaded.mixer && loaded.clips.length > 0) {
+            const idleClip = loaded.clips.find(c => /idle/i.test(c.name)) ?? loaded.clips[0];
+            loaded.mixer.clipAction(idleClip).play();
+          }
+          return clips;
+        } catch (e) {
+          console.warn('[sandbox] preview model load failed:', e);
+          return [];
+        }
+      },
+      onPlayPreviewAnim: (clipName) => {
+        const loaded = (window as unknown as Record<string, unknown>)['__previewLoaded'] as import('@/characters/CharacterLoader').LoadedChar | undefined;
+        if (!loaded?.mixer) return;
+        loaded.mixer.stopAllAction();
+        if (!clipName) return;
+        const clip = loaded.clips.find(c => c.name === clipName);
+        if (clip) loaded.mixer.clipAction(clip).play();
+      },
       onSpawnNPC: (dna, _name, hp, damage, count) => {
         const playerPos = player.group.position;
         const angle0 = Math.random() * Math.PI * 2;
@@ -897,7 +1022,7 @@ async function main() {
             playerPos.x + Math.cos(angle) * r, 1.5,
             playerPos.z + Math.sin(angle) * r,
           );
-          const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+          const en = new SlimeEnemy(pos, physics, (dmg: number) => { player.health.takeDamage(dmg); if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), dmg, "damage"); } });
           // Override HP and damage
           en.health.forceSetHp(hp);
           (en as unknown as { _maxHp?: number })._maxHp = hp;
@@ -922,7 +1047,7 @@ async function main() {
             1.5,
             playerPos.z + Math.sin(angle) * r,
           );
-          const en = new SlimeEnemy(pos, physics, (dmg: number) => player.health.takeDamage(dmg));
+          const en = new SlimeEnemy(pos, physics, (dmg: number) => { player.health.takeDamage(dmg); if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), dmg, "damage"); } });
           scene.add(en.group);
           sceneManager.addEnemy(en);
         }
@@ -1066,6 +1191,54 @@ async function main() {
     _sandboxUi.show();
   }
 
+  // ── Shadow arrival VFX (blink destination) ───────────────────────────────
+  /** Dark shadow puff at the blink landing point — wavy wisps that rise and fade. */
+  function _shadowArrivalVfx(pos: THREE.Vector3, targetScene: THREE.Scene): void {
+    for (let i = 0; i < 5; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: i < 2 ? 0x0a000f : 0x1a0028,
+        transparent: true,
+        opacity: 0.65 - i * 0.08,
+      });
+      const geo = new THREE.SphereGeometry(0.22 + i * 0.07, 6, 4);
+      const mesh = new THREE.Mesh(geo, mat);
+      const angle = (i / 5) * Math.PI * 2;
+      const r = 0.25 + (i % 2) * 0.2;
+      mesh.position.set(pos.x + Math.cos(angle) * r, pos.y + 0.3, pos.z + Math.sin(angle) * r);
+      targetScene.add(mesh);
+      const t0 = performance.now();
+      const rise = 1.0 + i * 0.25;
+      const anim = () => {
+        const t = Math.min((performance.now() - t0) / 480, 1);
+        mesh.position.y = pos.y + 0.3 + t * rise;
+        // Wavy sideways drift
+        mesh.position.x = pos.x + Math.cos(angle) * r + Math.sin(t * 7 + i * 1.3) * 0.12;
+        mesh.position.z = pos.z + Math.sin(angle) * r + Math.cos(t * 7 + i * 1.3) * 0.12;
+        mat.opacity = (0.65 - i * 0.08) * (1 - t * t);
+        mesh.scale.setScalar(1 + t * 0.5);
+        if (t < 1) { requestAnimationFrame(anim); return; }
+        targetScene.remove(mesh); geo.dispose(); mat.dispose();
+      };
+      requestAnimationFrame(anim);
+    }
+    // Dark ground disc that expands and fades
+    const dGeo = new THREE.CircleGeometry(0.5, 18);
+    dGeo.rotateX(-Math.PI / 2);
+    const dMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+    const disc = new THREE.Mesh(dGeo, dMat);
+    disc.position.set(pos.x, pos.y + 0.02, pos.z);
+    targetScene.add(disc);
+    const d0 = performance.now();
+    const dAnim = () => {
+      const t = Math.min((performance.now() - d0) / 380, 1);
+      dMat.opacity = 0.5 * Math.pow(1 - t, 1.8);
+      disc.scale.setScalar(1 + t * 1.5);
+      if (t < 1) { requestAnimationFrame(dAnim); return; }
+      targetScene.remove(disc); dGeo.dispose(); dMat.dispose();
+    };
+    requestAnimationFrame(dAnim);
+  }
+
   // ── Story toast ──────────────────────────────────────────────────────────
   function _storyToast(text: string, kind: 'beat' | 'act'): void {
     const el = document.createElement('div');
@@ -1182,6 +1355,11 @@ async function main() {
       }
     },
     onDevLab: () => startSandbox(),
+    rebindControls: {
+      getBindings: () => input.bindings as import('@/core/InputManager').Bindings,
+      rebind:       (action, code) => input.rebind(action, code),
+      resetBindings: () => input.resetBindings(),
+    },
   });
 
   // ── Test / debug hook (dev builds only) ──────────────────────────────────
@@ -1431,8 +1609,9 @@ async function main() {
   });
 
   // ── Combat systems ────────────────────────────────────────────────────────
-  const combat = new CombatSystem();
-  const spells = new SpellSystem();
+  const combat  = new CombatSystem();
+  const spells  = new SpellSystem();
+  const abilities = new AbilitySystem();
 
   // Raycaster for mouse → world position on the floor plane
   const raycaster = new THREE.Raycaster();
@@ -1579,6 +1758,7 @@ async function main() {
         const _now = performance.now() * 0.001;
         for (let _ci = 0; _ci < _spawnedRigs.length; _ci++) {
           const { rig, born, walkCtrl, wander } = _spawnedRigs[_ci];
+
           if (walkCtrl) {
             const isControlled = _selectedCreatureIdx === _ci;
             if (isControlled) {
@@ -1629,6 +1809,10 @@ async function main() {
         _selectionRing.visible = false;
       }
 
+      // Tick the preview model mixer (asset browser inspection model)
+      const _previewLoaded = (window as unknown as Record<string, unknown>)['__previewLoaded'] as import('@/characters/CharacterLoader').LoadedChar | undefined;
+      _previewLoaded?.mixer?.update(dt);
+
       // 5. Room manager / overworld — enemy AI + door trigger checks
       if (gameMode === 'interior') {
         hud.setTime(null);
@@ -1649,6 +1833,8 @@ async function main() {
             playerCol:            0,
             playerRow:            0,
             nearSettlements:      [],
+            completedNpcDialogues: _completedNpcDialogues,
+            eliteEnemiesKilled: _eliteEnemiesKilled,
           });
         }
       } else if (overworld) {
@@ -1693,6 +1879,8 @@ async function main() {
               playerCol:            _gc.col,
               playerRow:            _gc.row,
               nearSettlements:      _nearby,
+              completedNpcDialogues: _completedNpcDialogues,
+              eliteEnemiesKilled: _eliteEnemiesKilled,
             });
           }
         }
@@ -1785,13 +1973,16 @@ async function main() {
       // 4b. Interactable proximity detection (interior only)
       if (gameMode === 'interior') {
         interactables.update(player.group.position, sceneManager.getActiveInteractables());
-        // Taming prompt takes priority over book prompts when a fleeing slime is nearby
+        // Priority: taming prompt > staircase hint > interactable prompt
         const _nearFleeInt = sceneManager.getActiveEnemies().find(
           en => !en.isDead && en.isRecruitable
             && en.worldPosition.distanceTo(player.group.position) < 6.0,
         );
+        const _stairHint = !_nearFleeInt ? sceneManager.getStaircaseHint(player.group.position) : null;
         interactables.overridePrompt(
-          _nearFleeInt ? (party.isFull ? 'Party full' : '♪ Sing to it') : null,
+          _nearFleeInt
+            ? (party.isFull ? 'Party full' : '♪ Sing to it')
+            : _stairHint ?? null,
         );
       }
 
@@ -1805,7 +1996,21 @@ async function main() {
           mouseWorld.x - player.group.position.x,
           mouseWorld.z - player.group.position.z,
         );
-        combat.triggerMelee(player.group.position, meleeAngle, enemies, scene);
+        combat.triggerMelee(player.group.position, meleeAngle, enemies, scene,
+          // G2: melee damage number + G3: hit-stop + G3: death knockback
+          (target, damage) => {
+            const pos = (target as unknown as { worldPosition?: THREE.Vector3 }).worldPosition;
+            if (pos) dmgNumbers.spawn(pos.clone().setY(pos.y + 1.8), damage, 'damage');
+            cameraRig.shake(0.06, 0.18); // light shake on melee hit
+            gameLoop.freeze(2);           // G3: 2-frame hit-stop
+            // G3: knockback on lethal hit
+            if ((target as unknown as { isDead?: boolean }).isDead) {
+              (target as unknown as { applyDeathKnockback?(from: THREE.Vector3): void })
+                .applyDeathKnockback?.(player.group.position);
+            }
+          },
+        );
+        player.triggerAttack();
       }
 
       // 6a. E key — context-sensitive: interior = read book; exterior = enter/recruit
@@ -1896,15 +2101,116 @@ async function main() {
             mouseWorld,
             enemies,
             scene,
-            undefined,
+            // G2: damage number on spell hit + G3: hit-stop on crit
+            (target, damage) => {
+              const pos = (target as unknown as { worldPosition?: THREE.Vector3 }).worldPosition;
+              if (pos) {
+                const isCrit = damage > 10;
+                dmgNumbers.spawn(pos.clone().setY(pos.y + 1.8), damage, isCrit ? 'crit' : 'damage');
+                if (isCrit) { cameraRig.shake(0.08, 0.25); gameLoop.freeze(3); } // G3: 3-frame hit-stop on crit
+              }
+            },
             {
               spellDamageMult: progression.derivedSpellDamageMult,
               aoeRadiusMult: progression.mods.aoeRadiusMult,
               party,
               onForceFlee: (targets) => targets.forEach(e => (e as unknown as { forceFlee?(): void }).forceFlee?.()),
               onBattleHymn: (_dur) => { party.followerDamageMult = 1.5; },
+              // ── Movement spells ──────────────────────────────────────────
+              onBlink: (_origin) => {
+                // Shadow Step: blink to mouse cursor with dark smoky transition
+                const playerPos = player.group.position;
+                const raw = mouseWorld.clone().setY(playerPos.y);
+                const toMouse = raw.clone().sub(playerPos);
+                const dist    = Math.min(toMouse.length(), 12);
+                const dir     = toMouse.clone().normalize();
+
+                // Wall check
+                const rayHit = physics.castRayVsWalls(
+                  playerPos.clone().setY(playerPos.y + 0.8),
+                  dir,
+                  dist + 0.5,
+                );
+                const safeDist = rayHit !== null ? Math.max(0.5, rayHit - 0.9) : dist;
+                const dest = playerPos.clone().add(dir.multiplyScalar(safeDist));
+                dest.y = playerPos.y;
+
+                // ── Shadow step transition ────────────────────────────────
+                // Phase 1 (0-120ms): player model squishes into shadow + fades
+                // Phase 2 (120ms): teleport happens
+                // Phase 3 (120-320ms): player reforms from shadow at destination
+                const charScene = (player as unknown as { _charController?: { scene: THREE.Group } })
+                  ._charController?.scene ?? null;
+
+                // Squish and fade out over 120ms
+                const FADE_OUT = 120;
+                const FADE_IN  = 200;
+                const outStart = performance.now();
+
+                const fadeOut = () => {
+                  const t = Math.min((performance.now() - outStart) / FADE_OUT, 1);
+                  // Squish downward + shrink sideways (melt into shadow)
+                  if (charScene) {
+                    charScene.scale.y = 1 - t * 0.92;
+                    charScene.scale.x = 1 + t * 0.3;
+                    charScene.scale.z = 1 + t * 0.3;
+                  }
+                  if (t < 1) { requestAnimationFrame(fadeOut); return; }
+
+                  // Teleport
+                  player.teleport(dest);
+
+                  // Destination shadow smoke (appears just after teleport)
+                  _shadowArrivalVfx(dest, scene);
+
+                  // Phase 3: reform at destination
+                  const inStart = performance.now();
+                  const fadeIn = () => {
+                    const ti = Math.min((performance.now() - inStart) / FADE_IN, 1);
+                    // Ease out: fast scale up from shadow
+                    const ease = 1 - Math.pow(1 - ti, 2.5);
+                    if (charScene) {
+                      charScene.scale.y = ease;
+                      charScene.scale.x = 1 + (1 - ease) * 0.25;
+                      charScene.scale.z = 1 + (1 - ease) * 0.25;
+                    }
+                    if (ti < 1) { requestAnimationFrame(fadeIn); return; }
+                    // Fully reformed
+                    if (charScene) charScene.scale.set(1, 1, 1);
+                  };
+                  requestAnimationFrame(fadeIn);
+                };
+                requestAnimationFrame(fadeOut);
+
+                // No arcane light pulse — just the dark shadow VFX from SpellSystem
+              },
+              onLevitateToggle: () => {
+                player.levitateMode = !player.levitateMode;
+                if (player.levitateMode) {
+                  (player as unknown as { _levitateTargetY: number })._levitateTargetY =
+                    player.group.position.y + (player as unknown as { LEVITATE_HEIGHT: number }).LEVITATE_HEIGHT;
+                  particles.burst(player.group.position, 0x88ddff, 14, 2.5, 0.5);
+                } else {
+                  // Landing — deactivate levitate, physics resumes
+                  particles.burst(player.group.position, 0x88ddff, 8, 1.5, 0.3);
+                }
+              },
+              onFlyBurst: (_angle) => {
+                // Toggle sustained fly spell mode (WoW-style free flight)
+                const wasFlying = player.flySpellMode;
+                player.flySpellMode = !wasFlying;
+                player.group.userData['_flySpellMode'] = player.flySpellMode;
+                particles.burst(player.group.position, 0xffdd44, wasFlying ? 8 : 20, wasFlying ? 2.0 : 4.5, 0.4);
+                if (!wasFlying) {
+                  lighting.addSpellPulse(player.group.position, 0xffdd44);
+                }
+              },
             },
           );
+          // Trigger cast animation on the character model (Throw / Use_Item clip)
+          player.triggerCast();
+          // G3: zoom punch on spell cast (orthographic FOV-kick equivalent)
+          cameraRig.punch(1.8, 0.18);
           // Phase 7.5c — cast light pulse: brief PointLight flash at cast origin
           lighting.addSpellPulse(player.group.position, spells.getSpellColor(activeSpell));
           // Phase 7.5d — spell cast particle burst
@@ -1920,6 +2226,23 @@ async function main() {
       // 7. Combat tick (expire arcs / projectiles / zones / auras)
       combat.update(dt, scene);
       spells.update(dt, scene, enemies, player.group.position, physics);
+      abilities.update(dt);
+
+      // 7a. Ability casting (Q/R/Z/X keys — one-shot edge detection)
+      const _abCtx = {
+        playerPos:   player.group.position,
+        playerGroup: player.group,
+        scene,
+        camera:      cameraRig.camera,
+        aimDir:      mouseWorld.clone().sub(player.group.position).setY(0).normalize(),
+        progression,
+        enemies:     (sceneManager.getActiveEnemies() as unknown as Array<{ worldPosition: THREE.Vector3; hp: number; takeDamage(d: number): void; isDead: boolean }>),
+        playerHp:    player.health,
+      };
+      if (s.ability1) abilities.trycast(0, _abCtx);
+      if (s.ability2) abilities.trycast(1, _abCtx);
+      if (s.ability3) abilities.trycast(2, _abCtx);
+      if (s.ability4) abilities.trycast(3, _abCtx);
 
       // 7c. Lighting + particle tick
       lighting.update(dt);
@@ -1928,34 +2251,68 @@ async function main() {
       // 7b. Death check
       if (player.health.hp <= 0 && !deathTriggered) {
         deathTriggered = true;
+        player.triggerDeath();
+        cameraRig.shake(0.25, 0.6); // big shake on player death
+        const _floorDef = getFloorDef(sceneManager.currentFloor);
+        const _floorLabel = _floorDef?.name
+          ?? (sceneManager.currentFloor === 0 ? 'the Ground Floor'
+            : sceneManager.currentFloor > 0 ? `Floor ${sceneManager.currentFloor}`
+            : `the Basement`);
+        deathScreen.setContext(_floorLabel, sceneManager.killCount, sceneManager.totalEnemies);
         deathScreen.show();
       }
 
-      // 7c. Room-clear check (interior only)
+      // 7c. Room-clear check + wave progress display (interior only)
       if (gameMode === 'interior') {
         const dead  = sceneManager.roomEnemiesDefeated;
         const total = sceneManager.totalEnemies;
-      const isCleared = total > 0 && dead >= total;
-      if (isCleared && !wasRoomCleared) {
-        const fl = sceneManager.currentFloor;
-        const label = fl === 0 ? 'Ground Floor Cleared'
-                    : fl  > 0 ? `Floor ${fl} Cleared`
-                    :           `Basement ${Math.abs(fl)} Cleared`;
-        victoryBanner.show(label);
-      }
+        const isCleared = total > 0 && dead >= total && !sceneManager.waveInfo;
+        if (isCleared && !wasRoomCleared) {
+          const fl = sceneManager.currentFloor;
+          const label = fl === 0 ? 'Ground Floor Cleared'
+                      : fl  > 0 ? `Floor ${fl} Cleared`
+                      :           `Basement ${Math.abs(fl)} Cleared`;
+          victoryBanner.show(label);
+          // B3: spawn heal orb at room centre
+          _spawnHealOrb(scene, player, particles);
+        }
         wasRoomCleared = isCleared;
+
+        // B3: show wave progress in objective tracker for swarm rooms
+        const wi = sceneManager.waveInfo;
+        if (wi) {
+          objTracker.setObjective(`Wave ${wi.current} of ${wi.total}`, 'Defeat all enemies to advance', false);
+          objTracker.setProgress(dead, total, 'defeated');
+        }
       }
+      // B3: animate + pick up heal orbs each frame (interior only)
+      if (gameMode === 'interior') _updateHealOrbs(dt, scene, player, particles);
     }
 
     // 8. Camera
     cameraRig.updateZoom(dt);
-    cameraRig.follow(player.group.position);
+    cameraRig.follow(player.group.position, dt);
+    // G2: update floating combat text + enemy health bars
+    dmgNumbers.update();
+    const activeEnemiesForBars = gameMode === 'interior'
+      ? sceneManager.getActiveEnemies()
+      : (overworld?.getActiveEnemies() ?? []);
+    enemyBars.update(activeEnemiesForBars as unknown as Parameters<typeof enemyBars.update>[0], player.group.position);
 
     // XP — grant 20 XP per kill tracked this frame
     const currKillCount = sceneManager.killCount;
     if (currKillCount > prevKillCount) {
       progression.grantXP((currKillCount - prevKillCount) * 20);
       prevKillCount = currKillCount;
+
+      // E1: track named elite kills for defeat_elite story beats
+      // Scan enemies that just died this frame and collect their enemyId tags.
+      for (const e of sceneManager.getActiveEnemies()) {
+        if (e.isDead) {
+          const eid = e.group.userData['enemyId'] as string | undefined;
+          if (eid) _eliteEnemiesKilled.add(eid);
+        }
+      }
     }
 
     // 9. HUD + per-frame stat sync
@@ -1976,6 +2333,9 @@ async function main() {
       progression.level,
       progression.xpProgress,
     );
+
+    // G2: Ability bar — update every frame (cooldowns need smooth countdown)
+    hud.setAbilities(abilities.getAllSlotInfos(), abilities.mana.fraction);
 
     // Show resource + potion strips in exterior mode only
     if (gameMode === 'exterior') {
@@ -2001,9 +2361,11 @@ async function main() {
       hud.setConsumables(null);
     }
 
-    // Cooldown sweep overlays for action bar slots
+    // Cooldown sweep overlays + countdown numbers for action bar slots
+    const equippedIds = progression.getEquippedSlots();
     hud.setCooldowns(
-      progression.getEquippedSlots().map(id => id ? spells.cooldownFraction(id) : null),
+      equippedIds.map(id => id ? spells.cooldownFraction(id) : null),
+      equippedIds.map(id => id ? spells.cooldownRemaining(id) : null),
     );
 
     // Buff bar — tick and update
@@ -2028,5 +2390,62 @@ async function main() {
 
 // Export the startup promise so unit tests can await full initialisation.
 export const _startupComplete = main().catch(console.error);
+
+// ── B3: Room-clear heal orb ───────────────────────────────────────────────────
+// A floating golden sphere spawns at room centre when all enemies are defeated.
+// Walking within 1.5u picks it up and restores 25% max HP.
+
+const _healOrbs: Array<{ mesh: THREE.Mesh; t: number }> = [];
+
+function _spawnHealOrb(
+  scene: THREE.Scene,
+  player: import('@/player/PlayerController').PlayerController,
+  particles: import('@/rendering/ParticleSystem').ParticleSystem,
+): void {
+  const geo = new THREE.OctahedronGeometry(0.35, 0);
+  const mat = new THREE.MeshLambertMaterial({
+    color: 0xffdd44,
+    emissive: new THREE.Color(0xffaa00),
+    emissiveIntensity: 0.8,
+    transparent: true, opacity: 0.92,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 1.0, 0);
+  scene.add(mesh);
+  _healOrbs.push({ mesh, t: 0 });
+}
+
+/** Call once per frame from within the game loop to animate + pick up orbs. */
+function _updateHealOrbs(
+  dt: number,
+  scene: THREE.Scene,
+  player: import('@/player/PlayerController').PlayerController,
+  particles: import('@/rendering/ParticleSystem').ParticleSystem,
+): void {
+  for (let i = _healOrbs.length - 1; i >= 0; i--) {
+    const orb = _healOrbs[i];
+    orb.t += dt;
+    // Float + spin
+    orb.mesh.position.y = 1.0 + Math.sin(orb.t * 2.2) * 0.18;
+    orb.mesh.rotation.y += dt * 1.8;
+    // Pulse emissive
+    (orb.mesh.material as THREE.MeshLambertMaterial).emissiveIntensity =
+      0.6 + Math.sin(orb.t * 4.0) * 0.3;
+
+    // Proximity pickup
+    const dx = orb.mesh.position.x - player.group.position.x;
+    const dz = orb.mesh.position.z - player.group.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < 1.5) {
+      const heal = Math.round(player.health.maxHp * 0.25);
+      player.health.heal(heal);
+      particles.burst(orb.mesh.position.clone(), 0xffdd44, 20, 3.0, 0.5);
+      scene.remove(orb.mesh);
+      orb.mesh.geometry.dispose();
+      (orb.mesh.material as THREE.Material).dispose();
+      _healOrbs.splice(i, 1);
+    }
+  }
+}
+
 
 

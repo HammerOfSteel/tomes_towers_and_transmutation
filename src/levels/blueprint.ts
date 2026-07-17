@@ -15,6 +15,8 @@ export type InteractableType =
   | 'forge'     | 'quest_board' | 'greenhouse_orb'
   | 'barrel'    | 'crate' | 'chest' | 'candelabra' // decorative furnishings
   | 'workbench_key'                               // narrative key item (basement)
+  // ── Locked door (E3) ───────────────────────────────────────────────────
+  | 'locked_door'                                 // requires namedKey in inventory
   // ── Alchemy / brewing ──────────────────────────────────────────────────
   | 'potion_rack' | 'distillation_coil' | 'fermenting_vat' | 'herb_bundle'
   // ── Smithing ───────────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ const VALID_SPAWN_TYPES: SpawnType[] = ['slime'];
 const VALID_INTERACTABLE_TYPES: InteractableType[] = [
   'bookshelf', 'lectern',
   'cauldron', 'telescope', 'forge', 'quest_board', 'greenhouse_orb',
-  'barrel', 'crate', 'chest', 'candelabra', 'workbench_key',
+  'barrel', 'crate', 'chest', 'candelabra', 'workbench_key', 'locked_door',
   'potion_rack', 'distillation_coil', 'fermenting_vat', 'herb_bundle',
   'anvil', 'cooling_trough',
   'bed', 'wardrobe', 'writing_desk', 'bunk', 'mess_table',

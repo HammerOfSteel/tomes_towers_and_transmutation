@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Chibi Human Princess</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Sunny sky blue */
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #333;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+            z-index: 10;
+        }
+        h3 { margin: 0 0 5px 0; font-size: 1.8rem; letter-spacing: 1px; color: #ff6b81; }
+        p { margin: 0; font-size: 0.9rem; color: #555; font-weight: bold; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h3>Chibi Royal Princess</h3>
+        <p>Procedural Cute Anime Rig | Drag to rotate | Scroll to zoom</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 30, 80);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 12, 35);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 6, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Bright ambient
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xfff5e6, 2.0); // Warm sunlight
+        sunLight.position.set(20, 30, 20);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 100;
+        sunLight.shadow.camera.left = -25;
+        sunLight.shadow.camera.right = 25;
+        sunLight.shadow.camera.top = 25;
+        sunLight.shadow.camera.bottom = -25;
+        sunLight.shadow.bias = -0.001;
+        scene.add(sunLight);
+
+        const fillLight = new THREE.DirectionalLight(0xaaccff, 0.8); // Sky reflection
+        fillLight.position.set(-20, 10, -20);
+        scene.add(fillLight);
+
+        // --- Environment ---
+        // Garden grass base
+        const groundGeo = new THREE.CylinderGeometry(30, 30, 2, 64);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x7cb342, // Fresh green grass
+            roughness: 1.0,
+            metalness: 0.0
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.position.y = -1;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Floating cherry blossom petals
+        const petalGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.02, 8);
+        petalGeo.scale(1, 0.2, 2);
+        const petalMat = new THREE.MeshBasicMaterial({ color: 0xffb7c5, side: THREE.DoubleSide });
+        const petals = [];
+        for(let i=0; i<40; i++) {
+            const petal = new THREE.Mesh(petalGeo, petalMat);
+            petal.position.set(
+                (Math.random() - 0.5) * 40,
+                Math.random() * 20,
+                (Math.random() - 0.5) * 40
+            );
+            petal.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+            petal.userData = {
+                speedY: Math.random() * 0.03 + 0.02,
+                speedRot: Math.random() * 0.05 + 0.01,
+                swayOff: Math.random() * Math.PI * 2
+            };
+            scene.add(petal);
+            petals.push(petal);
+        }
+
+        // --- GUI Parameters & State ---
+        const params = {
+            skinTone: '#ffd1b3',
+            hairColor: '#fde74c', // Blonde
+            dressColor: '#ff9abc', // Pink
+            accentColor: '#ffffff', // White ruffles
+            eyeColor: '#4ea8de', // Blue eyes
+            crownColor: '#ffd700', // Gold
+            walkSpeed: 6.0,
+            bounceHeight: 0.8,
+            isWalking: true
+        };
+
+        const materials = {
+            skin: new THREE.MeshStandardMaterial({ color: params.skinTone, roughness: 0.4, metalness: 0.1 }),
+            hair: new THREE.MeshStandardMaterial({ color: params.hairColor, roughness: 0.7, metalness: 0.1, flatShading: false }),
+            dress: new THREE.MeshStandardMaterial({ color: params.dressColor, roughness: 0.8, metalness: 0.0 }),
+            accent: new THREE.MeshStandardMaterial({ color: params.accentColor, roughness: 0.9 }),
+            gold: new THREE.MeshStandardMaterial({ color: params.crownColor, roughness: 0.2, metalness: 0.9 }),
+            eyeBase: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1 }),
+            eyeIris: new THREE.MeshStandardMaterial({ color: params.eyeColor, roughness: 0.2 }),
+            eyeHighlight: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+            blush: new THREE.MeshStandardMaterial({ color: 0xff7799, transparent: true, opacity: 0.5 }),
+            mouth: new THREE.MeshStandardMaterial({ color: 0xaa3355, roughness: 0.6 })
+        };
+
+        let characterRoot = new THREE.Group();
+        scene.add(characterRoot);
+        let rig = {};
+
+        // Helper: Create fleshy limbs using CapsuleGeometry
+        function createFleshyLimb(length, thickness, mat) {
+            const group = new THREE.Group();
+            // Capsule geometry handles rounded caps perfectly for chibi limbs
+            const boneGeo = new THREE.CapsuleGeometry(thickness, length, 4, 16);
+            const boneMesh = new THREE.Mesh(boneGeo, mat);
+            // Offset so pivot is at the top
+            boneMesh.position.y = -length / 2;
+            boneMesh.castShadow = true;
+            boneMesh.receiveShadow = true;
+            group.add(boneMesh);
+            return group;
+        }
+
+        function buildCharacter() {
+            while(characterRoot.children.length > 0) {
+                characterRoot.remove(characterRoot.children[0]);
+            }
+            rig = {};
+
+            // Root node (handles height/bouncing)
+            rig.root = new THREE.Group();
+            rig.root.position.y = 5.0; // Base height
+            characterRoot.add(rig.root);
+
+            // --- Torso & Dress ---
+            rig.torso = new THREE.Group();
+            rig.root.add(rig.torso);
+
+            // Main bell skirt
+            const dressGeo = new THREE.ConeGeometry(3.0, 5.0, 32);
+            // Flat top for the cone
+            const dressMesh = new THREE.Mesh(dressGeo, materials.dress);
+            dressMesh.position.y = -1.5;
+            dressMesh.castShadow = true;
+            dressMesh.receiveShadow = true;
+            rig.torso.add(dressMesh);
+
+            // Ruffle/Trim at the bottom
+            const trimGeo = new THREE.TorusGeometry(2.95, 0.3, 16, 32);
+            trimGeo.rotateX(Math.PI / 2);
+            const trimMesh = new THREE.Mesh(trimGeo, materials.accent);
+            trimMesh.position.y = -3.9;
+            trimMesh.castShadow = true;
+            rig.torso.add(trimMesh);
+            
+            // Waist Ribbon
+            const ribbonGeo = new THREE.CylinderGeometry(1.4, 1.45, 0.5, 32);
+            const ribbonMesh = new THREE.Mesh(ribbonGeo, materials.accent);
+            ribbonMesh.position.y = 0.2;
+            rig.torso.add(ribbonMesh);
+
+            // Giant Ribbon Bow on back
+            const bowGroup = new THREE.Group();
+            bowGroup.position.set(0, 0.2, -1.4);
+            rig.torso.add(bowGroup);
+            const bowWingGeo = new THREE.SphereGeometry(0.6, 16, 16);
+            bowWingGeo.scale(1.5, 0.8, 0.4);
+            const leftBow = new THREE.Mesh(bowWingGeo, materials.accent);
+            leftBow.position.set(0.7, 0, -0.2);
+            leftBow.rotation.z = -0.2;
+            const rightBow = new THREE.Mesh(bowWingGeo, materials.accent);
+            rightBow.position.set(-0.7, 0, -0.2);
+            rightBow.rotation.z = 0.2;
+            const bowCenter = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), materials.accent);
+            bowGroup.add(leftBow, rightBow, bowCenter);
+
+            // --- Neck & Head ---
+            rig.neck = new THREE.Group();
+            rig.neck.position.y = 1.0; // Top of dress
+            rig.torso.add(rig.neck);
+
+            // Head (Smooth Sphere)
+            const headGeo = new THREE.SphereGeometry(2.5, 32, 32);
+            const headMesh = new THREE.Mesh(headGeo, materials.skin);
+            headMesh.position.y = 2.5; // Lift up from neck
+            headMesh.castShadow = true;
+            headMesh.receiveShadow = true;
+            rig.neck.add(headMesh);
+
+            // --- Face Details ---
+            const faceGroup = new THREE.Group();
+            faceGroup.position.set(0, 0, 0); // Relative to head center
+            headMesh.add(faceGroup);
+
+            // Anime Eyes (Large ovals)
+            const eyeGeo = new THREE.SphereGeometry(0.5, 32, 16);
+            eyeGeo.scale(0.8, 1.2, 0.3); // Tall and flat
+            
+            const leftEye = new THREE.Mesh(eyeGeo, materials.eyeBase);
+            leftEye.position.set(0.9, -0.2, 2.3);
+            leftEye.rotation.y = Math.PI / 12;
+            leftEye.rotation.z = 0.1;
+
+            const rightEye = new THREE.Mesh(eyeGeo, materials.eyeBase);
+            rightEye.position.set(-0.9, -0.2, 2.3);
+            rightEye.rotation.y = -Math.PI / 12;
+            rightEye.rotation.z = -0.1;
+            
+            faceGroup.add(leftEye, rightEye);
+
+            // Colored Iris
+            const irisGeo = new THREE.SphereGeometry(0.4, 16, 16);
+            irisGeo.scale(0.8, 1.1, 0.2);
+            const leftIris = new THREE.Mesh(irisGeo, materials.eyeIris);
+            leftIris.position.set(0, -0.1, 0.15);
+            leftEye.add(leftIris);
+            const rightIris = new THREE.Mesh(irisGeo, materials.eyeIris);
+            rightIris.position.set(0, -0.1, 0.15);
+            rightEye.add(rightIris);
+
+            // Eye Highlights (Kawaii sparkles)
+            const highLightGeo1 = new THREE.SphereGeometry(0.15, 16, 16);
+            const hl1L = new THREE.Mesh(highLightGeo1, materials.eyeHighlight);
+            hl1L.position.set(-0.1, 0.2, 0.25);
+            leftEye.add(hl1L);
+            const hl1R = new THREE.Mesh(highLightGeo1, materials.eyeHighlight);
+            hl1R.position.set(0.1, 0.2, 0.25);
+            rightEye.add(hl1R);
+            
+            const highLightGeo2 = new THREE.SphereGeometry(0.08, 16, 16);
+            const hl2L = new THREE.Mesh(highLightGeo2, materials.eyeHighlight);
+            hl2L.position.set(0.15, -0.2, 0.25);
+            leftEye.add(hl2L);
+            const hl2R = new THREE.Mesh(highLightGeo2, materials.eyeHighlight);
+            hl2R.position.set(-0.15, -0.2, 0.25);
+            rightEye.add(hl2R);
+
+            // Blush
+            const blushGeo = new THREE.SphereGeometry(0.6, 16, 16);
+            blushGeo.scale(1.5, 0.6, 0.2);
+            const blushL = new THREE.Mesh(blushGeo, materials.blush);
+            blushL.position.set(1.3, -0.8, 2.0);
+            blushL.rotation.y = Math.PI / 8;
+            const blushR = new THREE.Mesh(blushGeo, materials.blush);
+            blushR.position.set(-1.3, -0.8, 2.0);
+            blushR.rotation.y = -Math.PI / 8;
+            faceGroup.add(blushL, blushR);
+
+            // Tiny smiling mouth
+            const mouthGeo = new THREE.TorusGeometry(0.2, 0.05, 8, 16, Math.PI);
+            mouthGeo.rotateX(Math.PI); // Flip into smile
+            const mouth = new THREE.Mesh(mouthGeo, materials.mouth);
+            mouth.position.set(0, -1.0, 2.4);
+            mouth.rotation.x = -0.2;
+            faceGroup.add(mouth);
+
+            // --- Hair ---
+            const hairGroup = new THREE.Group();
+            headMesh.add(hairGroup);
+
+            // Main hair cap (covers back of head)
+            const hairBaseGeo = new THREE.SphereGeometry(2.6, 32, 32, 0, Math.PI*2, 0, Math.PI*0.6);
+            const hairBase = new THREE.Mesh(hairBaseGeo, materials.hair);
+            hairBase.position.y = 0.1;
+            hairBase.castShadow = true;
+            hairGroup.add(hairBase);
+            
+            // Bangs
+            const bangGeo = new THREE.SphereGeometry(2.65, 16, 16, 0, Math.PI*2, 0, Math.PI*0.3);
+            const bangMesh = new THREE.Mesh(bangGeo, materials.hair);
+            bangMesh.rotation.x = Math.PI * 0.15;
+            bangMesh.position.set(0, -0.2, 0.2);
+            hairGroup.add(bangMesh);
+
+            // Dynamic Pigtails
+            rig.pigtails = [];
+            const tailGeo = new THREE.ConeGeometry(0.8, 3.5, 16);
+            // Offset geometry so it pivots from the top
+            tailGeo.translate(0, -1.5, 0); 
+            
+            for(let i=-1; i<=1; i+=2) {
+                const tailGroup = new THREE.Group();
+                // Attach high on the sides of the head
+                tailGroup.position.set(i * 2.3, 1.2, -0.5);
+                
+                // Cute hair tie
+                const scrunchieGeo = new THREE.TorusGeometry(0.3, 0.15, 16, 16);
+                const scrunchie = new THREE.Mesh(scrunchieGeo, materials.accent);
+                scrunchie.rotation.x = Math.PI / 2;
+                tailGroup.add(scrunchie);
+
+                const tailMesh = new THREE.Mesh(tailGeo, materials.hair);
+                tailMesh.castShadow = true;
+                // Angle them outwards
+                tailMesh.rotation.z = i * 0.4;
+                tailMesh.rotation.x = 0.2;
+                
+                tailGroup.add(tailMesh);
+                hairGroup.add(tailGroup);
+                rig.pigtails.push(tailGroup);
+            }
+
+            // --- Royal Crown ---
+            const crownGroup = new THREE.Group();
+            crownGroup.position.set(0, 2.4, 0); // Perfectly on top
+            headMesh.add(crownGroup);
+
+            const crownBaseGeo = new THREE.CylinderGeometry(1.0, 1.0, 0.3, 16);
+            const crownBase = new THREE.Mesh(crownBaseGeo, materials.gold);
+            crownGroup.add(crownBase);
+            
+            // Crown spikes and jewels
+            for(let i=0; i<6; i++) {
+                const spikeGeo = new THREE.ConeGeometry(0.3, 0.8, 4);
+                const spike = new THREE.Mesh(spikeGeo, materials.gold);
+                const angle = (i / 6) * Math.PI * 2;
+                spike.position.set(Math.cos(angle)*0.85, 0.4, Math.sin(angle)*0.85);
+                
+                // Add a ruby to the front spike
+                if (i === 4) { // Facing forward based on angle math
+                    const jewel = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), new THREE.MeshStandardMaterial({color: 0xff0044, metalness: 0.8, roughness: 0.1}));
+                    jewel.position.set(0, -0.2, 0.2);
+                    spike.add(jewel);
+                }
+                
+                spike.rotation.order = 'YXZ';
+                spike.rotation.y = -angle + Math.PI/2;
+                spike.rotation.x = 0.2; // Tilt out slightly
+                crownGroup.add(spike);
+            }
+
+            // --- Fleshy Arms ---
+            rig.shoulders = [];
+            rig.elbows = [];
+            
+            const armThickness = 0.25;
+
+            for (let i = -1; i <= 1; i += 2) {
+                // Shoulders (Puffy Sleeves) placed wide to clear dress
+                const shoulderGroup = new THREE.Group();
+                shoulderGroup.position.set(i * 1.5, 0.6, 0); 
+                rig.torso.add(shoulderGroup);
+                rig.shoulders.push(shoulderGroup);
+
+                // Puffy Sleeve
+                const sleeveGeo = new THREE.SphereGeometry(0.7, 16, 16);
+                const sleeve = new THREE.Mesh(sleeveGeo, materials.accent);
+                sleeve.scale.set(1, 1.2, 1);
+                shoulderGroup.add(sleeve);
+
+                const upperArm = createFleshyLimb(1.2, armThickness, materials.skin);
+                upperArm.position.y = -0.3; // Start below puff
+                shoulderGroup.add(upperArm);
+
+                const elbow = new THREE.Group();
+                elbow.position.set(0, -1.2, 0); // End of upper arm
+                upperArm.add(elbow);
+                rig.elbows.push(elbow);
+
+                const lowerArm = createFleshyLimb(1.2, armThickness, materials.skin);
+                elbow.add(lowerArm);
+
+                // Simple rounded hand (sphere)
+                const handGeo = new THREE.SphereGeometry(0.35, 16, 16);
+                const hand = new THREE.Mesh(handGeo, materials.skin);
+                hand.position.set(0, -1.3, 0);
+                lowerArm.add(hand);
+            }
+
+            // --- Fleshy Legs ---
+            // Hidden mostly under dress, visible when walking
+            rig.hips = [];
+            rig.knees = [];
+            
+            for (let i = -1; i <= 1; i += 2) {
+                const hip = new THREE.Group();
+                hip.position.set(i * 0.7, -1.5, 0); // High up inside dress
+                rig.torso.add(hip);
+                rig.hips.push(hip);
+
+                const thigh = createFleshyLimb(1.8, armThickness * 1.3, materials.skin);
+                hip.add(thigh);
+
+                const knee = new THREE.Group();
+                knee.position.set(0, -1.8, 0);
+                thigh.add(knee);
+                rig.knees.push(knee);
+
+                const calf = createFleshyLimb(1.5, armThickness * 1.2, materials.skin);
+                knee.add(calf);
+
+                // Cute rounded shoes
+                const shoeGeo = new THREE.CapsuleGeometry(0.4, 0.5, 8, 16);
+                shoeGeo.rotateX(Math.PI / 2);
+                shoeGeo.translate(0, -0.2, 0.2); 
+                const shoe = new THREE.Mesh(shoeGeo, materials.accent); // Match trim color
+                shoe.position.set(0, -1.5, 0);
+                calf.add(shoe);
+            }
+        }
+
+        const clock = new THREE.Clock();
+        
+        function updateAnimation() {
+            const time = clock.getElapsedTime();
+            
+            // Animate falling petals
+            petals.forEach((petal) => {
+                petal.position.y -= petal.userData.speedY;
+                petal.position.x += Math.sin(time + petal.userData.swayOff) * 0.02;
+                petal.rotation.x += petal.userData.speedRot;
+                petal.rotation.y += petal.userData.speedRot;
+                
+                // Reset petal if it falls below ground
+                if(petal.position.y < -1) {
+                    petal.position.y = 20;
+                    petal.position.x = (Math.random() - 0.5) * 40;
+                }
+            });
+
+            if (!rig.root) return;
+
+            const isWalk = params.isWalking;
+            const walkSpeed = params.walkSpeed;
+            const phase = time * walkSpeed;
+            
+            // Idle breathing
+            const breath = Math.sin(time * 2.5) * 0.02;
+            rig.torso.scale.set(1 + breath, 1 + breath, 1 + breath);
+
+            if (isWalk) {
+                // --- Bouncy Walk Cycle ---
+                // Root bobs up and down excitedly
+                const bob = Math.abs(Math.sin(phase)) * params.bounceHeight;
+                rig.root.position.y = 5.0 + bob;
+                
+                // Torso slight sway
+                rig.torso.rotation.z = Math.sin(phase) * 0.08;
+                rig.torso.rotation.y = Math.sin(phase) * 0.15;
+
+                // Head bobs oppositely to cushion the bounce
+                rig.neck.rotation.x = Math.sin(phase * 2) * 0.05 + 0.1;
+                rig.neck.rotation.z = -Math.sin(phase) * 0.05;
+
+                // Legs & Arms
+                for(let i=0; i<2; i++) {
+                    const legPhase = phase + (i === 0 ? 0 : Math.PI); 
+                    
+                    // Cute marching legs
+                    rig.hips[i].rotation.x = Math.sin(legPhase) * 1.0;
+                    // Bend knees when leg goes back
+                    rig.knees[i].rotation.x = Math.max(0, -Math.cos(legPhase)) * 1.2;
+
+                    // Arms swing energetically
+                    const armPhase = legPhase + Math.PI;
+                    
+                    rig.shoulders[i].rotation.x = Math.sin(armPhase) * 0.8;
+                    // Angle arms out so hands clear the wide dress skirt
+                    rig.shoulders[i].rotation.z = (i === 0 ? 0.6 : -0.6);
+                    
+                    // Bend elbows slightly inward during swing
+                    rig.elbows[i].rotation.x = -0.3 + Math.sin(armPhase) * 0.2; 
+                    rig.elbows[i].rotation.z = (i === 0 ? -0.1 : 0.1);
+                }
+
+                // Dynamic Pigtails Bounce
+                rig.pigtails.forEach((tail, i) => {
+                    // Sway out based on torso roll, bounce based on walking step
+                    tail.rotation.z = (i === 0 ? -1 : 1) * (0.2 + Math.abs(Math.sin(phase)) * 0.3) - rig.torso.rotation.z * 1.5;
+                    tail.rotation.x = Math.sin(phase * 2) * 0.2 + 0.2;
+                });
+
+            } else {
+                // --- Cute Idle Stance ---
+                rig.root.position.y = 5.0; // Reset height
+                rig.torso.rotation.set(0, 0, 0);
+
+                for(let i=0; i<2; i++) {
+                    // Spread legs slightly in a cute V-stance
+                    rig.hips[i].rotation.set(0.1, (i===0 ? 0.2 : -0.2), (i===0 ? 0.05 : -0.05));
+                    rig.knees[i].rotation.set(0, 0, 0);
+                    
+                    // Arms rest nicely angled OUTWARD over the dress
+                    rig.shoulders[i].rotation.set(0.1, 0, (i===0 ? 0.7 : -0.7));
+                    // Elbows bend slightly forward
+                    rig.elbows[i].rotation.set(-0.2, 0, 0);
+                }
+                
+                // Head looks around happily
+                const look = Math.sin(time * 0.8) * 0.2;
+                const tilt = Math.cos(time * 0.5) * 0.1;
+                rig.neck.rotation.set(0, look, tilt);
+
+                // Gentle pigtail sway
+                rig.pigtails.forEach((tail, i) => {
+                    tail.rotation.z = (i === 0 ? -1 : 1) * 0.3;
+                    tail.rotation.x = Math.sin(time * 1.5 + i) * 0.05 + 0.1;
+                });
+            }
+        }
+
+        const gui = new GUI({ title: 'Princess Wardrobe' });
+        
+        const colorFolder = gui.addFolder('Styling');
+        colorFolder.addColor(params, 'skinTone').name('Skin Tone').onChange(c => materials.skin.color.set(c));
+        colorFolder.addColor(params, 'hairColor').name('Hair Color').onChange(c => materials.hair.color.set(c));
+        colorFolder.addColor(params, 'dressColor').name('Dress Color').onChange(c => materials.dress.color.set(c));
+        colorFolder.addColor(params, 'accentColor').name('Ruffles/Bows').onChange(c => materials.accent.color.set(c));
+        colorFolder.addColor(params, 'eyeColor').name('Eye Color').onChange(c => materials.eyeIris.color.set(c));
+        
+        const animFolder = gui.addFolder('Animation');
+        animFolder.add(params, 'isWalking').name('Toggle Walk');
+        animFolder.add(params, 'walkSpeed', 1, 15).name('Walk Speed');
+        animFolder.add(params, 'bounceHeight', 0.1, 1.5).name('Bounce Vigor');
+
+        // Initial Build
+        buildCharacter();
+
+        // Main Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateAnimation();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start
+        animate();
+    </script>
+</body>
+</html>

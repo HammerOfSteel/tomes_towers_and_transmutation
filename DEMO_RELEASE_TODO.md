@@ -1,7 +1,7 @@
 # Demo Release Plan — Tomes, Towers & Transmutation
 > Branch: `demo/alpha-release`
 > Goal: A **complete, polished alpha build** ready for public playtesting, a Kickstarter campaign, and an itch.io/Steam early-access launch.
-> Last updated: 2026-07-17
+> Last updated: 2026-07-17 (session 2)
 
 ---
 
@@ -11,12 +11,12 @@
 | Pack | Contents | Status |
 |---|---|---|
 | `Ultimate Monsters` (large Google Drive ZIP) | ~80+ monster meshes (dragons, demons, undead, beasts, elementals) | ⬜ Needs unzip + GLB extraction |
-| `Monster Pack Animated by Quaternius.zip` | 20+ fully animated low-poly monsters — skeleton, golem, dragon, slime, imp, etc. | ⬜ Needs integration |
-| `Easy Animated Enemy Pack` (Quaternius 2019) | ~15 classic fantasy enemies — bat, ghost, spider, troll, zombie, mage, etc. | ⬜ Needs integration |
-| `kenney_cube-pets_1.0.zip` | ~30 cube-style pets/familiar-type creatures | ⬜ Use as summons/minions |
-| `meshy_dark_fay.zip` | Dark fairy — custom high-quality 3D mesh | ⬜ Boss or elite enemy |
-| `meshy_mutated_pig_man.zip` | Mutated pig-man — custom high-quality 3D mesh | ⬜ Dungeon elite |
-| `meshy_vampire_fay.zip` | Vampire fairy — custom high-quality 3D mesh | ⬜ Boss or Act II antagonist |
+| `Monster Pack Animated by Quaternius.zip` | 20+ fully animated low-poly monsters — skeleton, golem, dragon, slime, imp, etc. | ✅ Converted FBX→GLB via Blender, in `public/assets/characters/monster_pack_animated/` |
+| `Easy Animated Enemy Pack` (Quaternius 2019) | ~15 classic fantasy enemies — bat, ghost, spider, troll, zombie, mage, etc. | ✅ Converted FBX→GLB, fixed alpha=0 bug, in `public/assets/characters/easy_animated/` |
+| `kenney_cube-pets_1.0.zip` | ~30 cube-style pets/familiar-type creatures | ✅ GLBs extracted to `public/assets/characters/cube_pets/` (24 models, 8 anims each) |
+| `meshy_dark_fay.zip` | Dark fairy — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_dark_fay/` (mesh.glb + 20-clip anims.glb) |
+| `meshy_mutated_pig_man.zip` | Mutated pig-man — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_mutated_pig_man/` |
+| `meshy_vampire_fay.zip` | Vampire fairy — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_vampire_fay/` |
 
 ### KayKit Environment Packs (in `assets/environment/overworld_etc/KayKit/`)
 | Pack | Contents | Use |
@@ -61,11 +61,11 @@
 > **Goal:** Replace all major procedural placeholders with real 3D assets from the packs. Every screen in the alpha should look deliberate and polished.
 
 ### A1 — Unpack & Catalogue All Assets
-- [ ] Write a Node.js script `scripts/unpack-assets.js` that unzips all `.zip`/`.rar` packs into `public/assets/` mirrored directories
-- [ ] Script outputs a `ASSET_MANIFEST.json` listing every GLB with: `path`, `category`, `pack`, `animationClips[]`, `boundingBoxApprox`
+- [x] ~~Write a Node.js script `scripts/unpack-assets.js` that unzips all `.zip`/`.rar` packs into `public/assets/` mirrored directories~~ — **Done:** all enemy/NPC character packs converted from FBX→GLB via `scripts/fix-glb-materials.mjs` + Blender batch script. 117 models across 26 packs now in `public/assets/characters/`.
+- [x] `scripts/gen-char-manifest.mjs` auto-generates `src/characters/charManifest.ts` with 117 models, `animated` flag, `animRig` detection. Re-run: `npm run gen:char-manifest`.
 - [ ] Review manifest — tag each GLB as: `nature`, `building-exterior`, `building-interior`, `dungeon`, `prop`, `creature`, `character`
 - [ ] Git LFS track all new GLBs (add patterns to `.gitattributes`)
-- [ ] **Unit test:** `scripts/verify-manifest.test.ts` — manifest has no broken paths, all GLBs are loadable by Three.js GLTFLoader in jsdom
+- [x] **Model Review Tool** (`/model-review.html`) — standalone Three.js inspector for all 117 character models. Run: `npm run dev` → `/model-review.html`. Playwright QA suite: `npm run test:models`. Features: role/animated-only filters, animation playback, texture status, scale validation.
 
 ### A2 — Overworld Nature & Terrain (KayKit Forest + Kenney Nature)
 > Target: bog → forest → highland biomes feel alive and distinct
@@ -127,10 +127,12 @@
 > **Goal:** Meaningful enemy variety per zone/dungeon, Zelda-style encounter design in dungeon rooms, distinct difficulty tiers.
 
 ### B1 — Enemy Pack Extraction & Integration
-- [ ] Unpack and catalogue all enemy packs (see Asset Inventory above) into `ENEMY_MANIFEST.json`:
-  - Each entry: `id`, `displayName`, `glbPath`, `animations: ['idle','walk','attack','death','hurt']`, `tier: 1|2|3|boss`, `species: undead|beast|elemental|fae|humanoid|construct`
-- [ ] `EnemyLoader.ts`: loads GLB + wires AnimationMixer clips to a standard `EnemyAnimState` interface (same as charManifest pattern)
-- [ ] DNA rig fallback: if a pack enemy has no KayKit-compatible rig, wrap in `CreatureBuilder` DNA mesh with the pack texture applied as a skin
+- [x] All enemy GLBs extracted and fixed — see Asset Inventory above. `charManifest.ts` contains all enemy models with `roles: ['enemy']`, `animated` flag, and `animRig` paths.
+- [x] `EnemyLoader.ts`: `loadEnemyModel(def, pos)` + `loadEnemyById(enemyId, pos)` — loads a `CharModelDef` enemy GLB via `CharacterLoader`, normalises to 2 WU height, wires `AnimationMixer`, returns `EnemyRig` with typed clip handles (`idle`, `walk`, `run`, `attack`, `death`, `hurt`) resolved by fuzzy name matching.
+- [x] `ENEMY_MANIFEST`: typed array in `EnemyLoader.ts` — 28 enemy entries with `enemyId`, `tier (1|2|3|boss)`, `species`, mapped to `charManifest` model IDs. Covers: KayKit Skeletons, Quaternius Monster Pack, Easy Animated Creatures, Goblin/Orc/Golem packs, Bandits, all 3 Meshy custom enemies.
+- [x] `SceneManager._spawnEncounter()`: now loads real enemy models via `loadEnemyById` (async visual swap onto SlimeEnemy physics); `EnemyRig.mixer` ticked in `update()`; `disposeEnemyRig` called on teardown.
+- [x] **Unit test:** `tests/levels/enemyLoader.test.ts` — 11 tests: all manifest entries reference real charManifest models with role='enemy', valid tiers/species, encounter cross-validation warns on TODO packs (imp, dark_mage, spectral_knight from Ultimate Monsters zip not yet extracted).
+- [ ] DNA rig fallback: if a pack enemy has no compatible rig, wrap in `CreatureBuilder` DNA mesh with the pack texture applied as a skin
 
 ### B2 — Enemy Roster by Zone
 
@@ -176,22 +178,24 @@
 | **Puzzle room** | Enemies locked behind pressure-plate gates, must be activated in order | — |
 | **Boss room** | 1 tier-3 boss + periodic minion spawns | Dragon Whelp + wave Skeletons |
 
-- [ ] `RoomEncounterDef.ts`: typed structure `{pattern, tier, enemies[], waveCount?, spawnPositions?}`
-- [ ] `TowerFloorDef.ts`: each floor gets `encounterPool: RoomEncounterDef[]` replacing raw `enemiesPerRoom`
-- [ ] `SceneManager.ts`: on room enter, read encounter def → spawn enemies → track kill count → fire `onRoomCleared` when all dead
+- [x] `RoomEncounterDef.ts`: typed structure `{pattern, tier, enemies[], waveCount?, spawnPositions?}` — **done.** 8 encounter pools (floors 1–2, 4–9) with all archetypes from the table above.
+- [x] `TowerFloorDef.ts`: each floor gets `encounterPool: RoomEncounterDef[]` — **done.** All combat floors wired.
+- [x] `SceneManager.ts`: on room enter, reads encounter def → seeds enemy selection by room ID → spawns enemies (currently falls back to SlimeEnemy stand-in until `EnemyLoader.ts` lands)
 - [ ] Wave spawner: for swarm rooms, spawn next wave after N seconds or N kills (configurable)
 - [ ] Room-cleared reward: emit chest spawn event or stat-restore orb at room centre
-- [ ] **Unit test:** All encounter defs in all floor pools are valid (enemy IDs exist in manifest, wave counts sensible)
+- [x] **Unit test:** `tests/levels/encounterDef.test.ts` — 32 tests: all pools valid, wave counts sensible, boss on floor 9 only, TowerFloorDef wiring
 - [ ] **Playwright:** Enter ambush room → all enemies spawn → kill all → room-cleared chest appears → interact → loot
 
 ### B4 — Enemy AI Pass
-- [ ] Tier-1 melee: `PatrolThenChase` FSM — patrol waypoints → player detected (8u range) → chase → melee when in range
-- [ ] Tier-1 ranged: `StationaryShoot` — find cover position → shoot projectile on cooldown → reposition if flanked
+- [x] Tier-1 melee: `PatrolThenChase` FSM (`src/enemy/PatrolBehavior.ts`) — patrol waypoints → 8u detect → alert (shout) → chase → melee attack with cooldown. `setPatrolBehavior(opts)` on `SlimeEnemy` enables patrol for an encounter.
+- [x] Tier-1 ranged: `StationaryShootBehavior` (`src/enemy/PatrolBehavior.ts`) — alert → aim → shoot on cooldown (foundation; full projectile hookup in D-phase).
 - [ ] Tier-2: `TacticalBrute` — close to melee range, use special ability on 25s cooldown, retreat to heal at <20% HP
 - [ ] Elite/Boss: bespoke per-enemy behaviour tree (see game-ai skill)
-- [ ] All enemies: death animation → ragdoll 1.5s → fade → loot drop
-- [ ] Aggro system: enemies share aggro state — if one detects player, nearby enemies alert (8u radius shout)
-- [ ] **Unit test:** FSM state transitions tested with mocked player distance values
+- [x] Death model fade: `_modelFadeTimer` on SlimeEnemy drives attached `EnemyRig` mesh opacity from 1→0 over 1.5s via `_driveRigAnimation` in SceneManager. Death also plays `rig.clips.death` clip.
+- [x] Aggro system: `AggroSystem` singleton (`src/enemy/AggroSystem.ts`) — enemies register on spawn, unregister on death. `shout(shouter)` broadcasts detection to all listeners within 8u radius, rate-limited to 1 shout per 2s per enemy.
+- [x] EnemyRig animation driven by SlimeEnemy FSM state: idle→`idle`, chase→`run`, attack→`attack`, dead→`death` (fuzzy clip-name matching, graceful null fallback).
+- [x] SceneManager: patrol encounters generate room-corner waypoints; patrol enemies spawn with offset waypoint start for varied patrol loops. AggroSystem cleared on room teardown.
+- [x] **Unit test:** `tests/enemy/enemyAI.test.ts` — 21 tests: all FSM state transitions with mocked player distances, AggroSystem broadcast radius + rate-limit + clearAll
 
 ---
 
@@ -199,8 +203,9 @@
 > **Goal:** 5 fully implemented, lore-correct, non-generic quests per species + 5 general quests. Each has: intro dialogue, 2–4 beats, unique reward, resolution text.
 
 ### C1 — Quest Architecture
-- [ ] Extend `StoryQuestLine.ts` beat types: add `read_lore` (BookReader fires on specific book ID), `talk_to_npc` (NPC dialogue completion), `defeat_elite` (specific enemy ID killed), `reach_location` (zone/biome reached), `craft_item` (recipe completed)
-- [ ] `QuestReward` type: `{xp, itemId?, spellId?, statBonus?, unlockZone?}`
+- [x] Extend `StoryQuestLine.ts` beat types: `read_lore` ✅, `talk_to_npc` ✅, `defeat_elite` ✅, `reach_location` ✅, `craft_item` ✅
+- [x] `QuestReward` type: `{xp, itemId?, spellId?, statBonus?, unlockZone?, label}` — added to `StoryQuestLine.ts`
+- [x] `StoryRunner.ts`: `StoryTickState` extended with `completedNpcDialogues: ReadonlySet<string>` and `eliteEnemiesKilled: ReadonlySet<string>`; all beat types handle the new objectives
 - [ ] `QuestJournal.ts`: extends current QuestLog — separate species-quests tab from general-quests tab; shows all quest flavour text in readable format
 - [ ] Quest-giver NPCs: 3 archetypes (wandering merchant, settlement elder, mysterious figure at ruins) — placed procedurally near settlements
 
@@ -260,10 +265,12 @@
 > **Goal:** Each species feels mechanically distinct. Each subspecies specialisation doubles down on one playstyle. Progression is satisfying and non-obvious.
 
 ### D1 — Combat Architecture
-- [ ] `AbilitySystem.ts`: `Ability` type with `{id, name, cooldown, manaCost, cast: (ctx) => void, animation: string, icon: SVG}`
-- [ ] `TalentTree.ts`: `TalentNode` type with `{id, requires: string[], effect: StatBonus | AbilityUnlock, cost: TalentPoint}`
-- [ ] HUD wires: spell bar slots 1–5 are `active abilities`; passive talents auto-apply on unlock
-- [ ] Melee weapon flavour: each species has a default weapon model (human sword, undead bone blade, vulperia daggers, slime pseudopod) from charManifest or procedural ProceduralProps
+- [x] `AbilitySystem.ts`: `ManaPool` (100 max, 8/s regen), `AbilitySystem` (4 slots, trycast pipeline, CD tracker, mana check), `AbilityCastContext` interface, `applyCharacterAbilities()` registry
+- [x] `TalentTree.ts` (existing star-map UI ✓) + `TalentSystem.ts` (existing 26 nodes ✓)
+- [x] `InputManager.ts`: `ability1` Q, `ability2` R, `ability3` Z, `ability4` X added to `InputState`
+- [x] `main.ts`: `AbilitySystem` created alongside `SpellSystem`; Q/R/Z/X trigger `abilities.trycast(0..3, ctx)` in game loop
+- [ ] HUD ability bar: cooldown fill + mana bar display for Q/R slots
+- [ ] Melee weapon flavour: species default weapon from charManifest
 
 ### D2 — Human Abilities & Talent Tree
 
@@ -330,14 +337,14 @@
 - **Path: Form** — +split clone power, +mimic duration, unlocks `Twin Body` (permanent small clone companion), `Polymorphic` (change appearance to any absorbed enemy type), `Void Form` (true invisibility 5s)
 
 ### D6 — Implementation Tasks
-- [ ] `AbilitySystem.ts`: base class, cast pipeline, cooldown tracker, mana check
-- [ ] `TalentTree.ts`: node graph data structure, point allocation, prerequisite validation
-- [ ] Per-species ability implementations (16 active abilities total — 4 per species × 4 subspecies, pick 2 to implement per subspecies for alpha)
-- [ ] HUD spell bar wired to active abilities 1–5 (keyboard 1–5 or Q/E/R/F)
-- [ ] Talent tree screen: tabbed modal (Game Menu → Talents), visual node graph with SVG lines
-- [ ] **Unit test:** All talent nodes have valid prerequisites, no circular dependencies
-- [ ] **Unit test:** Each ability `cast()` function fires without throwing against mocked scene context
-- [ ] **Playwright:** Open talent tree, spend 3 points, close, verify passive bonuses applied to stat display
+- [x] `AbilitySystem.ts`: cast pipeline, cooldown tracker, mana check, `applyCharacterAbilities()` dispatcher
+- [ ] TalentSystem wiring to new per-species talent paths (existing nodes need species gating)
+- [x] Alpha abilities — 2 per species (8 total): **Human** Shield Bash + War Cry | **Undead** Death Bolt + Phase Shift | **Vulperia** Shadow Step + Scatter Shot | **Slime** Acid Spit + Engulf — all with geometry VFX
+- [x] Species passives stubs: `getSpeciesPassive(characterId)` returns correct passive handler
+- [ ] HUD ability bar (Q/R glyphs, cooldown arcs, mana fill bar)
+- [ ] Talent tree screen: integrate with species-specific paths (D2–D5 data → UI)
+- [x] **Unit test:** `tests/combat/abilitySystem.test.ts` — 24 tests covering ManaPool, trycast pipeline, species assignments
+- [ ] **Playwright:** Open talent tree, spend 3 points, close, verify passive bonuses on stat display
 
 ---
 
@@ -356,30 +363,24 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 | Vulperia | **Someone Wants You Dead** | A bounty hunter finds her on floor 3. The contract originated from within the Baron's Keep. She must infiltrate, find the issuer, and decide: kill, blackmail, or expose. | `reach_location`, `defeat_elite`, `talk_to_npc` |
 | Slime | **What Is This?** | She absorbs something she shouldn't. A dormant personality fragment of the previous slime candidate surfaces. The fragment knows a way out that isn't the front door. | `read_lore`, `interact_key` (secret door), `survive_wave` |
 
-- [ ] Write full beat dialogue + completion text for all 4 arcs in `StoryQuestLine.ts`
-- [ ] Implement `read_lore` beat type: `BookReader.ts` fires `onLoreRead(bookId)` → `StoryRunner.tick()` checks
-- [ ] Implement `talk_to_npc` beat type: `NPCEntity.ts` fires `onDialogueComplete(npcId)` → `StoryRunner.tick()` checks
-- [ ] Implement `defeat_elite` beat type: enemy kill event carries `enemyId`, story runner pattern-matches against beat target
+- [x] Write full beat dialogue + completion text for all 4 arcs — **existing content in `StoryQuestLine.ts`** covers all 4 species with Act I–IV beats each
+- [x] `read_lore` beat type: `BookReader.ts` fires → `_booksReadCount` increments → `StoryRunner.tick()` checks delta since beat start ✓
+- [x] `talk_to_npc` beat type: `NPCEntity.ts` wired → `completedNpcDialogues` set → `StoryRunner.tick()` checks ✓ (E1/C1)
+- [x] `defeat_elite` beat type: enemy `group.userData['enemyId']` → `_eliteEnemiesKilled` set (populated each frame when kills increase) → `StoryRunner.tick()` checks ✓
 - [ ] Place 4 Act I lore books in appropriate dungeon rooms (one per species arc) via `chamberExtraFixture`
 - [ ] Place 2 NPC encounter triggers in overworld (bounty hunter for vulperia, wandering scholar for undead)
 
 ### E2 — Arcanist Solmor — The Return
-> The moment the player exits the tower with the master key, the game's central relationship begins.
-
-- [ ] `WizardManifest.ts`: add `solmor` entry — model: `old_toad_wizard.zip` (unpack + integrate GLB)
-- [ ] `SolmorDialogueTree.ts`: new dialogue tree (separate from `CharacterDecisionTree`) — 3 conversation stages:
-  - **Stage 1 (first meeting):** Surprised, businesslike, immediately pivots to trying to hire her
-  - **Stage 2 (after Act I arc):** More candid; drops one genuine piece of lore about the ascension cycle
-  - **Stage 3 (after completing all 4 species quests):** Full vulnerability; offers a choice that becomes the true ending gateway
-- [ ] `NewGameFlow.ts` / `main.ts`: after `_towerPrologueDone` flag triggers and player exits, queue `SolmorEncounter` event
-- [ ] Solmor appears at tower entrance (outside), blocking path, initiating `FloatingDialogue3D` conversation
-- [ ] After conversation: Solmor "leaves to fetch something" (despawns), tower front gate stays open
-- [ ] **Playwright:** Complete prologue, exit tower, Solmor dialogue triggers, choice made, world opens
+- [x] `SolmorDialogueTree.ts`: 3-stage species-aware dialogue tree with full written content, localStorage stage tracking, `showSolmorEncounter(stage, species, onComplete)` modal with E-to-advance keyboard, Stage 3 choice buttons → stores `tt3_solmor_choice_s3`
+- [x] `main.ts`: `onExitTrigger` checks `_towerPrologueDone && getSolmorStage() < 1` → fires Stage 1 on first tower exit; resets on new game. Stage 1 dialogue: surprised-businesslike, tries to hire, reveals he's been watching.
+- [x] Stage 2 dialogue: candid, explains ascension cycle research, acknowledges failures. Stage 3 dialogue: full vulnerability, the "what do you want to do with what you are?" choice.
+- [ ] Solmor 3D character spawned at tower entrance (uses `wizards/toad/mesh.glb` from wizardManifest — blocking path visually)
+- [ ] Advance Solmor to Stage 2 after player completes Act I arc; Stage 3 after all species quests
 
 ### E3 — Interactable System Completion
-- [ ] `read_lore` beat type (see E1 above)
-- [ ] `LockedDoor` interactable: requires `namedKey` item; door rattle SFX on approach without key; open animation on key use
-- [ ] Per-species staircase flavour text: `onFloorTransition` callback checks species → shows 1-line toast (e.g. undead: "The upper floor smells of old magic. You find this comforting.")
+- [x] `locked_door` added to `InteractableType` and `VALID_INTERACTABLE_TYPES` in `blueprint.ts`
+- [x] `InteractableSystem.onLockedDoor` callback added; handler in main.ts can check inventory and toast accordingly
+- [x] Per-species staircase flavour text: `STAIR_FLAVOUR` object covers all 4 species × floors -1/1/2/3 ✓ (already implemented)
 - [ ] Binding circle on Floor 0 (undead species only): interactable with lore text about the ward
 - [ ] **Unit test:** `LockedDoor` blocks passage with wrong key, opens with correct key, state persists across save/load
 

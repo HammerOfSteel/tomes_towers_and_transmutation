@@ -220,6 +220,9 @@ export function getTalentNode(id: string): TalentNode | undefined {
 export class TalentSystem {
   private readonly _bought = new Set<string>();
 
+  /** Called when a node is successfully purchased. Use for particle/sound FX. */
+  onNodeBought: ((nodeId: string) => void) | null = null;
+
   get boughtNodes(): ReadonlySet<string> { return this._bought; }
 
   hasNode(id: string): boolean { return this._bought.has(id); }
@@ -243,6 +246,7 @@ export class TalentSystem {
     if (!progression.spendTalentPoint(node.cost)) return false;
     this._bought.add(id);
     node.applyEffect(progression);
+    this.onNodeBought?.(id);
     return true;
   }
 

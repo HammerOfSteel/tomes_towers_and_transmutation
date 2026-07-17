@@ -49,7 +49,14 @@ const HUD_CSS = `
 .hud-hp-fill {
   height: 100%; width: 100%;
   background: #44ddff; border-radius: 2px;
-  transition: width .1s ease, background .2s ease;
+  transition: width .25s ease-out, background .2s ease;
+}
+/* Trailing ghost fill — delayed tick-down visual */
+.hud-hp-trail {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: rgba(255,100,60,.45); border-radius: 2px;
+  transition: width .9s ease-out;
+  pointer-events: none;
 }
 
 .hud-val { font-family: monospace; font-size: 10px; color: #4a6677; }
@@ -100,6 +107,55 @@ const HUD_CSS = `
   display: flex; gap: 6px;
   z-index: 100; user-select: none; pointer-events: none;
 }
+
+/* ── Ability bar (above spell bar) ── */
+#hud-abilities {
+  position: fixed; bottom: 116px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  z-index: 100; user-select: none;
+}
+.hud-mana-track {
+  width: 100%; height: 4px;
+  background: rgba(0,0,0,.55); border-radius: 2px; overflow: hidden;
+  min-width: 218px;
+}
+.hud-mana-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0066aa, #44ddff);
+  border-radius: 2px;
+  transition: width 0.12s linear;
+}
+.hud-ab-slots { display: flex; gap: 5px; }
+.hud-ab-slot {
+  position: relative;
+  width: 50px; height: 50px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; overflow: hidden;
+  background: rgba(0,0,0,.58);
+  border: 1px solid #2a1e3a;
+  border-radius: 5px;
+  pointer-events: auto;
+  transition: border-color .12s, box-shadow .12s;
+}
+.hud-ab-slot--ready  { border-color: #5a4072; }
+.hud-ab-slot--active { border-color: #aa60ff; box-shadow: 0 0 10px rgba(170,96,255,.35); }
+.hud-ab-slot--empty  { opacity: 0.35; }
+.hud-ab-slot-key {
+  font-family: var(--hud-font-mono); font-size: 8px; letter-spacing: 1px;
+  color: #4a3060; line-height: 1;
+}
+.hud-ab-slot-icon { font-size: 19px; line-height: 1; }
+.hud-ab-slot--empty .hud-ab-slot-icon { opacity: 0.25; }
+.hud-ab-slot-cd-num {
+  font-family: var(--hud-font-mono); font-size: 9px; color: #aa88cc;
+  min-height: 11px;
+}
+/* Cooldown sweep — same conic-gradient technique as spell slots */
+.hud-ab-cd {
+  position: absolute; inset: 0; border-radius: 4px; pointer-events: none;
+  background: conic-gradient(from -90deg, rgba(0,0,0,.6) 0% var(--cd, 0%), transparent var(--cd, 0%) 100%);
+}
+.hud-ab-slot--no-mana { filter: saturate(0.4); opacity: 0.65; }
 
 /* ── Potion quick-slot bar ── */
 #hud-potions {
@@ -183,6 +239,37 @@ const HUD_CSS = `
   pointer-events: none;
   transition: none;
 }
+/* Cooldown countdown number */
+.hud-slot-cd-num {
+  position: absolute; bottom: 3px; right: 4px;
+  font-family: monospace; font-size: 9px; font-weight: 700;
+  color: rgba(255,230,150,.9);
+  text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  pointer-events: none; line-height: 1;
+}
+/* ── Screen hit flash ── */
+#hud-hit-flash {
+  position: fixed; inset: 0; z-index: 9500;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(255,40,20,.45) 100%);
+  opacity: 0;
+  transition: opacity .08s ease-out;
+}
+#hud-hit-flash.hud-hit-flash--active { opacity: 1; }
+/* ── Low HP border pulse ── */
+@keyframes hud-low-hp-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(255,40,20,0); }
+  50%       { box-shadow: inset 0 0 0 3px rgba(255,40,20,.65); }
+}
+#hud-low-hp-overlay {
+  position: fixed; inset: 0; z-index: 9400;
+  pointer-events: none; border-radius: 0;
+  opacity: 0; transition: opacity .4s ease;
+}
+#hud-low-hp-overlay.hud-low-hp--active {
+  opacity: 1;
+  animation: hud-low-hp-pulse 1.2s ease-in-out infinite;
+}
 
 /* ── Tooltip ── */
 #hud-tooltip {
@@ -260,9 +347,22 @@ export class HUD {
   private _tooltipTimer: ReturnType<typeof setTimeout> | null = null;
   /** Current spell IDs in each slot — read by tooltip closures */
   private _slotSpells: (string | null)[] = [null, null, null, null];
+  /** HP animated trail */
+  private readonly _hpTrailFill: HTMLElement;
+  private _hpTrailTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Screen hit flash + low HP overlay */
+  private readonly _hitFlashEl: HTMLElement;
+  private readonly _lowHpOverlayEl: HTMLElement;
+  private _hitFlashTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Spell slot CD countdown spans */
+  private readonly _slotCdNums: HTMLElement[] = [];
   /** Resource strip */
   private readonly _resRoot: HTMLElement;
   private readonly _resCounts: Record<string, HTMLElement> = {};
+  /** Ability bar */
+  private readonly _abRoot: HTMLElement;
+  private readonly _manaFill: HTMLElement;
+  private readonly _abSlots: Array<{ slot: HTMLElement; iconEl: HTMLElement; cdNumEl: HTMLElement; cdOverlay: HTMLElement }>;
   /** Potion quick-slots */
   private readonly _potRoot: HTMLElement;
   private readonly _potCounts: [HTMLElement, HTMLElement] = [document.createElement('span'), document.createElement('span')];
@@ -298,12 +398,24 @@ export class HUD {
     hpLabel.textContent = 'HP';
     const hpTrack = document.createElement('div');
     hpTrack.className = 'hud-track';
+    hpTrack.style.position = 'relative';
+    this._hpTrailFill = document.createElement('div');
+    this._hpTrailFill.className = 'hud-hp-trail';
+    this._hpTrailFill.style.width = '100%';
     this.hpFill = document.createElement('div');
     this.hpFill.className = 'hud-hp-fill';
-    hpTrack.appendChild(this.hpFill);
+    hpTrack.append(this._hpTrailFill, this.hpFill);
     this.hpText = document.createElement('span');
     this.hpText.className = 'hud-val';
     hpRow.append(hpLabel, hpTrack, this.hpText);
+
+    // ── Hit flash + low HP overlay ───────────────────────────────
+    this._hitFlashEl = document.createElement('div');
+    this._hitFlashEl.id = 'hud-hit-flash';
+    document.body.appendChild(this._hitFlashEl);
+    this._lowHpOverlayEl = document.createElement('div');
+    this._lowHpOverlayEl.id = 'hud-low-hp-overlay';
+    document.body.appendChild(this._lowHpOverlayEl);
 
     // ── Status row ──────────────────────────────────────────────────────
     const statusRow = document.createElement('div');
@@ -385,6 +497,12 @@ export class HUD {
       cdOverlay.className = 'hud-slot-cd';
       slot.appendChild(cdOverlay);
 
+      // Cooldown countdown number
+      const cdNum = document.createElement('span');
+      cdNum.className = 'hud-slot-cd-num';
+      this._slotCdNums.push(cdNum);
+      slot.appendChild(cdNum);
+
       const num = document.createElement('span');
       num.className = 'hud-slot-num';
       num.textContent = String(i + 1);
@@ -417,6 +535,49 @@ export class HUD {
       return slot;
     });
     document.body.appendChild(this.barRoot);
+
+    // ── Ability bar (Q R Z X with mana) ─────────────────────────────────
+    this._abRoot = document.createElement('div');
+    this._abRoot.id = 'hud-abilities';
+
+    const manaTrack = document.createElement('div');
+    manaTrack.className = 'hud-mana-track';
+    this._manaFill = document.createElement('div');
+    this._manaFill.className = 'hud-mana-fill';
+    this._manaFill.style.width = '100%';
+    manaTrack.appendChild(this._manaFill);
+
+    const abSlotRow = document.createElement('div');
+    abSlotRow.className = 'hud-ab-slots';
+
+    const AB_KEYS = ['Q', 'R', 'Z', 'X'];
+    this._abSlots = AB_KEYS.map((key, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'hud-ab-slot hud-ab-slot--empty';
+
+      const keyEl = document.createElement('div');
+      keyEl.className = 'hud-ab-slot-key';
+      keyEl.textContent = key;
+
+      const iconEl = document.createElement('div');
+      iconEl.className = 'hud-ab-slot-icon';
+      iconEl.textContent = '○';
+
+      const cdNumEl = document.createElement('div');
+      cdNumEl.className = 'hud-ab-slot-cd-num';
+
+      const cdOverlay = document.createElement('div');
+      cdOverlay.className = 'hud-ab-cd';
+
+      slot.append(keyEl, iconEl, cdNumEl, cdOverlay);
+      slot.title = `Ability slot ${i + 1} (${key})`;
+      abSlotRow.appendChild(slot);
+
+      return { slot, iconEl, cdNumEl, cdOverlay };
+    });
+
+    this._abRoot.append(abSlotRow, manaTrack);
+    document.body.appendChild(this._abRoot);
 
     // ── Resource strip ──────────────────────────────────────────────────
     this._resRoot = document.createElement('div');
@@ -481,10 +642,27 @@ export class HUD {
     // XP bar
     this.xpLevelEl.textContent = `Lv ${level}`;
     this.xpFill.style.width = `${Math.round(xpProgress * 100)}%`;
-    // HP bar
+    // HP bar + animated trail
     const pct = Math.max(0, hp / maxHp) * 100;
     this.hpFill.style.width      = `${pct}%`;
     this.hpFill.style.background = pct > 50 ? '#44ddff' : pct > 25 ? '#ffcc44' : '#ff4444';
+
+    // Trail: stays at old value, then snaps down after 350ms delay
+    const trailPct = parseFloat(this._hpTrailFill.style.width) || 100;
+    if (pct < trailPct - 0.5) {
+      // HP dropped — let trail linger then animate down
+      if (this._hpTrailTimer) clearTimeout(this._hpTrailTimer);
+      this._hpTrailTimer = setTimeout(() => {
+        this._hpTrailFill.style.width = `${pct}%`;
+        this._hpTrailTimer = null;
+      }, 350);
+    } else if (pct > trailPct + 0.5) {
+      // HP gained — snap trail up immediately
+      this._hpTrailFill.style.width = `${pct}%`;
+    }
+
+    // Low HP pulse border (< 25%)
+    this._lowHpOverlayEl.classList.toggle('hud-low-hp--active', pct < 25);
     this.hpText.textContent      = `${hp} / ${maxHp}`;
 
     // Dodge pips — 0 lit when just used, 3 lit when fully ready
@@ -600,6 +778,50 @@ export class HUD {
     }
   }
 
+  /**
+   * Update the ability bar (Q R Z X slots + mana bar).
+   * @param slotInfos  Array of 4 AbilitySlotInfo objects (from AbilitySystem.getAllSlotInfos())
+   * @param manaFrac   Current mana as 0–1 fraction
+   */
+  setAbilities(
+    slotInfos: Array<{ id: string | null; name: string; icon: string; cdRemaining: number; cdTotal: number; manaCost: number; canCast: boolean }>,
+    manaFrac: number,
+  ): void {
+    // Mana bar
+    this._manaFill.style.width = `${Math.round(Math.max(0, Math.min(1, manaFrac)) * 100)}%`;
+
+    // Slots
+    for (let i = 0; i < 4; i++) {
+      const info  = slotInfos[i];
+      const { slot, iconEl, cdNumEl, cdOverlay } = this._abSlots[i];
+      if (!info || !info.id) {
+        slot.className = 'hud-ab-slot hud-ab-slot--empty';
+        iconEl.textContent = '○';
+        cdNumEl.textContent = '';
+        cdOverlay.style.setProperty('--cd', '0%');
+        continue;
+      }
+
+      const isOnCD = info.cdRemaining > 0.05;
+      const cdPct  = isOnCD ? `${Math.round((info.cdRemaining / info.cdTotal) * 100)}%` : '0%';
+
+      slot.className = 'hud-ab-slot' +
+        (isOnCD   ? '' : info.canCast ? ' hud-ab-slot--ready' : ' hud-ab-slot--no-mana') +
+        (isOnCD && info.cdRemaining < 0.4 ? ' hud-ab-slot--active' : '');
+
+      iconEl.textContent = info.icon || '○';
+      cdOverlay.style.setProperty('--cd', cdPct);
+
+      if (isOnCD) {
+        cdNumEl.textContent = info.cdRemaining >= 10
+          ? String(Math.ceil(info.cdRemaining))
+          : info.cdRemaining.toFixed(1);
+      } else {
+        cdNumEl.textContent = '';
+      }
+    }
+  }
+
   /** Set weather icon in the clock widget.  Provide a state key. */
   setWeather(state: 'clear' | 'cloudy' | 'rain' | 'storm' | null): void {
     this._pendingWeather = state;
@@ -658,15 +880,39 @@ export class HUD {
   }
 
   /** Update the cooldown sweep overlays on the 4 action slots.
-   *  @param fractions Array of 4 values where 0 = ready, 1 = just cast. */
-  setCooldowns(fractions: (number | null)[]): void {
+   *  @param fractions  Array of 4 values where 0 = ready, 1 = just cast.
+   *  @param remaining  Optional array of remaining seconds (shows countdown number). */
+  setCooldowns(fractions: (number | null)[], remaining?: (number | null)[]): void {
     for (let i = 0; i < 4; i++) {
       const slot = this.barSlots[i];
       const cdEl = slot.querySelector<HTMLElement>('.hud-slot-cd');
       if (!cdEl) continue;
       const frac = fractions[i] ?? 0;
       cdEl.style.setProperty('--cd', `${Math.round(frac * 100)}%`);
+
+      const rem = remaining?.[i] ?? 0;
+      const numEl = this._slotCdNums[i];
+      if (numEl) {
+        if (rem > 0.05) {
+          numEl.textContent = rem >= 10 ? String(Math.ceil(rem)) : rem.toFixed(1);
+        } else {
+          numEl.textContent = '';
+        }
+      }
     }
+  }
+
+  /** Flash the screen-edge vignette (player took damage). */
+  flashHit(): void {
+    if (this._hitFlashTimer) {
+      clearTimeout(this._hitFlashTimer);
+      this._hitFlashTimer = null;
+    }
+    this._hitFlashEl.classList.add('hud-hit-flash--active');
+    this._hitFlashTimer = setTimeout(() => {
+      this._hitFlashEl.classList.remove('hud-hit-flash--active');
+      this._hitFlashTimer = null;
+    }, 220);
   }
 
   private _ensureStyles(): void {

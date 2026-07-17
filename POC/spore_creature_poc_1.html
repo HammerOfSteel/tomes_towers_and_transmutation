@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Spore Creature</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Inter', sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #ffffff;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h3>Procedural Creature Generator</h3>
+        <p>Drag to rotate | Scroll to zoom | Use UI to mutate</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // --- Core Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+        scene.fog = new THREE.Fog(0x1a1a2e, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(20, 15, 30);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 3, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; // Don't let camera go too far below ground
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff0dd, 2);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        dirLight.shadow.camera.left = -15;
+        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.camera.top = 15;
+        dirLight.shadow.camera.bottom = -15;
+        scene.add(dirLight);
+
+        const rimLight = new THREE.DirectionalLight(0x88bbff, 1.5);
+        rimLight.position.set(-10, 10, -10);
+        scene.add(rimLight);
+
+        // --- Environment (Ground) ---
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x2a2a3e, 
+            roughness: 0.8, 
+            metalness: 0.2 
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const gridHelper = new THREE.GridHelper(100, 50, 0x000000, 0x000000);
+        gridHelper.material.opacity = 0.2;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+
+        // --- Procedural Generation Parameters ---
+        const params = {
+            color: '#70b533',
+            resolution: 40,
+            spineLength: 10,
+            spineNodes: 7,
+            thickness: 1.2,
+            tailThickness: 0.2,
+            walkSpeed: 3.0,
+            stepSize: 3.0,
+            stepHeight: 2.0,
+            legLength: 4.0,
+            legSpread: 2.5,
+            wiggleAmount: 0.5,
+            spikeHeight: 0.8,
+            hasSpikes: true,
+            isolation: 60 // Marching cubes threshold
+        };
+
+        // --- Marching Cubes (The "Skin") Setup ---
+        const material = new THREE.MeshStandardMaterial({ 
+            color: params.color, 
+            roughness: 0.3, 
+            metalness: 0.1,
+            envMapIntensity: 1.0
+        });
+
+        // The bounds of the Marching Cubes volume. Must be large enough to contain the creature.
+        const volumeScale = 25; 
+        let effect = new MarchingCubes(params.resolution, material, true, true, 100000);
+        effect.position.set(0, 0, 0);
+        effect.scale.set(volumeScale, volumeScale, volumeScale);
+        effect.enableUvs = false;
+        effect.enableColors = false;
+        effect.castShadow = true;
+        effect.receiveShadow = true;
+        scene.add(effect);
+
+        // Helper to convert World Coordinates to Marching Cubes Volume Coordinates [0, 1]
+        function worldToMC(worldVec) {
+            return {
+                x: (worldVec.x / (volumeScale * 2)) + 0.5,
+                y: (worldVec.y / (volumeScale * 2)) + 0.5,
+                z: (worldVec.z / (volumeScale * 2)) + 0.5
+            };
+        }
+
+        function addBlob(pos, strength) {
+            const mcPos = worldToMC(pos);
+            // Ensure blob is within volume bounds to prevent smearing artifacts on the edges
+            if (mcPos.x > 0.05 && mcPos.x < 0.95 && mcPos.y > 0.05 && mcPos.y < 0.95 && mcPos.z > 0.05 && mcPos.z < 0.95) {
+                // subtract=12 is a magic number in THREE.MarchingCubes that represents standard addition
+                effect.addBall(mcPos.x, mcPos.y, mcPos.z, strength, 12);
+            }
+        }
+
+        // --- Creature Rig (Skeleton & Appendages) ---
+        const spine = [];
+        const legs = [];
+        let eyesGroup = new THREE.Group();
+        scene.add(eyesGroup);
+
+        function rebuildRig() {
+            spine.length = 0;
+            legs.length = 0;
+
+            // 1. Build Spine
+            for (let i = 0; i < params.spineNodes; i++) {
+                // Interpolate Z from Head (+Length/2) to Tail (-Length/2)
+                const zPos = (params.spineLength / 2) - (i * (params.spineLength / (params.spineNodes - 1)));
+                // Thickness tapers off towards the tail
+                const tFactor = 1.0 - (i / (params.spineNodes - 1));
+                const radius = params.tailThickness + (params.thickness - params.tailThickness) * Math.sin(tFactor * Math.PI);
+                
+                spine.push({
+                    basePos: new THREE.Vector3(0, 4, zPos),
+                    currentPos: new THREE.Vector3(0, 4, zPos),
+                    radius: radius
+                });
+            }
+
+            // 2. Build Legs (Attach to specific spine nodes)
+            const frontLegNode = 1;
+            const backLegNode = params.spineNodes - 2;
+
+            // Front Left
+            legs.push({ spineIndex: frontLegNode, side: 1, phase: 0 });
+            // Front Right
+            legs.push({ spineIndex: frontLegNode, side: -1, phase: Math.PI });
+            // Back Left
+            legs.push({ spineIndex: backLegNode, side: 1, phase: Math.PI });
+            // Back Right
+            legs.push({ spineIndex: backLegNode, side: -1, phase: 0 });
+
+            // 3. Build Eyes (Predefined Geometries)
+            eyesGroup.clear();
+            
+            const eyeGeo = new THREE.SphereGeometry(0.8, 32, 32);
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+            const pupilGeo = new THREE.SphereGeometry(0.3, 16, 16);
+            const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+            function createEye(offsetX) {
+                const eye = new THREE.Mesh(eyeGeo, eyeMat);
+                const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+                pupil.position.set(0, 0, 0.6); // Slightly forward
+                eye.add(pupil);
+                eye.position.set(offsetX, 1.5, 0.5);
+                
+                // Add an eyelid (metaball aesthetic continuation)
+                const lidGeo = new THREE.SphereGeometry(0.85, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2);
+                const lidMat = material; // Share body material
+                const lid = new THREE.Mesh(lidGeo, lidMat);
+                lid.rotation.x = -Math.PI / 4;
+                eye.add(lid);
+
+                return eye;
+            }
+
+            const leftEye = createEye(1.2);
+            const rightEye = createEye(-1.2);
+            eyesGroup.add(leftEye);
+            eyesGroup.add(rightEye);
+        }
+
+        // --- Procedural Generation & Animation Loop ---
+        const clock = new THREE.Clock();
+
+        function updateCreature() {
+            const time = clock.getElapsedTime();
+            
+            // 1. Reset Marching Cubes volume
+            effect.reset();
+            effect.isolation = params.isolation;
+
+            // 2. Animate and Generate Spine (Body)
+            for (let i = 0; i < spine.length; i++) {
+                const node = spine[i];
+                
+                // Slithering/Breathing animation
+                const slitherOffset = Math.sin(time * params.walkSpeed + i * 0.8) * params.wiggleAmount;
+                const bounceOffset = Math.abs(Math.sin(time * params.walkSpeed * 2)) * 0.2; // slight bounce
+                
+                node.currentPos.x = node.basePos.x + slitherOffset;
+                node.currentPos.y = node.basePos.y + bounceOffset;
+                node.currentPos.z = node.basePos.z;
+
+                // Add main body blob
+                addBlob(node.currentPos, node.radius * 0.08); // Factor scales down for MC threshold
+
+                // Add spikes on the back
+                if (params.hasSpikes && i > 0 && i < spine.length - 1) {
+                    const spikePos = node.currentPos.clone();
+                    spikePos.y += node.radius * 1.5;
+                    addBlob(spikePos, node.radius * params.spikeHeight * 0.03);
+                }
+            }
+
+            // 3. Update Appendages (Eyes)
+            const head = spine[0];
+            const neck = spine[1];
+            eyesGroup.position.copy(head.currentPos);
+            // Make eyes point away from neck to look forward naturally
+            const lookTarget = new THREE.Vector3().subVectors(head.currentPos, neck.currentPos).normalize().multiplyScalar(5).add(head.currentPos);
+            eyesGroup.lookAt(lookTarget);
+
+            // 4. Procedural Leg Animation (Fake IK)
+            legs.forEach(leg => {
+                const hipNode = spine[leg.spineIndex];
+                const hipPos = hipNode.currentPos.clone();
+                hipPos.y -= hipNode.radius * 0.5; // Attach slightly below center
+
+                // Walk Cycle Math
+                const stepPhase = time * params.walkSpeed + leg.phase;
+                
+                // Foot target calculation
+                const footPos = new THREE.Vector3();
+                footPos.x = hipPos.x + (params.legSpread * leg.side);
+                
+                // As stepPhase goes 0->PI: sin is (+), foot lifts. -cos goes (-) to (+), moving forward.
+                // As stepPhase goes PI->2PI: sin is (-), clamped to 0. -cos goes (+) to (-), moving backward.
+                const forwardMovement = -Math.cos(stepPhase);
+                footPos.z = hipNode.basePos.z + forwardMovement * params.stepSize;
+                
+                const lift = Math.max(0, Math.sin(stepPhase));
+                footPos.y = lift * params.stepHeight + 0.5; // +0.5 for foot radius
+
+                // Knee calculation (bend outwards and up)
+                const kneePos = new THREE.Vector3().lerpVectors(hipPos, footPos, 0.5);
+                kneePos.x += (leg.side * 1.5); // bend knees outward
+                kneePos.y += lift * 0.5;       // lift knee extra when stepping
+                kneePos.z += forwardMovement * params.stepSize * 0.2; // knee leads slightly
+
+                // Build the leg using metaballs to seamlessly fuse with the body
+                const legThickness = params.thickness * 0.03;
+                
+                // Add joints
+                addBlob(hipPos, legThickness * 1.2);
+                addBlob(kneePos, legThickness * 0.8);
+                addBlob(footPos, legThickness * 1.0);
+
+                // Add in-between bones for smoothness
+                addBlob(new THREE.Vector3().lerpVectors(hipPos, kneePos, 0.5), legThickness * 0.9);
+                addBlob(new THREE.Vector3().lerpVectors(kneePos, footPos, 0.5), legThickness * 0.8);
+                // Add toes
+                const toePos = footPos.clone();
+                toePos.z += 1.0;
+                toePos.y -= 0.2;
+                addBlob(toePos, legThickness * 0.6);
+            });
+            
+            // Force Marching Cubes geometry to update based on new blobs
+            effect.update();
+        }
+
+        // --- GUI Setup ---
+        const gui = new GUI({ title: 'Spore Mutator' });
+        
+        gui.addColor(params, 'color').name('Skin Color').onChange(c => material.color.set(c));
+        
+        const geoFolder = gui.addFolder('Morphology');
+        geoFolder.add(params, 'thickness', 0.5, 3.0).name('Body Thickness');
+        geoFolder.add(params, 'tailThickness', 0.1, 1.5).name('Tail Thickness');
+        geoFolder.add(params, 'spineLength', 5, 15).name('Spine Length').onChange(rebuildRig);
+        geoFolder.add(params, 'legSpread', 1.0, 5.0).name('Leg Width');
+        geoFolder.add(params, 'hasSpikes').name('Back Spikes');
+        
+        const animFolder = gui.addFolder('Animation');
+        animFolder.add(params, 'walkSpeed', 0, 10).name('Walk Speed');
+        animFolder.add(params, 'stepSize', 0, 5).name('Stride Length');
+        animFolder.add(params, 'stepHeight', 0, 5).name('Step Height');
+        animFolder.add(params, 'wiggleAmount', 0, 2).name('Wiggle Amount');
+
+        const perfFolder = gui.addFolder('Performance');
+        perfFolder.add(params, 'resolution', 20, 80, 1).name('Mesh Detail (MC)').onChange(res => {
+            scene.remove(effect);
+            effect = new MarchingCubes(res, material, true, true, 100000);
+            effect.position.set(0, 0, 0);
+            effect.scale.set(volumeScale, volumeScale, volumeScale);
+            effect.enableUvs = false;
+            effect.enableColors = false;
+            effect.castShadow = true;
+            effect.receiveShadow = true;
+            scene.add(effect);
+        });
+
+        // --- Main Loop ---
+        rebuildRig();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateCreature();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

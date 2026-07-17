@@ -41,6 +41,11 @@ export class OWMinimap {
   /** Whether the minimap is currently visible. */
   private _visible = true;
   private _questPins: Array<{ col: number; row: number }> = [];
+  /** Fog-of-war: set of visited cell keys ("col,row") revealed by player movement. */
+  private readonly _explored = new Set<string>();
+  /** Tower grid position (centre of world). Drawn as a purple star. */
+  private _towerCol = 0;
+  private _towerRow = 0;
 
   /** Update the quest target pins shown on the minimap. */
   setQuestPins(pins: Array<{ col: number; row: number }>): void {
@@ -51,6 +56,9 @@ export class OWMinimap {
     const { grid, settlements, dungeons } = worldData;
     this._gw = grid.width;
     this._gh = grid.height;
+    // Tower is at world-space (0,0) → grid centre
+    this._towerCol = Math.floor(this._gw / 2);
+    this._towerRow = Math.floor(this._gh / 2);
 
     // ── Wrapper div ──────────────────────────────────────────────────────────
     this._wrap = document.createElement('div');
@@ -89,6 +97,7 @@ export class OWMinimap {
     this._renderTerrain(grid);
     this._renderSettlements(settlements ?? []);
     this._renderDungeons(dungeons ?? []);
+    this._renderTower();
 
     // ── Keyboard toggle [M] ─────────────────────────────────────────────────
     this._onKey = this._onKey.bind(this);
@@ -158,6 +167,29 @@ export class OWMinimap {
     }
   }
 
+  private _renderTower(): void {
+    const ctx = this._bgCtx;
+    const x = this._cx(this._towerCol);
+    const y = this._cy(this._towerRow);
+    // Draw a small 5-pointed star for the wizard's tower
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+      const r = i % 2 === 0 ? 5.5 : 2.5;
+      i === 0 ? ctx.moveTo(Math.cos(a) * 5.5, Math.sin(a) * 5.5)
+              : ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#cc88ff';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(180,100,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private _renderDungeons(dungeons: DungeonEntry[]): void {
     const ctx = this._bgCtx;
     for (const d of dungeons) {
@@ -187,8 +219,32 @@ export class OWMinimap {
 
   /** Call once per frame from the overworld update loop. */
   updatePlayer(col: number, row: number): void {
+    // Reveal cells in a radius around the player
+    const REVEAL_R = 5;
+    for (let dc = -REVEAL_R; dc <= REVEAL_R; dc++) {
+      for (let dr = -REVEAL_R; dr <= REVEAL_R; dr++) {
+        if (dc * dc + dr * dr <= REVEAL_R * REVEAL_R) {
+          const c = Math.max(0, Math.min(this._gw - 1, col + dc));
+          const r = Math.max(0, Math.min(this._gh - 1, row + dr));
+          this._explored.add(`${c},${r}`);
+        }
+      }
+    }
+
     const ctx = this._ovCtx;
     ctx.clearRect(0, 0, MAP_PX, MAP_PX);
+
+    // Fog-of-war: cover unexplored cells with a dark overlay
+    const pw = MAP_PX / this._gw;
+    const ph = MAP_PX / this._gh;
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    for (let r = 0; r < this._gh; r++) {
+      for (let c = 0; c < this._gw; c++) {
+        if (!this._explored.has(`${c},${r}`)) {
+          ctx.fillRect(c * pw, r * ph, Math.ceil(pw) + 1, Math.ceil(ph) + 1);
+        }
+      }
+    }
 
     const x = this._cx(col);
     const y = this._cy(row);

@@ -29,6 +29,8 @@ export interface DevPanelOptions {
   getInstantCooldowns: () => boolean;
   /** Unlock and equip all known spells. */
   onAllSpells: () => void;
+  /** Grant all species abilities (Q, R) + universal Blink (Z) + Levitate (X). */
+  onAllAbilities?: () => void;
   /** Restore player HP to full. */
   onFillHp: () => void;
   /** Set player HP to a precise value. */
@@ -362,10 +364,13 @@ export class DevPanel {
     cdRow.append(cdInfo, cdCb);
     sec.appendChild(cdRow);
 
-    // All spells button
+    // All spells + abilities buttons
     const row = document.createElement('div');
     row.className = 'dp-row';
     row.appendChild(this._btn('✨  All Spells', false, () => this._opts.onAllSpells()));
+    if (this._opts.onAllAbilities) {
+      row.appendChild(this._btn('🪄  All Abilities', false, () => this._opts.onAllAbilities!()));
+    }
     sec.appendChild(row);
     return sec;
   }

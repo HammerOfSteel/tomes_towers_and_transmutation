@@ -30,6 +30,7 @@ const PROMPT_LABELS: Record<string, string> = {
   crate:          'crate',
   chest:          'chest',
   workbench_key:  'master key',
+  locked_door:    'locked door',
 };
 
 /** Items that are purely decorative — no interaction prompt shown. */
@@ -102,6 +103,12 @@ export class InteractableSystem {
 
   /** Attempt to interact with the nearest item.
    *  @returns `true` if an interaction was triggered; `false` if nothing was nearby. */
+  /** Called when player attempts to open a locked_door.
+   *  The system checks the inventory for the required key; this callback is
+   *  invoked with true if the door opened, false if it rattled (wrong/no key).
+   *  The `content` field of the interactable specifies the required key item ID. */
+  onLockedDoor: ((doorId: string, requiredKey: string, hasKey: boolean) => void) | null = null;
+
   tryRead(): boolean {
     if (!this.nearby || this.bookReader.isOpen) return false;
     const item = this.nearby;
@@ -115,6 +122,14 @@ export class InteractableSystem {
     // Master key — one-time pickup
     if (item.type === 'workbench_key') {
       this.onKeyPickup?.();
+      return true;
+    }
+
+    // Locked door — requires a specific key item in inventory.
+    // The caller's onLockedDoor handler is responsible for inventory checking.
+    if (item.type === 'locked_door') {
+      const requiredKey = item.content ?? 'master_key';
+      this.onLockedDoor?.(item.id, requiredKey, false /* caller checks */);
       return true;
     }
 
@@ -176,15 +191,15 @@ export class InteractableSystem {
     }
     const label = PROMPT_LABELS[item.type] ?? item.type;
     // Verb depends on object type
-    const verb = item.type === 'telescope'
-      ? 'Use'
-      : item.type === 'workbench_key'
-        ? 'Take'
-        : (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type)
-          ? 'Examine'
-          : item.type === 'quest_board'
-            ? 'Browse'
-            : this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
+    const verb =
+      item.type === 'telescope'    ? 'Use' :
+      item.type === 'workbench_key' ? 'Take' :
+      item.type === 'locked_door'   ? 'Try' :
+      item.type === 'chest'         ? 'Open' :
+      item.type === 'barrel' || item.type === 'crate' ? 'Search' :
+      (['cauldron', 'forge', 'greenhouse_orb'] as string[]).includes(item.type) ? 'Examine' :
+      item.type === 'quest_board'   ? 'Browse' :
+      this.progression.hasRead(item.id) ? 'Re-read' : 'Read';
     this.promptEl.innerHTML = `<kbd style="${KBD_STYLE}">E</kbd>&nbsp; ${verb} ${label}`;
     this.promptEl.style.opacity = '1';
   }

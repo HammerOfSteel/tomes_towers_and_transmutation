@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model Review — TT&T</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0e0e14; color: #c0a0f0; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+
+    #app { display: flex; height: 100vh; }
+
+    /* ── Viewport ── */
+    #viewport-wrap {
+      flex: 1;
+      position: relative;
+      background: #141820;
+    }
+    #c { display: block; width: 100%; height: 100%; }
+
+    /* ── Side panel ── */
+    #side-panel {
+      width: 300px;
+      flex-shrink: 0;
+      background: #12101a;
+      border-left: 1px solid #2a1e40;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Model list ── */
+    #model-list-section {
+      flex: 1;
+      overflow-y: auto;
+      border-bottom: 1px solid #2a1e40;
+    }
+    #model-list { list-style: none; }
+    #model-list li {
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: .75rem;
+      border-bottom: 1px solid #1a1228;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #model-list li:hover { background: #1e1530; }
+    #model-list li.active { background: #2a1848; color: #e0b8ff; }
+    #model-list li .pack-tag {
+      font-size: .62rem;
+      color: #4a3860;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    #model-list li .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      background: #333;
+    }
+    #model-list li.status-ok   .status-dot { background: #40e080; }
+    #model-list li.status-warn .status-dot { background: #e0a030; }
+    #model-list li.status-err  .status-dot { background: #e04040; }
+
+    /* ── Stats & controls ── */
+    #info-section {
+      padding: 10px;
+      font-size: .72rem;
+      flex-shrink: 0;
+    }
+    #model-title {
+      font-size: .9rem;
+      font-weight: 700;
+      color: #e0b8ff;
+      margin-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #stats-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 2px 8px;
+      color: #786090;
+      margin-bottom: 8px;
+    }
+    #stats-grid .lbl { color: #4a3860; }
+    #stats-grid .val { color: #c0a0f0; }
+    #stats-grid .val.ok   { color: #40e080; }
+    #stats-grid .val.warn { color: #e0a030; }
+    #stats-grid .val.err  { color: #e04040; }
+    .section-title {
+      font-size: .65rem;
+      font-weight: 700;
+      color: #4a3860;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin: 8px 0 4px;
+    }
+
+    /* ── Anim controls ── */
+    #anim-controls { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
+    .anim-btn {
+      font-size: .65rem;
+      padding: 2px 7px;
+      background: #1e1530;
+      border: 1px solid #3a2860;
+      border-radius: 3px;
+      color: #c0a0f0;
+      cursor: pointer;
+    }
+    .anim-btn:hover { background: #2a1848; }
+    .anim-btn.playing { background: #7040cc; border-color: #9060ee; color: #fff; }
+    .anim-btn.stop { background: #3a1010; border-color: #601010; color: #e06060; }
+
+    /* ── Camera preset buttons ── */
+    #cam-controls { display: flex; gap: 3px; margin-bottom: 6px; }
+    .cam-btn {
+      font-size: .65rem;
+      padding: 2px 7px;
+      background: #1e1530;
+      border: 1px solid #3a2860;
+      border-radius: 3px;
+      color: #786090;
+      cursor: pointer;
+      flex: 1;
+      text-align: center;
+    }
+    .cam-btn:hover { background: #2a1848; color: #c0a0f0; }
+    .cam-btn.active { background: #241a3a; color: #c0a0f0; }
+
+    /* ── Filter / role ── */
+    #filter-bar {
+      display: flex;
+      gap: 4px;
+      padding: 6px 10px;
+      border-bottom: 1px solid #2a1e40;
+      flex-shrink: 0;
+    }
+    #filter-inp {
+      flex: 1;
+      background: #1a1228;
+      border: 1px solid #3a2860;
+      border-radius: 3px;
+      color: #c0a0f0;
+      font-size: .72rem;
+      padding: 2px 6px;
+    }
+    .role-btn {
+      font-size: .65rem;
+      padding: 2px 6px;
+      background: #1a1228;
+      border: 1px solid #3a2860;
+      border-radius: 3px;
+      color: #786090;
+      cursor: pointer;
+    }
+    .role-btn.active { background: #7040cc; color: #fff; border-color: #9060ee; }
+
+    /* ── Viewport overlay ── */
+    #loading-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(10,8,16,.85);
+      font-size: 1rem;
+      color: #786090;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+    #loading-overlay.hidden { opacity: 0; }
+
+    #nav-bar {
+      position: absolute;
+      bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 8px;
+    }
+    .nav-btn {
+      font-size: .75rem;
+      padding: 4px 14px;
+      background: rgba(20,16,30,.85);
+      border: 1px solid #3a2860;
+      border-radius: 3px;
+      color: #c0a0f0;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+    }
+    .nav-btn:hover { background: rgba(112,64,204,.5); }
+
+    #scale-info {
+      position: absolute;
+      top: 10px; left: 10px;
+      font-size: .7rem;
+      color: #4a3860;
+      pointer-events: none;
+    }
+
+    #error-banner {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      background: #400808;
+      color: #ff8080;
+      font-size: .75rem;
+      padding: 4px 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="viewport-wrap">
+      <canvas id="c"></canvas>
+      <div id="loading-overlay">Loading…</div>
+      <div id="error-banner"></div>
+      <div id="scale-info"></div>
+      <div id="nav-bar">
+        <button class="nav-btn" id="btn-prev">◄ Prev</button>
+        <button class="nav-btn" id="btn-next">Next ►</button>
+      </div>
+    </div>
+    <div id="side-panel">
+      <div id="filter-bar">
+        <input id="filter-inp" type="text" placeholder="filter…" />
+        <button class="role-btn active" data-role="all">All</button>
+        <button class="role-btn" data-role="enemy">⚔</button>
+        <button class="role-btn" data-role="npc">👥</button>
+        <button class="role-btn" data-role="player">🧙</button>
+        <button class="role-btn" id="btn-anim-only" title="Show only animated models (default)">🎬</button>
+      </div>
+      <div id="model-list-section">
+        <ul id="model-list"></ul>
+      </div>
+      <div id="info-section">
+        <div id="model-title">—</div>
+        <div id="stats-grid"></div>
+        <div class="section-title">Camera</div>
+        <div id="cam-controls">
+          <button class="cam-btn active" data-angle="front">Front</button>
+          <button class="cam-btn" data-angle="side">Side</button>
+          <button class="cam-btn" data-angle="iso">Iso</button>
+          <button class="cam-btn" data-angle="top">Top</button>
+        </div>
+        <div class="section-title">Animations</div>
+        <div id="anim-controls"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/model-review.ts"></script>
+</body>
+</html>

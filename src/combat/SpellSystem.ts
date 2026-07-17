@@ -14,7 +14,7 @@ const MAX_SPARK_BURSTS = Math.floor(512 / 22); // 23
 
 // ── Spell definitions ─────────────────────────────────────────────────────────
 
-export type SpellType = 'projectile' | 'aoe' | 'chain' | 'zone' | 'buff';
+export type SpellType = 'projectile' | 'aoe' | 'chain' | 'zone' | 'buff' | 'movement';
 
 interface SpellDef {
   type: SpellType;
@@ -39,6 +39,10 @@ const SPELL_DEFS: Record<string, SpellDef> = {
   void_rift:    { type: 'zone',       color: 0x7733cc, emissive: 0x330066, damage: 3, speed: 0,  radius: 2,    cooldown: 12, dotDuration: 8 },
   battle_hymn:  { type: 'buff',       color: 0xffcc44, emissive: 0xaa7700, damage: 0, speed: 0,  radius: 0,    cooldown: 20, buffDuration: 12 },
   mass_animate: { type: 'aoe',        color: 0x88aa77, emissive: 0x334422, damage: 0, speed: 0,  radius: 6,    cooldown: 30, aoeVfxDuration: 1.5 },
+  // ── Movement spells ──────────────────────────────────────────────────────
+  blink:        { type: 'movement',   color: 0xaa44ff, emissive: 0x660099, damage: 0, speed: 0,  radius: 0,    cooldown: 8  },
+  levitate:     { type: 'movement',   color: 0x88ddff, emissive: 0x224455, damage: 0, speed: 0,  radius: 0,    cooldown: 1  },
+  fly:          { type: 'movement',   color: 0xffdd44, emissive: 0x886600, damage: 0, speed: 0,  radius: 0,    cooldown: 12 },
 };
 
 const FALLBACK_DEF = SPELL_DEFS.magic_bolt;
@@ -59,6 +63,12 @@ export interface CastOptions {
   party?: PartyManager;
   onForceFlee?: (enemies: (Damageable & { forceFlee?(): void })[]) => void;
   onBattleHymn?: (duration: number) => void;
+  /** Blink: teleport player to destination. Already wall-checked by caller. */
+  onBlink?: (destination: THREE.Vector3) => void;
+  /** Levitate: toggle hover mode on the player. */
+  onLevitateToggle?: () => void;
+  /** Fly burst: launch player in facing direction for given duration/speed. */
+  onFlyBurst?: (facingAngle: number) => void;
 }
 
 // ── Projectile — comet with glowing core + additive trail ─────────────────────
@@ -997,6 +1007,14 @@ export class SpellSystem {
     return cd.remaining / cd.duration;
   }
 
+  /** Returns remaining cooldown in seconds (0 when ready). */
+  cooldownRemaining(spellId: string): number {
+    if (this.instantCooldowns) return 0;
+    const cd = this._cooldowns.get(spellId);
+    if (!cd || cd.remaining <= 0) return 0;
+    return cd.remaining;
+  }
+
   isReady(spellId: string): boolean {
     if (this.instantCooldowns) return true;
     const cd = this._cooldowns.get(spellId);
@@ -1052,6 +1070,9 @@ export class SpellSystem {
         break;
       case 'buff':
         this._fireBuff(origin, def, scene, opts);
+        break;
+      case 'movement':
+        this._fireMovement(spellId, origin, def, scene, opts);
         break;
     }
 
@@ -1448,5 +1469,83 @@ export class SpellSystem {
     if (opts.party) {
       opts.party.followerDamageMult = 1.5;
     }
+  }
+
+  // ── Movement spells ─────────────────────────────────────────────────────
+
+  private _fireMovement(
+    spellId: string,
+    origin: THREE.Vector3,
+    def: SpellDef,
+    scene: THREE.Scene,
+    opts: CastOptions,
+  ): void {
+    if (spellId === 'blink') {
+      // VFX at origin; destination computed + wall-checked by caller via onBlink
+      this._blinkVfx(origin, def.color, scene);
+      opts.onBlink?.(origin);   // caller receives origin, calculates dest from mouseWorld
+    } else if (spellId === 'levitate') {
+      // Toggle levitation — player floats up and holds height
+      this._addSpark(origin, def.color, 3.0, scene);
+      opts.onLevitateToggle?.();
+    } else if (spellId === 'fly') {
+      // Burst of speed in facing direction
+      this._addSpark(origin, def.color, 5.0, scene);
+      opts.onFlyBurst?.(0 /* facingAngle from player */);
+    }
+  }
+
+  /** Blink VFX: fading ring at origin + flash sphere at destination offset. */
+  /** Shadow smoke at the blink origin — dark wisps that rise and dissolve. */
+  private _blinkVfx(origin: THREE.Vector3, _color: number, scene: THREE.Scene): void {
+    // 4 dark shadow wisps rising from origin — no bright colors, no arcane ring
+    for (let i = 0; i < 4; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x110016,
+        transparent: true,
+        opacity: 0.7 - i * 0.12,
+      });
+      const geo = new THREE.SphereGeometry(0.18 + i * 0.06, 6, 4);
+      const mesh = new THREE.Mesh(geo, mat);
+      const angle = (i / 4) * Math.PI * 2;
+      mesh.position.set(
+        origin.x + Math.cos(angle) * 0.3,
+        origin.y + 0.4,
+        origin.z + Math.sin(angle) * 0.3,
+      );
+      scene.add(mesh);
+
+      const startT = performance.now();
+      const riseSpeed = 1.2 + i * 0.3;
+      const animate = () => {
+        const t = (performance.now() - startT) / 550;
+        if (t >= 1) { scene.remove(mesh); geo.dispose(); mat.dispose(); return; }
+        // Wavy upward drift — each wisp wobbles slightly sideways
+        mesh.position.y = origin.y + 0.4 + t * riseSpeed;
+        mesh.position.x = origin.x + Math.cos(angle) * 0.3 + Math.sin(t * 6 + i) * 0.1;
+        mesh.position.z = origin.z + Math.sin(angle) * 0.3 + Math.cos(t * 6 + i) * 0.1;
+        mat.opacity = (0.7 - i * 0.12) * (1 - t);
+        mesh.scale.setScalar(1 + t * 0.6);
+        requestAnimationFrame(animate);
+      };
+      requestAnimationFrame(animate);
+    }
+
+    // Dark shadow disc on the ground
+    const discGeo = new THREE.CircleGeometry(0.7, 20);
+    discGeo.rotateX(-Math.PI / 2);
+    const discMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.position.set(origin.x, origin.y + 0.02, origin.z);
+    scene.add(disc);
+    const discStart = performance.now();
+    const animDisc = () => {
+      const t = (performance.now() - discStart) / 400;
+      if (t >= 1) { scene.remove(disc); discGeo.dispose(); discMat.dispose(); return; }
+      discMat.opacity = 0.55 * (1 - t * t);
+      disc.scale.setScalar(1 + t * 1.2);
+      requestAnimationFrame(animDisc);
+    };
+    requestAnimationFrame(animDisc);
   }
 }

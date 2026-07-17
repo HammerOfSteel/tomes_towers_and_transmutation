@@ -4,6 +4,12 @@
 //  The TowerGenerator consumes these to produce deterministic per-floor blueprints.
 
 import type { FloorType, InteractableType, Rotation } from './blueprint';
+import type { RoomEncounterDef } from './RoomEncounterDef';
+import {
+  ENCOUNTER_POOL_F1, ENCOUNTER_POOL_F2,
+  ENCOUNTER_POOL_F4, ENCOUNTER_POOL_F5, ENCOUNTER_POOL_F6,
+  ENCOUNTER_POOL_F7, ENCOUNTER_POOL_F8, ENCOUNTER_POOL_F9,
+} from './RoomEncounterDef';
 
 export interface FixtureDef {
   type: InteractableType;
@@ -71,6 +77,13 @@ export interface TowerFloorDef {
    * Use for barrels, crates, chests, and narrative key items.
    */
   chamberScatter?: readonly ScatterEntry[];
+  /**
+   * Designed room encounters for this floor's side rooms (Phase B3).
+   * When present, SceneManager selects one entry (seeded by room ID) and
+   * spawns the specified enemies instead of the generic `enemiesPerRoom` count.
+   * Floors without a pool fall back to the existing slime-count logic.
+   */
+  encounterPool?: readonly RoomEncounterDef[];
 }
 
 export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
@@ -231,7 +244,9 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'globe', x: 4, z: 10 },
       // Rugs under each reading table
       { type: 'rug', x: 5, z: 5 },
-    ],  },
+    ],
+    encounterPool: ENCOUNTER_POOL_F1,
+  },
 
   // ── Floor 2 — The Fermentation Level ────────────────────────────────────────
   {
@@ -267,6 +282,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'barrel', x: 13, z: 12,
         content: 'A sealed barrel marked \'BATCH 89 — DO NOT DISTURB UNTIL THE NEXT CONVERGENCE\'. The date is illegible.' },
     ],
+    encounterPool: ENCOUNTER_POOL_F2,
   },
 
   // ── Floor 3 — The Wizard's Chambers (player start) ───────────────────────────
@@ -340,6 +356,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'barrel', x: 3, z: 8,
         content: 'A barrel of coal dust mixed with arcane reagent. The label says "GRADE A SCORCHITE". It is very illegal.' },
     ],
+    encounterPool: ENCOUNTER_POOL_F4,
   },
 
   // ── Floor 5 — The Minion Barracks ────────────────────────────────────────────
@@ -368,6 +385,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'bunk', x: 12, z: 12 },
       { type: 'mess_table', x: 8, z: 10 },
     ],
+    encounterPool: ENCOUNTER_POOL_F5,
   },
 
   // ── Floor 6 — The War Room ───────────────────────────────────────────────────
@@ -397,6 +415,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'weapon_stand', x: 12, z: 12 },
       { type: 'banner', x: 8, z: 2, rotation: 180 as const },
     ],
+    encounterPool: ENCOUNTER_POOL_F6,
   },
 
   // ── Floor 7 — The Botanical Laboratory ──────────────────────────────────────
@@ -427,6 +446,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'plant_pot', x: 3, z: 8 },
       { type: 'plant_pot', x: 13, z: 8 },
     ],
+    encounterPool: ENCOUNTER_POOL_F7,
   },
 
   // ── Floor 8 — The Forbidden Archive ─────────────────────────────────────────
@@ -468,6 +488,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'bookshelf', x: 13, z: 12, rotation: 180 as const,
         content: 'Scrolls sealed with seven different wax stamps. One of the stamps is a thumbprint. A very large thumbprint.' },
     ],
+    encounterPool: ENCOUNTER_POOL_F8,
   },
 
   // ── Floor 9 — The Celestial Observatory ─────────────────────────────────────
@@ -496,6 +517,7 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'globe', x: 11, z: 11 },
       { type: 'rug', x: 8, z: 8 },
     ],
+    encounterPool: ENCOUNTER_POOL_F9,
   },
 ];
 

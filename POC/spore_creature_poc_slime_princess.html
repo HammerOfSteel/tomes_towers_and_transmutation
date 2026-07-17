@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Spore Creature</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Inter', sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #ffffff;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h3>Procedural Creature Generator</h3>
+        <p>Drag to rotate | Scroll to zoom | Use UI to mutate</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // --- Core Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+        scene.fog = new THREE.Fog(0x1a1a2e, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(20, 15, 30);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 3, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; // Don't let camera go too far below ground
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff0dd, 2);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        dirLight.shadow.camera.left = -15;
+        dirLight.shadow.camera.right = 15;
+        dirLight.shadow.camera.top = 15;
+        dirLight.shadow.camera.bottom = -15;
+        scene.add(dirLight);
+
+        const rimLight = new THREE.DirectionalLight(0x88bbff, 1.5);
+        rimLight.position.set(-10, 10, -10);
+        scene.add(rimLight);
+
+        // --- Environment (Ground) ---
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x2a2a3e, 
+            roughness: 0.8, 
+            metalness: 0.2 
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const gridHelper = new THREE.GridHelper(100, 50, 0x000000, 0x000000);
+        gridHelper.material.opacity = 0.2;
+        gridHelper.material.transparent = true;
+        scene.add(gridHelper);
+
+        // --- Procedural Generation Parameters ---
+        const params = {
+            color: '#33b5a8', // Slime cyan/mint
+            resolution: 45,
+            headSize: 2.5,
+            bodyThickness: 1.2,
+            armLength: 3.5,
+            legLength: 4.0,
+            legSpread: 1.2,
+            walkSpeed: 4.0,
+            strideLength: 2.0,
+            stepHeight: 1.5,
+            bounceAmount: 0.4,
+            isolation: 60 // Marching cubes threshold
+        };
+
+        // --- Marching Cubes (The "Skin") Setup ---
+        // Using Physical Material for a translucent, jelly/slime look
+        const material = new THREE.MeshPhysicalMaterial({ 
+            color: params.color, 
+            roughness: 0.1, 
+            metalness: 0.05,
+            transmission: 0.6, // Glass-like transparency
+            thickness: 2.0,    // Refraction volume
+            ior: 1.4,          // Index of refraction (water/gel)
+            envMapIntensity: 2.0
+        });
+
+        // The bounds of the Marching Cubes volume.
+        const volumeScale = 15; 
+        let effect = new MarchingCubes(params.resolution, material, true, true, 100000);
+        effect.position.set(0, 0, 0);
+        effect.scale.set(volumeScale, volumeScale, volumeScale);
+        effect.enableUvs = false;
+        effect.enableColors = false;
+        effect.castShadow = true;
+        effect.receiveShadow = true;
+        scene.add(effect);
+
+        // Helper to convert World Coordinates to Marching Cubes Volume Coordinates [0, 1]
+        function worldToMC(worldVec) {
+            return {
+                x: (worldVec.x / (volumeScale * 2)) + 0.5,
+                y: (worldVec.y / (volumeScale * 2)) + 0.5,
+                z: (worldVec.z / (volumeScale * 2)) + 0.5
+            };
+        }
+
+        function addBlob(pos, strength) {
+            const mcPos = worldToMC(pos);
+            // Ensure blob is within volume bounds to prevent smearing artifacts on the edges
+            if (mcPos.x > 0.05 && mcPos.x < 0.95 && mcPos.y > 0.05 && mcPos.y < 0.95 && mcPos.z > 0.05 && mcPos.z < 0.95) {
+                effect.addBall(mcPos.x, mcPos.y, mcPos.z, strength, 12);
+            }
+        }
+
+        // --- Creature Rig (Skeleton & Appendages) ---
+        let eyesGroup = new THREE.Group();
+        scene.add(eyesGroup);
+
+        // Base structural points for the biped
+        const rig = {
+            headY: 9.0,
+            chestY: 6.0,
+            pelvisY: 4.5,
+            shoulderWidth: 1.8
+        };
+
+        function rebuildRig() {
+            // Build Chibi Eyes (Larger, cuter proportions)
+            eyesGroup.clear();
+            
+            const eyeGeo = new THREE.SphereGeometry(0.8, 32, 32);
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+            const pupilGeo = new THREE.SphereGeometry(0.35, 16, 16);
+            const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111 }); // Darker pupils
+            const highlightGeo = new THREE.SphereGeometry(0.15, 8, 8);
+            const highlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+            function createEye(offsetX) {
+                const eye = new THREE.Mesh(eyeGeo, eyeMat);
+                
+                const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+                pupil.position.set(0, 0, 0.55); 
+                
+                const highlight = new THREE.Mesh(highlightGeo, highlightMat);
+                highlight.position.set(0.15, 0.15, 0.75); // Anime sparkle
+                
+                eye.add(pupil);
+                eye.add(highlight);
+                
+                // Position eyes lower and wider for chibi look
+                eye.position.set(offsetX, -0.2, 2.0); 
+                
+                // Slime eyelids blending in
+                const lidGeo = new THREE.SphereGeometry(0.85, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2.2);
+                const lidMat = material; 
+                const lid = new THREE.Mesh(lidGeo, lidMat);
+                lid.rotation.x = -Math.PI / 3;
+                eye.add(lid);
+
+                return eye;
+            }
+
+            const leftEye = createEye(1.0);
+            const rightEye = createEye(-1.0);
+            eyesGroup.add(leftEye);
+            eyesGroup.add(rightEye);
+        }
+
+        // --- Procedural Generation & Animation Loop ---
+        const clock = new THREE.Clock();
+
+        function updateCreature() {
+            const time = clock.getElapsedTime();
+            
+            effect.reset();
+            effect.isolation = params.isolation;
+
+            // 1. Calculate Core Bobbing (Bipedal walk bounce)
+            const walkPhase = time * params.walkSpeed;
+            const bounce = Math.abs(Math.sin(walkPhase)) * params.bounceAmount;
+            
+            // Core Nodes
+            const currentHeadY = rig.headY + bounce;
+            const currentChestY = rig.chestY + bounce;
+            const currentPelvisY = rig.pelvisY + bounce;
+
+            // 2. Build Torso & Head
+            // Head
+            const headPos = new THREE.Vector3(0, currentHeadY, 0);
+            addBlob(headPos, params.headSize * 0.08);
+            
+            // "Hair" / Slime Twintails (adds volume to the head silhouette)
+            const hairSway = Math.sin(time * 2) * 0.2;
+            addBlob(new THREE.Vector3(-2.2, currentHeadY - 1, -1 + hairSway), params.headSize * 0.04);
+            addBlob(new THREE.Vector3(2.2, currentHeadY - 1, -1 - hairSway), params.headSize * 0.04);
+
+            // Torso (Chest to Pelvis)
+            addBlob(new THREE.Vector3(0, currentChestY, 0), params.bodyThickness * 0.08);
+            addBlob(new THREE.Vector3(0, currentPelvisY, 0), params.bodyThickness * 0.1); // Slightly wider hips
+            // Midriff connector
+            addBlob(new THREE.Vector3(0, (currentChestY + currentPelvisY) / 2, 0), params.bodyThickness * 0.07);
+
+            // 3. Update Eyes Group to track head
+            eyesGroup.position.copy(headPos);
+            // Tiny subtle head bob look-at
+            eyesGroup.lookAt(new THREE.Vector3(0, currentHeadY, 10));
+
+            // 4. Procedural Limbs (Fake IK)
+            const limbs = [
+                { type: 'leg', side: 1, phase: 0 },
+                { type: 'leg', side: -1, phase: Math.PI },
+                { type: 'arm', side: 1, phase: Math.PI }, // Arms swing opposite to legs
+                { type: 'arm', side: -1, phase: 0 }
+            ];
+
+            limbs.forEach(limb => {
+                const limbPhase = walkPhase + limb.phase;
+                const forwardMovement = -Math.cos(limbPhase);
+                const lift = Math.max(0, Math.sin(limbPhase));
+
+                if (limb.type === 'leg') {
+                    // Hip position
+                    const hipPos = new THREE.Vector3(params.legSpread * limb.side, currentPelvisY, 0);
+                    
+                    // Foot position (treadmill style)
+                    const footPos = new THREE.Vector3();
+                    footPos.x = hipPos.x;
+                    footPos.y = lift * params.stepHeight + 0.5; // Floor + foot radius
+                    footPos.z = forwardMovement * params.strideLength;
+
+                    // Knee bends forward and slightly out
+                    const kneePos = new THREE.Vector3().lerpVectors(hipPos, footPos, 0.5);
+                    kneePos.z += lift * 1.5; // bend knee forward
+                    kneePos.x += limb.side * 0.2; 
+
+                    const thickness = params.bodyThickness * 0.035;
+                    addBlob(hipPos, thickness * 1.2);
+                    addBlob(kneePos, thickness * 0.9);
+                    addBlob(footPos, thickness * 1.1);
+                    
+                    // Thigh and Calf connectors
+                    addBlob(new THREE.Vector3().lerpVectors(hipPos, kneePos, 0.5), thickness * 1.0);
+                    addBlob(new THREE.Vector3().lerpVectors(kneePos, footPos, 0.5), thickness * 0.9);
+
+                } else if (limb.type === 'arm') {
+                    // Shoulder position
+                    const shoulderPos = new THREE.Vector3(rig.shoulderWidth * limb.side, currentChestY, 0);
+                    
+                    // Hand position (swinging)
+                    const handPos = new THREE.Vector3();
+                    handPos.x = shoulderPos.x + (limb.side * 0.5); // hang slightly outward
+                    handPos.y = currentChestY - params.armLength + (lift * 0.5); // Lift slightly when swinging forward
+                    handPos.z = forwardMovement * (params.strideLength * 0.8); // Swing arc
+
+                    // Elbow bends backward slightly
+                    const elbowPos = new THREE.Vector3().lerpVectors(shoulderPos, handPos, 0.5);
+                    elbowPos.z -= 0.5;
+                    elbowPos.x += limb.side * 0.2;
+
+                    const thickness = params.bodyThickness * 0.025;
+                    addBlob(shoulderPos, thickness * 1.1);
+                    addBlob(elbowPos, thickness * 0.8);
+                    addBlob(handPos, thickness * 0.7); // Cute small hands
+
+                    // Bicep and Forearm connectors
+                    addBlob(new THREE.Vector3().lerpVectors(shoulderPos, elbowPos, 0.5), thickness * 0.9);
+                    addBlob(new THREE.Vector3().lerpVectors(elbowPos, handPos, 0.5), thickness * 0.75);
+                }
+            });
+            
+            effect.update();
+        }
+
+        // --- GUI Setup ---
+        const gui = new GUI({ title: 'Chibi Slime Mutator' });
+        
+        gui.addColor(params, 'color').name('Slime Color').onChange(c => material.color.set(c));
+        
+        const geoFolder = gui.addFolder('Proportions');
+        geoFolder.add(params, 'headSize', 1.0, 4.0).name('Head Size');
+        geoFolder.add(params, 'bodyThickness', 0.5, 3.0).name('Chubbiness');
+        geoFolder.add(params, 'armLength', 1.5, 5.0).name('Arm Length');
+        geoFolder.add(params, 'legSpread', 0.5, 3.0).name('Hip Width');
+        
+        const animFolder = gui.addFolder('Animation');
+        animFolder.add(params, 'walkSpeed', 0, 10).name('Walk Speed');
+        animFolder.add(params, 'strideLength', 0, 4).name('Stride Length');
+        animFolder.add(params, 'stepHeight', 0, 3).name('Step Height');
+        animFolder.add(params, 'bounceAmount', 0, 1.5).name('Bounciness');
+
+        const perfFolder = gui.addFolder('Settings');
+        perfFolder.add(material, 'transmission', 0, 1).name('Transparency');
+        perfFolder.add(params, 'resolution', 20, 80, 1).name('Mesh Detail').onChange(res => {
+            scene.remove(effect);
+            effect = new MarchingCubes(res, material, true, true, 100000);
+            effect.position.set(0, 0, 0);
+            effect.scale.set(volumeScale, volumeScale, volumeScale);
+            effect.enableUvs = false;
+            effect.enableColors = false;
+            effect.castShadow = true;
+            effect.receiveShadow = true;
+            scene.add(effect);
+        });
+
+        // --- Main Loop ---
+        rebuildRig();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateCreature();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

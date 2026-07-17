@@ -20,6 +20,15 @@ export class DeathScreen {
 
   get isVisible(): boolean { return this._visible; }
 
+  /** Optionally show the floor/context where the player fell. */
+  setContext(floorName: string, kills: number, total: number): void {
+    const sub = this.el.querySelector<HTMLElement>('.ds-sub');
+    if (!sub) return;
+    const loc = floorName ? ` on ${floorName}` : '';
+    const killLine = total > 0 ? `<br>${kills} of ${total} enemies defeated.` : '';
+    sub.innerHTML = `The ritual failed${loc}.${killLine}<br><br>Even so — the tower still stands.<br>The journal is still there.<br>The notes are still yours.`;
+  }
+
   show(): void {
     if (this._visible) return;
     this._visible = true;

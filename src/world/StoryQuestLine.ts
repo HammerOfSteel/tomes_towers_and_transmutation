@@ -35,7 +35,11 @@ export type StoryObjectiveType =
   | 'explore_floor'
   | 'survive_wave'
   | 'interact_key'
-  | 'read_lore';
+  | 'read_lore'
+  /** Phase C1: complete a full dialogue with a specific NPC (by npcId). */
+  | 'talk_to_npc'
+  /** Phase C1: defeat a specific named enemy instance (by enemyId). */
+  | 'defeat_elite';
 
 export interface StoryObjective {
   type:         StoryObjectiveType;
@@ -45,6 +49,33 @@ export interface StoryObjective {
   // proximity to any known settlement / dungeon with matching label)
   hintCol?:     number;
   hintRow?:     number;
+  /** talk_to_npc: canonical NPC id to complete dialogue with. */
+  npcId?:       string;
+  /** defeat_elite: canonical enemy id of the named elite to kill. */
+  enemyId?:     string;
+}
+
+// ── Quest reward (Phase C1) ───────────────────────────────────────────────────
+
+/** Structured reward granted when a quest or act completes. */
+export interface QuestReward {
+  xp:           number;
+  gold?:        number;
+  /** ID of an item added to the player's inventory (e.g. 'forgeborn_blade'). */
+  itemId?:      string;
+  /** Spell ID unlocked in the spellbook (e.g. 'nova_burst'). */
+  spellId?:     string;
+  /** Flat stat bonus applied to progression.mods. */
+  statBonus?:   Partial<{
+    meleeDamageMult: number;
+    spellDamageMult: number;
+    maxHpBonus:      number;
+    movementMult:    number;
+  }>;
+  /** Zone or area unlocked (used by DiscoveryTracker). */
+  unlockZone?:  string;
+  /** Display name shown in the reward toast. */
+  label:        string;
 }
 
 export interface StoryBeat {

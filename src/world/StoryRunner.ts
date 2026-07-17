@@ -47,6 +47,18 @@ export interface StoryTickState {
   playerRow:            number;
   /** Settlement labels near the player (within ~8 tiles). */
   nearSettlements:      string[];
+  /**
+   * Phase C1 — NPC IDs whose full dialogue sequence has been completed since
+   * game start.  Accumulated by NPCEntity.onDialogueComplete callbacks wired
+   * in main.ts.
+   */
+  completedNpcDialogues: ReadonlySet<string>;
+  /**
+   * Phase C1 — Enemy IDs of named elite enemies that have been killed since
+   * game start.  Accumulated by SceneManager's enemy-death event via
+   * enemy.group.userData['enemyId'].
+   */
+  eliteEnemiesKilled:    ReadonlySet<string>;
 }
 
 // ── StoryRunner ───────────────────────────────────────────────────────────────
@@ -196,6 +208,20 @@ export class StoryRunner {
       case 'read_lore':
         // Fulfils when the player opens any book or lectern since this beat activated.
         return (state.booksReadCount - this._beatStartBooks) >= 1;
+
+      case 'talk_to_npc': {
+        // Fulfils when the target NPC's dialogue has been fully completed.
+        const npcId = beat.objective.npcId;
+        if (!npcId) return false;
+        return state.completedNpcDialogues.has(npcId);
+      }
+
+      case 'defeat_elite': {
+        // Fulfils when the named elite enemy has been killed (matched by enemyId).
+        const enemyId = beat.objective.enemyId;
+        if (!enemyId) return false;
+        return state.eliteEnemiesKilled.has(enemyId);
+      }
     }
   }
 

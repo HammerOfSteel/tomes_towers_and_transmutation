@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Low Poly Fox Princess</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Sky blue */
+            font-family: 'Inter', sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #333;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+            z-index: 10;
+        }
+        h3 { margin: 0 0 5px 0; font-size: 1.5rem; }
+        p { margin: 0; font-size: 0.9rem; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h3>Low Poly Fox Princess</h3>
+        <p>Procedural Skeletal Rigging | Drag to rotate | Scroll to zoom</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x9bd4e4);
+        scene.fog = new THREE.Fog(0x9bd4e4, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 12, 35);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 5, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(15, 25, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 70;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0xeebbbb, 0.8);
+        fillLight.position.set(-15, 10, -15);
+        scene.add(fillLight);
+
+        // Low poly ground grid
+        const groundGeo = new THREE.CylinderGeometry(40, 40, 2, 32);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x6db966, 
+            roughness: 1.0, 
+            flatShading: true 
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.position.y = -1;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Add some low poly rocks for decoration
+        const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x888888, flatShading: true });
+        for(let i=0; i<8; i++) {
+            const rock = new THREE.Mesh(rockGeo, rockMat);
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 10 + Math.random() * 20;
+            rock.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+            rock.rotation.set(Math.random(), Math.random(), Math.random());
+            rock.scale.setScalar(0.5 + Math.random() * 1.5);
+            rock.castShadow = true;
+            rock.receiveShadow = true;
+            scene.add(rock);
+        }
+
+        const params = {
+            furColor: '#e86a33',
+            secondaryColor: '#ffffff',
+            dressColor: '#ff8fb3',
+            goldColor: '#f1c40f',
+            walkSpeed: 6.0,
+            strideLength: 1.5,
+            earSize: 1.2,
+            tailFluff: 1.0,
+            chubbiness: 1.0,
+            isWalking: true
+        };
+
+        // Shared materials (flatShading is key to the low-poly look)
+        const materials = {
+            fur: new THREE.MeshStandardMaterial({ color: params.furColor, flatShading: true, roughness: 0.9 }),
+            furAlt: new THREE.MeshStandardMaterial({ color: params.secondaryColor, flatShading: true, roughness: 0.9 }),
+            dress: new THREE.MeshStandardMaterial({ color: params.dressColor, flatShading: true, roughness: 0.7 }),
+            gold: new THREE.MeshStandardMaterial({ color: params.goldColor, flatShading: true, roughness: 0.3, metalness: 0.8 }),
+            dark: new THREE.MeshStandardMaterial({ color: 0x222222, flatShading: true, roughness: 1.0 }),
+            skin: new THREE.MeshStandardMaterial({ color: 0xffd1b3, flatShading: true, roughness: 0.8 }) // inner ear
+        };
+
+        let characterRoot = new THREE.Group();
+        scene.add(characterRoot);
+
+        // Global object to store joints for procedural animation
+        let rig = {};
+
+        // Helper to create a limb part with a proper pivot point
+        function createLimbPart(geometry, material, yOffset) {
+            const group = new THREE.Group();
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.y = yOffset; // Offset mesh so group origin is the joint
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            group.add(mesh);
+            return { group, mesh };
+        }
+
+        function buildCharacter() {
+            // Clear existing character
+            while(characterRoot.children.length > 0) {
+                characterRoot.remove(characterRoot.children[0]);
+            }
+            rig = {};
+
+            // --- Root & Torso ---
+            rig.root = new THREE.Group();
+            rig.root.position.y = 5.5; // Base height
+            characterRoot.add(rig.root);
+
+            // Dress / Torso (Hexagonal cone, very low poly)
+            const dressGeo = new THREE.CylinderGeometry(1.2 * params.chubbiness, 2.5 * params.chubbiness, 3.5, 6);
+            const dressPart = createLimbPart(dressGeo, materials.dress, -1.75);
+            rig.torso = dressPart.group;
+            rig.root.add(rig.torso);
+
+            // Dress frill at bottom
+            const frillGeo = new THREE.CylinderGeometry(2.6 * params.chubbiness, 2.8 * params.chubbiness, 0.5, 6);
+            const frill = new THREE.Mesh(frillGeo, materials.furAlt);
+            frill.position.y = -3.5;
+            frill.castShadow = true;
+            rig.torso.add(frill);
+
+            // --- Head ---
+            rig.neck = new THREE.Group();
+            rig.neck.position.y = 0.5; // Top of dress
+            rig.torso.add(rig.neck);
+
+            // Head Base (Icosahedron looks great for low poly)
+            const headGeo = new THREE.IcosahedronGeometry(2.2, 1); 
+            const headMesh = new THREE.Mesh(headGeo, materials.fur);
+            headMesh.position.y = 2.0;
+            headMesh.castShadow = true;
+            rig.neck.add(headMesh);
+
+            // Snout (Cone)
+            const snoutGeo = new THREE.ConeGeometry(0.8, 1.5, 5);
+            snoutGeo.rotateX(Math.PI / 2); // Point forward
+            const snout = new THREE.Mesh(snoutGeo, materials.furAlt);
+            snout.position.set(0, 0, 2.0);
+            headMesh.add(snout);
+
+            // Nose
+            const noseGeo = new THREE.IcosahedronGeometry(0.2, 0);
+            const nose = new THREE.Mesh(noseGeo, materials.dark);
+            nose.position.set(0, 0, 2.7);
+            headMesh.add(nose);
+
+            // Eyes
+            const eyeGeo = new THREE.BoxGeometry(0.4, 0.6, 0.2);
+            const leftEye = new THREE.Mesh(eyeGeo, materials.dark);
+            leftEye.position.set(0.8, 0.6, 1.8);
+            leftEye.rotation.y = Math.PI / 8;
+            leftEye.rotation.z = -Math.PI / 16; // Cute tilt
+            const rightEye = leftEye.clone();
+            rightEye.position.set(-0.8, 0.6, 1.8);
+            rightEye.rotation.y = -Math.PI / 8;
+            rightEye.rotation.z = Math.PI / 16;
+            headMesh.add(leftEye, rightEye);
+
+            // --- Ears ---
+            rig.ears = [];
+            const earBaseGeo = new THREE.ConeGeometry(0.7 * params.earSize, 2 * params.earSize, 4);
+            // Move pivot to bottom of ear
+            earBaseGeo.translate(0, 1 * params.earSize, 0); 
+            
+            const leftEarGroup = new THREE.Group();
+            leftEarGroup.position.set(1.4, 1.5, -0.2);
+            leftEarGroup.rotation.z = -Math.PI / 6;
+            leftEarGroup.rotation.x = -Math.PI / 12;
+            const leftEar = new THREE.Mesh(earBaseGeo, materials.fur);
+            leftEarGroup.add(leftEar);
+            headMesh.add(leftEarGroup);
+            rig.ears.push(leftEarGroup);
+
+            const rightEarGroup = new THREE.Group();
+            rightEarGroup.position.set(-1.4, 1.5, -0.2);
+            rightEarGroup.rotation.z = Math.PI / 6;
+            rightEarGroup.rotation.x = -Math.PI / 12;
+            const rightEar = new THREE.Mesh(earBaseGeo, materials.fur);
+            rightEarGroup.add(rightEar);
+            headMesh.add(rightEarGroup);
+            rig.ears.push(rightEarGroup);
+
+            // Inner Ear Fluff
+            const innerEarGeo = new THREE.ConeGeometry(0.4 * params.earSize, 1.5 * params.earSize, 3);
+            innerEarGeo.translate(0, 0.75 * params.earSize, 0.2);
+            const innerLeft = new THREE.Mesh(innerEarGeo, materials.skin);
+            leftEarGroup.add(innerLeft);
+            const innerRight = new THREE.Mesh(innerEarGeo, materials.skin);
+            rightEarGroup.add(innerRight);
+
+            // --- Crown ---
+            const crownGroup = new THREE.Group();
+            crownGroup.position.set(0, 2.0, 0.2);
+            crownGroup.rotation.x = -Math.PI / 8; // Tilted slightly forward
+            headMesh.add(crownGroup);
+
+            const crownBaseGeo = new THREE.TorusGeometry(1.0, 0.2, 4, 8);
+            crownBaseGeo.rotateX(Math.PI / 2);
+            const crownBase = new THREE.Mesh(crownBaseGeo, materials.gold);
+            crownGroup.add(crownBase);
+            
+            for(let i=0; i<4; i++) {
+                const spikeGeo = new THREE.ConeGeometry(0.3, 0.8, 4);
+                const spike = new THREE.Mesh(spikeGeo, materials.gold);
+                const angle = (i / 4) * Math.PI * 2 + Math.PI/4;
+                spike.position.set(Math.cos(angle)*1.0, 0.4, Math.sin(angle)*1.0);
+                crownGroup.add(spike);
+            }
+
+            // --- Arms ---
+            rig.shoulders = [];
+            rig.elbows = [];
+            
+            const armGeo = new THREE.CylinderGeometry(0.4, 0.3, 2, 5);
+            const lowerArmGeo = new THREE.CylinderGeometry(0.3, 0.25, 1.8, 5);
+
+            for (let i = -1; i <= 1; i += 2) {
+                const shoulder = new THREE.Group();
+                shoulder.position.set(i * (1.5 + params.chubbiness * 0.5), -0.5, 0); // Position relative to top of torso
+                rig.torso.add(shoulder);
+                rig.shoulders.push(shoulder);
+
+                const upperArm = createLimbPart(armGeo, materials.fur, -1);
+                shoulder.add(upperArm.group);
+
+                const elbow = new THREE.Group();
+                elbow.position.set(0, -2, 0); // End of upper arm
+                upperArm.group.add(elbow);
+                rig.elbows.push(elbow);
+
+                const lowerArm = createLimbPart(lowerArmGeo, materials.furAlt, -0.9);
+                elbow.add(lowerArm.group);
+            }
+
+            // --- Legs ---
+            rig.hips = [];
+            rig.knees = [];
+            
+            const legGeo = new THREE.CylinderGeometry(0.6, 0.4, 2.5, 5);
+            const calfGeo = new THREE.CylinderGeometry(0.4, 0.3, 2.5, 5);
+            const footGeo = new THREE.BoxGeometry(1, 0.8, 1.5);
+            footGeo.translate(0, -0.4, 0.25); // Offset pivot to ankle
+
+            for (let i = -1; i <= 1; i += 2) {
+                const hip = new THREE.Group();
+                hip.position.set(i * (0.8 * params.chubbiness), -3.2, 0); // Bottom of torso
+                rig.torso.add(hip);
+                rig.hips.push(hip);
+
+                const thigh = createLimbPart(legGeo, materials.fur, -1.25);
+                hip.add(thigh.group);
+
+                const knee = new THREE.Group();
+                knee.position.set(0, -2.5, 0);
+                thigh.group.add(knee);
+                rig.knees.push(knee);
+
+                const calf = createLimbPart(calfGeo, materials.furAlt, -1.25);
+                knee.add(calf.group);
+
+                const foot = new THREE.Mesh(footGeo, materials.dark); // Little black boots/paws
+                foot.position.set(0, -2.5, 0);
+                foot.castShadow = true;
+                calf.group.add(foot);
+            }
+
+            // --- Tail ---
+            // A fluffy tail made of overlapping icosahedrons attached hierarchically
+            rig.tailSegments = [];
+            const tailRoot = new THREE.Group();
+            tailRoot.position.set(0, -2.5, -2 * params.chubbiness);
+            rig.torso.add(tailRoot);
+            
+            let currentParent = tailRoot;
+            const tailParts = 5;
+            
+            for(let i=0; i<tailParts; i++) {
+                const segmentGroup = new THREE.Group();
+                
+                // Scale factor goes up then down to create a diamond/fluffy shape
+                const scale = Math.sin((i / (tailParts - 1)) * Math.PI) * 1.5 * params.tailFluff + 0.5;
+                const segGeo = new THREE.IcosahedronGeometry(scale, 1);
+                
+                // Tip is white, rest is fur color
+                const mat = (i === tailParts - 1) ? materials.furAlt : materials.fur;
+                const segMesh = new THREE.Mesh(segGeo, mat);
+                
+                segMesh.position.set(0, 0, -scale); // Push backward along local Z
+                segMesh.castShadow = true;
+                segmentGroup.add(segMesh);
+                
+                // Next pivot point is at the end of this segment
+                const nextPivot = new THREE.Group();
+                nextPivot.position.set(0, 0, -scale * 1.5);
+                segmentGroup.add(nextPivot);
+                
+                currentParent.add(segmentGroup);
+                rig.tailSegments.push(segmentGroup);
+                
+                currentParent = nextPivot;
+            }
+        }
+
+        const clock = new THREE.Clock();
+        
+        function updateAnimation() {
+            const time = clock.getElapsedTime();
+            
+            if (!rig.root) return;
+
+            const isWalk = params.isWalking;
+            const walkSpeed = params.walkSpeed;
+            const phase = time * walkSpeed;
+            
+            // Idle breathing
+            const breath = Math.sin(time * 2) * 0.05;
+            rig.torso.scale.set(1 + breath, 1 + breath*0.5, 1 + breath);
+
+            if (isWalk) {
+                // --- Walk Cycle ---
+                // Root bobbing
+                const bob = Math.abs(Math.sin(phase)) * 0.6;
+                rig.root.position.y = 5.5 + bob;
+                
+                // Torso slight sway
+                rig.torso.rotation.z = Math.sin(phase) * 0.05;
+                rig.torso.rotation.y = Math.sin(phase) * 0.1;
+
+                // Legs
+                // Left Leg (Index 0 is Left/Right based on loop above, let's assume 0 is Left side (-1), 1 is Right (+1))
+                const legMultiplier = [1, -1]; 
+                
+                for(let i=0; i<2; i++) {
+                    const legPhase = phase + (i === 0 ? 0 : Math.PI); // Offset by half a cycle
+                    
+                    // Hip swings forward and back
+                    rig.hips[i].rotation.x = Math.sin(legPhase) * params.strideLength * 0.5;
+                    
+                    // Knee only bends backward (positive X rotation in this setup, or negative depending on initial pose)
+                    // We want it to bend when swinging forward
+                    const kneeBend = Math.max(0, -Math.cos(legPhase)) * params.strideLength * 0.8;
+                    rig.knees[i].rotation.x = kneeBend;
+
+                    // Arms swing opposite to legs
+                    const armPhase = legPhase + Math.PI;
+                    rig.shoulders[i].rotation.x = Math.sin(armPhase) * params.strideLength * 0.5;
+                    // Cute T-rex arms / bent elbows while walking
+                    rig.elbows[i].rotation.x = -0.5 + Math.sin(armPhase) * 0.2; 
+                    
+                    // Slight outward spread for chibi look
+                    rig.shoulders[i].rotation.z = (i === 0 ? 1 : -1) * 0.3;
+                }
+                
+                // Head bob
+                rig.neck.rotation.x = Math.sin(phase * 2) * 0.05;
+
+            } else {
+                // --- Idle Stance ---
+                rig.root.position.y = 5.5; // Reset height
+                
+                // Reset torso
+                rig.torso.rotation.set(0, 0, 0);
+
+                // Cute idle pose
+                for(let i=0; i<2; i++) {
+                    // Spread legs slightly
+                    rig.hips[i].rotation.set(0.1, (i===0 ? 0.2 : -0.2), (i===0 ? 0.1 : -0.1));
+                    rig.knees[i].rotation.set(0, 0, 0);
+                    
+                    // Hands held together or resting politely
+                    rig.shoulders[i].rotation.set(-0.2, (i===0 ? 0.4 : -0.4), (i===0 ? 0.3 : -0.3));
+                    rig.elbows[i].rotation.set(-0.6, 0, 0);
+                }
+                
+                // Head idle look around occasionally
+                const look = Math.sin(time * 0.5) * 0.2;
+                rig.neck.rotation.set(0, look, 0);
+            }
+
+            // --- Always Active Animations (Tail & Ears) ---
+            
+            // Ear flick (procedural noise/randomness)
+            if (Math.random() > 0.98) {
+                rig.ears[0].rotation.z = -Math.PI / 6 - (Math.random() * 0.2);
+            } else {
+                rig.ears[0].rotation.z = THREE.MathUtils.lerp(rig.ears[0].rotation.z, -Math.PI / 6, 0.1);
+            }
+            if (Math.random() > 0.98) {
+                rig.ears[1].rotation.z = Math.PI / 6 + (Math.random() * 0.2);
+            } else {
+                rig.ears[1].rotation.z = THREE.MathUtils.lerp(rig.ears[1].rotation.z, Math.PI / 6, 0.1);
+            }
+
+            // Tail Swish (Sine wave propagated down the segments)
+            const tailSpeed = isWalk ? 10 : 3;
+            const swishAmount = isWalk ? 0.3 : 0.15;
+            
+            rig.tailSegments.forEach((segment, index) => {
+                // Delay phase based on segment index to create a curve
+                const segPhase = (time * tailSpeed) - (index * 0.5);
+                segment.rotation.y = Math.sin(segPhase) * swishAmount;
+                // Add a little upward curl
+                segment.rotation.x = Math.sin(time * 2 + index) * 0.05 + 0.1;
+            });
+        }
+
+        const gui = new GUI({ title: 'Princess Mutator' });
+        
+        const colorFolder = gui.addFolder('Colors');
+        colorFolder.addColor(params, 'furColor').name('Fur Base').onChange(c => materials.fur.color.set(c));
+        colorFolder.addColor(params, 'secondaryColor').name('Fur Tip/Chest').onChange(c => materials.furAlt.color.set(c));
+        colorFolder.addColor(params, 'dressColor').name('Dress').onChange(c => materials.dress.color.set(c));
+        colorFolder.addColor(params, 'goldColor').name('Crown').onChange(c => materials.gold.color.set(c));
+        
+        const morphFolder = gui.addFolder('Proportions');
+        morphFolder.add(params, 'chubbiness', 0.5, 2.0).name('Body Width').onChange(buildCharacter);
+        morphFolder.add(params, 'earSize', 0.5, 2.5).name('Ear Size').onChange(buildCharacter);
+        morphFolder.add(params, 'tailFluff', 0.5, 2.0).name('Tail Fluffiness').onChange(buildCharacter);
+        
+        const animFolder = gui.addFolder('Animation');
+        animFolder.add(params, 'isWalking').name('Toggle Walk');
+        animFolder.add(params, 'walkSpeed', 1, 15).name('Walk Speed');
+        animFolder.add(params, 'strideLength', 0.5, 3).name('Stride Length');
+
+        // Initial Build
+        buildCharacter();
+
+        // Main Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateAnimation();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

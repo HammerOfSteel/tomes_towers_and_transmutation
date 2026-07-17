@@ -8,6 +8,8 @@ export class GameLoop {
   private lastTime = 0;
   private running = false;
   private readonly callbacks: ((dt: number) => void)[] = [];
+  /** Remaining frames of hit-stop freeze (dt passed as 0 while > 0). */
+  private _freezeFrames = 0;
 
   /** Register a callback to be called every frame. Returns an unsubscribe fn. */
   onTick(cb: (dt: number) => void): () => void {
@@ -16,6 +18,15 @@ export class GameLoop {
       const idx = this.callbacks.indexOf(cb);
       if (idx !== -1) this.callbacks.splice(idx, 1);
     };
+  }
+
+  /**
+   * Hit-stop: freeze game time for `frames` frames (dt=0).
+   * Multiple calls accumulate; the max is capped at 8 frames to avoid
+   * making the game unresponsive.
+   */
+  freeze(frames: number): void {
+    this._freezeFrames = Math.min(this._freezeFrames + frames, 8);
   }
 
   start(): void {
@@ -37,7 +48,14 @@ export class GameLoop {
     const dt = Math.min(rawDt, 0.05);
     this.lastTime = time;
 
-    for (const cb of this.callbacks) cb(dt);
+    // Hit-stop: pass dt=0 while freeze frames are pending.
+    let effectiveDt = dt;
+    if (this._freezeFrames > 0) {
+      this._freezeFrames--;
+      effectiveDt = 0;
+    }
+
+    for (const cb of this.callbacks) cb(effectiveDt);
 
     requestAnimationFrame(this.tick);
   };

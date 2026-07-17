@@ -154,6 +154,28 @@ export class PlayerController {
   private bobTimer = 0;
   private flashTimer = 0;
 
+  // ── Extended animation state machine (B4 / E-phase) ──────────────────────
+  /** Jump phase for sequencing Jump_Start → Jump_Idle → Jump_Land. */
+  private _jumpPhase: 'grounded' | 'rising' | 'falling' | 'landing' = 'grounded';
+  /** Whether a one-shot cast animation is blocking the loop state. */
+  private _castAnimActive = false;
+  /** Pitch/roll tilt applied to charController.scene during levitate/fly (radians). */
+  private _leanX = 0;
+  private _leanZ = 0;
+  /**
+   * Levitate mode: player hovers at a fixed Y and can move XZ freely.
+   * Different from flyMode (dev cheat) — uses mana and plays Jump_Idle.
+   */
+  levitateMode = false;
+  private _levitateTargetY = 0;
+  private readonly LEVITATE_HEIGHT = 1.8; // WU above ground when levitating
+  /**
+   * Fly spell mode — full 3D free flight, faster than levitate.
+   * Space = ascend, Shift (run) = descend, WASD = 2× run speed horizontal.
+   * Toggles on/off. Separate from flyMode (dev cheat).
+   */
+  flySpellMode = false;
+
   // Direct sub-mesh references (squash/stretch applied here, NOT on group)
   private readonly bodyMesh: THREE.Mesh;
   private readonly headMesh: THREE.Mesh;
@@ -172,6 +194,53 @@ export class PlayerController {
   /** 0 = dodge just used (full cooldown), 1 = fully ready. */
   get dodgeReadyFraction(): number {
     return this.dodgeCooldown <= 0 ? 1 : Math.max(0, 1 - this.dodgeCooldown / DODGE_COOLDOWN);
+  }
+
+  // ── Animation trigger API (called from main.ts / AbilitySystem) ───────────
+
+  /** Play the melee attack one-shot animation. */
+  triggerAttack(): void {
+    if (!this._charController) return;
+    const returnTo = this._resolveLoopState(0);
+    this._charController.playOnce('attack', returnTo);
+  }
+
+  /** Play the spell-cast one-shot animation (Throw / Use_Item). */
+  triggerCast(): void {
+    if (!this._charController) return;
+    const returnTo = this._resolveLoopState(0);
+    this._charController.playOnce('cast', returnTo, () => { this._castAnimActive = false; });
+    this._castAnimActive = true;
+  }
+
+  /** Play the blink/teleport arrival animation (Spawn_Air). */
+  triggerSpawnAir(): void {
+    if (!this._charController) return;
+    this._charController.playOnce('spawn_air', 'idle');
+  }
+
+  /** Play the appear-from-ground animation (Spawn_Ground). */
+  triggerSpawnGround(): void {
+    if (!this._charController) return;
+    this._charController.playOnce('spawn_ground', 'idle');
+  }
+
+  /** Play the item pickup animation. */
+  triggerPickup(): void {
+    if (!this._charController) return;
+    this._charController.playOnce('pickup', this._resolveLoopState(0));
+  }
+
+  /** Play the interact animation. */
+  triggerInteract(): void {
+    if (!this._charController) return;
+    this._charController.playOnce('interact', this._resolveLoopState(0));
+  }
+
+  /** Force the death animation (one-shot, stays in final pose). */
+  triggerDeath(): void {
+    if (!this._charController) return;
+    this._charController.playOnce('die', 'idle');
   }
 
   /**
@@ -305,6 +374,150 @@ export class PlayerController {
     this.flashTimer = Math.max(0, this.flashTimer - dt);
     const wasGrounded = this.isGrounded;
 
+    // ── Ability signals from AbilitySystem (via group.userData) ────────────
+    // Blink teleport arrival
+    if (this.group.userData['_triggerSpawnAir']) {
+      this.group.userData['_triggerSpawnAir'] = false;
+      this.triggerSpawnAir();
+    }
+    // Levitate toggle
+    if (typeof this.group.userData['_levitateMode'] === 'boolean') {
+      const wantsLev = this.group.userData['_levitateMode'] as boolean;
+      if (wantsLev !== this.levitateMode) {
+        this.levitateMode = wantsLev;
+        if (wantsLev) {
+          this._levitateTargetY = this._pos.y + this.LEVITATE_HEIGHT;
+        } else {
+          // Deactivating levitate → set jumpPhase to falling so land animation fires
+          this._jumpPhase = 'falling';
+        }
+      }
+      delete this.group.userData['_levitateMode'];
+    }
+    // Fly spell toggle (replaces old fly burst system)
+    if (typeof this.group.userData['_flySpellMode'] === 'boolean') {
+      this.flySpellMode = this.group.userData['_flySpellMode'] as boolean;
+      delete this.group.userData['_flySpellMode'];
+    }
+
+    // ── LEVITATE MODE (ability — hover at fixed height, XZ movement only) ──
+    if (this.levitateMode) {
+      const LEVITATE_H = RUN_SPEED * 0.7;  // slower horizontal movement while floating
+      const md = calculateMoveDirection(input);
+      this.velocity.x = lerp(this.velocity.x, md.x * LEVITATE_H, ACCEL_GROUND * dt);
+      this.velocity.z = lerp(this.velocity.z, md.z * LEVITATE_H, ACCEL_GROUND * dt);
+      // Gently float up to target height
+      const cur = this.body.translation();
+      const targetY = this._levitateTargetY;
+      const yDelta = targetY - cur.y;
+      this.velocity.y = lerp(this.velocity.y, yDelta * 5, 8 * dt);
+
+      this.body.setNextKinematicTranslation({
+        x: cur.x + this.velocity.x * dt,
+        y: cur.y + this.velocity.y * dt,
+        z: cur.z + this.velocity.z * dt,
+      });
+      rapierToThreeInto(this.body.translation(), this._pos);
+      this.group.position.copy(this._pos);
+
+      const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      if (hSpeed > 0.3) {
+        this.facingAngle = lerpAngle(
+          this.facingAngle,
+          Math.atan2(this.velocity.x, this.velocity.z),
+          TURN_SPEED_GROUND * dt,
+        );
+        this.group.rotation.y = this.facingAngle;
+      }
+      // Fall through to animation section (skips physics below)
+      this.isGrounded = false;
+      // (animation + visual section runs below)
+      const hSpeedLev = hSpeed;
+      { // scoped to run visual/animation updates
+        const speedFactor = Math.min(hSpeedLev / RUN_SPEED, 1);
+        this.bodyMesh.rotation.x = lerp(this.bodyMesh.rotation.x, -speedFactor * 0.2, 0.12);
+        const headMat = this.headMesh.material as THREE.MeshLambertMaterial;
+        headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, 0.7, 0.05);
+        const bodyMat = this.bodyMesh.material as THREE.MeshLambertMaterial;
+        bodyMat.color.setHex(PALETTE.PLAYER_BODY);
+        this.group.visible = true;
+        this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
+        this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
+        this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+        if (this._charController) {
+          this._charController.setState('levitate');
+          const targetLeanX = -Math.min(hSpeedLev / RUN_SPEED, 1) * 0.28;
+          const strafeSign = Math.cos(this.facingAngle) * this.velocity.x - Math.sin(this.facingAngle) * this.velocity.z;
+          const targetLeanZ = -Math.min(Math.abs(strafeSign) / RUN_SPEED, 1) * 0.18 * Math.sign(strafeSign);
+          this._leanX = lerp(this._leanX, targetLeanX, 8 * dt);
+          this._leanZ = lerp(this._leanZ, targetLeanZ, 8 * dt);
+          this._charController.scene.rotation.x = this._leanX;
+          this._charController.scene.rotation.z = this._leanZ;
+          this._charController.update(dt);
+        }
+        const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));
+        const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+        this.shadow.position.set(this._pos.x, floorY - this.LEVITATE_HEIGHT * 0.9 + 0.03, this._pos.z);
+        this.shadow.scale.setScalar(Math.max(0.05, 0.6 - height * 0.04));
+        (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.2;
+      }
+      return;
+    }
+
+    // ── FLY SPELL MODE (gameplay — full 3D free flight, toggleable) ──────────
+    if (this.flySpellMode) {
+      const FLY_H = RUN_SPEED * 2.2;  // fast horizontal movement
+      const FLY_V = RUN_SPEED * 1.5;  // vertical speed
+      const md = calculateMoveDirection(input);
+      this.velocity.x = lerp(this.velocity.x, md.x * FLY_H, ACCEL_GROUND * dt);
+      this.velocity.z = lerp(this.velocity.z, md.z * FLY_H, ACCEL_GROUND * dt);
+      // Space = ascend, Shift (run key) = descend
+      if (input.jump)      this.velocity.y = lerp(this.velocity.y, FLY_V, 8 * dt);
+      else if (input.run)  this.velocity.y = lerp(this.velocity.y, -FLY_V, 8 * dt);
+      else                 this.velocity.y = lerp(this.velocity.y, 0, 6 * dt);
+
+      const cur = this.body.translation();
+      this.body.setNextKinematicTranslation({
+        x: cur.x + this.velocity.x * dt,
+        y: cur.y + this.velocity.y * dt,
+        z: cur.z + this.velocity.z * dt,
+      });
+      rapierToThreeInto(this.body.translation(), this._pos);
+      this.group.position.copy(this._pos);
+
+      const hSpeedFly = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      if (hSpeedFly > 0.4) {
+        this.facingAngle = lerpAngle(
+          this.facingAngle,
+          Math.atan2(this.velocity.x, this.velocity.z),
+          TURN_SPEED_GROUND * dt,
+        );
+        this.group.rotation.y = this.facingAngle;
+      }
+      this.isGrounded = false;
+
+      // Animation + tilt: aggressive forward lean based on speed
+      const speedT = Math.min(hSpeedFly / (RUN_SPEED * 2.2), 1);
+      const flyLeanX = -speedT * 0.62;  // up to ~35° forward
+      const strafeSignFly = Math.cos(this.facingAngle) * this.velocity.x - Math.sin(this.facingAngle) * this.velocity.z;
+      const flyLeanZ = -Math.min(Math.abs(strafeSignFly) / FLY_H, 1) * 0.22 * Math.sign(strafeSignFly);
+      this._leanX = lerp(this._leanX, flyLeanX, 10 * dt);
+      this._leanZ = lerp(this._leanZ, flyLeanZ, 10 * dt);
+
+      if (this._charController) {
+        this._charController.setState('fly');
+        this._charController.scene.rotation.x = this._leanX;
+        this._charController.scene.rotation.z = this._leanZ;
+        this._charController.update(dt);
+      }
+
+      const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+      this.shadow.position.set(this._pos.x, floorY - 1.5, this._pos.z);
+      this.shadow.scale.setScalar(0.4);
+      (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.12;
+      return;
+    }
+
     // ── FLY MODE (dev cheat — overworld only) ──────────────────────────────
     if (this.flyMode) {
       const FLY_H = RUN_SPEED * 2.5;  // fast horizontal glide
@@ -353,17 +566,21 @@ export class PlayerController {
       this.dodgeDir.copy(moveDir);
       this.dodgeTimer = DODGE_DURATION;
       this.dodgeCooldown = DODGE_COOLDOWN;
-      this.health.takeDamage(0); // trigger i-frame window via a zero-damage hit? no — call directly
-      // Instead force the i-frame via a helper (we grant iframe via health internal override isn't ideal)
-      // We use the dodge iframe by directly granting invulnerability via a workaround:
-      // Expose a grantIframe method or just call takeDamage with 0 and override via separate iframeDuration
-      // Simpler: track dodge i-frames separately in the player
       this.flashTimer = DODGE_IFRAME;
-      this.bodyMesh.scale.set(0.8, 0.6, 0.8); // squash into dash
+      // G3: Squash on launch — Y compress, Z stretch in dodge direction
+      this._applyModelScale(0.85, 0.65, 1.35);
     }
 
     if (this.dodgeTimer > 0) {
       this.dodgeTimer -= dt;
+      const rollFrac = this.dodgeTimer / DODGE_DURATION; // 1 at start → 0 at end
+      if (rollFrac > 0.15) {
+        // Mid-roll: maintain stretch
+        this._applyModelScale(0.88, 0.80, 1.28);
+      } else {
+        // End of roll: land-bounce squash
+        this._applyModelScale(1.15, 0.72, 1.15);
+      }
       // Override horizontal velocity with dodge
       this.velocity.x = this.dodgeDir.x * DODGE_SPEED;
       this.velocity.z = this.dodgeDir.z * DODGE_SPEED;
@@ -496,10 +713,15 @@ export class PlayerController {
       this.group.visible = true;
     }
 
-    // Squash/stretch scale decays back to (1,1,1) on bodyMesh
+    // Squash/stretch scale decays back to (1,1,1) on bodyMesh and char model
     this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
     this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
     this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+    if (this._charController) {
+      this._charController.scene.scale.x = lerp(this._charController.scene.scale.x, 1, 12 * dt);
+      this._charController.scene.scale.y = lerp(this._charController.scene.scale.y, 1, 12 * dt);
+      this._charController.scene.scale.z = lerp(this._charController.scene.scale.z, 1, 12 * dt);
+    }
 
     // DNA rig animation (runs alongside hidden bodyMesh/headMesh logic)
     if (this._creatureRig) {
@@ -528,14 +750,74 @@ export class PlayerController {
       }
     }
 
-    // Asset model animation — drive CharacterController state from movement
+    // Asset model animation — full state machine with jump sequence, tilt, death
     if (this._charController) {
-      const nextState = this.flashTimer > 0
-        ? 'hit'
-        : hSpeed > RUN_SPEED * 0.5 ? 'run'
-        : hSpeed > 0.3             ? 'walk'
-        : 'idle';
-      this._charController.setState(nextState);
+      // ── Jump sequence ─────────────────────────────────────────────────────
+      const justLanded  = !wasGrounded && this.isGrounded;
+      const justLeftGround = wasGrounded && !this.isGrounded;
+
+      if (justLanded && this._jumpPhase !== 'landing' && this._jumpPhase !== 'grounded') {
+        this._jumpPhase = 'landing';
+        this._charController.playOnce('jump_land', this._resolveLoopState(hSpeed), () => {
+          this._jumpPhase = 'grounded';
+        });
+      } else if (justLeftGround && !this._charController.isPlayingOneShot) {
+        // Only trigger jump_start if we went airborne from a jump (not a fall-off edge)
+        if (this.velocity.y > 0.5) {
+          this._jumpPhase = 'rising';
+          this._charController.playOnce('jump_start', 'jump_air', () => {
+            // After jump_start, settle into jump_air loop
+            this._charController?.setState('jump_air');
+          });
+        } else {
+          this._jumpPhase = 'falling';
+          this._charController.setState('jump_air');
+        }
+      }
+
+      // Peak → falling transition
+      if (this._jumpPhase === 'rising' && this.velocity.y < 0) {
+        this._jumpPhase = 'falling';
+      }
+
+      // ── Levitate visual ───────────────────────────────────────────────────
+      if (this.levitateMode) {
+        this._charController.setState('levitate');
+      } else if (!this.isGrounded && this._jumpPhase === 'grounded') {
+        // Fell off a ledge without jumping — play air idle
+        this._jumpPhase = 'falling';
+        this._charController.setState('jump_air');
+      }
+
+      // ── Ground loop state ─────────────────────────────────────────────────
+      if (this.isGrounded && this._jumpPhase === 'grounded' && !this._charController.isPlayingOneShot) {
+        const nextLoop = this._resolveLoopState(hSpeed);
+        this._charController.setState(nextLoop);
+      }
+
+      // ── Hit flash ─────────────────────────────────────────────────────────
+      if (this.flashTimer > 0.3 && !this._charController.isPlayingOneShot) {
+        this._charController.playOnce('hit', this._resolveLoopState(hSpeed));
+      }
+
+      // ── Tilt during levitate ─────────────────────────────────────────────
+      // (Fly spell has its own tilt block inside flySpellMode early-return above)
+      const targetLeanX = this.levitateMode
+        ? -Math.min(hSpeed / RUN_SPEED, 1) * 0.30
+        : this.flyMode
+          ? -Math.min(hSpeed / RUN_SPEED, 1) * 0.55
+          : 0;
+      const strafeSign = Math.cos(this.facingAngle) * this.velocity.x
+                       - Math.sin(this.facingAngle) * this.velocity.z;
+      const targetLeanZ = (this.levitateMode || this.flyMode)
+        ? -Math.min(Math.abs(strafeSign) / RUN_SPEED, 1) * 0.18 * Math.sign(strafeSign)
+        : 0;
+
+      this._leanX = lerp(this._leanX, targetLeanX, 8 * dt);
+      this._leanZ = lerp(this._leanZ, targetLeanZ, 8 * dt);
+      this._charController.scene.rotation.x = this._leanX;
+      this._charController.scene.rotation.z = this._leanZ;
+
       this._charController.update(dt);
     }
 
@@ -553,15 +835,32 @@ export class PlayerController {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
+  /**
+   * Resolve the appropriate looping animation state for the current speed.
+   * Used to set the return-to state after a one-shot.
+   */
+  private _resolveLoopState(hSpeed: number): import('@/characters/CharacterController').CharAnimLoopState {
+    if (this.levitateMode) return 'levitate';
+    if (this.flySpellMode) return 'fly';
+    if (this.flyMode)      return 'fly';
+    if (!this.isGrounded)  return 'jump_air';
+    return hSpeed > RUN_SPEED * 0.5 ? 'run' : hSpeed > 0.3 ? 'walk' : 'idle';
+  }
+
   /** Flash and squash when the player is hit. */
   private onHit(): void {
     this.flashTimer = PLAYER_IFRAME;
     this.bodyMesh.scale.set(1.3, 0.7, 1.3);
+    // Trigger hit one-shot on character model
+    if (this._charController && !this._charController.isPlayingOneShot) {
+      const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      this._charController.playOnce('hit', this._resolveLoopState(hSpeed));
+    }
   }
 
   /** Jump take-off: vertical stretch on bodyMesh only. */
   private squashStretchJump(): void {
-    this.bodyMesh.scale.set(0.75, 1.35, 0.75);
+    this._applyModelScale(0.75, 1.35, 0.75);
   }
 
   /** Landing splat proportional to fall speed, on bodyMesh only. */
@@ -569,7 +868,15 @@ export class PlayerController {
     const t = Math.min(Math.abs(fallVelocity) / MAX_FALL_SPEED, 1);
     const sy = Math.max(0.6, 1 - t * 0.4);
     const sxz = 1 + t * 0.5;
-    this.bodyMesh.scale.set(sxz, sy, sxz);
+    this._applyModelScale(sxz, sy, sxz);
+  }
+
+  /** Apply scale to whichever visual is active: charController scene or fallback bodyMesh. */
+  private _applyModelScale(sx: number, sy: number, sz: number): void {
+    if (this._charController) {
+      this._charController.scene.scale.set(sx, sy, sz);
+    }
+    this.bodyMesh.scale.set(sx, sy, sz);
   }
 
   // ── Static builders ────────────────────────────────────────────────────────

@@ -23,6 +23,8 @@ export interface DevSandboxOptions {
   onSpawnEnemies: (n: number) => void;
   onKillAllEnemies: () => void;
   onGrantAllSpells: () => void;
+  /** Grant all species abilities (Blink, Levitate, Fly Burst, + species Q/R). */
+  onGrantAllAbilities?: () => void;
   /** Run generator, return text stats AND the room IDs it contains. */
   getProcGenStats: (type: 'tower' | 'overworld' | 'dungeon', seed: number) => { text: string; roomIds: string[] };
   /** Teleport into a generated room by ID. */
@@ -62,6 +64,16 @@ export interface DevSandboxOptions {
   // ── Asset Browser tab ─────────────────────────────────────────────────────
   /** Swap the player's visible model to the GLB at `path`. */
   onSwapPlayerModel?: (path: string) => void;
+  /**
+   * Load a character model for inspection in the dev viewport.
+   * Resolves with the list of animation clip names found on the model.
+   * Returns an empty array if no clips are available.
+   * The model is placed at a fixed inspection position in the sandbox scene;
+   * call again with a different model to swap the inspected model.
+   */
+  onPreviewModel?: (model: import('@/characters/charManifest').CharModelDef) => Promise<string[]>;
+  /** Play a named animation clip on the currently previewed model. Empty string = stop. */
+  onPlayPreviewAnim?: (clipName: string) => void;
 }
 
 /** A saved NPC preset (stored in DevSandbox instance memory). */
@@ -240,7 +252,12 @@ export class DevSandbox {
   private _waveTimerId: ReturnType<typeof setInterval> | null = null;
   private _waveSpawned = 0;
   // Asset browser
-  private _assetFilter = '';
+  private _assetFilter  = '';
+  private _assetRoleTab: 'all' | 'enemy' | 'npc' | 'player' = 'all';
+  private _previewModelId: string | null = null;
+  private _previewAnimBtns: HTMLElement[] = [];
+  private _previewStatusEl: HTMLElement | null = null;
+  private _previewClipListEl: HTMLElement | null = null;
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
   private _procType: 'tower' | 'overworld' | 'dungeon' = 'tower';
@@ -435,10 +452,16 @@ export class DevSandbox {
     const grantAllBtn = document.createElement('button');
     grantAllBtn.className = 'ds-btn';
     grantAllBtn.textContent = 'Grant All';
-    grantAllBtn.title = 'Unlock all 8 spells at once';
+    grantAllBtn.title = 'Unlock all 8 spells + all abilities (Q R Z X) at once';
     grantAllBtn.onclick = () => this._opts.onGrantAllSpells();
 
-    grantRow.append(grantActiveBtn, grantAllBtn);
+    const grantAbilitiesBtn = document.createElement('button');
+    grantAbilitiesBtn.className = 'ds-btn';
+    grantAbilitiesBtn.textContent = '🪄 Grant Abilities';
+    grantAbilitiesBtn.title = 'Grant all species abilities: Blink (Z), Levitate (X), Fly Burst, and species Q/R slots';
+    grantAbilitiesBtn.onclick = () => this._opts.onGrantAllAbilities?.();
+
+    grantRow.append(grantActiveBtn, grantAllBtn, grantAbilitiesBtn);
     actSec.append(actTitle, grantRow);
 
     // Hint
@@ -1237,7 +1260,38 @@ export class DevSandbox {
   private _buildAssetsTab(): HTMLElement {
     const wrap = document.createElement('div');
 
-    // Filter bar
+    // ── Role filter tabs ───────────────────────────────────────────────────
+    const roleSec = document.createElement('div');
+    roleSec.className = 'ds-section';
+    const roleRow = document.createElement('div');
+    roleRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+    const roles: Array<{ id: 'all' | 'enemy' | 'npc' | 'player'; label: string }> = [
+      { id: 'all',    label: 'All' },
+      { id: 'enemy',  label: '⚔ Enemies' },
+      { id: 'npc',    label: '👥 NPCs' },
+      { id: 'player', label: '🧙 Player' },
+    ];
+    const roleBtns: HTMLButtonElement[] = [];
+    roles.forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn';
+      btn.textContent = r.label;
+      btn.style.cssText = 'font-size:.7rem;padding:2px 8px;';
+      btn.onclick = () => {
+        this._assetRoleTab = r.id;
+        roleBtns.forEach((b, i) => {
+          b.style.background = i === roles.findIndex(x => x.id === r.id) ? '#7040cc' : '';
+        });
+        renderList();
+      };
+      if (r.id === this._assetRoleTab) btn.style.background = '#7040cc';
+      roleBtns.push(btn);
+      roleRow.appendChild(btn);
+    });
+    roleSec.appendChild(roleRow);
+    wrap.appendChild(roleSec);
+
+    // ── Filter bar ─────────────────────────────────────────────────────────
     const filterSec = document.createElement('div');
     filterSec.className = 'ds-section';
     const filterRow = document.createElement('div');
@@ -1248,70 +1302,180 @@ export class DevSandbox {
     const filterInp = document.createElement('input');
     filterInp.type = 'text';
     filterInp.className = 'ds-input ds-input--wide';
-    filterInp.placeholder = 'e.g. knight, archer…';
+    filterInp.placeholder = 'e.g. skeleton, goblin, fay…';
     filterInp.value = this._assetFilter;
     filterInp.oninput = () => { this._assetFilter = filterInp.value.toLowerCase(); renderList(); };
     filterRow.append(filterLbl, filterInp);
     filterSec.appendChild(filterRow);
     wrap.appendChild(filterSec);
 
-    // Model list
+    // ── Model list ─────────────────────────────────────────────────────────
     const listSec = document.createElement('div');
     listSec.className = 'ds-section';
     const listTitle = document.createElement('div');
     listTitle.className = 'ds-section-title';
     listTitle.textContent = `${CHAR_MODELS.length} models in manifest`;
     const listEl = document.createElement('div');
-    listEl.style.cssText = 'display:flex;flex-direction:column;gap:3px;max-height:320px;overflow-y:auto;';
+    listEl.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto;';
     listSec.append(listTitle, listEl);
     wrap.appendChild(listSec);
 
     const renderList = () => {
       listEl.innerHTML = '';
-      const filter = this._assetFilter;
-      const shown = filter
-        ? CHAR_MODELS.filter(m => m.name.toLowerCase().includes(filter) || m.packId.toLowerCase().includes(filter))
-        : CHAR_MODELS;
+      const filter   = this._assetFilter;
+      const roleTab  = this._assetRoleTab;
+
+      let shown = CHAR_MODELS as import('@/characters/charManifest').CharModelDef[];
+      if (roleTab !== 'all') shown = shown.filter(m => (m.roles as string[]).includes(roleTab));
+      if (filter) shown = shown.filter(m =>
+        m.name.toLowerCase().includes(filter) ||
+        m.packId.toLowerCase().includes(filter) ||
+        (m.tags as string[]).some(t => t.includes(filter)),
+      );
+
       listTitle.textContent = `${shown.length} / ${CHAR_MODELS.length} models`;
 
       for (const model of shown) {
-        const pack = CHAR_PACKS.find(p => p.id === model.packId);
+        const pack    = CHAR_PACKS.find(p => p.id === model.packId);
+        const isPreviewed = model.id === this._previewModelId;
+
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:2px 0;';
+        row.style.cssText = `display:flex;align-items:center;gap:4px;padding:2px 3px;border-radius:3px;${isPreviewed ? 'background:rgba(112,64,204,.25);outline:1px solid #7040cc55;' : ''}`;
 
         const icon = document.createElement('span');
         icon.textContent = pack?.icon ?? '📦';
-        icon.style.cssText = 'font-size:.9rem;min-width:18px;';
+        icon.style.cssText = 'font-size:.85rem;min-width:16px;';
 
-        const name = document.createElement('span');
-        name.style.cssText = 'font-size:.74rem;color:#c0a0f0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-        name.textContent = model.name;
-        name.title = model.path;
+        const nameWrap = document.createElement('div');
+        nameWrap.style.cssText = 'flex:1;min-width:0;';
+        const nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-size:.74rem;color:#c0a0f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        nameEl.textContent = model.name;
+        nameEl.title = model.path;
+        const packLabel = document.createElement('div');
+        packLabel.style.cssText = 'font-size:.62rem;color:#4a3860;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        packLabel.textContent = pack?.name ?? model.packId;
+        nameWrap.append(nameEl, packLabel);
 
+        // Badge for animation availability
+        const hasSelfAnims  = !!model.animRig || !!model.animRigB;
+        const animBadge = document.createElement('span');
+        animBadge.style.cssText = 'font-size:.6rem;padding:1px 4px;border-radius:2px;flex-shrink:0;';
+        if (hasSelfAnims) {
+          animBadge.textContent = '🎬';
+          animBadge.title = `Has animation rig: ${model.animRig ?? model.animRigB}`;
+          animBadge.style.background = 'rgba(0,160,80,.2)';
+          animBadge.style.color = '#40e080';
+        } else {
+          animBadge.textContent = 'static';
+          animBadge.title = 'No animation rig — may have embedded clips';
+          animBadge.style.background = 'rgba(80,80,80,.2)';
+          animBadge.style.color = '#606060';
+        }
+
+        // Preview button
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'ds-btn';
+        prevBtn.style.cssText = 'font-size:.65rem;padding:1px 5px;flex-shrink:0;';
+        prevBtn.textContent = isPreviewed ? '▶ On' : '▶ View';
+        prevBtn.title = `Spawn ${model.name} as inspection model`;
+        prevBtn.onclick = async () => {
+          prevBtn.textContent = '…';
+          prevBtn.disabled = true;
+          this._previewModelId = model.id;
+          this._updatePreviewInspector(model, []);
+          if (this._previewStatusEl) this._previewStatusEl.textContent = `Loading ${model.name}…`;
+
+          const clips = await this._opts.onPreviewModel?.(model) ?? [];
+          this._updatePreviewInspector(model, clips);
+          renderList(); // refresh highlight
+        };
+
+        // Equip button
         const swapBtn = document.createElement('button');
         swapBtn.className = 'ds-btn';
-        swapBtn.style.cssText = 'font-size:.7rem;padding:2px 7px;flex-shrink:0;';
-        swapBtn.textContent = '⇄ Equip';
-        swapBtn.title = `Swap player to ${model.name}`;
+        swapBtn.style.cssText = 'font-size:.65rem;padding:1px 5px;flex-shrink:0;';
+        swapBtn.textContent = '⇄';
+        swapBtn.title = `Equip ${model.name} on player`;
         swapBtn.onclick = () => {
           this._opts.onSwapPlayerModel?.(model.path);
           swapBtn.textContent = '✓';
-          setTimeout(() => { swapBtn.textContent = '⇄ Equip'; }, 1200);
+          setTimeout(() => { swapBtn.textContent = '⇄'; }, 1000);
         };
 
-        row.append(icon, name, swapBtn);
+        row.append(icon, nameWrap, animBadge, prevBtn, swapBtn);
         listEl.appendChild(row);
       }
     };
 
     renderList();
 
+    // ── Animation Inspector ────────────────────────────────────────────────
+    const animSec = document.createElement('div');
+    animSec.className = 'ds-section';
+    const animTitle = document.createElement('div');
+    animTitle.className = 'ds-section-title';
+    animTitle.textContent = 'Animation Inspector';
+
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:.72rem;color:#786090;padding:4px 0;font-style:italic;';
+    statusEl.textContent = '← Click ▶ View on any model to inspect it';
+    this._previewStatusEl = statusEl;
+
+    const clipListEl = document.createElement('div');
+    clipListEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;';
+    this._previewClipListEl = clipListEl;
+
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'ds-btn';
+    stopBtn.style.cssText = 'font-size:.68rem;margin-top:5px;';
+    stopBtn.textContent = '■ Stop';
+    stopBtn.onclick = () => {
+      this._opts.onPlayPreviewAnim?.('');
+      this._previewAnimBtns.forEach(b => { (b as HTMLButtonElement).style.background = ''; });
+    };
+
+    animSec.append(animTitle, statusEl, clipListEl, stopBtn);
+    wrap.appendChild(animSec);
+
+    // ── Hint ───────────────────────────────────────────────────────────────
     const hint = document.createElement('div');
     hint.className = 'ds-hint';
-    hint.textContent = 'Equip swaps the player\'s visible mesh. Stats and physics are unchanged.';
+    hint.textContent = '▶ View spawns an isolated preview at origin. ⇄ Equips on the player. 🎬 = has animation rig.';
     wrap.appendChild(hint);
 
     return wrap;
+  }
+
+  /** Update the animation inspector section after a model is previewed. */
+  private _updatePreviewInspector(model: import('@/characters/charManifest').CharModelDef, clips: string[]): void {
+    if (!this._previewStatusEl || !this._previewClipListEl) return;
+
+    if (clips.length === 0) {
+      this._previewStatusEl.textContent = `${model.name} — no animation clips found`;
+      this._previewStatusEl.style.color = '#9070a0';
+    } else {
+      this._previewStatusEl.textContent = `${model.name} — ${clips.length} clip${clips.length > 1 ? 's' : ''} available`;
+      this._previewStatusEl.style.color = '#40e080';
+    }
+
+    this._previewClipListEl.innerHTML = '';
+    this._previewAnimBtns = [];
+
+    for (const clipName of clips) {
+      const btn = document.createElement('button');
+      btn.className = 'ds-btn';
+      btn.style.cssText = 'font-size:.65rem;padding:2px 7px;';
+      btn.textContent = clipName;
+      btn.title = `Play animation: ${clipName}`;
+      btn.onclick = () => {
+        this._opts.onPlayPreviewAnim?.(clipName);
+        this._previewAnimBtns.forEach(b => { (b as HTMLButtonElement).style.background = ''; });
+        btn.style.background = '#7040cc';
+      };
+      this._previewClipListEl.appendChild(btn);
+      this._previewAnimBtns.push(btn);
+    }
   }
 
   // ── Cheats tab ────────────────────────────────────────────────────────────
@@ -1391,9 +1555,19 @@ export class DevSandbox {
     }
     const allSpellsBtn = document.createElement('button');
     allSpellsBtn.className = 'ds-btn';
-    allSpellsBtn.textContent = '✨ Grant All Spells';
+    allSpellsBtn.textContent = '✨ Grant All Spells + Abilities';
+    allSpellsBtn.title = 'Unlock all 8 spells + all species abilities (Q R Z X)';
     allSpellsBtn.onclick = () => o.onGrantAllSpells();
     spellSec.appendChild(allSpellsBtn);
+
+    if (o.onGrantAllAbilities) {
+      const allAbilitiesBtn = document.createElement('button');
+      allAbilitiesBtn.className = 'ds-btn';
+      allAbilitiesBtn.textContent = '🪄 Grant All Abilities';
+      allAbilitiesBtn.title = 'Grant species Q/R abilities + Blink (Z) + Levitate (X)';
+      allAbilitiesBtn.onclick = () => o.onGrantAllAbilities!();
+      spellSec.appendChild(allAbilitiesBtn);
+    }
     wrap.appendChild(spellSec);
 
     // ── Combat ────────────────────────────────────────────────────────────

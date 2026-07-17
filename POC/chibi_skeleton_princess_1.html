@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Chibi Skeleton Princess</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a2e; /* Spooky night sky */
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #eee;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        h3 { margin: 0 0 5px 0; font-size: 1.8rem; letter-spacing: 1px; }
+        p { margin: 0; font-size: 0.9rem; color: #aaa; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h3>Chibi Skeleton Princess</h3>
+        <p>Procedural Skeletal Rigging & Cape Physics | Drag to rotate | Scroll to zoom</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+        scene.fog = new THREE.Fog(0x1a1a2e, 20, 100);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 12, 35);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 5, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+
+        // --- Lighting ---
+        // Spooky ambient moonlight
+        const ambientLight = new THREE.AmbientLight(0x2a2a44, 1.5);
+        scene.add(ambientLight);
+
+        // Main moonlight (cool blue)
+        const dirLight = new THREE.DirectionalLight(0x88bbff, 2.0);
+        dirLight.position.set(15, 25, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 70;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        scene.add(dirLight);
+
+        // Warm rim light to make the character pop from the dark background
+        const rimLight = new THREE.DirectionalLight(0xffaa55, 1.5);
+        rimLight.position.set(-15, 10, -15);
+        scene.add(rimLight);
+
+        // --- Environment ---
+        // Graveyard/Cobblestone floor base
+        const groundGeo = new THREE.CylinderGeometry(30, 30, 2, 32);
+        const groundMat = new THREE.MeshStandardMaterial({ 
+            color: 0x222233, 
+            roughness: 0.8, 
+            flatShading: true 
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.position.y = -1;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Floating spooky wisps (particles)
+        const wispGeo = new THREE.IcosahedronGeometry(0.2, 0);
+        const wispMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 });
+        const wisps = [];
+        for(let i=0; i<15; i++) {
+            const wisp = new THREE.Mesh(wispGeo, wispMat);
+            wisp.position.set(
+                (Math.random() - 0.5) * 30,
+                Math.random() * 15,
+                (Math.random() - 0.5) * 30
+            );
+            wisp.userData = {
+                speed: Math.random() * 0.02 + 0.01,
+                offset: Math.random() * Math.PI * 2
+            };
+            scene.add(wisp);
+            wisps.push(wisp);
+        }
+
+        // --- GUI Parameters ---
+        const params = {
+            boneColor: '#e8e8e4',
+            dressColor: '#3a0ca3',
+            trimColor: '#f72585',
+            eyeGlow: '#00ffff',
+            crownColor: '#ffd700',
+            walkSpeed: 5.0,
+            strideLength: 1.2,
+            headSize: 1.0,
+            isWalking: true
+        };
+
+        const materials = {
+            bone: new THREE.MeshStandardMaterial({ color: params.boneColor, flatShading: true, roughness: 0.9 }),
+            socket: new THREE.MeshStandardMaterial({ color: 0x111111, flatShading: true, roughness: 1.0 }),
+            glow: new THREE.MeshBasicMaterial({ color: params.eyeGlow }), // Unlit material for glowing effect
+            dress: new THREE.MeshStandardMaterial({ color: params.dressColor, flatShading: true, roughness: 0.7 }),
+            trim: new THREE.MeshStandardMaterial({ color: params.trimColor, flatShading: true, roughness: 0.5 }),
+            gold: new THREE.MeshStandardMaterial({ color: params.crownColor, flatShading: true, roughness: 0.3, metalness: 0.8 })
+        };
+
+        let characterRoot = new THREE.Group();
+        scene.add(characterRoot);
+        let rig = {};
+
+        // Helper: Create a bone with joints
+        function createBone(length, thickness, mat) {
+            const group = new THREE.Group();
+            
+            // Bone shaft
+            const boneGeo = new THREE.CylinderGeometry(thickness*0.6, thickness, length, 5);
+            const boneMesh = new THREE.Mesh(boneGeo, mat);
+            boneMesh.position.y = -length / 2;
+            boneMesh.castShadow = true;
+            boneMesh.receiveShadow = true;
+            group.add(boneMesh);
+
+            // Joint sphere at the top (pivot point)
+            const jointGeo = new THREE.IcosahedronGeometry(thickness * 1.3, 0);
+            const jointMesh = new THREE.Mesh(jointGeo, mat);
+            jointMesh.castShadow = true;
+            group.add(jointMesh);
+
+            return group;
+        }
+
+        function buildCharacter() {
+            while(characterRoot.children.length > 0) {
+                characterRoot.remove(characterRoot.children[0]);
+            }
+            rig = {};
+
+            // Root
+            rig.root = new THREE.Group();
+            rig.root.position.y = 5.0; // Base height
+            characterRoot.add(rig.root);
+
+            // --- Torso / Dress ---
+            // Elegant A-line gothic dress
+            const dressGeo = new THREE.CylinderGeometry(1.0, 3.0, 4.5, 8);
+            const dressMesh = new THREE.Mesh(dressGeo, materials.dress);
+            dressMesh.position.y = -2.25;
+            dressMesh.castShadow = true;
+            dressMesh.receiveShadow = true;
+            
+            rig.torso = new THREE.Group();
+            rig.torso.add(dressMesh);
+            rig.root.add(rig.torso);
+
+            // Dress Trim
+            const trimGeo = new THREE.TorusGeometry(3.0, 0.2, 4, 8);
+            trimGeo.rotateX(Math.PI / 2);
+            const trimMesh = new THREE.Mesh(trimGeo, materials.trim);
+            trimMesh.position.y = -4.3;
+            rig.torso.add(trimMesh);
+
+            // Waist sash
+            const sashGeo = new THREE.CylinderGeometry(1.2, 1.4, 0.6, 8);
+            const sashMesh = new THREE.Mesh(sashGeo, materials.trim);
+            sashMesh.position.y = -1.2;
+            rig.torso.add(sashMesh);
+
+            // --- Cape ---
+            rig.capeSegments = [];
+            const capeRoot = new THREE.Group();
+            capeRoot.position.set(0, -0.5, -1.0); // Attach to back of neck
+            rig.torso.add(capeRoot);
+            
+            let currentCapeParent = capeRoot;
+            const capeParts = 5;
+            
+            for(let i=0; i<capeParts; i++) {
+                const segmentGroup = new THREE.Group();
+                
+                const width = 2.0 + (i * 0.4); // Gets wider at the bottom
+                const capeGeo = new THREE.BoxGeometry(width, 1.2, 0.1);
+                const capeMesh = new THREE.Mesh(capeGeo, materials.trim);
+                capeMesh.position.y = -0.6; // Pivot at top
+                capeMesh.castShadow = true;
+                segmentGroup.add(capeMesh);
+                
+                const nextPivot = new THREE.Group();
+                nextPivot.position.y = -1.1; // Connect to bottom of this segment
+                segmentGroup.add(nextPivot);
+                
+                currentCapeParent.add(segmentGroup);
+                rig.capeSegments.push(segmentGroup);
+                currentCapeParent = nextPivot;
+            }
+
+            // --- Neck & Head ---
+            rig.neck = new THREE.Group();
+            rig.neck.position.y = 0.0; // Top of dress
+            rig.torso.add(rig.neck);
+
+            // Cranium (Base Skull)
+            const skullScale = params.headSize;
+            const headGeo = new THREE.IcosahedronGeometry(2.5 * skullScale, 2); 
+            // Flatten bottom slightly for jaw
+            const posAttr = headGeo.attributes.position;
+            for(let i = 0; i < posAttr.count; i++) {
+                if(posAttr.getY(i) < -1) posAttr.setY(i, posAttr.getY(i) * 0.7);
+            }
+            headGeo.computeVertexNormals();
+
+            const headMesh = new THREE.Mesh(headGeo, materials.bone);
+            headMesh.position.y = 2.5 * skullScale;
+            headMesh.castShadow = true;
+            rig.neck.add(headMesh);
+
+            // --- Face / Sockets ---
+            // Eye Sockets (Deep black boxes inset into the skull)
+            const socketGeo = new THREE.BoxGeometry(1.2 * skullScale, 1.4 * skullScale, 0.8);
+            
+            const leftSocket = new THREE.Mesh(socketGeo, materials.socket);
+            leftSocket.position.set(0.9 * skullScale, 0.2 * skullScale, 2.0 * skullScale);
+            leftSocket.rotation.y = Math.PI / 8;
+            leftSocket.rotation.z = Math.PI / 16;
+            
+            const rightSocket = new THREE.Mesh(socketGeo, materials.socket);
+            rightSocket.position.set(-0.9 * skullScale, 0.2 * skullScale, 2.0 * skullScale);
+            rightSocket.rotation.y = -Math.PI / 8;
+            rightSocket.rotation.z = -Math.PI / 16;
+            
+            headMesh.add(leftSocket, rightSocket);
+
+            // Glowing Magic Pupils
+            const pupilGeo = new THREE.SphereGeometry(0.3 * skullScale, 16, 16);
+            
+            const leftPupil = new THREE.Mesh(pupilGeo, materials.glow);
+            leftPupil.position.set(0, 0, 0.2); // Positioned inside socket
+            leftSocket.add(leftPupil);
+            
+            const rightPupil = new THREE.Mesh(pupilGeo, materials.glow);
+            rightPupil.position.set(0, 0, 0.2);
+            rightSocket.add(rightPupil);
+            
+            // Add point lights to the eyes to make them actually cast glow on the face
+            const eyeLightL = new THREE.PointLight(params.eyeGlow, 0.5, 5);
+            eyeLightL.position.set(0, 0, 0.5);
+            leftPupil.add(eyeLightL);
+            const eyeLightR = new THREE.PointLight(params.eyeGlow, 0.5, 5);
+            eyeLightR.position.set(0, 0, 0.5);
+            rightPupil.add(eyeLightR);
+
+            // Nasal Cavity (Tiny dark triangle)
+            const noseGeo = new THREE.ConeGeometry(0.3 * skullScale, 0.5 * skullScale, 3);
+            noseGeo.rotateX(-Math.PI / 2);
+            const nose = new THREE.Mesh(noseGeo, materials.socket);
+            nose.position.set(0, -0.6 * skullScale, 2.4 * skullScale);
+            headMesh.add(nose);
+
+            // Cute Chibi Teeth (Curved row of small white boxes)
+            const toothGeo = new THREE.BoxGeometry(0.15 * skullScale, 0.3 * skullScale, 0.1 * skullScale);
+            for(let i=-2; i<=2; i++) {
+                const tooth = new THREE.Mesh(toothGeo, materials.bone);
+                const angle = i * 0.15;
+                const radius = 2.3 * skullScale;
+                tooth.position.set(
+                    Math.sin(angle) * radius, 
+                    -1.3 * skullScale, 
+                    Math.cos(angle) * radius
+                );
+                tooth.rotation.y = angle;
+                headMesh.add(tooth);
+            }
+
+            // --- Crooked Crown ---
+            const crownGroup = new THREE.Group();
+            crownGroup.position.set(0.5, 2.3 * skullScale, 0.2);
+            crownGroup.rotation.z = -Math.PI / 8; // Crooked tilt
+            crownGroup.rotation.x = -Math.PI / 16;
+            headMesh.add(crownGroup);
+
+            const crownBaseGeo = new THREE.TorusGeometry(0.8, 0.15, 4, 8);
+            crownBaseGeo.rotateX(Math.PI / 2);
+            const crownBase = new THREE.Mesh(crownBaseGeo, materials.gold);
+            crownGroup.add(crownBase);
+            
+            for(let i=0; i<5; i++) {
+                const spikeGeo = new THREE.ConeGeometry(0.2, 0.8, 4);
+                const spike = new THREE.Mesh(spikeGeo, materials.gold);
+                const angle = (i / 5) * Math.PI * 2;
+                spike.position.set(Math.cos(angle)*0.8, 0.4, Math.sin(angle)*0.8);
+                // Tilt spikes outward slightly
+                spike.rotation.x = Math.PI/12;
+                spike.rotation.order = 'YXZ';
+                spike.rotation.y = -angle + Math.PI/2;
+                crownGroup.add(spike);
+            }
+
+            // --- Bony Arms ---
+            rig.shoulders = [];
+            rig.elbows = [];
+            
+            const boneThickness = 0.15;
+
+            for (let i = -1; i <= 1; i += 2) {
+                // Clavicle extension to get arms outside the dress
+                const clavicleOffset = 1.3;
+                
+                const shoulder = new THREE.Group();
+                shoulder.position.set(i * clavicleOffset, -0.5, 0);
+                rig.torso.add(shoulder);
+                rig.shoulders.push(shoulder);
+
+                const upperArm = createBone(1.8, boneThickness, materials.bone);
+                shoulder.add(upperArm);
+
+                const elbow = new THREE.Group();
+                elbow.position.set(0, -1.8, 0); // End of humerus
+                upperArm.add(elbow);
+                rig.elbows.push(elbow);
+
+                const lowerArm = createBone(1.6, boneThickness, materials.bone);
+                elbow.add(lowerArm);
+
+                // Skeletal hand (small cluster of blocks)
+                const handGeo = new THREE.BoxGeometry(0.4, 0.5, 0.2);
+                const hand = new THREE.Mesh(handGeo, materials.bone);
+                hand.position.set(0, -1.8, 0);
+                lowerArm.add(hand);
+            }
+
+            // --- Bony Legs ---
+            // Hidden mostly under the dress, but visible during walk
+            rig.hips = [];
+            rig.knees = [];
+            
+            for (let i = -1; i <= 1; i += 2) {
+                const hip = new THREE.Group();
+                hip.position.set(i * 0.6, -3.5, 0); // Under dress
+                rig.torso.add(hip);
+                rig.hips.push(hip);
+
+                const thigh = createBone(2.0, boneThickness * 1.2, materials.bone);
+                hip.add(thigh);
+
+                const knee = new THREE.Group();
+                knee.position.set(0, -2.0, 0);
+                thigh.add(knee);
+                rig.knees.push(knee);
+
+                const calf = createBone(1.8, boneThickness * 1.2, materials.bone);
+                knee.add(calf);
+
+                // Skeletal foot
+                const footGeo = new THREE.BoxGeometry(0.5, 0.3, 0.8);
+                footGeo.translate(0, -0.15, 0.2); 
+                const foot = new THREE.Mesh(footGeo, materials.bone);
+                foot.position.set(0, -1.8, 0);
+                calf.add(foot);
+            }
+        }
+
+        const clock = new THREE.Clock();
+        
+        function updateAnimation() {
+            const time = clock.getElapsedTime();
+            
+            // Animate environmental wisps
+            wisps.forEach((wisp, i) => {
+                wisp.position.y += Math.sin(time * 2 + wisp.userData.offset) * 0.02;
+                wisp.rotation.x += wisp.userData.speed;
+                wisp.rotation.y += wisp.userData.speed;
+            });
+
+            if (!rig.root) return;
+
+            const isWalk = params.isWalking;
+            const walkSpeed = params.walkSpeed;
+            const phase = time * walkSpeed;
+            
+            // Idle breathing (gentle hover and dress expansion)
+            const breath = Math.sin(time * 2) * 0.03;
+            rig.torso.scale.set(1 + breath, 1, 1 + breath);
+
+            if (isWalk) {
+                // --- Walk Cycle ---
+                // Root bobbing
+                const bob = Math.abs(Math.sin(phase)) * 0.5;
+                rig.root.position.y = 5.0 + bob;
+                
+                // Torso slight sway
+                rig.torso.rotation.z = Math.sin(phase) * 0.05;
+                rig.torso.rotation.y = Math.sin(phase) * 0.1;
+
+                // Legs & Arms
+                for(let i=0; i<2; i++) {
+                    const legPhase = phase + (i === 0 ? 0 : Math.PI); 
+                    
+                    // Legs swinging
+                    rig.hips[i].rotation.x = Math.sin(legPhase) * params.strideLength * 0.6;
+                    
+                    // Knees snap back slightly (classic rigid skeleton walk)
+                    const kneeBend = Math.max(0, -Math.cos(legPhase)) * params.strideLength * 0.8;
+                    rig.knees[i].rotation.x = kneeBend;
+
+                    // Arms swing opposite to legs
+                    const armPhase = legPhase + Math.PI;
+                    rig.shoulders[i].rotation.x = Math.sin(armPhase) * params.strideLength * 0.5;
+                    
+                    // Arms kept slightly bent for cute posture
+                    rig.elbows[i].rotation.x = -0.3 + Math.sin(armPhase) * 0.2; 
+                    rig.shoulders[i].rotation.z = (i === 0 ? 1 : -1) * 0.2; // A-pose arms
+                }
+                
+                // Head bob
+                rig.neck.rotation.x = Math.sin(phase * 2) * 0.05;
+
+            } else {
+                // --- Idle Stance ---
+                rig.root.position.y = 5.0; // Reset height
+                rig.torso.rotation.set(0, 0, 0);
+
+                for(let i=0; i<2; i++) {
+                    // Spread legs slightly
+                    rig.hips[i].rotation.set(0.1, (i===0 ? 0.2 : -0.2), (i===0 ? 0.1 : -0.1));
+                    rig.knees[i].rotation.set(0, 0, 0);
+                    
+                    // Polite/Shy hand clasp pose
+                    rig.shoulders[i].rotation.set(0.3, (i===0 ? 0.5 : -0.5), (i===0 ? 0.2 : -0.2));
+                    rig.elbows[i].rotation.set(-1.0, 0, 0); // Bend elbows inward
+                }
+                
+                // Head looks around curiously
+                const look = Math.sin(time * 0.5) * 0.3;
+                const tilt = Math.cos(time * 0.4) * 0.1;
+                rig.neck.rotation.set(0, look, tilt);
+            }
+
+            // --- Cape Physics (Sine Wave Propagation) ---
+            const capeSpeed = isWalk ? walkSpeed : 2;
+            const capeAmplitude = isWalk ? 0.3 : 0.1;
+            
+            rig.capeSegments.forEach((segment, index) => {
+                // Offset phase per segment for a trailing ripple effect
+                const segPhase = (time * capeSpeed) - (index * 0.6);
+                
+                // X rotation for billowing backward
+                segment.rotation.x = Math.sin(segPhase) * capeAmplitude + (isWalk ? 0.2 : 0.05);
+                
+                // Slight Y sway
+                segment.rotation.y = Math.cos(time * 1.5 - index * 0.3) * 0.05;
+            });
+        }
+
+        const gui = new GUI({ title: 'Necromancer Control Panel' });
+        
+        const colorFolder = gui.addFolder('Materials & Magic');
+        colorFolder.addColor(params, 'boneColor').name('Bone Polish').onChange(c => materials.bone.color.set(c));
+        colorFolder.addColor(params, 'dressColor').name('Gown Color').onChange(c => materials.dress.color.set(c));
+        colorFolder.addColor(params, 'trimColor').name('Cape & Trim').onChange(c => materials.trim.color.set(c));
+        colorFolder.addColor(params, 'crownColor').name('Gold Hue').onChange(c => materials.gold.color.set(c));
+        
+        colorFolder.addColor(params, 'eyeGlow').name('Soul Glow').onChange(c => {
+            materials.glow.color.set(c);
+            // Update point lights inside the skull
+            characterRoot.traverse((child) => {
+                if (child.isPointLight) child.color.set(c);
+            });
+        });
+        
+        const morphFolder = gui.addFolder('Skeletal Proportions');
+        morphFolder.add(params, 'headSize', 0.6, 1.5).name('Cranium Size').onChange(buildCharacter);
+        
+        const animFolder = gui.addFolder('Animation');
+        animFolder.add(params, 'isWalking').name('Toggle March');
+        animFolder.add(params, 'walkSpeed', 1, 10).name('March Speed');
+        animFolder.add(params, 'strideLength', 0.5, 2.0).name('Stride Range');
+
+        // Initial Build
+        buildCharacter();
+
+        // Main Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            updateAnimation();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start
+        animate();
+    </script>
+</body>
+</html>

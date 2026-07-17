@@ -6,6 +6,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { SlimePersonality } from '@/interactables/TamingGame';
 import { mulberry32 } from '@/core/prng';
 import type { SpatialHash } from '@/core/SpatialHash';
+import { PatrolBehavior, type PatrolBehaviorOptions } from '@/enemy/PatrolBehavior';
+import { AggroSystem, type AggroListener } from '@/enemy/AggroSystem';
 
 // VFX PRNG — deterministic, never Math.random()
 const _slimeRand = mulberry32(0xBAADF00D);
@@ -132,9 +134,21 @@ export class SlimeEnemy implements Damageable {
   private _deathTimer = -1.0;
   private readonly _deathChunks: Array<{ mesh: THREE.Mesh; vel: THREE.Vector3 }> = [];
   private _deathChunkGeo: THREE.IcosahedronGeometry | null = null;
+  // G3: death knockback slide
+  private _knockbackDir = new THREE.Vector3();
+  private _knockbackSpeed = 0;
 
   /** Current aggro target when acting as a follower. null = follow player. */
   private _followerTarget: SlimeEnemy | null = null;
+
+  // ── B4: PatrolBehavior + AggroSystem integration ──────────────────────────
+  /** When set, the patrol FSM overrides the built-in idle→chase transitions. */
+  private _patrol: PatrolBehavior | null = null;
+  /** Set to true when this enemy receives an aggro shout from a nearby ally. */
+  private _aggroAlerted = false;
+  /** Countdown for model fade on death (drives EnemyRig opacity to 0). */
+  private _modelFadeTimer = -1.0;
+  private readonly MODEL_FADE_DURATION = 1.5; // seconds
 
   constructor(
     spawnPosition: THREE.Vector3,
@@ -249,6 +263,31 @@ export class SlimeEnemy implements Damageable {
     (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_FLEE_COLOR);
   }
 
+  // ── B4: patrol + aggro ────────────────────────────────────────────────────
+
+  /**
+   * Attach a PatrolBehavior so this enemy walks between waypoints when not
+   * aggroed.  Call before adding to the scene.
+   * Also registers the enemy with the global AggroSystem.
+   */
+  setPatrolBehavior(opts: Partial<PatrolBehaviorOptions>): void {
+    this._patrol = new PatrolBehavior(opts);
+    AggroSystem.instance.register(this as unknown as AggroListener);
+  }
+
+  /**
+   * AggroListener.onAggroShout — called by AggroSystem when a nearby ally
+   * detects the player.  Forces this enemy into chase mode next update.
+   */
+  onAggroShout(_shouter: AggroListener): void {
+    if (this.state === 'idle' || this.state === 'alert') {
+      this._aggroAlerted = true;
+    }
+  }
+
+  /** AggroListener.worldPosition (already defined; satisfies the interface). */
+  // worldPosition getter already exists below
+
   /**
    * Recruit this enemy into the player's party.
    * Changes colour to purple and sets the FSM to `'recruited'`.
@@ -330,6 +369,38 @@ export class SlimeEnemy implements Damageable {
     // ── FSM transitions ────────────────────────────────────────────────────
     const flat = new THREE.Vector3(playerPos.x - this._pos.x, 0, playerPos.z - this._pos.z);
     const distToPlayer = flat.length();
+
+    // B4: apply aggro shout — force into chase if alerted by a nearby ally
+    if (this._aggroAlerted && !this.isDead && this.state !== 'recruited') {
+      this.state       = 'chase';
+      this._aggroAlerted = false;
+    }
+
+    // B4: if patrol behavior is attached, run it in parallel.
+    // The patrol FSM returns a movement velocity that overrides the default
+    // idle/alert transitions (but NOT flee, recruited, or dead states).
+    if (this._patrol && !this.isDead && this.state !== 'flee' && this.state !== 'recruited') {
+      const pout = this._patrol.tick(this._pos, playerPos, dt);
+      // Sync patrol FSM state → slime state
+      if (pout.state === 'dead') {
+        this.state = 'dead';
+      } else if (pout.state === 'attack') {
+        this.state = 'attack';
+      } else if (pout.state === 'chase') {
+        if (this.state !== 'attack') this.state = 'chase';
+        // Broadcast aggro shout on first detection
+        if (pout.justDetected) AggroSystem.instance.shout(this as unknown as AggroListener);
+      } else if (pout.state === 'alert') {
+        if (this.state === 'idle') {
+          this.state = 'alert';
+          if (pout.justDetected) AggroSystem.instance.shout(this as unknown as AggroListener);
+        }
+      }
+      // Override movement with patrol FSM output (applied further down in movement section)
+      this.group.userData['_patrolOut'] = pout;
+    } else {
+      this.group.userData['_patrolOut'] = null;
+    }
 
     // Low-HP flee threshold (check before normal FSM so it can interrupt any state)
     if (this.state !== 'flee' && this.state !== 'recruited') {
@@ -736,9 +807,23 @@ export class SlimeEnemy implements Damageable {
     if (this.state === 'idle') this.state = 'alert';
   }
 
+  /** G3: Apply a brief outward slide on death (call when lethal damage is dealt).
+   *  @param fromPos  World position of the attacker — enemy slides away from it.
+   *  @param speed    Initial slide speed in WU/s (default 4). */
+  applyDeathKnockback(fromPos: THREE.Vector3, speed = 4.0): void {
+    this._knockbackDir.subVectors(this.worldPosition, fromPos).setY(0);
+    if (this._knockbackDir.lengthSq() < 0.001) this._knockbackDir.set(1, 0, 0);
+    this._knockbackDir.normalize();
+    this._knockbackSpeed = speed;
+  }
+
   private onDead(): void {
     this.state = 'dead';
     this._deathTimer = DEATH_ANIM_DURATION;
+    // B4: start model fade timer for the attached EnemyRig (if any)
+    this._modelFadeTimer = this.MODEL_FADE_DURATION;
+    // Unregister from aggro system on death
+    AggroSystem.instance.unregister(this as unknown as AggroListener);
 
     // Reset colour and show body for Phase 1 pop squash
     (this.bodyMesh.material as THREE.MeshLambertMaterial).color.setHex(SLIME_COLOR);
@@ -784,6 +869,13 @@ export class SlimeEnemy implements Damageable {
 
     const elapsed = DEATH_ANIM_DURATION - Math.max(0, this._deathTimer);
     const t = elapsed / DEATH_ANIM_DURATION; // 0 → 1
+
+    // G3: knockback slide — decelerates over the first 30% of the anim
+    if (t < 0.3 && this._knockbackSpeed > 0) {
+      const slide = this._knockbackSpeed * dt;
+      this.group.position.addScaledVector(this._knockbackDir, slide);
+      this._knockbackSpeed = Math.max(0, this._knockbackSpeed - 20 * dt); // decelerate
+    }
 
     if (t < 0.20) {
       // Phase 1 (0–20%): pop—body expands outward flat like a burst bubble
