@@ -28,6 +28,74 @@
       flex-direction: column;
       overflow: hidden;
     }
+    /* ── Mode tabs ──────────────────────────────────── */
+    #mode-tabs {
+      display: flex;
+      border-bottom: 1px solid #2a1e40;
+      flex-shrink: 0;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 7px 4px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #665588;
+      font-size: 11px;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .mode-tab:hover { color: #aaa; }
+    .mode-tab.active { color: #c090ff; border-bottom-color: #8844cc; }
+    #chars-panel, #env-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+    /* ── Environment panel ──────────────────────────── */
+    #env-filter-bar { padding: 6px 8px; border-bottom: 1px solid #1e1630; }
+    #env-filter-bar input { width: 100%; background: #1a1626; border: 1px solid #2a1e40; color: #eee; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
+    #env-cat-bar { display: flex; flex-wrap: wrap; gap: 3px; padding: 5px 6px; border-bottom: 1px solid #1e1630; }
+    .env-cat-btn { font-size: 10px; padding: 2px 6px; background: #1a1626; border: 1px solid #2a1e40; color: #665588; border-radius: 3px; cursor: pointer; }
+    .env-cat-btn.active { background: #2a1645; color: #c090ff; border-color: #6633aa; }
+    #env-list-section { flex: 1; overflow-y: auto; }
+    #env-list { list-style: none; padding: 0; margin: 0; }
+    #env-list li { display: flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer; border-bottom: 1px solid #1a1626; font-size: 11px; color: #998ab8; }
+    #env-list li:hover { background: #1e1830; color: #eee; }
+    #env-list li.active { background: #2a1645; color: #e0d0ff; }
+    #env-list li.status-miss { color: #ff6666; }
+    #env-info-section { padding: 8px 10px; border-top: 1px solid #2a1e40; font-size: 11px; }
+    #env-asset-title { font-size: 13px; color: #ddd; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+    #env-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin-bottom: 6px; color: #998ab8; }
+    #env-stats-grid .lbl { color: #554466; }
+    #env-stats-grid .val { color: #c8b8e8; font-family: monospace; }
+    #env-scale-controls { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+    /* ── Editor mode ─────────────────────────────────── */
+    #editor-sub-tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid #2a1e40; }
+    .editor-sub { flex: 1; padding: 5px 2px; background: transparent; border: none; border-bottom: 2px solid transparent; color: #554466; font-size: 10px; cursor: pointer; }
+    .editor-sub:hover { color: #aaa; }
+    .editor-sub.active { color: #ffcc44; border-bottom-color: #aa8800; }
+    #editor-asset-panel { flex: 1; overflow-y: auto; border-bottom: 1px solid #2a1e40; }
+    #editor-asset-search { width: 100%; background: #1a1626; border: none; border-bottom: 1px solid #2a1e40; color: #eee; padding: 5px 8px; font-size: 12px; box-sizing: border-box; }
+    #editor-asset-cats { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 5px; }
+    .ed-cat-btn { font-size: 9px; padding: 2px 5px; background: #1a1626; border: 1px solid #2a1e40; color: #554466; border-radius: 2px; cursor: pointer; }
+    .ed-cat-btn.active { background: #2a1a00; color: #ffcc44; border-color: #aa8800; }
+    #editor-asset-list { list-style: none; padding: 0; margin: 0; }
+    #editor-asset-list li { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; color: #998ab8; cursor: pointer; border-bottom: 1px solid #110d1a; }
+    #editor-asset-list li:hover { background: #1e1830; color: #eee; }
+    #editor-asset-list li.placing { background: #2a2000; color: #ffcc44; }
+    #editor-toolbar { display: flex; align-items: center; gap: 3px; padding: 4px 6px; background: #0e0c16; border-top: 1px solid #2a1e40; flex-wrap: wrap; flex-shrink: 0; }
+    .ed-tool { background: transparent; border: 1px solid #2a1e40; color: #665588; padding: 3px 7px; border-radius: 3px; cursor: pointer; font-size: 13px; }
+    .ed-tool:hover { color: #eee; border-color: #6633aa; }
+    .ed-tool.active { background: #2a1645; color: #ffcc44; border-color: #aa8800; }
+    .ed-sep { color: #2a1e40; font-size: 16px; padding: 0 2px; }
+    #editor-inspector { padding: 6px 8px; border-top: 1px solid #2a1e40; font-size: 11px; min-height: 80px; flex-shrink: 0; }
+    #ed-insp-title { color: #998ab8; margin-bottom: 4px; font-size: 12px; }
+    .ed-field { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .ed-field label { color: #554466; min-width: 50px; font-size: 10px; }
+    .ed-field input, .ed-field select { background: #1a1626; border: 1px solid #2a1e40; color: #eee; padding: 2px 4px; font-size: 11px; border-radius: 2px; flex: 1; }
+    #editor-status-bar { display: flex; gap: 8px; padding: 3px 8px; background: #0e0c16; border-top: 1px solid #2a1e40; font-size: 9px; color: #554466; flex-shrink: 0; }
 
     /* ── Model list ── */
     #model-list-section {
@@ -218,29 +286,111 @@
       </div>
     </div>
     <div id="side-panel">
-      <div id="filter-bar">
-        <input id="filter-inp" type="text" placeholder="filter…" />
-        <button class="role-btn active" data-role="all">All</button>
-        <button class="role-btn" data-role="enemy">⚔</button>
-        <button class="role-btn" data-role="npc">👥</button>
-        <button class="role-btn" data-role="player">🧙</button>
-        <button class="role-btn" id="btn-anim-only" title="Show only animated models (default)">🎬</button>
+      <!-- ── Mode tabs ──────────────────────────────────── -->
+      <div id="mode-tabs">
+        <button class="mode-tab active" id="tab-chars" data-mode="chars">🧙 Characters</button>
+        <button class="mode-tab"        id="tab-env"   data-mode="env">🌳 Environment</button>
+        <button class="mode-tab"        id="tab-editor" data-mode="editor">✏️ Editor</button>
       </div>
-      <div id="model-list-section">
-        <ul id="model-list"></ul>
-      </div>
-      <div id="info-section">
-        <div id="model-title">—</div>
-        <div id="stats-grid"></div>
-        <div class="section-title">Camera</div>
-        <div id="cam-controls">
-          <button class="cam-btn active" data-angle="front">Front</button>
-          <button class="cam-btn" data-angle="side">Side</button>
-          <button class="cam-btn" data-angle="iso">Iso</button>
-          <button class="cam-btn" data-angle="top">Top</button>
+
+      <!-- ── Characters mode ───────────────────────────── -->
+      <div id="chars-panel">
+        <div id="filter-bar">
+          <input id="filter-inp" type="text" placeholder="filter…" />
+          <button class="role-btn active" data-role="all">All</button>
+          <button class="role-btn" data-role="enemy">⚔</button>
+          <button class="role-btn" data-role="npc">👥</button>
+          <button class="role-btn" data-role="player">🧙</button>
+          <button class="role-btn" id="btn-anim-only" title="Show only animated models (default)">🎬</button>
         </div>
-        <div class="section-title">Animations</div>
-        <div id="anim-controls"></div>
+        <div id="model-list-section">
+          <ul id="model-list"></ul>
+        </div>
+        <div id="info-section">
+          <div id="model-title">—</div>
+          <div id="stats-grid"></div>
+          <div class="section-title">Camera</div>
+          <div id="cam-controls">
+            <button class="cam-btn active" data-angle="front">Front</button>
+            <button class="cam-btn" data-angle="side">Side</button>
+            <button class="cam-btn" data-angle="iso">Iso</button>
+            <button class="cam-btn" data-angle="top">Top</button>
+          </div>
+          <div class="section-title">Animations</div>
+          <div id="anim-controls"></div>
+        </div>
+      </div>
+
+      <!-- ── Environment mode ──────────────────────────── -->
+      <div id="env-panel" style="display:none">
+        <div id="env-filter-bar">
+          <input id="env-filter-inp" type="text" placeholder="filter assets…" />
+        </div>
+        <div id="env-cat-bar"></div>
+        <div id="env-list-section">
+          <ul id="env-list"></ul>
+        </div>
+        <div id="env-info-section">
+          <div id="env-asset-title">—</div>
+          <div id="env-stats-grid"></div>
+          <div class="section-title">Scale</div>
+          <div id="env-scale-controls">
+            <label style="font-size:11px;color:#888">Game scale:</label>
+            <input id="env-scale-slider" type="range" min="0.1" max="8" step="0.05" value="1" style="flex:1" />
+            <span id="env-scale-val" style="font-family:monospace;font-size:12px;min-width:40px">1.00</span>
+            <button id="env-scale-copy" title="Copy scale value" style="font-size:11px;padding:2px 6px">📋</button>
+          </div>
+          <label style="font-size:11px;color:#888;margin-top:6px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="env-ref-toggle" checked /> Show 2m reference figure
+          </label>
+          <div class="section-title">Camera</div>
+          <div id="env-cam-controls">
+            <button class="cam-btn active" data-angle="front">Front</button>
+            <button class="cam-btn" data-angle="side">Side</button>
+            <button class="cam-btn" data-angle="iso">Iso</button>
+            <button class="cam-btn" data-angle="top">Top</button>
+          </div>
+        </div>
+      </div>
+      <!-- ── Editor mode ───────────────────────────────── -->
+      <div id="editor-panel" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+        <div id="editor-sub-tabs">
+          <button class="editor-sub active" data-etype="tower">🏰 Tower</button>
+          <button class="editor-sub" data-etype="overworld">🌍 World</button>
+          <button class="editor-sub" data-etype="building">🏠 Building</button>
+          <button class="editor-sub" data-etype="interior">🪑 Interior</button>
+          <button class="editor-sub" data-etype="dungeon">⚔️ Dungeon</button>
+        </div>
+        <div id="editor-asset-panel">
+          <input id="editor-asset-search" type="text" placeholder="search assets…" />
+          <div id="editor-asset-cats"></div>
+          <ul id="editor-asset-list"></ul>
+        </div>
+        <div id="editor-toolbar">
+          <button class="ed-tool active" id="ed-tool-select" title="Select [V]">↖</button>
+          <button class="ed-tool" id="ed-tool-move"   title="Move [W]">✛</button>
+          <button class="ed-tool" id="ed-tool-rotate" title="Rotate [E]">↻</button>
+          <button class="ed-tool" id="ed-tool-scale"  title="Scale [R]">⤡</button>
+          <span class="ed-sep">|</span>
+          <button class="ed-tool" id="ed-snap-toggle" title="Snap to grid [S]">⊞</button>
+          <button class="ed-tool" id="ed-view-top"    title="Top view [T]">⊤</button>
+          <button class="ed-tool" id="ed-undo"        title="Undo [Ctrl+Z]">↩</button>
+          <button class="ed-tool" id="ed-redo"        title="Redo [Ctrl+Y]">↪</button>
+          <span class="ed-sep">|</span>
+          <button class="ed-tool" id="ed-save"        title="Save [Ctrl+S]">💾</button>
+          <button class="ed-tool" id="ed-load"        title="Load">📂</button>
+          <input type="file" id="ed-load-input" accept=".json" style="display:none" />
+        </div>
+        <div id="editor-inspector">
+          <div id="ed-insp-title">— nothing selected —</div>
+          <div id="ed-insp-fields"></div>
+        </div>
+        <div id="editor-status-bar">
+          <span id="ed-status-sel">0 selected</span>
+          <span id="ed-status-grid">grid: 2 WU</span>
+          <span id="ed-status-snap">snap: ON</span>
+          <span id="ed-status-undo">0 actions</span>
+        </div>
       </div>
     </div>
   </div>

@@ -77,6 +77,7 @@ import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
 import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
+import { preloadDungeonProps, addPropsToRoom } from '@/rendering/KayKitDungeonProps';
 
 async function main() {
   injectHudTheme();
@@ -161,6 +162,8 @@ async function main() {
   const enemyBars   = new EnemyHealthBars(cameraRig.camera, canvas);
   // Track last floor so onRoomLoaded can detect floor changes and show the location card.
   let _prevFloorIdx = Number.MIN_SAFE_INTEGER;
+  // A4: KayKit dungeon prop group for the currently loaded room — removed on next room swap.
+  let _roomPropGroup: THREE.Group | null = null;
   // Visited rooms — rooms entered at least once get instant lighting on re-entry.
   // First-visit rooms fade up from darkness for an exploration reveal effect.
   const _visitedRoomIds = new Set<string>();
@@ -178,6 +181,12 @@ async function main() {
   sceneManager.onRoomLoaded = (bp, _s) => {
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
+
+    // A4: inject KayKit dungeon props (torches, pillars, barrels) into the room
+    const dungeonPropGroup = addPropsToRoom(bp, assetLoader, bp.id);
+    scene.add(dungeonPropGroup);
+    // Store ref on bp so SceneManager teardown can remove it (we track via _roomPropGroup)
+    _roomPropGroup = dungeonPropGroup;
 
     // Apply ambiance preset, then optionally override intensity for fade.
     const preset = (bp as any).lightPreset ?? 'dungeon';
@@ -395,6 +404,8 @@ async function main() {
     gameMode = 'interior';
     minimap?.hide();
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
+    // Remove previous room's KayKit props before loading new room
+    if (_roomPropGroup) { scene.remove(_roomPropGroup); _roomPropGroup = null; }
     sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
   }
 
@@ -797,6 +808,9 @@ async function main() {
       });
       // onBeatActivate fires during start() for the first beat — no manual init needed
     }
+
+    // A4: preload KayKit dungeon props so first room has assets ready
+    preloadDungeonProps(assetLoader).catch(() => { /* non-fatal */ });
 
     gameLoop.start();
   }

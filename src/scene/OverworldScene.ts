@@ -84,7 +84,7 @@ export interface DungeonEntranceHandle {
 }
 
 // Internal storage entries (not exported)
-interface TreeEntry { group: THREE.Group; px: number; pz: number; }
+interface TreeEntry { group: THREE.Group; px: number; pz: number; biome: string; }
 interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: number; }
 
 // ── OverworldScene ────────────────────────────────────────────────────────────
@@ -359,41 +359,86 @@ export class OverworldScene {
   // ── Asset upgrade ─────────────────────────────────────────────────────────
 
   /**
-   * Swap every procedural tree group's children for a real GLB model loaded
-   * from the Kenney nature-kit.  Safe to call fire-and-forget: if any model
-   * fails to load the procedural fallback geometry remains for that tree.
-   * Physics colliders are keyed by world position and are NOT affected.
+   * Swap procedural tree groups for real KayKit Forest pack GLTF models,
+   * selected by biome so each zone looks distinct:
+   *   forest   → KayKit broadleaf trees (Tree_1, Tree_2, Tree_3 variants)
+   *   bog      → KayKit bare / dead trees (Tree_Bare variants)
+   *   highland → KayKit pine / conifer (Tree_4 variants)
+   *   default  → Kenney nature-kit trees (fallback)
+   *
+   * Physics colliders are keyed by world position and are unaffected.
    */
   async upgradeTreesWithAssets(
     loader: import('@/assets/AssetLoader').AssetLoader,
   ): Promise<void> {
-    const TREE_MODELS = [
+    // ── KayKit Forest pack — biome pools ──────────────────────────────────
+    const KK_FOREST = [
+      '/assets/kaykit_nature/Tree_1_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_1_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_1_C_Color1.gltf',
+      '/assets/kaykit_nature/Tree_2_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_2_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_2_C_Color1.gltf',
+      '/assets/kaykit_nature/Tree_3_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_3_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_3_C_Color1.gltf',
+    ];
+    const KK_BARE = [
+      '/assets/kaykit_nature/Tree_Bare_1_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_Bare_1_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_Bare_1_C_Color1.gltf',
+      '/assets/kaykit_nature/Tree_Bare_2_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_Bare_2_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_Bare_2_C_Color1.gltf',
+    ];
+    const KK_PINE = [
+      '/assets/kaykit_nature/Tree_4_A_Color1.gltf',
+      '/assets/kaykit_nature/Tree_4_B_Color1.gltf',
+      '/assets/kaykit_nature/Tree_4_C_Color1.gltf',
+    ];
+    // Kenney nature-kit fallback (works as default / mixed-biome areas)
+    const KN_DEFAULT = [
       '/assets/nature/tree_default.glb',
       '/assets/nature/tree_cone.glb',
       '/assets/nature/tree_blocks.glb',
       '/assets/nature/tree_detailed.glb',
     ];
 
-    await loader.preload(TREE_MODELS);
+    const allPaths = [...KK_FOREST, ...KK_BARE, ...KK_PINE, ...KN_DEFAULT];
+    await loader.preload(allPaths);
 
     for (const tr of this._trees) {
-      // Deterministic model selection from world position (no extra RNG needed)
-      const hash  = Math.abs((Math.round(tr.px * 17) ^ Math.round(tr.pz * 31)));
-      const idx   = hash % TREE_MODELS.length;
-      const model = loader.getClone(TREE_MODELS[idx]);
+      const hash = Math.abs((Math.round(tr.px * 17) ^ Math.round(tr.pz * 31)));
+
+      // Pick pool and scale based on biome
+      let pool: string[];
+      let scale: number;
+      switch (tr.biome) {
+        case 'bog':
+          pool  = KK_BARE;
+          scale = 2.2;
+          break;
+        case 'highland':
+        case 'rocky':
+          pool  = KK_PINE;
+          scale = 2.8;
+          break;
+        case 'forest':
+          pool  = KK_FOREST;
+          scale = 2.5;
+          break;
+        default:
+          pool  = KN_DEFAULT;
+          scale = 3.0;
+      }
+
+      const model = loader.getClone(pool[hash % pool.length]!);
       if (!model) continue;
-
-      // Kenney nature-kit uses 1-unit tiles; our world tile is T=2 WU, and
-      // the trees should be roughly 4–5 WU tall to match the procedural ones.
-      model.scale.setScalar(3.0);
-
-      // The group already has the correct world position + random Y rotation;
-      // just replace the visual children, leaving transform intact.
+      model.scale.setScalar(scale);
       tr.group.clear();
       tr.group.add(model);
     }
 
-    // Expose a flag the Playwright test layer can read
     (this.scene as any).__assetTreesLoaded = true;
   }
 
@@ -461,7 +506,26 @@ export class OverworldScene {
       '/assets/nature/flower_yellowA.glb',
     ];
     const MUSHROOM = ['/assets/nature/mushroom_red.glb', '/assets/nature/mushroom_tan.glb'];
-    await loader.preload([...GRASS, ...FLOWERS, ...MUSHROOM]);
+    // KayKit Forest pack — bog and dense forest cover
+    const KK_GRASS = [
+      '/assets/kaykit_nature/Grass_1_A_Color1.gltf',
+      '/assets/kaykit_nature/Grass_1_B_Color1.gltf',
+      '/assets/kaykit_nature/Grass_1_C_Color1.gltf',
+    ];
+    const KK_BUSH = [
+      '/assets/kaykit_nature/Bush_1_A_Color1.gltf',
+      '/assets/kaykit_nature/Bush_2_B_Color1.gltf',
+      '/assets/kaykit_nature/Bush_3_A_Color1.gltf',
+      '/assets/kaykit_nature/Bush_4_A_Color1.gltf',
+    ];
+    // Small rocks for highland / bog scatter
+    const KK_ROCK_SMALL = [
+      '/assets/kaykit_nature/Rock_1_A_Color1.gltf',
+      '/assets/kaykit_nature/Rock_2_A_Color1.gltf',
+      '/assets/kaykit_nature/Rock_3_A_Color1.gltf',
+    ];
+    await loader.preload([...GRASS, ...FLOWERS, ...MUSHROOM,
+      ...KK_GRASS, ...KK_BUSH, ...KK_ROCK_SMALL]);
 
     const W  = GW * T;
     const H  = GH * T;
@@ -486,21 +550,31 @@ export class OverworldScene {
       // Choose prop type by biome + hash
       const hash = Math.abs((Math.round(wx * 11) ^ Math.round(wz * 23)));
       let path: string;
-      if (cell.biome === 'forest' || lv >= 2) {
-        path = lv >= 3
-          ? MUSHROOM[hash % MUSHROOM.length]!
-          : GRASS[hash % GRASS.length]!;
+      let propScale = 1.4;
+
+      if (cell.biome === 'bog') {
+        // Bog: KayKit grass clumps + small bushes + Kenney mushrooms
+        if (hash % 5 === 0)       path = MUSHROOM[hash % MUSHROOM.length]!;
+        else if (hash % 4 === 0)  path = KK_ROCK_SMALL[hash % KK_ROCK_SMALL.length]!;
+        else if (hash % 2 === 0)  path = KK_BUSH[hash % KK_BUSH.length]!;
+        else                      path = KK_GRASS[hash % KK_GRASS.length]!;
+        propScale = 1.2;
+      } else if (cell.biome === 'forest' || lv >= 2) {
+        // Forest/highland: KayKit bushes and grass
+        if (hash % 3 === 0)       path = KK_BUSH[hash % KK_BUSH.length]!;
+        else                      path = KK_GRASS[hash % KK_GRASS.length]!;
+        propScale = 1.3;
       } else if (lv === 1) {
-        path = (hash % 3 === 0)
-          ? FLOWERS[hash % FLOWERS.length]!
-          : GRASS[hash % GRASS.length]!;
+        // Meadow: Kenney flowers + KayKit grass
+        if (hash % 3 === 0)       path = FLOWERS[hash % FLOWERS.length]!;
+        else                      path = GRASS[hash % GRASS.length]!;
       } else {
-        continue; // no clutter on bog/water tiles
+        continue; // water tiles — no clutter
       }
 
       const model = loader.getClone(path);
       if (!model) continue;
-      model.scale.setScalar(1.4);
+      model.scale.setScalar(propScale);
       model.rotation.y = (hash % 8) * Math.PI / 4;
       const grp = new THREE.Group();
       grp.position.set(wx, wy, wz);
@@ -1571,7 +1645,7 @@ export class OverworldScene {
       const tree = this._makeTree(rand);
       tree.position.set(wx, level * SH, wz);
       tree.rotation.y = rand() * Math.PI * 2;
-      this._trees.push({ group: tree, px: wx, pz: wz });
+      this._trees.push({ group: tree, px: wx, pz: wz, biome: cell.biome ?? 'forest' });
     }
   }
 
