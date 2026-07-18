@@ -1,0 +1,119 @@
+# PRINCESS_CREATOR_TODO — Master Phased Roadmap
+
+> Legend: `[x]` done · `[~]` partial · `[ ]` todo.
+> "✔ Accept:" lines are the acceptance checks that close a phase.
+> Session 2026-07-18 delivered Phases 0–1 fully and large parts of 2–5
+> (a deliberately deep vertical slice); remaining work is marked.
+
+---
+
+## Phase 0 — Research & Specification ✅
+
+- [x] **R1. Primary-source Spore research**
+  - [x] R1.1 Chris Hecker liner notes (metaball skin, spheres-only, bone weights from ball ownership, Moore & Warren tessellation)
+  - [x] R1.2 SIGGRAPH '08 motion retargeting paper (generalize/specialize, spine splines, anti-buckling, Test Drive)
+  - [x] R1.3 Gingold "Magic Crayons" GDC philosophy (constraints > breadth, design grammar)
+  - [x] R1.4 Official tutorial UX grammar (spine wheel-scale, morph handles, symmetry, undo, name dice)
+  - [x] R1.5 Rempton Games breakdown (rigblocks, 3-layer paint)
+- [x] **R2. Community & tech survey** (see RESEARCH_SUPPLEMENT.md)
+  - [x] R2.1 User's reference video (VOID three.js creator) — video-only inspiration, no public source
+  - [x] R2.2 Open-source Spore-likes (Pudgy Pals spline+metaball trick, daniellochner Unity creator, 3D Paint metaball sculptor)
+  - [x] R2.3 THREE.MarchingCubes API/perf/export (`generateGeometry()`, maxPolyCount sizing, res bands 28–40 live / 50–70 bake)
+  - [x] R2.4 GLTFExporter gotchas (transmission ext, binary guard, CanvasTexture-not-DataTexture, userData pivot tags)
+  - [x] R2.5 Chibi proportion numbers (2.5 heads, eyes low + 20–30% face, arms ≤ legs)
+  - [x] R2.6 Kawaii palette bands + punk-royal reference reconciliation
+  - [x] R2.7 Creator UX patterns (preset-first, curated randomize, archetype-aware controls)
+- [x] **R3. POC autopsy** — extract geometry recipes from all four Gemini POCs (documented in RESEARCH.md §3)
+- [x] **R4. Docs suite** — README, RESEARCH(+SUPPLEMENT), ARCHITECTURE, DNA_SCHEMA, PARTS_CATALOG, UX_SPEC, INTEGRATION, this TODO
+- ✔ Accept: a new contributor can implement any module from docs alone. ✅
+
+## Phase 1 — Foundation: DNA, Store, Stage, Shell ✅
+
+- [x] **F1. Scaffold**: `princess-creator.html` entry + vite input + `src/princess-creator/` module tree (standalone rule enforced)
+- [x] **F2. Types** (`types.ts`): PrincessDNA v1 + enums + BuildResult/Rig/Sockets contracts
+- [x] **F3. RNG** (`rng.ts`): mulberry32 + int/float/pick/chance/shuffle + string hash
+- [x] **F4. DNA core** (`dna.ts`): per-archetype defaults · clone · clamp/validate · migrate · share codes (`P1.` + base64url)
+- [x] **F5. Store** (`store.ts`): path-set API, rAF-coalesced notify, colors-only fast path detection, undo/redo (cap 100), drag-aware history
+- [x] **F6. Stage** (`scene.ts`): renderer (ACES, sRGB, PCFSoft), pedestal + gold ring, key/rim/fill lights, fog, dust sparkles, orbit controls (clamped), auto-framing, `snapshot()`
+- [x] **F7. Name generator** (`names.ts`): seeded syllable names + 🎲
+- [x] **F8. Unit tests**: DNA round-trip, defaults validity, clamp, migration, deterministic randomize (see `__tests__/dna.test.ts`)
+- ✔ Accept: `npm run dev` → page loads, pedestal renders, tests green. ✅
+
+## Phase 2 — Body Synthesizers (4 archetypes) ✅
+
+- [x] **B1. Shared chibi scaffold** (`synth/shared.ts`): rig group tree (root/torso/neck/head + shoulder/elbow/hip/knee pairs), 9 sockets, pivot-at-joint limb helpers, dress builders (bell/aline/hex/layered/slim), proportion math from `dna.body` (2.5-head grammar)
+- [x] **B2. Human** (`synth/human.ts`): smooth sphere head, capsule limbs, puff sleeves, bell dress + ruffle + sash + shoes; POC parity+
+- [x] **B3. Fox** (`synth/fox.ts`): flat-shaded icosa head, snout+nose, hex dress + frill, cylinder limbs, boots; signature sliders (snoutLength, fluff)
+- [x] **B4. Skeleton** (`synth/skeleton.ts`): shaft+knob bones, flattened-jaw skull, socket boxes + glow pupils + eye point-lights, teeth row, A-line gown + trim + sash
+- [x] **B5. Slime** (`synth/slime.ts`): MarchingCubes body (res 40 live), per-frame re-blob from rig joints, transmission material, tracked eye/face anchor, twin-tail hair as metaballs, inner core glow, floor puddle blend
+- [x] **B6. Face module** (`face.ts`): eye styles (sparkle/round/lash/sleepy/star/glow/void/button), mouths (smile/open/cat/pout/fang/teeth), blush, blink hook
+- [x] **B7. Materials** (`materials.ts`): MaterialKit per archetype (flat vs smooth vs jelly vs bone), `apply(colors)` retint, dispose discipline
+- [x] **B8. Synth smoke tests** (`__tests__/synth.test.ts`): all archetypes build, rig+sockets complete, dispose runs, slime update() headless-safe
+- ✔ Accept: all four princesses render from DNA and survive slider extremes without visual breakage. ✅ (visual QA continues in Phase 6)
+
+## Phase 3 — Parts System ✅ core / [~] breadth
+
+- [x] **P1. Registry + attach pipeline** (`parts.ts`): PartDef/PartCtx, socket attach, mirroring (author-left, auto-right), morph application, kit-slot materials
+- [x] **P2. Starter parts**: crowns ×5 (classic/tiara/crooked/flower/halo), ears ×4 (fox/cat/round/long), tails ×4 (fluffy/thin/bone/wisp), back ×3 (bow/cape/wings), hand items ×4 (wand/staff/fan/tome), hair ×5 (bob/pigtails/twintails/bun/long)
+- [x] **P3. Per-archetype adaptation**: kit-driven retint + slime sink-in + slime tail/hair→metaball reroute + fox tail default etc.
+- [ ] **P4. Backlog parts** (PARTS_CATALOG §6): choker, witch hat, glasses, gloves, flower-in-hair, harness overlay (Midnight Punk), held slime-pet
+  - [ ] P4.1 author geometry · P4.2 allow-matrix · P4.3 randomizer pools · P4.4 visual QA matrix
+- ✔ Accept (core): every part renders on every allowed archetype, mirrored pairs symmetric, palette retint touches parts with zero part code. ✅
+
+## Phase 4 — Color & Palette System ✅ core / [~] patterns
+
+- [x] **C1. 8-slot color model** (primary/secondary/accent/skin/hair/eyes/metal/glow) wired through MaterialKit
+- [x] **C2. Curated palettes** (`palettes.ts`): per archetype ≥4 sets incl. **Midnight Punk** (canonical human), rose&gold, autumn fox, sunset kitsune, mint slime, bubblegum, bone&violet, moonlit — one-click apply
+- [x] **C3. Swatch pickers** for all 8 slots (native color inputs, live retint, history on release)
+- [ ] **C4. Pattern layer** (Spore's "coat"): canvas-texture stripes/spots/gradient for dress + fox fur; slime excluded (transmission)
+  - [ ] C4.1 `CanvasSkin`-style generator (borrow proven approach from `src/creatures/CanvasSkin.ts`) · C4.2 DNA fields (`pattern`, `patternColor`, `patternScale`) + migration v2 · C4.3 UI chips · C4.4 GLB export check (CanvasTexture path)
+- [ ] **C5. Palette editor**: save custom palette to gallery storage
+- ✔ Accept (core): palette click restyles everything incl. parts + glow lights in <1 frame. ✅
+
+## Phase 5 — Life: Animation & Test Drive ✅ core / [~] extras
+
+- [x] **A1. Animator** (`animate.ts`): idle (breath, sway/bob/float/rattle styles, head look-around, shy hand clasp) + walk cycle (bob, hip/knee/arm swing, POC-parity) on the shared rig contract
+- [x] **A2. Secondary motion hooks** (per synth `update()`): tail swish, cape ripple, pigtail bounce, ear flicks, jelly re-blob wobble, skeleton micro-rattle
+- [x] **A3. Blink system** (face hook, 2.5–5s seeded)
+- [x] **A4. Emotes**: wave / twirl / dance / cast with envelopes + auto-return; cast fires stage sparkle burst
+- [ ] **A5. Extra emotes**: curtsy (very princess), tantrum, spellbook-read idle
+- [ ] **A6. Cursor-glance** micro-delight (princess occasionally looks toward pointer)
+- [ ] **A7. `prefers-reduced-motion`** support (freeze sparkles, tone down bounce)
+- ✔ Accept (core): switching archetypes mid-emote never errors; all 4 feel alive when idle. ✅
+
+## Phase 6 — Creator UX Polish ✅ core / [~] backlog
+
+- [x] **U1. Full panel UI** per UX_SPEC (tabs, custom sliders w/ dbl-click reset, chips, swatches, palette cards, archetype dock, emote bar, top bar)
+- [x] **U2. Randomize/Mutate** (curated pools, weighted signatures, palette-aware) + name dice
+- [x] **U3. Undo/redo** (buttons + Ctrl+Z/Ctrl+Shift+Z), drag-aware
+- [x] **U4. Share code** field: live code, copy, import w/ shake-on-invalid
+- [x] **U5. Gallery** (localStorage, thumbnails via stage snapshot, load/delete/save)
+- [x] **U6. Keyboard map** (undo/redo, space=random emote, W walk, R camera, 1–4 archetype, Ctrl+S save)
+- [ ] **U7. Onboarding shimmer**: first-visit 3-step coachmarks (archetype dock → tabs → randomize)
+- [ ] **U8. Toasts** for copy/import/save feedback (currently minimal inline feedback)
+- [ ] **U9. Mobile/touch pass** (panels collapse to sheets; pinch zoom)
+- [ ] **U10. Sound pass** (tiny UI chimes, mute toggle)
+- [ ] **U11. e2e tests** (playwright): load, tab switch, randomize changes DNA, import code renders, export buttons produce blobs
+- ✔ Accept (core): a first-time user makes a princess they like in <2 min without docs. (validate with team)
+
+## Phase 7 — Spore-Grade Direct Manipulation & Export Depth [ ]
+
+- [ ] **D1. Hover/select layer**: raycast part hover glow + click select (outline pass)
+- [ ] **D2. Wheel-scale hovered part** (Spore's signature feel), Alt+wheel = rotate
+- [ ] **D3. Drag parts between sockets** with ghost preview + snap; symmetry maintained
+- [ ] **D4. Proportion pull-handles** on head/torso/hem (drag = fatter/taller) — the "grab the spine" feeling
+- [ ] **D5. Paint-drop mode**: drag palette swatch onto a region to retint just that slot
+- [ ] **D6. Export depth**: GLB rig metadata (`userData.pivotRole`), optional high-res slime bake (res 64 `generateGeometry()`), DNA-in-PNG steganography (Spore homage, LSB in portrait border)
+- [ ] **D7. `factory.ts`** façade + INTEGRATION path A wired into the game behind a dev flag (campfire "create your princess" experiment)
+- [ ] **D8. Performance hardening**: rebuild <8ms parts / <16ms slime on mid hardware; memory-leak soak test (1000 randomizes)
+- ✔ Accept: editing feels like Spore — grab, scroll, drag; game spawns a DNA princess end-to-end.
+
+---
+
+## Standing rules (all phases)
+
+- DNA is the only state; every feature lands with schema + migration + test.
+- No game-runtime imports; `factory.ts` is the only integration surface.
+- Every part/palette addition passes the all-archetypes × slider-extremes QA.
+- Dispose discipline: no geometry leaks on rebuild (soak test in D8 guards).
+- Docs updated in the same PR as the code they describe.

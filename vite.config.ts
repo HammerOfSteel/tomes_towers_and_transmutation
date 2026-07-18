@@ -82,6 +82,7 @@ export default defineConfig({
         sandbox:     path.resolve(__dirname, 'sandbox.html'),
         worldEditor: path.resolve(__dirname, 'world-editor.html'),
         modelReview: path.resolve(__dirname, 'model-review.html'),
+        princessCreator: path.resolve(__dirname, 'princess-creator.html'),
       },
     },
   },

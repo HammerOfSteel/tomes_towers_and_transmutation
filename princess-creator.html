@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Princess Atelier — Tomes, Towers &amp; Transmutation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #161126;
+      --panel: rgba(32, 25, 52, 0.82);
+      --panel-border: rgba(232, 182, 76, 0.16);
+      --ink: #efe9ff;
+      --ink-dim: #a99cc9;
+      --gold: #e8b64c;
+      --gold-soft: rgba(232, 182, 76, 0.35);
+      --plum: #2a2144;
+      --plum-light: #3a2f5e;
+      --danger: #ff6b81;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); }
+    body { font-family: 'Quicksand', system-ui, sans-serif; color: var(--ink); }
+    #stage-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    /* ── Top bar ── */
+    #top-bar {
+      position: fixed; top: 12px; left: 16px; right: 16px; z-index: 10;
+      display: flex; align-items: center; gap: 14px;
+      padding: 8px 16px;
+    }
+    #title { display: flex; flex-direction: column; line-height: 1.05; }
+    #title .main {
+      font-family: 'Cormorant Garamond', serif; font-style: italic;
+      font-size: 22px; color: var(--gold); letter-spacing: 0.5px;
+    }
+    #title .sub { font-size: 9.5px; color: var(--ink-dim); letter-spacing: 2.2px; text-transform: uppercase; }
+    #name-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    #name-input {
+      background: var(--plum); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 12px; font: 600 14px 'Quicksand', sans-serif;
+      width: 190px; outline: none; text-align: center;
+    }
+    #name-input:focus { border-color: var(--gold-soft); }
+    .icon-btn {
+      background: var(--plum); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 11px; font-size: 14px; cursor: pointer;
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+    .icon-btn:hover { border-color: var(--gold-soft); transform: translateY(-1px); }
+    .icon-btn:active { transform: scale(0.94); }
+    .icon-btn:disabled { opacity: 0.35; cursor: default; transform: none; }
+
+    /* ── Left panel ── */
+    #panel-left {
+      position: fixed; left: 16px; top: 68px; bottom: 128px; width: 288px; z-index: 9;
+      display: flex; flex-direction: column; padding: 12px; gap: 10px;
+    }
+    #tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .tab {
+      background: var(--plum); color: var(--ink-dim); border: 1px solid transparent;
+      border-radius: 9px; padding: 6px 0; font: 600 12px 'Quicksand', sans-serif;
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active { background: var(--plum-light); color: var(--gold); border-color: var(--gold-soft); }
+    #tab-content { overflow-y: auto; flex: 1; padding-right: 4px; }
+
+    .section { margin-bottom: 14px; }
+    .section-title {
+      font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase;
+      color: var(--gold); opacity: 0.85; margin-bottom: 8px;
+      border-bottom: 1px solid var(--panel-border); padding-bottom: 4px;
+    }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .row label { font-size: 12px; color: var(--ink-dim); width: 86px; flex-shrink: 0; }
+    .slider { flex: 1; accent-color: var(--gold); height: 4px; cursor: pointer; }
+    .color-row .swatch {
+      flex: 0 0 44px; height: 26px; border: 1px solid var(--panel-border);
+      border-radius: 8px; background: none; cursor: pointer; padding: 2px;
+    }
+    .chip-group { margin: 8px 0; }
+    .chip-label { font-size: 11px; color: var(--ink-dim); margin-bottom: 5px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip {
+      background: var(--plum); color: var(--ink-dim); border: 1px solid transparent;
+      border-radius: 999px; padding: 4px 11px; font: 600 11.5px 'Quicksand', sans-serif;
+      cursor: pointer; transition: all 0.13s ease;
+    }
+    .chip:hover { color: var(--ink); transform: translateY(-1px); }
+    .chip:active { transform: scale(0.92); }
+    .chip.active { background: var(--plum-light); color: var(--gold); border-color: var(--gold-soft); box-shadow: 0 0 10px rgba(232, 182, 76, 0.15); }
+
+    .palette-card {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      background: var(--plum); border: 1px solid transparent; border-radius: 10px;
+      padding: 7px 10px; margin: 5px 0; cursor: pointer; transition: all 0.13s ease;
+      color: var(--ink); font: 600 12px 'Quicksand', sans-serif;
+    }
+    .palette-card:hover { border-color: var(--gold-soft); transform: translateX(2px); }
+    .palette-dots { display: flex; gap: 4px; }
+    .palette-dots .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); }
+
+    /* ── Right panel ── */
+    #panel-right {
+      position: fixed; right: 16px; top: 68px; bottom: 128px; width: 252px; z-index: 9;
+      display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto;
+    }
+    .big-btn {
+      width: 100%; background: linear-gradient(135deg, var(--plum-light), var(--plum));
+      color: var(--ink); border: 1px solid var(--panel-border); border-radius: 12px;
+      padding: 10px; font: 700 13.5px 'Quicksand', sans-serif; cursor: pointer;
+      transition: all 0.13s ease;
+    }
+    .big-btn:hover { border-color: var(--gold-soft); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+    .big-btn:active { transform: scale(0.96); }
+    .big-btn.gold { color: var(--gold); }
+    .btn-row { display: flex; gap: 6px; }
+    .btn-row .big-btn { flex: 1; padding: 8px 4px; font-size: 12px; }
+    #share-code, #import-code {
+      width: 100%; background: var(--plum); color: var(--ink-dim);
+      border: 1px solid var(--panel-border); border-radius: 9px; padding: 7px 9px;
+      font: 500 10.5px monospace; outline: none;
+    }
+    #import-code { color: var(--ink); }
+    #import-code:focus { border-color: var(--gold-soft); }
+    .shake { animation: shake 0.4s ease; border-color: var(--danger) !important; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+    #gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .gallery-card { position: relative; cursor: pointer; }
+    .gallery-card img {
+      width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px;
+      border: 1px solid var(--panel-border); background: var(--plum);
+      transition: transform 0.13s ease;
+    }
+    .gallery-card img:hover { transform: scale(1.06); border-color: var(--gold-soft); }
+    .gallery-name {
+      font-size: 9px; color: var(--ink-dim); text-align: center; margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .gallery-del {
+      position: absolute; top: -4px; right: -4px; width: 17px; height: 17px;
+      border-radius: 50%; border: none; background: var(--plum-light); color: var(--ink-dim);
+      font-size: 10px; line-height: 1; cursor: pointer; display: none;
+    }
+    .gallery-card:hover .gallery-del { display: block; }
+    .gallery-del.confirm { background: var(--danger); color: #fff; }
+    .gallery-empty { grid-column: 1 / -1; font-size: 10.5px; color: var(--ink-dim); text-align: center; padding: 8px 0; }
+
+    /* ── Dock & emotes ── */
+    #dock {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10;
+      display: flex; gap: 10px; padding: 10px 14px;
+    }
+    .arch-card {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: var(--plum); color: var(--ink-dim); border: 1px solid transparent;
+      border-radius: 13px; padding: 9px 18px; cursor: pointer;
+      font: 700 11.5px 'Quicksand', sans-serif; transition: all 0.15s ease;
+    }
+    .arch-card .arch-icon { font-size: 21px; }
+    .arch-card:hover { transform: translateY(-3px); color: var(--ink); }
+    .arch-card.active {
+      background: var(--plum-light); color: var(--gold);
+      border-color: var(--gold-soft); box-shadow: 0 0 18px rgba(232, 182, 76, 0.22);
+    }
+    #emotes {
+      position: fixed; bottom: 18px; right: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 6px; padding: 10px;
+    }
+    #emote-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .emote-btn {
+      background: var(--plum); color: var(--ink); border: 1px solid transparent;
+      border-radius: 10px; padding: 7px 10px; font: 600 11.5px 'Quicksand', sans-serif;
+      cursor: pointer; transition: all 0.13s ease;
+    }
+    .emote-btn:hover { border-color: var(--gold-soft); transform: translateY(-1px) rotate(-1deg); }
+    .emote-btn:active { transform: scale(0.92); }
+    #btn-walk { width: 100%; }
+    #btn-walk.active { color: var(--gold); border-color: var(--gold-soft); background: var(--plum-light); }
+
+    .hint { font-size: 9.5px; color: var(--ink-dim); text-align: center; opacity: 0.75; }
+
+    /* slim scrollbars */
+    ::-webkit-scrollbar { width: 7px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--plum-light); border-radius: 4px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage-canvas"></canvas>
+
+  <div id="top-bar" class="panel">
+    <div id="title">
+      <span class="main">✦ Princess Atelier</span>
+      <span class="sub">Tomes, Towers &amp; Transmutation</span>
+    </div>
+    <div id="name-wrap">
+      <input id="name-input" maxlength="24" spellcheck="false" aria-label="Princess name" />
+      <button id="btn-dice" class="icon-btn" title="Random name">🎲</button>
+      <button id="btn-undo" class="icon-btn" title="Undo (Ctrl+Z)">↶</button>
+      <button id="btn-redo" class="icon-btn" title="Redo (Ctrl+Shift+Z)">↷</button>
+    </div>
+  </div>
+
+  <div id="panel-left" class="panel">
+    <div id="tabs"></div>
+    <div id="tab-content"></div>
+  </div>
+
+  <div id="panel-right" class="panel">
+    <button id="btn-random" class="big-btn gold">🎲 Randomize</button>
+    <div class="btn-row">
+      <button id="btn-mutate" class="big-btn">⚡ Mutate</button>
+      <button id="btn-save-gallery" class="big-btn">⭐ Save</button>
+    </div>
+    <div class="section">
+      <div class="section-title">Share</div>
+      <input id="share-code" readonly spellcheck="false" aria-label="Share code" />
+      <div class="btn-row" style="margin-top:6px">
+        <button id="btn-copy" class="big-btn">⧉ Copy</button>
+      </div>
+      <input id="import-code" placeholder="paste a P1. code…" spellcheck="false" style="margin-top:6px" />
+      <div class="btn-row" style="margin-top:6px">
+        <button id="btn-import" class="big-btn">↧ Import</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Export</div>
+      <div class="btn-row">
+        <button id="btn-export-png" class="big-btn">PNG</button>
+        <button id="btn-export-glb" class="big-btn">GLB</button>
+        <button id="btn-export-json" class="big-btn">JSON</button>
+      </div>
+    </div>
+    <div class="section" style="flex:1">
+      <div class="section-title">Gallery</div>
+      <div id="gallery-grid"></div>
+    </div>
+    <div class="hint">drag to orbit · scroll to zoom · dbl-click slider = reset · 1-4 archetype · space = emote</div>
+  </div>
+
+  <div id="dock" class="panel"></div>
+
+  <div id="emotes" class="panel">
+    <div id="emote-buttons"></div>
+    <button id="btn-walk" class="emote-btn">🚶 Walk</button>
+  </div>
+
+  <script type="module" src="/src/princess-creator/main.ts"></script>
+</body>
+</html>
