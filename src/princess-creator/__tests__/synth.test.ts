@@ -83,6 +83,45 @@ describe('composePrincess', () => {
     kit.dispose();
   });
 
+  it('wave 2 species tech: flame hair, mist trail, leaf wings, ghost materials', () => {
+    // Ignis: hair group is shaped fire
+    const ignis = defaultDna('ignis');
+    const kitI = createMaterialKit(ignis);
+    const rI = composePrincess(ignis, kitI);
+    expect(rI.rig.head.getObjectByName('hair:flame')).toBeTruthy();
+    expect(ignis.aura.style).toBe('ember');
+    rI.update(0.5, 0.016);
+    rI.dispose(); kitI.dispose();
+
+    // Specter: translucent kit + mist hair + wisp trail
+    const spec = defaultDna('specter');
+    const kitS = createMaterialKit(spec);
+    expect(kitS.skin.transparent).toBe(true);
+    expect(kitS.skin.opacity).toBeLessThan(1);
+    expect(kitS.hair.transparent).toBe(true);
+    const rS = composePrincess(spec, kitS);
+    expect(rS.rig.head.getObjectByName('hair:mist')).toBeTruthy();
+    expect(spec.parts.tail).toBe('wisp');
+    rS.update(0.5, 0.016);
+    rS.dispose(); kitS.dispose();
+
+    // Fae: leaf wings in the back socket + leaves sprinkled in the hair
+    const fae = defaultDna('fae');
+    const kitF = createMaterialKit(fae);
+    const rF = composePrincess(fae, kitF);
+    expect(fae.parts.back).toBe('wings_leaf');
+    expect(rF.sockets.back.children.length).toBeGreaterThan(0);
+    const hairGroup = rF.rig.head.children.find((c) => c.name.startsWith('hair:'));
+    expect(hairGroup).toBeTruthy();
+    let leafMeshes = 0;
+    hairGroup!.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.material === kitF.accent) leafMeshes++;
+    });
+    expect(leafMeshes).toBeGreaterThanOrEqual(7); // sprinkled leaves (+ties)
+    rF.dispose(); kitF.dispose();
+  });
+
   it('random DNA builds for 25 seeds per archetype without throwing', () => {
     for (const a of SPECIES_IDS) {
       for (let seed = 1; seed <= 25; seed++) {

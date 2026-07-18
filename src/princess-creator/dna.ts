@@ -20,6 +20,7 @@ const NAME_DEFAULTS: Record<SpeciesId, string> = {
   human: 'Amelie', elf: 'Sylvael', high_elf: 'Aurelienne', pixie: 'Pip',
   undead: 'Morwen', celestial: 'Seraphel', draconic: 'Emberlyn',
   gnome: 'Podkin', goblin: 'Snikret', foxling: 'Maribel',
+  ignis: 'Cindra', specter: 'Vesper', fae: 'Briarwyn',
   slime: 'Blobette', skeleton: 'Mortica',
 };
 

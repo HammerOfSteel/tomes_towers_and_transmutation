@@ -59,6 +59,47 @@ export function attachAura(result: BuildResult, dna: PrincessDNA, kit: MaterialK
     });
   }
 
+  // ── Rising embers (ignis) ──
+  if (style === 'ember') {
+    const count = Math.round(7 + intensity * 6);
+    const sparkGeo = new THREE.SphereGeometry(0.09, 6, 5);
+    result.hooks.disposers.push(() => sparkGeo.dispose());
+    const sparks: Array<{ mesh: THREE.Mesh; phase: number; r: number; speed: number; drift: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(sparkGeo, moteMat);
+      const spark = {
+        mesh,
+        phase: (i * 0.73) % 1,
+        r: 0.8 + ((i * 37) % 100) / 100 * (p.hemR + 1.2),
+        speed: 0.14 + ((i * 53) % 100) / 100 * 0.12,
+        drift: (i * 2.1) % (Math.PI * 2),
+      };
+      result.rig.root.add(mesh);
+      sparks.push(spark);
+    }
+    const rise = p.headCY + p.headR + 3;
+    result.hooks.tick.push((t) => {
+      for (const s of sparks) {
+        const u = (t * s.speed + s.phase) % 1;      // 0 → 1 lifetime
+        const a = s.drift + t * 0.4 + u * 1.5;      // spiral upward
+        s.mesh.position.set(
+          Math.cos(a) * s.r * (1 - u * 0.4),
+          u * rise,
+          Math.sin(a) * s.r * (1 - u * 0.4),
+        );
+        s.mesh.scale.setScalar(Math.max(0.05, (1 - u) * (0.8 + intensity * 0.6)));
+      }
+    });
+    // Firelight: warm flickering glow from within
+    const fire = new THREE.PointLight(0xffffff, 0.7 * intensity, 12);
+    fire.color = kit.glow.color;
+    fire.position.y = 2.5;
+    result.rig.torso.add(fire);
+    result.hooks.tick.push((t) => {
+      fire.intensity = intensity * (0.6 + Math.sin(t * 9.2) * 0.12 + Math.sin(t * 23.7) * 0.08);
+    });
+  }
+
   // ── Ambient light + soft shell (cold & warm) ──
   if (style === 'cold' || style === 'warm') {
     const light = new THREE.PointLight(0xffffff, (style === 'cold' ? 0.5 : 0.8) * intensity, 14);

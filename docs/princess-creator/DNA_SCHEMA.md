@@ -19,7 +19,10 @@ Renames/extensions:
 - `parts` gains `crownSize`, `backSize`, `handSize` (0.6–1.6, wheel-scalable)
   and `glasses: boolean`.
 - Enums extended: hair `braided/ponytail/wild/afro`; ears `horn_small/horn_curved`;
-  back `wings_butterfly/wings_feather/grimoire`; eyes `slit`.
+  back `wings_butterfly/wings_feather/wings_leaf/grimoire`; eyes `slit`;
+  aura `ember`. Species grew to 15 with Wave 2a (`fae`, `ignis`, `specter`) —
+  additive enum growth stays within v2 (old codes import; old builds fall
+  back unknown species to human).
 - `body.height` range widened to 0.5–1.35 (pixie/gnome/goblin ↔ high elf);
   `body.headSize` to 0.75–1.65.
 

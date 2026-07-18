@@ -191,6 +191,41 @@ export const SPECIES_DEFS: Record<SpeciesId, SpeciesDef> = {
     subtypes: undefined,
   },
 
+  // ── 🌿 Fae — the forest's rules, brought indoors ──
+  fae: {
+    id: 'fae', label: 'Fae', icon: '🌿', synth: 'human',
+    blurb: 'Plants move slightly toward her in every room. This is normal.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.height = 0.85; d.body.headSize = 1.15; d.body.chubbiness = 0.85;
+      d.hair = { style: 'long', length: 1.2 }; // interwoven with leaves (sprinkled)
+      d.parts.ears = 'long'; d.parts.earSize = 0.8;
+      d.parts.back = 'wings_leaf'; d.parts.backSize = 1.15;
+      d.parts.crown = 'flower';
+      d.face.eyeStyle = 'sparkle'; d.face.blush = 0.45;
+      d.aura = { style: 'motes', intensity: 0.45 }; // green fireflies
+      d.motion.idleStyle = 'float'; d.motion.energy = 0.55; d.motion.bounce = 0.5;
+    },
+    lockBody: { height: 0.85, headSize: 1.15 },
+    skinTones: ['#cfe0c0', '#e8d5a8', '#b8d4b0', '#d9c9a8'],
+    hairColors: ['#2e5c3f', '#c9952a', '#5a4632', '#cfd4dc'],
+    palettes: [
+      pal('forest-court', 'Forest Court', { primary: '#3d6b4a', secondary: '#d8e8c8', accent: '#c9952a', skin: '#cfe0c0', hair: '#2e5c3f', eyes: '#8ab84f', metal: '#b5952a', glow: '#c8f2a0' }),
+      pal('autumn-glade', 'Autumn Glade', { primary: '#8a5a2a', secondary: '#f2e0c0', accent: '#c2452d', skin: '#e8d5a8', hair: '#c9952a', eyes: '#d9772f', metal: '#c8a24a', glow: '#ffd9a0' }),
+      pal('moss-morning', 'Moss & Morning', { primary: '#5c7a5c', secondary: '#eaf2e0', accent: '#7a4a8a', skin: '#b8d4b0', hair: '#5a4632', eyes: '#7b5ea7', metal: '#c0c8d8', glow: '#d8f2e8' }),
+    ],
+    rand: {
+      dress: [['layered', 5], ['bell', 2], ['aline', 2], ['slim', 1]], // leaf-hem energy
+      hair: [['long', 4], ['braided', 3], ['wild', 2], ['bun', 1]],
+      eyes: [['sparkle', 4], ['round', 2], ['star', 2], ['sleepy', 2]],
+      mouth: MOUTH_SWEET,
+      crown: [['flower', 6], ['none', 2], ['tiara', 1], ['halo', 1]],
+      ears: [['long', 1]],
+      tail: [['none', 8], ['wisp', 2]],
+      back: [['wings_leaf', 7], ['wings_butterfly', 2], ['none', 1]],
+    },
+  },
+
   // ── 💀 Undead — returned; not interested in your opinion on the matter ──
   undead: {
     id: 'undead', label: 'Undead', icon: '🥀', synth: 'human',
@@ -403,6 +438,81 @@ export const SPECIES_DEFS: Record<SpeciesId, SpeciesDef> = {
       { id: '3', label: 'Three-tail' },
       { id: '9', label: 'Nine-tail' },
     ],
+  },
+
+  // ── 🔥 Ignis — the fireplace tried to explain; he filed it under anomalies ──
+  ignis: {
+    id: 'ignis', label: 'Ignis', icon: '🔥', synth: 'human',
+    blurb: 'Warm to the touch. Not hot enough to damage; hot enough to make a point.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.chubbiness = 0.95;
+      d.hair = { style: 'wild', length: 1.1 }; // rendered as SHAPED FIRE
+      d.parts.crown = 'none'; // the fire is the crown
+      d.parts.back = 'none';
+      d.parts.glasses = false;
+      d.face.eyeStyle = 'glow'; d.face.blush = 0.25; d.face.mouth = 'smile';
+      d.dress.style = 'slim'; d.dress.puffSleeves = false; // structured, not flowing
+      d.dress.sash = true;
+      d.aura = { style: 'ember', intensity: 0.65 };
+      d.traits.eyeGlowIntensity = 0.9;
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.7;
+    },
+    skinTones: ['#b5622a', '#8a4a2a', '#4a3a3a', '#2e2a2e'],
+    hairColors: ['#ff9a3d', '#ff5e2a', '#8ab4ff'], // flame tint (blue = "she will explain later")
+    palettes: [
+      pal('emberheart', 'Emberheart', { primary: '#2e2a32', secondary: '#4a3a3a', accent: '#c8a24a', skin: '#b5622a', hair: '#ff9a3d', eyes: '#ffd166', metal: '#c8a24a', glow: '#ff9a3d' }),
+      pal('blue-core', 'Blue Core', { primary: '#1c1a2e', secondary: '#3d3654', accent: '#8a8f9c', skin: '#4a3a3a', hair: '#8ab4ff', eyes: '#c4e0ff', metal: '#9aa1b5', glow: '#8ab4ff' }),
+      pal('obsidian-gold', 'Obsidian & Gold', { primary: '#26222e', secondary: '#c8a24a', accent: '#b5522a', skin: '#8a4a2a', hair: '#ff5e2a', eyes: '#ffb05e', metal: '#e8c46e', glow: '#ff7a3d' }),
+    ],
+    rand: {
+      dress: [['slim', 5], ['aline', 3], ['layered', 1], ['hex', 1]],
+      hair: [['wild', 4], ['long', 2], ['ponytail', 2], ['twintails', 1], ['bun', 1]], // all become fire
+      eyes: [['glow', 5], ['slit', 2], ['star', 2], ['void', 1]],
+      mouth: [['smile', 4], ['fang', 3], ['pout', 2]],
+      crown: [['none', 6], ['crooked', 2], ['classic', 1], ['halo', 1]],
+      ears: [['none', 7], ['horn_small', 2], ['horn_curved', 1]],
+      tail: [['none', 7], ['wisp', 3]],
+      back: [['none', 7], ['cape', 2], ['wings', 1]],
+    },
+  },
+
+  // ── 👻 Specter — always partially elsewhere; the tower made it visible ──
+  specter: {
+    id: 'specter', label: 'Specter', icon: '👻', synth: 'human',
+    blurb: 'Not undead — different. Things she can\'t quite put down stay with her.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.height = 1.05; d.body.chubbiness = 0.8;
+      d.hair = { style: 'long', length: 1.4 }; // fades into mist at the ends
+      d.parts.crown = 'none';
+      d.parts.back = 'none';
+      d.parts.tail = 'wisp'; d.parts.tailSize = 1.1; // the trail
+      d.parts.handL = 'tome'; // the book she can't put down
+      d.face.eyeStyle = 'void'; d.face.blush = 0; d.face.mouth = 'none';
+      d.dress.style = 'aline'; d.dress.length = 1.25; d.dress.trim = false;
+      d.dress.puffSleeves = false;
+      d.aura = { style: 'cold', intensity: 0.45 };
+      d.motion.idleStyle = 'float'; d.motion.energy = 0.3; d.motion.bounce = 0.3;
+    },
+    lockBody: { height: 1.05, chubbiness: 0.8 },
+    skinTones: ['#c8d2e0', '#b0bccf', '#dfe4ea'],
+    hairColors: ['#f4f2ee', '#c4d4e8', '#b0c4d8'],
+    palettes: [
+      pal('grey-passage', 'The Grey Passage', { primary: '#8a94a8', secondary: '#c4ccd8', accent: '#5c6683', skin: '#c8d2e0', hair: '#f4f2ee', eyes: '#e8f2ff', metal: '#9aa1b5', glow: '#c4d4ff' }),
+      pal('lavender-echo', 'Lavender Echo', { primary: '#7b6ba7', secondary: '#d8c9e8', accent: '#4a4456', skin: '#b0bccf', hair: '#c4d4e8', eyes: '#e6ccff', metal: '#8a8f9c', glow: '#c8b0ff' }),
+      pal('candlelit-memory', 'Candlelit Memory', { primary: '#a89478', secondary: '#e8dcc0', accent: '#6b5a4a', skin: '#dfe4ea', hair: '#b0c4d8', eyes: '#ffe9b0', metal: '#c8a24a', glow: '#ffe0a8' }),
+    ],
+    rand: {
+      dress: [['aline', 5], ['layered', 3], ['slim', 2]],
+      hair: [['long', 6], ['wild', 2], ['bob', 1], ['bun', 1]], // all trail into mist
+      eyes: [['void', 5], ['sleepy', 2], ['glow', 2], ['star', 1]],
+      mouth: [['none', 4], ['pout', 3], ['smile', 2]],
+      crown: [['none', 6], ['tiara', 2], ['halo', 2]],
+      ...NO_EXTRAS,
+      tail: [['wisp', 7], ['none', 3]],
+      back: [['none', 7], ['cape', 2], ['grimoire', 1]],
+    },
   },
 
   // ── 🟢 Slime — absorbed a spellbook; retains information differently ──

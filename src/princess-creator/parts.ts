@@ -358,6 +358,34 @@ function buildBack(dna: PrincessDNA, kit: MaterialKit, hemDrop: number): BackBui
       wings.push(wing);
     }
     return { group: g, wings };
+  } else if (id === 'wings_leaf') {
+    // Fae: large leaf-like wings, occasionally slightly translucent (doc).
+    const wings: THREE.Object3D[] = [];
+    for (const side of [1, -1]) {
+      const wing = new THREE.Group();
+      for (const [len, wid, px, py, rz] of [
+        [3.4, 0.8, 2.1, 1.9, 1.2],     // big upper leaf — tips clear the hair
+        [2.5, 0.62, 1.7, 0.55, 0.7],   // lower leaf
+      ] as const) {
+        const leafGeo = new THREE.ConeGeometry(wid, len, 6);
+        leafGeo.translate(0, len / 2, 0);
+        leafGeo.scale(1, 1, 0.09);
+        const leaf = shadowed(new THREE.Mesh(leafGeo, kit.secondary));
+        leaf.position.set(px * side, py, 0);
+        leaf.rotation.z = -rz * side; // tips point up and outward
+        // Center vein
+        const vein = new THREE.Mesh(
+          new THREE.BoxGeometry(wid * 0.12, len * 0.82, 0.05), kit.accent,
+        );
+        vein.position.y = len * 0.45;
+        leaf.add(vein);
+        wing.add(leaf);
+      }
+      wing.rotation.y = -0.35 * side;
+      g.add(wing);
+      wings.push(wing);
+    }
+    return { group: g, wings };
   } else if (id === 'grimoire') {
     // The mage's floating spellbook — orbits behind the shoulder.
     const book = new THREE.Group();
@@ -564,6 +592,143 @@ function buildHair(dna: PrincessDNA, kit: MaterialKit, headR: number): HairBuild
   return { group: g, pigtails };
 }
 
+// ── Species hair tech: flame (ignis) & mist (specter) ───────────────────────
+
+interface FlameSpec { x: number; y: number; z: number; h: number; r: number }
+
+/** Map a normal hair style onto a shaped-fire arrangement. */
+function flameLayout(style: PrincessDNA['hair']['style'], R: number, len: number): FlameSpec[] {
+  const crown = (n: number, h: number, ring = 0.55): FlameSpec[] =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2 + 0.4;
+      return {
+        x: Math.cos(a) * R * ring,
+        y: R * (0.55 + 0.25 * Math.abs(Math.sin(a * 2))),
+        z: Math.sin(a) * R * ring - R * 0.1,
+        h: R * h * len * (0.8 + ((i * 29) % 5) / 10),
+        r: R * 0.24,
+      };
+    });
+  switch (style) {
+    case 'twintails': return [
+      ...crown(4, 0.7),
+      { x: R * 0.95, y: R * 0.35, z: -R * 0.2, h: R * 1.7 * len, r: R * 0.32 },
+      { x: -R * 0.95, y: R * 0.35, z: -R * 0.2, h: R * 1.7 * len, r: R * 0.32 },
+    ];
+    case 'ponytail': return [
+      ...crown(5, 0.65),
+      { x: 0, y: R * 0.6, z: -R * 0.8, h: R * 1.9 * len, r: R * 0.36 },
+    ];
+    case 'bun': return [
+      ...crown(6, 0.5, 0.62),
+      { x: 0, y: R * 0.85, z: -R * 0.25, h: R * 1.5 * len, r: R * 0.4 },
+    ];
+    case 'long': return crown(8, 1.25, 0.6);
+    case 'bob': return crown(7, 0.7, 0.6);
+    default: return crown(9, 0.95, 0.58); // wild & the rest: a proper blaze
+  }
+}
+
+interface FlameHair { group: THREE.Group; tongues: Array<{ node: THREE.Group; phase: number }> }
+
+/** Ignis: hair is literally flames — white-hot cores in glowing tongues. */
+function buildFlameHair(dna: PrincessDNA, kit: MaterialKit, headR: number): FlameHair {
+  const g = new THREE.Group();
+  g.name = 'hair:flame';
+  const tongues: FlameHair['tongues'] = [];
+  const specs = flameLayout(dna.hair.style, headR, dna.hair.length);
+  specs.forEach((spec, i) => {
+    const node = new THREE.Group();
+    node.position.set(spec.x, spec.y, spec.z);
+    const outerGeo = new THREE.ConeGeometry(spec.r, spec.h, 6);
+    outerGeo.translate(0, spec.h / 2, 0);
+    const outer = new THREE.Mesh(outerGeo, kit.glow);
+    const coreGeo = new THREE.ConeGeometry(spec.r * 0.45, spec.h * 0.62, 5);
+    coreGeo.translate(0, spec.h * 0.31, 0);
+    const core = new THREE.Mesh(coreGeo, kit.white);
+    core.position.y = spec.h * 0.06;
+    node.add(outer, core);
+    // Lean slightly outward from the scalp center
+    node.rotation.z = -spec.x / headR * 0.35;
+    node.rotation.x = spec.z / headR * 0.3;
+    g.add(node);
+    tongues.push({ node, phase: i * 1.31 });
+  });
+  return { group: g, tongues };
+}
+
+interface MistHair { group: THREE.Group; trail: THREE.Group[] }
+
+/** Specter: hair fades into mist at the ends and lags behind movement. */
+function buildMistHair(
+  dna: PrincessDNA, kit: MaterialKit, headR: number,
+  disposers: Array<() => void>,
+): MistHair {
+  const g = new THREE.Group();
+  g.name = 'hair:mist';
+  const seg = 24;
+
+  // Cap (ghosted kit.hair — specter's kit is translucent already)
+  const capGeo = new THREE.SphereGeometry(headR * 1.05, seg, seg, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  const cap = shadowed(new THREE.Mesh(capGeo, kit.hair));
+  cap.position.y = headR * 0.1;
+  g.add(cap);
+
+  // Trailing mist chain: shrinking spheres with fading custom materials that
+  // share the kit's hair Color instance (palette retints recolor the mist).
+  const n = 5;
+  const trail: THREE.Group[] = [];
+  let parent: THREE.Object3D = g;
+  const anchor = new THREE.Group();
+  anchor.position.set(0, headR * 0.25, -headR * 0.75);
+  g.add(anchor);
+  parent = anchor;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const mat = new THREE.MeshStandardMaterial({
+      transparent: true,
+      opacity: 0.45 * (1 - t) + 0.05,
+      depthWrite: false,
+      roughness: 0.9,
+    });
+    mat.color = kit.hair.color; // shared instance → follows palette
+    disposers.push(() => mat.dispose());
+    const node = new THREE.Group();
+    const r = headR * (0.55 - t * 0.3) * dna.hair.length;
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.1, r), 14, 10), mat);
+    puff.position.z = -r * 0.4;
+    node.add(puff);
+    const next = new THREE.Group();
+    next.position.set(0, -r * 0.5, -r * 1.15);
+    node.add(next);
+    parent.add(node);
+    trail.push(node);
+    parent = next;
+  }
+  return { group: g, trail };
+}
+
+/** Fae: small leaves grow from the hair — not placed there, simply there. */
+function sprinkleLeaves(hairGroup: THREE.Group, headR: number, kit: MaterialKit): void {
+  const SPOTS: ReadonlyArray<readonly [number, number, number]> = [
+    [0.3, 0.75, 0.5], [2.2, 0.6, 0.62], [4.1, 0.8, 0.45],
+    [5.3, 0.55, 0.6], [1.3, 0.35, 0.72], [3.3, 0.4, 0.7], [5.9, 0.9, 0.35],
+  ];
+  for (const [a, el, ring] of SPOTS) {
+    const leafGeo = new THREE.ConeGeometry(headR * 0.09, headR * 0.28, 5);
+    leafGeo.translate(0, headR * 0.14, 0);
+    leafGeo.scale(1, 1, 0.35);
+    const leaf = new THREE.Mesh(leafGeo, kit.accent);
+    const dir = new THREE.Vector3(
+      Math.cos(a) * Math.cos(el), Math.sin(el), Math.sin(a) * Math.cos(el) - 0.2,
+    ).normalize();
+    leaf.position.copy(dir.clone().multiplyScalar(headR * ring * 1.55));
+    leaf.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    leaf.rotation.z += (a * 7) % 1 - 0.5;
+    hairGroup.add(leaf);
+  }
+}
+
 // ── Glasses (scholar signature) ──────────────────────────────────────────────
 
 function buildGlasses(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Group {
@@ -717,21 +882,47 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
     result.rig.head.add(glasses);
   }
 
-  // Hair — slime hair is rendered as metaballs by the slime synth
-  if (!isSlime) {
-    const hair = buildHair(dna, kit, p.headR);
-    if (hair) {
-      hair.group.userData.pick = 'hair';
-      result.rig.head.add(hair.group);
-      if (hair.pigtails.length > 0) {
-        const tails = hair.pigtails;
-        result.hooks.tick.push((t) => {
-          tails.forEach((tailGroup, i) => {
-            const side = i === 0 ? 1 : -1;
-            tailGroup.rotation.z = side * (0.12 + Math.sin(t * 2.4 + i) * 0.08);
-            tailGroup.rotation.x = Math.sin(t * 1.9 + i * 2) * 0.07;
-          });
+  // Hair — slime hair is rendered as metaballs by the slime synth;
+  // ignis hair is shaped fire; specter hair trails into mist.
+  if (!isSlime && dna.hair.style !== 'none') {
+    if (dna.species === 'ignis') {
+      const flame = buildFlameHair(dna, kit, p.headR);
+      flame.group.userData.pick = 'hair';
+      result.rig.head.add(flame.group);
+      const tongues = flame.tongues;
+      result.hooks.tick.push((t) => {
+        for (const { node, phase } of tongues) {
+          node.scale.y = 1 + Math.sin(t * 7.5 + phase) * 0.22 + Math.sin(t * 13 + phase * 2) * 0.08;
+          node.rotation.y = Math.sin(t * 5.2 + phase) * 0.14;
+        }
+      });
+    } else if (dna.species === 'specter') {
+      const mist = buildMistHair(dna, kit, p.headR, result.hooks.disposers);
+      mist.group.userData.pick = 'hair';
+      result.rig.head.add(mist.group);
+      const trail = mist.trail;
+      result.hooks.tick.push((t) => {
+        trail.forEach((node, i) => {
+          node.rotation.y = Math.sin(t * 1.4 - i * 0.7) * 0.22;
+          node.rotation.x = Math.sin(t * 1.1 - i * 0.55) * 0.12 + 0.06;
         });
+      });
+    } else {
+      const hair = buildHair(dna, kit, p.headR);
+      if (hair) {
+        hair.group.userData.pick = 'hair';
+        if (dna.species === 'fae') sprinkleLeaves(hair.group, p.headR, kit);
+        result.rig.head.add(hair.group);
+        if (hair.pigtails.length > 0) {
+          const tails = hair.pigtails;
+          result.hooks.tick.push((t) => {
+            tails.forEach((tailGroup, i) => {
+              const side = i === 0 ? 1 : -1;
+              tailGroup.rotation.z = side * (0.12 + Math.sin(t * 2.4 + i) * 0.08);
+              tailGroup.rotation.x = Math.sin(t * 1.9 + i * 2) * 0.07;
+            });
+          });
+        }
       }
     }
   }

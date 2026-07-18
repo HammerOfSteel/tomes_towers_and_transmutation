@@ -27,7 +27,7 @@ aura                        = none | motes | cold | warm  (+ intensity)
   at thumbnail size.
 - v1 share codes migrate: `fox→foxling`, knobs `species{}` → `traits{}`.
 
-## 2. Wave 1 roster (all live)
+## 2. Roster (Wave 1 + Wave 2a — all live)
 
 | Species | Tech | Silhouette hook | Signature defaults | Aura | Canonical palette |
 |---|---|---|---|---|---|
@@ -41,6 +41,9 @@ aura                        = none | motes | cold | warm  (+ intensity)
 | 🍄 Gnome | smooth | 0.7× tall, 1.35× head, STRUCTURAL afro | glasses + tome, round ears, bob idle | — | Hearth & Apron |
 | 👺 Goblin | smooth | 0.78× tall, huge radar ears (×1.6) | wild hair, crooked (acquired) crown, fang, big round eyes | — | Scrap Chic |
 | 🦊 Foxling | fox (flat low-poly) | fox ears + fluffy tail(s) | hex dress, cat mouth, button eyes | — | Autumn Maple |
+| 🌿 Fae | smooth | LEAF WINGS + leaves growing in hair | flower crown, elf ears, green-gold glow skin, float idle | motes (fireflies) | Forest Court |
+| 🔥 Ignis | smooth | hair is SHAPED FIRE (style→flame layout) | ember-lit skin, glow eyes, structured dark dress, firelight flicker | ember (rising sparks) | Emberheart |
+| 👻 Specter | smooth | translucent body + mist-trail hair | void eyes, no mouth, wisp trail, the tome she can't put down | cold | The Grey Passage |
 | 💧 Slime | metaballs | translucent blob + jelly twintails | halo, wisp trail, open mouth, float | — | Mint Jelly |
 | 💀 Skeleton | bones | skull + glow sockets + cape | crooked crown, teeth, rattle idle | cold (low) | Gothic Royal |
 
@@ -78,16 +81,16 @@ stay coherent; reapplied on species switch when chosen.
 
 ## 5. Wave 2 backlog (designed in the game doc, not yet built)
 
-| Species | Key tech needed |
-|---|---|
-| 🌿 Fae | leaf-hem dress profile, vine hair interweave, larger leaf wings |
-| 🌊 Naiad | iridescent/wet materials, temple fins part, water-color palettes |
-| 🌙 Moonborn | silver skin pattern lines (paint phase), crescent hair growth, Crescent/Full/Eclipse subtypes |
-| 🌺 Verdant | growing-things hair, living wreath, bark accessories |
-| 🔥 Ignis | `hair_flame` (animated emissive fire hair), ember skin patterns, obsidian accessory set |
-| 👻 Specter | translucency for the smooth synth, `hair_mist` trails, motion-lag cloth |
-| 🐍 Lamia | serpent lower-body synth variant (biggest lift — new tech) |
-| 💪 Orc / 🧌 Troll | broad-build preset + tusk part (small lift) |
+| Species | Key tech needed | Status |
+|---|---|---|
+| 🌿 Fae | leaf wings, leaf-sprinkled hair, firefly motes | ✅ SHIPPED (leaf-hem dress profile still backlog) |
+| 🔥 Ignis | flame hair (style→fire layout), ember aura, ember-lit skin | ✅ SHIPPED (ember skin *patterns* wait for paint phase) |
+| 👻 Specter | translucent material kit, mist-trail hair | ✅ SHIPPED (motion-lag cloth backlog) |
+| 🌊 Naiad | iridescent/wet materials, temple fins part, water palettes | backlog |
+| 🌙 Moonborn | silver skin pattern lines (paint phase), crescent hair, Crescent/Full/Eclipse subtypes | backlog |
+| 🌺 Verdant | growing-things hair, living wreath, bark accessories | backlog |
+| 🐍 Lamia | serpent lower-body synth variant (biggest lift — new tech) | backlog |
+| 💪 Orc / 🧌 Troll | broad-build preset + tusk part (small lift) | backlog |
 
 Also backlogged: outfit vocabulary expansions (corset, ballgown skirt, veil,
 mantle…), `familiar_shoulder`, tail bell-charms, and boon-flavored accessory

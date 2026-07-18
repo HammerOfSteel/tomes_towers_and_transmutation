@@ -63,17 +63,31 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
   }
 
   // Luminous species: skin carries a faint inner glow (doc: celestial/high
-  // elf glow warm; undead is pale-luminous in darkness).
+  // elf glow warm; undead pale-luminous; ignis ember-lit; fae green-gold).
   const skinGlowFor = (d: PrincessDNA): number => {
     if (d.species === 'celestial') return 0.14 + d.aura.intensity * 0.1;
     if (d.species === 'high_elf') return 0.08 + d.aura.intensity * 0.06;
     if (d.species === 'undead') return 0.05 + d.aura.intensity * 0.05;
+    if (d.species === 'ignis') return 0.12 + d.aura.intensity * 0.12;
+    if (d.species === 'fae') return 0.06 + d.aura.intensity * 0.05;
+    if (d.species === 'specter') return 0.06 + d.aura.intensity * 0.04;
     return 0;
   };
   const skinGlow = skinGlowFor(dna);
   if (skinGlow > 0 && 'emissive' in skin) {
     (skin as THREE.MeshStandardMaterial).emissive = new THREE.Color(c.glow);
     (skin as THREE.MeshStandardMaterial).emissiveIntensity = skinGlow;
+  }
+
+  // Specter: semi-translucent — she can appear almost solid or almost absent.
+  if (dna.species === 'specter') {
+    const ghost = (m: THREE.Material, opacity: number): void => {
+      m.transparent = true;
+      m.opacity = opacity;
+    };
+    ghost(skin, 0.72);
+    ghost(primary, 0.82);
+    ghost(hairMat, 0.55);
   }
 
   const kit: MaterialKit = {
