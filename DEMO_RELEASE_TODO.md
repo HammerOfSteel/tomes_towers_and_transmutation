@@ -1,7 +1,65 @@
 # Demo Release Plan — Tomes, Towers & Transmutation
-> Branch: `demo/alpha-release`
+> Branch: `DEMO_RELEASE`
 > Goal: A **complete, polished alpha build** ready for public playtesting, a Kickstarter campaign, and an itch.io/Steam early-access launch.
-> Last updated: 2026-07-17 (session 2)
+> Last updated: 2026-07-18 (princess creator integrated from feature/princess-creator)
+
+---
+
+## PHASE PC — Princess Creator Game Integration
+> **Goal:** The Spore-style Princess Atelier becomes a first-class way to start a new game.
+> The existing real-model picker remains; a toggle on the new-game card switches between modes.
+
+### PC1 — Base Templates (4 playable species)
+Pre-built DNA for the 4 main species so there's always something in the library even on first launch.
+
+- [ ] `src/princess-creator/defaults/human.princess.json` — human mage, bell dress, tiara, warm aura
+- [ ] `src/princess-creator/defaults/undead.princess.json` — skeleton, slim dress, void eyes, cold aura
+- [ ] `src/princess-creator/defaults/foxling.princess.json` — foxling, a-line dress, fox ears/tail, ember aura
+- [ ] `src/princess-creator/defaults/slime.princess.json` — slime species, hex dress, bubbles aura, no hair
+- [ ] `PrincessDefaults.ts`: exports these 4 as `DEFAULT_PRINCESSES: readonly PrincessDNA[]`; seeds the gallery on first launch if empty
+
+### PC2 — Princess Library UI
+Shown in the new-game flow when custom mode is enabled.
+
+- [ ] `PrincessLibraryPanel.ts` — a small HTML/CSS panel (matches existing DaisyUI theme) showing gallery thumbnails (3-column grid, max 24)
+  - Each card: thumbnail PNG + name + species badge + "Play" / "Edit" / "Delete" buttons
+  - "✦ Create New" button → opens `princess-creator.html` in a new tab
+  - "▶ Play" → selects that princess DNA and proceeds to new game
+  - Species badge colours: human=blue, foxling=amber, undead=teal, slime=green
+- [ ] Seeded with `DEFAULT_PRINCESSES` on first launch (via `PrincessDefaults.ts`)
+- [ ] "Edit" deep-links into the Atelier with that princess pre-loaded via URL hash: `princess-creator.html#code=P2.xxx`
+
+### PC3 — New-Game Custom Princess Toggle
+- [ ] Add `customPrincess: boolean` toggle on the existing new-game / character-selection card
+  - Default: **off** (existing real-model picker remains the default)
+  - When toggled on: hide the real-model picker, show `PrincessLibraryPanel`
+- [ ] Persist toggle preference to `localStorage` key `ttt_custom_princess_mode`
+- [ ] `CharacterConfig` extended: `{ ...existing, princessDna?: PrincessDNA }` — only set when custom mode is on
+- [ ] New game flow: if `princessDna` is set, call `buildPrincess(dna, {targetHeight: 1.6})` instead of loading a GLB model
+
+### PC4 — Wire `buildPrincess` into Player Model
+- [ ] `PlayerController.applyPrincess(dna: PrincessDNA)` — calls `buildPrincess(dna, {targetHeight:1.6})`, attaches `instance.root` to player group, stores `_princessInstance` for per-frame `.update(t, dt)` calls and eventual `.dispose()`
+- [ ] Game loop: call `_princessInstance?.update(elapsedTime, dt)` each frame when custom mode active
+- [ ] On new game start with `princessDna`: swap player model to the princess rig (in place of the existing DNA creature rig)
+- [ ] On species selection: map princess species → game species:
+  ```
+  human / elf / high_elf / celestial / pixie → 'human' species
+  foxling → 'vulperia' species
+  undead / skeleton → 'undead' species
+  slime → 'slime' species
+  draconic / gnome / goblin / fae / others → nearest species match
+  ```
+- [ ] Abilities, talent tree, story arcs use the mapped game species (cosmetics only in princess layer)
+
+### PC5 — Atelier Dev Lab Entry
+- [ ] Dev Labs menu: add "👸 Princess Atelier" → opens `princess-creator.html` in new tab
+- [ ] Creative mode skin picker: show custom-princess gallery entries alongside real model GLBs
+- [ ] `PrincessFactory` exposed on `window.__game.buildPrincess(dna)` for bot/test access
+
+### PC6 — Unit Tests
+- [ ] `tests/princess-creator/defaults.test.ts` — all 4 default DNAs are valid (pass `validateDna()`) and produce a `PrincessInstance` without throwing
+- [ ] `tests/princess-creator/integration.test.ts` — `buildPrincess` with each of the 4 mapped species produces a rig with correct height and non-empty clips
+- [ ] Run all existing `src/princess-creator/__tests__/` to confirm baseline passes
 
 ---
 
@@ -535,6 +593,235 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 | M3 — Verified Alpha | F | Full test suite green |
 | M4 — Polished Alpha | G | 60fps, polished UX, game feel |
 | M5 — Launch Ready | H | Docs updated, campaign live |
+
+---
+
+## PHASE NS — New Species Expansion (Princess Creator Integration)
+> **Goal:** The 21 princess-creator species become meaningful game choices, not just skins.
+> Three species get **full Tier-1 treatment** (unique story arc, abilities, talent tree, lore).
+> All 21 map correctly to a game species for abilities/story/talents.
+> Campfire intro, Solmor dialogue, and staircase flavour text acknowledge every form.
+
+---
+
+### NS0 — Species Mapping & Infrastructure
+
+**Current game species (4):** `human`, `undead`, `vulperia`, `slime`
+**New Tier-1 species (3):** `elf`, `celestial`, `draconic`
+**All 21 princess-creator species → game species map:**
+
+| Princess Species | Game Species | Notes |
+|---|---|---|
+| `human`, `gnome`, `goblin`, `verdant`, `pixie` | `human` | |
+| `elf`, `high_elf`, `fae` | `elf` *(new)* | Share Elf story arc |
+| `celestial`, `naiad`, `moonborn` | `celestial` *(new)* | Share Celestial story arc |
+| `draconic`, `ignis` | `draconic` *(new)* | Share Draconic story arc |
+| `foxling`, `orc`, `troll`, `lamia` | `vulperia` | Existing Vulperia arc |
+| `undead`, `specter`, `skeleton` | `undead` | Existing Undead arc |
+| `slime` | `slime` | Existing Slime arc |
+
+- [ ] `SpeciesId` in `StoryQuestLine.ts` expanded: add `'elf' | 'celestial' | 'draconic'`
+- [ ] `SPECIES_MAP` in `StoryQuestLine.ts` extended for all 21 princess-creator species (via `princessSpecies` field on `CharacterConfig`)
+- [ ] `CharacterConfig.princessSpecies?: string` — set when custom princess mode is active, maps via `PRINCESS_SPECIES_MAP` in `PrincessDefaults.ts`
+- [ ] `speciesForCharacter()` extended to accept `princessSpecies` override
+- [ ] `applyCharacterAbilities()` routes to correct species ability set for princess characters
+- [ ] `TalentSystem.activeSpecies` works for all 7 game species
+
+---
+
+### NS1 — New Story Arcs (3 × 4-act, 16 beats each)
+
+#### 🧝 Elf Arc — *"The Second Time Around"*
+She has been here before. Not this tower — a different one. A different wizard. A different century. She is less surprised than she should be, which says something.
+
+| Act | Title | Summary | Beat Types |
+|---|---|---|---|
+| Prologue | *The Tower, Again* | The staircase layout is different. The books are in the wrong order. These are the only comforts. | `explore_floor`, `interact_key` |
+| Act I | *Something Familiar* | A book in the library is annotated in her own handwriting. She doesn't remember writing it. | `read_lore`, `talk_to_npc` |
+| Act II | *The Previous Candidate* | Evidence suggests Solmor has imprisoned an elf before — centuries ago. The records were sealed. She unseals them. | `reach_location`, `defeat_elite` |
+| Act III/IV | *The Graceful Exit* | She could leave with the knowledge she came for. She chooses to stay long enough to make it inconvenient. | All types |
+
+- [ ] Write full beat dialogue + completion text for Elf Act I–IV (16 beats)
+- [ ] Elf staircase flavour text: 4 floors × 4 species variants = 4 new entries in `STAIR_FLAVOUR`
+- [ ] Elf Solmor Stage 1/2/3 dialogue variants (she is politely unimpressed)
+- [ ] Elf lore book placed in dungeon (Floor 2 — the fermentation level, she finds a recipe she wrote)
+
+#### ⭐ Celestial Arc — *"Atmospheric Re-entry"*
+She fell. This happens. The tower was just where she landed. She has filed a formal complaint with the relevant cosmic authority and is waiting for a response.
+
+| Act | Title | Summary | Beat Types |
+|---|---|---|---|
+| Prologue | *The Landing* | The tower is cold. The ceiling has three cracks. She has counted them. | `explore_floor`, `interact_key` |
+| Act I | *Gravity* | Something about the tower's wards is specifically suppressing her celestial connection. This is unusual. This is personal. | `read_lore`, `talk_to_npc` |
+| Act II | *The Anchor* | A ward stone on floor 7 is the source. It was placed within the last fifty years. By someone who knew exactly what it would do. | `reach_location`, `defeat_elite` |
+| Act III/IV | *Reconnection* | Destroy the anchor, feel the stars again. Then decide how to handle Solmor. | All types |
+
+- [ ] Write full beat dialogue + completion text for Celestial Act I–IV (16 beats)
+- [ ] Celestial staircase flavour text (she finds the library charming; floor 3 has a star chart that is almost correct)
+- [ ] Celestial Solmor Stage 1/2/3 variants (she is cosmically patient and slightly pitying)
+- [ ] Celestial lore book placed in Floor 8 (Archive — she finds a paper of Solmor's on "celestial binding wards")
+
+#### 🐉 Draconic Arc — *"The Fire That Stays"*
+She isn't angry. She is very patient. The scales absorbing the wizard's ambient spellwork are a side effect; so is the faint smell of ozone. She has decided not to explain either.
+
+| Act | Title | Summary | Beat Types |
+|---|---|---|---|
+| Prologue | *Heat Retention* | The tower is cooler than expected. The books are not fire-resistant. She adjusts. | `explore_floor`, `interact_key` |
+| Act I | *The Hoard Instinct* | She keeps finding rooms she wants to claim. This is apparently cultural. She is documenting it. | `read_lore`, `reach_location` |
+| Act II | *Old Claim* | The land the tower stands on was once draconic territory — several centuries ago. There are plaques. | `talk_to_npc`, `defeat_elite` |
+| Act III/IV | *Reclamation* | She does not want the tower. She wants it acknowledged that she could take the tower. These are different. | All types |
+
+- [ ] Write full beat dialogue + completion text for Draconic Act I–IV (16 beats)
+- [ ] Draconic staircase flavour text (floor 4 is the smithy — she approves; floor 1 is a library — she also approves, but quietly)
+- [ ] Draconic Solmor Stage 1/2/3 variants (she is curious and unintimidated; he is somewhat intimidated)
+- [ ] Draconic lore book placed in Floor 4 (Runic Forge — a treatise on "draco-compatible binding compounds")
+
+---
+
+### NS2 — New Species Passives & Abilities
+
+#### 🧝 Elf
+**Passive:** `Long Memory` — Has seen this before. +10% XP from all sources. First encounter with each enemy type deals +20% damage (surprise advantage, only once per run per enemy type).
+
+| Subspecies | Combat Style | Abilities |
+|---|---|---|
+| `elf_scholar` | Ranged / support | `Recall` (briefly replay last spell at no cost), `Arcane Library` (cycle through 3 equipped spells instantly), `Memory Palace` (reveal all lore in current floor) |
+| `elf_wanderer` | Mobile / evasive | `Graceful Step` (dodge leaves a temp. root trap), `Centuries of Practice` (+20% damage when HP > 75%), `Slip Away` (disengage + 2s invis) |
+| `elf_sage` | AoE crowd control | `Time Worn` (slow enemies within 6u for 3s), `Studied Weakness` (reveal enemy resistances on first hit), `Elder's Patience` (charge a 3x damage shot over 2s) |
+
+- [ ] Add `elf` to `AbilitySystem` routing in `applyCharacterAbilities()`
+- [ ] Implement `Recall` spell — mirrors last cast spell (calls existing SpellSystem cast with stored last-cast params)
+- [ ] Implement `Arcane Library` ability — cycle through equipped spells without cooldown penalty
+- [ ] Elf talent tree: 3 paths **Memory / Grace / Sage** — 10 nodes each + 4 elf-exclusive cross-nodes
+  - [ ] Add nodes to `TalentSystem.ts` with `allowedSpecies: ['elf']`
+
+#### ⭐ Celestial
+**Passive:** `Star-Touched` — Emits a faint light aura (3u radius, always on). Enemies within the aura have −10% hit rate. At night, all spells deal +15% damage and cost 10% less mana.
+
+| Subspecies | Combat Style | Abilities |
+|---|---|---|
+| `celestial_dawn` | Burst ranged | `Starburst` (5-projectile spread), `Solar Flare` (brief blind all enemies), `Light Beam` (piercing beam, max range) |
+| `celestial_dusk` | Defensive / debuff | `Moonveil` (3s damage immunity bubble), `Eclipse` (reduce enemy damage dealt by 30% for 5s), `Gravity Well` (pull enemies into cluster 4u) |
+| `celestial_void` | Blink / repositioning | `Stellar Jump` (blink 8u toward cursor), `Void Touch` (next melee hit phases through armour), `Singularity` (summon point that auto-absorbs nearby projectiles) |
+
+- [ ] Add `celestial` to `AbilitySystem` routing
+- [ ] Implement `Starburst` — 5-projectile spread (reuse existing projectile system with angle offsets)
+- [ ] Implement `Moonveil` — damage immunity window (extend existing i-frames system duration)
+- [ ] Celestial talent tree: 3 paths **Dawn / Dusk / Void** — 10 nodes each
+  - [ ] Add nodes with `allowedSpecies: ['celestial']`
+
+#### 🐉 Draconic
+**Passive:** `Scale Armour` — Takes 15% reduced physical damage. Deals +20% damage when above 75% HP. Fire-type spells cost 20% less mana.
+
+| Subspecies | Combat Style | Abilities |
+|---|---|---|
+| `draconic_fire` | Aggressive burst | `Breath` (cone fire attack, 3u range), `Ignite` (apply burn DoT, 5s), `Dragon Rage` (15s buff: +40% damage, −20% defence) |
+| `draconic_scale` | Melee tank | `Harden` (block next 3 hits completely), `Tail Sweep` (360° knockback), `Roar` (AoE fear 2s, enemies flee) |
+| `draconic_void` | Debuff / drain | `Acid Scale` (shed scales that deal DoT on contact), `Corrode` (reduce enemy armour 50% for 4s), `Ancient Fire` (slow-moving large orb that phases through enemies) |
+
+- [ ] Add `draconic` to `AbilitySystem` routing
+- [ ] Implement `Breath` — cone hitbox (new geometry hitbox, fan-shaped, 3u × 45°)
+- [ ] Implement `Harden` — block counter (integrate into PlayerController.takeDamage())
+- [ ] Draconic talent tree: 3 paths **Fire / Scale / Void** — 10 nodes each
+  - [ ] Add nodes with `allowedSpecies: ['draconic']`
+
+---
+
+### NS3 — Campfire Intro Dialogue (New Species)
+
+The campfire wizard familiar conversation needs species-aware opening lines for all 7 game species. Currently only 4 are distinguished.
+
+- [ ] **Elf intro** — Familiar: *"Oh. You've been in a tower before, haven't you."* / She: *"Several. Though usually more intentionally."*
+- [ ] **Celestial intro** — Familiar: *"You're giving off a faint light. I find that either impressive or alarming."* / She: *"Both is acceptable."*
+- [ ] **Draconic intro** — Familiar: *"...your scales are absorbing the ambient magical field."* / She: *"I noticed. Is that a problem?"* / Familiar: *"For the tower, possibly."*
+- [ ] `CharacterDecisionTree.ts` extended: add `elf_scholar`, `elf_wanderer`, `celestial_dawn`, `celestial_dusk`, `draconic_fire`, `draconic_scale` as selectable `CharacterId`s
+- [ ] `NewGameFlow.ts` / `CharacterDecisionTree.ts`: species-aware choice branch flavour (the familiar's assessment of each species form — e.g., skeptical for elf, genuinely uncertain for celestial, slightly alarmed for draconic)
+- [ ] Character creation UI: show 3 new species sections in the model picker (Elf / Celestial / Draconic) with 2 subspecies each
+- [ ] Default DNA for each new species added to `PrincessDefaults.ts` (6 more entries: elf_scholar, elf_wanderer, celestial_dawn, celestial_dusk, draconic_fire, draconic_scale)
+
+---
+
+### NS4 — New Starting Boons (from CHARACTER_DESIGN.md)
+
+| Boon | Effect | Fits Species |
+|---|---|---|
+| 🌿 **Herbalist's Gift** | Start with Minor Heal spell, herb yield +25% | Human / Verdant |
+| 🌑 **Night-Touched** | +15% damage 18:00–06:00, passive: enemies can't detect you at range >12u at night | Undead / Moonborn / Specter |
+| ⚡ **Static Charge** | Start with Lightning Bolt, +10% AoE radius on all spells | Any / Ignis |
+| 🎭 **Silver Tongue** | NPCs give 2 extra dialogue options; merchants sell at −15% | Elf / Foxling / Goblin |
+| 🔮 **Resonant Mind** | Spell cooldowns −20%, starting mana +30 | Celestial / High Elf / Mage |
+| 🛡 **Tower-Trained** | Start with +20 HP, first hit in each new room deals 0 damage | Human Warrior / Draconic |
+
+- [ ] Add 6 new `BoonDef` entries to `DNACreator.ts` BOONS array
+- [ ] `applyBoon()` in `main.ts` / `startGame()` handles new boon effects:
+  - Herbalist's Gift → grant `minor_heal` spell + set `herbYieldMult` modifier
+  - Night-Touched → register `DayNightSystem` listener that sets `mods.nightDamageBonus`
+  - Static Charge → grant `lightning_bolt` spell + set `mods.aoeRadiusMult *= 1.1`
+  - Silver Tongue → set `mods.silverTongue = true` (checked in NPCEntity dialogue)
+  - Resonant Mind → set `mods.spellCooldownMult = 0.8` + grant 30 starting mana
+  - Tower-Trained → apply +20 max HP + set `mods.firstHitImmune = true`
+
+---
+
+### NS5 — Species-Aware Solmor Encounters
+
+The 3-stage Solmor dialogue tree needs branches for the 3 new Tier-1 species.
+
+- [ ] **Elf — Stage 1:** He is confused — she seems completely unsurprised. She isn't. *"This is the third tower. The second wizard. You're the first to notice, which is either encouraging or more concerning."*
+- [ ] **Celestial — Stage 1:** He is physically uncomfortable. She emits light. He tries to pretend this is normal. *"You're not what I was expecting."* / *"I know. I rarely am."*
+- [ ] **Draconic — Stage 1:** He is trying to be professional but her scales have been absorbing his ambient spellwork for a week. *"You've been... uh... would you mind—"* / *"I'll stop absorbing it when you stop leaking it."*
+- [ ] `SolmorDialogueTree.ts` `showSolmorEncounter()` extended: accepts `species: SpeciesId` parameter (currently only uses 4 variants) — add `elf`, `celestial`, `draconic` branches for Stage 1/2/3
+- [ ] Stage 3 choice text (the "what do you want to do with what you are?" question) gets species-specific answer options for all 7 species
+
+---
+
+### NS6 — New Lore Books & Environmental Storytelling
+
+Each new Tier-1 species gets a species-specific lore book in the tower, distinct from the 4 currently placed.
+
+- [ ] **Elf** — Floor 1 (Library): An annotated spellbook in her own handwriting from "about three hundred years ago." The handwriting is better. The margin notes are not.
+- [ ] **Celestial** — Floor 7 (Botanical Lab, already has slime book): A paper titled *"Interim Report: Celestial Binding Efficacy at Ground Level"* with results marked **INCONCLUSIVE** in large letters.
+- [ ] **Draconic** — Floor 9 (Observatory): A star chart with handwritten notes identifying three constellations as historically draconic territory claims. The notes are defensive.
+- [ ] Implement via `chamberScatter` lectern entries on appropriate floors (matching the 3 new arcs)
+
+---
+
+### NS7 — Unit Tests (New Species)
+
+- [ ] `tests/combat/storyRunner.test.ts` — extend: Elf/Celestial/Draconic story lines validated (acts.length, beat types, completionText, npcId/enemyId where required)
+- [ ] `tests/combat/abilitySystem.test.ts` — extend: `applyCharacterAbilities()` returns correct sets for `elf_scholar`, `celestial_dawn`, `draconic_fire`
+- [ ] `tests/princess-creator/defaults.test.ts` — PC1 tests: all 10 defaults (4 original + 6 new) produce valid `PrincessInstance` at `targetHeight: 1.6`
+- [ ] `tests/princess-creator/speciesMapping.test.ts` — all 21 princess-creator species map to a valid game species via `PRINCESS_SPECIES_MAP`
+- [ ] Existing `src/princess-creator/__tests__/` — run clean baseline (currently passing)
+
+---
+
+### NS8 — Creative Mode & Bot Updates for New Species
+
+- [ ] Creative mode skin picker: show all 21 princess species organised by group (human/elf/celestial/draconic/vulperia/undead/slime) when custom princess mode is available
+- [ ] Bot scenario `tests/bot/scenarios/princess-creator.ts`:
+  - Open princess library, select "Maribel" (foxling default), start game
+  - Verify foxling princess model spawns (height ≈ 1.6 WU)
+  - Walk to floor 1, verify staircase toast is foxling-flavoured
+  - Screenshot and close
+- [ ] Register `princess-creator` scenario in `BotLauncher.ts`
+
+---
+
+## PHASE PC continued — Remaining Integration Items
+*(from Phase PC above — moved here for ordering clarity)*
+
+- [ ] PC3: `customPrincess: boolean` toggle on new-game card (default off)
+- [ ] PC3: `CharacterConfig.princessDna?: PrincessDNA` — set when custom mode on
+- [ ] PC3: Persist toggle to `localStorage` key `ttt_custom_princess_mode`
+- [ ] PC4: `PlayerController.applyPrincess(dna)` — `buildPrincess({targetHeight:1.6})`, attach `instance.root`, store for frame updates
+- [ ] PC4: Game loop — `_princessInstance?.update(elapsedTime, dt)` each frame
+- [ ] PC4: On species selection, map princess species → game species via `PRINCESS_SPECIES_MAP`
+- [ ] PC5: Dev Labs → "👸 Princess Atelier" opens `princess-creator.html` in new tab
+- [ ] PC5: Creative skin picker — gallery entries visible alongside real model GLBs
+- [ ] PC5: `window.__game.buildPrincess(dna)` exposed for bot/test access
+- [ ] PC6: `tests/princess-creator/defaults.test.ts` — 4 base defaults validate + build
+- [ ] PC6: `tests/princess-creator/integration.test.ts` — `buildPrincess` height + non-empty clips per species
 
 ---
 

@@ -25,7 +25,10 @@ import type { CharacterId } from '@/scene/CharacterDecisionTree';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type SpeciesId = 'human' | 'undead' | 'vulperia' | 'slime';
+export type SpeciesId =
+  | 'human' | 'undead' | 'vulperia' | 'slime'
+  // NS0: New Tier-1 species added with princess-creator expansion
+  | 'elf' | 'celestial' | 'draconic';
 
 export type StoryObjectiveType =
   | 'defeat_enemies'
@@ -742,15 +745,241 @@ const SLIME_STORY: StoryQuestLine = {
   ],
 };
 
+// ── NS1: New Tier-1 species — stub story lines (full arcs in Phase NS1) ─────
+
+const ELF_STORY: StoryQuestLine = {
+  speciesId:    'elf',
+  displayTitle: 'The Second Time Around',
+  synopsis:     'She has been in a tower before. A different one. A different century. She is less surprised than she should be, which says something.',
+  acts: [
+    {
+      id:    'tower_prologue',
+      title: 'Prologue — The Tower',
+      intro: "The staircase layout is different. The books are in the wrong order. These are the only comforts. You begin, as you always do, by reading the problem.",
+      beats: [
+        {
+          id: 'tower_p1', title: 'Not The First Time',
+          description:    "You have been in a tower before. The procedure is the same: find what you need, find the exit. Explore the ground floor. There will be a key.",
+          objective:      { type: 'explore_floor', targetLabel: 'Explore the ground floor' },
+          completionText: "Exactly where you expected it. The wizard at least has consistent methodology.", rewardXp: 30, rewardGold: 0,
+        },
+        {
+          id: 'tower_p2', title: 'The Library Has Opinions',
+          description:    "The first staircase is locked. The key is in the study. Find it — the books can wait, despite what they say about themselves.",
+          objective:      { type: 'explore_floor', targetLabel: 'Find the upper floor key' },
+          completionText: "A library with a telescope. A note: 'Do not go to the basement.' You recognise that note. A different handwriting, but the same note.", rewardXp: 30, rewardGold: 0,
+        },
+        {
+          id: 'tower_p3', title: 'The Workshop Is Familiar',
+          description:    "The workshop key. Always in the workshop, always badly hidden. Find it.",
+          objective:      { type: 'explore_floor', targetLabel: 'Find the workshop key' },
+          completionText: "Inside a glove. The third wizard in a row who hid it in a glove. You despair of their creativity.", rewardXp: 40, rewardGold: 0,
+        },
+        {
+          id: 'tower_p4', title: 'Annotated In Your Own Hand',
+          description:    "Descend. The spare master key is on the workbench. As always.",
+          objective:      { type: 'interact_key', targetLabel: 'Pick up the master key' },
+          completionText: "You find the spare key. And in the archives: a book you annotated. Three hundred years ago. In a different tower. Your handwriting hasn't changed. His notes reference you by name.", rewardXp: 100, rewardGold: 0,
+        },
+      ],
+    },
+    {
+      id: 'elf_act1', title: 'Act I — Something Familiar',
+      intro: "A book in the library is annotated in your own handwriting. You do not remember writing it. You remember writing the book it was copied from.",
+      beats: [
+        {
+          id: 'elf_a1b1', title: 'Secure the Area',
+          description:    "There are enemies between you and answers. Remove them.",
+          objective:      { type: 'defeat_enemies', count: 8, targetLabel: 'Defeat 8 enemies' },
+          completionText: "Dealt with.", rewardXp: 60, rewardGold: 20,
+        },
+        {
+          id: 'elf_a1b2', title: 'Find the Record',
+          description:    "There is a settlement with an archive that predates the tower. Find what record exists of the previous candidate.",
+          objective:      { type: 'reach_location', targetLabel: 'Reach the settlement archive' },
+          completionText: "The record names your predecessor. The description is accurate. She escaped. The wizard built a new tower.", rewardXp: 70, rewardGold: 20,
+        },
+      ],
+    },
+    {
+      id: 'elf_act2', title: 'Act II — The Century Gap',
+      intro: "There is a gap in the records. Forty years where no one saw what happened. You were here for part of it.",
+      beats: [
+        {
+          id: 'elf_a2b1', title: 'Into the Old Records',
+          description:    "Read what remains of the archive.",
+          objective:      { type: 'read_lore', targetLabel: 'Read the old archive' },
+          completionText: "You find the gap. And at the edge of it, your name, in someone else's handwriting.", rewardXp: 90, rewardGold: 25,
+        },
+        {
+          id: 'elf_a2b2', title: 'Clear the Path',
+          description:    "Whatever was buried in that dungeon to seal the records is still active. Clear it.",
+          objective:      { type: 'clear_dungeon', targetLabel: 'Clear the sealed archive dungeon' },
+          completionText: "The seal breaks. The records are incomplete. But you know enough.", rewardXp: 130, rewardGold: 50,
+        },
+      ],
+    },
+    {
+      id: 'elf_act3', title: 'Act III — Making It Difficult',
+      intro: "Solmor has noticed your interest in the records. He has sent people to discourage further investigation.",
+      beats: [
+        {
+          id: 'elf_a3b1', title: 'Discourage the Discouragements',
+          description:    "A retrieval party. Discourage them.",
+          objective:      { type: 'defeat_enemies', count: 12, targetLabel: 'Defeat 12 enemies' },
+          completionText: "Discouraged.", rewardXp: 100, rewardGold: 30,
+        },
+        {
+          id: 'elf_a3b2', title: 'Survive the Night',
+          description:    "More coming.",
+          objective:      { type: 'survive_wave', targetLabel: 'Survive the retrieval wave' },
+          completionText: "They send fewer each time, which is instructive.", rewardXp: 120, rewardGold: 40,
+        },
+      ],
+    },
+    {
+      id: 'elf_act4', title: 'Act IV — The Graceful Exit',
+      intro: "She could leave. She has what she came for. She is choosing not to, for now.",
+      beats: [
+        {
+          id: 'elf_a4b1', title: 'Settle the Score',
+          description:    "There is a dungeon where the original binding ward was constructed. Clear it.",
+          objective:      { type: 'clear_dungeon', targetLabel: 'Clear the binding ward dungeon' },
+          completionText: "The ward is dismantled. The binding dissolves. The century-gap closes.", rewardXp: 200, rewardGold: 80,
+        },
+        {
+          id: 'elf_a4b2', title: 'Make It Official',
+          description:    "Reach the settlement that holds the founding charter of this region. They should know what the tower is.",
+          objective:      { type: 'reach_location', targetLabel: 'Reach the founding settlement' },
+          completionText: "They know now. They will remember. She leaves, as she always leaves: without hurry, without fanfare, and without the wizard noticing until significantly later.", rewardXp: 260, rewardGold: 110,
+        },
+      ],
+    },
+  ],
+};
+
+// ── Celestial stub ─────────────────────────────────────────────────────────
+
+const CELESTIAL_STORY: StoryQuestLine = {
+  speciesId:    'celestial',
+  displayTitle: 'Atmospheric Re-entry',
+  synopsis:     "She fell. This happens. The tower was just where she landed. She has filed a formal complaint and is waiting for a response.",
+  acts: [
+    {
+      id: 'tower_prologue', title: 'Prologue — The Tower',
+      intro: "The tower is cold. The ceiling has three cracks. She has counted them. The ceiling is, objectively, insufficient.",
+      beats: [
+        { id: 'tower_p1', title: 'Orientation', description: "Assess the ground floor. There is a key somewhere.", objective: { type: 'explore_floor', targetLabel: 'Explore the ground floor' }, completionText: "The pantry key. At least there is food.", rewardXp: 30, rewardGold: 0 },
+        { id: 'tower_p2', title: 'Elevation', description: "The staircase key. Find it.", objective: { type: 'explore_floor', targetLabel: 'Find the upper floor key' }, completionText: "A library. A window. And a note: 'Do not go to the basement.' She notes this with patience.", rewardXp: 30, rewardGold: 0 },
+        { id: 'tower_p3', title: 'The Workshop', description: "The workshop key.", objective: { type: 'explore_floor', targetLabel: 'Find the workshop key' }, completionText: "The workshop is full of incomplete experiments. She identifies three significant errors.", rewardXp: 40, rewardGold: 0 },
+        { id: 'tower_p4', title: 'The Anchor', description: "Descend. Find the spare master key.", objective: { type: 'interact_key', targetLabel: 'Pick up the master key' }, completionText: "The key. And in the archive: a paper titled 'Celestial Binding Efficacy at Ground Level'. Results: INCONCLUSIVE, in very large letters. She is not surprised.", rewardXp: 100, rewardGold: 0 },
+      ],
+    },
+    {
+      id: 'celestial_act1', title: 'Act I — Something Is Blocking the Signal',
+      intro: "Her connection to the stars is suppressed. Something in the tower is doing this deliberately.",
+      beats: [
+        { id: 'celestial_a1b1', title: 'Clear the Interference', description: "Enemies nearby are disrupting the investigation.", objective: { type: 'defeat_enemies', count: 8, targetLabel: 'Defeat 8 enemies' }, completionText: "Clearer now.", rewardXp: 60, rewardGold: 20 },
+        { id: 'celestial_a1b2', title: 'Find the Ward', description: "A settlement scholar knows about binding wards. Find them.", objective: { type: 'reach_location', targetLabel: 'Reach the scholar settlement' }, completionText: "The scholar is helpful and frightened in approximately equal measure.", rewardXp: 60, rewardGold: 20 },
+      ],
+    },
+    {
+      id: 'celestial_act2', title: 'Act II — The Ward Stone',
+      intro: "There is a ward stone somewhere in the tower region. It was placed specifically to block celestial abilities.",
+      beats: [
+        { id: 'celestial_a2b1', title: 'Research', description: "The answer is in the archive.", objective: { type: 'read_lore', targetLabel: 'Read the celestial binding research' }, completionText: "The ward stone is on floor 7. Placed within the last fifty years. By someone who knew.", rewardXp: 80, rewardGold: 25 },
+        { id: 'celestial_a2b2', title: 'Reach Floor 7', description: "Clear the path.", objective: { type: 'clear_dungeon', targetLabel: 'Clear to the ward stone' }, completionText: "The ward stone is found. The connection flickers.", rewardXp: 130, rewardGold: 45 },
+      ],
+    },
+    {
+      id: 'celestial_act3', title: 'Act III — They Do Not Want It Removed',
+      intro: "Word has reached someone that she is close to the ward stone. They have sent people.",
+      beats: [
+        { id: 'celestial_a3b1', title: 'Remove the Obstruction', description: "A guard party. Remove them.", objective: { type: 'defeat_enemies', count: 14, targetLabel: 'Defeat 14 enemies' }, completionText: "Removed.", rewardXp: 110, rewardGold: 35 },
+        { id: 'celestial_a3b2', title: 'Survive the Second Wave', description: "Another wave.", objective: { type: 'survive_wave', targetLabel: 'Survive the second wave' }, completionText: "It ends. The ward stone is unprotected.", rewardXp: 120, rewardGold: 40 },
+      ],
+    },
+    {
+      id: 'celestial_act4', title: 'Act IV — Reconnection',
+      intro: "The ward stone can be destroyed or repurposed. The stars have been patient.",
+      beats: [
+        { id: 'celestial_a4b1', title: 'Destroy the Stone', description: "Clear the dungeon that houses it.", objective: { type: 'clear_dungeon', targetLabel: 'Destroy the ward stone dungeon' }, completionText: "The ward shatters. The signal returns. The stars, after some consideration, acknowledge receipt of her complaint.", rewardXp: 210, rewardGold: 85 },
+        { id: 'celestial_a4b2', title: 'Signal Home', description: "Reach a high point and broadcast.", objective: { type: 'reach_location', targetLabel: 'Reach the signal point' }, completionText: "She stands in an open field. The light returns. The complaint has been logged. Resolution: pending, estimated arrival: one to four centuries. She decides not to wait.", rewardXp: 250, rewardGold: 110 },
+      ],
+    },
+  ],
+};
+
+// ── Draconic stub ──────────────────────────────────────────────────────────
+
+const DRACONIC_STORY: StoryQuestLine = {
+  speciesId:    'draconic',
+  displayTitle: 'The Fire That Stays',
+  synopsis:     "She is not angry. She is patient. The scales absorbing the wizard's ambient spellwork are a side effect. She has not explained this.",
+  acts: [
+    {
+      id: 'tower_prologue', title: 'Prologue — The Tower',
+      intro: "The tower is cooler than she expected. The books are not fire-resistant. She makes adjustments.",
+      beats: [
+        { id: 'tower_p1', title: 'Heat Retention', description: "The ground floor. There will be a key.", objective: { type: 'explore_floor', targetLabel: 'Explore the ground floor' }, completionText: "The pantry key. The food is adequate. The temperature is not.", rewardXp: 30, rewardGold: 0 },
+        { id: 'tower_p2', title: 'Upward', description: "Staircase key. Study.", objective: { type: 'explore_floor', targetLabel: 'Find the upper floor key' }, completionText: "The library. A telescope. A note: 'Do not go to the basement.' She notes this with the patience of a species that measures time in centuries.", rewardXp: 30, rewardGold: 0 },
+        { id: 'tower_p3', title: 'The Forge Floor', description: "The workshop. She approves of it.", objective: { type: 'explore_floor', targetLabel: 'Find the workshop key' }, completionText: "The forge is cold. She considers warming it up and decides this is not the moment.", rewardXp: 40, rewardGold: 0 },
+        { id: 'tower_p4', title: 'The Proof', description: "Descend. Find the spare master key.", objective: { type: 'interact_key', targetLabel: 'Pick up the master key' }, completionText: "The key. And in the archive: a star chart noting three constellations as \"formerly draconic territorial claims.\" Solmor's note reads: \"current occupant: human wizard.\" She disagrees with this assessment.", rewardXp: 100, rewardGold: 0 },
+      ],
+    },
+    {
+      id: 'draconic_act1', title: 'Act I — The Hoard Instinct',
+      intro: "She keeps finding rooms she wants to claim. This is, apparently, cultural. She is choosing to document it.",
+      beats: [
+        { id: 'draconic_a1b1', title: 'Establish Territory', description: "There are creatures in her claimed areas. Remove them.", objective: { type: 'defeat_enemies', count: 10, targetLabel: 'Defeat 10 enemies' }, completionText: "The area is clear. She places a very small stone in the corner. This is not symbolic. It is definitely symbolic.", rewardXp: 70, rewardGold: 25 },
+        { id: 'draconic_a1b2', title: 'Find the Old Maps', description: "A settlement holds maps predating the tower. Find them.", objective: { type: 'reach_location', targetLabel: 'Reach the map settlement' }, completionText: "The maps confirm what she suspected. This land was draconic territory. Several centuries ago. She considers the implications.", rewardXp: 60, rewardGold: 20 },
+      ],
+    },
+    {
+      id: 'draconic_act2', title: 'Act II — Old Claim',
+      intro: "The land the tower stands on was draconic territory. There are plaques. The wizard did not read them.",
+      beats: [
+        { id: 'draconic_a2b1', title: 'Find the Plaques', description: "The archive will have records.", objective: { type: 'read_lore', targetLabel: 'Read the territorial records' }, completionText: "Three plaques. Two in good condition. One partially melted by someone who was, probably, annoyed.", rewardXp: 80, rewardGold: 20 },
+        { id: 'draconic_a2b2', title: 'Clear the Disputed Dungeon', description: "A dungeon on the old territorial boundary has been occupied by something that is not welcome.", objective: { type: 'clear_dungeon', targetLabel: 'Clear the disputed dungeon' }, completionText: "Clear. She places another small stone. This is still not symbolic.", rewardXp: 120, rewardGold: 50 },
+      ],
+    },
+    {
+      id: 'draconic_act3', title: 'Act III — They Noticed',
+      intro: "The fact of her clearing dungeons and reading territorial records has attracted attention.",
+      beats: [
+        { id: 'draconic_a3b1', title: 'A Formal Objection', description: "A party has been sent to formally object. She will formally disagree.", objective: { type: 'defeat_enemies', count: 15, targetLabel: 'Defeat 15 enemies' }, completionText: "The objection has been noted and declined.", rewardXp: 120, rewardGold: 40 },
+        { id: 'draconic_a3b2', title: 'The Siege', description: "They sent more.", objective: { type: 'survive_wave', targetLabel: 'Survive the siege' }, completionText: "It ends. They do not come back. She is faintly disappointed — she was beginning to warm up.", rewardXp: 130, rewardGold: 50 },
+      ],
+    },
+    {
+      id: 'draconic_act4', title: 'Act IV — Reclamation',
+      intro: "She does not want the tower. She wants it acknowledged that she could take the tower. These are different.",
+      beats: [
+        { id: 'draconic_a4b1', title: 'The Final Dungeon', description: "There is a dungeon at the old territorial heart. Clear it. Formally reclaim.", objective: { type: 'clear_dungeon', targetLabel: 'Clear the territorial heart dungeon' }, completionText: "The dungeon is clear. She places a very large stone. This is a little symbolic.", rewardXp: 220, rewardGold: 90 },
+        { id: 'draconic_a4b2', title: 'The Declaration', description: "Reach the settlement that controls the local historical record. They will note this.", objective: { type: 'reach_location', targetLabel: 'Reach the record-keeping settlement' }, completionText: "The record is updated. The territory is noted as \"under draconic advisory oversight.\" She considers this adequate. She leaves. The stones remain.", rewardXp: 260, rewardGold: 110 },
+      ],
+    },
+  ],
+};
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 export const STORY_LINES: Record<SpeciesId, StoryQuestLine> = {
-  human:    HUMAN_STORY,
-  undead:   UNDEAD_STORY,
-  vulperia: VULPERIA_STORY,
-  slime:    SLIME_STORY,
+  human:     HUMAN_STORY,
+  undead:    UNDEAD_STORY,
+  vulperia:  VULPERIA_STORY,
+  slime:     SLIME_STORY,
+  // NS1: New Tier-1 species
+  elf:       ELF_STORY,
+  celestial: CELESTIAL_STORY,
+  draconic:  DRACONIC_STORY,
 };
 
 export function getStoryLine(characterId: CharacterId): StoryQuestLine {
   return STORY_LINES[speciesForCharacter(characterId)];
+}
+
+/** Get a story line directly by species ID (for princess-creator mode). */
+export function getStoryLineBySpecies(species: SpeciesId): StoryQuestLine {
+  return STORY_LINES[species];
 }

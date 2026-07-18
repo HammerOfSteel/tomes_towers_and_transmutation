@@ -14,7 +14,7 @@ export type TalentPath =
   | 'naturalist'   | 'cross';
 
 /** Species IDs that mirror StoryQuestLine.SpeciesId — kept local to avoid circular imports. */
-export type TalentSpecies = 'human' | 'undead' | 'vulperia' | 'slime';
+export type TalentSpecies = 'human' | 'undead' | 'vulperia' | 'slime' | 'elf' | 'celestial' | 'draconic';
 
 export interface TalentNode {
   id: string;
@@ -247,6 +247,31 @@ export const TALENT_NODES: readonly TalentNode[] = [
     name: 'Amorphous',
     description: '[Slime only] Immune to knockback; take 15% reduced fall damage. Passive — always active.',
     applyEffect: p => { p.mods.amorphous = true; },
+  },
+  // NS2: New Tier-1 species signature nodes
+  {
+    id: 'sp_elf_long_memory', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['ar_1'],
+    allowedSpecies: ['elf'] as const,
+    name: 'Long Memory',
+    description: '[Elf only] +10% XP from all sources. First encounter with each enemy type deals +20% damage. Passive — resets per run.',
+    applyEffect: p => { p.mods.longMemory = true; },
+  },
+  {
+    id: 'sp_celestial_star_touched', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['ar_2'],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Star-Touched',
+    description: '[Celestial only] 3u light aura (enemies -10% hit rate). At night: spells +15% damage, -10% mana cost. Passive.',
+    applyEffect: p => { p.mods.starTouched = true; },
+  },
+  {
+    id: 'sp_draconic_scale_armour', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['bd_1', 'wl_1'],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Scale Armour',
+    description: '[Draconic only] −15% physical damage taken. +20% damage when above 75% HP. Fire spells cost 20% less mana. Passive.',
+    applyEffect: p => { p.mods.scaleArmour = true; },
   },
 ];
 

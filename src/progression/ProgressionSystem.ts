@@ -48,6 +48,10 @@ export interface TalentModifiers {
   undyingHunger: boolean;      // undead — restore 5% HP on kill
   predatorsEye: boolean;       // vulperia — first hit on each enemy crits
   amorphous: boolean;          // slime — knockback immune, reduced fall damage
+  // NS2: New Tier-1 species passives
+  longMemory: boolean;         // elf — +10% XP, first-encounter bonus damage
+  starTouched: boolean;        // celestial — light aura, night power boost
+  scaleArmour: boolean;        // draconic — physical DR, fire mana discount
 }
 
 const BASE_MODS: TalentModifiers = {
@@ -56,6 +60,7 @@ const BASE_MODS: TalentModifiers = {
   hasCurseTouch: false, hasSoulDrain: false,
   hasVoidWeave: false, hasDeathPact: false, hasSpellBlade: false,
   ironWill: false, undyingHunger: false, predatorsEye: false, amorphous: false,
+  longMemory: false, starTouched: false, scaleArmour: false,
 };
 
 // ── Main class ────────────────────────────────────────────────────────────
