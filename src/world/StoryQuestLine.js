@@ -41,6 +41,13 @@ const SPECIES_MAP = {
     slime_arcane: 'slime',
     slime_philosopher: 'slime',
     slime_young: 'slime',
+    // NS3: new Tier-1 species
+    elf_scholar:     'elf',
+    elf_wanderer:    'elf',
+    celestial_dawn:  'celestial',
+    celestial_dusk:  'celestial',
+    draconic_fire:   'draconic',
+    draconic_scale:  'draconic',
 };
 export function speciesForCharacter(id) {
     return SPECIES_MAP[id];
@@ -651,11 +658,19 @@ const SLIME_STORY = {
 };
 // ── Export ────────────────────────────────────────────────────────────────────
 export const STORY_LINES = {
-    human: HUMAN_STORY,
-    undead: UNDEAD_STORY,
+    human:    HUMAN_STORY,
+    undead:   UNDEAD_STORY,
     vulperia: VULPERIA_STORY,
-    slime: SLIME_STORY,
+    slime:    SLIME_STORY,
+    // NS3: new Tier-1 species — stub story lines (same structure as HUMAN_STORY but species-flavoured)
+    elf:       { ...HUMAN_STORY, speciesId: 'elf',       displayTitle: 'The Second Time Around',  synopsis: 'She has been in a tower before. A different one. A different century.' },
+    celestial: { ...HUMAN_STORY, speciesId: 'celestial', displayTitle: 'Atmospheric Re-entry',     synopsis: 'She fell. This happens. The tower was just where she landed.' },
+    draconic:  { ...HUMAN_STORY, speciesId: 'draconic',  displayTitle: 'The Fire That Stays',      synopsis: 'She is not angry. She is very patient.' },
 };
 export function getStoryLine(characterId) {
     return STORY_LINES[speciesForCharacter(characterId)];
+}
+/** Get a story line directly by species ID (for princess-creator mode). */
+export function getStoryLineBySpecies(species) {
+    return STORY_LINES[species];
 }

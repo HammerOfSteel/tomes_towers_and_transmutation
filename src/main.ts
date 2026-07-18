@@ -251,6 +251,25 @@ async function main() {
             [2]:  "The cauldrons are enormous. You briefly consider whether you could fit inside one.\nFor research purposes only.",
             [3]:  "The carpet here is very soft. You take a moment to appreciate this.\nEveryone deserves a moment like this.",
           },
+          // NS1: New Tier-1 species staircase flavour
+          elf: {
+            [-1]: "The preservation wards down here are standard second-era work.\nCompetent. Not elegant. You could do better, but you were not asked.",
+            [1]:  "The library. You have been in better libraries.\nYou have also been in worse, but you are choosing to appreciate this one on its merits.",
+            [2]:  "The fermentation level. Something is still actively producing.\nYou find this impressive and slightly worrying in equal measure.",
+            [3]:  "The wizard's own quarters. Personal, deliberate, and slightly chaotic in ways he probably does not see.\nYou have notes.",
+          },
+          celestial: {
+            [-1]: "The ward architecture down here is pre-Conclave methodology with a modern retrofit.\nSomeone who knew what they were doing built this. The retrofit was less careful.",
+            [1]:  "A library of unusual breadth. You have read most of what is here, in various forms.\nThe margin notes are new. You find them charming.",
+            [2]:  "Fermentation. The smell is complex and technically impressive.\nYou appreciate precision applied to unexpected domains.",
+            [3]:  "The wizard's quarters. Every object has been placed with intent.\nThe star chart on the desk is almost correct. Almost.",
+          },
+          draconic: {
+            [-1]: "The laboratory. The temperature differential between the ward surfaces tells you a great deal about their construction date.\nOld. Careful. She approves.",
+            [1]:  "The library.\nShe approves of libraries.",
+            [2]:  "The fermentation level. The alchemical array is well-maintained.\nThe smell is not her preference but the craft is evident.",
+            [3]:  "The wizard's sanctum. Every item here was chosen.\nThe forge on the level above was more interesting, but she does not say this aloud.",
+          },
         };
         const msg = STAIR_FLAVOUR[_characterSpecies]?.[bp.floor];
         if (msg) _storyToast(msg, 'beat');

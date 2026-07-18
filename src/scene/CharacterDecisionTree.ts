@@ -151,10 +151,14 @@ export class CharacterDecisionTree {
       '(Rattle your bones aggressively) "Do I look like I have any skin left?"',
       '(Hiss, baring fangs) "Touch my tail and you lose a finger."',
       '(Squelch indignantly) "We... are... squishy... we are legion..."',
+      // NS3: New Tier-1 species choices
+      '(Flicker briefly) "Yes. I\'ve been in a tower before.\nSeveral, actually. Though usually more intentionally."',
+      '(Emit a faint ambient glow) "You\'re uncomfortable. That\'s the light.\nI can\'t turn it off. I\'ve tried."',
+      '(Let your scales catch the firelight) "Your wards have been absorbing the ambient spellwork for three days.\nI assumed you knew."',
     ]);
 
     // ── PHASE 2: personality / class lock ─────────────────────────────────────
-    let characterId: CharacterId;
+    let characterId: CharacterId = 'rogue';  // default fallback
 
     if (species === 0) {
       // ── HUMAN ──────────────────────────────────────────────────────────────
@@ -290,7 +294,7 @@ export class CharacterDecisionTree {
         );
       }
 
-    } else {
+    } else if (species === 3) {
       // ── SLIME ──────────────────────────────────────────────────────────────
       await overlay.speak(
         "A slime! Oh, wonderful.\n" +
@@ -334,6 +338,93 @@ export class CharacterDecisionTree {
           "But also perhaps something entirely other. Welcome to existing.",
         );
       }
+
+    } else if (species === 4) {
+      // ── ELF ────────────────────────────────────────────────────────────────
+      await overlay.speak(
+        "An elf! I can tell by the complete absence of surprise.\n" +
+        "Either you've been in a tower before, or you simply don't show alarm.\n" +
+        "I suspect the former. How many towers is this?",
+      );
+
+      const elfChoice = await overlay.choose([
+        '"This would be the third. Your methodology is consistent\nbut your hiding spot for the basement key is not."',
+        '"I\'ve lost count. Towers run together after the first century.\nYours has a better library than average."',
+      ]);
+
+      if (elfChoice === 0) {
+        characterId = 'elf_scholar';
+        await overlay.speak(
+          "The third. And you've already found the pattern.\n" +
+          "I should rethink the key placement.\n" +
+          "Or just accept this was inevitable.",
+        );
+      } else {
+        characterId = 'elf_wanderer';
+        await overlay.speak(
+          "A compliment! From an elf!\n" +
+          "I'm putting this in the tower's official record under 'rare events'.\n" +
+          "The library appreciates being seen.",
+        );
+      }
+
+    } else if (species === 5) {
+      // ── CELESTIAL ──────────────────────────────────────────────────────────
+      await overlay.speak(
+        "A celestial! That's...\n" +
+        "It's very bright in here suddenly. That's you, isn't it.\n" +
+        "I've been trying to recreate that effect artificially for fifteen years.",
+      );
+
+      const celestialChoice = await overlay.choose([
+        '"It\'s ambient. I can\'t turn it off.\nI\'ve filed a complaint about this. I\'m still waiting for a response."',
+        '"The paper you have on celestial binding in your archive.\nPage fourteen has a significant error."',
+      ]);
+
+      if (celestialChoice === 0) {
+        characterId = 'celestial_dawn';
+        await overlay.speak(
+          "Filed a complaint! With whom exactly?\n" +
+          "The celestial bureaucracy! I have so many questions.\n" +
+          "This is unprecedented. Please don't leave.",
+        );
+      } else {
+        characterId = 'celestial_dusk';
+        await overlay.speak(
+          "Page fourteen!\n" +
+          "I knew something was wrong with page fourteen.\n" +
+          "Please. What's the error. I'll get a quill.",
+        );
+      }
+
+    } else if (species === 6) {
+      // ── DRACONIC ───────────────────────────────────────────────────────────
+      await overlay.speak(
+        "Draconic! That explains a great deal.\n" +
+        "Your scales have been absorbing the ambient spellwork\n" +
+        "for approximately seventy-two hours. I noticed.",
+      );
+
+      const draconicChoice = await overlay.choose([
+        '"I assumed you knew. You should put up a sign."',
+        '"I noticed you noticed. I\'ve been waiting to see\nif you would mention it. You took three days."',
+      ]);
+
+      if (draconicChoice === 0) {
+        characterId = 'draconic_fire';
+        await overlay.speak(
+          "A sign.\n" +
+          "'Warning: ambient spellwork may be absorbed by visiting draconic entities.'\n" +
+          "I'm making a note to install one. This is extremely reasonable.",
+        );
+      } else {
+        characterId = 'draconic_scale';
+        await overlay.speak(
+          "You were waiting to see how long it took me.\n" +
+          "That is an extremely draconic approach to social interaction.\n" +
+          "I mean that as a compliment.",
+        );
+      }
     }
 
     // ── PHASE 3: stat allocation ───────────────────────────────────────────────
@@ -357,8 +448,20 @@ export class CharacterDecisionTree {
       "Wonderful. That's the naming sorted.\n" +
       "Two small questions remain. Please try to hold a roughly consistent shape.\n" +
       "It helps me maintain eye contact.",
+      // elf
+      "Right. I have two remaining questions.\n" +
+      "They're the same questions I ask everyone. I'm told they're revealing.\n" +
+      "You've probably heard them before.",
+      // celestial
+      "Two more questions. Standard procedure.\n" +
+      "I'll try not to be distracted by the ambient light.\n" +
+      "No promises.",
+      // draconic
+      "Two more questions. Completely standard.\n" +
+      "I'll keep them brief.\n" +
+      "The ward absorption should stabilise once you're settled.",
     ];
-    await overlay.speak(TRANSITION[species]);
+    await overlay.speak(TRANSITION[Math.min(species, TRANSITION.length - 1)]);
 
     // ── Q1: approaches (species-specific framing, same stat mapping) ──────────
     const Q1_PROMPTS: readonly string[] = [
@@ -408,7 +511,7 @@ export class CharacterDecisionTree {
         "Simply exist near the gap and wait for it to become philosophically irrelevant.",
       ],
     ];
-    await overlay.speak(Q1_PROMPTS[species]);
+    await overlay.speak(Q1_PROMPTS[Math.min(species, Q1_PROMPTS.length - 1)]);
     const q1 = await overlay.choose(Q1_CHOICES[species] as unknown as string[]);
 
     const statBonusA: StatBonus = (
@@ -456,7 +559,7 @@ export class CharacterDecisionTree {
         "It was a state of mind. I think. The notes get unclear here.",
       ],
     ];
-    await overlay.speak(Q1_REACTIONS[species][q1]);
+    await overlay.speak(Q1_REACTIONS[Math.min(species, Q1_REACTIONS.length - 1)]![q1]);
 
     // ── Q2: adversity (species-specific framing, same stat mapping) ───────────
     const Q2_PROMPTS: readonly string[] = [
@@ -504,7 +607,7 @@ export class CharacterDecisionTree {
         "Contemplate the existential implications of the colour match. Then eat it.",
       ],
     ];
-    await overlay.speak(Q2_PROMPTS[species]);
+    await overlay.speak(Q2_PROMPTS[Math.min(species, Q2_PROMPTS.length - 1)]);
     const q2 = await overlay.choose(Q2_CHOICES[species] as unknown as string[]);
 
     const statBonusB: StatBonus = (
@@ -561,7 +664,7 @@ export class CharacterDecisionTree {
         "Or possibly 'may have identified with the gruel'. Further study needed.",
       ],
     ];
-    await overlay.speak(Q2_REACTIONS[species][q2]);
+    await overlay.speak(Q2_REACTIONS[Math.min(species, Q2_REACTIONS.length - 1)]![q2]);
 
     // ── Farewell (species-aware) ───────────────────────────────────────────────
     await _pause(600);
