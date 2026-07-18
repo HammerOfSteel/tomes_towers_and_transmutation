@@ -885,11 +885,11 @@ export class CharacterCreationV2 {
       }
     };
 
-    // Insert toggle above the actions
-    panel.insertBefore(princessToggle, actions);
-
     actions.append(backBtn, beginBtn);
     panel.appendChild(actions);
+
+    // PC3: Insert princess toggle above the actions row
+    panel.insertBefore(princessToggle, actions);
 
     return overlay;
   }

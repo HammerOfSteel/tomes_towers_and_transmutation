@@ -139,6 +139,14 @@ const ui = new Ui(store, {
       thumb,
     }));
   },
+  playNow: () => {
+    // Save first, then hand off to the main game via localStorage
+    const code = dnaToShareCode(store.dna);
+    const thumb = stage.snapshot(128, true);
+    addToGallery({ name: store.dna.name, code, thumb });
+    localStorage.setItem('ttt_quickplay_princess', code);
+    window.location.href = '/';
+  },
   loadGalleryEntry: (id: string) => {
     const entry = loadGallery().find((e) => e.id === id);
     if (!entry) return;

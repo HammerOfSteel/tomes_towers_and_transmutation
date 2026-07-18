@@ -81,6 +81,8 @@ export default defineConfig(({ mode }) => ({
   // F4: 'warn' in production builds, 'info' in dev — suppress noisy info logs in prod
   logLevel: mode === 'production' ? 'warn' : 'info',
   resolve: {
+    // Prioritise .ts over .js so stale JS mirrors don't shadow the real source
+    extensions: ['.mts', '.ts', '.tsx', '.mjs', '.js', '.jsx', '.json', '.vue'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },

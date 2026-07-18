@@ -23,7 +23,8 @@ export default defineConfig({
   use: {
     baseURL:        'http://localhost:5173',
     browserName:    'chromium',
-    headless:       true,
+    headless:       false,
+    slowMo:         300,   // ms between actions — makes it watchable
     viewport:       { width: 1280, height: 720 },
     // Always capture screenshots — key for visual debugging
     screenshot:     'on',

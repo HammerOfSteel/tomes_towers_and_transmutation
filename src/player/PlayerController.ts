@@ -189,6 +189,8 @@ export class PlayerController {
   private _charController: CharacterController | null = null;
   /** PC4: Princess-creator instance (mutually exclusive with _creatureRig/_charController). */
   private _princessInstance: import('@/princess-creator/factory').PrincessInstance | null = null;
+  /** Tracks last-set animation state so we only call setState on change. */
+  private _princessAnimState: string = 'idle';
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
@@ -322,6 +324,7 @@ export class PlayerController {
    * Safe to call multiple times — disposes the previous instance.
    */
   async applyPrincess(dna: import('@/princess-creator/types').PrincessDNA): Promise<void> {
+    console.log('[PlayerController] applyPrincess called — dna:', dna ? `name=${dna.name} species=${dna.species}` : 'NULL');
     // Dispose previous visuals
     if (this._princessInstance) {
       this.group.remove(this._princessInstance.root);
@@ -346,18 +349,40 @@ export class PlayerController {
     // bundle into the main game chunk unless this code path is actually exercised.
     const { buildPrincess } = await import('@/princess-creator/factory');
     this._princessInstance = buildPrincess(dna, { targetHeight: 1.6 });
+    console.log('[PlayerController] buildPrincess complete — root children:', this._princessInstance.root.children.length);
 
     // Position feet at capsule bottom
     const box = new THREE.Box3().setFromObject(this._princessInstance.root);
     this._princessInstance.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - box.min.y;
+    console.log('[PlayerController] princess added to group ✓');
 
     this.group.add(this._princessInstance.root);
   }
 
   /** PC4: Per-frame update for princess animations (call from game loop). */
   updatePrincess(elapsedSeconds: number, dt: number): void {
-    this._princessInstance?.update(elapsedSeconds, dt);
+    if (!this._princessInstance) return;
+
+    // Bridge player movement state to princess animation states.
+    // Only call setState when state changes — calling every frame resets the clip.
+    const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+    const nextState = !this.isGrounded
+      ? 'jump_idle'
+      : hSpeed > RUN_SPEED * 0.5 ? 'run'
+      : hSpeed > 0.3             ? 'walk'
+      :                            'idle';
+
+    if (nextState !== this._princessAnimState) {
+      this._princessAnimState = nextState;
+      console.log(`[princess-anim] setState: ${nextState} (hSpeed=${hSpeed.toFixed(2)} grounded=${this.isGrounded})`);
+      this._princessInstance.setState(nextState as import('@/princess-creator/anim/clips').AnimId);
+    }
+
+    this._princessInstance.update(elapsedSeconds, dt);
   }
+
+  /** Returns the current princess animation state string (for tests). */
+  get princessAnimState(): string { return this._princessAnimState; }
 
   /** True when a princess model is currently active. */
   get hasPrincess(): boolean { return this._princessInstance !== null; }

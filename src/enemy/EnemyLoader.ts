@@ -172,9 +172,47 @@ export async function loadEnemyById(
 ): Promise<EnemyRig> {
   const def = CHAR_MODELS.find(m => m.id === modelId);
   if (!def) {
-    throw new Error(`EnemyLoader: model id "${modelId}" not found in charManifest`);
+    // B1: DNA rig fallback — unknown enemy IDs get a procedural CreatureBuilder mesh
+    console.warn(`[EnemyLoader] "${modelId}" not in charManifest — using DNA fallback`);
+    return buildDnaFallbackRig(modelId, spawnPos);
   }
   return loadEnemyModel(def, spawnPos);
+}
+
+/**
+ * B1: DNA rig fallback — builds a procedural CreatureBuilder mesh when no
+ * compatible GLB model exists in charManifest. The mesh inherits basic
+ * idle/attack/death clips from the walk animation.
+ */
+async function buildDnaFallbackRig(modelId: string, spawnPos: THREE.Vector3): Promise<EnemyRig> {
+  const { buildCreature } = await import('@/creatures/CreatureBuilder');
+  const { DEFAULT_PLAYER_DNA } = await import('@/creatures/CreatureDNA');
+
+  // Seed creature DNA from the model ID string for deterministic appearance
+  let seed = 0;
+  for (let i = 0; i < modelId.length; i++) seed = (seed * 31 + modelId.charCodeAt(i)) >>> 0;
+  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+
+  const dna = { ...DEFAULT_PLAYER_DNA };
+  // Vary colour so different enemy types look distinct (use numeric hex)
+  const hue = Math.floor(rng() * 6);   // 0-5 → 6 distinct palette slots
+  const PALETTES: Array<typeof DEFAULT_PLAYER_DNA.colors> = [
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x6a4a8a, secondary: 0x4a2a6a },  // purple
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x8a4a4a, secondary: 0x6a2a2a },  // red
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a6a4a, secondary: 0x2a4a2a },  // green
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a4a8a, secondary: 0x2a2a6a },  // blue
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x8a6a4a, secondary: 0x6a4a2a },  // orange
+    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a8a8a, secondary: 0x2a6a6a },  // teal
+  ];
+  dna.colors = PALETTES[hue] ?? PALETTES[0];
+
+  const rig = buildCreature(dna);
+  const group = rig.root;
+  group.scale.setScalar(TARGET_HEIGHT / 2.0);   // DNA creatures ~2 WU tall
+  group.position.copy(spawnPos);
+
+  const emptyClips = { idle: null, walk: null, run: null, attack: null, death: null, hurt: null };
+  return { group, mixer: null, allClips: [], clips: emptyClips, normScale: 1, def: undefined as any };
 }
 
 // ── Disposal ──────────────────────────────────────────────────────────────────

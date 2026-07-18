@@ -107,6 +107,9 @@ interface SaveData {
   statBonuses?: string[];
   // In-game progress
   hasMasterKey?: boolean;
+  // Princess creator — share code so the rig can be rebuilt on Continue
+  princessCode?:    string;
+  princessSpecies?: string;
 }
 
 // ── Save-slot helpers (exported for main.ts auto-save) ─────────────────────

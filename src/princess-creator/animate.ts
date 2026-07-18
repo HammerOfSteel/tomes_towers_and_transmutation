@@ -64,6 +64,8 @@ export class Animator {
   setState(id: AnimId): void {
     if (!this.clipSet) return;
     if (!STATE_IDS.includes(id)) { this.play(id); return; }
+    // Guard: don't restart if we're already in this state and not mid-one-shot
+    if (this.state === id && this.oneShot === null) return;
     this.state = id;
     this.oneShot = null;
     this.held = false;

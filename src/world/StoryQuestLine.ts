@@ -134,6 +134,7 @@ const SPECIES_MAP: Record<CharacterId, SpeciesId> = {
   celestial_dusk:  'celestial',
   draconic_fire:   'draconic',
   draconic_scale:  'draconic',
+  princess:        'human',   // runtime-replaced by princessSpecies
 };
 
 export function speciesForCharacter(id: CharacterId): SpeciesId {

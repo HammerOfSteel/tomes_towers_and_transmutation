@@ -29,6 +29,7 @@ export interface UiActions {
   exportGlb(): void;
   exportJson(): void;
   saveToGallery(): void;
+  playNow(): void;
   loadGalleryEntry(id: string): void;
   deleteGalleryEntry(id: string): void;
   listClips(): Array<{ id: AnimId; label: string; group: string; loop: boolean }>;
@@ -165,6 +166,7 @@ export class Ui {
     (document.getElementById('btn-export-glb') as HTMLButtonElement).onclick = () => this.actions.exportGlb();
     (document.getElementById('btn-export-json') as HTMLButtonElement).onclick = () => this.actions.exportJson();
     (document.getElementById('btn-save-gallery') as HTMLButtonElement).onclick = () => this.actions.saveToGallery();
+    (document.getElementById('btn-play-now') as HTMLButtonElement).onclick = () => this.actions.playNow();
     this.undoBtn.onclick = () => this.actions.undo();
     this.redoBtn.onclick = () => this.actions.redo();
 

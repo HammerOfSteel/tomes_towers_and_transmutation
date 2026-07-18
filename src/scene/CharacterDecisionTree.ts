@@ -40,7 +40,9 @@ export type CharacterId =
   | 'celestial_dawn'
   | 'celestial_dusk'
   | 'draconic_fire'
-  | 'draconic_scale';
+  | 'draconic_scale'
+  // Custom princess path
+  | 'princess';
 
 export type StatBonus =
   | 'strength'
@@ -90,6 +92,8 @@ export const CHAR_MANIFEST_MAP: Record<CharacterId, string> = {
   celestial_dusk:  'fantasy_heroes/Necromancer',
   draconic_fire:   'fantasy_heroes/Knight',
   draconic_scale:  'fantasy_heroes/Knight',
+  // Custom princess (gallery pick overrides model at runtime)
+  princess:        'kaykit_adventurers/Mage',
 };
 
 /** Default lore display name per character. */
@@ -120,6 +124,8 @@ export const CHAR_DEFAULT_NAMES: Record<CharacterId, string> = {
   celestial_dusk:  'the Dusk Celestial',
   draconic_fire:   'the Fire-Blooded',
   draconic_scale:  'the Scale-Armoured',
+  // Custom princess
+  princess:        'the Princess',
 };
 
 /** Maps a stat bonus to its display label. */
@@ -155,7 +161,21 @@ export class CharacterDecisionTree {
       '(Flicker briefly) "Yes. I\'ve been in a tower before.\nSeveral, actually. Though usually more intentionally."',
       '(Emit a faint ambient glow) "You\'re uncomfortable. That\'s the light.\nI can\'t turn it off. I\'ve tried."',
       '(Let your scales catch the firelight) "Your wards have been absorbing the ambient spellwork for three days.\nI assumed you knew."',
+      // Custom princess path
+      '*(Reach into your bag and produce a detailed illustrated profile)*\n"I have documentation."',
     ]);
+
+    // ── Custom princess short-circuit ─────────────────────────────────────────
+    if (species === 7) {
+      await overlay.speak(
+        "...You have documentation.\n" +
+        "In the twenty-three years I\'ve been running this tower, no one has ever\n" +
+        "arrived with documentation.\n" +
+        "This is, in fact, the most prepared anyone has ever been.\n" +
+        "I am going to need a moment.",
+      );
+      return { characterId: 'princess', statBonuses: ['intelligence', 'magic_power'] };
+    }
 
     // ── PHASE 2: personality / class lock ─────────────────────────────────────
     let characterId: CharacterId = 'rogue';  // default fallback
@@ -512,53 +532,39 @@ export class CharacterDecisionTree {
       ],
     ];
     await overlay.speak(Q1_PROMPTS[Math.min(species, Q1_PROMPTS.length - 1)]);
-    const q1 = await overlay.choose(Q1_CHOICES[species] as unknown as string[]);
+    const q1 = await overlay.choose(
+      (Q1_CHOICES[Math.min(species, Q1_CHOICES.length - 1)] as unknown as string[]),
+    );
+    console.log(`[CDT] phase3 Q1: species=${species} q1=${q1}`);
 
     const statBonusA: StatBonus = (
       ['strength', 'agility', 'intelligence', 'constitution'] as const
     )[q1];
     overlay.showStatGain(STAT_DISPLAY[statBonusA]);
 
-    // Brief species-aware reaction from the wizard
-    const Q1_REACTIONS: readonly (readonly [string, string, string, string])[] = [
+    const Q1_REACTIONS: readonly (readonly string[])[] = [
       // human
-      [
-        "Direct. Possibly reimbursable. We'll discuss the floor later.",
-        "A dagger! Classic. You're a 'prepared for most things' sort. Noted.",
-        "Enchanted labels! Yes. Only works if you can read them. Can you?\n" +
-        "...Of course you can. Why did I ask.",
-        "Passive stubbornness. A legitimate strategy. Slow, but legitimate.",
-      ],
+      [ "Confrontational. Excellent. Energy like that is hard to extinguish.\nI'll note 'high aggression' and 'possibly a management problem'.",
+        "Patient. Methodical. Either very wise or very tired.\nI'll put 'probably fine'.",
+        "Inventive. Lateral thinking under duress is useful.\nNote: 'may be ungovernable'.",
+        "Philosophically flexible. I appreciate that.\nNote: 'do not lend books to'." ],
       // undead
-      [
-        "Brute persistence. Appropriate. Very on-brand for your condition.",
-        "Patience and spatial awareness. Very sensible given your, ah, timeline.",
-        "You know unsealing cantrips. You've been in a coffin before.\n" +
-        "More than once, I'd guess. The answer is always more than once.",
-        "Indefinite patience. The resting state. I respect the commitment.",
-      ],
+      [ "Direct. Classic rattle-first approach. Bone memory is real.\nI'll file that.",
+        "Glacial. Exactly the pacing one expects from the undead.\nPatience quantified.",
+        "Still technically alive enough to negotiate. Noted.\nThis bodes interestingly.",
+        "Lateral. Not what I expected but it does explain the architecture.\nFiling." ],
       // vulperia
-      [
-        "Direct action. No hesitation. The lock never saw you coming.\n" +
-        "It rarely does.",
-        "Pattern recognition. You notice everything, don't you.\n" +
-        "Everything. I've just hidden my notes.",
-        "You talked an enchantment into submission.\n" +
-        "I find this funny and also slightly alarming.",
-        "Strategic proximity. The social engineering approach.\n" +
-        "I have seen this exact technique used on me. Repeatedly.",
-      ],
+      [ "Direct action. No hesitation. The lock never saw you coming.\nIt rarely does.",
+        "Intelligence-first. Know your terrain. Classic.\nYour kind always finds the map.",
+        "Soft power. Admirable. The guards will never know what happened.\nNeither will I.",
+        "Networked solution. Of course you know someone.\nEveryone knows someone." ],
       // slime
-      [
-        "Pure persistence. I respect this. The gap had no idea what it was dealing with.",
-        "Careful observation first. Then action. Very methodical for someone\n" +
-        "without, technically, a skeleton.",
-        "You absorbed part of the wall. I'm writing 'creative problem-solver' in my notes.\n" +
-        "And also 'please don't absorb the archives'.",
-        "Philosophical approach! The gap was never really a gap.\n" +
-        "It was a state of mind. I think. The notes get unclear here.",
-      ],
+      [ "Kinetic. Bold. You are either very confident or very certain of your own regeneration.",
+        "Patient. You waited them out. You have all the time.\nThe world does not.",
+        "Absorbed. Literally and metaphorically.\nThis is philosophically sound.",
+        "Optimal. The gap became you.\nThis is the correct solution." ],
     ];
+
     await overlay.speak(Q1_REACTIONS[Math.min(species, Q1_REACTIONS.length - 1)]![q1]);
 
     // ── Q2: adversity (species-specific framing, same stat mapping) ───────────
@@ -608,62 +614,39 @@ export class CharacterDecisionTree {
       ],
     ];
     await overlay.speak(Q2_PROMPTS[Math.min(species, Q2_PROMPTS.length - 1)]);
-    const q2 = await overlay.choose(Q2_CHOICES[species] as unknown as string[]);
+    const q2 = await overlay.choose(
+      (Q2_CHOICES[Math.min(species, Q2_CHOICES.length - 1)] as unknown as string[]),
+    );
+    console.log(`[CDT] phase3 Q2: species=${species} q2=${q2}`);
 
     const statBonusB: StatBonus = (
       ['attack_power', 'stealth', 'magic_power', 'max_hp'] as const
     )[q2];
     overlay.showStatGain(STAT_DISPLAY[statBonusB]);
 
-    // Brief species-aware farewell
-    const Q2_REACTIONS: readonly (readonly [string, string, string, string])[] = [
+    const Q2_REACTIONS: readonly (readonly string[])[] = [
       // human
-      [
-        "Confrontational. Excellent. Energy like that is hard to extinguish.\n" +
-        "I'll note 'high aggression' and 'possibly a management problem'.",
-        "A planner. Thoughtful. Slightly alarming.\n" +
-        "I'm going to check the pantry locks when you leave this cell.",
-        "Transmutation instinct! Even on gruel.\n" +
-        "I like this. The tower will have use for someone who improves what they're given.",
-        "Stoic pragmatism. You eat the gruel AND you're angry about it.\n" +
-        "Efficient. Unpleasant. Correct.",
-      ],
+      [ "Tactical complaint. You want me to know you know where the kitchen is.\nI will be moving the kitchen. It won't help.",
+        "Quiet acceptance. Either noble or deeply suspicious.\nI'm filing both.",
+        "Transmutation. Of course. You couldn't just eat it.\nNote: 'will alchemise everything'.",
+        "Strategic consumption. You ate it anyway.\nRevenge requires calories. Respect." ],
       // undead
-      [
-        "Bone-ash ink. You came prepared.\n" +
-        "Either very organised or very experienced. Both concerning.",
-        "Intelligence gathering from a gruel delivery. I respect this.\n" +
-        "Not what I expected. Exactly what I should have expected.",
-        "Transmutation practice from dinner. Very dedicated.\n" +
-        "Or very bored. Possibly both. Both is fine.",
-        "Dignified resignation. The long game.\n" +
-        "You have had centuries to develop this response. It shows.",
-      ],
+      [ "You don't eat it. It sits. It becomes part of the ambience.\nYou've done this before.",
+        "You made something of it. The undead have an admirable relationship with leftovers.",
+        "You tried to understand the gruel. This says something about you.\nI'm not sure what.",
+        "Catalogued. You have noted it for future reference.\nYou are preparing for something." ],
       // vulperia
-      [
-        "Tactical complaint. You want me to know you know where the kitchen is.\n" +
-        "I will be moving the kitchen. It won't help.",
-        "The delivery schedule! Nobody notices the delivery schedule.\n" +
-        "You noticed immediately. I've just rethought my security arrangements.",
-        "You're analysing my provisioning choices.\n" +
-        "This is the most unsettling thing anyone has done in this cell.",
-        "Silent suffering with full note-taking.\n" +
-        "I find this somehow more threatening than the loud approach.",
-      ],
+      [ "Throw and demand. Classic opener. The staff will remember you.\nThis is intentional.",
+        "Take it and leave quietly. You have already assessed the exits.\nGood.",
+        "The mage option. You cannot help yourself. Fire is your first language.",
+        "Complaint filed. Formally. You have probably done this before.\nIt works." ],
       // slime
-      [
-        "Opinions through the slot. Clear communication.\n" +
-        "Largely incomprehensible from my end but the intent was unmistakable.",
-        "Research absorption! You ate the gruel as science.\n" +
-        "I genuinely don't know how to feel about this. I'll put 'analytical'.",
-        "Selective component extraction from dinner!\n" +
-        "That's either very advanced chemistry or very strange dining.\n" +
-        "Either way: impressive.",
-        "Existential colour contemplation, then eating.\n" +
-        "I will include this in my notes under 'exceptional self-awareness'.\n" +
-        "Or possibly 'may have identified with the gruel'. Further study needed.",
-      ],
+      [ "Returned with interest. A bold diplomatic move.\nThe kitchen has been warned.",
+        "Absorbed and waited. You became slightly more nutritious.\nThis is an upgrade.",
+        "Transmuted. You improved it. The gruel is now something else.\nBetter or worse: unclear.",
+        "Ate anyway. You fuelled the complaint with the fuel it complained about.\nEfficient." ],
     ];
+
     await overlay.speak(Q2_REACTIONS[Math.min(species, Q2_REACTIONS.length - 1)]![q2]);
 
     // ── Farewell (species-aware) ───────────────────────────────────────────────
@@ -686,8 +669,9 @@ export class CharacterDecisionTree {
       "Please don't absorb the bookshelves. They're load-bearing, emotionally.\n" +
       "I'll be upstairs. Take care of yourself. All of yourself.",
     ];
-    await overlay.speak(FAREWELLS[species]);
+    await overlay.speak(FAREWELLS[Math.min(species, FAREWELLS.length - 1)]);
 
+    console.log(`[CDT] result: characterId=${characterId} statBonuses=${statBonusA},${statBonusB}`);
     return {
       characterId,
       statBonuses: [statBonusA, statBonusB],

@@ -129,14 +129,29 @@ const STAGE3_CHOICES: Array<{ label: string; choiceId: string }> = [
   { label: 'Ask Solmor what he actually wants, for once.',         choiceId: 'solmor_end_reciprocal' },
 ];
 
-function getStage3(): SolmorDialogue {
+/** Species-specific final choice — the answer most true to each form. */
+const STAGE3_SPECIES_CHOICE: Partial<Record<SpeciesId, { label: string; choiceId: string }>> = {
+  human:    { label: '"I want to go home. And then come back, on my own terms."',       choiceId: 'solmor_end_human' },
+  undead:   { label: '"I want to know why I\'m still here. Not the mechanism. The reason."', choiceId: 'solmor_end_undead' },
+  vulperia: { label: '"I want a contract. Proper terms. My signature, not a capture order."', choiceId: 'solmor_end_vulperia' },
+  slime:    { label: '(Consider for a long time) "More."',                              choiceId: 'solmor_end_slime' },
+  elf:      { label: '"I want to know if any of the others made it. Not the candidates. The ones before them."', choiceId: 'solmor_end_elf' },
+  celestial: { label: '"I want my complaint resolved. And then we can talk about the rest."', choiceId: 'solmor_end_celestial' },
+  draconic: { label: '"I want the Appendix D unsealed. After that I\'ll decide."',      choiceId: 'solmor_end_draconic' },
+};
+
+function getStage3(species?: SpeciesId): SolmorDialogue {
+  const choices = [...STAGE3_CHOICES];
+  // Add species-specific choice as a 5th option if available
+  const speciesChoice = species ? STAGE3_SPECIES_CHOICE[species] : null;
+  if (speciesChoice) choices.push(speciesChoice);
   return {
     title: 'Arcanist Solmor — The True Question',
     lines: [
       { speaker: 'solmor', text: STAGE3_OPENING },
       { speaker: 'solmor', text: STAGE3_REVELATION },
     ],
-    choices: STAGE3_CHOICES,
+    choices,
   };
 }
 
@@ -170,7 +185,7 @@ export function showSolmorEncounter(
   const dialogue =
     stage === 1 ? getStage1(species) :
     stage === 2 ? getStage2(species) :
-    getStage3();
+    getStage3(species);
 
   // ── Build panel ───────────────────────────────────────────────────────────
   const overlay = document.createElement('div');

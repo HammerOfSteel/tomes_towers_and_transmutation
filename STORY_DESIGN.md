@@ -1,7 +1,50 @@
-# Story Design — The Tower Prologue & The Reluctant Apprentice Arc
+# Story Design — The Tower Prologue & All Species Arcs
 
-> **Status:** Prologue beats implemented in `StoryQuestLine.ts`.
-> Full arc designed here for future implementation.
+> **Status:** All story arcs implemented in `StoryQuestLine.ts`.
+> 7 species × 4-act arcs + 5 general quests. Solmor encounter Stages 1–3 done.
+> Last updated: 2026-07 (princess-creator expansion — Elf, Celestial, Draconic added)
+
+---
+
+## Species Arc Quick Reference
+
+| Species | Arc Title | Theme | Acts |
+|---|---|---|---|
+| **Human** | The Kingdom's Call | Duty vs. revenge — a barbarian war band follows tower intelligence | 4 acts + prologue |
+| **Undead** | The Unliving Question | Why am I still moving? — a necromancer made her and disappeared | 4 acts + prologue |
+| **Vulperia** | The Price on Your Head | Bounty contract, Baron's Keep, intelligence networks | 4 acts + prologue |
+| **Slime** | A Philosophical Ooze | Absorbs a construct personality fragment; finds a way out that isn't the front door | 4 acts + prologue |
+| **Elf** | The Second Time Around | Third tower. Annotated book in her own handwriting from 3 centuries ago. | 4 acts + prologue |
+| **Celestial** | Atmospheric Re-entry | Fell from the sky, found the ward stone blocking her signal, filed a formal complaint | 4 acts + prologue |
+| **Draconic** | The Fire That Stays | Scales absorbing ambient spellwork; territorial history; sealed Appendix D | 4 acts + prologue |
+
+### General Quests (all species)
+| Quest | Summary |
+|---|---|
+| The Missing Familiar | Cat-construct wanders overworld → escort → permanent companion |
+| Supply Line | 8 medicinal herbs → settlement friendly |
+| The Ruined Greenhouse | Defeat guardians, plant 5 seeds → reagent source |
+| The Baron's Complaint | Deliver letters → Baron's Keep neutral |
+| The Ninth Tower | Observatory evidence → 3 ruin dungeons unlocked |
+
+---
+
+## Solmor Encounter Stages
+
+### Stage 1 — First Meeting
+Fires the first time the player exits the tower. Species-aware opening line (7 variants).
+Core: he introduces the ascension research, offers a contract.
+
+### Stage 2 — Candid Word
+Fires after Act I completes (onActBegin for non-prologue acts).
+Species-aware opening (7 variants — the question relevant to the player's just-completed arc).
+Core: explains the truth of ascension, acknowledges failures, reveals 9 towers.
+
+### Stage 3 — The True Question
+Fires when the complete story arc finishes (onStoryComplete).
+4 generic choices + 1 species-specific choice (7 total species variants).
+Generic: independent / partner / freedom / ask-him-back.
+Species choices: human=return-on-own-terms / undead=why-still-here / vulperia=proper-contract / slime="more" / elf=what-happened-to-the-others / celestial=complaint-first / draconic=unseal-appendix-D.
 
 ---
 

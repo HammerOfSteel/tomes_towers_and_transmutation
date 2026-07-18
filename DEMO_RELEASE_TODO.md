@@ -605,12 +605,12 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 | `undead`, `specter`, `skeleton` | `undead` | Existing Undead arc |
 | `slime` | `slime` | Existing Slime arc |
 
-- [ ] `SpeciesId` in `StoryQuestLine.ts` expanded: add `'elf' | 'celestial' | 'draconic'`
-- [ ] `SPECIES_MAP` in `StoryQuestLine.ts` extended for all 21 princess-creator species (via `princessSpecies` field on `CharacterConfig`)
-- [ ] `CharacterConfig.princessSpecies?: string` — set when custom princess mode is active, maps via `PRINCESS_SPECIES_MAP` in `PrincessDefaults.ts`
-- [ ] `speciesForCharacter()` extended to accept `princessSpecies` override
+- [x] `SpeciesId` in `StoryQuestLine.ts` expanded: add `'elf' | 'celestial' | 'draconic'`
+- [x] `SPECIES_MAP` in `StoryQuestLine.ts` extended for all 21 princess-creator species (via `princessSpecies` field on `CharacterConfig`)
+- [x] `CharacterConfig.princessSpecies?: string` — set when custom princess mode is active, maps via `PRINCESS_SPECIES_MAP` in `PrincessDefaults.ts`
+- [x] `speciesForCharacter()` extended to accept `princessSpecies` override
 - [x] `applyCharacterAbilities()` routes to correct species ability set for princess characters — wired via `princessSpecies` → `_characterSpecies`
-- [ ] `TalentSystem.activeSpecies` works for all 7 game species
+- [x] `TalentSystem.activeSpecies` works for all 7 game species
 
 ---
 
@@ -626,7 +626,7 @@ She has been here before. Not this tower — a different one. A different wizard
 | Act II | *The Previous Candidate* | Evidence suggests Solmor has imprisoned an elf before — centuries ago. The records were sealed. She unseals them. | `reach_location`, `defeat_elite` |
 | Act III/IV | *The Graceful Exit* | She could leave with the knowledge she came for. She chooses to stay long enough to make it inconvenient. | All types |
 
-- [ ] Write full beat dialogue + completion text for Elf Act I–IV (16 beats)
+- [x] Write full beat dialogue + completion text for Elf Act I–IV (16 beats)
 - [x] Elf staircase flavour text: 4 floors (basement/lib/brew/chambers)
 - [x] Elf Solmor Stage 1/2 dialogue variants — politely unsurprised, annotated book question
 - [x] Elf lore book placed in Floor 2 (Brewing) — recipe in her handwriting, 3 centuries old
@@ -641,7 +641,7 @@ She fell. This happens. The tower was just where she landed. She has filed a for
 | Act II | *The Anchor* | A ward stone on floor 7 is the source. It was placed within the last fifty years. By someone who knew exactly what it would do. | `reach_location`, `defeat_elite` |
 | Act III/IV | *Reconnection* | Destroy the anchor, feel the stars again. Then decide how to handle Solmor. | All types |
 
-- [ ] Write full beat dialogue + completion text for Celestial Act I–IV (16 beats)
+- [x] Write full beat dialogue + completion text for Celestial Act I–IV (16 beats)
 - [x] Celestial staircase flavour text (4 floors)
 - [x] Celestial Solmor Stage 1/2 variants — light discomfort, ward paper page 14
 - [x] Celestial lore book placed in Floor 8 (Archive) — ward paper with her gold-star addendum
@@ -656,7 +656,7 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 | Act II | *Old Claim* | The land the tower stands on was once draconic territory — several centuries ago. There are plaques. | `talk_to_npc`, `defeat_elite` |
 | Act III/IV | *Reclamation* | She does not want the tower. She wants it acknowledged that she could take the tower. These are different. | All types |
 
-- [ ] Write full beat dialogue + completion text for Draconic Act I–IV (16 beats)
+- [x] Write full beat dialogue + completion text for Draconic Act I–IV (16 beats)
 - [x] Draconic staircase flavour text (4 floors)
 - [x] Draconic Solmor Stage 1/2 variants — sign suggestion, 3-day observation
 - [x] Draconic lore book placed in Floor 4 (Runic Forge) — territorial treatise + sealed Appendix D
@@ -674,9 +674,9 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 | `elf_wanderer` | Mobile / evasive | `Graceful Step` (dodge leaves a temp. root trap), `Centuries of Practice` (+20% damage when HP > 75%), `Slip Away` (disengage + 2s invis) |
 | `elf_sage` | AoE crowd control | `Time Worn` (slow enemies within 6u for 3s), `Studied Weakness` (reveal enemy resistances on first hit), `Elder's Patience` (charge a 3x damage shot over 2s) |
 
-- [ ] Add `elf` to `AbilitySystem` routing in `applyCharacterAbilities()`
-- [ ] Implement `Recall` spell — mirrors last cast spell (calls existing SpellSystem cast with stored last-cast params)
-- [ ] Implement `Arcane Library` ability — cycle through equipped spells without cooldown penalty
+- [x] Add `elf` to `AbilitySystem` routing in `applyCharacterAbilities()`
+- [x] Implement `Recall` spell — mirrors last cast spell (calls existing SpellSystem cast with stored last-cast params)
+- [x] Implement `Arcane Library` ability — cycle through equipped spells without cooldown penalty
 - [x] Elf talent tree: Memory/Grace/Sage paths (6 nodes: elf_mem_1/2, elf_grace_1/2, elf_sage_1/2) + Long Memory signature
   - [ ] Add nodes to `TalentSystem.ts` with `allowedSpecies: ['elf']`
 
@@ -689,9 +689,9 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 | `celestial_dusk` | Defensive / debuff | `Moonveil` (3s damage immunity bubble), `Eclipse` (reduce enemy damage dealt by 30% for 5s), `Gravity Well` (pull enemies into cluster 4u) |
 | `celestial_void` | Blink / repositioning | `Stellar Jump` (blink 8u toward cursor), `Void Touch` (next melee hit phases through armour), `Singularity` (summon point that auto-absorbs nearby projectiles) |
 
-- [ ] Add `celestial` to `AbilitySystem` routing
-- [ ] Implement `Starburst` — 5-projectile spread (reuse existing projectile system with angle offsets)
-- [ ] Implement `Moonveil` — damage immunity window (extend existing i-frames system duration)
+- [x] Add `celestial` to `AbilitySystem` routing
+- [x] Implement `Starburst` — 5-projectile spread (reuse existing projectile system with angle offsets)
+- [x] Implement `Moonveil` — damage immunity window (extend existing i-frames system duration)
 - [x] Celestial talent tree: Dawn/Dusk/Void paths (6 nodes: cel_dawn_1/2, cel_dusk_1/2, cel_void_1/2) + Star-Touched signature
   - [ ] Add nodes with `allowedSpecies: ['celestial']`
 
@@ -704,9 +704,9 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 | `draconic_scale` | Melee tank | `Harden` (block next 3 hits completely), `Tail Sweep` (360° knockback), `Roar` (AoE fear 2s, enemies flee) |
 | `draconic_void` | Debuff / drain | `Acid Scale` (shed scales that deal DoT on contact), `Corrode` (reduce enemy armour 50% for 4s), `Ancient Fire` (slow-moving large orb that phases through enemies) |
 
-- [ ] Add `draconic` to `AbilitySystem` routing
-- [ ] Implement `Breath` — cone hitbox (new geometry hitbox, fan-shaped, 3u × 45°)
-- [ ] Implement `Harden` — block counter (integrate into PlayerController.takeDamage())
+- [x] Add `draconic` to `AbilitySystem` routing
+- [x] Implement `Breath` — cone hitbox (new geometry hitbox, fan-shaped, 3u × 45°)
+- [x] Implement `Harden` — block counter (integrate into PlayerController.takeDamage())
 - [x] Draconic talent tree: Fire/Scale/Void paths (6 nodes: dra_fire_1/2, dra_scale_1/2, dra_void_1/2) + Scale Armour signature
   - [ ] Add nodes with `allowedSpecies: ['draconic']`
 
@@ -716,13 +716,13 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 
 The campfire wizard familiar conversation needs species-aware opening lines for all 7 game species. Currently only 4 are distinguished.
 
-- [ ] **Elf intro** — Familiar: *"Oh. You've been in a tower before, haven't you."* / She: *"Several. Though usually more intentionally."*
-- [ ] **Celestial intro** — Familiar: *"You're giving off a faint light. I find that either impressive or alarming."* / She: *"Both is acceptable."*
-- [ ] **Draconic intro** — Familiar: *"...your scales are absorbing the ambient magical field."* / She: *"I noticed. Is that a problem?"* / Familiar: *"For the tower, possibly."*
-- [ ] `CharacterDecisionTree.ts` extended: add `elf_scholar`, `elf_wanderer`, `celestial_dawn`, `celestial_dusk`, `draconic_fire`, `draconic_scale` as selectable `CharacterId`s
-- [ ] `NewGameFlow.ts` / `CharacterDecisionTree.ts`: species-aware choice branch flavour (the familiar's assessment of each species form — e.g., skeptical for elf, genuinely uncertain for celestial, slightly alarmed for draconic)
-- [ ] Character creation UI: show 3 new species sections in the model picker (Elf / Celestial / Draconic) with 2 subspecies each
-- [ ] Default DNA for each new species added to `PrincessDefaults.ts` (6 more entries: elf_scholar, elf_wanderer, celestial_dawn, celestial_dusk, draconic_fire, draconic_scale)
+- [x] **Elf intro** — Familiar: *"Oh. You've been in a tower before, haven't you."* / She: *"Several. Though usually more intentionally."*
+- [x] **Celestial intro** — Familiar: *"You're giving off a faint light. I find that either impressive or alarming."* / She: *"Both is acceptable."*
+- [x] **Draconic intro** — Familiar: *"...your scales are absorbing the ambient magical field."* / She: *"I noticed. Is that a problem?"* / Familiar: *"For the tower, possibly."*
+- [x] `CharacterDecisionTree.ts` extended: add `elf_scholar`, `elf_wanderer`, `celestial_dawn`, `celestial_dusk`, `draconic_fire`, `draconic_scale` as selectable `CharacterId`s
+- [x] `NewGameFlow.ts` / `CharacterDecisionTree.ts`: species-aware choice branch flavour (the familiar's assessment of each species form — e.g., skeptical for elf, genuinely uncertain for celestial, slightly alarmed for draconic)
+- [x] Character creation UI: show 3 new species sections in the model picker (Elf / Celestial / Draconic) with 2 subspecies each
+- [x] Default DNA for each new species added to `PrincessDefaults.ts` (6 more entries: elf_scholar, elf_wanderer, celestial_dawn, celestial_dusk, draconic_fire, draconic_scale)
 
 ---
 
@@ -756,7 +756,7 @@ The 3-stage Solmor dialogue tree needs branches for the 3 new Tier-1 species.
 - [ ] **Elf — Stage 1:** He is confused — she seems completely unsurprised. She isn't. *"This is the third tower. The second wizard. You're the first to notice, which is either encouraging or more concerning."*
 - [ ] **Celestial — Stage 1:** He is physically uncomfortable. She emits light. He tries to pretend this is normal. *"You're not what I was expecting."* / *"I know. I rarely am."*
 - [ ] **Draconic — Stage 1:** He is trying to be professional but her scales have been absorbing his ambient spellwork for a week. *"You've been... uh... would you mind—"* / *"I'll stop absorbing it when you stop leaking it."*
-- [ ] `SolmorDialogueTree.ts` `showSolmorEncounter()` extended: accepts `species: SpeciesId` parameter (currently only uses 4 variants) — add `elf`, `celestial`, `draconic` branches for Stage 1/2/3
+- [x] `SolmorDialogueTree.ts` `showSolmorEncounter()` extended: accepts `species: SpeciesId` parameter (currently only uses 4 variants) — add `elf`, `celestial`, `draconic` branches for Stage 1/2/3
 - [ ] Stage 3 choice text (the "what do you want to do with what you are?" question) gets species-specific answer options for all 7 species
 
 ---
@@ -798,11 +798,11 @@ Each new Tier-1 species gets a species-specific lore book in the tower, distinct
 *(from Phase PC above — moved here for ordering clarity)*
 
 - [ ] PC3: `customPrincess: boolean` toggle on new-game card (default off)
-- [ ] PC3: `CharacterConfig.princessDna?: PrincessDNA` — set when custom mode on
+- [x] PC3: `CharacterConfig.princessDna?: PrincessDNA` — set when custom mode on
 - [ ] PC3: Persist toggle to `localStorage` key `ttt_custom_princess_mode`
 - [ ] PC4: `PlayerController.applyPrincess(dna)` — `buildPrincess({targetHeight:1.6})`, attach `instance.root`, store for frame updates
 - [ ] PC4: Game loop — `_princessInstance?.update(elapsedTime, dt)` each frame
-- [ ] PC4: On species selection, map princess species → game species via `PRINCESS_SPECIES_MAP`
+- [x] PC4: On species selection, map princess species → game species via `PRINCESS_SPECIES_MAP`
 - [ ] PC5: Dev Labs → "👸 Princess Atelier" opens `princess-creator.html` in new tab
 - [ ] PC5: Creative skin picker — gallery entries visible alongside real model GLBs
 - [ ] PC5: `window.__game.buildPrincess(dna)` exposed for bot/test access
@@ -827,3 +827,345 @@ npx tsc --noEmit
 # Performance build check
 npx vite build && npx vite preview
 ```
+
+---
+
+## Phase PROC — Full Procedural Pivot: Retire External Assets, Build Creator Ecosystem
+
+> **Decision (2026-07-18):** Move completely away from external asset packs (KayKit,
+> Fantasy Heroes, etc.). The procedural princess rig already proves the aesthetic works.
+> We will build dedicated procedural tools for every entity type, plus a full modular
+> world-building system, then retire the old GLB pipeline.
+
+### Two consumers of every builder — this is the core principle
+
+Every builder (NPC, Enemy, Prop, Building) serves **two equally important consumers**:
+
+1. **The game itself** — the runtime procedural world generator uses these builders
+   to populate settlements, generate dungeon rooms, spawn NPC crowds, place enemies
+   in encounters, fill interiors with furniture, and decorate every space.
+   No human involvement needed. The game runs `buildBuilding(dna)` and `buildNpc(dna)`
+   automatically from world-gen scripts exactly like it already runs `buildPrincess(dna)`.
+
+2. **The designer** — creative mode and the standalone atelier tools let a human
+   author custom blueprints, tweak them in the visual editor, save them to a gallery,
+   and place them in specific world locations. Custom blueprints override the
+   procedural defaults for named locations (e.g. "the inn in Ravenport" is always
+   Mirabel's custom inn blueprint, not a random one).
+
+**The builder code is shared.** The atelier tools and the game runtime call the exact
+same `build*(dna)` function. The atelier just adds a UI layer around it.
+
+> **Implementation order:** PROC-A (foundation) → PROC-B (creator tools + game runtime wiring)
+> → PROC-C (world gen system) → PROC-D (creative mode integration)
+> → PROC-E (asset pipeline removal)
+
+---
+
+### PROC-A: Procedural Foundation & Registry
+
+**Goal:** Single registry that maps entity type → procedural builder. Both the game runtime
+and the atelier tools resolve builders through the same registry.
+
+- [ ] A1: `src/procedural/EntityRegistry.ts` — central map: `'princess' | 'npc' | 'enemy' | 'prop' | 'building'` → builder factory; game systems import from here, not directly from builders
+- [ ] A2: `src/procedural/ProceduralDNA.ts` — shared base DNA interface with `v`, `seed`, `name`, `kind` fields; species-specific DNA extends it
+- [ ] A3: `src/procedural/builder/BaseBuilder.ts` — abstract builder with `build(dna): THREE.Group`, `update(t, dt)`, `dispose()`
+- [ ] A4: Share code system extended to all entity types (`P2.` prefix for princess, `N2.` for NPC, `E2.` for enemy, `B2.` for building)
+- [ ] A5: `src/procedural/WorldGen.ts` — top-level world generation coordinator: given a world `seed`, produces a deterministic placement plan for all buildings, NPCs, enemies, and props in a region
+- [ ] A6: `tests/procedural/EntityRegistry.test.ts` — registry resolves all known types without error
+- [ ] A7: `tests/procedural/WorldGen.test.ts` — same seed → identical placement plan every run
+
+---
+
+### PROC-B: Creator Tool Ecosystem
+
+**Goal:** Each builder has two entry points:
+- A **standalone atelier** (HTML tool) for human authoring and blueprint saving
+- A **game-runtime API** called by the world generator and scene loading code
+
+Both call the same underlying `build*(dna)` function.
+
+#### B1: NPC Creator Atelier + Game Runtime (`npc-creator.html`)
+
+**Atelier:** designer opens tool, chooses species/role/personality, tweaks appearance,
+saves blueprint to gallery. Named NPCs in specific towns can be locked to a blueprint.
+
+**Game runtime:** `NPCSpawner.spawnForSettlement(settlement, seed)` reads the settlement
+DNA, picks NPC roles from the population table, resolves each role to either a named
+blueprint (if one exists for that location) or generates one procedurally from the role
++ species defaults. Calls `buildNpc(dna)` and places the result in the scene.
+
+- [ ] B1a: `src/npc-creator/types.ts` — `NpcDNA` with fields: `species`, `role` (merchant | elder | quest_giver | scholar | guard | innkeeper | mysterious), `personality` (friendly | wary | eccentric | formal | cheerful), `bodyPreset`, `colors`, `accessory`, `dialogue_seed`
+- [ ] B1b: `src/npc-creator/builder.ts` — `buildNpc(dna)` → `NpcInstance` with `.root`, `.update(t,dt)`, `.speak(text)`, `.idle()`; called by BOTH the atelier preview AND the game's NPCSpawner
+- [ ] B1c: `src/npc-creator/archetypes/` — 6 species archetypes (human, undead, foxling, slime, elf, draconic) each with 3 role variants
+- [ ] B1d: `src/npc-creator/ui.ts` — Atelier UI: role picker, species wheel, color swatches, name generator, accessory slots (hat, badge, bag, tool)
+- [ ] B1e: `npc-creator.html` — standalone entry point; save to `ttt.npcCreator.gallery.v1` localStorage
+- [ ] B1f: `src/npc-creator/gallery.ts` — load/save/delete NPC blueprints, share codes
+- [ ] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant); used by NPCSpawner when no custom blueprint exists
+- [ ] B1h: `src/world/NPCSpawner.ts` refactor — `spawnForSettlement(settlementDna, seed)` resolves NPC list from population tier; calls `buildNpc(dna)` for every NPC; no more `loadCharModel()`
+- [ ] B1i: `src/world/NPCSpawner.ts` — named NPC override system: `NAMED_NPCS: Record<locationId, NpcDNA>` allows specific blueprint per named location
+- [ ] B1j: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`, `tests/npc-creator/spawner.test.ts`
+
+#### B2: Enemy Creator Atelier + Game Runtime (`enemy-creator.html`)
+
+**Atelier:** designer creates enemy blueprints by tier and role, tests them in a built-in
+combat arena with a dummy player. Saves to enemy gallery.
+
+**Game runtime:** `EnemyLoader.loadForEncounter(encounterId, floor, seed)` reads the
+encounter definition, resolves enemy types to blueprints (named boss blueprints for
+boss rooms, procedural tier-appropriate blueprints for random encounters), calls
+`buildEnemy(dna)`, and hands the result to the combat system.
+
+- [ ] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
+- [ ] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance`; called by BOTH the atelier preview arena AND the game's EnemyLoader at room load time
+- [ ] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
+- [ ] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
+- [ ] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
+- [ ] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement); used by EnemyLoader for random encounters when no custom blueprint specified
+- [ ] B2g: `src/enemy/EnemyLoader.ts` refactor — `loadForEncounter()` reads encounter definition, resolves enemy list, calls `buildEnemy(dna)`; fully replaces old KayKit skeleton/zombie model loading
+- [ ] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier; boss blueprints stored as named entries (`boss_floor3`, `boss_floor7`, etc.)
+- [ ] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/encounter.test.ts`
+
+#### B3: Prop & Item Creator + Game Runtime (`prop-creator.html`)
+
+**Atelier:** designer creates prop blueprints (chests, furniture, dungeon dressing),
+previews them in 3D, saves to gallery.
+
+**Game runtime:** `PropPlacer.decorateRoom(roomDna, seed)` reads the room's floor theme,
+queries the prop gallery for theme-appropriate blueprints, calls `buildProp(dna)` for
+each, and scatters them within the room bounds using the room's placement grid.
+This runs automatically every time a dungeon room is loaded.
+
+- [ ] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`, `theme` (dungeon | library | alchemy | overworld | residential)
+- [ ] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata + optional interaction zone; called by BOTH atelier preview AND PropPlacer at room-load time
+- [ ] B3c: 12 base prop archetypes with material and theme variants
+- [ ] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
+- [ ] B3e: `src/levels/PropPlacer.ts` — `decorateRoom(roomDna, seed)` queries prop gallery by theme, places props using seeded RNG; called by SceneManager after room geometry is built
+- [ ] B3f: Room floor themes drive prop palette: ground=study, 1=library, 2=lab, 3=observatory, basement=alchemy, settlement=residential
+- [ ] B3g: Tests — `tests/prop-creator/builder.test.ts`, `tests/levels/PropPlacer.test.ts`
+- [ ] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant)
+- [ ] B1h: `src/world/NPCSpawner.ts` updated — reads NPC blueprints from registry; `buildNpc(dna)` replaces old procedural DNA creature rig for all NPCs
+- [ ] B1i: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`
+
+#### B2: Enemy Creator Atelier (`enemy-creator.html`)
+
+The enemy creator focuses on combat role, threat level, and attack patterns — not story.
+
+- [ ] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
+- [ ] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance` with `.root`, `.update(t,dt)`, `.attack()`, `.takeDamage(n)`, `.die()`
+- [ ] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
+- [ ] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
+- [ ] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
+- [ ] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement)
+- [ ] B2g: `src/enemy/EnemyLoader.ts` updated — `loadEnemyById()` reads from enemy gallery + defaults; fully replaces old KayKit skeleton/zombie models
+- [ ] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier with custom phase definitions
+- [ ] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/combat.test.ts`
+
+#### B3: Prop & Item Creator (`prop-creator.html`)
+
+Furniture, interactables, treasure, dungeon dressing — all procedural.
+
+- [ ] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`
+- [ ] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata
+- [ ] B3c: 12 base prop archetypes with material variants
+- [ ] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
+- [ ] B3e: Room encounter definitions updated to reference prop blueprints instead of hardcoded geometry
+
+---
+
+### PROC-C: Procedural World Building System
+
+**Goal:** Houses, buildings, dungeons, and interiors generated from modular DNA blueprints
+at **runtime by the game** — not hand-placed. The same `buildBuilding(dna)` function
+powers both the game's automatic world generation and the designer's creative mode placement.
+
+When the game generates a new overworld region it calls:
+```
+WorldGen.generateSettlement(seed, settlementDna)
+  → BuildingBuilder.build(buildingDna)          // exterior mesh
+  → InteriorGenerator.build(interiorLayoutDna)  // interior rooms
+  → PropPlacer.decorateRoom(roomDna, seed)       // furniture + props
+  → NPCSpawner.spawnForSettlement(...)           // NPC crowd
+```
+All of this runs automatically from seeds — no human input required.
+A designer using creative mode calls the same chain, but picks the DNAs manually.
+
+#### C1: Modular Building Grammar
+
+- [ ] C1a: `src/world/buildings/BuildingDNA.ts` — `BuildingDNA` with: `kind` (house | shop | inn | guild | tower | ruin | barn | well | gate), `size` (tiny | small | medium | large), `floors` (1–3), `style` (thatched | stone | timber | arcane), `condition` (pristine | weathered | damaged | ruined), `has_interior: boolean`, `interior_layout`
+- [ ] C1b: `src/world/buildings/ModularSet.ts` — vocabulary of reusable geometry pieces: wall segment, door frame, window, roof pitch, corner post, chimney, step, arch — all built from `THREE.BufferGeometry` primitives with material variants
+- [ ] C1c: `src/world/buildings/BuildingBuilder.ts` — `buildBuilding(dna): BuildingInstance` with `.exteriorGroup`, `.interiorGroup`, `.doorTrigger`, `.bounds`
+- [ ] C1d: Roof system — hip / gable / thatched variants, auto-fit to footprint
+- [ ] C1e: Window and door placement — rule-based: one door per street-facing wall, windows every N units
+- [ ] C1f: Facade decoration — shutters, hanging signs, flower boxes, barrels at door — driven by `style` + `condition`
+
+#### C2: Settlement Generator
+
+- [ ] C2a: `src/world/SettlementGenerator.ts` refactor — replaces current placeholder; lays out buildings on a grid using BuildingDNA, respects roads/paths
+- [ ] C2b: `SettlementDNA` — `{ size: 'hamlet'|'village'|'town'|'city', style, factionId, populationTier }`; generates building mix from population tier
+- [ ] C2c: Road system — stone/dirt path procedural geometry connecting all buildings
+- [ ] C2d: Public spaces — market square, well, notice board, fountain — placed by role
+- [ ] C2e: Lighting — procedural lantern placement along roads + building windows at night
+
+#### C3: Interior Generation
+
+- [ ] C3a: `src/world/buildings/InteriorGenerator.ts` — takes `BuildingDNA.interior_layout` and generates: floor plan, room dividers, furniture placement (using PropDNA blueprints), lighting
+- [ ] C3b: Interior layouts by building kind:
+  - House: main room + bedroom + optional cellar
+  - Inn: common room + bar + 4–8 sleeping rooms upstairs
+  - Shop: counter + display shelves + back storage
+  - Guild: hall + meeting room + armoury/library
+  - Ruin: collapsed walls, debris, loot spawn points
+- [ ] C3c: Furniture density by `condition` — pristine rooms are tidy, ruined rooms have overturned/destroyed versions
+- [ ] C3d: Door trigger → load interior scene (reuses SceneManager room system)
+- [ ] C3e: Interior ambient: candles, fireplace, dust particles — all procedural
+
+#### C4: Dungeon Generation Enhancement
+
+- [ ] C4a: Tile vocabulary expanded — corridor segment, junction, dead end, alcove, large chamber, trapped floor, magical circle — all procedural geometry
+- [ ] C4b: Wall decoration system — torches, chains, reliefs, carvings — placed by floor theme and condition
+- [ ] C4c: Floor themes per tower level (ground=study, 1=library, 2=laboratory, 3=observatory, basement=workshop) drive prop palette selection
+- [ ] C4d: Procedural ceiling system — arches, vaulted, flat — vary by room type
+- [ ] C4e: Loot container placement — chests, crates, shelves — rule-based by room type
+
+---
+
+### PROC-D: Creative Mode Integration
+
+**Goal:** All creator tools accessible from creative mode. World editor gains building placement.
+
+- [ ] D1: Creative mode sidebar — new "🧪 Creators" section with links to NPC, Enemy, Prop creator tools
+- [ ] D2: World editor — "🏠 Place Building" mode: pick building blueprint from gallery, click to place in overworld, auto-generates interior
+- [ ] D3: World editor — "👤 Place NPC" mode: pick NPC blueprint, click to place, set patrol route
+- [ ] D4: World editor — "💀 Place Enemy" mode: pick enemy blueprint, click to place, set encounter zone
+- [ ] D5: Prop placement in interiors — creative mode within interior scenes lets designers place props from gallery
+- [ ] D6: Blueprint export — save entire settlement as a JSON "world blueprint" that the procedural generator can replay deterministically
+- [ ] D7: Test arena — enemy creator has built-in arena: place a player dummy, place enemy blueprints, run combat simulation
+
+---
+
+### PROC-E: Asset Pipeline Retirement
+
+**Goal:** Remove all external GLB/FBX dependencies. Ship with zero external model files.
+
+#### E1: Audit & Inventory (do first)
+
+- [ ] E1a: Full audit of `public/assets/` — list every GLB/FBX file, which code references it, whether it is used in any live game path
+- [ ] E1b: List of `charManifest.ts` entries that reference external files — mark each as: `REPLACED` (has procedural equivalent) or `PENDING` (needs creator work first)
+- [ ] E1c: List of `EnemyLoader.ts` model IDs that reference external files — same tagging
+- [ ] E1d: Identify any external assets used for world props, buildings, settlement dressing
+- [ ] E1e: Create tracking doc `docs/assets/ASSET_RETIREMENT.md` — one row per file, status column
+
+#### E2: Remove Enemy Assets
+
+- [ ] E2a: `charManifest.ts` — remove all skeleton, zombie, knight, mage entries that reference KayKit/Fantasy Heroes models
+- [ ] E2b: `EnemyLoader.ts` — fully replace `loadEnemyById()` with `buildEnemy(dna)` from enemy-creator system; delete old GLB load path
+- [ ] E2c: `EnemyAI.ts` — ensure all AI states (patrol/chase/attack/die) work with procedural enemy rig
+- [ ] E2d: Delete GLB files: `public/assets/kaykit_skeletons/`, `public/assets/skeletons_free/`, enemy-related GLBs from `public/assets/fantasy_heroes/`
+
+#### E3: Remove Player/NPC Assets
+
+- [ ] E3a: `charManifest.ts` — remove all player character GLB entries (already replaced by princess rig system)
+- [ ] E3b: `NPCSpawner.ts` — replace remaining `loadCharModel()` calls with `buildNpc(dna)`
+- [ ] E3c: Delete GLB files: `public/assets/kaykit_adventurers/`, `public/assets/adventure/`, `public/assets/fox/`, `public/assets/fantasy_heroes/`
+
+#### E4: Remove World / Building Assets
+
+- [ ] E4a: Any external building/prop GLBs in `public/assets/environment/` — replaced by PROC-C
+- [ ] E4b: `public/assets/towers/` — evaluate: tower exterior GLB may stay as a special case or be procedurally rebuilt
+- [ ] E4c: Music and audio files — **keep** (not in scope of this phase)
+- [ ] E4d: `public/draco/` decoder — evaluate if still needed after model removal
+
+#### E5: Cleanup & Size Reduction
+
+- [ ] E5a: Remove `@/characters/charManifest.ts` and `@/characters/CharacterController.ts` — entire KayKit animation system retired
+- [ ] E5b: Remove `@/player/PlayerController.ts` asset model path (`applyAssetModel`, `_charController` field)
+- [ ] E5c: `vite.config.ts` — remove any GLB/FBX loader plugins if no longer needed
+- [ ] E5d: Bundle size check: run `npx vite build --report` and confirm >40% reduction in `public/` folder size
+- [ ] E5e: Update `ARCHITECTURE.md` with the new procedural-only architecture diagram
+
+---
+
+### PROC-F: Polish & Visual Upgrade (post-retirement)
+
+**Goal:** With external assets gone, invest in procedural quality — the game should look *better*, not just different.
+
+- [ ] F1: Princess rig — add more body shape presets, more dress variants, richer material system
+- [ ] F2: NPC diversity — crowd-level variation: hat variants, cloak, apron, tool variety, 40+ combinations per role
+- [ ] F3: Enemy visual tier — tier 1 enemies look scrappy, tier 2 look organised, tier 3 look terrifying — material + size + glow variation
+- [ ] F4: Procedural ambient particles — dust motes, firefly-glow, ash, leaves, snow — environment-driven
+- [ ] F5: Procedural lighting upgrade — every prop casts appropriate light; candle flicker, cauldron glow, moonlight through windows
+- [ ] F6: Day/night visual transition — overworld buildings lit at night via procedural lantern system
+- [ ] F7: Weather system (visual only) — rain particles, overcast sky, fog density — no gameplay impact
+
+---
+
+### PROC Asset Inventory — Everything the Game Needs
+
+> Full inventory so nothing gets missed during the procedural rebuild.
+
+#### Player Characters (all → princess rig, ✓ done)
+| Character | Current | Procedural Status |
+|---|---|---|
+| Human variants (warrior/paladin/bard/rogue/mage) | KayKit GLB | ✓ → `getDefaultPrincessForCharId()` |
+| Undead variants | KayKit Skeletons GLB | ✓ → UNDEAD blueprint |
+| Vulperia/Fox | fox.glb | ✓ → FOXLING blueprint |
+| Slime | slime.glb | ✓ → SLIME blueprint |
+| Elf | — | ✓ → ELF blueprint |
+| Celestial | — | ✓ → CELESTIAL blueprint |
+| Draconic | — | ✓ → DRACONIC blueprint |
+
+#### Enemies (all → enemy-creator, PROC-B2)
+| Enemy Type | Current | Status |
+|---|---|---|
+| Skeleton Mage | KayKit Skeletons | ⏳ PROC-B2 |
+| Skeleton Rogue | KayKit Skeletons | ⏳ PROC-B2 |
+| Zombie | skeletons_free GLB | ⏳ PROC-B2 |
+| Ghost | KayKit Skeletons | ⏳ PROC-B2 |
+| Undead Scholar | KayKit | ⏳ PROC-B2 |
+| Vulperia Bounty Hunter | fox.glb | ⏳ PROC-B2 |
+| Floor Boss (per floor) | none | ⏳ PROC-B2 tier 4 |
+
+#### NPCs (all → npc-creator, PROC-B1)
+| NPC Type | Current | Status |
+|---|---|---|
+| Merchant | procedural DNA creature | ⏳ PROC-B1 |
+| Elder / Quest Giver | procedural DNA creature | ⏳ PROC-B1 |
+| Scholar | procedural DNA creature | ⏳ PROC-B1 |
+| Guard | procedural DNA creature | ⏳ PROC-B1 |
+| Mysterious | procedural DNA creature | ⏳ PROC-B1 |
+| Solmor (wizard) | wizard GLB (random) | ⏳ PROC-B1 special |
+
+#### World Props (all → prop-creator, PROC-B3)
+| Category | Items Needed |
+|---|---|
+| Dungeon dressing | torch, chain, shelf, crate, barrel, rug, lectern, ritual circle, cauldron, brazier, sarcophagus, locked chest |
+| Library/study | bookshelf (full/empty/ransacked), desk, chair, scroll pile, candelabra, inkwell, map table |
+| Alchemical (basement) | cauldron, reagent shelf, distillation apparatus, ingredient crates, experiment table |
+| Overworld vegetation | tree (3 variants), bush, rock (5 sizes), mushroom cluster, fallen log |
+| Settlement props | market stall, well, bench, sign post, fence, gate, hay bale, cart |
+| Building interiors | bed, wardrobe, fireplace, cooking pot, dining table, hearth |
+
+#### Buildings (all → PROC-C)
+| Building Type | Interior | Exterior |
+|---|---|---|
+| House (small/medium/large) | living room + bedroom | thatched / timber |
+| Inn | common room + bar + rooms | large, sign, stable |
+| General store | counter + shelves | shop front window |
+| Blacksmith | forge + display | chimney, anvil outside |
+| Library / Scholar | shelves + reading room | stone, arched windows |
+| Temple / Shrine | altar + prayer space | decorated roof |
+| Guild hall | meeting hall + armoury | banner, large door |
+| Ruin (3 sizes) | collapsed partial interior | crumbled walls |
+| Tower sections | per-floor interior (already built) | exterior facade |
+
+#### Environments (PROC-C / world gen)
+| Feature | Status |
+|---|---|
+| Overworld terrain (heightfield) | ✓ existing Rapier heightfield |
+| River / water | partial — PROC-C needed |
+| Roads / paths | ⏳ PROC-C2 |
+| Settlement layout | partial — PROC-C2 refactor |
+| Day/night sky | ✓ existing DayNight system |
+| Weather (visual) | ⏳ PROC-F7 |
+

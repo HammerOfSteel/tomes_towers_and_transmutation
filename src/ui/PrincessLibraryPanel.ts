@@ -19,7 +19,7 @@ import { shareCodeToDna } from '@/princess-creator/dna';
 import { seedGalleryIfEmpty, PRINCESS_SPECIES_MAP } from '@/princess-creator/defaults/PrincessDefaults';
 
 export interface PrincessLibraryCallbacks {
-  onSelect: (dna: PrincessDNA, gameSpecies: 'human' | 'undead' | 'vulperia' | 'slime') => void;
+  onSelect: (dna: PrincessDNA, gameSpecies: 'human' | 'undead' | 'vulperia' | 'slime' | 'elf' | 'celestial' | 'draconic') => void;
   onClose?: () => void;
 }
 
@@ -247,9 +247,10 @@ export class PrincessLibraryPanel {
     `;
 
     card.querySelector('.plp-btn-play')?.addEventListener('click', () => {
+      console.log('[PLP] Play clicked — dna:', dna ? `name=${dna.name} species=${dna.species}` : 'NULL', '| gameSpecies:', gameSpecies);
       if (!dna) return;
+      this._cb.onSelect(dna, gameSpecies); // resolve FIRST — hide() triggers onClose which would mark settled
       this.hide();
-      this._cb.onSelect(dna, gameSpecies);
     });
 
     card.querySelector('.plp-btn-edit')?.addEventListener('click', () => {

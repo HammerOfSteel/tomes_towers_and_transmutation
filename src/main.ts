@@ -748,6 +748,7 @@ async function main() {
 
   /** Shared start-game logic — called by character creation onStart and by tests. */
   function startGame(seed?: number, cfg?: CharacterConfig): void {
+    console.log(`[startGame] seed=${seed ?? 'random'} char=${cfg?.characterId ?? 'none'} boon=${cfg?.boon ?? 'none'} princess=${!!cfg?.princessDna}`);
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
@@ -820,16 +821,27 @@ async function main() {
       if (entry) progression.boostStat(entry[0], entry[1]);
     }
 
-    // Apply player character appearance — princess mode > asset model > DNA
-    if (cfg?.princessDna) {
-      // PC4: spawn a princess-creator character
-      player.applyPrincess(cfg.princessDna).catch((e) =>
-        console.error('[main] failed to build princess model:', e));
-    } else if (cfg?.assetModel) {
-      player.applyAssetModel(cfg.assetModel).catch((e) =>
-        console.error('[main] failed to load asset model:', e));
-    } else if (cfg?.dna) {
-      player.applyDNA(cfg.dna);
+    // ── Apply player character appearance ─────────────────────────────────
+    // Always use the princess rig system:
+    //   • Documentation path  → user's gallery pick  (cfg.princessDna set)
+    //   • Every other path    → static species blueprint from PrincessDefaults
+    //   Never fall back to old KayKit asset models for the playable character.
+    {
+      const dnaToApply = cfg?.princessDna ?? null;
+      if (dnaToApply) {
+        console.log('[main] applyPrincess (gallery pick) → dna:', dnaToApply.name, dnaToApply.species);
+        player.applyPrincess(dnaToApply).catch((e) =>
+          console.error('[main] ❌ applyPrincess failed:', e));
+      } else {
+        // Lazy-import so PrincessDefaults doesn't bloat the initial bundle
+        import('@/princess-creator/defaults/PrincessDefaults').then(({ getDefaultPrincessForCharId }) => {
+          const defaultDna = getDefaultPrincessForCharId(cfg?.characterId);
+          console.log('[main] applyPrincess (default blueprint) → char:', cfg?.characterId,
+            '→ dna:', defaultDna.name, defaultDna.species);
+          player.applyPrincess(defaultDna).catch((e) =>
+            console.error('[main] ❌ applyPrincess (default) failed:', e));
+        });
+      }
     }
 
     // ── Start story quest line ─────────────────────────────────────────────
@@ -927,14 +939,14 @@ async function main() {
         camera:       cameraRig.camera,
         canvas:       renderer.domElement,
         openCharSheet: () => statPanel.open(progression),
-        orbit: orbit as CreativeModeContext['orbit'],
+        orbit: undefined,
       });
     }
 
     gameLoop.start();
+    (window as any).__gameStarted = true;   // test hook — one-way flag
+    console.log('[startGame] gameLoop started ✓');
   }
-
-  /** XP kill tracker — grants XP for each new kill registered. */
   let prevKillCount = 0;
   /** E1/E2: Named elite enemy IDs killed this session (for defeat_elite beats). */
   const _eliteEnemiesKilled   = new Set<string>();
@@ -1378,10 +1390,11 @@ async function main() {
     const isBeat = kind === 'beat';
     Object.assign(el.style, {
       position:   'fixed',
-      bottom:     isBeat ? '90px' : '50%',
+      top:        isBeat ? 'auto'  : '100px',   // act toasts: below HUD, not centre
+      bottom:     isBeat ? '90px' : 'auto',
       left:       '50%',
-      transform:  isBeat ? 'translateX(-50%)' : 'translate(-50%, 50%)',
-      maxWidth:   '480px',
+      transform:  'translateX(-50%)',
+      maxWidth:   isBeat ? '480px' : '560px',
       padding:    isBeat ? '10px 20px' : '16px 28px',
       background: isBeat ? 'rgba(20,14,6,0.88)' : 'rgba(12,8,3,0.94)',
       border:     `1px solid ${isBeat ? '#5a3a1a' : '#c8963c'}`,
@@ -1510,14 +1523,19 @@ async function main() {
         flow.play(document.body, slotId).then(cfg => {
           flow.dispose();
           // Persist character identity so "Continue" can restore it
-          patchSaveSlot(slotId, {
-            characterId:  cfg.characterId,
-            boon:         cfg.boon,
-            statBonuses:  cfg.statBonuses,
-            hasMasterKey: false,
-            floor:        0,
-            location:     'The Tower',
+          import('@/princess-creator/dna').then(({ dnaToShareCode }) => {
+            patchSaveSlot(slotId, {
+              characterId:     cfg.characterId,
+              boon:            cfg.boon,
+              statBonuses:     cfg.statBonuses,
+              hasMasterKey:    false,
+              floor:           0,
+              location:        'The Tower',
+              princessCode:    cfg.princessDna ? dnaToShareCode(cfg.princessDna) : undefined,
+              princessSpecies: cfg.princessSpecies,
+            });
           });
+          console.log('[newGame] saved princess to slot:', !!cfg.princessDna);
           startGame(undefined, cfg);
         }).catch(err => {
           console.error('[NewGameFlow] failed:', err);
@@ -1537,18 +1555,24 @@ async function main() {
           // Dynamically load the model list to rebuild assetModel
           import('@/characters/charManifest').then(({ CHAR_MODELS }) => {
             import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
-              const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
-              cfg = {
-                name:         charId,
-                boon:         (saved.boon ?? 'tome') as import('@/ui/CharacterCreation').StartingBoon,
-                slotId,
-                dna:          { ...DEFAULT_PLAYER_DNA },
-                assetModel:   assetModel ?? undefined,
-                statBonuses:  (saved.statBonuses ?? []) as StatBonus[],
-                characterId:  charId,
-                hasMasterKey: saved.hasMasterKey ?? false,
-              };
-              startGame(undefined, cfg);
+              import('@/princess-creator/dna').then(({ shareCodeToDna }) => {
+                const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
+                const princessDna = saved.princessCode ? shareCodeToDna(saved.princessCode) : undefined;
+                console.log('[continue] restoring — char:', charId, 'princess:', !!princessDna);
+                cfg = {
+                  name:            charId,
+                  boon:            (saved.boon ?? 'tome') as import('@/ui/CharacterCreation').StartingBoon,
+                  slotId,
+                  dna:             { ...DEFAULT_PLAYER_DNA },
+                  assetModel:      princessDna ? undefined : (assetModel ?? undefined),
+                  statBonuses:     (saved.statBonuses ?? []) as StatBonus[],
+                  characterId:     charId,
+                  hasMasterKey:    saved.hasMasterKey ?? false,
+                  princessDna:     princessDna ?? undefined,
+                  princessSpecies: saved.princessSpecies as any,
+                };
+                startGame(undefined, cfg);
+              });
             });
           });
         } else {
@@ -1563,6 +1587,32 @@ async function main() {
       resetBindings: () => input.resetBindings(),
     },
   });
+
+  // ── Princess Atelier quick-play handoff ───────────────────────────────────
+  // "▶ Play as Her" in the Atelier sets this key → we skip the campfire
+  // entirely and drop the player straight into the game with their princess.
+  {
+    const quickCode = localStorage.getItem('ttt_quickplay_princess');
+    if (quickCode) {
+      localStorage.removeItem('ttt_quickplay_princess');
+      mainMenu.hide();
+      import('@/princess-creator/dna').then(async ({ shareCodeToDna }) => {
+        const dna = shareCodeToDna(quickCode);
+        import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+          startGame(undefined, {
+            name:           dna?.name ?? 'Princess',
+            boon:           'tome',
+            slotId:         0,
+            dna:            { ...DEFAULT_PLAYER_DNA },
+            statBonuses:    ['intelligence', 'magic_power'],
+            characterId:    'rogue',
+            princessDna:    dna ?? undefined,
+            princessSpecies: 'human',
+          });
+        });
+      });
+    }
+  }
 
   // ── Test / debug hook (dev builds only) ──────────────────────────────────
   // Exposed on window so Playwright e2e tests can drive the game without
@@ -1594,6 +1644,16 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Whether the game loop is actively running (true only after startGame completes). */
+      isGameRunning: () => (gameLoop as any).running === true,
+      /** Name + species of the active princess rig (null if none). For tests. */
+      getPrincessInfo: () => {
+        const inst = (player as any)._princessInstance;
+        if (!inst) return null;
+        return { name: inst.dna?.name ?? '?', species: inst.dna?.species ?? '?' };
+      },
+      /** Current princess animation state (idle/walk/run/jump_idle) — for tests. */
+      getPrincessAnimState: () => player.princessAnimState,
       hasAssetTrees:   () => !!(scene as any).__assetTreesLoaded,
       hasAssetRocks:       () => !!(scene as any).__assetRocksLoaded,
       hasAssetClutter:     () => !!(scene as any).__assetClutterLoaded,
@@ -1603,6 +1663,53 @@ async function main() {
       hasAssetDungeon:     () => !!(scene as any).__assetDungeonLoaded,
       /** Open the character creation screen (slot 0 by default). */
       openCharCreation: (slotId = 0) => charCreation.show(slotId),
+      /** Skip campfire and start immediately as a princess (share code or DNA). */
+      quickPlayPrincess: (codeOrDna: string | object) => {
+        console.log('[quickPlayPrincess] called');
+        const code = typeof codeOrDna === 'string' ? codeOrDna : null;
+        const dna  = typeof codeOrDna === 'object'  ? codeOrDna : null;
+        import('@/princess-creator/dna').then(({ shareCodeToDna }) => {
+          const resolved = code ? shareCodeToDna(code) : dna;
+          import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+            mainMenu.hide();
+            startGame(undefined, {
+              name:            (resolved as any)?.name ?? 'Princess',
+              boon:            'tome',
+              slotId:          0,
+              dna:             { ...DEFAULT_PLAYER_DNA },
+              statBonuses:     ['intelligence', 'magic_power'],
+              characterId:     'rogue',
+              princessDna:     (resolved as import('@/princess-creator/types').PrincessDNA) ?? undefined,
+              princessSpecies: 'human',
+            });
+          });
+        });
+      },
+      /** Jump directly to a tower floor by index (-1=basement, 0=ground, 1-9=upper). */
+      goToFloor: (floorIndex: number) => {
+        const floorDefs: Record<number, string> = {
+          [-1]: 'tower_floor_alchemy_chamber',
+          [0]:  sceneManager.startRoomId ?? 'tower_floor_0_chamber',
+        };
+        const roomId = floorDefs[floorIndex] ?? `tower_floor_${floorIndex}_chamber`;
+        console.log(`[goToFloor] floor=${floorIndex} roomId=${roomId}`);
+        switchToInterior(roomId);
+      },
+      /** Trigger the full NewGameFlow campfire for a given slot (Playwright-friendly). */
+      triggerNewGame: (slotId = 0) => {
+        console.log(`[triggerNewGame] slotId=${slotId}`);
+        mainMenu.hide();
+        const flow = new NewGameFlow();
+        flow.play(document.body, slotId).then(cfg => {
+          console.log(`[triggerNewGame] campfire done → char=${cfg.characterId} princess=${!!cfg.princessDna}`);
+          flow.dispose();
+          startGame(undefined, cfg);
+        }).catch(err => {
+          console.error('[triggerNewGame] campfire FAILED:', err);
+          flow.dispose();
+          startGame();
+        });
+      },
       /** Snapshot of current character creation state — for Playwright tests. */
       getCharCreationState: () => charCreation.getState(),
       /** Enter creative mode (dev only). */
