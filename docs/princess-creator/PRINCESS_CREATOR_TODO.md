@@ -2,8 +2,32 @@
 
 > Legend: `[x]` done · `[~]` partial · `[ ]` todo.
 > "✔ Accept:" lines are the acceptance checks that close a phase.
-> Session 2026-07-18 delivered Phases 0–1 fully and large parts of 2–5
-> (a deliberately deep vertical slice); remaining work is marked.
+---
+
+## Status at a glance — end of day 2026-07-18
+
+**All tool phases (0–9) complete.** 21 species · 5 body synthesizers · full
+Spore-style direct manipulation · DNA v2 share codes (`P2.`) + DNA-in-PNG
+portraits · 24-clip animation system with per-species tuning + versioned
+`princess-animations.anim.json` export · `PrincessFactory` game façade ·
+**186 unit tests**, tsc/eslint clean, Playwright visual-QA scripts
+(`scripts/princess-screenshots.mjs`, `scripts/princess-anim-verify.mjs`).
+
+| Phase | Status | Phase | Status |
+|---|---|---|---|
+| 0 Research & spec | ✅ | 5 Animation & test drive | ✅ core |
+| 1 Foundation (DNA/store/stage) | ✅ | 6 Creator UX polish | ✅ core |
+| 2 Body synthesizers | ✅ | 7 Direct manipulation & exports | ✅ |
+| 3 Parts system | ✅ core | 8 Species/classes/subtypes (21) | ✅ |
+| 4 Color & palettes | ✅ core | 9 Animation system & anim export | ✅ |
+
+**Next up: Phase 10 — game-side integration** (bottom of this file). The
+`[~]` marks inside phases 3–6 are optional polish, folded into task 10.8.
+
+**Branch state:** all work lives on `feature/princess-creator` (draft PR #1).
+The PR's base branch `feature/asset-level-editor` has since been merged into
+`main` — when it's time to land this, retarget the PR base to `main` (no
+merge through the editor branch needed).
 
 ---
 
@@ -152,6 +176,32 @@ Goal: every species ships the full game move set, tunable in-tool, exportable.
 - [x] 9.6 Factory API — `p.setState/play/onEvent/clips`, `{ tweaks }` option.
 - [x] 9.7 QA — 27 anim tests (186 total); Playwright pose verification
       (`scripts/princess-anim-verify.mjs`, freeze-frame capture technique).
+
+## Phase 10 — Game-Side Integration (NEXT — not started)
+
+Goal: princesses leave the Atelier and enter the game world.
+
+- [ ] 10.1 Spawn path — `buildPrincess(shareCode, { targetHeight: 1.6 })` in
+      the game scene; named NPCs as committed `.princess.json` files
+      (`assets/princesses/…`) — the Spore "tiny recipe" payoff.
+- [ ] 10.2 Controller wiring — movement drives `setState` (idle/walk/run;
+      jump_begin → jump_idle → jump_land from the jump arc).
+- [ ] 10.3 Combat wiring — attacks/casts via `play()`, damage windows from
+      `onEvent('hit' | 'cast_release')`; get_hit/block reactions; deaths
+      hold their final frame (holdLast).
+- [ ] 10.4 Stats hook — pure `statsForDna(dna)` in game code (creator stays
+      cosmetic); species/parts → small Spore-style modifiers.
+- [ ] 10.5 Portrait pipeline — exporter PNGs (DNA embedded) as dialogue-UI
+      portraits.
+- [ ] 10.6 Audio pass — map anim events (step/hit/cast_release/liftoff/land/
+      parry) to SFX; optional per-species voice blips.
+- [ ] 10.7 More species combat flavor — lamia tail-whip attack_2, slime
+      bounce-slam, specter phase-dodge get_hit, ignis flame-burst cast
+      (same override mechanism as slither/melt).
+- [ ] 10.8 Creator polish backlog — remaining `[~]` items from phases 3–6
+      (pattern/paint coat layer, more parts, e2e suite, sound in-tool).
+- ✔ Accept: a princess made in the Atelier walks, fights, and falls in the
+      actual game with correct event timing.
 
 ## Standing rules (all phases)
 
