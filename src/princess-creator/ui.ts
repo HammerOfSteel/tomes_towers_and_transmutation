@@ -14,8 +14,7 @@ import { defaultDna } from './dna';
 import { SPECIES_DEFS, CLASS_DEFS, PALETTES } from './species';
 import type { DnaStore } from './store';
 import type { GalleryEntry } from './gallery';
-import type { EmoteId } from './animate';
-import { EMOTES } from './animate';
+import { STATE_IDS, type AnimId } from './anim/clips';
 
 export interface UiActions {
   randomize(): void;
@@ -32,8 +31,14 @@ export interface UiActions {
   saveToGallery(): void;
   loadGalleryEntry(id: string): void;
   deleteGalleryEntry(id: string): void;
-  playEmote(id: EmoteId): void;
-  toggleWalk(): boolean;
+  listClips(): Array<{ id: AnimId; label: string; group: string; loop: boolean }>;
+  playClip(id: AnimId): void;
+  setAnimState(id: AnimId): void;
+  getAnimState(): AnimId;
+  getTweak(id: AnimId): { speed: number; amp: number };
+  setTweakValue(id: AnimId, patch: { speed?: number; amp?: number }): void;
+  resetTweak(id: AnimId): void;
+  exportAnims(): void;
   undo(): void;
   redo(): void;
   applyPalette(species: SpeciesId, paletteId: string): void;
@@ -50,10 +55,6 @@ const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'colors', label: 'Colors' },
   { id: 'motion', label: 'Motion' },
 ];
-
-const EMOTE_META: Record<EmoteId, string> = {
-  wave: '👋 Wave', twirl: '🌀 Twirl', dance: '💃 Dance', cast: '✨ Cast',
-};
 
 /** Signature sliders pinned to the top of the Body tab, per archetype. */
 const SIGNATURE: Record<Archetype, Array<{ label: string; path: string; range: Range }>> = {
@@ -101,7 +102,6 @@ export class Ui {
   private galleryGrid: HTMLElement;
   private codeField: HTMLInputElement;
   private nameField: HTMLInputElement;
-  private walkBtn: HTMLButtonElement;
   private undoBtn: HTMLButtonElement;
   private redoBtn: HTMLButtonElement;
   private subtypeWrap!: HTMLElement;
@@ -113,7 +113,6 @@ export class Ui {
     this.galleryGrid = document.getElementById('gallery-grid') as HTMLElement;
     this.codeField = document.getElementById('share-code') as HTMLInputElement;
     this.nameField = document.getElementById('name-input') as HTMLInputElement;
-    this.walkBtn = document.getElementById('btn-walk') as HTMLButtonElement;
     this.undoBtn = document.getElementById('btn-undo') as HTMLButtonElement;
     this.redoBtn = document.getElementById('btn-redo') as HTMLButtonElement;
 
@@ -156,16 +155,7 @@ export class Ui {
     }
     this.subtypeWrap = el('div', 'dock-chips subtype-chips', metaRow);
 
-    const emoteBar = document.getElementById('emote-buttons') as HTMLElement;
-    for (const id of EMOTES) {
-      const b = el('button', 'emote-btn', emoteBar);
-      b.textContent = EMOTE_META[id];
-      b.onclick = () => this.actions.playEmote(id);
-    }
-    this.walkBtn.onclick = () => {
-      const on = this.actions.toggleWalk();
-      this.walkBtn.classList.toggle('active', on);
-    };
+    this.buildAnimPanel();
 
     (document.getElementById('btn-dice') as HTMLButtonElement).onclick = () => this.actions.rollName();
     (document.getElementById('btn-random') as HTMLButtonElement).onclick = () => this.actions.randomize();
@@ -450,7 +440,110 @@ export class Ui {
     this.renderTab();
   }
 
-  setWalkActive(on: boolean): void {
-    this.walkBtn.classList.toggle('active', on);
+  // ── Animations panel ───────────────────────────────────────────────────────
+
+  /** Rebuild on species change — clip labels are species-flavored (Slither, Melt…). */
+  refreshAnimPanel(): void {
+    this.buildAnimPanel();
+  }
+
+  private buildAnimPanel(): void {
+    const states = document.getElementById('anim-states') as HTMLElement;
+    const actionsWrap = document.getElementById('anim-actions') as HTMLElement;
+    const tweaks = document.getElementById('anim-tweaks') as HTMLElement;
+    states.innerHTML = '';
+    actionsWrap.innerHTML = '';
+    tweaks.innerHTML = '';
+    const clips = this.actions.listClips();
+    const byId = new Map(clips.map((c) => [c.id, c]));
+
+    // Base-state loop chips
+    for (const id of STATE_IDS) {
+      const meta = byId.get(id);
+      if (!meta) continue;
+      const chip = el('button', 'chip', states);
+      chip.dataset.anim = id;
+      chip.textContent = meta.label;
+      chip.onclick = () => {
+        this.actions.setAnimState(id);
+        this.setAnimActive(id);
+      };
+    }
+    this.setAnimActive(this.actions.getAnimState());
+
+    // One-shot actions, grouped
+    const GROUPS: ReadonlyArray<{ id: string; label: string }> = [
+      { id: 'combat', label: 'Combat' },
+      { id: 'locomotion', label: 'Jumps' },
+      { id: 'reaction', label: 'Reactions' },
+      { id: 'misc', label: 'Emotes' },
+    ];
+    for (const g of GROUPS) {
+      const members = clips.filter((c) => c.group === g.id && !c.loop);
+      if (members.length === 0) continue;
+      el('div', 'anim-group-label', actionsWrap).textContent = g.label;
+      const grid = el('div', 'anim-grid', actionsWrap);
+      for (const c of members) {
+        const b = el('button', 'emote-btn', grid);
+        b.dataset.anim = c.id;
+        b.textContent = c.label;
+        b.onclick = () => {
+          this.actions.playClip(c.id);
+          this.setAnimActive(this.actions.getAnimState());
+        };
+      }
+    }
+
+    // Tuning + export
+    el('div', 'tweak-title', tweaks).textContent = 'Tune clip · saved per species';
+    const sel = el('select', 'anim-select', tweaks);
+    for (const c of clips) {
+      const o = el('option', '', sel);
+      o.value = c.id;
+      o.textContent = c.label;
+    }
+    const speedRow = el('div', 'row', tweaks);
+    el('label', '', speedRow).textContent = 'Speed';
+    const speed = el('input', 'slider', speedRow);
+    speed.type = 'range'; speed.min = '0.5'; speed.max = '1.8'; speed.step = '0.01';
+    const ampRow = el('div', 'row', tweaks);
+    el('label', '', ampRow).textContent = 'Punch';
+    const amp = el('input', 'slider', ampRow);
+    amp.type = 'range'; amp.min = '0.5'; amp.max = '1.6'; amp.step = '0.01';
+
+    const syncTweak = (): void => {
+      const t = this.actions.getTweak(sel.value as AnimId);
+      speed.value = String(t.speed);
+      amp.value = String(t.amp);
+    };
+    const preview = (): void => {
+      this.actions.playClip(sel.value as AnimId);
+      this.setAnimActive(this.actions.getAnimState());
+    };
+    sel.onchange = () => { syncTweak(); preview(); };
+    speed.oninput = () => {
+      this.actions.setTweakValue(sel.value as AnimId, { speed: parseFloat(speed.value) });
+      preview();
+    };
+    amp.oninput = () => {
+      this.actions.setTweakValue(sel.value as AnimId, { amp: parseFloat(amp.value) });
+      preview();
+    };
+
+    const btnRow = el('div', 'btn-row', tweaks);
+    const reset = el('button', 'big-btn', btnRow);
+    reset.textContent = '↺ Reset';
+    reset.onclick = () => { this.actions.resetTweak(sel.value as AnimId); syncTweak(); preview(); };
+    const exp = el('button', 'big-btn gold', btnRow);
+    exp.textContent = '💾 Anim JSON';
+    exp.title = 'Export every species\' resolved clip set for the game';
+    exp.onclick = () => this.actions.exportAnims();
+    syncTweak();
+  }
+
+  setAnimActive(id: string): void {
+    document.querySelectorAll<HTMLButtonElement>('#anim-states .chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.anim === id);
+    });
   }
 }

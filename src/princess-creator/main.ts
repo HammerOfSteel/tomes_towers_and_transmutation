@@ -16,10 +16,14 @@ import { Stage } from './scene';
 import { createMaterialKit, type MaterialKit } from './materials';
 import { composePrincess } from './compose';
 import type { BuildResult } from './synth/contracts';
-import { Animator, EMOTES, type EmoteId } from './animate';
+import { Animator } from './animate';
+import { ANIM_IDS, type AnimId } from './anim/clips';
+import {
+  tweaksFor, setTweak, clearTweaks, buildAnimationExport, importAnimationExport,
+} from './anim/tweaks';
 import { DirectManipulator } from './interact';
 import { Ui } from './ui';
-import { exportPng, exportGlb, exportJson } from './exporter';
+import { exportPng, exportGlb, exportJson, downloadBlob } from './exporter';
 import { extractFromImageFile } from './stegano';
 import { loadGallery, addToGallery, removeFromGallery } from './gallery';
 
@@ -46,7 +50,7 @@ let kit: MaterialKit = createMaterialKit(store.dna);
 let result: BuildResult = composePrincess(store.dna, kit);
 stage.scene.add(result.root);
 stage.setArchetypeMood(store.dna.archetype);
-animator.bind(result, store.dna);
+animator.bind(result, store.dna, tweaksFor(store.dna.species));
 manipulator.bind(result);
 
 let lastSpecies = store.dna.species;
@@ -70,8 +74,10 @@ function rebuild(dna: PrincessDNA, archetypeChanged: boolean): void {
   if (speciesChanged) stage.frame(dna.body.height);
   result = composePrincess(dna, kit);
   stage.scene.add(result.root);
-  animator.bind(result, dna);
+  animator.bind(result, dna, tweaksFor(dna.species));
   manipulator.bind(result);
+  // Clip labels/speeds are species-flavored (lamia Slither, slime Melt…).
+  if (speciesChanged) ui.refreshAnimPanel();
 }
 
 // ── UI actions ──
@@ -140,10 +146,36 @@ const ui = new Ui(store, {
     if (dna) store.setDna(dna);
   },
   deleteGalleryEntry: (id: string) => ui.setGallery(removeFromGallery(id)),
-  playEmote: (id: EmoteId) => animator.playEmote(id),
-  toggleWalk: () => {
-    animator.setWalking(!animator.isWalking);
-    return animator.isWalking;
+  listClips: () => {
+    const set = animator.clips;
+    return ANIM_IDS.map((id) => ({
+      id,
+      label: set?.[id].label ?? id,
+      group: set?.[id].group ?? 'misc',
+      loop: set?.[id].loop ?? false,
+    }));
+  },
+  playClip: (id: AnimId) => animator.play(id),
+  setAnimState: (id: AnimId) => animator.setState(id),
+  getAnimState: () => animator.stateId,
+  getTweak: (id: AnimId) => {
+    const t = tweaksFor(store.dna.species)[id];
+    return { speed: t?.speed ?? 1, amp: t?.amp ?? 1 };
+  },
+  setTweakValue: (id: AnimId, patch: { speed?: number; amp?: number }) => {
+    setTweak(store.dna.species, id, patch);
+    animator.bind(result, store.dna, tweaksFor(store.dna.species));
+  },
+  resetTweak: (id: AnimId) => {
+    clearTweaks(store.dna.species, id);
+    animator.bind(result, store.dna, tweaksFor(store.dna.species));
+  },
+  exportAnims: () => {
+    const blob = new Blob(
+      [JSON.stringify(buildAnimationExport())],
+      { type: 'application/json' },
+    );
+    downloadBlob(blob, 'princess-animations.anim.json');
   },
   undo: () => store.undo(),
   redo: () => store.redo(),
@@ -186,10 +218,14 @@ window.addEventListener('keydown', (e) => {
     ui.setGallery(addToGallery({ name: store.dna.name, code: dnaToShareCode(store.dna), thumb }));
   } else if (e.key === ' ') {
     e.preventDefault();
-    animator.playEmote(EMOTES[Math.floor(Math.random() * EMOTES.length)]);
+    const set = animator.clips;
+    if (set) {
+      const shots = ANIM_IDS.filter((id) => !set[id].loop);
+      animator.play(shots[Math.floor(Math.random() * shots.length)]);
+    }
   } else if (e.key.toLowerCase() === 'w') {
     animator.setWalking(!animator.isWalking);
-    ui.setWalkActive(animator.isWalking);
+    ui.setAnimActive(animator.stateId);
   } else if (e.key.toLowerCase() === 'r') {
     stage.frame();
   } else if (/^[1-9]$/.test(e.key)) {
@@ -226,8 +262,18 @@ window.addEventListener('drop', (e) => {
     } else if (file.name.endsWith('.json')) {
       try {
         const parsed: unknown = JSON.parse(await file.text());
-        store.setDna(dnaFromRaw(parsed)); // runs v1→v2 migration + sanitize
-        importFeedback(true);
+        if ((parsed as { format?: string } | null)?.format === 'ttt-princess-anim') {
+          // Animation library drop → restore the saved tweaks.
+          const ok = importAnimationExport(parsed);
+          if (ok) {
+            animator.bind(result, store.dna, tweaksFor(store.dna.species));
+            ui.refreshAnimPanel();
+          }
+          importFeedback(ok);
+        } else {
+          store.setDna(dnaFromRaw(parsed)); // runs v1→v2 migration + sanitize
+          importFeedback(true);
+        }
       } catch {
         importFeedback(false);
       }
@@ -254,6 +300,8 @@ loop();
   store,
   stage,
   manipulator,
+  animator,
+  buildAnimationExport,
   dnaToShareCode,
   shareCodeToDna,
   stegano: { embed: import('./stegano') },

@@ -1,171 +1,158 @@
-// ── Animator: idle / walk / emotes / blink on the shared rig contract ───────
+// ── Animator: game-grade clip playback on the shared rig contract ───────────
 //
-//  Stateless recompute: every frame sets joint rotations from scratch, so
-//  archetype swaps and emote interruptions can never leave stale poses.
-//  Per-archetype flavor comes from dna.motion (energy/bounce/idleStyle) and
-//  each synth/part's own tick hooks — this file never branches on archetype.
+//  A thin state machine over anim/clips + anim/player:
+//  - `setState(id)`   — base loop (idle / walk / run / jump_idle / block_1 …)
+//  - `play(id)`       — one-shot (attacks, casts, hits, deaths, emotes);
+//                       returns to the base state when done, except holdLast
+//                       clips (deaths) which freeze until something else plays
+//  - species flavor comes from the resolved ClipSet (lamia slithers, slime
+//    melts…) plus idle-style overlays (float hover, skeleton rattle) and the
+//    ever-present breath/blink.
+//
+//  Game events (hit frames, cast_release, footsteps, liftoff/land) surface
+//  through `onEvent`.
 
 import type { PrincessDNA } from './types';
 import type { BuildResult } from './synth/contracts';
+import { resolveClips, STATE_IDS, type AnimId, type ClipSet, type TweakMap } from './anim/clips';
+import { ClipPlayer } from './anim/player';
 
 export type EmoteId = 'wave' | 'twirl' | 'dance' | 'cast';
 export const EMOTES: readonly EmoteId[] = ['wave', 'twirl', 'dance', 'cast'];
-
-const EMOTE_DURATION: Record<EmoteId, number> = {
-  wave: 2.2, twirl: 1.9, dance: 2.6, cast: 2.0,
+const EMOTE_TO_CLIP: Record<EmoteId, AnimId> = {
+  wave: 'wave', twirl: 'twirl', dance: 'dance', cast: 'cast_spell_1',
 };
-
-/** smooth in (15%) / out (25%) envelope. */
-function envelope(u: number): number {
-  const inn = Math.min(1, u / 0.15);
-  const out = Math.min(1, (1 - u) / 0.25);
-  const s = (x: number): number => x * x * (3 - 2 * x);
-  return s(Math.max(0, Math.min(inn, out)));
-}
 
 export class Animator {
   private result: BuildResult | null = null;
   private dna: PrincessDNA | null = null;
-  private walking = false;
-  private emote: { id: EmoteId; start: number } | null = null;
+  private clipSet: ClipSet | null = null;
+  private player = new ClipPlayer();
+  private state: AnimId = 'idle';
+  private oneShot: AnimId | null = null;
+  private held = false;              // frozen on a holdLast final frame
   private nextBlink = 2.5;
   private blinkStart = -1;
-  /** Fired at the flourish moment of the 'cast' emote (stage sparkles). */
+  private lastNow = 0;
+  /** Game/stage hooks: hit, cast_release, step, liftoff, land, parry… */
+  onEvent: ((id: string) => void) | null = null;
+  /** Legacy hook kept for the stage sparkle burst. */
   onCastBurst: (() => void) | null = null;
-  private castFired = false;
 
-  bind(result: BuildResult, dna: PrincessDNA): void {
-    this.result = result;
-    this.dna = dna;
+  constructor() {
+    this.player.onEvent = (id) => {
+      if (id === 'cast_release') this.onCastBurst?.();
+      this.onEvent?.(id);
+    };
   }
 
+  bind(result: BuildResult, dna: PrincessDNA, tweaks: TweakMap = {}): void {
+    this.result = result;
+    this.dna = dna;
+    this.clipSet = resolveClips(dna, tweaks);
+    this.oneShot = null;
+    this.held = false;
+    this.player.play(this.clipSet[this.state] ?? this.clipSet.idle, this.lastNow);
+  }
+
+  get clips(): ClipSet | null { return this.clipSet; }
+  get currentId(): AnimId { return this.oneShot ?? this.state; }
+  /** The base loop we're in (ignores any one-shot riding on top). */
+  get stateId(): AnimId { return this.state; }
+
+  /** Base loop. Unknown/one-shot ids fall back to play(). */
+  setState(id: AnimId): void {
+    if (!this.clipSet) return;
+    if (!STATE_IDS.includes(id)) { this.play(id); return; }
+    this.state = id;
+    this.oneShot = null;
+    this.held = false;
+    this.player.play(this.clipSet[id], this.lastNow);
+  }
+
+  /** One-shot; auto-returns to the current base state (unless holdLast). */
+  play(id: AnimId): void {
+    if (!this.clipSet) return;
+    const clip = this.clipSet[id];
+    if (!clip) return;
+    if (clip.loop) { this.setState(id); return; }
+    this.oneShot = id;
+    this.held = false;
+    this.player.play(clip, this.lastNow);
+  }
+
+  // ── Legacy API (main/factory/tests) ──
   setWalking(on: boolean): void {
-    this.walking = on;
+    this.setState(on ? 'walk' : 'idle');
   }
 
   get isWalking(): boolean {
-    return this.walking;
+    return this.state === 'walk' || this.state === 'run';
   }
 
-  playEmote(id: EmoteId): void {
-    this.emote = { id, start: -1 }; // start stamped on next update
-    this.castFired = false;
+  playEmote(id: EmoteId | AnimId): void {
+    const clipId = (EMOTE_TO_CLIP as Record<string, AnimId>)[id] ?? (id as AnimId);
+    this.play(clipId);
   }
 
   update(t: number): void {
-    if (!this.result || !this.dna) return;
+    this.lastNow = t;
+    if (!this.result || !this.dna || !this.clipSet) return;
     const { rig, hooks } = this.result;
-    const m = this.dna.motion;
-    const energy = 0.4 + m.energy * 0.9;
 
-    // ── Reset the pose-affecting transforms we own ──
-    rig.root.rotation.set(0, 0, 0);
-    rig.root.position.y = rig.baseY;
-    rig.torso.rotation.set(0, 0, 0);
-
-    const breath = Math.sin(t * 2.2) * 0.028;
-    rig.torso.scale.set(1 + breath, 1 + breath * 0.5, 1 + breath);
-
-    if (this.walking) {
-      const phase = t * (3.6 + m.energy * 5.5);
-      rig.root.position.y = rig.baseY + Math.abs(Math.sin(phase)) * (0.25 + m.bounce * 0.75);
-      rig.torso.rotation.z = Math.sin(phase) * 0.05;
-      rig.torso.rotation.y = Math.sin(phase) * 0.1;
-      rig.neck.rotation.set(Math.sin(phase * 2) * 0.05 + 0.06, 0, -Math.sin(phase) * 0.04);
-      for (let i = 0; i < 2; i++) {
-        const lp = phase + (i === 0 ? 0 : Math.PI);
-        rig.hips[i].rotation.set(Math.sin(lp) * 0.55 * energy, 0, 0);
-        rig.knees[i].rotation.set(Math.max(0, -Math.cos(lp)) * 0.95 * energy, 0, 0);
-        const ap = lp + Math.PI;
-        const side = i === 0 ? 1 : -1;
-        rig.shoulders[i].rotation.set(Math.sin(ap) * 0.5 * energy, 0, side * 0.4);
-        rig.elbows[i].rotation.set(-0.3 + Math.sin(ap) * 0.2, 0, side * -0.08);
-      }
-    } else {
-      // ── Idle ──
-      const style = m.idleStyle;
-      if (style === 'float') {
-        rig.root.position.y = rig.baseY + 0.16 + Math.sin(t * 1.6) * 0.12;
-      } else if (style === 'bob') {
-        rig.root.position.y = rig.baseY + Math.abs(Math.sin(t * 2.6)) * 0.14 * (0.5 + m.bounce);
-      }
-      if (style === 'sway' || style === 'float') {
-        rig.torso.rotation.z = Math.sin(t * 1.3) * 0.035;
-      }
-      rig.neck.rotation.set(
-        Math.cos(t * 0.45) * 0.04,
-        Math.sin(t * 0.7) * 0.22,
-        Math.cos(t * 0.5) * 0.07,
-      );
-      for (let i = 0; i < 2; i++) {
-        const side = i === 0 ? 1 : -1;
-        const legDangle = style === 'float' ? 0.18 : 0;
-        rig.hips[i].rotation.set(0.08 + legDangle, side * 0.18, side * 0.06);
-        rig.knees[i].rotation.set(style === 'float' ? 0.25 : 0, 0, 0);
-        // Polite hands resting over the dress
-        rig.shoulders[i].rotation.set(0.12, 0, side * 0.52);
-        rig.elbows[i].rotation.set(-0.35, 0, side * -0.15);
-      }
-      if (style === 'rattle') {
-        const j = (f: number, o: number): number => Math.sin(t * f + o) * 0.009;
-        rig.torso.rotation.z += j(37, 0);
-        rig.neck.rotation.z += j(53, 1);
-        for (let i = 0; i < 2; i++) {
-          rig.shoulders[i].rotation.z += j(43, i * 2);
-          rig.hips[i].rotation.z += j(47, i * 3);
-        }
-      }
-    }
-
-    // ── Emote overlay ──
-    if (this.emote) {
-      if (this.emote.start < 0) this.emote.start = t;
-      const id = this.emote.id;
-      const dur = EMOTE_DURATION[id];
-      const u = (t - this.emote.start) / dur;
-      if (u >= 1) {
-        this.emote = null;
+    // One-shot lifecycle
+    if (this.oneShot && this.player.isFinished && !this.held) {
+      const clip = this.clipSet[this.oneShot];
+      if (clip.holdLast) {
+        this.held = true; // stay dead until told otherwise
       } else {
-        const e = envelope(u);
-        if (id === 'wave') {
-          rig.shoulders[1].rotation.z = -2.35 * e;
-          rig.shoulders[1].rotation.x = -0.15 * e;
-          rig.elbows[1].rotation.z = Math.sin(t * 11) * 0.55 * e;
-          rig.neck.rotation.z = 0.12 * e;
-        } else if (id === 'twirl') {
-          const s = (x: number): number => x * x * (3 - 2 * x);
-          rig.root.rotation.y = s(u) * Math.PI * 4;
-          rig.shoulders[0].rotation.z = 1.5 * e;
-          rig.shoulders[1].rotation.z = -1.5 * e;
-          rig.root.position.y += Math.sin(u * Math.PI) * 0.5;
-        } else if (id === 'dance') {
-          rig.root.position.y += Math.abs(Math.sin(t * 6.2)) * 0.5 * e;
-          rig.torso.rotation.z += Math.sin(t * 6.2) * 0.09 * e;
-          for (let i = 0; i < 2; i++) {
-            const side = i === 0 ? 1 : -1;
-            rig.shoulders[i].rotation.x = Math.sin(t * 6.2 + i * Math.PI) * 0.9 * e - 0.4 * e;
-            rig.shoulders[i].rotation.z = side * (0.6 + Math.sin(t * 3.1) * 0.25) * e;
-            rig.elbows[i].rotation.x = -0.6 * e;
-          }
-          rig.neck.rotation.z += Math.sin(t * 3.1) * 0.12 * e;
-        } else {
-          // cast
-          for (let i = 0; i < 2; i++) {
-            rig.shoulders[i].rotation.x = -1.25 * e;
-            rig.shoulders[i].rotation.z = (i === 0 ? 1 : -1) * 0.18 * e;
-            rig.elbows[i].rotation.x = -0.35 * e;
-          }
-          rig.neck.rotation.x = -0.12 * e;
-          if (!this.castFired && u > 0.45) {
-            this.castFired = true;
-            this.onCastBurst?.();
-          }
-        }
+        this.oneShot = null;
+        this.player.play(this.clipSet[this.state], t);
       }
     }
 
-    // ── Blink ──
-    if (hooks.setBlink) {
+    const pose = this.player.sample(t);
+
+    // ── Apply pose to the rig ──
+    const j = pose.joints;
+    rig.torso.rotation.set(j.torso[0], j.torso[1], j.torso[2]);
+    rig.neck.rotation.set(j.neck[0], j.neck[1], j.neck[2]);
+    rig.shoulders[0].rotation.set(j.shoulderL[0], j.shoulderL[1], j.shoulderL[2]);
+    rig.shoulders[1].rotation.set(j.shoulderR[0], j.shoulderR[1], j.shoulderR[2]);
+    rig.elbows[0].rotation.set(j.elbowL[0], j.elbowL[1], j.elbowL[2]);
+    rig.elbows[1].rotation.set(j.elbowR[0], j.elbowR[1], j.elbowR[2]);
+    rig.hips[0].rotation.set(j.hipL[0], j.hipL[1], j.hipL[2]);
+    rig.hips[1].rotation.set(j.hipR[0], j.hipR[1], j.hipR[2]);
+    rig.knees[0].rotation.set(j.kneeL[0], j.kneeL[1], j.kneeL[2]);
+    rig.knees[1].rotation.set(j.kneeR[0], j.kneeR[1], j.kneeR[2]);
+    rig.root.rotation.set(pose.rootRot[0], pose.rootRot[1], pose.rootRot[2]);
+
+    let rootY = rig.baseY + pose.rootY;
+    let scale = pose.torsoScale;
+
+    // ── Overlays: idle-style motion + breath (not while dead/held) ──
+    if (!this.held) {
+      const style = this.dna.motion.idleStyle;
+      const grounded = this.currentId === 'idle' || this.currentId === 'idle_alt'
+        || this.currentId === 'walk' || this.currentId === 'run' || this.currentId === 'read';
+      if (grounded) {
+        if (style === 'float') rootY += 0.16 + Math.sin(t * 1.6) * 0.12;
+        else if (style === 'bob' && (this.currentId === 'idle' || this.currentId === 'idle_alt')) {
+          rootY += Math.abs(Math.sin(t * 2.6)) * 0.14 * (0.5 + this.dna.motion.bounce);
+        }
+        if (style === 'rattle') {
+          rig.torso.rotation.z += Math.sin(t * 37) * 0.009;
+          rig.neck.rotation.z += Math.sin(t * 53 + 1) * 0.009;
+        }
+      }
+      scale *= 1 + Math.sin(t * 2.2) * 0.028;
+    }
+
+    rig.root.position.y = rootY;
+    rig.torso.scale.set(scale, 1 + (scale - 1) * 0.5, scale);
+
+    // ── Blink (the dead don't blink) ──
+    if (hooks.setBlink && !this.held) {
       if (this.blinkStart < 0 && t >= this.nextBlink) this.blinkStart = t;
       if (this.blinkStart >= 0) {
         const bu = (t - this.blinkStart) / 0.24;

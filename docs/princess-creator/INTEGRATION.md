@@ -11,10 +11,15 @@ import { buildPrincess } from '@/princess-creator/factory';
 
 const p = buildPrincess(dnaOrShareCode, { targetHeight: 1.6 });
 scene.add(p.root);
-// per frame: p.update(t, dt)   — idle/walk/emotes + secondary motion
-p.playEmote('twirl');           // wave | twirl | dance | cast
+// per frame: p.update(t, dt)   — clip playback + secondary motion
+p.setState('run');              // base loops: idle/idle_alt/walk/run/jump_idle/block_1/stunned/read
+p.play('attack_1');             // one-shots (attacks/casts/hits/deaths) auto-return to the state
+p.onEvent((id) => { /* 'hit' | 'cast_release' | 'step' | 'liftoff' | 'land' | 'parry' */ });
+p.clips;                        // resolved species-flavored BakedClips (see ANIMATIONS.md)
+p.playEmote('twirl');           // legacy sugar: wave | twirl | dance | cast
 p.setWalking(true);
 // or pass { animate: false } and drive p.rig joints yourself
+// optional { tweaks } — per-clip speed/amp from a .anim.json export
 p.dispose();                    // frees geometries + material kit
 ```
 - `factory.ts` is a thin façade over compose/synth/parts/materials with zero
@@ -29,7 +34,14 @@ Includes `KHR_materials_transmission` for slime (check target viewer support;
 fallback: alpha-blend material). Pivot groups arrive as named `Object3D`s with
 `userData.pivotRole` tags.
 
-### C. DNA strings as content
+### C. Animation library JSON — SHIPPED
+`💾 Anim JSON` in the Atelier exports `princess-animations.anim.json`: all 21
+species' fully resolved clip sets (24 clips each) + tuning tweaks. Playable
+with a ~20-line sampler (spec + snippet in `ANIMATIONS.md` §5) or bakeable to
+`THREE.AnimationClip`s offline. Drop the file back onto the Atelier to restore
+a tuning session.
+
+### D. DNA strings as content
 `.princess.json` / `P1.` codes are tiny and diff-friendly — commit named NPCs
 (e.g. `assets/princesses/maribel.princess.json`), spawn via factory at
 runtime. This is the Spore "tiny recipe" payoff: a cast of characters in a few

@@ -127,6 +127,32 @@
 
 ---
 
+## Phase 9 — Animation System: Game Move Set, Tuning & Export ✅
+
+Goal: every species ships the full game move set, tunable in-tool, exportable.
+
+- [x] 9.1 Clip library (`anim/clips.ts`) — 24 keyframed clips on the shared
+      10-joint rig contract: idle, idle_alt, walk, run, attack_1/2,
+      cast_spell_1/2, get_hit_1/2, block_1/2, jump_begin/idle/land, die_1/2,
+      victory, curtsy, stunned, read, wave, twirl, dance. Gameplay events
+      (hit, cast_release, step, liftoff, land, parry). Sparse keys → dense
+      bake; bare keys = full-neutral anchors.
+- [x] 9.2 Species flavor — lamia Slither/coil jumps, slime Melt, skeleton
+      Collapse, speed scalars (troll 0.78 … pixie 1.15); resolution
+      base → species → energy → tweaks.
+- [x] 9.3 Playback (`anim/player.ts`, `animate.ts`) — crossfading ClipPlayer
+      with loop-aware event firing; Animator state machine (setState/play,
+      holdLast deaths freeze, overlays + blink suppressed while held);
+      legacy API (setWalking/playEmote) preserved.
+- [x] 9.4 Tuning + save/load (`anim/tweaks.ts`) — per-species per-clip
+      speed/amp in localStorage; Animations panel (state chips, grouped
+      one-shots, tune sliders); `.anim.json` drop-import restores sessions.
+- [x] 9.5 Export — `princess-animations.anim.json` v1: rig contract + all 21
+      species fully resolved + tweaks (~0.9 MB). Spec: ANIMATIONS.md.
+- [x] 9.6 Factory API — `p.setState/play/onEvent/clips`, `{ tweaks }` option.
+- [x] 9.7 QA — 27 anim tests (186 total); Playwright pose verification
+      (`scripts/princess-anim-verify.mjs`, freeze-frame capture technique).
+
 ## Standing rules (all phases)
 
 - DNA is the only state; every feature lands with schema + migration + test.

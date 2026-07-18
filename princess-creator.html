@@ -185,10 +185,23 @@
       border-color: var(--gold-soft); box-shadow: 0 0 18px rgba(232, 182, 76, 0.22);
     }
     #emotes {
-      position: fixed; bottom: 18px; right: 16px; z-index: 10;
-      display: flex; flex-direction: column; gap: 6px; padding: 10px;
+      position: fixed; bottom: 18px; right: 16px; z-index: 10; width: 252px;
+      display: flex; flex-direction: column; gap: 7px; padding: 10px;
+      max-height: 46vh;
     }
-    #emote-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    #anim-states { gap: 4px; }
+    #anim-actions { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 3px; }
+    .anim-group-label { font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--gold); opacity: 0.8; margin-top: 2px; }
+    .anim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    #anim-tweaks { border-top: 1px solid var(--panel-border); padding-top: 6px; }
+    #anim-tweaks .row label { width: 64px; font-size: 11px; }
+    #anim-tweaks .tweak-title { font-size: 10.5px; color: var(--ink-dim); margin-bottom: 3px; }
+    .anim-select {
+      width: 100%; background: var(--plum); color: var(--ink);
+      border: 1px solid var(--panel-border); border-radius: 9px; padding: 6px 8px;
+      font: 600 12px 'Quicksand', sans-serif; outline: none; cursor: pointer; margin-bottom: 2px;
+    }
+    .anim-select:focus { border-color: var(--gold-soft); }
     .emote-btn {
       background: var(--plum); color: var(--ink); border: 1px solid transparent;
       border-radius: 10px; padding: 7px 10px; font: 600 11.5px 'Quicksand', sans-serif;
@@ -267,8 +280,10 @@
   <div id="dock" class="panel"></div>
 
   <div id="emotes" class="panel">
-    <div id="emote-buttons"></div>
-    <button id="btn-walk" class="emote-btn">🚶 Walk</button>
+    <div class="section-title" style="margin-bottom:2px">Animations</div>
+    <div id="anim-states" class="chips"></div>
+    <div id="anim-actions"></div>
+    <div id="anim-tweaks"></div>
   </div>
 
   <script type="module" src="/src/princess-creator/main.ts"></script>
