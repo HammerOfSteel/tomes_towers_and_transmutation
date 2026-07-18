@@ -34,6 +34,7 @@ import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
+import { CreativeMode } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
@@ -669,10 +670,18 @@ async function main() {
 
   // ── Game Menu (ESC hub) + legacy Pause Menu ────────────────────────────
   const pauseMenu = new PauseMenu({
-    onOpenEditor:   () => editMode.toggle(),
-    onOpenDevPanel: () => devPanel.open(),
-    onOpenStats:    () => statPanel.open(progression),
-    onSave:         () => autoSave(),
+    onOpenEditor:       () => editMode.toggle(),
+    onOpenDevPanel:     () => devPanel.open(),
+    onOpenStats:        () => statPanel.open(progression),
+    onSave:             () => autoSave(),
+    onEnterCreative:    () => {
+      if (!import.meta.env.DEV) return;
+      CreativeMode.enter();
+    },
+    onOpenBackrooms:    () => {
+      if (!import.meta.env.DEV) return;
+      CreativeMode.enterBackroom('spell_lab');
+    },
   });
 
   const gameMenu = new GameMenu({
@@ -811,6 +820,19 @@ async function main() {
 
     // A4: preload KayKit dungeon props so first room has assets ready
     preloadDungeonProps(assetLoader).catch(() => { /* non-fatal */ });
+
+    // Initialise creative mode with game context (dev only)
+    if (import.meta.env.DEV) {
+      CreativeMode.init({
+        player:       player as Parameters<typeof CreativeMode.init>[0]['player'],
+        regularHUD:   { el: (hud as unknown as { el?: HTMLElement }).el },
+        sceneManager: sceneManager as Parameters<typeof CreativeMode.init>[0]['sceneManager'],
+        scene,
+        camera:       cameraRig.camera,
+        canvas:       renderer.domElement,
+        openCharSheet: () => statPanel.open(progression),
+      });
+    }
 
     gameLoop.start();
   }
@@ -1424,6 +1446,14 @@ async function main() {
     // Ignore all game key routing while the main menu is visible
     if (mainMenu.isVisible) return;
 
+    // Ctrl+Shift+C — toggle creative mode (dev builds only)
+    if (import.meta.env.DEV && e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      if (CreativeMode.active) CreativeMode.exit();
+      else                     CreativeMode.enter();
+      return;
+    }
+
     if (e.key === 'Escape') {
       if (bookReader.isOpen) {
         bookReader.close();         // close book → game
@@ -1453,10 +1483,13 @@ async function main() {
     } else if (e.key === 'h' || e.key === 'H') {
       if (!gameMenu.isOpen && !editMode.isActive) controlsOverlay.toggle();
     } else if (e.key === 'k' || e.key === 'K') {
+      if (import.meta.env.DEV && CreativeMode.active) return;
       if (!gameMenu.isOpen && !editMode.isActive) spellBook.toggle();
     } else if (e.key === 'p' || e.key === 'P') {
+      if (import.meta.env.DEV && CreativeMode.active) return;
       if (!gameMenu.isOpen && !editMode.isActive) statPanel.toggle(progression);
     } else if (e.key === 't' || e.key === 'T') {
+      if (import.meta.env.DEV && CreativeMode.active) return;
       if (!gameMenu.isOpen && !editMode.isActive) talentTree.toggle(progression, talentSystem);
     } else if (e.key === '`' || e.key === '~') {
       if (!gameMenu.isOpen) editMode.toggle(); // shortcut: direct editor toggle
@@ -2398,6 +2431,9 @@ async function main() {
 
     // 10. Render
     composer.render(dt);
+
+    // 11. Creative mode per-frame update (dev only)
+    if (import.meta.env.DEV) CreativeMode.update(dt);
   });
   // Game loop is started by MainMenu.onPlay — not here.
 }

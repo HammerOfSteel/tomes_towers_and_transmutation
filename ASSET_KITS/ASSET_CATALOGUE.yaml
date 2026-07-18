@@ -1,0 +1,410 @@
+---
+# Asset Kits Catalogue — Tomes, Towers & Transmutation
+# Source: ASSET_KITS/
+# Last updated: 2026-07-17
+# All paths relative to project root.
+# extracted_to: null means not yet extracted to public/assets/
+
+kaykit:
+  base_path: ASSET_KITS/KayKit_Kits
+  kits:
+    - id: kaykit_forest_nature
+      archive: KayKit_Forest_Nature_Pack_1.0_FREE.zip
+      models: 420
+      sample: [Bush_1_A_Color1, Grass_1_A_Color1, Rock_1_A_Color1, Tree_1_A_Color1, Tree_Bare_1_A_Color1]
+      format: gltf
+      game_use: Overworld biomes — forest, bog, highland. Trees, rocks, grass, bushes.
+      extracted_to: public/assets/kaykit_nature
+      status: extracted
+
+    - id: kaykit_dungeon_pack
+      archive: KayKit Dungeon Pack 1.0.zip
+      models: 636
+      sample: [character_barbarian, character_knight, wall, floor_tile_large, torch_lit, chest, pillar]
+      format: gltf
+      game_use: Dungeon rooms — walls, floors, props, torches, chests, characters.
+      extracted_to: public/assets/kaykit_dungeon
+      status: extracted
+
+    - id: kaykit_medieval_builder
+      archive: KayKit Medieval Builder Pack 1.0.zip
+      models: 681
+      sample: [archeryrange, barracks, bridge, castle, market, house_large]
+      format: gltf+glb
+      game_use: Settlement buildings — full medieval town structures.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_halloween_bits
+      archive: KayKit_HalloweenBits_1.0_FREE.zip
+      models: 259
+      sample: [arch, arch_gate, gravestone, pumpkin, dead_tree, cauldron]
+      format: gltf
+      game_use: Graveyard biome / undead zone. Gravestones, spooky gates, pumpkins.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_city_builder_bits
+      archive: KayKit_City_Builder_Bits_1.0_FREE.zip
+      models: 184
+      sample: [bench, box_A, building_A, market_stall, road, wall_fence]
+      format: gltf
+      game_use: Settlement props — market stalls, fountains, roads, fences.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_medieval_hexagon
+      archive: KayKit_Medieval_Hexagon_Pack_1.0_FREE.zip
+      models: 926
+      sample: [building_archeryrange, building_barracks, building_castle, building_church, hex_grass, hex_forest]
+      format: gltf
+      game_use: Overworld hex-map — hexagonal terrain tiles, castles, towers, moats.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_rpg_tools_bits
+      archive: KayKit_RPGToolsBits_1.0_FREE.zip
+      models: 206
+      sample: [anvil, axe, blueprint, chest, coin_bag, potion, scroll, sword]
+      format: gltf
+      game_use: Dungeon loot props / smithy / RPG items.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_resource_bits
+      archive: KayKit_ResourceBits_1.0_FREE.zip
+      models: 304
+      sample: [Copper_Bar, Iron_Bar, Gold_Bar, Wood_Log, Stone_Block]
+      format: gltf
+      game_use: Resource gathering / crafting props for overworld nodes.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_fantasy_weapons_bits
+      archive: KayKit_FantasyWeaponsBits_1.0_FREE.zip
+      models: 124
+      sample: [arrow_A, axe_A, bow_A, dagger_A, staff_A, sword_A]
+      format: gltf
+      game_use: Weapon loot props / decoration.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_furniture_bits
+      archive: KayKit_Furniture_Bits_1.0_FREE.zip
+      models: 212
+      sample: [armchair, bed_double_A, desk, shelf_A, sofa, table_A]
+      format: gltf
+      game_use: House interiors — furniture for cottages, inns, manors.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_block_bits
+      archive: KayKit_BlockBits_1.0_FREE.zip
+      models: 160
+      sample: [bricks_A, bricks_B, colored_block_blue, colored_block_green, platform_A]
+      format: gltf
+      game_use: Procedural fill geometry / generic building blocks.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_spooktober
+      archive: KayKit Spooktober Seasonal Pack 1.1.zip
+      models: 152
+      sample: [character_jack, character_witch, candleBundle, candleLarge, lantern_jack]
+      format: gltf+glb
+      game_use: Halloween / undead seasonal props.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_prototype_bits
+      archive: KayKit_Prototype_Bits_1.1_FREE.zip
+      models: 293
+      sample: [Barrel_A, Barrel_B, Box_A, Crate_A, Ramp_A]
+      format: gltf
+      game_use: Generic prototype props — barrels, boxes, crates.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_restaurant_bits
+      archive: KayKit_Restaurant_Bits_1.0_FREE.zip
+      models: 582
+      sample: [bowl, chair_A, counter, plate, table_round]
+      format: gltf
+      game_use: Tavern / inn interior props.
+      extracted_to: null
+      status: not_extracted
+
+    # Lower priority — not fantasy-themed
+    - id: kaykit_mini_game_variety
+      archive: KayKit Mini-Game Variety Pack 1.2.zip
+      models: 411
+      game_use: Mini-game props
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_board_game_bits
+      archive: KayKit_BoardGameBits_1.0_FREE.zip
+      models: 648
+      game_use: Board-game pieces
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_platformer_pack
+      archive: KayKit_Platformer_Pack_1.0_FREE.zip
+      models: 1498
+      game_use: Platformer structures
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_holiday_bits
+      archive: KayKit_Holiday_Bits_1.0_FREE.zip
+      models: 400
+      game_use: Seasonal holiday props
+      extracted_to: null
+      status: not_extracted
+
+    - id: kaykit_space_base_bits
+      archive: KayKit_Space_Base_Bits_1.0_FREE.zip
+      models: 244
+      game_use: Sci-fi base modules
+      extracted_to: null
+      status: not_extracted
+
+kenney_non_modular:
+  base_path: ASSET_KITS/Kenney_Kits
+  kits:
+    - id: kenney_fantasy_town_kit
+      archive: kenney_fantasy-town-kit_2.0.zip
+      models: 501
+      sample: [balcony-wall, banner-green, banner-red, road, roof-flat, roof-gable, stall-green, wall, wall-door, wall-window-glass]
+      format: glb
+      game_use: Settlement buildings + streets — houses, inns, shops, market stalls, roads.
+      extracted_to: public/assets/town
+      status: extracted
+
+    - id: kenney_furniture_kit
+      archive: kenney_furniture-kit.zip
+      models: 420
+      sample: [bedDouble, bookcase, chair, couch, desk, shelf, table]
+      format: glb
+      game_use: House interiors — all furniture types for cottages, inns, studies.
+      extracted_to: public/assets/furniture
+      status: extracted
+
+    - id: kenney_graveyard_kit
+      archive: kenney_graveyard-kit_5.0.zip
+      models: 273
+      sample: [altar-stone, altar-wood, bench, gravestone-cross, gravestone-round, mausoleum, tree-dead]
+      format: glb
+      game_use: Graveyard biome — gravestones, altars, dead trees, mausoleums.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_survival_kit
+      archive: kenney_survival-kit.zip
+      models: 240
+      sample: [barrel, bedroll, campfire, log-stack, tent, tool-axe, tool-shovel]
+      format: glb
+      game_use: Overworld camps — campfire clearings, tents, survival props.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_tower_defense_kit
+      archive: kenney_tower-defense-kit.zip
+      models: 480
+      sample: [detail-crystal, tower-round, tower-square, wall-corner, wall-gate, cannon]
+      format: glb
+      game_use: Tower exterior / outpost zones / Baron's Keep defensive structures.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_pirate_kit
+      archive: kenney_pirate-kit.zip
+      models: 216
+      sample: [barrel, boat-row-large, cannon, chest, dock, sail]
+      format: glb
+      game_use: Coastal settlement / pirate port.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_mini_dungeon
+      archive: kenney_mini-dungeon.zip
+      models: 75
+      sample: [banner, barrel, corridor, door, room-small, stairs]
+      format: glb
+      game_use: Mini-sized dungeon tiles for tight corridors / sub-dungeons.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_mini_forest
+      archive: kenney_mini-forest_1.0.zip
+      models: 66
+      sample: [bridge, building-platform, tree-pine, tree-round, rock]
+      format: glb
+      game_use: Mini forest props — small-scale nature pieces.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_platformer_kit
+      archive: kenney_platformer-kit.zip
+      models: 459
+      sample: [barrel, block-grass, coin, spike, spring]
+      format: glb
+      game_use: Platformer props (secondary use for overworld decorations)
+      extracted_to: null
+      status: not_extracted
+
+    # Lower priority
+    - id: kenney_city_kit_commercial
+      archive: kenney_city-kit-commercial_2.1.zip
+      models: 123
+      game_use: Commercial city buildings
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_city_kit_industrial
+      archive: kenney_city-kit-industrial_1.0.zip
+      models: 75
+      game_use: Industrial city buildings
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_city_kit_suburban
+      archive: kenney_city-kit-suburban_20.zip
+      models: 120
+      game_use: Suburban city buildings
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_coaster_kit
+      archive: kenney_coaster-kit.zip
+      models: 549
+      game_use: Theme park coaster
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_blaster_kit
+      archive: kenney_blaster-kit_2.1.zip
+      models: 120
+      game_use: Sci-fi blasters
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_car_kit
+      archive: kenney_car-kit.zip
+      models: 150
+      game_use: Vehicles
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_mini_arcade
+      archive: kenney_mini-arcade.zip
+      models: 60
+      game_use: Arcade machines
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_mini_arena
+      archive: kenney_mini-arena.zip
+      models: 66
+      game_use: Arena props
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_mini_market
+      archive: kenney_mini-market.zip
+      models: 60
+      game_use: Market shop interior (secondary)
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_train_kit
+      archive: kenney_train-kit.zip
+      models: 309
+      game_use: Train tracks
+      extracted_to: null
+      status: not_extracted
+
+kenney_modular:
+  base_path: ASSET_KITS/Kenney_Kits/Modular
+  kits:
+    - id: kenney_castle_kit
+      archive: kenney_castle-kit.zip
+      models: 228
+      sample: [bridge-draw, door, flag, gate, metal-gate, tower-square-base, tower-square-mid, tower-square-roof, wall, wall-corner, wall-narrow]
+      format: glb
+      game_use: Wizard tower exterior / Baron's Keep — modular castle pieces.
+      extracted_to: public/assets/castle
+      status: extracted
+
+    - id: kenney_modular_dungeon_kit
+      archive: kenney_modular-dungeon-kit_1.0.zip
+      models: 117
+      sample: [corridor-corner, corridor-end, corridor-intersection, corridor-wide, room-large, room-small, stairs, gate-door]
+      format: glb
+      game_use: Full dungeon tile set — corridors, rooms, doors, traps, stairs.
+      extracted_to: public/assets/dungeon
+      status: extracted
+
+    - id: kenney_modular_cave_kit
+      archive: kenney_modular-cave-kit_1.0.zip
+      models: 120
+      sample: [corridor-corner, corridor-end, corridor-intersection, room-small, stalactite, water-tile]
+      format: glb
+      game_use: Bog shrine / mine dungeon — cave tiles, stalactites, underground water.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_building_kit
+      archive: kenney_building-kit.zip
+      models: 237
+      sample: [barricade-doorway-a, wall-flat, window-a, floor, roof-corner, roof-edge]
+      format: glb
+      game_use: House construction supplement — additional modular wall/roof/floor pieces.
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_city_kit_roads
+      archive: kenney_city-kit-roads.zip
+      models: 216
+      sample: [bridge-pillar, road-straight, road-corner, road-intersection, road-end]
+      format: glb
+      game_use: Overworld roads / cobblestone paths connecting settlements.
+      extracted_to: null
+      status: not_extracted
+
+    # Lower priority
+    - id: kenney_factory_kit
+      archive: kenney_factory-kit_3.0.zip
+      models: 429
+      game_use: Factory / industrial modular
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_holiday_kit
+      archive: kenney_holiday-kit.zip
+      models: 297
+      game_use: Holiday cabin kit
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_minigolf_kit
+      archive: kenney_minigolf-kit.zip
+      models: 378
+      game_use: Mini-golf course
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_modular_space_kit
+      archive: kenney_modular-space-kit_1.0.zip
+      models: 120
+      game_use: Modular space station
+      extracted_to: null
+      status: not_extracted
+
+    - id: kenney_toy_car_kit
+      archive: kenney_toy-car-kit.zip
+      models: 471
+      game_use: Toy car track
+      extracted_to: null
+      status: not_extracted

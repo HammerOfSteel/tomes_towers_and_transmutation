@@ -53,6 +53,12 @@ const LS_BINDINGS_KEY = 'ttt_key_bindings';
  * Call dispose() when removing to clean up DOM listeners.
  */
 export class InputManager {
+  /**
+   * When true, attack (LMB) and castSpell (RMB) are suppressed.
+   * Set by creative mode to prevent fighting while placing assets.
+   */
+  static suppressAttackAndSpell = false;
+
   private readonly heldKeys = new Set<string>();
   private readonly heldMouseButtons = new Set<number>();
   private mouseX = 0;
@@ -148,10 +154,10 @@ export class InputManager {
       moveRight:    this.heldKeys.has(b.moveRight)    || this.heldKeys.has('ArrowRight'),
       run:          this.heldKeys.has(b.run)      || this.heldKeys.has('ShiftRight'),
       jump:         this.heldKeys.has(b.jump),
-      attack:       this.heldMouseButtons.has(0),
+      attack:       !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(0),
       dodge:        this.heldKeys.has(b.dodge),
       interact:     this.heldKeys.has(b.interact),
-      castSpell:    this.heldMouseButtons.has(2),
+      castSpell:    !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(2),
       activeSlot:   this._activeSlot,
       ability1:     this.heldKeys.has('KeyQ'),
       ability2:     this.heldKeys.has('KeyR'),

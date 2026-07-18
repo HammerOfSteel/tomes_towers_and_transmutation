@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── JS-driven states (can't be Tailwind utilities — applied by JS) ─────── */
+
+/* Mode tabs */
+.mode-tab { @apply flex-1 py-2 px-1 text-xs font-medium text-base-content/40 hover:text-base-content border-b-2 border-transparent transition-colors cursor-pointer bg-transparent; }
+.mode-tab.active { @apply text-primary border-primary; }
+
+/* Camera / angle buttons */
+.cam-btn { @apply flex-1 btn btn-xs btn-ghost text-base-content/50; }
+.cam-btn.active { @apply bg-primary/20 text-primary border-primary/40; }
+
+/* Role filter buttons */
+.role-btn { @apply btn btn-xs btn-ghost text-base-content/50; }
+.role-btn.active { @apply bg-primary text-primary-content; }
+
+/* Animation buttons */
+.anim-btn { @apply btn btn-xs btn-ghost text-base-content/60; }
+.anim-btn.playing { @apply bg-primary text-primary-content; }
+.anim-btn.stop { @apply bg-error/20 text-error; }
+
+/* Editor sub-tabs */
+.editor-sub { @apply flex-1 py-1 px-0.5 text-[10px] text-base-content/30 border-b-2 border-transparent bg-transparent hover:text-base-content cursor-pointer transition-colors; }
+.editor-sub.active { @apply text-warning border-warning; }
+
+/* Editor tools */
+.ed-tool { @apply btn btn-xs btn-ghost text-base-content/50; }
+.ed-tool.active { @apply bg-warning/20 text-warning; }
+
+/* Loading overlay */
+#loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+/* ─── Kit tree (JS-generated) ───────────────────────────────────────────── */
+.kit-all-btn { @apply px-3 py-1.5 text-xs cursor-pointer text-base-content/60 border-b border-base-300/60 hover:bg-primary/10 hover:text-primary transition-colors; }
+.kit-all-btn.active { @apply bg-primary/15 text-primary font-medium; }
+
+.kit-group-hdr { @apply flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-base-content/60 cursor-pointer bg-base-300/50 border-b border-base-300/60 select-none hover:bg-primary/10 hover:text-primary transition-colors; }
+.kit-group-hdr.active { @apply bg-primary/15 text-primary; }
+.kit-group-icon { @apply text-[9px] text-base-content/30; }
+.kit-count { @apply ml-auto text-[9px] font-mono text-base-content/30; }
+
+.kit-item { @apply flex items-center gap-1.5 py-1 px-2 pl-6 text-[10px] cursor-pointer text-base-content/40 border-b border-base-300/30 hover:bg-base-content/5 hover:text-base-content/80 transition-colors; }
+.kit-item.active { @apply bg-primary/15 text-primary; }
+.kit-item.unextracted { @apply opacity-40 cursor-default; }
+.kit-item.unextracted:hover { @apply bg-transparent text-base-content/40; }
+.kit-item-label { @apply flex-1 overflow-hidden text-ellipsis whitespace-nowrap; }
+.kit-extracted { @apply text-success text-[9px] ml-1; }
+
+/* ─── Asset / model lists (JS-generated) ────────────────────────────────── */
+.env-kit-header { @apply px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-base-content/25 bg-base-300/80; }
+
+#env-list { list-style: none; padding: 0; margin: 0; }
+#env-list li { @apply flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer text-xs text-base-content/60 border-b border-base-300/40 hover:bg-base-content/5 hover:text-base-content transition-colors; }
+#env-list li.active { @apply bg-primary/15 text-primary; }
+#env-list li.env-kit-header { cursor: default; }
+#env-list li.env-kit-header:hover { @apply bg-base-300/80 text-base-content/25; }
+
+#model-list { list-style: none; padding: 0; margin: 0; }
+#model-list li { @apply flex items-center gap-1.5 px-2.5 py-1.5 cursor-pointer text-xs text-base-content/60 border-b border-base-300/40 hover:bg-base-content/5 transition-colors; }
+#model-list li.active { @apply bg-primary/15 text-base-content; }
+#model-list li .pack-tag { @apply text-[10px] text-base-content/25 ml-auto whitespace-nowrap; }
+#model-list li .status-dot { @apply w-2 h-2 rounded-full flex-shrink-0 bg-base-content/20; }
+#model-list li.status-ok   .status-dot { @apply bg-success; }
+#model-list li.status-warn .status-dot { @apply bg-warning; }
+#model-list li.status-err  .status-dot { @apply bg-error; }
+
+#editor-asset-list { list-style: none; padding: 0; margin: 0; }
+#editor-asset-list li { @apply flex items-center gap-1.5 px-2 py-1 text-xs text-base-content/60 cursor-pointer border-b border-base-300/30 hover:bg-base-content/5 hover:text-base-content transition-colors; }
+#editor-asset-list li.placing { @apply bg-warning/15 text-warning; }
+#editor-asset-list li.env-kit-header { @apply cursor-default bg-base-300/80 text-base-content/25; }
+
+/* ─── Stats grids (JS-generated innerHTML) ──────────────────────────────── */
+#stats-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin-bottom: 8px; font-size: 0.72rem; }
+#stats-grid .lbl { @apply text-base-content/30; }
+#stats-grid .val { @apply text-primary/80 font-mono; }
+#stats-grid .val.ok   { @apply text-success; }
+#stats-grid .val.warn { @apply text-warning; }
+#stats-grid .val.err  { @apply text-error; }
+
+#env-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin-bottom: 6px; font-size: 11px; }
+#env-stats-grid .lbl { @apply text-base-content/30; }
+#env-stats-grid .val { @apply text-primary/80 font-mono; }
+
+/* ─── Inspector fields (JS-generated) ──────────────────────────────────── */
+.ed-field { @apply flex items-center gap-2 my-1; }
+.ed-field label { @apply text-base-content/30 text-[10px] min-w-[50px]; }
+.ed-field input, .ed-field select { @apply bg-base-300 border border-base-content/10 text-base-content text-xs px-1 py-0.5 rounded flex-1 outline-none focus:border-primary/50; }
+
+/* ─── Section title label ────────────────────────────────────────────────── */
+.section-title { @apply text-[10px] font-bold uppercase tracking-widest text-base-content/25 mt-2 mb-1; }

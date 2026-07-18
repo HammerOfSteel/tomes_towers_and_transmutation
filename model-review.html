@@ -1,350 +1,119 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="night">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Model Review — TT&T</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; background: #0e0e14; color: #c0a0f0; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
-
-    #app { display: flex; height: 100vh; }
-
-    /* ── Viewport ── */
-    #viewport-wrap {
-      flex: 1;
-      position: relative;
-      background: #141820;
-    }
-    #c { display: block; width: 100%; height: 100%; }
-
-    /* ── Side panel ── */
-    #side-panel {
-      width: 300px;
-      flex-shrink: 0;
-      background: #12101a;
-      border-left: 1px solid #2a1e40;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    /* ── Mode tabs ──────────────────────────────────── */
-    #mode-tabs {
-      display: flex;
-      border-bottom: 1px solid #2a1e40;
-      flex-shrink: 0;
-    }
-    .mode-tab {
-      flex: 1;
-      padding: 7px 4px;
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      color: #665588;
-      font-size: 11px;
-      cursor: pointer;
-      transition: color .15s, border-color .15s;
-    }
-    .mode-tab:hover { color: #aaa; }
-    .mode-tab.active { color: #c090ff; border-bottom-color: #8844cc; }
-    #chars-panel, #env-panel {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      overflow: hidden;
-    }
-    /* ── Environment panel ──────────────────────────── */
-    #env-filter-bar { padding: 6px 8px; border-bottom: 1px solid #1e1630; }
-    #env-filter-bar input { width: 100%; background: #1a1626; border: 1px solid #2a1e40; color: #eee; padding: 4px 8px; border-radius: 3px; font-size: 12px; }
-    #env-cat-bar { display: flex; flex-wrap: wrap; gap: 3px; padding: 5px 6px; border-bottom: 1px solid #1e1630; }
-    .env-cat-btn { font-size: 10px; padding: 2px 6px; background: #1a1626; border: 1px solid #2a1e40; color: #665588; border-radius: 3px; cursor: pointer; }
-    .env-cat-btn.active { background: #2a1645; color: #c090ff; border-color: #6633aa; }
-    #env-list-section { flex: 1; overflow-y: auto; }
-    #env-list { list-style: none; padding: 0; margin: 0; }
-    #env-list li { display: flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer; border-bottom: 1px solid #1a1626; font-size: 11px; color: #998ab8; }
-    #env-list li:hover { background: #1e1830; color: #eee; }
-    #env-list li.active { background: #2a1645; color: #e0d0ff; }
-    #env-list li.status-miss { color: #ff6666; }
-    #env-info-section { padding: 8px 10px; border-top: 1px solid #2a1e40; font-size: 11px; }
-    #env-asset-title { font-size: 13px; color: #ddd; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
-    #env-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin-bottom: 6px; color: #998ab8; }
-    #env-stats-grid .lbl { color: #554466; }
-    #env-stats-grid .val { color: #c8b8e8; font-family: monospace; }
-    #env-scale-controls { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
-    /* ── Editor mode ─────────────────────────────────── */
-    #editor-sub-tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid #2a1e40; }
-    .editor-sub { flex: 1; padding: 5px 2px; background: transparent; border: none; border-bottom: 2px solid transparent; color: #554466; font-size: 10px; cursor: pointer; }
-    .editor-sub:hover { color: #aaa; }
-    .editor-sub.active { color: #ffcc44; border-bottom-color: #aa8800; }
-    #editor-asset-panel { flex: 1; overflow-y: auto; border-bottom: 1px solid #2a1e40; }
-    #editor-asset-search { width: 100%; background: #1a1626; border: none; border-bottom: 1px solid #2a1e40; color: #eee; padding: 5px 8px; font-size: 12px; box-sizing: border-box; }
-    #editor-asset-cats { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 5px; }
-    .ed-cat-btn { font-size: 9px; padding: 2px 5px; background: #1a1626; border: 1px solid #2a1e40; color: #554466; border-radius: 2px; cursor: pointer; }
-    .ed-cat-btn.active { background: #2a1a00; color: #ffcc44; border-color: #aa8800; }
-    #editor-asset-list { list-style: none; padding: 0; margin: 0; }
-    #editor-asset-list li { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; color: #998ab8; cursor: pointer; border-bottom: 1px solid #110d1a; }
-    #editor-asset-list li:hover { background: #1e1830; color: #eee; }
-    #editor-asset-list li.placing { background: #2a2000; color: #ffcc44; }
-    #editor-toolbar { display: flex; align-items: center; gap: 3px; padding: 4px 6px; background: #0e0c16; border-top: 1px solid #2a1e40; flex-wrap: wrap; flex-shrink: 0; }
-    .ed-tool { background: transparent; border: 1px solid #2a1e40; color: #665588; padding: 3px 7px; border-radius: 3px; cursor: pointer; font-size: 13px; }
-    .ed-tool:hover { color: #eee; border-color: #6633aa; }
-    .ed-tool.active { background: #2a1645; color: #ffcc44; border-color: #aa8800; }
-    .ed-sep { color: #2a1e40; font-size: 16px; padding: 0 2px; }
-    #editor-inspector { padding: 6px 8px; border-top: 1px solid #2a1e40; font-size: 11px; min-height: 80px; flex-shrink: 0; }
-    #ed-insp-title { color: #998ab8; margin-bottom: 4px; font-size: 12px; }
-    .ed-field { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
-    .ed-field label { color: #554466; min-width: 50px; font-size: 10px; }
-    .ed-field input, .ed-field select { background: #1a1626; border: 1px solid #2a1e40; color: #eee; padding: 2px 4px; font-size: 11px; border-radius: 2px; flex: 1; }
-    #editor-status-bar { display: flex; gap: 8px; padding: 3px 8px; background: #0e0c16; border-top: 1px solid #2a1e40; font-size: 9px; color: #554466; flex-shrink: 0; }
-
-    /* ── Model list ── */
-    #model-list-section {
-      flex: 1;
-      overflow-y: auto;
-      border-bottom: 1px solid #2a1e40;
-    }
-    #model-list { list-style: none; }
-    #model-list li {
-      padding: 5px 10px;
-      cursor: pointer;
-      font-size: .75rem;
-      border-bottom: 1px solid #1a1228;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    #model-list li:hover { background: #1e1530; }
-    #model-list li.active { background: #2a1848; color: #e0b8ff; }
-    #model-list li .pack-tag {
-      font-size: .62rem;
-      color: #4a3860;
-      margin-left: auto;
-      white-space: nowrap;
-    }
-    #model-list li .status-dot {
-      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-      background: #333;
-    }
-    #model-list li.status-ok   .status-dot { background: #40e080; }
-    #model-list li.status-warn .status-dot { background: #e0a030; }
-    #model-list li.status-err  .status-dot { background: #e04040; }
-
-    /* ── Stats & controls ── */
-    #info-section {
-      padding: 10px;
-      font-size: .72rem;
-      flex-shrink: 0;
-    }
-    #model-title {
-      font-size: .9rem;
-      font-weight: 700;
-      color: #e0b8ff;
-      margin-bottom: 6px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    #stats-grid {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 2px 8px;
-      color: #786090;
-      margin-bottom: 8px;
-    }
-    #stats-grid .lbl { color: #4a3860; }
-    #stats-grid .val { color: #c0a0f0; }
-    #stats-grid .val.ok   { color: #40e080; }
-    #stats-grid .val.warn { color: #e0a030; }
-    #stats-grid .val.err  { color: #e04040; }
-    .section-title {
-      font-size: .65rem;
-      font-weight: 700;
-      color: #4a3860;
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin: 8px 0 4px;
-    }
-
-    /* ── Anim controls ── */
-    #anim-controls { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
-    .anim-btn {
-      font-size: .65rem;
-      padding: 2px 7px;
-      background: #1e1530;
-      border: 1px solid #3a2860;
-      border-radius: 3px;
-      color: #c0a0f0;
-      cursor: pointer;
-    }
-    .anim-btn:hover { background: #2a1848; }
-    .anim-btn.playing { background: #7040cc; border-color: #9060ee; color: #fff; }
-    .anim-btn.stop { background: #3a1010; border-color: #601010; color: #e06060; }
-
-    /* ── Camera preset buttons ── */
-    #cam-controls { display: flex; gap: 3px; margin-bottom: 6px; }
-    .cam-btn {
-      font-size: .65rem;
-      padding: 2px 7px;
-      background: #1e1530;
-      border: 1px solid #3a2860;
-      border-radius: 3px;
-      color: #786090;
-      cursor: pointer;
-      flex: 1;
-      text-align: center;
-    }
-    .cam-btn:hover { background: #2a1848; color: #c0a0f0; }
-    .cam-btn.active { background: #241a3a; color: #c0a0f0; }
-
-    /* ── Filter / role ── */
-    #filter-bar {
-      display: flex;
-      gap: 4px;
-      padding: 6px 10px;
-      border-bottom: 1px solid #2a1e40;
-      flex-shrink: 0;
-    }
-    #filter-inp {
-      flex: 1;
-      background: #1a1228;
-      border: 1px solid #3a2860;
-      border-radius: 3px;
-      color: #c0a0f0;
-      font-size: .72rem;
-      padding: 2px 6px;
-    }
-    .role-btn {
-      font-size: .65rem;
-      padding: 2px 6px;
-      background: #1a1228;
-      border: 1px solid #3a2860;
-      border-radius: 3px;
-      color: #786090;
-      cursor: pointer;
-    }
-    .role-btn.active { background: #7040cc; color: #fff; border-color: #9060ee; }
-
-    /* ── Viewport overlay ── */
-    #loading-overlay {
-      position: absolute; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(10,8,16,.85);
-      font-size: 1rem;
-      color: #786090;
-      pointer-events: none;
-      transition: opacity .3s;
-    }
-    #loading-overlay.hidden { opacity: 0; }
-
-    #nav-bar {
-      position: absolute;
-      bottom: 10px; left: 50%;
-      transform: translateX(-50%);
-      display: flex; gap: 8px;
-    }
-    .nav-btn {
-      font-size: .75rem;
-      padding: 4px 14px;
-      background: rgba(20,16,30,.85);
-      border: 1px solid #3a2860;
-      border-radius: 3px;
-      color: #c0a0f0;
-      cursor: pointer;
-      backdrop-filter: blur(4px);
-    }
-    .nav-btn:hover { background: rgba(112,64,204,.5); }
-
-    #scale-info {
-      position: absolute;
-      top: 10px; left: 10px;
-      font-size: .7rem;
-      color: #4a3860;
-      pointer-events: none;
-    }
-
-    #error-banner {
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      background: #400808;
-      color: #ff8080;
-      font-size: .75rem;
-      padding: 4px 10px;
-      display: none;
-    }
-  </style>
 </head>
-<body>
-  <div id="app">
-    <div id="viewport-wrap">
-      <canvas id="c"></canvas>
-      <div id="loading-overlay">Loading…</div>
-      <div id="error-banner"></div>
-      <div id="scale-info"></div>
-      <div id="nav-bar">
-        <button class="nav-btn" id="btn-prev">◄ Prev</button>
-        <button class="nav-btn" id="btn-next">Next ►</button>
+<body class="bg-base-300 text-base-content overflow-hidden h-screen">
+  <div id="app" class="flex h-screen overflow-hidden">
+
+    <!-- ── 3D Viewport ──────────────────────────────────────────── -->
+    <div id="viewport-wrap" class="flex-1 relative overflow-hidden">
+      <canvas id="c" class="block w-full h-full"></canvas>
+
+      <div id="loading-overlay"
+           class="absolute inset-0 flex items-center justify-center bg-base-300/80 backdrop-blur-sm text-base-content/40 text-sm pointer-events-none transition-opacity duration-300">
+        Loading…
+      </div>
+
+      <div id="error-banner"
+           class="absolute top-0 inset-x-0 bg-error/90 text-error-content text-xs px-3 py-1.5 z-10"
+           style="display:none"></div>
+
+      <div id="scale-info"
+           class="absolute top-2 left-2 text-[10px] text-base-content/25 pointer-events-none font-mono"></div>
+
+      <div id="nav-bar" class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
+        <button class="btn btn-xs btn-ghost btn-outline opacity-60 hover:opacity-100" id="btn-prev">◄ Prev</button>
+        <button class="btn btn-xs btn-ghost btn-outline opacity-60 hover:opacity-100" id="btn-next">Next ►</button>
       </div>
     </div>
-    <div id="side-panel">
-      <!-- ── Mode tabs ──────────────────────────────────── -->
-      <div id="mode-tabs">
-        <button class="mode-tab active" id="tab-chars" data-mode="chars">🧙 Characters</button>
-        <button class="mode-tab"        id="tab-env"   data-mode="env">🌳 Environment</button>
+
+    <!-- ── Side Panel ───────────────────────────────────────────── -->
+    <div id="side-panel"
+         class="w-[300px] flex-shrink-0 bg-base-200 border-l border-base-300 flex flex-col overflow-hidden">
+
+      <!-- Mode tabs -->
+      <div id="mode-tabs" class="flex flex-shrink-0 border-b border-base-300">
+        <button class="mode-tab active" id="tab-chars"  data-mode="chars">🧙 Characters</button>
+        <button class="mode-tab"        id="tab-env"    data-mode="env">🌳 Environment</button>
         <button class="mode-tab"        id="tab-editor" data-mode="editor">✏️ Editor</button>
       </div>
 
-      <!-- ── Characters mode ───────────────────────────── -->
-      <div id="chars-panel">
-        <div id="filter-bar">
-          <input id="filter-inp" type="text" placeholder="filter…" />
-          <button class="role-btn active" data-role="all">All</button>
-          <button class="role-btn" data-role="enemy">⚔</button>
-          <button class="role-btn" data-role="npc">👥</button>
-          <button class="role-btn" data-role="player">🧙</button>
-          <button class="role-btn" id="btn-anim-only" title="Show only animated models (default)">🎬</button>
+      <!-- ── Characters Panel ─────────────────────────────────── -->
+      <div id="chars-panel" class="flex flex-col flex-1 overflow-hidden">
+
+        <!-- Filter bar -->
+        <div class="flex items-center gap-1 px-2 py-1.5 border-b border-base-300 flex-shrink-0">
+          <input id="filter-inp" type="text" placeholder="filter…"
+                 class="input input-xs input-ghost flex-1 text-xs min-w-0 focus:outline-none focus:bg-base-300/50" />
+          <div class="flex gap-0.5">
+            <button class="role-btn active" data-role="all">All</button>
+            <button class="role-btn" data-role="enemy">⚔</button>
+            <button class="role-btn" data-role="npc">👥</button>
+            <button class="role-btn" data-role="player">🧙</button>
+            <button class="role-btn" id="btn-anim-only" title="Animated only">🎬</button>
+          </div>
         </div>
-        <div id="model-list-section">
+
+        <!-- Model list -->
+        <div id="model-list-section" class="flex-1 overflow-y-auto min-h-0">
           <ul id="model-list"></ul>
         </div>
-        <div id="info-section">
-          <div id="model-title">—</div>
+
+        <!-- Info section -->
+        <div id="info-section" class="flex-shrink-0 px-3 py-2 border-t border-base-300 overflow-y-auto max-h-[45%]">
+          <div id="model-title" class="text-sm font-semibold text-base-content mb-1 truncate">—</div>
           <div id="stats-grid"></div>
           <div class="section-title">Camera</div>
-          <div id="cam-controls">
+          <div id="cam-controls" class="flex gap-1 mb-2">
             <button class="cam-btn active" data-angle="front">Front</button>
             <button class="cam-btn" data-angle="side">Side</button>
             <button class="cam-btn" data-angle="iso">Iso</button>
             <button class="cam-btn" data-angle="top">Top</button>
           </div>
           <div class="section-title">Animations</div>
-          <div id="anim-controls"></div>
+          <div id="anim-controls" class="flex flex-wrap gap-1 mb-1"></div>
         </div>
       </div>
 
-      <!-- ── Environment mode ──────────────────────────── -->
-      <div id="env-panel" style="display:none">
-        <div id="env-filter-bar">
-          <input id="env-filter-inp" type="text" placeholder="filter assets…" />
+      <!-- ── Environment Panel ─────────────────────────────────── -->
+      <div id="env-panel" style="display:none" class="flex flex-col flex-1 overflow-hidden">
+
+        <!-- Search -->
+        <div id="env-filter-bar" class="px-2 py-1.5 border-b border-base-300 flex-shrink-0">
+          <input id="env-filter-inp" type="text" placeholder="filter assets…"
+                 class="input input-xs input-ghost w-full text-xs focus:outline-none focus:bg-base-300/50" />
         </div>
-        <div id="env-cat-bar"></div>
-        <div id="env-list-section">
+
+        <!-- Kit tree nav -->
+        <div id="env-cat-bar" class="overflow-y-auto flex-shrink-0 border-b border-base-300" style="max-height:42%"></div>
+
+        <!-- Asset list -->
+        <div id="env-list-section" class="flex-1 overflow-y-auto min-h-0">
           <ul id="env-list"></ul>
         </div>
-        <div id="env-info-section">
-          <div id="env-asset-title">—</div>
+
+        <!-- Asset info -->
+        <div id="env-info-section" class="flex-shrink-0 px-3 py-2 border-t border-base-300">
+          <div id="env-asset-title" class="text-sm font-semibold text-base-content mb-1 truncate">—</div>
           <div id="env-stats-grid"></div>
           <div class="section-title">Scale</div>
-          <div id="env-scale-controls">
-            <label style="font-size:11px;color:#888">Game scale:</label>
-            <input id="env-scale-slider" type="range" min="0.1" max="8" step="0.05" value="1" style="flex:1" />
-            <span id="env-scale-val" style="font-family:monospace;font-size:12px;min-width:40px">1.00</span>
-            <button id="env-scale-copy" title="Copy scale value" style="font-size:11px;padding:2px 6px">📋</button>
+          <div id="env-scale-controls" class="flex items-center gap-2 mb-1">
+            <span class="text-[10px] text-base-content/40 shrink-0">Game scale:</span>
+            <input id="env-scale-slider" type="range" min="0.1" max="8" step="0.05" value="1"
+                   class="range range-xs range-primary flex-1" />
+            <span id="env-scale-val" class="font-mono text-xs min-w-[36px] text-right text-primary">1.00</span>
+            <button id="env-scale-copy" title="Copy scale value"
+                    class="btn btn-xs btn-ghost opacity-50 hover:opacity-100">📋</button>
           </div>
-          <label style="font-size:11px;color:#888;margin-top:6px;display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="env-ref-toggle" checked /> Show 2m reference figure
+          <label class="flex items-center gap-2 text-[10px] text-base-content/40 mt-1 cursor-pointer">
+            <input type="checkbox" id="env-ref-toggle" checked class="checkbox checkbox-xs checkbox-primary" />
+            Show 2m reference figure
           </label>
           <div class="section-title">Camera</div>
-          <div id="env-cam-controls">
+          <div id="env-cam-controls" class="flex gap-1">
             <button class="cam-btn active" data-angle="front">Front</button>
             <button class="cam-btn" data-angle="side">Side</button>
             <button class="cam-btn" data-angle="iso">Iso</button>
@@ -352,48 +121,84 @@
           </div>
         </div>
       </div>
-      <!-- ── Editor mode ───────────────────────────────── -->
+
+      <!-- ── Editor Panel ──────────────────────────────────────── -->
       <div id="editor-panel" style="display:none;flex-direction:column;flex:1;overflow:hidden">
-        <div id="editor-sub-tabs">
-          <button class="editor-sub active" data-etype="tower">🏰 Tower</button>
+
+        <!-- Sub-tabs -->
+        <div id="editor-sub-tabs" class="flex flex-shrink-0 border-b border-base-300">
+          <button class="editor-sub active" data-etype="tower_floor">🏰 Tower</button>
           <button class="editor-sub" data-etype="overworld">🌍 World</button>
-          <button class="editor-sub" data-etype="building">🏠 Building</button>
-          <button class="editor-sub" data-etype="interior">🪑 Interior</button>
-          <button class="editor-sub" data-etype="dungeon">⚔️ Dungeon</button>
+          <button class="editor-sub" data-etype="building">🏠 Build</button>
+          <button class="editor-sub" data-etype="interior">🪑 Int</button>
+          <button class="editor-sub" data-etype="dungeon">⚔️ Dung</button>
         </div>
-        <div id="editor-asset-panel">
-          <input id="editor-asset-search" type="text" placeholder="search assets…" />
-          <div id="editor-asset-cats"></div>
-          <ul id="editor-asset-list"></ul>
+
+        <!-- Asset browser: search + kit tree + list -->
+        <div id="editor-asset-panel" class="flex flex-col border-b border-base-300" style="flex:1;overflow-y:auto;max-height:55%">
+          <input id="editor-asset-search" type="text" placeholder="search assets…"
+                 class="input input-xs input-ghost w-full text-xs border-b border-base-300 rounded-none px-2 focus:outline-none focus:bg-base-300/50" />
+          <div id="editor-asset-cats" class="overflow-y-auto flex-shrink-0 border-b border-base-300/60" style="max-height:45%"></div>
+          <ul id="editor-asset-list" class="flex-1 overflow-y-auto min-h-0"></ul>
         </div>
-        <div id="editor-toolbar">
-          <button class="ed-tool active" id="ed-tool-select" title="Select [V]">↖</button>
-          <button class="ed-tool" id="ed-tool-move"   title="Move [W]">✛</button>
-          <button class="ed-tool" id="ed-tool-rotate" title="Rotate [E]">↻</button>
-          <button class="ed-tool" id="ed-tool-scale"  title="Scale [R]">⤡</button>
-          <span class="ed-sep">|</span>
-          <button class="ed-tool" id="ed-snap-toggle" title="Snap to grid [S]">⊞</button>
-          <button class="ed-tool" id="ed-view-top"    title="Top view [T]">⊤</button>
-          <button class="ed-tool" id="ed-undo"        title="Undo [Ctrl+Z]">↩</button>
-          <button class="ed-tool" id="ed-redo"        title="Redo [Ctrl+Y]">↪</button>
-          <span class="ed-sep">|</span>
-          <button class="ed-tool" id="ed-save"        title="Save [Ctrl+S]">💾</button>
-          <button class="ed-tool" id="ed-load"        title="Load">📂</button>
+
+        <!-- Toolbar -->
+        <div id="editor-toolbar"
+             class="flex items-center gap-0.5 px-1.5 py-1 bg-base-300/50 border-t border-base-300 flex-wrap flex-shrink-0">
+          <div class="join">
+            <button class="ed-tool join-item active" id="ed-tool-select" title="Select [V]">↖</button>
+            <button class="ed-tool join-item" id="ed-tool-move"   title="Move [W]">✛</button>
+            <button class="ed-tool join-item" id="ed-tool-rotate" title="Rotate [E]">↻</button>
+            <button class="ed-tool join-item" id="ed-tool-scale"  title="Scale [R]">⤡</button>
+          </div>
+          <div class="w-px h-4 bg-base-content/10 mx-0.5"></div>
+          <div class="join">
+            <button class="ed-tool join-item" id="ed-snap-toggle" title="Snap [S]">⊞</button>
+            <button class="ed-tool join-item" id="ed-view-top"    title="Top [T]">⊤</button>
+            <button class="ed-tool join-item" id="ed-undo"        title="Undo [Ctrl+Z]">↩</button>
+            <button class="ed-tool join-item" id="ed-redo"        title="Redo [Ctrl+Y]">↪</button>
+          </div>
+          <div class="w-px h-4 bg-base-content/10 mx-0.5"></div>
+          <div class="join">
+            <button class="ed-tool join-item" id="ed-save" title="Save [Ctrl+S]">💾</button>
+            <button class="ed-tool join-item" id="ed-load-game" title="Load current saved level from game output">🔄</button>
+            <button class="ed-tool join-item" id="ed-load" title="Load from file">📂</button>
+          </div>
           <input type="file" id="ed-load-input" accept=".json" style="display:none" />
         </div>
-        <div id="editor-inspector">
-          <div id="ed-insp-title">— nothing selected —</div>
+
+        <!-- Version control panel -->
+        <div id="ed-version-panel" class="flex-shrink-0 border-t border-base-300 text-[10px]">
+          <div class="flex items-center gap-1 px-2 py-1 bg-base-300/40">
+            <span id="ed-doc-label" class="flex-1 text-base-content/50 truncate">—</span>
+            <span id="ed-version-count" class="text-base-content/25 font-mono"></span>
+            <button id="ed-ver-toggle" class="btn btn-xs btn-ghost opacity-40 hover:opacity-100 text-[9px]" title="Toggle version history">▾ history</button>
+          </div>
+          <div id="ed-version-save-bar" class="hidden flex items-center gap-1 px-2 py-1 border-t border-base-300/60">
+            <input id="ed-version-label" type="text" placeholder="version label…"
+                   class="input input-xs input-ghost flex-1 text-[10px] focus:outline-none focus:bg-base-300/50" />
+            <button id="ed-version-save" class="btn btn-xs btn-outline btn-primary text-[9px]">+ Save version</button>
+          </div>
+          <div id="ed-version-list" class="hidden overflow-y-auto" style="max-height:120px"></div>
+        </div>
+
+        <!-- Inspector -->
+        <div id="editor-inspector" class="px-2 py-1.5 border-t border-base-300 flex-shrink-0 min-h-[60px]">
+          <div id="ed-insp-title" class="text-xs text-base-content/40 mb-1">— nothing selected —</div>
           <div id="ed-insp-fields"></div>
         </div>
-        <div id="editor-status-bar">
+
+        <!-- Status bar -->
+        <div id="editor-status-bar"
+             class="flex gap-2 px-2 py-0.5 bg-base-300/50 border-t border-base-300 text-[9px] text-base-content/30 flex-shrink-0">
           <span id="ed-status-sel">0 selected</span>
           <span id="ed-status-grid">grid: 2 WU</span>
           <span id="ed-status-snap">snap: ON</span>
           <span id="ed-status-undo">0 actions</span>
         </div>
       </div>
-    </div>
-  </div>
+    </div><!-- /side-panel -->
+  </div><!-- /app -->
   <script type="module" src="/src/model-review.ts"></script>
 </body>
 </html>

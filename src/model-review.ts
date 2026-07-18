@@ -21,12 +21,16 @@
  *   .modelList    — array of { id, name, path } for the current filter
  */
 
+import './model-review.css';
 import * as THREE          from 'three';
 import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
 import { CHAR_MODELS, CHAR_PACKS, type CharModelDef } from '@/characters/charManifest';
 import { loadCharModel, getCharModelBounds } from '@/characters/CharacterLoader';
-import { ENV_ASSETS, ENV_CATEGORIES, ENV_PACKS, type EnvAssetDef } from '@/assets/envManifest';
+import { ENV_ASSETS, ENV_CATEGORIES, ENV_KITS, type EnvAssetDef } from '@/assets/envManifest';
+import { BlueprintLayer } from '@/editor/BlueprintLayer';
+import { EditorVersioning } from '@/editor/EditorVersioning';
+import { bootstrapAllTowerFloors } from '@/editor/towerBootstrap';
 import { EditorCore }        from '@/editor/EditorCore';
 import { EditorSerializer }  from '@/editor/EditorSerializer';
 import { TowerFloorEditor }  from '@/editor/TowerFloorEditor';
@@ -655,7 +659,7 @@ let _envMode        = false;
 let _envCurrentDef: EnvAssetDef | null = null;
 let _envGroup: THREE.Group | null = null;
 let _envScale       = 1.0;
-let _envCatFilter   = 'all';
+let _envKitFilter   = 'all'; // 'all' | KitGroup | kit.id
 let _envTextFilter  = '';
 let _envFiltered: EnvAssetDef[] = [...ENV_ASSETS];
 
@@ -712,7 +716,8 @@ document.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach(btn => {
       if (_envFiltered.length > 0 && !_envCurrentDef) loadEnvAsset(_envFiltered[0]!);
     } else {
       scene.remove(_refFigure);
-      if (_envGroup) { scene.remove(_envGroup); _envGroup = null; }
+      if (_envGroup)     { scene.remove(_envGroup);     _envGroup     = null; }
+      if (_currentGroup) { scene.remove(_currentGroup); _currentGroup = null; }
     }
 
     if (mode === 'editor') {
@@ -737,11 +742,18 @@ document.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach(btn => {
         } as Partial<LevelDoc>));
 
         _editorCore.activate();
+        _blueprintLayer = new BlueprintLayer(scene);
         _buildEditorAssetPanel();
         _bindEditorToolbar();
+        _renderVersionPanel();
 
         const edContainer = document.getElementById('editor-inspector')!.parentElement!;
         _towerEditor     = new TowerFloorEditor(_editorCore, _editorSerial!, edContainer);
+        _towerEditor.onFloorChange = (floorIndex) => {
+          _blueprintLayer?.showTowerFloor(floorIndex);
+        };
+        // Show blueprint for initial floor
+        _blueprintLayer?.showTowerFloor(_towerEditor.activeFloorIndex);
         _overworldEditor = new OverworldEditor(scene, camera, canvas);
         const owPanel    = document.getElementById('ow-editor-panel');
         if (owPanel) {
@@ -759,8 +771,15 @@ document.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach(btn => {
         orbit.target.set(0, 0, 0);
         orbit.update();
       } else {
-        // Re-activating after switching away
+        // Re-activating after switching away — clear any stale character/env models
+        if (_currentGroup) { scene.remove(_currentGroup); _currentGroup = null; }
+        if (_envGroup)     { scene.remove(_envGroup);     _envGroup     = null; }
+        scene.remove(_refFigure);
         _editorCore.activate();
+        // Restore blueprint for current sub-type
+        if (_editorType === 'tower_floor') {
+          _blueprintLayer?.showTowerFloor(_towerEditor?.activeFloorIndex ?? 0);
+        }
       }
     } else if (_editorCore) {
       // Leaving editor mode — deactivate but keep state
@@ -770,63 +789,114 @@ document.querySelectorAll<HTMLButtonElement>('.mode-tab').forEach(btn => {
   });
 });
 
-// ── Category bar ─────────────────────────────────────────────────────────────
-function _buildEnvCatBar(): void {
-  envCatBarEl.innerHTML = '';
-  const allBtn = document.createElement('button');
-  allBtn.className = 'env-cat-btn' + (_envCatFilter === 'all' ? ' active' : '');
-  allBtn.textContent = '🌍 All';
-  allBtn.onclick = () => { _envCatFilter = 'all'; _buildEnvList(); _updateEnvCatBar(); };
-  envCatBarEl.appendChild(allBtn);
+// ── Kit group tree ────────────────────────────────────────────────────────────
+const KIT_GROUPS: { group: import('@/assets/envManifest').KitGroup; label: string }[] = [
+  { group: 'kaykit',          label: 'KayKit' },
+  { group: 'kenney',          label: 'Kenney' },
+  { group: 'kenney_modular',  label: 'Kenney Modular' },
+];
 
-  for (const cat of ENV_CATEGORIES) {
-    const btn = document.createElement('button');
-    btn.className = 'env-cat-btn' + (_envCatFilter === cat.id ? ' active' : '');
-    btn.textContent = `${cat.icon} ${cat.label}`;
-    btn.onclick = () => { _envCatFilter = cat.id; _buildEnvList(); _updateEnvCatBar(); };
-    envCatBarEl.appendChild(btn);
-  }
+function _setEnvKitFilter(id: string): void {
+  _envKitFilter = id;
+  _buildEnvList();
+  _buildEnvKitTree(); // rebuild to update active states
 }
-function _updateEnvCatBar(): void {
-  document.querySelectorAll<HTMLButtonElement>('.env-cat-btn').forEach(btn => {
-    const text = btn.textContent ?? '';
-    const isAll = text.includes('All');
-    btn.classList.toggle('active',
-      isAll ? _envCatFilter === 'all'
-             : ENV_CATEGORIES.some(c => text.includes(c.label) && _envCatFilter === c.id),
-    );
-  });
+
+function _buildEnvKitTree(): void {
+  envCatBarEl.innerHTML = '';
+
+  // All row
+  const allRow = document.createElement('div');
+  allRow.className = 'kit-all-btn' + (_envKitFilter === 'all' ? ' active' : '');
+  allRow.textContent = '🌍 All Assets';
+  allRow.onclick = () => _setEnvKitFilter('all');
+  envCatBarEl.appendChild(allRow);
+
+  for (const { group, label } of KIT_GROUPS) {
+    const kits = ENV_KITS.filter(k => k.group === group);
+    const extracted = kits.filter(k => k.extracted).length;
+
+    const grpEl = document.createElement('div');
+    grpEl.className = 'kit-group-hdr' + (_envKitFilter === group ? ' active' : '');
+    grpEl.innerHTML =
+      `<span class="kit-group-icon">▾</span><span>${label}</span>` +
+      `<span class="kit-count">${extracted}/${kits.length} extracted</span>`;
+    grpEl.onclick = () => _setEnvKitFilter(group);
+    envCatBarEl.appendChild(grpEl);
+
+    for (const kit of kits) {
+      const kitEl = document.createElement('div');
+      kitEl.className = 'kit-item' +
+        (_envKitFilter === kit.id ? ' active' : '') +
+        (kit.extracted ? '' : ' unextracted');
+      kitEl.innerHTML =
+        `<span>${kit.icon}</span>` +
+        `<span class="kit-item-label">${kit.label}</span>` +
+        (kit.extracted ? '<span class="kit-extracted">✓</span>' : '');
+      if (kit.extracted) {
+        kitEl.onclick = (e) => { e.stopPropagation(); _setEnvKitFilter(kit.id); };
+      }
+      envCatBarEl.appendChild(kitEl);
+    }
+  }
 }
 
 // ── List rendering ────────────────────────────────────────────────────────────
 function _buildEnvList(): void {
+  const isGroup = ['kaykit', 'kenney', 'kenney_modular'].includes(_envKitFilter);
+
   _envFiltered = ENV_ASSETS.filter(a => {
-    const catOk  = _envCatFilter === 'all' || a.category === _envCatFilter;
-    const textOk = !_envTextFilter || a.name.toLowerCase().includes(_envTextFilter) ||
-                   a.pack.toLowerCase().includes(_envTextFilter);
-    return catOk && textOk;
+    const kitOk = _envKitFilter === 'all'
+      ? true
+      : isGroup
+        ? ENV_KITS.find(k => k.id === a.kitId)?.group === _envKitFilter
+        : a.kitId === _envKitFilter;
+    const textOk = !_envTextFilter ||
+      a.name.toLowerCase().includes(_envTextFilter) ||
+      a.kitId.toLowerCase().includes(_envTextFilter);
+    return kitOk && textOk;
   });
 
   envListEl.innerHTML = '';
-  const packIcons: Record<string, string> = {};
-  for (const p of ENV_PACKS) packIcons[p.id] = p.icon;
 
-  _envFiltered.forEach((def, i) => {
-    const li = document.createElement('li');
-    if (def === _envCurrentDef) li.classList.add('active');
-    const icon = document.createElement('span');
-    icon.textContent = packIcons[def.pack] ?? '📦';
-    const name = document.createElement('span');
-    name.textContent = def.name;
-    name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-    const scaleTag = document.createElement('span');
-    scaleTag.textContent = `×${def.gameScale}`;
-    scaleTag.style.cssText = 'font-family:monospace;font-size:10px;color:#554466';
-    li.append(icon, name, scaleTag);
-    li.onclick = () => { loadEnvAsset(def); };
-    envListEl.appendChild(li);
-    void i; // used by closure
-  });
+  // Group by kit, preserving ENV_KITS order
+  const byKit = new Map<string, EnvAssetDef[]>();
+  for (const a of _envFiltered) {
+    if (!byKit.has(a.kitId)) byKit.set(a.kitId, []);
+    byKit.get(a.kitId)!.push(a);
+  }
+
+  const showHeaders = _envKitFilter === 'all' || isGroup;
+  const kitOrder = ENV_KITS.map(k => k.id);
+
+  for (const kitId of kitOrder) {
+    const assets = byKit.get(kitId);
+    if (!assets?.length) continue;
+    const kit = ENV_KITS.find(k => k.id === kitId)!;
+
+    if (showHeaders) {
+      const hdr = document.createElement('li');
+      hdr.className = 'env-kit-header';
+      hdr.textContent = `${kit.icon} ${kit.label}`;
+      envListEl.appendChild(hdr);
+    }
+
+    for (const def of assets) {
+      const li = document.createElement('li');
+      if (def === _envCurrentDef) li.classList.add('active');
+      const icon = document.createElement('span');
+      icon.textContent = kit.icon;
+      const name = document.createElement('span');
+      name.textContent = def.name;
+      name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      const scaleTag = document.createElement('span');
+      scaleTag.textContent = `×${def.gameScale}`;
+      scaleTag.style.cssText = 'font-family:monospace;font-size:10px;color:#554466';
+      li.append(icon, name, scaleTag);
+      li.onclick = () => { loadEnvAsset(def); };
+      envListEl.appendChild(li);
+    }
+  }
 }
 
 // ── Load environment asset ────────────────────────────────────────────────────
@@ -887,7 +957,7 @@ async function loadEnvAsset(def: EnvAssetDef): Promise<void> {
     envTitleEl.title = def.path;
     const fmt = (v: number) => v.toFixed(2) + 'm';
     envStatsEl.innerHTML = `
-      <span class="lbl">Pack</span><span class="val">${def.pack.replace('kenney_','').replace('kaykit_','KK ')}</span>
+      <span class="lbl">Pack</span><span class="val">${def.kitId.replace('kenney_','').replace('kaykit_','KK ')}</span>
       <span class="lbl">Raw H</span><span class="val">${fmt(size.y)}</span>
       <span class="lbl">Raw W</span><span class="val">${fmt(size.x)}</span>
       <span class="lbl">Raw D</span><span class="val">${fmt(size.z)}</span>
@@ -991,7 +1061,7 @@ document.getElementById('env-filter-inp')?.addEventListener('input', (e) => {
 };
 
 // ── Init env tab ──────────────────────────────────────────────────────────────
-_buildEnvCatBar();
+_buildEnvKitTree();
 _buildEnvList();
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1002,13 +1072,14 @@ _buildEnvList();
 let _editorCore:   EditorCore | null = null;
 let _editorSerial: EditorSerializer | null = null;
 let _editorType:   EditorType = 'tower_floor';
-let _editorDocId   = 'floor_new';
-let _editorDocName = 'New Floor';
-let _editorCatFilter = 'all';
+let _editorDocId   = 'default';
+let _editorDocName = 'Tower Floor';
+let _editorKitFilter = 'all'; // 'all' | KitGroup | kit.id
 let _editorAssetText = '';
 
 // Sub-editors (created lazily when the Editor tab is first activated)
 let _towerEditor:     TowerFloorEditor | null = null;
+let _blueprintLayer:  BlueprintLayer   | null = null;
 let _overworldEditor: OverworldEditor  | null = null;
 let _buildingEditor:  BuildingEditor   | null = null;
 let _dungeonEditor:   DungeonEditor    | null = null;
@@ -1036,6 +1107,37 @@ function _activateSubEditor(type: EditorType): void {
   const floorListPanel = document.getElementById('tfe-floor-list-panel');
   if (floorListPanel) floorListPanel.style.display = type === 'tower_floor' ? '' : 'none';
 
+  // Blueprint layer: show correct blueprint per type
+  if (type === 'tower_floor') {
+    const floorIndex = _towerEditor?.activeFloorIndex ?? 0;
+    _blueprintLayer?.showTowerFloor(floorIndex);
+    camera.position.set(0, 20, 15);
+    camera.lookAt(0, 0, 0);
+    orbit.target.set(0, 0, 0);
+    orbit.update();
+  } else if (type === 'overworld') {
+    _blueprintLayer?.showOverworld((dungeonEntry) => {
+      // Clicking a dungeon marker → switch to dungeon editor with that dungeon
+      _editorType = 'dungeon';
+      document.querySelectorAll('.editor-sub').forEach(b => b.classList.remove('active'));
+      document.querySelector<HTMLButtonElement>('[data-etype="dungeon"]')?.classList.add('active');
+      _blueprintLayer?.showDungeon(dungeonEntry);
+      _positionCameraForDungeon();
+    });
+    // Top-down camera for world map
+    const GW = 128;
+    const half = GW * 0.5 * 0.5; // worldSize × TILE_SCALE / 2
+    camera.position.set(0, half * 1.5, 0);
+    camera.lookAt(0, 0, 0);
+    orbit.target.set(0, 0, 0);
+    orbit.update();
+  } else if (type === 'dungeon') {
+    _blueprintLayer?.showDungeon(null);
+    _positionCameraForDungeon();
+  } else {
+    _blueprintLayer?.hide();
+  }
+
   // Overworld: activate/deactivate the OverworldEditor (binds/unbinds its click handlers)
   if (_overworldEditor) {
     if (type === 'overworld' && !_overworldEditor.isActive) {
@@ -1055,65 +1157,122 @@ document.querySelectorAll<HTMLButtonElement>('.editor-sub').forEach(btn => {
     document.querySelectorAll('.editor-sub').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     _editorType = btn.dataset['etype'] as EditorType;
+    // Update doc name to match the active editor type
+    const TYPE_NAMES: Record<EditorType, string> = {
+      tower_floor: 'Tower Floor',
+      overworld:   'Overworld',
+      building:    'Building',
+      interior:    'Interior',
+      dungeon:     'Dungeon',
+    };
+    _editorDocName = TYPE_NAMES[_editorType] ?? _editorType;
     _buildEditorAssetPanel();
     _activateSubEditor(_editorType);
+    _renderVersionPanel();
   });
 });
 
 // ── Asset panel for editor ────────────────────────────────────────────────────
 
-function _buildEditorAssetPanel(): void {
-  // Category buttons — reuse ENV_CATEGORIES
-  const catBar = document.getElementById('editor-asset-cats')!;
-  catBar.innerHTML = '';
-  const allBtn = document.createElement('button');
-  allBtn.className = 'ed-cat-btn' + (_editorCatFilter === 'all' ? ' active' : '');
-  allBtn.textContent = 'All';
-  allBtn.onclick = () => { _editorCatFilter = 'all'; _renderEditorAssetList(); _updateEditorCatActive(); };
-  catBar.appendChild(allBtn);
-  for (const cat of ENV_CATEGORIES) {
-    const btn = document.createElement('button');
-    btn.className = 'ed-cat-btn' + (_editorCatFilter === cat.id ? ' active' : '');
-    btn.textContent = cat.icon;
-    btn.title = cat.label;
-    btn.onclick = () => { _editorCatFilter = cat.id; _renderEditorAssetList(); _updateEditorCatActive(); };
-    catBar.appendChild(btn);
-  }
+function _setEditorKitFilter(id: string): void {
+  _editorKitFilter = id;
+  _buildEditorKitTree();
   _renderEditorAssetList();
 }
 
-function _updateEditorCatActive(): void {
-  document.querySelectorAll<HTMLButtonElement>('.ed-cat-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', i === 0 ? _editorCatFilter === 'all'
-      : ENV_CATEGORIES[i - 1]?.id === _editorCatFilter);
-  });
+function _buildEditorAssetPanel(): void {
+  _buildEditorKitTree();
+  _renderEditorAssetList();
+}
+
+function _buildEditorKitTree(): void {
+  const catBar = document.getElementById('editor-asset-cats')!;
+  catBar.innerHTML = '';
+
+  const allRow = document.createElement('div');
+  allRow.className = 'kit-all-btn' + (_editorKitFilter === 'all' ? ' active' : '');
+  allRow.textContent = '🌍 All';
+  allRow.onclick = () => _setEditorKitFilter('all');
+  catBar.appendChild(allRow);
+
+  for (const { group, label } of KIT_GROUPS) {
+    const kits = ENV_KITS.filter(k => k.group === group);
+    const extracted = kits.filter(k => k.extracted).length;
+
+    const grpEl = document.createElement('div');
+    grpEl.className = 'kit-group-hdr' + (_editorKitFilter === group ? ' active' : '');
+    grpEl.innerHTML =
+      `<span class="kit-group-icon">▾</span><span>${label}</span>` +
+      `<span class="kit-count">${extracted}/${kits.length}</span>`;
+    grpEl.onclick = () => _setEditorKitFilter(group);
+    catBar.appendChild(grpEl);
+
+    for (const kit of kits) {
+      if (!kit.extracted) continue; // editor only shows extracted kits
+      const kitEl = document.createElement('div');
+      kitEl.className = 'kit-item' + (_editorKitFilter === kit.id ? ' active' : '');
+      kitEl.innerHTML =
+        `<span>${kit.icon}</span>` +
+        `<span class="kit-item-label">${kit.label}</span>` +
+        '<span class="kit-extracted">✓</span>';
+      kitEl.onclick = (e) => { e.stopPropagation(); _setEditorKitFilter(kit.id); };
+      catBar.appendChild(kitEl);
+    }
+  }
 }
 
 function _renderEditorAssetList(): void {
   const listEl = document.getElementById('editor-asset-list')!;
   listEl.innerHTML = '';
+  const isGroup = ['kaykit', 'kenney', 'kenney_modular'].includes(_editorKitFilter);
+
   const filtered = ENV_ASSETS.filter(a => {
-    const catOk  = _editorCatFilter === 'all' || a.category === _editorCatFilter;
+    const kitOk = _editorKitFilter === 'all'
+      ? true
+      : isGroup
+        ? ENV_KITS.find(k => k.id === a.kitId)?.group === _editorKitFilter
+        : a.kitId === _editorKitFilter;
     const textOk = !_editorAssetText || a.name.toLowerCase().includes(_editorAssetText);
-    return catOk && textOk;
+    return kitOk && textOk;
   });
 
-  for (const def of filtered) {
-    const li = document.createElement('li');
-    const icon = ENV_PACKS.find(p => p.id === def.pack)?.icon ?? '📦';
-    const nameEl = document.createElement('span');
-    nameEl.textContent = def.name;
-    nameEl.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-    const scaleTag = document.createElement('span');
-    scaleTag.textContent = `×${def.gameScale}`;
-    scaleTag.style.cssText = 'font-size:9px;color:#554466;font-family:monospace';
-    li.append(document.createTextNode(icon + ' '), nameEl, scaleTag);
-    li.onclick = () => {
-      document.querySelectorAll('#editor-asset-list li').forEach(l => l.classList.remove('placing'));
-      li.classList.add('placing');
-      _editorCore?.beginPlacing(def.path);
-    };
-    listEl.appendChild(li);
+  // Group by kit
+  const byKit = new Map<string, EnvAssetDef[]>();
+  for (const a of filtered) {
+    if (!byKit.has(a.kitId)) byKit.set(a.kitId, []);
+    byKit.get(a.kitId)!.push(a);
+  }
+  const showHeaders = _editorKitFilter === 'all' || isGroup;
+
+  for (const kitId of ENV_KITS.map(k => k.id)) {
+    const assets = byKit.get(kitId);
+    if (!assets?.length) continue;
+    const kit = ENV_KITS.find(k => k.id === kitId)!;
+
+    if (showHeaders) {
+      const hdr = document.createElement('li');
+      hdr.className = 'env-kit-header';
+      hdr.textContent = `${kit.icon} ${kit.label}`;
+      listEl.appendChild(hdr);
+    }
+
+    for (const def of assets) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${kit.icon}</span> `;
+      const nameEl = document.createElement('span');
+      nameEl.textContent = def.name;
+      nameEl.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      const scaleTag = document.createElement('span');
+      scaleTag.textContent = `×${def.gameScale}`;
+      scaleTag.style.cssText = 'font-size:9px;color:#554466;font-family:monospace';
+      li.append(nameEl, scaleTag);
+      li.onclick = () => {
+        document.querySelectorAll('#editor-asset-list li').forEach(l => l.classList.remove('placing'));
+        li.classList.add('placing');
+        _editorCore?.beginPlacing(def.path);
+      };
+      listEl.appendChild(li);
+    }
   }
 }
 
@@ -1173,7 +1332,13 @@ function _bindEditorToolbar(): void {
     }
   });
 
-  // Load
+  // Load from Game (🔄)
+  document.getElementById('ed-load-game')?.addEventListener('click', async () => {
+    if (!_editorCore || !_editorSerial) return;
+    await _loadFromGame();
+  });
+
+  // Load from file (📂)
   document.getElementById('ed-load')?.addEventListener('click', () => {
     document.getElementById('ed-load-input')?.click();
   });
@@ -1184,8 +1349,188 @@ function _bindEditorToolbar(): void {
     _editorDocId   = doc.id;
     _editorDocName = doc.name;
     await _editorSerial.applyToCore(doc);
+    _renderVersionPanel();
   });
 }
+
+// ── Load from Game ────────────────────────────────────────────────────────────
+
+async function _loadFromGame(): Promise<void> {
+  if (!_editorCore || !_editorSerial) return;
+
+  const type = _editorType;
+  const id   = _editorDocId;
+
+  // ── Tower: load all floors via TowerFloorEditor.loadDocs() ────────────────
+  if (type === 'tower_floor') {
+    let docs: import('@/editor/EditorSchema').TowerFloorDoc[] | null = null;
+
+    // 1. Try fetching saved multi-floor file
+    try {
+      const res = await fetch(`/editor-output/tower_floor/${id}.ttt-level.json`);
+      if (res.ok) {
+        const data = await res.json();
+        docs = Array.isArray(data) ? data : [data];
+      }
+    } catch { /* no saved file yet */ }
+
+    // 2. Bootstrap all floors from TOWER_FLOOR_DEFS
+    if (!docs) {
+      docs = bootstrapAllTowerFloors();
+      _setEditorStatus('Bootstrapped all tower floors from game definitions');
+    }
+
+    if (_towerEditor && docs.length > 0) {
+      await _towerEditor.loadDocs(docs);
+      _setEditorStatus(`Loaded tower: ${docs.length} floors`);
+      _renderVersionPanel();
+    }
+    return;
+  }
+
+  // ── All other types: single LevelDoc ─────────────────────────────────────
+
+  // 1. Try fetching from public/editor-output/
+  let doc = await _editorSerial.loadFromGame(type, id);
+
+  // 2. Fall back to localStorage autosave
+  if (!doc) {
+    doc = _editorSerial.loadAutosave(type, id);
+    if (doc) _setEditorStatus('Loaded from autosave');
+  }
+
+  if (!doc) {
+    _setEditorStatus('No saved level found — starting fresh');
+    return;
+  }
+
+  const hasObjects = _editorCore.getObjects().length > 0;
+  if (hasObjects && !confirm(`Load "${doc.name}"?\n\nUnsaved changes will be replaced. Save a version first if you want to keep them.`)) return;
+
+  _editorDocId   = doc.id;
+  _editorDocName = doc.name;
+  await _editorSerial.applyToCore(doc);
+  _setEditorStatus(`Loaded: ${doc.name}`);
+  _renderVersionPanel();
+}
+
+function _setEditorStatus(msg: string): void {
+  const el = document.getElementById('ed-status-sel');
+  if (el) {
+    el.textContent = msg;
+    setTimeout(() => { el.textContent = `${_editorCore?.getObjects().length ?? 0} objects`; }, 3000);
+  }
+}
+
+function _positionCameraForDungeon(): void {
+  // Side-angle view showing the dungeon rooms laid out in a row
+  camera.position.set(30, 18, -8);
+  camera.lookAt(30, 0, 10);
+  orbit.target.set(30, 0, 10);
+  orbit.update();
+}
+
+// Blueprint click raycasting — pick dungeon markers in overworld view
+const _bpRaycaster = new THREE.Raycaster();
+canvas.addEventListener('click', (e: MouseEvent) => {
+  if (_editorType !== 'overworld' || !_blueprintLayer) return;
+  const rect = canvas.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+  );
+  _bpRaycaster.setFromCamera(mouse, camera);
+  const hits = _bpRaycaster.intersectObjects(_blueprintLayer.clickables);
+  if (hits.length > 0) {
+    const onClick = hits[0]!.object.userData['onClick'] as (() => void) | undefined;
+    onClick?.();
+  }
+});
+
+// ── Version control panel ─────────────────────────────────────────────────────
+
+function _renderVersionPanel(): void {
+  const labelEl   = document.getElementById('ed-doc-label');
+  const countEl   = document.getElementById('ed-version-count');
+  const listEl    = document.getElementById('ed-version-list');
+  if (!labelEl || !countEl || !listEl) return;
+
+  const versions = EditorVersioning.listVersions(_editorType, _editorDocId);
+  const base     = EditorVersioning.getBase(_editorType, _editorDocId);
+
+  labelEl.textContent  = `${_editorDocName} (${_editorType}/${_editorDocId})`;
+  countEl.textContent  = versions.length ? `${versions.length} versions` : '';
+
+  listEl.innerHTML = '';
+
+  if (base) {
+    const row = _makeVersionRow('📌 Base template', base.name, null, base);
+    listEl.appendChild(row);
+  }
+
+  for (const v of versions) {
+    const d = new Date(v.savedAt);
+    const time = d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const row = _makeVersionRow(`v${v.version}`, `${v.label} — ${time}`, v, null);
+    listEl.appendChild(row);
+  }
+
+  if (!versions.length && !base) {
+    listEl.innerHTML = '<div class="px-2 py-2 text-[10px] text-base-content/25">No versions saved yet.</div>';
+  }
+}
+
+function _makeVersionRow(tag: string, label: string, v: import('@/editor/EditorVersioning').EditorVersionEntry | null, doc: import('@/editor/EditorSchema').LevelDoc | null): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-2 px-2 py-1 border-b border-base-300/40 hover:bg-base-content/5';
+
+  const tagEl = document.createElement('span');
+  tagEl.className = 'text-[9px] font-mono text-base-content/30 shrink-0';
+  tagEl.textContent = tag;
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'flex-1 truncate text-base-content/50';
+  nameEl.textContent = label;
+
+  const restoreDoc = v ? v.doc : doc;
+  if (restoreDoc) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-xs btn-ghost opacity-40 hover:opacity-100 text-[9px] shrink-0';
+    btn.textContent = '↩ restore';
+    btn.addEventListener('click', async () => {
+      if (!_editorSerial || !_editorCore) return;
+      if (!confirm(`Restore "${label}"?\n\nUnsaved changes will be lost.`)) return;
+      _editorDocId   = restoreDoc.id;
+      _editorDocName = restoreDoc.name;
+      await _editorSerial.applyToCore(restoreDoc);
+      _setEditorStatus(`Restored: ${label}`);
+    });
+    row.append(tagEl, nameEl, btn);
+  } else {
+    row.append(tagEl, nameEl);
+  }
+  return row;
+}
+
+// Wire version panel toggle + save version
+document.getElementById('ed-ver-toggle')?.addEventListener('click', () => {
+  const list    = document.getElementById('ed-version-list');
+  const saveBar = document.getElementById('ed-version-save-bar');
+  const hidden  = list?.classList.contains('hidden');
+  list?.classList.toggle('hidden', !hidden);
+  saveBar?.classList.toggle('hidden', !hidden);
+  _renderVersionPanel();
+});
+
+document.getElementById('ed-version-save')?.addEventListener('click', () => {
+  if (!_editorSerial || !_editorCore) return;
+  const label  = (document.getElementById('ed-version-label') as HTMLInputElement)?.value.trim();
+  const doc    = _editorSerial.build(_editorType, _editorDocId, _editorDocName);
+  EditorVersioning.save(doc, label || undefined);
+  (document.getElementById('ed-version-label') as HTMLInputElement).value = '';
+  _renderVersionPanel();
+  _setEditorStatus(`Version saved: ${label || 'auto-labelled'}`);
+});
 
 // ── Inspector panel ───────────────────────────────────────────────────────────
 

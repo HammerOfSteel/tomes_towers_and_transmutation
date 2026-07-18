@@ -18,42 +18,71 @@
 | `meshy_mutated_pig_man.zip` | Mutated pig-man — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_mutated_pig_man/` |
 | `meshy_vampire_fay.zip` | Vampire fairy — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_vampire_fay/` |
 
-### KayKit Environment Packs (in `assets/environment/overworld_etc/KayKit/`)
-| Pack | Contents | Use |
-|---|---|---|
-| `KayKit_Forest_Nature_Pack_1.0_FREE.zip` | Trees (oak, pine, dead), rocks, stumps, mushrooms, ferns, grass clumps, rivers | Overworld biomes: forest, bog |
-| `KayKit_DungeonRemastered_1.1_FREE.zip` | Stone tiles, walls, arches, doors, torches, pillars, traps, chests | Dungeon rooms + tower exterior |
-| `KayKit_City_Builder_Bits_1.0_FREE.zip` | Modular buildings, roads, walls, market stalls, fountains | Settlement rendering |
-| `KayKit_BlockBits_1.0_FREE.zip` | Generic block-style geometry pieces | Procedural fill |
-| `KayKit_HalloweenBits_1.0_FREE.zip` | Gravestones, pumpkins, spooky gates, dead trees, cauldrons | Graveyard biome / undead zone |
-| `KayKit_Medieval_Hexagon_Pack_1.0_FREE.zip` | Hexagonal terrain tiles, castles, towers, moats | Overworld hex-map option |
+### KayKit Kits (`ASSET_KITS/KayKit_Kits/`)
+> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
 
-### Kenney Environment Packs (in `assets/environment/overworld_etc/kenney/`)
-| Pack | Contents | Use |
-|---|---|---|
-| `kenney_fantasy-town-kit_2.0.zip` | Houses, inns, shops, churches, market stalls, town walls | Settlement buildings |
-| `kenney_castle-kit.zip` | Castle walls, towers, gates, battlements, drawbridge | Wizard tower exterior / Baron's Keep |
-| `kenney_modular-dungeon-kit_1.0.zip` | Full dungeon tile set: corridors, rooms, doors, traps, stairs | Dungeon zone rendering |
-| `kenney_modular-cave-kit_1.0.zip` | Cave tiles, stalactites, underground water | Bog shrine / mine dungeon |
-| `kenney_nature-kit.zip` | Trees, rocks, cliffs, water tiles, flowers, grass variants | Overworld biomes |
-| `kenney_furniture-kit.zip` | Tables, chairs, beds, shelves, barrels, chests — all 3D | House interiors |
-| `kenney_modular-buildings.zip` | Modular house walls, floors, roofs, windows, doors | House construction system |
-| `kenney_building-kit.zip` | Additional generic building parts | Supplement modular buildings |
-| `kenney_survival-kit.zip` | Campfires, tents, axes, logs, crates | Overworld camps |
-| `kenney_hexagon-kit.zip` | Hex terrain tiles (grass, sand, water, snow, forest) | Overworld hex grid option |
-| `kenney_retro-fantasy-kit.zip` | Fantasy props: potions, scrolls, gems, equipment, altars | Dungeon loot props |
-| `kenney_mini-dungeon.zip` | Mini-sized dungeon tiles for tight corridors | Sub-dungeon zones |
-| `kenney_tower-defense-kit.zip` | Towers, walls, gates, defensive structures | Tower exterior / outpost zones |
-| `kenney_3d-road-tiles.zip` | Road tiles (dirt, cobblestone, intersections) | Overworld paths |
-| `kenney_pirate-kit.zip` | Port, ship pieces, barrels, ropes | Coastal settlement (future) |
+| Archive | Models | Contents | Use |
+|---|---|---|---|
+| `KayKit Dungeon Pack 1.0.zip` | 636 | Characters, dungeon tiles, walls, torches, chests, pillars | Dungeon rooms + characters |
+| `KayKit Medieval Builder Pack 1.0.zip` | 681 | Archery range, barracks, bridge, castle, market, houses | Settlement buildings |
+| `KayKit Mini-Game Variety Pack 1.2.zip` | 411 | Character animals, arrow props, mini-game pieces | Misc props |
+| `KayKit Spooktober Seasonal Pack 1.1.zip` | 152 | Jack character, witch, candles, lanterns | Halloween / undead zone |
+| `KayKit_BlockBits_1.0_FREE.zip` | 160 | Bricks, colored blocks, platforms | Procedural fill geometry |
+| `KayKit_BoardGameBits_1.0_FREE.zip` | 648 | Board-game buildings, dice, tokens | Board-game style props |
+| `KayKit_City_Builder_Bits_1.0_FREE.zip` | 184 | Benches, boxes, buildings, market stalls, roads, fences | Settlement props |
+| `KayKit_FantasyWeaponsBits_1.0_FREE.zip` | 124 | Arrows, axes, bows, daggers, staffs, swords | Weapon loot props |
+| `KayKit_Forest_Nature_Pack_1.0_FREE.zip` | 420 | Bushes, grass, rocks, trees (all variants + colors), stumps, mushrooms | Overworld biomes: forest, bog, highland |
+| `KayKit_Furniture_Bits_1.0_FREE.zip` | 212 | Armchairs, beds, desks, shelves, sofas, tables | House interiors |
+| `KayKit_HalloweenBits_1.0_FREE.zip` | 259 | Arches, gates, gravestones, pumpkins, dead trees, cauldrons | Graveyard biome / undead zone |
+| `KayKit_Holiday_Bits_1.0_FREE.zip` | 400 | Bells, candy canes, seasonal decorations | Seasonal / misc props |
+| `KayKit_Medieval_Hexagon_Pack_1.0_FREE.zip` | 926 | Hex terrain tiles, buildings (archery, barracks, blacksmith, castle), moats | Overworld hex-map / settlements |
+| `KayKit_Platformer_Pack_1.0_FREE.zip` | 1498 | Arches, balls, blocks, platforms, spikes | Platformer structures |
+| `KayKit_Prototype_Bits_1.1_FREE.zip` | 293 | Barrels, boxes, crates, ramps | Generic prototype props |
+| `KayKit_RPGToolsBits_1.0_FREE.zip` | 206 | Anvil, axe, blueprints, chest, coin bag, potions, scrolls, swords | Dungeon loot props / smithy |
+| `KayKit_ResourceBits_1.0_FREE.zip` | 304 | Copper/iron/gold bars + stacks, wood logs, stone blocks | Resource gathering / crafting props |
+| `KayKit_Restaurant_Bits_1.0_FREE.zip` | 582 | Bowls, chairs, counters, plates, cooking props | Tavern / inn interior props |
+| `KayKit_Space_Base_Bits_1.0_FREE.zip` | 244 | Base modules, corridors, sci-fi pieces | Sci-fi base props |
 
-### House & Structure Packs
-| Pack | Contents | Use |
-|---|---|---|
-| `craftpix-net-649323-free-medieval-houses-3d-low-poly-pack.zip` | Pre-built medieval houses (thatched, stone, half-timber), various sizes | Settlements, villages |
-| `craftpix-891176-free-environment-props-3d-low-poly-models.zip` | Environment props: fences, signs, wells, barrels, carts | Overworld dressing |
-| `craftpix-net-539977-free-defence-tower-3d-low-poly-models.zip` | Defence towers: arrow towers, mage towers, cannon towers | Outpost / Baron's Keep |
-| `FantasyStylizedPack.rar` | Fantasy stylized pack (needs inventory after unrar) | Mixed use |
+### Kenney Kits — Non-Modular (`ASSET_KITS/Kenney_Kits/`)
+> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
+
+| Archive | Models | Contents | Use |
+|---|---|---|---|
+| `kenney_fantasy-town-kit_2.0.zip` | 501 | Balcony walls, banners, roads, roofs, stalls, houses, inns, shops | Settlement buildings + streets |
+| `kenney_furniture-kit.zip` | 420 | Bathroom cabinet, bed, bookcase, chair, couch, desk, shelf, table | House interiors |
+| `kenney_graveyard-kit_5.0.zip` | 273 | Altars, benches, gravestones (many variants), mausoleums, dead trees | Graveyard biome |
+| `kenney_survival-kit.zip` | 240 | Barrel, bedroll, campfire, log stack, tent, axe, shovel | Overworld camps |
+| `kenney_tower-defense-kit.zip` | 480 | Crystal details, towers (round/square), walls, gates, cannons | Tower exterior / outpost zones |
+| `kenney_pirate-kit.zip` | 216 | Barrels, boats, cannons, chests, docks, sails | Coastal settlement |
+| `kenney_mini-dungeon.zip` | 75 | Banners, barrels, corridors, doors, rooms, stairs | Mini-sized dungeon tiles |
+| `kenney_mini-forest_1.0.zip` | 66 | Bridge, building platforms, pine trees, round trees, rocks | Mini forest props |
+| `kenney_platformer-kit.zip` | 459 | Arrows, barrels, grass blocks, coins, spikes, springs | Platformer props |
+| `kenney_city-kit-commercial_2.1.zip` | 123 | Commercial buildings (multiple types) | City commercial buildings |
+| `kenney_city-kit-industrial_1.0.zip` | 75 | Industrial buildings (multiple types) | City industrial buildings |
+| `kenney_city-kit-suburban_20.zip` | 120 | Suburban house types | City suburban buildings |
+| `kenney_coaster-kit.zip` | 549 | Benches, coaster flumes, track pieces | Theme park props |
+| `kenney_blaster-kit_2.1.zip` | 120 | Sci-fi blasters (multiple variants) | Sci-fi weapons |
+| `kenney_car-kit.zip` | 150 | Ambulance, cars, cones | Vehicles |
+| `kenney_mini-arcade.zip` | 60 | Air hockey, arcade machines, basketball game | Arcade props |
+| `kenney_mini-arena.zip` | 66 | Banners, blocks, borders | Arena props |
+| `kenney_mini-market.zip` | 60 | Cash register, columns, shelving | Shop interior |
+| `kenney_train-kit.zip` | 309 | Railroad corners, straights, ramps | Train tracks |
+
+### Kenney Kits — Modular (`ASSET_KITS/Kenney_Kits/Modular/`)
+> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
+
+| Archive | Models | Contents | Use |
+|---|---|---|---|
+| `kenney_castle-kit.zip` | 228 | Drawbridge, doors, flags, gates, metal gates, tower bases/mids/roofs, walls, wall corners | Wizard tower exterior / Baron's Keep |
+| `kenney_modular-dungeon-kit_1.0.zip` | 117 | Corridor corners/ends/intersections/wide, rooms (small/large), stairs, gate-door | Dungeon zone rendering |
+| `kenney_modular-cave-kit_1.0.zip` | 120 | Cave corridor corners/ends/intersections, rooms, stalactites, water tiles | Bog shrine / mine dungeon |
+| `kenney_building-kit.zip` | 237 | Barricade doorways, flat walls, windows, floors, roof corners/edges | House construction supplement |
+| `kenney_city-kit-roads.zip` | 216 | Bridge pillars, road straights/corners/intersections, construction barriers | Overworld roads / paths |
+| `kenney_factory-kit_3.0.zip` | 429 | Arrows, conveyors, pipes, vents | Factory / industrial props |
+| `kenney_holiday-kit.zip` | 297 | Benches, cabin corners, cabin logs | Seasonal cabin props |
+| `kenney_minigolf-kit.zip` | 378 | Balls, block borders, course pieces | Mini-golf course |
+| `kenney_modular-space-kit_1.0.zip` | 120 | Cables, corridor corners/ends | Space station props |
+| `kenney_toy-car-kit.zip` | 471 | Gates, item props, track pieces | Toy car track |
 
 ---
 

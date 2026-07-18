@@ -365,6 +365,19 @@ export class PlayerController {
    *  Space = ascend, F (dodge key) = descend, WASD = 2.5× normal speed. */
   flyMode = false;
 
+  /**
+   * Creative mode speed multiplier applied on top of normal movement speed.
+   * 1 = normal, 3 = fast, 10 = very fast, 50 = teleport-speed.
+   * Only active while flyMode is true (creative movement).
+   */
+  creativeSpeedMultiplier = 1;
+
+  /**
+   * No-clip mode — disables collision detection so the player passes through walls.
+   * Only meaningful when flyMode is true.
+   */
+  noClipMode = false;
+
   update(input: InputState, dt: number): void {
     // ── 1. TIMERS ──────────────────────────────────────────────────────────
     this.health.tick(dt);
@@ -518,10 +531,10 @@ export class PlayerController {
       return;
     }
 
-    // ── FLY MODE (dev cheat — overworld only) ──────────────────────────────
+    // ── FLY MODE (dev cheat / creative mode) ─────────────────────────────
     if (this.flyMode) {
-      const FLY_H = RUN_SPEED * 2.5;  // fast horizontal glide
-      const FLY_V = RUN_SPEED * 2.0;  // vertical ascent/descent speed
+      const FLY_H = RUN_SPEED * 2.5 * this.creativeSpeedMultiplier;
+      const FLY_V = RUN_SPEED * 2.0 * Math.max(1, this.creativeSpeedMultiplier * 0.6);
       const md = calculateMoveDirection(input);
       this.velocity.x = lerp(this.velocity.x, md.x * FLY_H, ACCEL_GROUND * dt);
       this.velocity.z = lerp(this.velocity.z, md.z * FLY_H, ACCEL_GROUND * dt);
@@ -531,6 +544,7 @@ export class PlayerController {
       else                  this.velocity.y = lerp(this.velocity.y, 0, 8 * dt);
 
       const cur = this.body.translation();
+      // No-clip: position moves freely; with clip: normal kinematic translation
       this.body.setNextKinematicTranslation({
         x: cur.x + this.velocity.x * dt,
         y: cur.y + this.velocity.y * dt,

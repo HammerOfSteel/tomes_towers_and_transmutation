@@ -1,0 +1,814 @@
+import * as THREE from 'three';
+import { PALETTE } from '@/shaders/palette';
+import { rapierToThreeInto } from '@/physics/helpers';
+import { HealthComponent } from '@/combat/Health';
+import { buildCreature, computeQuadNaturalFootY } from '@/creatures/CreatureBuilder';
+import { animateCreature } from '@/creatures/CreatureAnimator';
+import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
+import { loadCharModel } from '@/characters/CharacterLoader';
+import { CharacterController } from '@/characters/CharacterController';
+// ── Capsule dimensions ─────────────────────────────────────────────────────
+const CAPSULE_HALF_HEIGHT = 0.5;
+const CAPSULE_RADIUS = 0.35;
+const KCC_OFFSET = 0.01;
+// ── Speed ─────────────────────────────────────────────────────────────────
+const WALK_SPEED = 5;
+const RUN_SPEED = 10;
+/** Snappy ground acceleration (units/s²). */
+const ACCEL_GROUND = 40;
+/** Ground friction when no input. */
+const DECEL_GROUND = 30;
+/** Air acceleration — less responsive than ground. */
+const ACCEL_AIR = 12;
+/** Air deceleration — almost zero, preserve momentum. */
+const DECEL_AIR = 4;
+// ── Jump ──────────────────────────────────────────────────────────────────
+const JUMP_VELOCITY = 11;
+/** Low gravity while holding Space on the way up → floaty rise. */
+const GRAVITY_RISE = 22;
+/** High gravity when Space released early → short hop. */
+const GRAVITY_RELEASE = 60;
+/** Snappier fall gravity — faster to land than to rise. */
+const GRAVITY_FALL = 40;
+const MAX_FALL_SPEED = 25;
+/** Tiny downward push every grounded frame keeps KCC contact detection happy. */
+const GROUND_PUSH = -2;
+/** Frames after walking off a ledge where jump is still accepted. */
+const COYOTE_TIME = 0.1;
+/** Frames before landing where a pre-pressed jump fires on contact. */
+const JUMP_BUFFER_TIME = 0.12;
+// ── Dodge-roll ────────────────────────────────────────────────────────────
+/** Dodge dash speed (units/s). */
+const DODGE_SPEED = 16;
+/** How long the dodge lasts (seconds). */
+const DODGE_DURATION = 0.22;
+/** Cooldown after the dodge ends before another can be triggered. */
+const DODGE_COOLDOWN = 0.7;
+/** i-frame window while dodging. */
+const DODGE_IFRAME = 0.3;
+// ── Player stats ──────────────────────────────────────────────────────────
+const PLAYER_HP = 10;
+const PLAYER_IFRAME = 0.5; // seconds of invulnerability after a hit
+// ── Animation ─────────────────────────────────────────────────────────────
+const TURN_SPEED_GROUND = 16; // rad/s
+const TURN_SPEED_AIR = 8;
+/** Maximum forward tilt at full run speed (radians). */
+const MAX_LEAN = 0.15;
+/** Head-bob amplitude (world units). */
+const BOB_AMP = 0.05;
+/** Bob cycles per world unit. */
+const BOB_FREQ = 0.5;
+// ── Isometric movement directions (normalized) ─────────────────────────────
+// Camera looks from (+x,+y,+z) toward origin (45° azimuth).
+// WASD are remapped to world-space diagonals to match screen axes.
+export const ISO_FORWARD = new THREE.Vector3(-1, 0, -1).normalize();
+export const ISO_BACKWARD = new THREE.Vector3(1, 0, 1).normalize();
+export const ISO_LEFT = new THREE.Vector3(-1, 0, 1).normalize();
+export const ISO_RIGHT = new THREE.Vector3(1, 0, -1).normalize();
+// ── Pure helpers (exported for unit tests) ─────────────────────────────────
+/** Returns the desired horizontal direction from input as a normalized Vector3
+ *  (y=0). Returns zero-vector when no keys are pressed. */
+export function calculateMoveDirection(input) {
+    const dir = new THREE.Vector3();
+    if (input.moveForward)
+        dir.add(ISO_FORWARD);
+    if (input.moveBackward)
+        dir.add(ISO_BACKWARD);
+    if (input.moveLeft)
+        dir.add(ISO_LEFT);
+    if (input.moveRight)
+        dir.add(ISO_RIGHT);
+    if (dir.lengthSq() > 0)
+        dir.normalize();
+    return dir;
+}
+// ── Internal math helpers ──────────────────────────────────────────────────
+function lerp(a, b, t) {
+    return a + (b - a) * Math.min(1, Math.max(0, t));
+}
+function lerpAngle(current, target, t) {
+    const raw = target - current;
+    const delta = ((raw % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+    return current + delta * Math.min(1, t);
+}
+// ── PlayerController ────────────────────────────────────────────────────────
+/** The player's physics body, kinematic controller, and visual mesh.
+ *
+ *  Add both `player.group` and `player.shadow` to the scene.
+ *  Call `player.update(input, dt)` each frame after `physicsWorld.step(dt)`.
+ */
+export class PlayerController {
+    /** Add to scene — the player's visual representation. */
+    group;
+    /** Add to scene — blob shadow that tracks the player and scales with height. */
+    shadow;
+    /** Health component — wire to HUD and combat system. */
+    health;
+    body;
+    collider;
+    kcc;
+    // Movement
+    velocity = new THREE.Vector3();
+    facingAngle = 0;
+    isGrounded = false;
+    // Jump state
+    coyoteTimer = 0;
+    jumpBufferTimer = 0;
+    lastJumpInput = false;
+    jumpHeld = false;
+    // Dodge-roll state
+    dodgeTimer = 0;
+    dodgeCooldown = 0;
+    dodgeDir = new THREE.Vector3();
+    lastDodgeInput = false;
+    // Animation / feedback
+    bobTimer = 0;
+    flashTimer = 0;
+    // ── Extended animation state machine (B4 / E-phase) ──────────────────────
+    /** Jump phase for sequencing Jump_Start → Jump_Idle → Jump_Land. */
+    _jumpPhase = 'grounded';
+    /** Whether a one-shot cast animation is blocking the loop state. */
+    _castAnimActive = false;
+    /** Pitch/roll tilt applied to charController.scene during levitate/fly (radians). */
+    _leanX = 0;
+    _leanZ = 0;
+    /**
+     * Levitate mode: player hovers at a fixed Y and can move XZ freely.
+     * Different from flyMode (dev cheat) — uses mana and plays Jump_Idle.
+     */
+    levitateMode = false;
+    _levitateTargetY = 0;
+    LEVITATE_HEIGHT = 1.8; // WU above ground when levitating
+    /**
+     * Fly spell mode — full 3D free flight, faster than levitate.
+     * Space = ascend, Shift (run) = descend, WASD = 2× run speed horizontal.
+     * Toggles on/off. Separate from flyMode (dev cheat).
+     */
+    flySpellMode = false;
+    // Direct sub-mesh references (squash/stretch applied here, NOT on group)
+    bodyMesh;
+    headMesh;
+    // DNA-based creature rig (replaces bodyMesh/headMesh visually when applied)
+    _creatureRig = null;
+    _walkCtrl = null;
+    /** Scratch vector for floor-level position passed to walk controller. */
+    _floorPos = new THREE.Vector3();
+    /** Asset-model character controller (mutually exclusive with _creatureRig). */
+    _charController = null;
+    /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
+    get facingAngleRad() { return this.facingAngle; }
+    /** 0 = dodge just used (full cooldown), 1 = fully ready. */
+    get dodgeReadyFraction() {
+        return this.dodgeCooldown <= 0 ? 1 : Math.max(0, 1 - this.dodgeCooldown / DODGE_COOLDOWN);
+    }
+    // ── Animation trigger API (called from main.ts / AbilitySystem) ───────────
+    /** Play the melee attack one-shot animation. */
+    triggerAttack() {
+        if (!this._charController)
+            return;
+        const returnTo = this._resolveLoopState(0);
+        this._charController.playOnce('attack', returnTo);
+    }
+    /** Play the spell-cast one-shot animation (Throw / Use_Item). */
+    triggerCast() {
+        if (!this._charController)
+            return;
+        const returnTo = this._resolveLoopState(0);
+        this._charController.playOnce('cast', returnTo, () => { this._castAnimActive = false; });
+        this._castAnimActive = true;
+    }
+    /** Play the blink/teleport arrival animation (Spawn_Air). */
+    triggerSpawnAir() {
+        if (!this._charController)
+            return;
+        this._charController.playOnce('spawn_air', 'idle');
+    }
+    /** Play the appear-from-ground animation (Spawn_Ground). */
+    triggerSpawnGround() {
+        if (!this._charController)
+            return;
+        this._charController.playOnce('spawn_ground', 'idle');
+    }
+    /** Play the item pickup animation. */
+    triggerPickup() {
+        if (!this._charController)
+            return;
+        this._charController.playOnce('pickup', this._resolveLoopState(0));
+    }
+    /** Play the interact animation. */
+    triggerInteract() {
+        if (!this._charController)
+            return;
+        this._charController.playOnce('interact', this._resolveLoopState(0));
+    }
+    /** Force the death animation (one-shot, stays in final pose). */
+    triggerDeath() {
+        if (!this._charController)
+            return;
+        this._charController.playOnce('die', 'idle');
+    }
+    /**
+     * Swap the player's visual for a DNA-based creature rig.
+     * The existing capsule physics body is unchanged.
+     * Called from main.ts after character creation.
+     */
+    applyDNA(dna) {
+        if (this._creatureRig) {
+            this.group.remove(this._creatureRig.root);
+            this._creatureRig.dispose();
+        }
+        this._walkCtrl = null;
+        this.bodyMesh.visible = false;
+        this.headMesh.visible = false;
+        this._creatureRig = buildCreature(dna);
+        this._creatureRig.root.scale.setScalar(dna.proportions.global);
+        if (dna.archetype !== 'biped') {
+            const wc = new ProceduralWalkController(this._creatureRig);
+            if (wc.isApplicable) {
+                const natFootY = wc.naturalFootY;
+                this._creatureRig.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - natFootY;
+                this._walkCtrl = wc;
+            }
+            else {
+                this._creatureRig.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS)
+                    - computeQuadNaturalFootY(this._creatureRig);
+            }
+        }
+        this.group.add(this._creatureRig.root);
+    }
+    /**
+     * Swap the player's visual for a loaded GLB/FBX asset model.
+     * Physics capsule is unchanged. Returns a promise that resolves once loaded.
+     */
+    async applyAssetModel(def) {
+        // Remove previous asset model if any
+        if (this._charController) {
+            this.group.remove(this._charController.scene);
+            this._charController.dispose();
+            this._charController = null;
+        }
+        // Remove procedural rig if any
+        if (this._creatureRig) {
+            this.group.remove(this._creatureRig.root);
+            this._creatureRig.dispose();
+            this._creatureRig = null;
+            this._walkCtrl = null;
+        }
+        this.bodyMesh.visible = false;
+        this.headMesh.visible = false;
+        const loaded = await loadCharModel(def);
+        this._charController = new CharacterController(loaded);
+        // Scale and position the model so feet sit at the capsule bottom
+        const scene = this._charController.scene;
+        // Most KayKit models are ~2 units tall — fit them to our capsule height
+        const box = new THREE.Box3().setFromObject(scene);
+        const modelH = box.max.y - box.min.y;
+        const targetH = (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) * 2;
+        const scale = modelH > 0.01 ? targetH / modelH : 1;
+        scene.scale.setScalar(scale);
+        // Recompute after scaling
+        box.setFromObject(scene);
+        scene.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - box.min.y;
+        this.group.add(scene);
+    }
+    /** Instantly reposition both the physics body and the visual mesh.
+     *  Use for room transitions only — not for gameplay movement. */
+    teleport(pos) {
+        this.body.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
+        this.group.position.copy(pos);
+        this._pos.copy(pos);
+        // Reset vertical velocity so the player lands cleanly in the new room
+        this.velocity.set(0, 0, 0);
+    }
+    _pos = new THREE.Vector3();
+    constructor(physicsWorld, startPosition) {
+        const { body, collider } = physicsWorld.createKinematicCapsule(startPosition, CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS);
+        this.body = body;
+        this.collider = collider;
+        this.kcc = physicsWorld.createCharacterController(KCC_OFFSET);
+        this.kcc.setSlideEnabled(true);
+        this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
+        this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
+        // Allow the KCC to step up tile edges (heightfield transitions and box edges).
+        // maxHeight = 0.7 clears one full tile level (SH=0.55) plus margin.
+        // minWidth  = 0.3 avoids stepping over narrow slivers / geometry artefacts.
+        this.kcc.enableAutostep(0.7, 0.3, false);
+        // Snap the character back down to the floor when descending steps/tiles.
+        // Without this the player floats momentarily after walking off an elevated tile.
+        // Distance 0.7 is just above one tile-level height (SH=0.55) so any single-step
+        // descent is snapped in the same frame.
+        this.kcc.enableSnapToGround(0.7);
+        const built = PlayerController.buildMesh();
+        this.group = built.group;
+        this.bodyMesh = built.bodyMesh;
+        this.headMesh = built.headMesh;
+        this.group.position.copy(startPosition);
+        this.shadow = PlayerController.buildShadow();
+        this.health = new HealthComponent(PLAYER_HP, PLAYER_IFRAME, () => this.onHit());
+    }
+    /** Dev fly mode — disables gravity and lets the player soar freely.
+     *  Space = ascend, F (dodge key) = descend, WASD = 2.5× normal speed. */
+    flyMode = false;
+    update(input, dt) {
+        // ── 1. TIMERS ──────────────────────────────────────────────────────────
+        this.health.tick(dt);
+        this.coyoteTimer -= dt;
+        this.jumpBufferTimer -= dt;
+        this.dodgeCooldown = Math.max(0, this.dodgeCooldown - dt);
+        this.flashTimer = Math.max(0, this.flashTimer - dt);
+        const wasGrounded = this.isGrounded;
+        // ── Ability signals from AbilitySystem (via group.userData) ────────────
+        // Blink teleport arrival
+        if (this.group.userData['_triggerSpawnAir']) {
+            this.group.userData['_triggerSpawnAir'] = false;
+            this.triggerSpawnAir();
+        }
+        // Levitate toggle
+        if (typeof this.group.userData['_levitateMode'] === 'boolean') {
+            const wantsLev = this.group.userData['_levitateMode'];
+            if (wantsLev !== this.levitateMode) {
+                this.levitateMode = wantsLev;
+                if (wantsLev) {
+                    this._levitateTargetY = this._pos.y + this.LEVITATE_HEIGHT;
+                }
+                else {
+                    // Deactivating levitate → set jumpPhase to falling so land animation fires
+                    this._jumpPhase = 'falling';
+                }
+            }
+            delete this.group.userData['_levitateMode'];
+        }
+        // Fly spell toggle (replaces old fly burst system)
+        if (typeof this.group.userData['_flySpellMode'] === 'boolean') {
+            this.flySpellMode = this.group.userData['_flySpellMode'];
+            delete this.group.userData['_flySpellMode'];
+        }
+        // ── LEVITATE MODE (ability — hover at fixed height, XZ movement only) ──
+        if (this.levitateMode) {
+            const LEVITATE_H = RUN_SPEED * 0.7; // slower horizontal movement while floating
+            const md = calculateMoveDirection(input);
+            this.velocity.x = lerp(this.velocity.x, md.x * LEVITATE_H, ACCEL_GROUND * dt);
+            this.velocity.z = lerp(this.velocity.z, md.z * LEVITATE_H, ACCEL_GROUND * dt);
+            // Gently float up to target height
+            const cur = this.body.translation();
+            const targetY = this._levitateTargetY;
+            const yDelta = targetY - cur.y;
+            this.velocity.y = lerp(this.velocity.y, yDelta * 5, 8 * dt);
+            this.body.setNextKinematicTranslation({
+                x: cur.x + this.velocity.x * dt,
+                y: cur.y + this.velocity.y * dt,
+                z: cur.z + this.velocity.z * dt,
+            });
+            rapierToThreeInto(this.body.translation(), this._pos);
+            this.group.position.copy(this._pos);
+            const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+            if (hSpeed > 0.3) {
+                this.facingAngle = lerpAngle(this.facingAngle, Math.atan2(this.velocity.x, this.velocity.z), TURN_SPEED_GROUND * dt);
+                this.group.rotation.y = this.facingAngle;
+            }
+            // Fall through to animation section (skips physics below)
+            this.isGrounded = false;
+            // (animation + visual section runs below)
+            const hSpeedLev = hSpeed;
+            { // scoped to run visual/animation updates
+                const speedFactor = Math.min(hSpeedLev / RUN_SPEED, 1);
+                this.bodyMesh.rotation.x = lerp(this.bodyMesh.rotation.x, -speedFactor * 0.2, 0.12);
+                const headMat = this.headMesh.material;
+                headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, 0.7, 0.05);
+                const bodyMat = this.bodyMesh.material;
+                bodyMat.color.setHex(PALETTE.PLAYER_BODY);
+                this.group.visible = true;
+                this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
+                this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
+                this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+                if (this._charController) {
+                    this._charController.setState('levitate');
+                    const targetLeanX = -Math.min(hSpeedLev / RUN_SPEED, 1) * 0.28;
+                    const strafeSign = Math.cos(this.facingAngle) * this.velocity.x - Math.sin(this.facingAngle) * this.velocity.z;
+                    const targetLeanZ = -Math.min(Math.abs(strafeSign) / RUN_SPEED, 1) * 0.18 * Math.sign(strafeSign);
+                    this._leanX = lerp(this._leanX, targetLeanX, 8 * dt);
+                    this._leanZ = lerp(this._leanZ, targetLeanZ, 8 * dt);
+                    this._charController.scene.rotation.x = this._leanX;
+                    this._charController.scene.rotation.z = this._leanZ;
+                    this._charController.update(dt);
+                }
+                const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));
+                const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+                this.shadow.position.set(this._pos.x, floorY - this.LEVITATE_HEIGHT * 0.9 + 0.03, this._pos.z);
+                this.shadow.scale.setScalar(Math.max(0.05, 0.6 - height * 0.04));
+                this.shadow.material.opacity = 0.2;
+            }
+            return;
+        }
+        // ── FLY SPELL MODE (gameplay — full 3D free flight, toggleable) ──────────
+        if (this.flySpellMode) {
+            const FLY_H = RUN_SPEED * 2.2; // fast horizontal movement
+            const FLY_V = RUN_SPEED * 1.5; // vertical speed
+            const md = calculateMoveDirection(input);
+            this.velocity.x = lerp(this.velocity.x, md.x * FLY_H, ACCEL_GROUND * dt);
+            this.velocity.z = lerp(this.velocity.z, md.z * FLY_H, ACCEL_GROUND * dt);
+            // Space = ascend, Shift (run key) = descend
+            if (input.jump)
+                this.velocity.y = lerp(this.velocity.y, FLY_V, 8 * dt);
+            else if (input.run)
+                this.velocity.y = lerp(this.velocity.y, -FLY_V, 8 * dt);
+            else
+                this.velocity.y = lerp(this.velocity.y, 0, 6 * dt);
+            const cur = this.body.translation();
+            this.body.setNextKinematicTranslation({
+                x: cur.x + this.velocity.x * dt,
+                y: cur.y + this.velocity.y * dt,
+                z: cur.z + this.velocity.z * dt,
+            });
+            rapierToThreeInto(this.body.translation(), this._pos);
+            this.group.position.copy(this._pos);
+            const hSpeedFly = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+            if (hSpeedFly > 0.4) {
+                this.facingAngle = lerpAngle(this.facingAngle, Math.atan2(this.velocity.x, this.velocity.z), TURN_SPEED_GROUND * dt);
+                this.group.rotation.y = this.facingAngle;
+            }
+            this.isGrounded = false;
+            // Animation + tilt: aggressive forward lean based on speed
+            const speedT = Math.min(hSpeedFly / (RUN_SPEED * 2.2), 1);
+            const flyLeanX = -speedT * 0.62; // up to ~35° forward
+            const strafeSignFly = Math.cos(this.facingAngle) * this.velocity.x - Math.sin(this.facingAngle) * this.velocity.z;
+            const flyLeanZ = -Math.min(Math.abs(strafeSignFly) / FLY_H, 1) * 0.22 * Math.sign(strafeSignFly);
+            this._leanX = lerp(this._leanX, flyLeanX, 10 * dt);
+            this._leanZ = lerp(this._leanZ, flyLeanZ, 10 * dt);
+            if (this._charController) {
+                this._charController.setState('fly');
+                this._charController.scene.rotation.x = this._leanX;
+                this._charController.scene.rotation.z = this._leanZ;
+                this._charController.update(dt);
+            }
+            const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+            this.shadow.position.set(this._pos.x, floorY - 1.5, this._pos.z);
+            this.shadow.scale.setScalar(0.4);
+            this.shadow.material.opacity = 0.12;
+            return;
+        }
+        // ── FLY MODE (dev cheat — overworld only) ──────────────────────────────
+        if (this.flyMode) {
+            const FLY_H = RUN_SPEED * 2.5; // fast horizontal glide
+            const FLY_V = RUN_SPEED * 2.0; // vertical ascent/descent speed
+            const md = calculateMoveDirection(input);
+            this.velocity.x = lerp(this.velocity.x, md.x * FLY_H, ACCEL_GROUND * dt);
+            this.velocity.z = lerp(this.velocity.z, md.z * FLY_H, ACCEL_GROUND * dt);
+            // Space = ascend, F/dodge key = descend, neither = gently level off
+            if (input.jump)
+                this.velocity.y = FLY_V;
+            else if (input.dodge)
+                this.velocity.y = -FLY_V;
+            else
+                this.velocity.y = lerp(this.velocity.y, 0, 8 * dt);
+            const cur = this.body.translation();
+            this.body.setNextKinematicTranslation({
+                x: cur.x + this.velocity.x * dt,
+                y: cur.y + this.velocity.y * dt,
+                z: cur.z + this.velocity.z * dt,
+            });
+            rapierToThreeInto(this.body.translation(), this._pos);
+            this.group.position.copy(this._pos);
+            const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+            if (hSpeed > 0.4) {
+                this.facingAngle = lerpAngle(this.facingAngle, Math.atan2(this.velocity.x, this.velocity.z), TURN_SPEED_GROUND * dt);
+                this.group.rotation.y = this.facingAngle;
+            }
+            return; // skip normal physics
+        }
+        // ── 1b. DODGE-ROLL ─────────────────────────────────────────────────────
+        const dodgeJustPressed = input.dodge && !this.lastDodgeInput;
+        this.lastDodgeInput = input.dodge;
+        if (dodgeJustPressed && this.dodgeCooldown <= 0 && this.dodgeTimer <= 0) {
+            // Direction: current facing, or movement direction if any
+            const moveDir = new THREE.Vector3(this.velocity.x, 0, this.velocity.z);
+            if (moveDir.lengthSq() < 0.01) {
+                moveDir.set(Math.sin(this.facingAngle), 0, Math.cos(this.facingAngle));
+            }
+            else {
+                moveDir.normalize();
+            }
+            this.dodgeDir.copy(moveDir);
+            this.dodgeTimer = DODGE_DURATION;
+            this.dodgeCooldown = DODGE_COOLDOWN;
+            this.flashTimer = DODGE_IFRAME;
+            // G3: Squash on launch — Y compress, Z stretch in dodge direction
+            this._applyModelScale(0.85, 0.65, 1.35);
+        }
+        if (this.dodgeTimer > 0) {
+            this.dodgeTimer -= dt;
+            const rollFrac = this.dodgeTimer / DODGE_DURATION; // 1 at start → 0 at end
+            if (rollFrac > 0.15) {
+                // Mid-roll: maintain stretch
+                this._applyModelScale(0.88, 0.80, 1.28);
+            }
+            else {
+                // End of roll: land-bounce squash
+                this._applyModelScale(1.15, 0.72, 1.15);
+            }
+            // Override horizontal velocity with dodge
+            this.velocity.x = this.dodgeDir.x * DODGE_SPEED;
+            this.velocity.z = this.dodgeDir.z * DODGE_SPEED;
+        }
+        // ── 2. JUMP INPUT — rising-edge detect, buffer window ─────────────────
+        const jumpJustPressed = input.jump && !this.lastJumpInput;
+        this.lastJumpInput = input.jump;
+        if (jumpJustPressed)
+            this.jumpBufferTimer = JUMP_BUFFER_TIME;
+        if (!input.jump)
+            this.jumpHeld = false;
+        // ── 3. EXECUTE JUMP ────────────────────────────────────────────────────
+        const canJump = wasGrounded || this.coyoteTimer > 0;
+        let justJumped = false;
+        if (this.jumpBufferTimer > 0 && canJump) {
+            this.velocity.y = JUMP_VELOCITY;
+            this.coyoteTimer = 0;
+            this.jumpBufferTimer = 0;
+            this.jumpHeld = true;
+            justJumped = true;
+            this.squashStretchJump();
+        }
+        // ── 4. GRAVITY ─────────────────────────────────────────────────────────
+        if (!wasGrounded || justJumped) {
+            let g;
+            if (this.velocity.y > 0) {
+                g = this.jumpHeld ? GRAVITY_RISE : GRAVITY_RELEASE;
+            }
+            else {
+                g = GRAVITY_FALL;
+            }
+            this.velocity.y -= g * dt;
+            this.velocity.y = Math.max(this.velocity.y, -MAX_FALL_SPEED);
+        }
+        else {
+            this.velocity.y = GROUND_PUSH;
+        }
+        // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────
+        // Skip normal acceleration when dodge is active (dodge overrides velocity)
+        if (this.dodgeTimer <= 0) {
+            const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
+            const moveDir = calculateMoveDirection(input);
+            const isMoving = moveDir.lengthSq() > 0.01;
+            const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
+            const decel = wasGrounded ? DECEL_GROUND : DECEL_AIR;
+            if (isMoving) {
+                this.velocity.x = lerp(this.velocity.x, moveDir.x * topSpeed, accel * dt);
+                this.velocity.z = lerp(this.velocity.z, moveDir.z * topSpeed, accel * dt);
+            }
+            else {
+                this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
+                this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
+            }
+        }
+        // ── 6. KCC ─────────────────────────────────────────────────────────────
+        const desired = {
+            x: this.velocity.x * dt,
+            y: this.velocity.y * dt,
+            z: this.velocity.z * dt,
+        };
+        this.kcc.computeColliderMovement(this.collider, desired);
+        this.isGrounded = this.kcc.computedGrounded() && this.velocity.y <= 0.1;
+        const actual = this.kcc.computedMovement();
+        if (this.velocity.y > 0 && actual.y < desired.y * 0.5) {
+            this.velocity.y = 0; // hit ceiling
+        }
+        const cur = this.body.translation();
+        this.body.setNextKinematicTranslation({
+            x: cur.x + actual.x,
+            y: cur.y + actual.y,
+            z: cur.z + actual.z,
+        });
+        // ── 7. POST-STEP STATE ─────────────────────────────────────────────────
+        if (wasGrounded && !this.isGrounded && !justJumped) {
+            this.coyoteTimer = COYOTE_TIME; // walked off ledge
+        }
+        if (!wasGrounded && this.isGrounded) {
+            this.squashStretchLand(this.velocity.y);
+            this.velocity.y = GROUND_PUSH;
+        }
+        // ── 8. SYNC POSITION ───────────────────────────────────────────────────
+        rapierToThreeInto(this.body.translation(), this._pos);
+        this.group.position.copy(this._pos);
+        // ── 9. VISUALS ─────────────────────────────────────────────────────────
+        const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+        // Rotate group to face direction of travel
+        if (hSpeed > 0.4) {
+            const targetAngle = Math.atan2(this.velocity.x, this.velocity.z);
+            const turnRate = wasGrounded ? TURN_SPEED_GROUND : TURN_SPEED_AIR;
+            this.facingAngle = lerpAngle(this.facingAngle, targetAngle, turnRate * dt);
+            this.group.rotation.y = this.facingAngle;
+        }
+        // Forward lean on bodyMesh (not group — keeps shadow/head unaffected)
+        const speedFactor = Math.min(hSpeed / RUN_SPEED, 1);
+        this.bodyMesh.rotation.x = lerp(this.bodyMesh.rotation.x, -speedFactor * MAX_LEAN, 0.12);
+        // Head bob while running on ground
+        const headBaseY = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.25;
+        if (this.isGrounded && hSpeed > 0.3) {
+            this.bobTimer += hSpeed * dt * BOB_FREQ;
+            const bob = Math.abs(Math.sin(this.bobTimer * Math.PI * 2)) * BOB_AMP * speedFactor;
+            this.headMesh.position.y = lerp(this.headMesh.position.y, headBaseY + bob, 0.3);
+        }
+        else {
+            this.headMesh.position.y = lerp(this.headMesh.position.y, headBaseY, 0.2);
+        }
+        // Head glow brighter when sprinting
+        const headMat = this.headMesh.material;
+        const glowTarget = input.run && hSpeed > 1 ? 1.2 : 0.4;
+        headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, glowTarget, 0.08);
+        // i-frame / hit flash: blink the body between white and normal colour
+        const bodyMat = this.bodyMesh.material;
+        if (this.flashTimer > 0) {
+            const blink = Math.sin(this.flashTimer * 40) > 0;
+            bodyMat.color.setHex(blink ? 0xffffff : PALETTE.PLAYER_BODY);
+            this.group.visible = this.dodgeTimer <= 0 || blink; // flicker during dodge
+        }
+        else {
+            bodyMat.color.setHex(PALETTE.PLAYER_BODY);
+            this.group.visible = true;
+        }
+        // Squash/stretch scale decays back to (1,1,1) on bodyMesh and char model
+        this.bodyMesh.scale.x = lerp(this.bodyMesh.scale.x, 1, 12 * dt);
+        this.bodyMesh.scale.y = lerp(this.bodyMesh.scale.y, 1, 12 * dt);
+        this.bodyMesh.scale.z = lerp(this.bodyMesh.scale.z, 1, 12 * dt);
+        if (this._charController) {
+            this._charController.scene.scale.x = lerp(this._charController.scene.scale.x, 1, 12 * dt);
+            this._charController.scene.scale.y = lerp(this._charController.scene.scale.y, 1, 12 * dt);
+            this._charController.scene.scale.z = lerp(this._charController.scene.scale.z, 1, 12 * dt);
+        }
+        // DNA rig animation (runs alongside hidden bodyMesh/headMesh logic)
+        if (this._creatureRig) {
+            const t = performance.now() * 0.001;
+            if (this._walkCtrl) {
+                // Pass rig root world position — ProceduralWalk uses root-local foot offsets.
+                this._creatureRig.root.getWorldPosition(this._floorPos);
+                this._walkCtrl.update(dt, this._floorPos, this.facingAngle);
+            }
+            else {
+                // Serpent trail: run BEFORE animateCreature so the sway overlay (+=) layers on top.
+                if (this._creatureRig.snakeLoco) {
+                    this._creatureRig.snakeLoco.update(this._creatureRig.root, this._creatureRig.bones.segments ?? []);
+                }
+                if (this.flashTimer > 0) {
+                    animateCreature(this._creatureRig, { state: 'hit', time: t, timeSinceHit: PLAYER_IFRAME - this.flashTimer });
+                }
+                else if (hSpeed > RUN_SPEED * 0.5) {
+                    animateCreature(this._creatureRig, { state: 'run', time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+                }
+                else if (hSpeed > 0.3) {
+                    animateCreature(this._creatureRig, { state: 'walk', time: t, velocity: Math.min(hSpeed / RUN_SPEED, 1) });
+                }
+                else {
+                    animateCreature(this._creatureRig, { state: 'idle', time: t });
+                }
+            }
+        }
+        // Asset model animation — full state machine with jump sequence, tilt, death
+        if (this._charController) {
+            // ── Jump sequence ─────────────────────────────────────────────────────
+            const justLanded = !wasGrounded && this.isGrounded;
+            const justLeftGround = wasGrounded && !this.isGrounded;
+            if (justLanded && this._jumpPhase !== 'landing' && this._jumpPhase !== 'grounded') {
+                this._jumpPhase = 'landing';
+                this._charController.playOnce('jump_land', this._resolveLoopState(hSpeed), () => {
+                    this._jumpPhase = 'grounded';
+                });
+            }
+            else if (justLeftGround && !this._charController.isPlayingOneShot) {
+                // Only trigger jump_start if we went airborne from a jump (not a fall-off edge)
+                if (this.velocity.y > 0.5) {
+                    this._jumpPhase = 'rising';
+                    this._charController.playOnce('jump_start', 'jump_air', () => {
+                        // After jump_start, settle into jump_air loop
+                        this._charController?.setState('jump_air');
+                    });
+                }
+                else {
+                    this._jumpPhase = 'falling';
+                    this._charController.setState('jump_air');
+                }
+            }
+            // Peak → falling transition
+            if (this._jumpPhase === 'rising' && this.velocity.y < 0) {
+                this._jumpPhase = 'falling';
+            }
+            // ── Levitate visual ───────────────────────────────────────────────────
+            if (this.levitateMode) {
+                this._charController.setState('levitate');
+            }
+            else if (!this.isGrounded && this._jumpPhase === 'grounded') {
+                // Fell off a ledge without jumping — play air idle
+                this._jumpPhase = 'falling';
+                this._charController.setState('jump_air');
+            }
+            // ── Ground loop state ─────────────────────────────────────────────────
+            if (this.isGrounded && this._jumpPhase === 'grounded' && !this._charController.isPlayingOneShot) {
+                const nextLoop = this._resolveLoopState(hSpeed);
+                this._charController.setState(nextLoop);
+            }
+            // ── Hit flash ─────────────────────────────────────────────────────────
+            if (this.flashTimer > 0.3 && !this._charController.isPlayingOneShot) {
+                this._charController.playOnce('hit', this._resolveLoopState(hSpeed));
+            }
+            // ── Tilt during levitate ─────────────────────────────────────────────
+            // (Fly spell has its own tilt block inside flySpellMode early-return above)
+            const targetLeanX = this.levitateMode
+                ? -Math.min(hSpeed / RUN_SPEED, 1) * 0.30
+                : this.flyMode
+                    ? -Math.min(hSpeed / RUN_SPEED, 1) * 0.55
+                    : 0;
+            const strafeSign = Math.cos(this.facingAngle) * this.velocity.x
+                - Math.sin(this.facingAngle) * this.velocity.z;
+            const targetLeanZ = (this.levitateMode || this.flyMode)
+                ? -Math.min(Math.abs(strafeSign) / RUN_SPEED, 1) * 0.18 * Math.sign(strafeSign)
+                : 0;
+            this._leanX = lerp(this._leanX, targetLeanX, 8 * dt);
+            this._leanZ = lerp(this._leanZ, targetLeanZ, 8 * dt);
+            this._charController.scene.rotation.x = this._leanX;
+            this._charController.scene.rotation.z = this._leanZ;
+            this._charController.update(dt);
+        }
+        // Shadow blob tracks position, shrinks with height
+        const height = Math.max(0, this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS));
+        // Y follows the player's actual floor height so the shadow stays on elevated tiles.
+        const floorY = this._pos.y - (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS);
+        this.shadow.position.set(this._pos.x, floorY + 0.03, this._pos.z);
+        this.shadow.scale.setScalar(Math.max(0.05, 1 - height * 0.09));
+        this.shadow.material.opacity = Math.max(0, (1 - height * 0.11) * 0.5);
+    }
+    // ── Private helpers ────────────────────────────────────────────────────────
+    /**
+     * Resolve the appropriate looping animation state for the current speed.
+     * Used to set the return-to state after a one-shot.
+     */
+    _resolveLoopState(hSpeed) {
+        if (this.levitateMode)
+            return 'levitate';
+        if (this.flySpellMode)
+            return 'fly';
+        if (this.flyMode)
+            return 'fly';
+        if (!this.isGrounded)
+            return 'jump_air';
+        return hSpeed > RUN_SPEED * 0.5 ? 'run' : hSpeed > 0.3 ? 'walk' : 'idle';
+    }
+    /** Flash and squash when the player is hit. */
+    onHit() {
+        this.flashTimer = PLAYER_IFRAME;
+        this.bodyMesh.scale.set(1.3, 0.7, 1.3);
+        // Trigger hit one-shot on character model
+        if (this._charController && !this._charController.isPlayingOneShot) {
+            const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+            this._charController.playOnce('hit', this._resolveLoopState(hSpeed));
+        }
+    }
+    /** Jump take-off: vertical stretch on bodyMesh only. */
+    squashStretchJump() {
+        this._applyModelScale(0.75, 1.35, 0.75);
+    }
+    /** Landing splat proportional to fall speed, on bodyMesh only. */
+    squashStretchLand(fallVelocity) {
+        const t = Math.min(Math.abs(fallVelocity) / MAX_FALL_SPEED, 1);
+        const sy = Math.max(0.6, 1 - t * 0.4);
+        const sxz = 1 + t * 0.5;
+        this._applyModelScale(sxz, sy, sxz);
+    }
+    /** Apply scale to whichever visual is active: charController scene or fallback bodyMesh. */
+    _applyModelScale(sx, sy, sz) {
+        if (this._charController) {
+            this._charController.scene.scale.set(sx, sy, sz);
+        }
+        this.bodyMesh.scale.set(sx, sy, sz);
+    }
+    // ── Static builders ────────────────────────────────────────────────────────
+    static buildMesh() {
+        const group = new THREE.Group();
+        const bodyGeo = new THREE.CapsuleGeometry(CAPSULE_RADIUS, CAPSULE_HALF_HEIGHT * 2, 8, 16);
+        const bodyMat = new THREE.MeshLambertMaterial({ color: PALETTE.PLAYER_BODY });
+        const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        bodyMesh.castShadow = true;
+        const headGeo = new THREE.SphereGeometry(0.2, 16, 16);
+        const headMat = new THREE.MeshLambertMaterial({
+            color: PALETTE.PLAYER_BODY,
+            emissive: new THREE.Color(PALETTE.PLAYER_GLOW),
+            emissiveIntensity: 0.4,
+        });
+        const headMesh = new THREE.Mesh(headGeo, headMat);
+        headMesh.position.y = CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS + 0.25;
+        headMesh.castShadow = true;
+        group.add(bodyMesh, headMesh);
+        return { group, bodyMesh, headMesh };
+    }
+    static buildShadow() {
+        const geo = new THREE.CircleGeometry(0.45, 16);
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.45,
+            depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.renderOrder = 1;
+        return mesh;
+    }
+}
