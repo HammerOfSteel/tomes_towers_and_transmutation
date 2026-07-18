@@ -187,6 +187,8 @@ export class PlayerController {
   private readonly _floorPos = new THREE.Vector3();
   /** Asset-model character controller (mutually exclusive with _creatureRig). */
   private _charController: CharacterController | null = null;
+  /** PC4: Princess-creator instance (mutually exclusive with _creatureRig/_charController). */
+  private _princessInstance: import('@/princess-creator/factory').PrincessInstance | null = null;
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
@@ -310,6 +312,55 @@ export class PlayerController {
 
     this.group.add(scene);
   }
+
+  /**
+   * PC4: Swap the player's visual for a princess-creator model.
+   * Calls `buildPrincess(dna, {targetHeight: 1.6})` from the factory,
+   * attaches `instance.root` to the player group, stores the instance for
+   * per-frame `update(t, dt)` calls.
+   *
+   * Safe to call multiple times — disposes the previous instance.
+   */
+  async applyPrincess(dna: import('@/princess-creator/types').PrincessDNA): Promise<void> {
+    // Dispose previous visuals
+    if (this._princessInstance) {
+      this.group.remove(this._princessInstance.root);
+      this._princessInstance.dispose();
+      this._princessInstance = null;
+    }
+    if (this._charController) {
+      this.group.remove(this._charController.scene);
+      this._charController.dispose();
+      this._charController = null;
+    }
+    if (this._creatureRig) {
+      this.group.remove(this._creatureRig.root);
+      this._creatureRig.dispose();
+      this._creatureRig = null;
+      this._walkCtrl = null;
+    }
+    this.bodyMesh.visible = false;
+    this.headMesh.visible = false;
+
+    // Dynamically import the factory to avoid pulling the whole princess-creator
+    // bundle into the main game chunk unless this code path is actually exercised.
+    const { buildPrincess } = await import('@/princess-creator/factory');
+    this._princessInstance = buildPrincess(dna, { targetHeight: 1.6 });
+
+    // Position feet at capsule bottom
+    const box = new THREE.Box3().setFromObject(this._princessInstance.root);
+    this._princessInstance.root.position.y = -(CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) - box.min.y;
+
+    this.group.add(this._princessInstance.root);
+  }
+
+  /** PC4: Per-frame update for princess animations (call from game loop). */
+  updatePrincess(elapsedSeconds: number, dt: number): void {
+    this._princessInstance?.update(elapsedSeconds, dt);
+  }
+
+  /** True when a princess model is currently active. */
+  get hasPrincess(): boolean { return this._princessInstance !== null; }
 
   /** Instantly reposition both the physics body and the visual mesh.
    *  Use for room transitions only — not for gameplay movement. */

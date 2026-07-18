@@ -127,6 +127,13 @@ const SPECIES_MAP: Record<CharacterId, SpeciesId> = {
   slime_arcane:      'slime',
   slime_philosopher: 'slime',
   slime_young:       'slime',
+  // NS3: New Tier-1 species
+  elf_scholar:     'elf',
+  elf_wanderer:    'elf',
+  celestial_dawn:  'celestial',
+  celestial_dusk:  'celestial',
+  draconic_fire:   'draconic',
+  draconic_scale:  'draconic',
 };
 
 export function speciesForCharacter(id: CharacterId): SpeciesId {

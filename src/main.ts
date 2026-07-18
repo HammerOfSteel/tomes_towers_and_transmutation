@@ -698,6 +698,9 @@ async function main() {
       if (!import.meta.env.DEV) return;
       CreativeMode.enterBackroom('spell_lab');
     },
+    onOpenPrincessAtelier: () => {
+      window.open('princess-creator.html', '_blank');
+    },
   });
 
   const gameMenu = new GameMenu({
@@ -757,11 +760,29 @@ async function main() {
     if (cfg?.boon === 'tome') {
       progression.grantSpell('flame_dart');
     } else if (cfg?.boon === 'blood') {
-      // +6 vitality → derivedMaxHp = 10 + 6*5 = 40 (+30 HP)
-      progression.boostStat('vitality', 6);
+      progression.boostStat('vitality', 6);    // +30 HP
     } else if (cfg?.boon === 'swift') {
-      // +7 swiftness → dodge CD mult ≈ 0.65, speed mult ≈ 1.28
-      progression.boostStat('swiftness', 7);
+      progression.boostStat('swiftness', 7);   // dodge CD ≈ 0.65, speed ≈ 1.28
+    }
+    // NS4: new boons
+    else if (cfg?.boon === 'herbalist') {
+      progression.grantSpell('minor_heal');
+      progression.mods.herbYieldMult *= 1.25;
+    } else if (cfg?.boon === 'night_touched') {
+      // Handled per-frame by DayNightSystem — flag here so it can check
+      progression.mods.hasNightTouched = true;
+    } else if (cfg?.boon === 'static_charge') {
+      progression.grantSpell('lightning_bolt');
+      progression.mods.aoeRadiusMult *= 1.10;
+    } else if (cfg?.boon === 'silver_tongue') {
+      progression.mods.silverTongue = true;
+    } else if (cfg?.boon === 'resonant_mind') {
+      progression.mods.spellCooldownMult = (progression.mods.spellCooldownMult ?? 1) * 0.80;
+      // +30 starting mana (grant via progression's mana pool through mods)
+      progression.mods.startingManaBonus = (progression.mods.startingManaBonus ?? 0) + 30;
+    } else if (cfg?.boon === 'tower_trained') {
+      progression.boostStat('vitality', 4);    // +20 HP
+      progression.mods.firstHitImmune = true;
     }
 
     // ── Apply narrative stat bonuses (from NewGameFlow conversation) ───
@@ -780,8 +801,12 @@ async function main() {
       if (entry) progression.boostStat(entry[0], entry[1]);
     }
 
-    // Apply player character appearance — asset model takes priority over DNA
-    if (cfg?.assetModel) {
+    // Apply player character appearance — princess mode > asset model > DNA
+    if (cfg?.princessDna) {
+      // PC4: spawn a princess-creator character
+      player.applyPrincess(cfg.princessDna).catch((e) =>
+        console.error('[main] failed to build princess model:', e));
+    } else if (cfg?.assetModel) {
       player.applyAssetModel(cfg.assetModel).catch((e) =>
         console.error('[main] failed to load asset model:', e));
     } else if (cfg?.dna) {
@@ -793,21 +818,24 @@ async function main() {
     _craftedItemCount = 0;
     consumables.reset();
     hud.setConsumables({ minorHealCount: 0, majorHealCount: 0 });
-    if (cfg?.characterId) {
-      _characterSpecies = speciesForCharacter(cfg.characterId);
+    // PC4: princess species override
+    const cfgSpecies = cfg?.princessSpecies
+      ? (cfg.princessSpecies as import('@/world/StoryQuestLine').SpeciesId)
+      : null;
+    if (cfg?.characterId || cfgSpecies) {
+      _characterSpecies = cfgSpecies ?? speciesForCharacter(cfg!.characterId!);
       // D6: gate species-specific talent nodes
       talentSystem.activeSpecies = _characterSpecies as import('@/progression/TalentSystem').TalentSpecies;
       mainMenu.setActiveSpecies(_characterSpecies);
       // Apply species-specific active abilities (D1/D6)
-      applyCharacterAbilities(abilities, cfg.characterId);
-      _storyRunner = new StoryRunner(cfg.characterId, questLog);
-      // C1: Update quest journal species tab with the story arc title (fire-and-forget)
-      import('@/world/StoryQuestLine').then(({ getStoryLine, speciesForCharacter }) => {
-        const species = speciesForCharacter(cfg.characterId as any);
-        if (species) {
-          const line = getStoryLine(species as any);
-          if (line) questLog.setSpeciesTitle(line.displayTitle);
-        }
+      if (cfg?.characterId) applyCharacterAbilities(abilities, cfg.characterId);
+      _storyRunner = cfg?.characterId
+        ? new StoryRunner(cfg.characterId, questLog)
+        : new StoryRunner(_characterSpecies as any, questLog);
+      // C1: Update quest journal species tab
+      const _sl = import('@/world/StoryQuestLine').then(({ getStoryLineBySpecies }) => {
+        const line = getStoryLineBySpecies(_characterSpecies as any);
+        if (line) questLog.setSpeciesTitle(line.displayTitle);
       });
       _storyRunner.onBeatComplete = (text, xp, gold) => {
         progression.grantXP(xp);
@@ -1564,6 +1592,18 @@ async function main() {
       getCurrentFloor: () => _currentFloor,
       /** Current room ID as loaded in SceneManager. */
       getCurrentRoom: () => sceneManager.currentFloor,
+      /** Set game time scale (1=normal, 0.1=slow-motion, 2=fast). */
+      setGameSpeed: (scale: number) => { physics.cullingRadius; gameLoop.timeScale = Math.max(0.01, Math.min(4, scale)); },
+      /** Get current game time scale. */
+      getGameSpeed: () => gameLoop.timeScale,
+      /** PC5: Build a princess from DNA or share code and attach to the player. */
+      buildPrincess: (dna: import('@/princess-creator/types').PrincessDNA | string) => {
+        import('@/princess-creator/dna').then(({ sanitizeDna, shareCodeToDna }) => {
+          const resolved = typeof dna === 'string' ? shareCodeToDna(dna) : sanitizeDna(dna as any);
+          if (!resolved) { console.error('[__game.buildPrincess] invalid DNA'); return; }
+          player.applyPrincess(resolved).catch(console.error);
+        });
+      },
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
@@ -1920,6 +1960,8 @@ async function main() {
     if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
       player.update(input.state, dt);
+      // PC4: tick princess creator animations each frame
+      if (player.hasPrincess) player.updatePrincess(performance.now() / 1000, dt);
 
       // 3. Update mouse world position for spell aim
       const s = input.state;

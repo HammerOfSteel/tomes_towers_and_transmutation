@@ -13,6 +13,10 @@ import * as THREE from 'three';
 import { loadWorldGenConfig }          from '@/world/WorldGenConfig';
 import type { CharModelDef }           from '@/characters/charManifest';
 import { AssetCharBrowser }            from '@/ui/AssetCharBrowser';
+import { PrincessLibraryPanel }        from '@/ui/PrincessLibraryPanel';
+import type { PrincessDNA }           from '@/princess-creator/types';
+import { PRINCESS_SPECIES_MAP }       from '@/princess-creator/defaults/PrincessDefaults';
+import { seedGalleryIfEmpty }         from '@/princess-creator/defaults/PrincessDefaults';
 import { loadCharModel }               from '@/characters/CharacterLoader';
 import type { CharacterConfig, StartingBoon } from '@/ui/DNACreator';
 import { generateNameForSpecies }      from '@/world/NameGenerator';
@@ -581,6 +585,12 @@ export class CharacterCreationV2 {
   private _slotId    = 0;
   private _assetModel: CharModelDef | null = null;
   private _boon: StartingBoon = 'tome';
+  // PC3: Custom princess mode
+  private _princessMode = false;
+  private _princessDna: PrincessDNA | null = null;
+  private _princessSpecies: string | null = null;
+  private _princessPanel: PrincessLibraryPanel | null = null;
+  private _princessToggleBtn: HTMLButtonElement | null = null;
 
   /** Fired when the player clicks "Begin →". */
   onComplete?: (cfg: CharacterConfig) => void;
@@ -598,7 +608,13 @@ export class CharacterCreationV2 {
   show(slotId: number): void {
     this._slotId = slotId;
     this._assetModel = null;
+    this._princessDna = null;
+    this._princessSpecies = null;
     this._boon = 'tome';
+
+    // Restore princess mode preference
+    this._princessMode = localStorage.getItem('ttt_custom_princess_mode') === 'true';
+    seedGalleryIfEmpty();
 
     const wg = loadWorldGenConfig();
 
@@ -816,6 +832,25 @@ export class CharacterCreationV2 {
     beginBtn.className = 'ccv2-btn ccv2-btn-begin';
     beginBtn.textContent = 'Begin →';
     beginBtn.onclick = () => {
+      // PC3: princess mode — requires a selected princess
+      if (this._princessMode) {
+        if (!this._princessDna) {
+          this._charBadge.style.borderColor = '#cc3030';
+          this._charBadge.textContent = '← Choose a princess';
+          setTimeout(() => { this._charBadge.style.borderColor = ''; }, 600);
+          return;
+        }
+        const cfg: CharacterConfig = {
+          name:            this._nameInput.value.trim() || this._princessDna.name,
+          boon:            this._boon,
+          slotId:          this._slotId,
+          dna:             { /* not used in princess mode */ } as any,
+          princessDna:     this._princessDna,
+          princessSpecies: (this._princessSpecies as CharacterConfig['princessSpecies']) ?? 'human',
+        };
+        this.onComplete?.(cfg);
+        return;
+      }
       if (!this._assetModel) {
         // Flash the badge to signal they need to pick a character
         this._charBadge.style.borderColor = '#cc3030';
@@ -832,9 +867,70 @@ export class CharacterCreationV2 {
       this.onComplete?.(cfg);
     };
 
+    // PC3: princess toggle button
+    const princessToggle = document.createElement('button');
+    princessToggle.className = 'ccv2-btn ccv2-btn-princess-toggle';
+    princessToggle.style.cssText = 'font-size:10px;padding:5px 10px;margin-bottom:8px;background:rgba(120,80,220,0.2);border:1px solid rgba(180,140,255,0.3);border-radius:5px;color:rgba(200,170,255,0.7);cursor:pointer;width:100%;text-align:left;';
+    this._princessToggleBtn = princessToggle;
+    this._updatePrincessToggleLabel();
+
+    princessToggle.onclick = () => {
+      this._princessMode = !this._princessMode;
+      localStorage.setItem('ttt_custom_princess_mode', String(this._princessMode));
+      this._updatePrincessToggleLabel();
+      // Show/hide browser vs princess panel
+      this._browserWrap.style.display = this._princessMode ? 'none' : '';
+      if (this._princessMode) {
+        this._openPrincessPanel();
+      }
+    };
+
+    // Insert toggle above the actions
+    panel.insertBefore(princessToggle, actions);
+
     actions.append(backBtn, beginBtn);
     panel.appendChild(actions);
 
     return overlay;
+  }
+
+  // ── PC3: Princess mode helpers ────────────────────────────────────────────
+
+  private _updatePrincessToggleLabel(): void {
+    if (!this._princessToggleBtn) return;
+    if (this._princessMode) {
+      this._princessToggleBtn.textContent = '👸 Custom Princess: ON — click to use real models';
+      this._princessToggleBtn.style.background = 'rgba(120,80,220,0.35)';
+      this._princessToggleBtn.style.borderColor = 'rgba(180,140,255,0.6)';
+    } else {
+      this._princessToggleBtn.textContent = '👸 Custom Princess: OFF — click to use your creations';
+      this._princessToggleBtn.style.background = 'rgba(120,80,220,0.1)';
+      this._princessToggleBtn.style.borderColor = 'rgba(180,140,255,0.2)';
+    }
+  }
+
+  private _openPrincessPanel(): void {
+    if (!this._princessPanel) {
+      this._princessPanel = new PrincessLibraryPanel(
+        this._overlay.ownerDocument.body,
+        {
+          onSelect: (dna, gameSpecies) => {
+            this._princessDna = dna;
+            this._princessSpecies = gameSpecies;
+            this._charBadge.textContent = `${dna.name} (${dna.species})`;
+            this._charBadge.className = 'ccv2-char-badge';
+            if (!this._nameInput.value.trim()) this._nameInput.value = dna.name;
+          },
+          onClose: () => {
+            // Panel closed — if no princess selected, show badge hint
+            if (!this._princessDna) {
+              this._charBadge.textContent = '← Choose a princess';
+              this._charBadge.className = 'ccv2-char-badge ccv2-badge--hint';
+            }
+          },
+        },
+      );
+    }
+    this._princessPanel.show();
   }
 }

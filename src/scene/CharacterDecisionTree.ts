@@ -33,7 +33,14 @@ export type CharacterId =
   | 'slime'
   | 'slime_arcane'
   | 'slime_philosopher'
-  | 'slime_young';
+  | 'slime_young'
+  // NS3: New Tier-1 species
+  | 'elf_scholar'
+  | 'elf_wanderer'
+  | 'celestial_dawn'
+  | 'celestial_dusk'
+  | 'draconic_fire'
+  | 'draconic_scale';
 
 export type StatBonus =
   | 'strength'
@@ -76,6 +83,13 @@ export const CHAR_MANIFEST_MAP: Record<CharacterId, string> = {
   slime_arcane:      'slime/Slime',
   slime_philosopher: 'slime/Slime',
   slime_young:       'slime/Slime',
+  // NS3: New Tier-1 species — use closest available models as stand-ins
+  elf_scholar:     'kaykit_adventurers/Mage',
+  elf_wanderer:    'adventure/Adventurer',
+  celestial_dawn:  'fantasy_heroes/Paladin',
+  celestial_dusk:  'fantasy_heroes/Necromancer',
+  draconic_fire:   'fantasy_heroes/Knight',
+  draconic_scale:  'fantasy_heroes/Knight',
 };
 
 /** Default lore display name per character. */
@@ -99,6 +113,13 @@ export const CHAR_DEFAULT_NAMES: Record<CharacterId, string> = {
   slime_arcane:      'the Arcane Slime',
   slime_philosopher: 'the Philosopher Slime',
   slime_young:       'the Young Slime',
+  // NS3: New Tier-1 species names
+  elf_scholar:     'the Elf Scholar',
+  elf_wanderer:    'the Wandering Elf',
+  celestial_dawn:  'the Dawn Celestial',
+  celestial_dusk:  'the Dusk Celestial',
+  draconic_fire:   'the Fire-Blooded',
+  draconic_scale:  'the Scale-Armoured',
 };
 
 /** Maps a stat bonus to its display label. */

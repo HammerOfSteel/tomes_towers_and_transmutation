@@ -52,6 +52,12 @@ export interface TalentModifiers {
   longMemory: boolean;         // elf — +10% XP, first-encounter bonus damage
   starTouched: boolean;        // celestial — light aura, night power boost
   scaleArmour: boolean;        // draconic — physical DR, fire mana discount
+  // NS4: New boon flags
+  hasNightTouched: boolean;    // night_touched — +15% dmg at night, stealth
+  silverTongue: boolean;       // silver_tongue — extra NPC dialogue, discount
+  firstHitImmune: boolean;     // tower_trained — first hit per room: no damage
+  spellCooldownMult: number;   // resonant_mind — cooldown multiplier (0.8)
+  startingManaBonus: number;   // resonant_mind — extra starting mana
 }
 
 const BASE_MODS: TalentModifiers = {
@@ -61,6 +67,8 @@ const BASE_MODS: TalentModifiers = {
   hasVoidWeave: false, hasDeathPact: false, hasSpellBlade: false,
   ironWill: false, undyingHunger: false, predatorsEye: false, amorphous: false,
   longMemory: false, starTouched: false, scaleArmour: false,
+  hasNightTouched: false, silverTongue: false, firstHitImmune: false,
+  spellCooldownMult: 1, startingManaBonus: 0,
 };
 
 // ── Main class ────────────────────────────────────────────────────────────
