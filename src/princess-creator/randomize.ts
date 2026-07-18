@@ -109,13 +109,16 @@ export function randomDna(archetype: Archetype, seed: number): PrincessDNA {
     parts: {
       crown: pickWeighted(rng, pool.crown),
       crownTilt: archetype === 'skeleton' ? -0.25 + rng() * 0.1 : (chance(rng, 0.25) ? mid(rng, RANGES.parts.crownTilt) : 0),
+      crownSize: mid(rng, RANGES.parts.crownSize),
       ears: pickWeighted(rng, pool.ears),
       earSize: mid(rng, RANGES.parts.earSize),
       tail: pickWeighted(rng, pool.tail),
       tailSize: mid(rng, RANGES.parts.tailSize),
       back: pickWeighted(rng, pool.back),
+      backSize: mid(rng, RANGES.parts.backSize),
       handL: pickWeighted(rng, HAND_POOL),
       handR: chance(rng, 0.75) ? 'none' : pickWeighted(rng, HAND_POOL),
+      handSize: mid(rng, RANGES.parts.handSize),
     },
     colors: { ...palette.colors },
     species: {
@@ -141,7 +144,7 @@ const MUTABLE_NUM_PATHS: readonly (readonly [keyof typeof RANGES, string])[] = [
   ['body', 'legLength'], ['body', 'hipWidth'], ['dress', 'flare'],
   ['dress', 'length'], ['face', 'eyeSize'], ['face', 'eyeSpacing'],
   ['face', 'blush'], ['hair', 'length'], ['parts', 'earSize'],
-  ['parts', 'tailSize'], ['species', 'fluff'], ['species', 'wobble'],
+  ['parts', 'tailSize'], ['parts', 'crownSize'], ['species', 'fluff'], ['species', 'wobble'],
   ['species', 'snoutLength'], ['motion', 'energy'], ['motion', 'bounce'],
 ];
 

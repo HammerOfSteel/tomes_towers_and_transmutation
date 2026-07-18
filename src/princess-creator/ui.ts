@@ -312,6 +312,7 @@ export class Ui {
       const s1 = this.section(c, 'Crown');
       this.chips(s1, 'Crown', 'parts.crown', CROWN_IDS);
       this.slider(s1, 'Tilt', 'parts.crownTilt', RANGES.parts.crownTilt);
+      this.slider(s1, 'Size', 'parts.crownSize', RANGES.parts.crownSize);
       const s2 = this.section(c, 'Ears & Tail');
       this.chips(s2, 'Ears', 'parts.ears', EAR_IDS);
       this.slider(s2, 'Ear Size', 'parts.earSize', RANGES.parts.earSize);
@@ -319,8 +320,10 @@ export class Ui {
       this.slider(s2, 'Tail Size', 'parts.tailSize', RANGES.parts.tailSize);
       const s3 = this.section(c, 'Back & Hands');
       this.chips(s3, 'Back', 'parts.back', BACK_IDS);
+      this.slider(s3, 'Back Size', 'parts.backSize', RANGES.parts.backSize);
       this.chips(s3, 'Left Hand', 'parts.handL', HAND_ITEM_IDS);
       this.chips(s3, 'Right Hand', 'parts.handR', HAND_ITEM_IDS);
+      this.slider(s3, 'Item Size', 'parts.handSize', RANGES.parts.handSize);
     } else if (this.activeTab === 'colors') {
       const s0 = this.section(c, 'Palettes');
       for (const pal of PALETTES[arch]) {

@@ -281,6 +281,7 @@ function buildHandItem(id: PrincessDNA['parts']['handL'], kit: MaterialKit): THR
     star.position.y = 0.95;
     star.rotation.z = Math.PI / 4;
     g.add(rod, star);
+    g.rotation.x = 2.3; // held pointing forward-down, tip clear of the sleeve
   } else if (id === 'staff') {
     const rod = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.2, 8), kit.metal));
     rod.position.y = 0.6;
@@ -297,6 +298,7 @@ function buildHandItem(id: PrincessDNA['parts']['handL'], kit: MaterialKit): THR
     const fan = shadowed(new THREE.Mesh(fanGeo, kit.accent));
     fan.position.y = 0.5;
     g.add(fan);
+    g.rotation.x = 1.9; // fanned outward, not up the arm
   } else {
     // tome — a little spellbook (very TTT)
     const cover = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.0, 0.28), kit.accent));
@@ -394,6 +396,8 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   const crown = buildCrown(dna, kit, p.headR, crownLift);
   if (crown) {
     crown.position.y = sink + crownLift;
+    crown.scale.setScalar(dna.parts.crownSize);
+    crown.userData.pick = 'crown';
     result.sockets.headTop.add(crown);
     const halo = crown.userData.halo as THREE.Mesh | undefined;
     if (halo) {
@@ -409,11 +413,13 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   const earL = buildEarL(dna, kit, p.headR);
   if (earL) {
     earL.position.y = sink * 0.5;
+    earL.userData.pick = 'ears';
     result.sockets.earL.add(earL);
     const earR = buildEarL(dna, kit, p.headR);
     if (earR) {
       earR.scale.x = -1;
       earR.position.y = sink * 0.5;
+      earR.userData.pick = 'ears';
       result.sockets.earR.add(earR);
       // Occasional ear flicks (fox POC charm) — applies to any ear style.
       let flickL = 0;
@@ -432,6 +438,7 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   // Tail (slime renders wisp/bone as meshes too — jelly kit makes them gummy)
   const tail = buildTail(dna, kit);
   if (tail) {
+    tail.group.userData.pick = 'tail';
     result.sockets.tail.add(tail.group);
     const segs = tail.segments;
     result.hooks.tick.push((t) => {
@@ -447,6 +454,8 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   // Back item
   const back = buildBack(dna, kit, p.dressH);
   if (back) {
+    back.group.scale.setScalar(dna.parts.backSize);
+    back.group.userData.pick = 'back';
     result.sockets.back.add(back.group);
     if (back.capeSegments) {
       const segs = back.capeSegments;
@@ -468,11 +477,17 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   }
 
   // Hand items
+  const hs = dna.parts.handSize;
   const left = buildHandItem(dna.parts.handL, kit);
-  if (left) result.sockets.handL.add(left);
+  if (left) {
+    left.scale.setScalar(hs);
+    left.userData.pick = 'handL';
+    result.sockets.handL.add(left);
+  }
   const right = buildHandItem(dna.parts.handR, kit);
   if (right) {
-    right.scale.x = -1;
+    right.scale.set(-hs, hs, hs);
+    right.userData.pick = 'handR';
     result.sockets.handR.add(right);
   }
 
@@ -480,6 +495,7 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   if (!isSlime) {
     const hair = buildHair(dna, kit, p.headR);
     if (hair) {
+      hair.group.userData.pick = 'hair';
       result.rig.head.add(hair.group);
       if (hair.pigtails.length > 0) {
         const tails = hair.pigtails;

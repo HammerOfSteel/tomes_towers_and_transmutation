@@ -65,13 +65,16 @@ export interface HairDna {
 export interface PartsDna {
   crown: CrownId;
   crownTilt: number;      // −0.35–0.35 rad
+  crownSize: number;      // 0.6–1.6  (wheel-scalable)
   ears: EarId;
   earSize: number;        // 0.6–1.8
   tail: TailId;
   tailSize: number;       // 0.6–1.6
   back: BackId;
+  backSize: number;       // 0.6–1.6  (wheel-scalable)
   handL: HandItemId;
   handR: HandItemId;
+  handSize: number;       // 0.6–1.6  (wheel-scalable, both hands)
 }
 
 export interface ColorsDna {
@@ -143,8 +146,11 @@ export const RANGES = {
   },
   parts: {
     crownTilt: { min: -0.35, max: 0.35 },
+    crownSize: { min: 0.6, max: 1.6 },
     earSize: { min: 0.6, max: 1.8 },
     tailSize: { min: 0.6, max: 1.6 },
+    backSize: { min: 0.6, max: 1.6 },
+    handSize: { min: 0.6, max: 1.6 },
   },
   species: {
     snoutLength: { min: 0.5, max: 1.6 },

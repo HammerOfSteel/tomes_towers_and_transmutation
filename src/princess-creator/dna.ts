@@ -40,8 +40,9 @@ export function defaultDna(archetype: Archetype): PrincessDNA {
     face: { eyeStyle: 'sparkle', eyeSize: 1, eyeSpacing: 1, eyeTilt: 0.08, blush: 0.5, mouth: 'smile' },
     hair: { style: 'bob', length: 1 },
     parts: {
-      crown: 'tiara', crownTilt: 0, ears: 'none', earSize: 1.1,
-      tail: 'none', tailSize: 1, back: 'bow', handL: 'none', handR: 'none',
+      crown: 'tiara', crownTilt: 0, crownSize: 1, ears: 'none', earSize: 1.1,
+      tail: 'none', tailSize: 1, back: 'bow', backSize: 1,
+      handL: 'none', handR: 'none', handSize: 1,
     },
     colors,
     species: { ...BASE_SPECIES },
@@ -162,13 +163,16 @@ export function sanitizeDna(raw: unknown): PrincessDNA {
     parts: {
       crown: oneOf(rp.crown, CROWN_IDS, d.parts.crown),
       crownTilt: clampNum(rp.crownTilt, RANGES.parts.crownTilt, d.parts.crownTilt),
+      crownSize: clampNum(rp.crownSize, RANGES.parts.crownSize, d.parts.crownSize),
       ears: oneOf(rp.ears, EAR_IDS, d.parts.ears),
       earSize: clampNum(rp.earSize, RANGES.parts.earSize, d.parts.earSize),
       tail: oneOf(rp.tail, TAIL_IDS, d.parts.tail),
       tailSize: clampNum(rp.tailSize, RANGES.parts.tailSize, d.parts.tailSize),
       back: oneOf(rp.back, BACK_IDS, d.parts.back),
+      backSize: clampNum(rp.backSize, RANGES.parts.backSize, d.parts.backSize),
       handL: oneOf(rp.handL, HAND_ITEM_IDS, d.parts.handL),
       handR: oneOf(rp.handR, HAND_ITEM_IDS, d.parts.handR),
+      handSize: clampNum(rp.handSize, RANGES.parts.handSize, d.parts.handSize),
     },
     colors: {
       primary: hex(rc.primary, d.colors.primary),

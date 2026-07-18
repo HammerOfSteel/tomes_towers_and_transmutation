@@ -17,6 +17,7 @@ import { createMaterialKit, type MaterialKit } from './materials';
 import { composePrincess } from './compose';
 import type { BuildResult } from './synth/contracts';
 import { Animator, EMOTES, type EmoteId } from './animate';
+import { DirectManipulator } from './interact';
 import { Ui } from './ui';
 import { exportPng, exportGlb, exportJson } from './exporter';
 import { loadGallery, addToGallery, removeFromGallery } from './gallery';
@@ -38,11 +39,14 @@ const store = new DnaStore(starterDna());
 const animator = new Animator();
 animator.onCastBurst = () => stage.castBurst();
 
+const manipulator = new DirectManipulator(stage, store);
+
 let kit: MaterialKit = createMaterialKit(store.dna);
 let result: BuildResult = composePrincess(store.dna, kit);
 stage.scene.add(result.root);
 stage.setArchetypeMood(store.dna.archetype);
 animator.bind(result, store.dna);
+manipulator.bind(result);
 
 function rebuild(dna: PrincessDNA, archetypeChanged: boolean): void {
   stage.scene.remove(result.root);
@@ -58,6 +62,7 @@ function rebuild(dna: PrincessDNA, archetypeChanged: boolean): void {
   result = composePrincess(dna, kit);
   stage.scene.add(result.root);
   animator.bind(result, dna);
+  manipulator.bind(result);
 }
 
 // ── UI actions ──
@@ -182,7 +187,16 @@ function loop(): void {
   const t = clock.elapsedTime;
   animator.update(t);
   result.update(t, dt);
+  manipulator.update(t);
   stage.update(t, dt);
   stage.render();
 }
 loop();
+
+// Dev/e2e handle (not part of the public surface).
+(window as unknown as Record<string, unknown>).__atelier = {
+  store,
+  stage,
+  manipulator,
+  get result() { return result; },
+};
