@@ -6,20 +6,21 @@ This document captures the binding technical decisions for *Tomes, Towers & Tran
 
 ## Core Constraints
 
-### The "No Asset" Rule
-Until Phase 8, **no binary assets are allowed in the repository**: no `.obj`, `.gltf`, `.glb`, `.png`, `.jpg`, `.mp3`, or `.wav` files.
+### Asset Pipeline
+**Phase 1–7 (code-first):** No binary assets — all geometry, textures, and audio generated in code.
 
-| Domain | Allowed Approach |
-|---|---|
-| Characters | Compound Three.js primitives (`CapsuleGeometry` + `SphereGeometry` etc.) |
-| Textures | Procedural GLSL fragment shaders (Perlin/Simplex noise, grid functions) |
-| Rune markings | Canvas API → `CanvasTexture` (runtime generated, not committed) |
-| VFX | Three.js `Points` with custom `ShaderMaterial` |
-| Audio | Web Audio API synthesis — no audio files |
+**Phase 8+ (current — DEMO_RELEASE):** GLB assets are now in the repository under `public/assets/`. The `assetMode` setting in `WorldGenConfig` controls whether code-first or asset-based rendering is used per-zone. Default is `code` for all zones; `kenney` enables GLB prop replacement where implemented.
 
-Rationale: Forces stylistic consistency, keeps the repo lightweight, and eliminates asset pipeline complexity until the game's structure is proven.
+| Domain | Code-first | Asset mode (`kenney`) |
+|---|---|---|
+| Characters | DNA creature rigs | `charManifest.ts` GLBs (117 models, 28 enemies) |
+| Environment | Procedural THREE.js geometry | KayKit / Kenney GLB packs (4,517 models, 48 kits) |
+| Audio | Web Audio API synthesis | `public/music/` MP3 tracks |
+| Textures | GLSL procedural shaders | Still code-first in all modes |
 
-See [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) for the full procedural style guide.
+GLB files are loaded **lazily** from `public/assets-index/<kitId>.json` (48 JSON files, one per kit). Each entry has `{ path, name, category, gameScale }`. Assets never block the main thread — they upgrade visuals asynchronously after the room loads.
+
+See [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) for the full style guide.
 
 ---
 
@@ -58,58 +59,74 @@ src/
 │   └── helpers.ts         — conversion utils (RAPIER ↔ THREE vectors)
 │
 ├── player/
-│   ├── PlayerController.ts  — kinematic character: movement, wall-slide, dodge
-│   ├── CombatSystem.ts      — melee arc, hitbox lifecycle, i-frames
+│   ├── PlayerController.ts  — kinematic character: movement, wall-slide, dodge, squash/stretch
 │   └── SpellSystem.ts       — spell slot management, projectile spawning
 │
-├── enemies/
-│   ├── EnemyManager.ts      — spawning, despawning, party list
-│   ├── StateMachine.ts      — generic FSM (Idle/Alert/Chase/Attack/Flee/Recruit)
-│   └── types/               — per-enemy config: stats, geometry, AI overrides
+├── enemy/
+│   ├── SlimeEnemy.ts        — base enemy: physics capsule, FSM, EnemyRig animation, pool revive
+│   ├── PatrolBehavior.ts    — tier-1 patrol+chase FSM; TacticalBrute tier-2 FSM
+│   ├── AggroSystem.ts       — shout broadcast, alert radius, clear-all on room teardown
+│   └── EnemyLoader.ts       — loads GLB enemy models, 28 entries in ENEMY_MANIFEST
 │
 ├── levels/
-│   ├── BlueprintRenderer.ts — parses JSON blueprint → Three.js geometry + Rapier bodies
-│   ├── DungeonGenerator.ts  — stitches blueprints into floors using a seed
-│   └── blueprintMigration.ts — upgrades old schema versions to current
+│   ├── SceneManager.ts      — room load/unload, door transitions, encounter spawning, wave FSM
+│   ├── BlueprintRenderer.ts — JSON blueprint → Three.js geometry + Rapier physics bodies
+│   ├── TowerFloorDef.ts     — per-floor defs: lighting, encounters, scatter props, lore books
+│   ├── RoomEncounterDef.ts  — typed encounter pools (8 archetypes, swarm wave support)
+│   └── blueprints/          — JSON room definitions
 │
-├── editor/
-│   ├── EditMode.ts          — toggles editor UI; intercepts input when active
-│   └── EditorUI.ts          — grid snapping, placement, export/import
+├── creative/
+│   ├── CreativeMode.ts      — orchestrator: enter/exit, key routing, backrooms
+│   ├── CreativePlacementSystem.ts  — right-click place, multi-select, align/distribute, undo/redo
+│   ├── CreativeAssetBrowser.ts     — 48-kit lazy-load inventory, Code tab spawns
+│   ├── SpawnPalette.ts      — spawn item definitions (enemies, NPCs, waves, zones, interactables)
+│   └── backroomScenes.ts    — 3D scene builders for 7 backrooms + spell workbench
+│
+├── world/
+│   ├── StoryQuestLine.ts    — per-species 4-act story data (16 beats × 4 species)
+│   ├── StoryRunner.ts       — runtime FSM: tick objectives, fire callbacks, advance acts
+│   ├── SolmorDialogueTree.ts — 3-stage wizard dialogue with species-aware text
+│   ├── SolmorPresence.ts    — 3D toad-wizard model near tower entrance
+│   ├── NPCEntity.ts         — overworld NPC: wander/idle/interact FSM, quest generation
+│   └── NPCDialogue.ts       — greeting + quest-hint banks for all NPC roles (9 roles)
+│
+├── progression/
+│   ├── ProgressionSystem.ts — XP/level, TalentModifiers, spell grants
+│   ├── TalentSystem.ts      — 30-node constellation + 4 species-gated signature nodes
+│   └── AbilitySystem.ts     — 4-slot ability bar, mana pool, cooldown tracker
 │
 ├── ui/
-│   ├── HUD.ts               — HP bar, spell slots, party count
-│   ├── BookReader.ts        — "Arcane for Dummies" overlay; triggers progression
-│   └── CharacterCreation.ts — DNA-driven character creator UI (archetype, morph sliders, outfit, props)
+│   ├── HUD.ts               — HP/mana/abilities/dodge/XP/quest tracker
+│   ├── QuestJournal.ts      — tabbed journal ([J] key): Species Quests | World Quests
+│   ├── TalentTree.ts        — star-map UI with species gating + particle unlock VFX
+│   ├── DamageNumbers.ts     — floating combat text (damage/heal/crit)
+│   ├── EnemyHealthBars.ts   — proximity-gated enemy HP bars
+│   ├── PickupVFX.ts         — world-space item pickup pop animation
+│   └── TalentUnlockVFX.ts   — DOM particle burst + Web Audio chime on talent purchase
 │
-├── creatures/
-│   ├── CreatureDNA.ts       — creature DNA type (archetype, proportions, colors, face, outfit, props)
-│   ├── CreatureBuilder.ts   — procedural geometry builder; one function per archetype
-│   └── CreatureAnimator.ts  — per-archetype idle/walk/run animation driver
-│
-└── shaders/
-    ├── palette.ts           — canonical color constants
-    ├── noise.glsl           — shared noise functions (imported by shaders)
-    └── [spell/surface shaders] — one file per material type
+└── shaders/                 — GLSL vertex/fragment shaders
 ```
 
 ### Data Flow
 
 ```
-InputManager
-    │ typed events
+InputManager (WASD/mouse/abilities)
+    │
     ▼
-PlayerController ──▶ PhysicsWorld.step()
+PlayerController ──▶ PhysicsWorld.step()  (culled at 30u radius)
     │                       │
     │               (collision callbacks)
+    │                       ▼
+    │             SlimeEnemy.update() ─── PatrolBehavior / TacticalBrute FSM
     │                       │
     ▼                       ▼
-CombatSystem ◀──── EnemyManager
+SpellSystem        SceneManager ──▶ _checkRoomCleared ──▶ _spawnClearReward
+    │                       │
+    ▼                       ▼
+AbilitySystem    StoryRunner.tick() ──▶ QuestJournal / ObjectiveTracker
     │
     ▼
-SpellSystem ──▶ ProjectilePool
-    │
-    ▼
-SceneManager.render() ──▶ THREE.WebGLRenderer
+THREE.WebGLRenderer (bloom post-processing, DayNightSystem fog)
 ```
 
 ---

@@ -3,7 +3,8 @@
 **Working Title:** Captive Ascendant
 **Genre:** Isometric Action-RPG
 **Platform:** Browser (WebGL)
-**Status:** Pre-production (design phase)
+**Status:** Active development — `DEMO_RELEASE` alpha targeting itch.io / Kickstarter
+**Last updated:** 2026-07 (full system implementation, targeting M1 content alpha)
 
 ---
 
@@ -60,6 +61,15 @@ After clearing the tower, recruiting an army, and unlocking the most destructive
 
 ## 4. Player Character
 
+The player character is chosen at game start via a narrative campfire dialogue with the wizard's familiar. There are **4 species**, each with unique passives, abilities, a talent constellation, and a 4-act story arc.
+
+| Species | Passive | Combat Style | Signature Ability |
+|---|---|---|---|
+| **Human** | Iron Will — 20% damage reduction below 25% HP | Melee/mage hybrid | Shield Bash, War Cry |
+| **Undead** | Undying Hunger — restore 5% HP on kill | Life-drain / death magic | Death Bolt, Phase Shift |
+| **Vulperia** (fox) | Predator's Eye — first hit on each enemy always crits | Burst assassin / kiting | Shadow Step, Scatter Shot |
+| **Slime** | Amorphous — immune to knockback, 15% reduced fall damage | Area-denial / engulf | Acid Spit, Engulf |
+
 - **Movement:** WASD, isometric camera lock. Smooth movement with kinematic character controller; wall-sliding on collision.
 - **Combat (melee):** Sweeping arc hitbox attack with brief stun. Short range.
 - **Combat (ranged):** Mouse-aimed spell projectiles. Unlocked progressively via books.
@@ -71,7 +81,16 @@ After clearing the tower, recruiting an army, and unlocking the most destructive
 ## 5. Progression Systems
 
 ### Spell Progression
-Books are the primary progression driver. See [docs/MAGIC_SYSTEM.md](docs/MAGIC_SYSTEM.md) for the full spell catalogue.
+Books are the primary progression driver. See [docs/MAGIC_SYSTEM.md](docs/MAGIC_SYSTEM.md) for the full spell catalogue. 12+ spells across 6 elements (fire, ice, lightning, arcane, shadow, nature).
+
+### Talent Trees
+Each species has a 30-node talent constellation with 7 paths (Blade Dancer, Arcanist, Warlock, Conductor, Artificer, Apothecary, Naturalist) plus 4 species-gated signature nodes. One talent point granted per level-up. See `src/progression/TalentSystem.ts`.
+
+### Species Story Arcs
+Each species has a unique 4-act story (16 beats total) with branching outcomes. Story objectives include `defeat_enemies`, `read_lore`, `talk_to_npc`, `defeat_elite`, `interact_key`. See `src/world/StoryQuestLine.ts` and `src/world/StoryRunner.ts`.
+
+### General Quests (5)
+Shared quests available to all species: Missing Familiar, Supply Line, Ruined Greenhouse, Baron's Complaint, The Ninth Tower.
 
 ### Minion Army
 Recruited minions follow the player, attack the player's target, and have their own HP pools. They persist until dismissed or killed. See [docs/ENEMY_DESIGN.md](docs/ENEMY_DESIGN.md).

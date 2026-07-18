@@ -74,6 +74,42 @@ export async function isNearTower(page: Page): Promise<boolean> {
   return page.evaluate(() => (window as any).__game.isNearTower()) as Promise<boolean>;
 }
 
+// ── F4: Console / pageerror capture ──────────────────────────────────────
+
+/**
+ * Attach console-error + pageerror listeners to the page.
+ * Returns an array that accumulates all error messages.
+ * Pass the array to `expect(errors).toHaveLength(0)` in your test.
+ *
+ * Usage:
+ *   const errors = attachErrorCapture(page);
+ *   // … test actions …
+ *   expect(errors, `Unexpected errors: ${errors.join('\n')}`).toHaveLength(0);
+ */
+export function attachErrorCapture(page: import('@playwright/test').Page): string[] {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
+  page.on('console',   (m) => {
+    if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`);
+  });
+  return errors;
+}
+
+/**
+ * Take a screenshot and, if there are any captured errors, fail the test.
+ * Convenience wrapper combining screenshot + error assertion.
+ */
+export async function screenshotAndAssertClean(
+  page:      import('@playwright/test').Page,
+  errors:    string[],
+  ssPath:    string,
+): Promise<void> {
+  await page.screenshot({ path: ssPath, fullPage: false });
+  if (errors.length > 0) {
+    throw new Error(`Page errors detected:\n${errors.join('\n')}`);
+  }
+}
+
 // ── Physics settle helper ─────────────────────────────────────────────────
 
 /**

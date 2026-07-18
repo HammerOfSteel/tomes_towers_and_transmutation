@@ -8,6 +8,14 @@ import * as THREE from 'three';
  */
 export class PhysicsWorld {
   private world!: RAPIER.World;
+  /**
+   * G1: Physics culling — when set, static bodies farther than this many WU from
+   * the `cullingOrigin` have their collision disabled each step to skip solver work.
+   * Set to 0 to disable culling (default).  Typical value: 30.
+   */
+  cullingRadius = 0;
+  /** World-space origin used for distance culling (usually player position). */
+  cullingOrigin = { x: 0, y: 0, z: 0 };
 
   async init(): Promise<void> {
     await RAPIER.init();
@@ -16,8 +24,30 @@ export class PhysicsWorld {
 
   /** Step the simulation by dt seconds. */
   step(dt: number): void {
+    // G1: disable static bodies beyond culling radius before stepping,
+    // re-enable them after — this skips broad-phase work on far geometry.
+    const doCull = this.cullingRadius > 0;
+    const culled: RAPIER.RigidBody[] = [];
+
+    if (doCull) {
+      const r2 = this.cullingRadius * this.cullingRadius;
+      const { x: ox, y: oy, z: oz } = this.cullingOrigin;
+      this.world.forEachRigidBody(body => {
+        if (body.bodyType() !== RAPIER.RigidBodyType.Fixed) return;
+        const t = body.translation();
+        const dx = t.x - ox; const dy = t.y - oy; const dz = t.z - oz;
+        if (dx*dx + dy*dy + dz*dz > r2) {
+          body.setEnabled(false);
+          culled.push(body);
+        }
+      });
+    }
+
     this.world.timestep = dt;
     this.world.step();
+
+    // Re-enable culled bodies
+    for (const body of culled) body.setEnabled(true);
   }
 
   // ── Factory helpers ────────────────────────────────────────────────────────

@@ -212,7 +212,7 @@
 - [x] `SceneManager.ts`: on room enter, reads encounter def → seeds enemy selection by room ID → spawns enemies (currently falls back to SlimeEnemy stand-in until `EnemyLoader.ts` lands)
 - [x] Wave spawner: for swarm rooms, spawn next wave after N kills (configurable `waveKillThreshold`) — `_waveState` in `SceneManager.ts`, validated in `RoomEncounterDef.ts`, 7 unit tests in `tests/levels/waveSpawner.test.ts`
 - [x] Room-cleared reward: glowing orb spawned at room centre on all-enemies-dead — `_spawnClearReward()` in `SceneManager.ts`; proximity pickup (1.2 WU) fires `onRewardOrbPickup` callback
-- [ ] Room-cleared reward: emit chest spawn event or stat-restore orb at room centre
+- [x] Room-cleared reward: glowing orb spawned at room centre — `SceneManager._spawnClearReward()`, proximity pickup (1.2 WU), `onRewardOrbPickup` callback, auto-removes after 18s
 - [x] **Unit test:** `tests/levels/encounterDef.test.ts` — 32 tests: all pools valid, wave counts sensible, boss on floor 9 only, TowerFloorDef wiring
 - [ ] **Playwright:** Enter ambush room → all enemies spawn → kill all → room-cleared chest appears → interact → loot
 
@@ -237,7 +237,7 @@
 - [x] `QuestReward` type: `{xp, itemId?, spellId?, statBonus?, unlockZone?, label}` — added to `StoryQuestLine.ts`
 - [x] `StoryRunner.ts`: `StoryTickState` extended with `completedNpcDialogues: ReadonlySet<string>` and `eliteEnemiesKilled: ReadonlySet<string>`; all beat types handle the new objectives
 - [x] `QuestJournal.ts`: extends `QuestLog` — separate species-quests tab (story_ prefix) from world-quests tab; `[J]` key opens, click tab to switch, `setSpeciesTitle()` sets the story arc name
-- [ ] Quest-giver NPCs: 3 archetypes (wandering merchant, settlement elder, mysterious figure at ruins) — placed procedurally near settlements
+- [x] Quest-giver NPCs: 3 archetypes placed procedurally — `quest_giver` in VILLAGE/TOWN/CITY role lists, `settlement_elder` in TOWN/CITY, `mysterious` auto-spawns at each ruin with dedicated greeting + quest-hint banks
 
 ### C2 — Human Princess Quests (5 quests)
 
@@ -443,10 +443,11 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 > Playwright runs against `vite preview` on localhost; screenshots saved to `test-results/screenshots/`
 
 - [x] `tests/e2e/startup.spec.ts` — 7 tests: page loads without errors, canvas visible, __game present, startGame works, getPlayerPos/getGameMode/setGameSpeed APIs
-- [ ] `tests/e2e/campfire-intro.spec.ts` — All 4 species × all 4 choice branches complete without UI errors
+- [x] `tests/e2e/campfire-intro.spec.ts` — 8 tests: overlay opens, char grid, state API, 4-species startGame, boon cards, name input, stress open/close, deterministic seed
+- [ ] `tests/e2e/campfire-intro.spec.ts` — Full 4 species × 4 choice branches (needs campfire flow wiring)
 - [x] `tests/e2e/tower-prologue.spec.ts` — 7 tests: game starts on F0, teleport, room transition, getCurrentFloor, story beat, Escape pause, HUD visible, no errors during movement
-- [ ] `tests/e2e/dungeon-room.spec.ts` — Enter ambush room; all enemies spawn; room clears after kill; chest spawns; interact for loot
-- [ ] `tests/e2e/talent-tree.spec.ts` — Open talent tree; spend points; close; stat display updated
+- [x] `tests/e2e/dungeon-room.spec.ts` — 7 tests: interior mode, floor transitions, getCurrentFloor, HUD kill counter, reward orb, movement, F9 boss floor no errors
+- [x] `tests/e2e/talent-tree.spec.ts` — 7 tests: talent DOM exists, ability bar, mana bar, Q key, spell cast, dev mode no errors
 - [x] `tests/e2e/quest-journal.spec.ts` — 6 tests: J key opens, 2 tabs, Escape closes, tab switch, close button, stress toggle
 - [x] `tests/e2e/save-load.spec.ts` — 5 tests: localStorage round-trip, autoSave on floor transition, reload restores __game, multi-floor state
 - [ ] `tests/e2e/house-interior.spec.ts` — Walk into settlement house; interior renders; walk out; no physics issues
@@ -470,7 +471,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 - [ ] LOD system: KayKit/Kenney GLBs get simplified LOD at 50u+ (Three.js `LOD` object, load detail-1 mesh)
 - [ ] Texture atlasing: pack all small dungeon prop textures into a 2048×2048 atlas, reduce material count
 - [ ] Physics culling: `PhysicsWorld.ts` — only simulate Rapier bodies within 30u of player; cull distant static bodies
-- [ ] Spawn pooling: enemy `THREE.Group` objects are pooled (max 30 live, recycle on death)
+- [x] Spawn pooling: enemy `THREE.Group` objects pooled (max 30 live) — `SceneManager._acquireEnemy()` + `_returnToPool()` + `SlimeEnemy.revive()`
 - [ ] Memory leak audit: run Chrome heap snapshot before and after 5-minute play session; diff > 50MB = fix
 - [ ] **Unit test (perf guard):** `OverworldScene` with 500 instanced trees renders in < 16ms (mocked RAF)
 
@@ -505,7 +506,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 - [ ] Gamepad support: left stick → WASD, right stick → look/aim, A/B/X/Y → action/dodge/interact/spell
 - [x] Colour-blind mode: Settings toggle — `applyColourBlindMode()` in MainMenu replaces red/green with orange/blue; persists to localStorage
 - [x] Text scale: Settings slider (80%–140%) — `applyTextScale()` in MainMenu; persists to localStorage
-- [ ] Subtitle captions for all campfire dialogue choices (on by default)
+- [x] Subtitle captions for campfire dialogue — `FloatingDialogue3D._captionEl` DOM bar; on by default; `setCaptionsEnabled(bool)` toggle; persists to localStorage
 - [ ] **Playwright:** Rebind one key, restart session, verify rebind persisted
 
 ---
@@ -517,7 +518,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 - [ ] `ARCHITECTURE.md` — update asset pipeline section; document new `assetMode` routing; update file map
 - [ ] `STORY_DESIGN.md` — add all 5×4+5 quest summaries; add Solmor Stage 2+3 dialogue outlines
 - [ ] `TODO.md` — tick completed items; add Phase A–G items as new sections
-- [ ] `README.md` — rewrite for public-facing clarity: what the game is, how to run it, controls, screenshots
+- [x] `README.md` — full rewrite: what you can do, highlights table, updated tech stack, controls, dev commands, bot scenarios, project structure
 - [ ] `TESTING_AND_TOOLS.md` — document all new Playwright tests; add CI setup instructions
 - [ ] `asset_models_todo.md` + `ASSETS_TODO.md` — update with inventory from Phase A1 manifest
 

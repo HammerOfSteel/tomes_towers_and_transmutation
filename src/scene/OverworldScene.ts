@@ -154,6 +154,11 @@ export class OverworldScene {
   onCampCleared?: (wx: number, wz: number) => void;
   /** Set of already-cleared camp keys ("wx:wz") — injected before enter(). */
   clearedCamps: Set<string> = new Set();
+  /**
+   * E1: Active player species — set from main.ts after character creation.
+   * Controls which species-specific encounter NPCs spawn near the tower.
+   */
+  characterSpecies: string | null = null;
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -240,6 +245,9 @@ export class OverworldScene {
       for (const rm of this._roadMeshes) rm.visible = false;
       for (const rg of this._roadTileGroups) this.scene.add(rg);
     }
+
+    // E1: Spawn species-specific NPC encounters near the tower door
+    this._spawnSpeciesEncounters();
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
@@ -300,6 +308,10 @@ export class OverworldScene {
       }
     }
     for (const npc of this._npcs) npc.update(dt, pos, inputE);
+
+    // A5: update tower window lights + portcullis gate
+    const hour = (this as any)._timeHour ?? 12;   // set by DayNightSystem if wired
+    this.updateTowerDetails(hour, pos);
 
     // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
     this._syncSlimeIM();
@@ -1612,7 +1624,66 @@ export class OverworldScene {
     glw.position.set(0, 1.55, DZ - 1.4);
     grp.add(glw);
 
+    // A5: Portcullis gate — iron bar grid that rises when player approaches
+    const gateGroup = new THREE.Group();
+    gateGroup.name = '__portcullis';
+    const barMat = new THREE.MeshLambertMaterial({ color: 0x2a2824 });
+    // 4 vertical bars
+    for (let b = 0; b < 4; b++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.5, 0.1), barMat);
+      bar.position.set(-0.75 + b * 0.5, 1.75, DZ + 0.05);
+      gateGroup.add(bar);
+    }
+    // 3 horizontal cross-bars
+    for (let h = 0; h < 3; h++) {
+      const hbar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 0.1), barMat);
+      hbar.position.set(0, 0.8 + h * 1.2, DZ + 0.05);
+      gateGroup.add(hbar);
+    }
+    grp.add(gateGroup);
+
+    // A5: Window point lights (activated at night via TimeSystem)
+    const winLightPositions: [number, number, number][] = [
+      [0, 5.0,  3.9],  // floor 1 south
+      [0, 10.0, 3.6],  // floor 2 south
+      [0, 15.0, 3.3],  // floor 3 south
+    ];
+    for (const [lx, ly, lz] of winLightPositions) {
+      const wLight = new THREE.PointLight(0xffcc66, 0, 5);  // starts off
+      wLight.name = '__window_light';
+      wLight.position.set(lx, ly, lz);
+      grp.add(wLight);
+    }
+
     return grp;
+  }
+
+  /** A5: Update tower window lights and portcullis gate each frame.
+   *  @param hour  Game hour (0–24)
+   *  @param playerPos  Player world position
+   */
+  updateTowerDetails(hour: number, playerPos: THREE.Vector3): void {
+    // Night = hours 18–6 (roughly)
+    const isNight = hour >= 18 || hour < 6;
+    const intensity = isNight ? 0.7 + 0.1 * Math.sin(Date.now() * 0.001) : 0;
+
+    let portcullis: THREE.Group | null = null;
+    this._tower.traverse(child => {
+      if (child.name === '__window_light') {
+        (child as THREE.PointLight).intensity = intensity;
+      }
+      if (child.name === '__portcullis') {
+        portcullis = child as THREE.Group;
+      }
+    });
+
+    // Raise gate when player is within 6 WU of tower door, lower otherwise
+    if (portcullis !== null) {
+      const pc = portcullis as THREE.Group;
+      const dist = playerPos.distanceTo(this._tower.position);
+      const targetY = dist < 6 ? 3.2 : 0;
+      pc.position.y += (targetY - pc.position.y) * 0.08;
+    }
   }
 
   // ── Tree placement ─────────────────────────────────────────────────────────
@@ -1780,7 +1851,50 @@ export class OverworldScene {
     }
   }
 
-  // ── Ruined greenhouse structures ───────────────────────────────────────────
+  // ── E1: Species-specific NPC encounter triggers ──────────────────────────────
+
+  private _spawnSpeciesEncounters(): void {
+    if (!this.characterSpecies) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    if (this.characterSpecies === 'vulperia') {
+      // Bounty hunter — lurks south-east of the tower, 12–14 WU from door
+      const bCol = GHW + 5; const bRow = GHH + 4;
+      const bWx  = 14; const bWz = 10;
+      const hunter = new NPCEntity(
+        bCol, bRow, bWx, bWz,
+        'guard',
+        { seed: 0xB077F, type: 'village', population: 0, name: 'Road', col: bCol, row: bRow } as any,
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      if (this.onQuestGiven) hunter.onQuestGiven = this.onQuestGiven;
+      // Override dialogue to hint at the bounty contract (checked by StoryRunner)
+      (hunter as any)._isSpeciesEncounter = 'vulperia_bounty_hunter';
+      this._npcs.push(hunter);
+      hunter.addToScene(this.scene);
+    }
+
+    if (this.characterSpecies === 'undead') {
+      // Wandering scholar — found near the western ruins, 10 WU from tower
+      const sCol = GHW - 4; const sRow = GHH + 3;
+      const sWx  = -10; const sWz = 8;
+      const scholar = new NPCEntity(
+        sCol, sRow, sWx, sWz,
+        'scholar',
+        { seed: 0x5C1101, type: 'village', population: 0, name: 'Road', col: sCol, row: sRow } as any,
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      if (this.onQuestGiven) scholar.onQuestGiven = this.onQuestGiven;
+      (scholar as any)._isSpeciesEncounter = 'undead_wandering_scholar';
+      this._npcs.push(scholar);
+      scholar.addToScene(this.scene);
+    }
+  }
 
   private _addRuins(rand: () => number): void {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;

@@ -115,6 +115,8 @@ async function main() {
   // ── Physics ────────────────────────────────────────────────────────────────
   const physics = new PhysicsWorld();
   await physics.init();
+  // G1: cull static bodies beyond 30 WU from the player each physics step
+  physics.cullingRadius = 30;
 
   // ── Input ──────────────────────────────────────────────────────────────────
   const input = new InputManager();
@@ -320,6 +322,9 @@ async function main() {
       discoveryTracker.saveToStorage();
     };
     ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
+    MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
+    // E1: pass current species so species-specific encounter NPCs spawn correctly
+    ow.characterSpecies = _characterSpecies;
     MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
     ow.onQuestGiven = (quest) => {
       questModal.show(quest, () => {
@@ -1906,7 +1911,9 @@ async function main() {
       return;
     }
 
-    // 1. Physics
+    // 1. Physics — G1: update culling origin to player position each frame
+    const _pp = player.group.position;
+    physics.cullingOrigin = { x: _pp.x, y: _pp.y, z: _pp.z };
     physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
@@ -2013,6 +2020,8 @@ async function main() {
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();
         overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
+        // A5: pass current hour so tower details (lights, gate) can respond
+        (overworld as any)._timeHour = TimeSystem.instance.hour % 24;
         solmorPresence.update(dt);   // E2: bob + anim tick
         party.pruneDead();
         tamingGame.update(dt);

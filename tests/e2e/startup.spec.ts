@@ -5,26 +5,18 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { loadPage } from './helpers';
+import { loadPage, attachErrorCapture } from './helpers';
 
+// ── Screenshot helper ─────────────────────────────────────────────────────────
 const SS = (page: Page, name: string) =>
   page.screenshot({ path: `tests/e2e/screenshots/startup-${name}.png` });
-
-// ── Console/error capture helpers ────────────────────────────────────────────
-
-function captureErrors(page: Page) {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console',   (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  return errors;
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 test.describe('Startup & Main Menu', () => {
 
   test('page loads without JS errors', async ({ page }) => {
-    const errors = captureErrors(page);
+    const errors = attachErrorCapture(page);
     await loadPage(page);
     await SS(page, '01-loaded');
     expect(errors, `No console errors on load: ${errors.join(', ')}`).toHaveLength(0);
@@ -42,7 +34,7 @@ test.describe('Startup & Main Menu', () => {
   });
 
   test('startGame API works and game enters playing state', async ({ page }) => {
-    const errors = captureErrors(page);
+    const errors = attachErrorCapture(page);
     await loadPage(page);
     await page.evaluate((s) => (window as any).__game.startGame(s), 0xDEAD_BEEF);
     await page.waitForTimeout(800);
