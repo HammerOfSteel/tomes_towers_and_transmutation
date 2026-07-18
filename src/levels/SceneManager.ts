@@ -809,6 +809,23 @@ export class SceneManager {
     this._visitedFloorIndices.add(bp.floor);
     this.scene.add(this.currentRoom.group);
 
+    // ── PROC-B3: Decorate room with procedural props ───────────────────────
+    import('@/levels/PropPlacer').then(({ decorateRoom }) => {
+      const placed = decorateRoom({
+        floorIndex: bp.floor,
+        halfWidth:  ((bp.width  - 1) * bp.cellSize) / 2 - 0.8,
+        halfDepth:  ((bp.depth  - 1) * bp.cellSize) / 2 - 0.8,
+        seed:       (bp.floor * 0x9E37_79B9 ^ bp.width * 0x1234_ABCD) >>> 0,
+        maxProps:   Math.min(8, bp.width + bp.depth),
+      });
+      for (const { built, x, z, rotation } of placed) {
+        built.root.position.set(x, 0, z);
+        built.root.rotation.y = rotation;
+        this.scene.add(built.root);
+        console.log(`[PropPlacer] placed ${built.dna.propKind} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+      }
+    }).catch(e => console.warn('[PropPlacer] decoration failed:', e));
+
     // ── Spawn enemies (skip if room was previously cleared) ──────────────
     const skipEnemies = this.clearedRooms.has(newId);
     if (!skipEnemies) {

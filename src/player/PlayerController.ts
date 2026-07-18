@@ -12,6 +12,7 @@ import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import type { CharModelDef } from '@/characters/charManifest';
 import { loadCharModel } from '@/characters/CharacterLoader';
 import { CharacterController } from '@/characters/CharacterController';
+import { LevitateEffect } from '@/player/LevitateEffect';
 
 // ── Capsule dimensions ─────────────────────────────────────────────────────
 
@@ -163,12 +164,18 @@ export class PlayerController {
   private _leanX = 0;
   private _leanZ = 0;
   /**
-   * Levitate mode: player hovers at a fixed Y and can move XZ freely.
+   * Levitate mode: active while levitate buff is running AND jump key held.
    * Different from flyMode (dev cheat) — uses mana and plays Jump_Idle.
    */
   levitateMode = false;
+  /** Remaining seconds on the levitate buff (countdown from 30). */
+  _levitateBuffTimer = 0;
   private _levitateTargetY = 0;
+  /** Sinusoidal bob offset applied on top of target height. */
+  private _levitateBobY  = 0;
   private readonly LEVITATE_HEIGHT = 1.8; // WU above ground when levitating
+  /** Cloud-puff particle effect at foot level while levitating. */
+  private readonly _levitateEffect = new LevitateEffect();
   /**
    * Fly spell mode — full 3D free flight, faster than levitate.
    * Space = ascend, Shift (run) = descend, WASD = 2× run speed horizontal.
@@ -357,6 +364,10 @@ export class PlayerController {
     console.log('[PlayerController] princess added to group ✓');
 
     this.group.add(this._princessInstance.root);
+
+    // Tag every mesh on the player (including accessories/hat/orb) so the
+    // OcclusionManager never fades the character's own geometry.
+    this.group.traverse(obj => { obj.userData.isNotOccluder = true; });
   }
 
   /** PC4: Per-frame update for princess animations (call from game loop). */
@@ -428,6 +439,9 @@ export class PlayerController {
     this.headMesh = built.headMesh;
     this.group.position.copy(startPosition);
 
+    // Attach cloud-puff levitate effect (hidden until buff is active)
+    this.group.add(this._levitateEffect.group);
+
     this.shadow = PlayerController.buildShadow();
 
     this.health = new HealthComponent(
@@ -469,19 +483,26 @@ export class PlayerController {
       this.group.userData['_triggerSpawnAir'] = false;
       this.triggerSpawnAir();
     }
-    // Levitate toggle
-    if (typeof this.group.userData['_levitateMode'] === 'boolean') {
-      const wantsLev = this.group.userData['_levitateMode'] as boolean;
-      if (wantsLev !== this.levitateMode) {
-        this.levitateMode = wantsLev;
-        if (wantsLev) {
-          this._levitateTargetY = this._pos.y + this.LEVITATE_HEIGHT;
-        } else {
-          // Deactivating levitate → set jumpPhase to falling so land animation fires
-          this._jumpPhase = 'falling';
-        }
-      }
+    // Levitate buff: AbilitySystem sets _levitateBuffDuration on cast
+    if (typeof this.group.userData['_levitateBuffDuration'] === 'number') {
+      this._levitateBuffTimer = this.group.userData['_levitateBuffDuration'] as number;
+      // Also handle old toggle path for backward-compat
+      delete this.group.userData['_levitateBuffDuration'];
       delete this.group.userData['_levitateMode'];
+    }
+    // Tick buff countdown
+    if (this._levitateBuffTimer > 0) {
+      this._levitateBuffTimer = Math.max(0, this._levitateBuffTimer - dt);
+    }
+    // Levitate is ACTIVE while buff running AND jump key held
+    const wasLevitating = this.levitateMode;
+    this.levitateMode = this._levitateBuffTimer > 0 && input.jump;
+    if (this.levitateMode && !wasLevitating) {
+      // Just entered levitate — anchor target Y to current position + height
+      this._levitateTargetY = this._pos.y + this.LEVITATE_HEIGHT;
+    } else if (!this.levitateMode && wasLevitating) {
+      // Just released — transition to falling
+      this._jumpPhase = 'falling';
     }
     // Fly spell toggle (replaces old fly burst system)
     if (typeof this.group.userData['_flySpellMode'] === 'boolean') {
@@ -489,15 +510,16 @@ export class PlayerController {
       delete this.group.userData['_flySpellMode'];
     }
 
-    // ── LEVITATE MODE (ability — hover at fixed height, XZ movement only) ──
+    // ── LEVITATE MODE (buff active + space held — hover with bob + cloud puffs) ──
     if (this.levitateMode) {
       const LEVITATE_H = RUN_SPEED * 0.7;  // slower horizontal movement while floating
       const md = calculateMoveDirection(input);
       this.velocity.x = lerp(this.velocity.x, md.x * LEVITATE_H, ACCEL_GROUND * dt);
       this.velocity.z = lerp(this.velocity.z, md.z * LEVITATE_H, ACCEL_GROUND * dt);
-      // Gently float up to target height
+      // Bob offset from the cloud effect (sinusoidal ±0.15 WU at ~1.5 Hz)
+      this._levitateBobY = this._levitateEffect.update(dt, true);
       const cur = this.body.translation();
-      const targetY = this._levitateTargetY;
+      const targetY = this._levitateTargetY + this._levitateBobY;
       const yDelta = targetY - cur.y;
       this.velocity.y = lerp(this.velocity.y, yDelta * 5, 8 * dt);
 
@@ -551,6 +573,11 @@ export class PlayerController {
         (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.2;
       }
       return;
+    }
+
+    // Buff active but space not held — fade out cloud puffs, allow normal movement
+    if (this._levitateBuffTimer > 0) {
+      this._levitateEffect.update(dt, false);
     }
 
     // ── FLY SPELL MODE (gameplay — full 3D free flight, toggleable) ──────────
@@ -677,7 +704,8 @@ export class PlayerController {
     }
 
     // ── 2. JUMP INPUT — rising-edge detect, buffer window ─────────────────
-    const jumpJustPressed = input.jump && !this.lastJumpInput;
+    // Suppress jump when levitate buff is active (space = levitate, not jump)
+    const jumpJustPressed = input.jump && !this.lastJumpInput && this._levitateBuffTimer <= 0;
     this.lastJumpInput = input.jump;
     if (jumpJustPressed) this.jumpBufferTimer = JUMP_BUFFER_TIME;
     if (!input.jump) this.jumpHeld = false;

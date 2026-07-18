@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { InputManager } from '@/core/InputManager';
-import { buildAssetShowcase, buildDungeonPrototype, buildSpellLab, buildCombatArena, buildEmptyRoom } from './backroomScenes';import {
+import { buildAssetShowcase, buildDungeonPrototype, buildSpellLab, buildCombatArena, buildEmptyRoom, buildBuildingLab } from './backroomScenes';import {
   setCreativeActive, isCreativeActive,
   setGodMode, setFlyEnabled, setNoClip,
   getCreativeState, getSpeedMultiplier,
@@ -147,6 +147,7 @@ export const CreativeMode = {
             case 'dungeon_prototype':return buildDungeonPrototype(scene);
             case 'spell_lab':        return buildSpellLab(scene);
             case 'combat_arena':     return buildCombatArena(scene);
+            case 'building_lab':     return buildBuildingLab(scene);
             default:
               return buildEmptyRoom(scene, roomId, 0x884488);
           }

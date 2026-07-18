@@ -291,22 +291,20 @@ export const ABILITY_BLINK: Ability = {
 };
 
 /**
- * Levitate — toggle hover mode.  The player floats 1.8u above the ground,
- * can move XZ freely, and uses Jump_Idle animation with direction tilt.
- * Drains 0.8 mana/s while active.
+ * Levitate — 30-second buff.  While active, **hold Space** to float 1.8u above
+ * the ground with a sinusoidal bob.  Release Space to descend naturally.
+ * Cast again to refresh the buff duration.
  */
 export const ABILITY_LEVITATE: Ability = {
   id:          'levitate',
   name:        'Levitate',
-  description: 'Toggle hover mode. Float 1.8u above the ground with directional tilt. Drains mana while active.',
+  description: '30s buff: hold jump (Space) to float 1.8u above ground with a gentle bob. Release to descend. Cast again to refresh.',
   icon:        '🌀',
-  cooldown:    1,   // low CD so toggle feels responsive
-  manaCost:    0,   // mana drain is per-second in PlayerController, not on cast
+  cooldown:    1,
+  manaCost:    0,
   cast(ctx) {
-    // Signal PlayerController to toggle levitate via userData
-    const current = ctx.playerGroup.userData['_levitateMode'] as boolean | undefined;
-    ctx.playerGroup.userData['_levitateMode'] = !current;
-    ctx.playerGroup.userData['_levitateY']    = ctx.playerPos.y + 1.8;
+    // Grant / refresh the 30-second levitate buff via userData
+    ctx.playerGroup.userData['_levitateBuffDuration'] = 30;
     _levitateVfx(ctx.scene, ctx.playerPos.clone());
   },
 };

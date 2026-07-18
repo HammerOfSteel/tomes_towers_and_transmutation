@@ -96,6 +96,7 @@ export default defineConfig(({ mode }) => ({
         worldEditor:    path.resolve(__dirname, 'world-editor.html'),
         modelReview:    path.resolve(__dirname, 'model-review.html'),
         princessCreator: path.resolve(__dirname, 'princess-creator.html'),
+        showroom:        path.resolve(__dirname, 'showroom.html'),
       },
     },
   },

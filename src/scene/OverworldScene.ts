@@ -38,7 +38,9 @@ import type { WorldGrid }              from '@/world/WorldGrid';
 import type { WorldData, DungeonEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
-import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
+import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
+import { createSettlementBuildingDna } from '@/world/buildings/BuildingTypeMap';
+import type { BuildingDNA }            from '@/world/buildings/BuildingDNA';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
 import { OWMinimap }                   from '@/ui/OWMinimap';
 import { ProceduralSkybox }            from '@/rendering/ProceduralSkybox';
@@ -100,6 +102,8 @@ export class OverworldScene {
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
+  /** DNA + world-space position per placed building — used for building-entry proximity. */
+  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3 }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
@@ -178,20 +182,32 @@ export class OverworldScene {
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
+    console.log('[OverworldScene] _buildTerrain...');
     this._terrain   = this._buildTerrain();
+    console.log('[OverworldScene] _buildWaterMesh...');
     this._waterMesh = this._buildWaterMesh();
+    console.log('[OverworldScene] _buildTower...');
     this._tower     = this._buildTower();
-
+    console.log('[OverworldScene] _plantTrees...');
     this._plantTrees(rand);
+    console.log('[OverworldScene] _placeRocks...');
     this._placeRocks(rand);
+    console.log('[OverworldScene] _spawnCamps...');
     this._spawnCamps(rand, config.enemyCampCount);
+    console.log('[OverworldScene] _addRuins...');
     this._addRuins(rand);
+    console.log('[OverworldScene] _placeDungeonEntrances...');
     this._placeDungeonEntrances(worldData.dungeons, rand);
+    console.log('[OverworldScene] _buildSettlements...');
     this._buildSettlements(worldData);
+    console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
+    console.log('[OverworldScene] _buildResourceNodes...');
     this._buildResourceNodes(worldData.resourceNodes ?? []);
+    console.log('[OverworldScene] minimap...');
     this._minimap = new OWMinimap(worldData);
-    this._minimap.hide(); // shown only while overworld is active
+    this._minimap.hide();
+    console.log('[OverworldScene] constructor DONE ✓');
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -1156,6 +1172,22 @@ export class OverworldScene {
     }));
   }
 
+  /**
+   * Returns the nearest building whose door is within `maxDist` world units of `pos`,
+   * or null if none is close enough.  Used by main.ts to show the "Press E to enter" prompt.
+   */
+  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3 } | null {
+    let best: { dna: BuildingDNA; pos: THREE.Vector3 } | null = null;
+    let bestD2 = maxDist * maxDist;
+    for (const bd of this._buildingData) {
+      const dx = bd.pos.x - pos.x;
+      const dz = bd.pos.z - pos.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; best = bd; }
+    }
+    return best;
+  }
+
   /** Convert a world-space (x, z) position to the nearest grid (col, row). */
   worldToGrid(x: number, z: number): { col: number; row: number } {
     return {
@@ -1903,9 +1935,12 @@ export class OverworldScene {
     const ruinInner   = GHW * T * 0.60;
     const ruinOuter   = GHW * T * 0.88;
     const ruinSpacing = Math.max(45, Math.round(GW * T * 0.441));
+    console.log(`[_addRuins] W=${W} H=${H} spacing=${ruinSpacing} inner=${ruinInner.toFixed(0)} outer=${ruinOuter.toFixed(0)}`);
     const pts = poissonDisk(W, H, ruinSpacing, rand);
+    console.log(`[_addRuins] poissonDisk done — ${pts.length} candidate points`);
 
-    for (const [px, pz] of pts) {
+    for (let i = 0; i < pts.length; i++) {
+      const [px, pz] = pts[i];
       if (this.buildingEntrances.length >= 2) break;
       const wx = px - W / 2;
       const wz = pz - H / 2;
@@ -1916,8 +1951,10 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const level = this._wg.get(c, r).elevation;
       const wy = level * SH;
+      console.log(`[_addRuins] making ruin ${i} at (${wx.toFixed(1)}, ${wz.toFixed(1)})...`);
 
       this._ruins.push(this._makeRuin(wx, wy, wz, rand));
+      console.log(`[_addRuins] ruin ${i} built`);
       this.buildingEntrances.push({
         type:     'greenhouse',
         position: new THREE.Vector3(wx, wy, wz),
@@ -1927,19 +1964,34 @@ export class OverworldScene {
       // C1: Spawn a mysterious NPC near each ruin
       const mCol = Math.round((wx + 3) / T + GHW);
       const mRow = Math.round((wz + 1) / T + GHH);
+      console.log(`[_addRuins] creating NPC for ruin ${i}...`);
+      const syntheticSettlement: import('@/world/WorldData').SettlementEntry = {
+        id:   0,
+        seed: (mCol * 73856093) ^ (mRow * 19349663),
+        plan: {
+          type:       'hamlet' as import('@/world/SettlementGenerator').SettlementType,
+          name:       'Ruins',
+          centerCol:  mCol,
+          centerRow:  mRow,
+          buildings:  [],
+          roads:      [],
+          population: 0,
+        },
+      };
       const mystNpc = new NPCEntity(
         mCol, mRow, wx + 3, wz + 1,
         'mysterious',
-        { seed: (mCol * 73856093) ^ (mRow * 19349663), type: 'village', population: 0,
-          name: 'Ruins', col: mCol, row: mRow } as any,   // synthetic settlement
+        syntheticSettlement,
         [],
         undefined, undefined, undefined,
         [],
       );
+      console.log(`[_addRuins] NPC created for ruin ${i}`);
       if (this.onQuestGiven) mystNpc.onQuestGiven = this.onQuestGiven;
       mystNpc.group.position.y = wy;
       this._npcs.push(mystNpc);
     }
+    console.log('[_addRuins] DONE');
   }
 
   private _makeRuin(
@@ -2294,10 +2346,13 @@ export class OverworldScene {
         const wz = (b.row - GHH) * T;
         const lv = this._wg.get(b.col, b.row).elevation;
         const wy = lv * SH;
-        const grp = generateBuilding(b.type, b.seed);
+        const dna = createSettlementBuildingDna(b, plan.type);
+        const inst = buildBuilding(dna);
+        const grp = inst.exteriorGroup;
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
+        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz) });
       }
 
       // Collect settlement road tiles — all at centre elevation for a flat pavement

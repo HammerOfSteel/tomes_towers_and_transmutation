@@ -286,6 +286,41 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   let minimap:   OWMinimap | null = null;
+
+  // ── Building interior overlay (while gameMode stays 'exterior') ────
+  let _inBuildingInterior = false;
+  let _buildingReturnPos  = new THREE.Vector3();
+  let _activeBuildingDna: import('@/world/buildings/BuildingDNA').BuildingDNA | null = null;
+  let _currentBuildingFloor = 0;
+  let _activeInterior: {
+    scene:     import('@/world/buildings/InteriorGenerator').InteriorScene;
+    floorBody: import('@dimforge/rapier3d-compat').RigidBody;
+  } | null = null;
+  // Always-on occlusion manager — switches between scene-wide and mesh-list modes
+  import('@/rendering/OcclusionManager').then(({ OcclusionManager }) => {
+    _occlusionMgr = new OcclusionManager();
+  });
+  let _occlusionMgr: import('@/rendering/OcclusionManager').OcclusionManager | null = null;
+  /** Y offset above terrain where building interiors are shown. */
+  const INTERIOR_Y = 200;
+
+  // ── Screen fade overlay ────────────────────────────────────────────
+  const _fadeEl = (() => {
+    const el = document.createElement('div');
+    el.id = 'screen-fade';
+    el.style.cssText = [
+      'position:fixed;inset:0;background:#000;',
+      'pointer-events:none;z-index:9999;',
+      'opacity:0;transition:opacity 0.35s ease;',
+    ].join('');
+    document.body.appendChild(el);
+    return el;
+  })();
+  /** Fade to black, call cb at peak opacity, then fade back. */
+  function _doFade(cb: () => void): void {
+    _fadeEl.style.opacity = '1';
+    setTimeout(() => { cb(); setTimeout(() => { _fadeEl.style.opacity = '0'; }, 80); }, 380);
+  }
   // E2: Solmor 3D presence near tower entrance (shown after prologue complete)
   const solmorPresence = new SolmorPresence(scene);
   solmorPresence.load().catch(() => {});  // fire-and-forget
@@ -321,11 +356,101 @@ async function main() {
     (player as unknown as { heal?: (n: number) => void }).heal?.(amount);
   };
 
+  /** Shared interior mount: loads a generated floor, positions it at INTERIOR_Y. */
+  async function _mountInterior(
+    dna: import('@/world/buildings/BuildingDNA').BuildingDNA,
+    floorIndex: number,
+  ): Promise<import('@/world/buildings/InteriorGenerator').InteriorScene> {
+    const { generateInterior } = await import('@/world/buildings/InteriorGenerator');
+    const interior = generateInterior(dna, floorIndex);
+
+    interior.group.position.set(0, INTERIOR_Y, 0);
+    scene.add(interior.group);
+    for (const l of interior.lights) {
+      l.position.y += INTERIOR_Y;
+      scene.add(l);
+    }
+
+    const floorBody = physics.createStaticBox(
+      new THREE.Vector3(0, INTERIOR_Y - 0.5, 0),
+      new THREE.Vector3(40, 0.5, 40),
+    );
+
+    _activeInterior = { scene: interior, floorBody };
+
+    // Set up wall/ceiling occlusion for the new floor (explicit mesh list — fast)
+    const { OcclusionManager } = await import('@/rendering/OcclusionManager');
+    if (!_occlusionMgr) _occlusionMgr = new OcclusionManager();
+    _occlusionMgr.setMeshes(interior.occluderMeshes);
+
+    return interior;
+  }
+
+  /** Dismount and free the currently active interior. */
+  function _unmountInterior(): void {
+    if (!_activeInterior) return;
+    scene.remove(_activeInterior.scene.group);
+    for (const l of _activeInterior.scene.lights) scene.remove(l);
+    physics.rapierWorld.removeRigidBody(_activeInterior.floorBody);
+    _activeInterior = null;
+    _occlusionMgr?.setScene(scene);  // restore scene-wide occlusion after leaving building
+  }
+
+  /** Enter a building's generated interior. Player teleported to INTERIOR_Y. */
+  async function enterBuildingInterior(dna: import('@/world/buildings/BuildingDNA').BuildingDNA): Promise<void> {
+    if (_inBuildingInterior) return;
+    _doFade(async () => {
+      const interior = await _mountInterior(dna, 0);
+      _buildingReturnPos.copy(player.group.position);
+      _activeBuildingDna    = dna;
+      _currentBuildingFloor = 0;
+      _inBuildingInterior   = true;
+      // Spawn near the exit door (front of building) or default centre
+      const spawnZ = interior.exitPos ? interior.exitPos.z + INTERIOR_Y + 1.5 : INTERIOR_Y + 1.2;
+      player.teleport(new THREE.Vector3(0, INTERIOR_Y + 1.2, spawnZ));
+      console.log('[buildingInterior] entered', dna.buildingKind, 'floor 0 /total', interior.totalFloors);
+    });
+  }
+
+  /** Switch floors inside a building (stair trigger). */
+  async function _switchBuildingFloor(newFloor: number): Promise<void> {
+    if (!_activeBuildingDna || !_activeInterior) return;
+    const oldFloor = _currentBuildingFloor;
+    _doFade(async () => {
+      _unmountInterior();
+      const interior = await _mountInterior(_activeBuildingDna!, newFloor);
+      _currentBuildingFloor = newFloor;
+      // Spawn near the relevant stair on the new floor
+      const goingUp  = newFloor > oldFloor;
+      const spawnRef = goingUp
+        ? (interior.stairDownPos ?? interior.stairUpPos ?? new THREE.Vector3(0, 0, 0))
+        : (interior.stairUpPos   ?? interior.stairDownPos ?? new THREE.Vector3(0, 0, 0));
+      player.teleport(new THREE.Vector3(spawnRef.x, INTERIOR_Y + 1.2, spawnRef.z + 1));
+      console.log('[buildingInterior] floor', newFloor, '/', interior.totalFloors);
+    });
+  }
+
+  /** Leave the current building interior and return to exterior. */
+  function leaveBuildingInterior(): void {
+    if (!_inBuildingInterior || !_activeInterior) return;
+    _doFade(() => {
+      _unmountInterior();
+      _inBuildingInterior   = false;
+      _activeBuildingDna    = null;
+      _currentBuildingFloor = 0;
+      player.teleport(_buildingReturnPos);
+      console.log('[buildingInterior] exited');
+    });
+  }
+
   function _makeOverworld(seed: number): OverworldScene {
+    console.log('[_makeOverworld] START seed=' + seed);
     // Always re-read so changes made in the Settings modal are picked up.
     worldGenConfig = loadWorldGenConfig();
     const cfg       = { ...worldGenConfig, seed };
+    console.log('[_makeOverworld] building world data...');
     const worldData = buildWorldData(seed, cfg);
+    console.log('[_makeOverworld] worldData built');
     // Rebuild minimap for the new world
     minimap?.dispose();
     minimap = new OWMinimap(worldData);
@@ -333,7 +458,9 @@ async function main() {
     // Create (or recreate) the overworld editor bound to this scene instance
     owEditor?.dispose();
     owEditor = new OverworldEditor(scene, cameraRig.camera, canvas);
+    console.log('[_makeOverworld] creating OverworldScene...');
     const ow = new OverworldScene(scene, physics, player, worldData);
+    console.log('[_makeOverworld] OverworldScene created');
     // Inject already-cleared camps so they aren't re-spawned
     ow.clearedCamps = discoveryTracker.clearedCamps;
     ow.onCampCleared = (wx, wz) => {
@@ -408,12 +535,16 @@ async function main() {
   }
 
   function switchToExterior(): void {
+    console.log('[switchToExterior] START gameMode=' + gameMode + ' overworld=' + !!overworld);
     // MUST unload dungeon first — onExitTrigger fires directly without
     // going through executeRoomSwap, so the room geometry + physics bodies
     // would otherwise stay in the scene and interfere with the overworld.
     sceneManager.unloadCurrentRoom();
+    console.log('[switchToExterior] dungeon unloaded');
     if (!overworld) {
+      console.log('[switchToExterior] creating overworld...');
       overworld = _makeOverworld(currentSeed);
+      console.log('[switchToExterior] overworld created');
     }
     // Mark last visited dungeon as cleared (enter = cleared, simplification for now)
     if (_activeDungeonId !== null) {
@@ -421,16 +552,20 @@ async function main() {
       _activeDungeonId = null;
     }
     gameMode = 'exterior';
+    physics.cullingRadius = 0;   // terrain heightfield is at world-origin; culling would disable it when player moves >30u away
+    _occlusionMgr?.setScene(scene);  // switch to scene-wide occlusion (trees, buildings, rocks)
+    console.log('[switchToExterior] calling overworld.enter()...');
     overworld.enter();
+    console.log('[switchToExterior] overworld.enter() complete');
     _weatherSys.setActive(true);
     minimap?.show();
     // E2: Show Solmor at tower entrance after prologue
     if (_towerPrologueDone) solmorPresence.show();
-    // Spawn just south of the tower door, high enough that the KCC capsule
-    // starts above the heightfield surface and falls cleanly to ground.
+    // Spawn just south of the tower door
     player.teleport(new THREE.Vector3(0, 1.5, 8));
     // Widen fog for the open world
     scene.fog = new THREE.Fog(0x0a1408, 60, 180);
+    console.log('[switchToExterior] COMPLETE ✓');
   }
 
   function switchToInterior(roomId?: string): void {
@@ -438,6 +573,8 @@ async function main() {
     _weatherSys.setActive(false);
     _cancelHarvest();
     gameMode = 'interior';
+    physics.cullingRadius = 30;   // re-enable culling for dungeon rooms
+    _occlusionMgr?.setScene(scene);  // scene-wide occlusion for dungeon/tower walls
     minimap?.hide();
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
     // Remove previous room's KayKit props before loading new room
@@ -446,15 +583,29 @@ async function main() {
   }
 
   sceneManager.onExitTrigger = () => {
+    console.log('[onExitTrigger] fired — hasMasterKey=' + _hasMasterKey + ' gameMode=' + gameMode);
+    // Already in exterior — ignore spurious re-trigger
+    if (gameMode === 'exterior') {
+      console.log('[onExitTrigger] already exterior — ignoring');
+      return;
+    }
     // Block the front door until the player has the master key.
     if (!_hasMasterKey && gameMode === 'interior') {
+      console.log('[onExitTrigger] blocked — no master key');
       _storyToast(
         'The front door is sealed with heavy magic. You need the master key — it must be in the basement.',
         'beat',
       );
       return;
     }
-    switchToExterior();
+    console.log('[onExitTrigger] calling switchToExterior...');
+    try {
+      switchToExterior();
+    } catch (err) {
+      console.error('[onExitTrigger] ❌ switchToExterior threw:', err);
+      return;
+    }
+    console.log('[onExitTrigger] switchToExterior returned');
 
     // E2: After the prologue, trigger Solmor's first encounter the first time
     // the player exits the tower with the master key.
@@ -580,6 +731,7 @@ async function main() {
 
   interactables.onKeyPickup = () => {
     if (_hasMasterKey) return; // already picked up
+    console.log('[onKeyPickup] master key picked up');
     _hasMasterKey = true;
     _storyToast(
       'You take the master key.\nThe binding ward dissolves in your palm.',
@@ -1646,14 +1798,186 @@ async function main() {
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
       /** Whether the game loop is actively running (true only after startGame completes). */
       isGameRunning: () => (gameLoop as any).running === true,
+      /** Force-give the master key (for tests). */
+      giveMasterKey: () => { _hasMasterKey = true; console.log('[__game] master key granted'); },
+      /** Whether master key is held. */
+      hasMasterKey: () => _hasMasterKey,
+      /** Trigger the exit door as if player walked into it. */
+      triggerExit: () => { console.log('[__game] triggerExit called'); sceneManager.onExitTrigger?.(); },
       /** Name + species of the active princess rig (null if none). For tests. */
       getPrincessInfo: () => {
         const inst = (player as any)._princessInstance;
         if (!inst) return null;
         return { name: inst.dna?.name ?? '?', species: inst.dna?.species ?? '?' };
       },
+      /** PROC dev: spawn a test NPC in the current scene. */
+      spawnTestNpc: (species = 'human', role = 'merchant') => {
+        import('@/npc-creator/defaults/NpcDefaults').then(({ getDefaultNpcDna }) => {
+          import('@/npc-creator/builder').then(({ buildNpc }) => {
+            const dna = getDefaultNpcDna(species as any, role as any, Date.now());
+            buildNpc({ ...dna, name: `Test ${species} ${role}` }).then(inst => {
+              const pos = player.group.position;
+              inst.root.position.set(pos.x + 2, pos.y, pos.z);
+              scene.add(inst.root);
+              console.log(`[spawnTestNpc] spawned ${dna.species}/${dna.role} near player`);
+            });
+          });
+        });
+      },
+      /** PROC dev: spawn a test enemy in the current scene. */
+      spawnTestEnemy: (species = 'undead', role = 'melee', tier = 1) => {
+        import('@/enemy-creator/defaults/EnemyDefaults').then(({ getDefaultEnemyDna }) => {
+          import('@/enemy-creator/builder').then(({ buildEnemy }) => {
+            const dna = getDefaultEnemyDna(species as any, role as any, tier as any, Date.now());
+            buildEnemy({ ...dna, name: `Test ${species} ${role} T${tier}` }).then(result => {
+              const pos = player.group.position;
+              result.rig.group.position.set(pos.x - 2, pos.y, pos.z + 2);
+              scene.add(result.rig.group);
+              console.log(`[spawnTestEnemy] spawned ${dna.species}/${dna.combatRole} tier ${tier} near player`);
+            });
+          });
+        });
+      },
+      /** PROC dev: decorate the current room with props. */
+      decorateCurrentRoom: () => {
+        import('@/levels/PropPlacer').then(({ decorateRoom, themeForFloor }) => {
+          const floor = _currentFloor;
+          const placed = decorateRoom({ floorIndex: floor, halfWidth: 5, halfDepth: 5, seed: Date.now(), maxProps: 8 });
+          for (const { built, x, z, rotation } of placed) {
+            built.root.position.set(x, 0, z);
+            built.root.rotation.y = rotation;
+            scene.add(built.root);
+          }
+          console.log(`[decorateCurrentRoom] placed ${placed.length} props on floor ${floor} (theme: ${themeForFloor(floor)})`);
+        });
+      },
+      /** PROC dev: spawn a test building in the current scene. */
+      spawnTestBuilding: (kind = 'house', style = 'thatched', size = 'small') => {
+        import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {
+          import('@/world/buildings/BuildingDNA').then(({ STYLE_COLORS }) => {
+            const dna = {
+              v: 1, kind: 'building', name: `Test ${kind}`, seed: Date.now(),
+              buildingKind: kind, size, floors: 2, style,
+              condition: 'weathered', hasInterior: true, interiorLayout: 'single_room',
+              colors: STYLE_COLORS[style as import('@/world/buildings/BuildingDNA').BuildingStyle] ?? STYLE_COLORS['thatched'],
+              rotation: 0,
+            } as any;
+            const inst = buildBuilding(dna);
+            const pos  = player.group.position;
+            inst.exteriorGroup.position.set(pos.x + 8, 0, pos.z);
+            scene.add(inst.exteriorGroup);
+            console.log(`[spawnTestBuilding] spawned ${kind}/${style}/${size} near player`);
+          });
+        });
+      },
+      /** Building interior state — used by E2E tests. */
+      isInBuildingInterior: () => _inBuildingInterior,
+      getBuildingFloor:     () => _currentBuildingFloor,
+      getBuildingTotalFloors: () => _activeInterior?.scene.totalFloors ?? 0,
+      getBuildingStairUpPos: () => {
+        const p = _activeInterior?.scene.stairUpPos;
+        if (!p) return null;
+        // root-local XZ + INTERIOR_Y for world Y
+        return { x: p.x, y: INTERIOR_Y + p.y + 1.2, z: p.z };
+      },
+      getBuildingStairDownPos: () => {
+        const p = _activeInterior?.scene.stairDownPos;
+        if (!p) return null;
+        return { x: p.x, y: INTERIOR_Y + p.y + 1.2, z: p.z };
+      },
+      /** Spawn a test building directly in front of the player (returns world pos). */
+      spawnBuildingNearPlayer: (kind = 'inn', style = 'tudor', floors = 2) => {
+        return new Promise<{x: number; z: number}>((resolve) => {
+          import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {
+            import('@/world/buildings/BuildingDNA').then(({ STYLE_COLORS }) => {
+              const pos = player.group.position;
+              const bx = pos.x + 6, bz = pos.z;
+              const dna: any = {
+                v:1, kind:'building', name:`Test ${kind}`, seed: 0xBEEF_1234,
+                buildingKind: kind, size:'medium', floors, style,
+                condition:'weathered', hasInterior:true, interiorLayout:'single_room',
+                colors: (STYLE_COLORS as Record<string, any>)[style] ?? STYLE_COLORS['timber'],
+                rotation:0, terrace:'none', features:[],
+              };
+              const inst = buildBuilding(dna);
+              inst.exteriorGroup.position.set(bx, 0, bz);
+              scene.add(inst.exteriorGroup);
+              // Register in overworld building data so getNearestBuilding finds it
+              (overworld as any)?._buildingData?.push({ dna, pos: new THREE.Vector3(bx, 0, bz) });
+              console.log(`[spawnBuildingNearPlayer] ${kind}/${style} floors=${floors} at (${bx},${bz})`);
+              resolve({ x: bx, z: bz });
+            });
+          });
+        });
+      },
       /** Current princess animation state (idle/walk/run/jump_idle) — for tests. */
       getPrincessAnimState: () => player.princessAnimState,
+
+      /**
+       * Enter a dev backroom directly (no portal navigation needed).
+       * Unloads the current dungeon room, builds the backroom scene, teleports the player.
+       * Sets window.__backroomReady = true when done.
+       * @param id  backroom id — default 'building_lab'
+       */
+      enterBackroom: async (id = 'building_lab') => {
+        (window as any).__backroomReady = false;
+        // Clear dungeon geometry + physics bodies
+        sceneManager.unloadCurrentRoom();
+        // No culling — backroom walls can be >30u away from player
+        physics.cullingRadius = 0;
+        // Create ground plane SYNCHRONOUSLY before any await so the
+        // player never falls through during the async scene build.
+        const groundBody = physics.createGroundPlane(0);
+
+        const prev = (window as any).__activeBackroomCleanup as (() => void) | undefined;
+        prev?.();
+
+        // Import backroom scene builders
+        const [{ buildBuildingLab, buildEmptyRoom }, { BackroomRegistry }] = await Promise.all([
+          import('@/creative/backroomScenes'),
+          import('@/creative/Backrooms'),
+        ]);
+
+        const def = BackroomRegistry.get(id);
+        const sp  = def?.spawnPoint ?? { x: 0, y: 1.5, z: 0 };
+
+        // Teleport before the scene builds so player stands on the ground
+        // plane we just created, rather than free-falling during async load.
+        player.teleport(new THREE.Vector3(sp.x, sp.y, sp.z));
+
+        let sceneCleaner: (() => void) | undefined;
+        if (id === 'building_lab') {
+          sceneCleaner = await buildBuildingLab(scene, physics);
+        } else {
+          sceneCleaner = buildEmptyRoom(scene, id, def?.portalColor ?? 0x884488);
+        }
+
+        (window as any).__activeBackroomCleanup = () => {
+          sceneCleaner?.();
+          try { physics.rapierWorld.removeRigidBody(groundBody); } catch { /* already removed */ }
+          physics.cullingRadius = 30;  // restore interior default
+          _occlusionMgr?.dispose();
+          _occlusionMgr = null;
+        };
+        (window as any).__backroomReady = true;
+        // Use scene-wide occlusion for backroom — catches all tagged + untagged walls
+        if (_occlusionMgr) {
+          _occlusionMgr.setScene(scene);
+        } else {
+          import('@/rendering/OcclusionManager').then(({ OcclusionManager: OM }) => {
+            _occlusionMgr = new OM();
+            _occlusionMgr.setScene(scene);
+          });
+        }
+        console.log('[enterBackroom] ready:', id);
+      },
+
+      exitBackroom: () => {
+        const cleanup = (window as any).__activeBackroomCleanup as (() => void) | undefined;
+        cleanup?.();
+        (window as any).__activeBackroomCleanup = null;
+        (window as any).__backroomReady = false;
+      },
       hasAssetTrees:   () => !!(scene as any).__assetTreesLoaded,
       hasAssetRocks:       () => !!(scene as any).__assetRocksLoaded,
       hasAssetClutter:     () => !!(scene as any).__assetClutterLoaded,
@@ -2163,6 +2487,7 @@ async function main() {
       if (gameMode === 'interior') {
         hud.setTime(null);
         sceneManager.update(dt, player.group.position);
+        // occlusion handled globally before render
 
         // Story runner tick — interior branch (prologue beats).
         // Throttled to 1 Hz like the exterior branch.
@@ -2202,6 +2527,66 @@ async function main() {
         overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
         // A5: pass current hour so tower details (lights, gate) can respond
         (overworld as any)._timeHour = TimeSystem.instance.hour % 24;
+
+        // ── Building interior entry / exit ────────────────────────────────
+        if (_inBuildingInterior) {
+          const _int = _activeInterior?.scene;
+          const _pp  = player.group.position;
+
+          // Occlusion: fade walls/ceiling that block camera→player
+          // (handled globally before render)
+
+          // Stair proximity check (1.8u radius); stairPos is root-local, group is at INTERIOR_Y
+          if (_int?.stairUpPos) {
+            const su = _int.stairUpPos;
+            const dx = _pp.x - su.x, dz = _pp.z - su.z;
+            if (dx*dx + dz*dz < 3.24) {
+              _setExteriorPrompt('Go up');
+              if (input.state.interact && !_npcBlocking)
+                _switchBuildingFloor(_currentBuildingFloor + 1);
+            } else if (_int.stairDownPos) {
+              const sd = _int.stairDownPos;
+              const dx2 = _pp.x - sd.x, dz2 = _pp.z - sd.z;
+              if (dx2*dx2 + dz2*dz2 < 3.24) {
+                _setExteriorPrompt('Go down');
+                if (input.state.interact && !_npcBlocking)
+                  _switchBuildingFloor(_currentBuildingFloor - 1);
+              } else {
+                _setExteriorPrompt('Leave building');
+                if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
+              }
+            } else {
+              _setExteriorPrompt('Leave building');
+              if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
+            }
+          } else if (_int?.stairDownPos) {
+            const sd = _int.stairDownPos;
+            const dx = _pp.x - sd.x, dz = _pp.z - sd.z;
+            if (dx*dx + dz*dz < 3.24) {
+              _setExteriorPrompt('Go down');
+              if (input.state.interact && !_npcBlocking)
+                _switchBuildingFloor(_currentBuildingFloor - 1);
+            } else {
+              _setExteriorPrompt('Leave building');
+              if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
+            }
+          } else {
+            // Single-floor building — always show leave prompt
+            _setExteriorPrompt('Leave building');
+            if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
+          }
+        } else {
+          // Check if player is near a building entrance
+          const _nearBuilding = overworld.getNearestBuilding(player.group.position, 4);
+          if (_nearBuilding) {
+            _setExteriorPrompt(`Enter ${_nearBuilding.dna.buildingKind}`);
+            if (input.state.interact && !_npcBlocking) {
+              enterBuildingInterior(_nearBuilding.dna);
+            }
+          } else {
+            // (prompt cleared below in the existing exterior-prompt block)
+          }
+        }
         solmorPresence.update(dt);   // E2: bob + anim tick
         party.pruneDead();
         tamingGame.update(dt);
@@ -2542,15 +2927,9 @@ async function main() {
                 // No arcane light pulse — just the dark shadow VFX from SpellSystem
               },
               onLevitateToggle: () => {
-                player.levitateMode = !player.levitateMode;
-                if (player.levitateMode) {
-                  (player as unknown as { _levitateTargetY: number })._levitateTargetY =
-                    player.group.position.y + (player as unknown as { LEVITATE_HEIGHT: number }).LEVITATE_HEIGHT;
-                  particles.burst(player.group.position, 0x88ddff, 14, 2.5, 0.5);
-                } else {
-                  // Landing — deactivate levitate, physics resumes
-                  particles.burst(player.group.position, 0x88ddff, 8, 1.5, 0.3);
-                }
+                // Grant/refresh 30s levitate buff — hold Space to float
+                player.group.userData['_levitateBuffDuration'] = 30;
+                particles.burst(player.group.position, 0x88ddff, 18, 2.5, 0.5);
               },
               onFlyBurst: (_angle) => {
                 // Toggle sustained fly spell mode (WoW-style free flight)
@@ -2739,7 +3118,8 @@ async function main() {
       })),
     );
 
-    // 10. Render
+    // 10. Render  (occlusion update runs here — single call, all modes)
+    _occlusionMgr?.update(cameraRig.camera, player.group.position, dt);
     composer.render(dt);
 
     // 11. Creative mode per-frame update (dev only)

@@ -392,6 +392,187 @@ export function buildCombatArena(scene: THREE.Scene): CleanupFn {
   return () => { scene.remove(group); };
 }
 
+// ── Building Interior Lab ─────────────────────────────────────────────────────
+
+const _BLAB_PAIRS = [
+  { kind: 'cottage',    style: 'thatched', floors: 1, species: 'human',     role: 'farmer',   note: '1 floor'  },
+  { kind: 'inn',        style: 'tudor',    floors: 2, species: 'human',     role: 'merchant', note: '2 floors' },
+  { kind: 'blacksmith', style: 'stone',    floors: 1, species: 'dwarven',   role: 'guard',    note: '1 floor'  },
+  { kind: 'chapel',     style: 'gothic',   floors: 2, species: 'celestial', role: 'scholar',  note: '2 floors' },
+  { kind: 'villa',      style: 'vampiric', floors: 2, species: 'undead',    role: 'noble',    note: '2 floors' },
+  { kind: 'apothecary', style: 'arcane',   floors: 2, species: 'elf',       role: 'elder',    note: '2 floors' },
+] as const;
+
+/**
+ * Building Interior Lab — walk through procedural interiors as the fox princess.
+ * Spawns 6 interiors in a row at z=0. Floor-1s are placed at z=+22 (same X).
+ * Physics: perimeter box colliders per interior so the character bounces off walls.
+ * NPCs placed in the first room of each interior.
+ */
+export async function buildBuildingLab(
+  scene: THREE.Scene,
+  physics?: import('@/physics/PhysicsWorld').PhysicsWorld,
+): Promise<CleanupFn> {
+
+  const sceneGroups: THREE.Group[]       = [];
+  const sceneLights: THREE.Light[]       = [];
+  const physBodies:  any[]               = [];
+
+  // ── Ground platform (visual only — physics floor provided by enterBackroom) ──
+  const platform = new THREE.Group();
+  platform.name  = 'backroom_building_lab';
+
+  const floorMat = new THREE.MeshLambertMaterial({ color: 0x1a1a2e });
+  const floorGeo = new THREE.PlaneGeometry(160, 70);
+  const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set(0, -0.02, 5);
+  platform.add(floorMesh);
+
+  const grid = new THREE.GridHelper(160, 80, 0x2a2a4a, 0x16162a);
+  grid.position.set(0, 0, 5);
+  platform.add(grid);
+
+  // Header label
+  platform.add(_makeLabel('🏗  BUILDING INTERIOR LAB  —  WASD · mouse · E to interact', 0x88ccff, { x: 0, y: 5.5, z: -30 }, 10));
+  platform.add(_makeLabel('Walk through rooms · find the stair trigger · E = change floor', 0x6688aa, { x: 0, y: 4.6, z: -30 }, 6));
+
+  scene.add(platform);
+  sceneGroups.push(platform);
+
+  // ── Import helpers ────────────────────────────────────────────────────────
+  const [
+    { generateInterior },
+    { STYLE_COLORS },
+    { getDefaultNpcDna },
+    { buildNpc },
+  ] = await Promise.all([
+    import('@/world/buildings/InteriorGenerator'),
+    import('@/world/buildings/BuildingDNA'),
+    import('@/npc-creator/defaults/NpcDefaults'),
+    import('@/npc-creator/builder'),
+  ]);
+
+  const COL_W   = 24;
+  const TOTAL   = _BLAB_PAIRS.length;
+  const F1_OFFSET_Z = 24;   // floor-1 displaced Z so they don't overlap floor-0
+
+  for (let i = 0; i < TOTAL; i++) {
+    const { kind, style, floors, species, role, note } = _BLAB_PAIRS[i];
+    const cx = (i - (TOTAL - 1) / 2) * COL_W;
+
+    const dna: any = {
+      v:1, kind:'building', name:`${kind} (${style})`,
+      seed: (i + 1) * 0x6B8B4567,
+      buildingKind: kind, size: 'medium', floors,
+      style, condition: 'weathered', hasInterior: true, interiorLayout: 'single_room',
+      colors: (STYLE_COLORS as Record<string, any>)[style] ?? STYLE_COLORS['timber'],
+      rotation: 0, terrace: 'none', features: [],
+    };
+
+    // ── Interior floor 0 ─────────────────────────────────────────────────
+    const int0 = generateInterior(dna, 0);
+    int0.group.position.set(cx, 0, 0);
+    scene.add(int0.group);
+    sceneGroups.push(int0.group);
+    for (const l of int0.lights) {
+      l.position.x += cx; scene.add(l); sceneLights.push(l);
+    }
+
+    // Physics perimeter walls for floor 0
+    if (physics) {
+      const hw = int0.planW / 2 + 0.1;
+      const hd = int0.planD / 2 + 0.1;
+      const fc = int0.floorCenter;         // root-local centre of floor
+      const wx = cx + fc.x;
+      const wz = 0  + fc.z;
+      const wallH = 3.0;
+      for (const [ox, oz, ew, ed] of [
+        [0,   -hd, hw, 0.5],   // south wall
+        [0,   +hd, hw, 0.5],   // north wall
+        [-hw, 0,  0.5, hd],    // west wall
+        [+hw, 0,  0.5, hd],    // east wall
+      ] as [number,number,number,number][]) {
+        physBodies.push(physics.createStaticBox(
+          new THREE.Vector3(wx + ox, wallH, wz + oz),
+          new THREE.Vector3(ew, wallH, ed),
+        ));
+      }
+    }
+
+    // ── Column label (floor 0) ────────────────────────────────────────────
+    platform.add(_makeLabel(`${kind}\n${style} · ${note}`, 0xaaaaff, { x: cx, y: 4.5, z: -22 }, 3.5));
+
+    // ── Interior floor 1 (if multi-floor) ────────────────────────────────
+    if (floors > 1) {
+      const int1 = generateInterior(dna, 1);
+      int1.group.position.set(cx, 0, F1_OFFSET_Z);
+      scene.add(int1.group);
+      sceneGroups.push(int1.group);
+      for (const l of int1.lights) {
+        l.position.x += cx; l.position.z += F1_OFFSET_Z; scene.add(l); sceneLights.push(l);
+      }
+
+      // Physics walls for floor 1
+      if (physics) {
+        const hw = int1.planW / 2 + 0.1;
+        const hd = int1.planD / 2 + 0.1;
+        const fc = int1.floorCenter;
+        const wx = cx + fc.x;
+        const wz = F1_OFFSET_Z + fc.z;
+        const wallH = 3.0;
+        for (const [ox, oz, ew, ed] of [
+          [0,   -hd, hw, 0.5],
+          [0,   +hd, hw, 0.5],
+          [-hw, 0,  0.5, hd],
+          [+hw, 0,  0.5, hd],
+        ] as [number,number,number,number][]) {
+          physBodies.push(physics.createStaticBox(
+            new THREE.Vector3(wx + ox, wallH, wz + oz),
+            new THREE.Vector3(ew, wallH, ed),
+          ));
+        }
+      }
+
+      // Stair connection arrow label
+      platform.add(_makeLabel(`↑ Floor 1`, 0x88ffaa, { x: cx, y: 3.5, z: F1_OFFSET_Z - 21 }, 2.5));
+    }
+
+    // ── NPC inside floor 0 ────────────────────────────────────────────────
+    try {
+      const npcDna  = getDefaultNpcDna(species as any, role as any, (i + 7) * 0x9E3779B9 >>> 0);
+      const npcInst = await buildNpc({ ...npcDna });
+      // Place NPC in the interior centre (root-local centre + group world pos)
+      const fc = int0.floorCenter;
+      npcInst.root.position.set(cx + fc.x, 0, fc.z + 1);
+      scene.add(npcInst.root);
+      sceneGroups.push(npcInst.root);
+    } catch { /* NPC optional */ }
+  }
+
+  // Connecting pathway between row 0 and row 1
+  const pathMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(4, F1_OFFSET_Z),
+    new THREE.MeshLambertMaterial({ color: 0x222240 }),
+  );
+  pathMesh.rotation.x = -Math.PI / 2;
+  pathMesh.position.set(0, 0, F1_OFFSET_Z / 2);
+  platform.add(pathMesh);
+  platform.add(_makeLabel('⤴  stair connections above  ⤴', 0x44cc88, { x: 0, y: 2, z: F1_OFFSET_Z / 2 }, 4));
+
+  console.log('[buildBuildingLab] ready — 6 building interiors, walk around with WASD');
+
+  return () => {
+    for (const g of sceneGroups) scene.remove(g);
+    for (const l of sceneLights) scene.remove(l);
+    if (physics) {
+      for (const b of physBodies) {
+        try { physics.rapierWorld.removeRigidBody(b); } catch { /* already removed */ }
+      }
+    }
+  };
+}
+
 // ── Generic empty room (placeholder for other backrooms) ──────────────────────
 
 export function buildEmptyRoom(scene: THREE.Scene, name: string, color: number): CleanupFn {

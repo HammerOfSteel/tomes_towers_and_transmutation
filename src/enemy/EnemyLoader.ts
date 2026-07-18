@@ -36,6 +36,7 @@
 import * as THREE                         from 'three';
 import { loadCharModel, getCharModelBounds } from '@/characters/CharacterLoader';
 import type { CharModelDef }              from '@/characters/charManifest';
+import type { EnemyDNA }                  from '@/enemy-creator/types';
 import { CHAR_MODELS }                    from '@/characters/charManifest';
 
 // ── EnemyAnimState ────────────────────────────────────────────────────────────
@@ -172,47 +173,39 @@ export async function loadEnemyById(
 ): Promise<EnemyRig> {
   const def = CHAR_MODELS.find(m => m.id === modelId);
   if (!def) {
-    // B1: DNA rig fallback — unknown enemy IDs get a procedural CreatureBuilder mesh
-    console.warn(`[EnemyLoader] "${modelId}" not in charManifest — using DNA fallback`);
-    return buildDnaFallbackRig(modelId, spawnPos);
+    // PROC-B2g: unknown model IDs get a procedural enemy-creator rig
+    console.log(`[EnemyLoader] "${modelId}" not in charManifest — using procedural enemy builder`);
+    return buildProceduralEnemyRig(modelId, spawnPos);
   }
   return loadEnemyModel(def, spawnPos);
 }
 
 /**
- * B1: DNA rig fallback — builds a procedural CreatureBuilder mesh when no
- * compatible GLB model exists in charManifest. The mesh inherits basic
- * idle/attack/death clips from the walk animation.
+ * PROC-B2g: Build a procedural enemy rig via the enemy-creator system.
+ * Seeds appearance from modelId for deterministic results.
  */
-async function buildDnaFallbackRig(modelId: string, spawnPos: THREE.Vector3): Promise<EnemyRig> {
-  const { buildCreature } = await import('@/creatures/CreatureBuilder');
-  const { DEFAULT_PLAYER_DNA } = await import('@/creatures/CreatureDNA');
-
-  // Seed creature DNA from the model ID string for deterministic appearance
+async function buildProceduralEnemyRig(modelId: string, spawnPos: THREE.Vector3): Promise<EnemyRig> {
+  // Derive a seed from the modelId string
   let seed = 0;
   for (let i = 0; i < modelId.length; i++) seed = (seed * 31 + modelId.charCodeAt(i)) >>> 0;
-  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 
-  const dna = { ...DEFAULT_PLAYER_DNA };
-  // Vary colour so different enemy types look distinct (use numeric hex)
-  const hue = Math.floor(rng() * 6);   // 0-5 → 6 distinct palette slots
-  const PALETTES: Array<typeof DEFAULT_PLAYER_DNA.colors> = [
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x6a4a8a, secondary: 0x4a2a6a },  // purple
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x8a4a4a, secondary: 0x6a2a2a },  // red
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a6a4a, secondary: 0x2a4a2a },  // green
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a4a8a, secondary: 0x2a2a6a },  // blue
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x8a6a4a, secondary: 0x6a4a2a },  // orange
-    { ...DEFAULT_PLAYER_DNA.colors, primary: 0x4a8a8a, secondary: 0x2a6a6a },  // teal
-  ];
-  dna.colors = PALETTES[hue] ?? PALETTES[0];
+  const { getDefaultEnemyDna, tierForFloor } = await import('@/enemy-creator/defaults/EnemyDefaults');
+  const { buildEnemy } = await import('@/enemy-creator/builder');
 
-  const rig = buildCreature(dna);
-  const group = rig.root;
-  group.scale.setScalar(TARGET_HEIGHT / 2.0);   // DNA creatures ~2 WU tall
-  group.position.copy(spawnPos);
+  // Infer species/role from known id patterns; fall back to sensible defaults
+  const species  = modelId.includes('fox')    ? 'vulperia'
+                 : modelId.includes('skeleton') || modelId.includes('zombie') ? 'undead'
+                 : modelId.includes('slime')  ? 'slime'
+                 : 'human';
+  const role     = modelId.includes('mage')   ? 'caster'
+                 : modelId.includes('rogue')  ? 'ranged'
+                 : 'melee';
+  const tier     = tierForFloor(0);   // default tier 1; caller can override
 
-  const emptyClips = { idle: null, walk: null, run: null, attack: null, death: null, hurt: null };
-  return { group, mixer: null, allClips: [], clips: emptyClips, normScale: 1, def: undefined as any };
+  const dna    = getDefaultEnemyDna(species as EnemyDNA['species'], role, tier, seed);
+  const result = await buildEnemy(dna);
+  result.rig.group.position.copy(spawnPos);
+  return result.rig;
 }
 
 // ── Disposal ──────────────────────────────────────────────────────────────────

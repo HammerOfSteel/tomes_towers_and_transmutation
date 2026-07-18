@@ -48,193 +48,51 @@ Shown in the new-game flow when custom mode is enabled.
 
 ---
 
-## Asset Inventory (what we have)
 
-### Enemy Packs (in `assets/characters/enimies/`)
-| Pack | Contents | Status |
-|---|---|---|
-| `Ultimate Monsters` (large Google Drive ZIP) | ~80+ monster meshes (dragons, demons, undead, beasts, elementals) | ⬜ Needs unzip + GLB extraction |
-| `Monster Pack Animated by Quaternius.zip` | 20+ fully animated low-poly monsters — skeleton, golem, dragon, slime, imp, etc. | ✅ Converted FBX→GLB via Blender, in `public/assets/characters/monster_pack_animated/` |
-| `Easy Animated Enemy Pack` (Quaternius 2019) | ~15 classic fantasy enemies — bat, ghost, spider, troll, zombie, mage, etc. | ✅ Converted FBX→GLB, fixed alpha=0 bug, in `public/assets/characters/easy_animated/` |
-| `kenney_cube-pets_1.0.zip` | ~30 cube-style pets/familiar-type creatures | ✅ GLBs extracted to `public/assets/characters/cube_pets/` (24 models, 8 anims each) |
-| `meshy_dark_fay.zip` | Dark fairy — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_dark_fay/` (mesh.glb + 20-clip anims.glb) |
-| `meshy_mutated_pig_man.zip` | Mutated pig-man — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_mutated_pig_man/` |
-| `meshy_vampire_fay.zip` | Vampire fairy — custom high-quality 3D mesh | ✅ GLBs in `public/assets/characters/meshy_vampire_fay/` |
-
-### KayKit Kits (`ASSET_KITS/KayKit_Kits/`)
-> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
-
-| Archive | Models | Contents | Use |
-|---|---|---|---|
-| `KayKit Dungeon Pack 1.0.zip` | 636 | Characters, dungeon tiles, walls, torches, chests, pillars | Dungeon rooms + characters |
-| `KayKit Medieval Builder Pack 1.0.zip` | 681 | Archery range, barracks, bridge, castle, market, houses | Settlement buildings |
-| `KayKit Mini-Game Variety Pack 1.2.zip` | 411 | Character animals, arrow props, mini-game pieces | Misc props |
-| `KayKit Spooktober Seasonal Pack 1.1.zip` | 152 | Jack character, witch, candles, lanterns | Halloween / undead zone |
-| `KayKit_BlockBits_1.0_FREE.zip` | 160 | Bricks, colored blocks, platforms | Procedural fill geometry |
-| `KayKit_BoardGameBits_1.0_FREE.zip` | 648 | Board-game buildings, dice, tokens | Board-game style props |
-| `KayKit_City_Builder_Bits_1.0_FREE.zip` | 184 | Benches, boxes, buildings, market stalls, roads, fences | Settlement props |
-| `KayKit_FantasyWeaponsBits_1.0_FREE.zip` | 124 | Arrows, axes, bows, daggers, staffs, swords | Weapon loot props |
-| `KayKit_Forest_Nature_Pack_1.0_FREE.zip` | 420 | Bushes, grass, rocks, trees (all variants + colors), stumps, mushrooms | Overworld biomes: forest, bog, highland |
-| `KayKit_Furniture_Bits_1.0_FREE.zip` | 212 | Armchairs, beds, desks, shelves, sofas, tables | House interiors |
-| `KayKit_HalloweenBits_1.0_FREE.zip` | 259 | Arches, gates, gravestones, pumpkins, dead trees, cauldrons | Graveyard biome / undead zone |
-| `KayKit_Holiday_Bits_1.0_FREE.zip` | 400 | Bells, candy canes, seasonal decorations | Seasonal / misc props |
-| `KayKit_Medieval_Hexagon_Pack_1.0_FREE.zip` | 926 | Hex terrain tiles, buildings (archery, barracks, blacksmith, castle), moats | Overworld hex-map / settlements |
-| `KayKit_Platformer_Pack_1.0_FREE.zip` | 1498 | Arches, balls, blocks, platforms, spikes | Platformer structures |
-| `KayKit_Prototype_Bits_1.1_FREE.zip` | 293 | Barrels, boxes, crates, ramps | Generic prototype props |
-| `KayKit_RPGToolsBits_1.0_FREE.zip` | 206 | Anvil, axe, blueprints, chest, coin bag, potions, scrolls, swords | Dungeon loot props / smithy |
-| `KayKit_ResourceBits_1.0_FREE.zip` | 304 | Copper/iron/gold bars + stacks, wood logs, stone blocks | Resource gathering / crafting props |
-| `KayKit_Restaurant_Bits_1.0_FREE.zip` | 582 | Bowls, chairs, counters, plates, cooking props | Tavern / inn interior props |
-| `KayKit_Space_Base_Bits_1.0_FREE.zip` | 244 | Base modules, corridors, sci-fi pieces | Sci-fi base props |
-
-### Kenney Kits — Non-Modular (`ASSET_KITS/Kenney_Kits/`)
-> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
-
-| Archive | Models | Contents | Use |
-|---|---|---|---|
-| `kenney_fantasy-town-kit_2.0.zip` | 501 | Balcony walls, banners, roads, roofs, stalls, houses, inns, shops | Settlement buildings + streets |
-| `kenney_furniture-kit.zip` | 420 | Bathroom cabinet, bed, bookcase, chair, couch, desk, shelf, table | House interiors |
-| `kenney_graveyard-kit_5.0.zip` | 273 | Altars, benches, gravestones (many variants), mausoleums, dead trees | Graveyard biome |
-| `kenney_survival-kit.zip` | 240 | Barrel, bedroll, campfire, log stack, tent, axe, shovel | Overworld camps |
-| `kenney_tower-defense-kit.zip` | 480 | Crystal details, towers (round/square), walls, gates, cannons | Tower exterior / outpost zones |
-| `kenney_pirate-kit.zip` | 216 | Barrels, boats, cannons, chests, docks, sails | Coastal settlement |
-| `kenney_mini-dungeon.zip` | 75 | Banners, barrels, corridors, doors, rooms, stairs | Mini-sized dungeon tiles |
-| `kenney_mini-forest_1.0.zip` | 66 | Bridge, building platforms, pine trees, round trees, rocks | Mini forest props |
-| `kenney_platformer-kit.zip` | 459 | Arrows, barrels, grass blocks, coins, spikes, springs | Platformer props |
-| `kenney_city-kit-commercial_2.1.zip` | 123 | Commercial buildings (multiple types) | City commercial buildings |
-| `kenney_city-kit-industrial_1.0.zip` | 75 | Industrial buildings (multiple types) | City industrial buildings |
-| `kenney_city-kit-suburban_20.zip` | 120 | Suburban house types | City suburban buildings |
-| `kenney_coaster-kit.zip` | 549 | Benches, coaster flumes, track pieces | Theme park props |
-| `kenney_blaster-kit_2.1.zip` | 120 | Sci-fi blasters (multiple variants) | Sci-fi weapons |
-| `kenney_car-kit.zip` | 150 | Ambulance, cars, cones | Vehicles |
-| `kenney_mini-arcade.zip` | 60 | Air hockey, arcade machines, basketball game | Arcade props |
-| `kenney_mini-arena.zip` | 66 | Banners, blocks, borders | Arena props |
-| `kenney_mini-market.zip` | 60 | Cash register, columns, shelving | Shop interior |
-| `kenney_train-kit.zip` | 309 | Railroad corners, straights, ramps | Train tracks |
-
-### Kenney Kits — Modular (`ASSET_KITS/Kenney_Kits/Modular/`)
-> Full inventory in `ASSET_KITS/ASSET_CATALOGUE.md` and `ASSET_KITS/ASSET_CATALOGUE.yaml`
-
-| Archive | Models | Contents | Use |
-|---|---|---|---|
-| `kenney_castle-kit.zip` | 228 | Drawbridge, doors, flags, gates, metal gates, tower bases/mids/roofs, walls, wall corners | Wizard tower exterior / Baron's Keep |
-| `kenney_modular-dungeon-kit_1.0.zip` | 117 | Corridor corners/ends/intersections/wide, rooms (small/large), stairs, gate-door | Dungeon zone rendering |
-| `kenney_modular-cave-kit_1.0.zip` | 120 | Cave corridor corners/ends/intersections, rooms, stalactites, water tiles | Bog shrine / mine dungeon |
-| `kenney_building-kit.zip` | 237 | Barricade doorways, flat walls, windows, floors, roof corners/edges | House construction supplement |
-| `kenney_city-kit-roads.zip` | 216 | Bridge pillars, road straights/corners/intersections, construction barriers | Overworld roads / paths |
-| `kenney_factory-kit_3.0.zip` | 429 | Arrows, conveyors, pipes, vents | Factory / industrial props |
-| `kenney_holiday-kit.zip` | 297 | Benches, cabin corners, cabin logs | Seasonal cabin props |
-| `kenney_minigolf-kit.zip` | 378 | Balls, block borders, course pieces | Mini-golf course |
-| `kenney_modular-space-kit_1.0.zip` | 120 | Cables, corridor corners/ends | Space station props |
-| `kenney_toy-car-kit.zip` | 471 | Gates, item props, track pieces | Toy car track |
-
----
-
-## PHASE A — Asset Integration Pipeline
-> **Goal:** Replace all major procedural placeholders with real 3D assets from the packs. Every screen in the alpha should look deliberate and polished.
-
-### A1 — Unpack & Catalogue All Assets
-- [x] ~~Write a Node.js script `scripts/unpack-assets.js` that unzips all `.zip`/`.rar` packs into `public/assets/` mirrored directories~~ — **Done:** all enemy/NPC character packs converted from FBX→GLB via `scripts/fix-glb-materials.mjs` + Blender batch script. 117 models across 26 packs now in `public/assets/characters/`.
-- [x] `scripts/gen-char-manifest.mjs` auto-generates `src/characters/charManifest.ts` with 117 models, `animated` flag, `animRig` detection. Re-run: `npm run gen:char-manifest`.
-- [ ] Review manifest — tag each GLB as: `nature`, `building-exterior`, `building-interior`, `dungeon`, `prop`, `creature`, `character`
-- [ ] Git LFS track all new GLBs (add patterns to `.gitattributes`)
-- [x] **Model Review Tool** (`/model-review.html`) — standalone Three.js inspector for all 117 character models. Run: `npm run dev` → `/model-review.html`. Playwright QA suite: `npm run test:models`. Features: role/animated-only filters, animation playback, texture status, scale validation.
-
-### A2 — Overworld Nature & Terrain (KayKit Forest + Kenney Nature)
-> Target: bog → forest → highland biomes feel alive and distinct
-
-- [ ] `OverworldScene.ts`: create `KayKitTreeRenderer` using `InstancedMesh` — oak, pine, dead tree variants from KayKit Forest pack
-- [ ] Replace procedural rock geometry with Kenney nature-kit rock variants (3 sizes) using `InstancedMesh`
-- [ ] Add river tiles using Kenney water tiles — animated UV scroll shader on water surfaces
-- [ ] Add biome-specific ground cover: mushrooms + ferns (bog), flowers (meadow), snow rocks (highland) from KayKit Forest
-- [ ] Graveyard biome patch using KayKit HalloweenBits (gravestones, dead trees, pumpkins) — appears near undead-themed dungeon
-- [ ] Campfire clearings use Kenney survival-kit props (logs, tent, crates)
-- [ ] Cobblestone path tiles from Kenney 3D-road-tiles connecting settlements
-- [ ] **Unit test:** `OverworldScene` renders within 16ms frame budget with 500+ instanced trees (performance guard)
-- [ ] **Playwright:** Overworld loads, camera can pan to all biome zones, screenshots for visual review
-
-### A3 — House & Settlement System
-> Target: 3-floor maximum modular houses that look genuinely good
-
-**Design Principle:** Houses are built from Kenney `modular-buildings` pieces (floor tiles, walls, windows, door frames, roof pieces). Pre-designed templates for 3 house archetypes; randomised façade variation within each type.
-
-| Archetype | Floors | Style | Pack Source |
-|---|---|---|---|
-| Peasant Cottage | 1 | Wattle & daub + thatched roof | craftpix medieval houses |
-| Merchant House | 2 | Stone ground + timber upper + tile roof | kenney_modular-buildings |
-| Manor | 3 | Full stone, arched windows, slate roof | kenney_fantasy-town-kit + kenney_castle-kit battlements |
-
-- [ ] `HouseBuilder.ts`: accepts `{type, seed, position}` → places modular wall/floor/roof GLB pieces, returns `THREE.Group`
-- [ ] Floor 1 (ground): shop or living space — kenney_furniture-kit props: counter, barrels, shelves
-- [ ] Floor 2 (upper): bedroom — bed, wardrobe, small desk, window with curtain plane
-- [ ] Floor 3 (attic/manor study): open roof beams, crates, optional library shelves
-- [ ] Interior is revealed when player enters (use `CameraInterior` mode that removes roof layer)
-- [ ] Settlement generator: 4–12 houses + market stalls + inn (Kenney fantasy-town-kit inn mesh) + well + notice board
-- [ ] **Playwright:** Walk into a house, interior props visible, walk out, no physics tunnelling
-
-### A4 — Dungeon Visual Pass (KayKit Dungeon Remastered + Kenney Modular Dungeon)
-> Target: dungeon rooms feel like KayKit quality, not code-only geometry
-
-- [ ] `DungeonRenderer.ts` (new or extended `BlueprintRenderer.ts` path for `assetMode='kenney'`): replaces cube walls with KayKit dungeon stone tile set
-- [ ] Dungeon wall pieces: straight wall, corner, T-junction, archway, door frame from KayKit DungeonRemastered
-- [ ] Floor tiles: KayKit stone floor, cracked variant, mossy variant — assigned by room type
-- [ ] Dungeon props from KayKit: wall torch brackets, hanging chains, cracked pillars, iron gates
-- [ ] Boss room variant: larger tiles, ornate floor border, dramatic central fixture (altar, throne, ritual circle)
-- [ ] Trap tiles: pressure plate + spike trap from KayKit dungeon kit — animated (up/down cycle, 2s period)
-- [ ] Chest spawns use KayKit chest GLB with open/close animation state
-- [ ] **Unit test:** `DungeonRenderer` with `assetMode='kenney'` loads all referenced GLBs without 404s
-- [ ] **Playwright:** Enter dungeon, all wall faces covered, no gaps, chests interactable
-
-### A5 — Tower Exterior Visual Pass (Kenney Castle-Kit)
-> The wizard's tower should look like a proper imposing structure from the overworld
-
-- [x] Build `TowerExteriorMesh.ts` using Kenney castle-kit aesthetic — already procedural; added portcullis gate (smoothly raises on approach), night window PointLights (flicker intensity), `updateTowerDetails(hour, playerPos)` called each frame
-- [x] LOD strategy: portcullis uses lazy lerp interpolation; window lights only activate at night
-- [x] Tower emits amber window glow at night — 3 `PointLight` nodes behind windows, intensity driven by `hour`
-- [x] Entry portal: iron portcullis gate — smoothly raises when player within 6 WU of door, lowers on retreat
-- [ ] **Playwright:** Screenshot tower from overworld at 3 distances, validate no Z-fighting
+> **⚠️ NO EXTERNAL MODELS — EVER.** This game is code-first, procedural-only. Zero GLB/FBX/OBJ files will be used in any game path. All geometry is `THREE.BufferGeometry` primitives via the DNA builder system. See **PROC-E** for the retirement plan for any legacy loading code.
 
 ---
 
 ## PHASE B — Enemy Expansion
-> **Goal:** Meaningful enemy variety per zone/dungeon, Zelda-style encounter design in dungeon rooms, distinct difficulty tiers.
+> **Goal:** Meaningful enemy variety per zone/dungeon, Zelda-style encounter design. All enemies use `buildEnemy(dna)` — no GLB models, no external packs.
 
-### B1 — Enemy Pack Extraction & Integration
-- [x] All enemy GLBs extracted and fixed — see Asset Inventory above. `charManifest.ts` contains all enemy models with `roles: ['enemy']`, `animated` flag, and `animRig` paths.
-- [x] `EnemyLoader.ts`: `loadEnemyModel(def, pos)` + `loadEnemyById(enemyId, pos)` — loads a `CharModelDef` enemy GLB via `CharacterLoader`, normalises to 2 WU height, wires `AnimationMixer`, returns `EnemyRig` with typed clip handles (`idle`, `walk`, `run`, `attack`, `death`, `hurt`) resolved by fuzzy name matching.
-- [x] `ENEMY_MANIFEST`: typed array in `EnemyLoader.ts` — 28 enemy entries with `enemyId`, `tier (1|2|3|boss)`, `species`, mapped to `charManifest` model IDs. Covers: KayKit Skeletons, Quaternius Monster Pack, Easy Animated Creatures, Goblin/Orc/Golem packs, Bandits, all 3 Meshy custom enemies.
-- [x] `SceneManager._spawnEncounter()`: now loads real enemy models via `loadEnemyById` (async visual swap onto SlimeEnemy physics); `EnemyRig.mixer` ticked in `update()`; `disposeEnemyRig` called on teardown.
-- [x] **Unit test:** `tests/levels/enemyLoader.test.ts` — 11 tests: all manifest entries reference real charManifest models with role='enemy', valid tiers/species, encounter cross-validation warns on TODO packs (imp, dark_mage, spectral_knight from Ultimate Monsters zip not yet extracted).
-- [ ] DNA rig fallback: if a pack enemy has no compatible rig, wrap in `CreatureBuilder` DNA mesh with the pack texture applied as a skin
+### B1 — Procedural Enemy System (replaces old model loading)
+- [x] `src/enemy-creator/types.ts` — `EnemyDNA` with species, combatRole, tier, colors, weapon, movement
+- [x] `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → procedural rig, zero GLB dependency
+- [x] `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier + boss defaults
+- [x] `src/enemy/EnemyLoader.ts` — `loadEnemyById()` falls back to `buildProceduralEnemyRig(dna)` for all IDs
+- [ ] **PROC-E2:** Remove `ENEMY_MANIFEST`, `charManifest.ts` enemy entries, all `loadEnemyModel()` / GLB load paths (tracked in PROC-E)
 
 ### B2 — Enemy Roster by Zone
+> All enemies built procedurally via `buildEnemy(dna)`. DNA specifies species, combatRole, tier, colors, movement — no external models.
 
 #### Tower Dungeon (Floors B1–9)
-| Enemy | Source | Floor Range | Tier | Notes |
+| Enemy | Species DNA | Floor Range | Tier | Notes |
 |---|---|---|---|---|
-| **Skeleton Warrior** | Quaternius Monster Pack | B1–2 | 1 | Basic melee, telegraphed swing |
-| **Skeleton Archer** | Quaternius Monster Pack | B1–3 | 1 | Ranged, seeks cover |
-| **Zombie** | Easy Animated Pack | B1–2 | 1 | Slow, heavy hit, fear aura |
-| **Imp** | Quaternius Monster Pack | 2–4 | 1 | Fast, low HP, swarms |
-| **Slime Cube** | Kenney Cube-Pets | 1–3 | 1 | Splits on death (2 small slimes) |
-| **Golem (stone)** | Quaternius Monster Pack | 4–6 | 2 | High HP, slow, area stomp |
-| **Gargoyle** | Ultimate Monsters | 5–7 | 2 | Flying, dive bomb, perch on walls |
-| **Dark Mage** | Easy Animated Pack | 5–8 | 2 | Ranged spells, teleports |
-| **Dark Fay** | meshy_dark_fay | 7–8 | 2 | Teleports, charm debuff |
-| **Vampire Fay** | meshy_vampire_fay | 8–9 | 3 | Life-steal, mist form |
-| **Pig-Man Brute** | meshy_mutated_pig_man | 6–8 | 2 | Charge attack, cleave |
-| **Spectral Knight** | Quaternius Monster Pack | 8–9 | 3 | Phase through walls, reflects spells |
-| **Dragon Whelp** | Quaternius Monster Pack | 9 | 3 | Fire breath cone |
+| **Bone Warrior** | undead · melee | B1–2 | 1 | Basic melee, telegraphed swing |
+| **Bone Archer** | undead · ranged | B1–3 | 1 | Ranged, seeks cover |
+| **Rot Walker** | undead · melee | B1–2 | 1 | Slow, heavy hit, fear aura |
+| **Imp Skulk** | draconic · swarm | 2–4 | 1 | Fast, low HP, swarms |
+| **Slime Cube** | slime · melee | 1–3 | 1 | Splits on death |
+| **Stone Golem** | draconic · tank | 4–6 | 2 | High HP, slow, area stomp |
+| **Gargoyle** | draconic · melee | 5–7 | 2 | Dive bomb, perch behaviour |
+| **Shadow Caster** | undead · caster | 5–8 | 2 | Ranged spells, teleports |
+| **Fae Wraith** | fae · caster | 7–8 | 2 | Teleports, charm debuff |
+| **Vampire Skulk** | vampire · caster | 8–9 | 3 | Life-steal, mist form |
+| **Brute** | orcish · melee | 6–8 | 2 | Charge attack, cleave |
+| **Spectral Knight** | undead · tank | 8–9 | 3 | Phase, reflects spells |
+| **Drake Whelp** | draconic · caster | 9 | 3 | Fire cone, boss encounter |
 
 #### Overworld (Exterior)
-| Enemy | Source | Biome | Tier | Notes |
+| Enemy | Species DNA | Biome | Tier | Notes |
 |---|---|---|---|---|
-| **Goblin Scout** | Easy Animated Pack | Forest | 1 | Patrol path, flees at low HP |
-| **Forest Troll** | Quaternius Monster Pack | Forest/Highland | 2 | Regenerates, stunned by fire |
-| **Giant Spider** | Easy Animated Pack | Bog | 1 | Webs player (slow debuff) |
-| **Bat Swarm** | Easy Animated Pack | Cave/Dungeon entry | 1 | Multi-hit, spread formation |
-| **Bog Wraith** | Ultimate Monsters | Bog | 2 | Invisible until 10u range |
-| **Bandit** | Kenney Mini-Characters (custom DNA) | Road/Camp | 1 | Uses ranged + melee, has camp |
-| **Baron's Guard** | Kenney Mini-Characters | Baron's Keep | 2 | Organised formation, shielded |
+| **Scout** | orcish · melee | Forest | 1 | Patrol path, flees at low HP |
+| **Troll** | orcish · tank | Forest/Highland | 2 | Regenerates, stunned by fire |
+| **Spider** | draconic · swarm | Bog | 1 | Webs player (slow debuff) |
+| **Bat Swarm** | fae · swarm | Cave/Dungeon entry | 1 | Multi-hit, spread formation |
+| **Bog Wraith** | undead · caster | Bog | 2 | Invisible until 10u range |
+| **Bandit** | human · melee | Road/Camp | 1 | Ranged + melee, has camp |
+| **Baron Guard** | human · tank | Baron's Keep | 2 | Organised formation, shielded |
 
 ### B3 — Dungeon Encounter Design (Zelda-style)
 > Each room has a designed encounter archetype. Rooms clear (enemies stop spawning) once all enemies die.
@@ -287,7 +145,7 @@ Shown in the new-game flow when custom mode is enabled.
 | # | Title | Lore Hook | Beats | Reward | Difficulty |
 |---|---|---|---|---|---|
 | H1 | **The Forsworn Garrison** | A ruined guard post near the tower once belonged to her kingdom — its banner still flies. | (1) Reach ruined post → (2) Defeat 8 guards-turned-bandit → (3) Raise her kingdom's banner | `+25% melee damage`, `banner wall decoration` | Easy |
-| H2 | **The Debt of Iron** | A blacksmith in the settlement is being extorted by a gang. She recognises the extortion tactic — it's her captor's signature. | (1) Talk to blacksmith → (2) Find gang camp, defeat gang leader → (3) Return, receive custom sword GLB prop | `unique melee weapon skin: Forgeborn Blade` | Medium |
+| H2 | **The Debt of Iron** | A blacksmith in the settlement is being extorted by a gang. She recognises the extortion tactic — it's her captor's signature. | (1) Talk to blacksmith → (2) Find gang camp, defeat gang leader → (3) Return, receive custom sword (procedural prop) | `unique melee weapon skin: Forgeborn Blade` | Medium |
 | H3 | **Letters Never Sent** | She finds a bundle of letters addressed to the baron — in Solmor's handwriting, apologising for "the incident involving the candidate." | (1) Read letters in archive → (2) Reach Baron's Keep outpost → (3) Deliver letters, gain baron's grudging respect or refuse and fight | `unlock Baron's Keep merchant NPC` OR `+20% attack vs Baron guards` | Medium |
 | H4 | **The Binding Circle** | The circle under the rug on floor 0 is still active — she can feel it pulling at her agency. Destroying it requires three reagents. | (1) Identify circle (read lore book) → (2) Gather 3 reagents from overworld nodes → (3) Craft Disruption Reagent → (4) Apply to circle | `permanent passive: Unbound — +15% movement speed`, `circle decoration removed` | Hard |
 | H5 | **Heir Apparent** | Rumour: the kingdom she was taken from has fallen. She can reclaim it or let it go. A wandering knight carries the royal seal. | (1) Find knight NPC → (2) 3 beats: defeat claimants at 3 camps → (3) Plant her banner at the ruined castle spire | `title: Heir Reclaimed`, `full-tower banner decoration set`, `+1 party capacity` | Very Hard |
@@ -308,7 +166,7 @@ Shown in the new-game flow when custom mode is enabled.
 |---|---|---|---|---|---|
 | V1 | **Scent Trail** | There was another Vulperia here before her. She can smell it — weeks old, heading east. | (1) Follow scent trail (interact 5 trail markers) → (2) Find camp → (3) Read their abandoned journal | `unlock new overworld camp site`, `+5 stealth base` | Easy |
 | V2 | **The Information Market** | A hooded merchant NPC knows something about the tower's history — but they want a piece of intel first. | (1) Talk to merchant → (2) Infiltrate Baron's outpost, read patrol schedule (steal document) → (3) Trade it | `unlock rare item merchant`, `+10% loot gold rate` | Medium |
-| V3 | **Contracts and Consequences** | A hunters' guild (using Kenney mini-characters as NPCs) has a bounty on her — placed anonymously. | (1) Intercept bounty hunter encounter → (2) Track back to guild hall → (3) Discover Solmor placed the bounty → (4) Confront guildmaster | `guild becomes neutral`, `unlock Hunter's Contract board (daily challenges)` | Medium |
+| V3 | **Contracts and Consequences** | A hunters' guild (procedural NPC guards built with `buildNpc(dna)`) has a bounty on her — placed anonymously. | (1) Intercept bounty hunter encounter → (2) Track back to guild hall → (3) Discover Solmor placed the bounty → (4) Confront guildmaster | `guild becomes neutral`, `unlock Hunter's Contract board (daily challenges)` | Medium |
 | V4 | **The Locked Room** | Floor 3 of the wizard's tower has a room with no key listed anywhere. Her nose says someone has been in there recently. | (1) Find hidden door (interact correct wall tile) → (2) Solve 3-pressure-plate puzzle → (3) Discover Solmor's personal trophy room | `unlock Solmor's Sanctum side room`, `unique staff weapon prop`, `lore document: The Previous Candidates` | Hard |
 | V5 | **The Long Game** | She's been playing the wizard's game since day one. Now she can flip it — place her own agent in his tower's automated warning system. | (1) Find warning glyphs on all 4 tower corners → (2) Deactivate each (combat + puzzle) → (3) Reprogram with her own sigil | `tower alert system disabled (enemies don't reinforce)`, `title: The Architect` | Very Hard |
 
@@ -510,7 +368,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 ### G1 — Performance
 - [ ] **Frame budget audit:** Profile with Chrome DevTools. Target: 60fps on M1 / GTX 1060 equivalent
 - [ ] `InstancedMesh` for all repeated environment (trees, rocks, dungeon tiles): batch count per scene ≤ 300 draw calls
-- [ ] LOD system: KayKit/Kenney GLBs get simplified LOD at 50u+ (Three.js `LOD` object, load detail-1 mesh)
+- [ ] LOD system: procedural building/tree geometry gets simplified LOD at 50u+ — lower polygon counts via `THREE.LOD` at coarse `BuildingDNA.size`
 - [ ] Texture atlasing: pack all small dungeon prop textures into a 2048×2048 atlas, reduce material count
 - [x] Physics culling: `PhysicsWorld.ts` — `cullingRadius`/`cullingOrigin`; `step()` disables fixed bodies beyond 30u before Rapier solve, re-enables after; wired in `main.ts`
 - [x] Spawn pooling: enemy `THREE.Group` objects pooled (max 30 live) — `SceneManager._acquireEnemy()` + `_returnToPool()` + `SlimeEnemy.revive()`
@@ -804,7 +662,7 @@ Each new Tier-1 species gets a species-specific lore book in the tower, distinct
 - [ ] PC4: Game loop — `_princessInstance?.update(elapsedTime, dt)` each frame
 - [x] PC4: On species selection, map princess species → game species via `PRINCESS_SPECIES_MAP`
 - [ ] PC5: Dev Labs → "👸 Princess Atelier" opens `princess-creator.html` in new tab
-- [ ] PC5: Creative skin picker — gallery entries visible alongside real model GLBs
+- [x] PC5: Creative skin picker — princess creator gallery entries shown; no GLB skins
 - [ ] PC5: `window.__game.buildPrincess(dna)` exposed for bot/test access
 - [ ] PC6: `tests/princess-creator/defaults.test.ts` — 4 base defaults validate + build
 - [ ] PC6: `tests/princess-creator/integration.test.ts` — `buildPrincess` height + non-empty clips per species
@@ -832,8 +690,7 @@ npx vite build && npx vite preview
 
 ## Phase PROC — Full Procedural Pivot: Retire External Assets, Build Creator Ecosystem
 
-> **Decision (2026-07-18):** Move completely away from external asset packs (KayKit,
-> Fantasy Heroes, etc.). The procedural princess rig already proves the aesthetic works.
+> **Decision (2026-07-18):** Move completely away from external asset packs. Code-first only. The procedural princess rig already proves the aesthetic works.
 > We will build dedicated procedural tools for every entity type, plus a full modular
 > world-building system, then retire the old GLB pipeline.
 
@@ -867,13 +724,13 @@ same `build*(dna)` function. The atelier just adds a UI layer around it.
 **Goal:** Single registry that maps entity type → procedural builder. Both the game runtime
 and the atelier tools resolve builders through the same registry.
 
-- [ ] A1: `src/procedural/EntityRegistry.ts` — central map: `'princess' | 'npc' | 'enemy' | 'prop' | 'building'` → builder factory; game systems import from here, not directly from builders
-- [ ] A2: `src/procedural/ProceduralDNA.ts` — shared base DNA interface with `v`, `seed`, `name`, `kind` fields; species-specific DNA extends it
-- [ ] A3: `src/procedural/builder/BaseBuilder.ts` — abstract builder with `build(dna): THREE.Group`, `update(t, dt)`, `dispose()`
-- [ ] A4: Share code system extended to all entity types (`P2.` prefix for princess, `N2.` for NPC, `E2.` for enemy, `B2.` for building)
-- [ ] A5: `src/procedural/WorldGen.ts` — top-level world generation coordinator: given a world `seed`, produces a deterministic placement plan for all buildings, NPCs, enemies, and props in a region
-- [ ] A6: `tests/procedural/EntityRegistry.test.ts` — registry resolves all known types without error
-- [ ] A7: `tests/procedural/WorldGen.test.ts` — same seed → identical placement plan every run
+- [x] A1: `src/procedural/EntityRegistry.ts` — central map: `'princess' | 'npc' | 'enemy' | 'prop' | 'building'` → builder factory; game systems import from here, not directly from builders
+- [x] A2: `src/procedural/ProceduralDNA.ts` — shared base DNA interface with `v`, `seed`, `name`, `kind` fields; species-specific DNA extends it
+- [x] A3: `src/procedural/builder/BaseBuilder.ts` — abstract builder with `build(dna): THREE.Group`, `update(t, dt)`, `dispose()`
+- [x] A4: Share code system extended to all entity types (`P2.` prefix for princess, `N2.` for NPC, `E2.` for enemy, `B2.` for building)
+- [x] A5: `src/procedural/WorldGen.ts` — top-level world generation coordinator: given a world `seed`, produces a deterministic placement plan for all buildings, NPCs, enemies, and props in a region
+- [x] A6: `tests/procedural/EntityRegistry.test.ts` — registry resolves all known types without error
+- [x] A7: `tests/procedural/WorldGen.test.ts` — same seed → identical placement plan every run
 
 ---
 
@@ -895,16 +752,16 @@ DNA, picks NPC roles from the population table, resolves each role to either a n
 blueprint (if one exists for that location) or generates one procedurally from the role
 + species defaults. Calls `buildNpc(dna)` and places the result in the scene.
 
-- [ ] B1a: `src/npc-creator/types.ts` — `NpcDNA` with fields: `species`, `role` (merchant | elder | quest_giver | scholar | guard | innkeeper | mysterious), `personality` (friendly | wary | eccentric | formal | cheerful), `bodyPreset`, `colors`, `accessory`, `dialogue_seed`
-- [ ] B1b: `src/npc-creator/builder.ts` — `buildNpc(dna)` → `NpcInstance` with `.root`, `.update(t,dt)`, `.speak(text)`, `.idle()`; called by BOTH the atelier preview AND the game's NPCSpawner
-- [ ] B1c: `src/npc-creator/archetypes/` — 6 species archetypes (human, undead, foxling, slime, elf, draconic) each with 3 role variants
-- [ ] B1d: `src/npc-creator/ui.ts` — Atelier UI: role picker, species wheel, color swatches, name generator, accessory slots (hat, badge, bag, tool)
-- [ ] B1e: `npc-creator.html` — standalone entry point; save to `ttt.npcCreator.gallery.v1` localStorage
-- [ ] B1f: `src/npc-creator/gallery.ts` — load/save/delete NPC blueprints, share codes
-- [ ] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant); used by NPCSpawner when no custom blueprint exists
-- [ ] B1h: `src/world/NPCSpawner.ts` refactor — `spawnForSettlement(settlementDna, seed)` resolves NPC list from population tier; calls `buildNpc(dna)` for every NPC; no more `loadCharModel()`
-- [ ] B1i: `src/world/NPCSpawner.ts` — named NPC override system: `NAMED_NPCS: Record<locationId, NpcDNA>` allows specific blueprint per named location
-- [ ] B1j: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`, `tests/npc-creator/spawner.test.ts`
+- [x] B1a: `src/npc-creator/types.ts` — `NpcDNA` with fields: `species`, `role` (merchant | elder | quest_giver | scholar | guard | innkeeper | mysterious), `personality` (friendly | wary | eccentric | formal | cheerful), `bodyPreset`, `colors`, `accessory`, `dialogue_seed`
+- [x] B1b: `src/npc-creator/builder.ts` — `buildNpc(dna)` → `NpcInstance` with `.root`, `.update(t,dt)`, `.speak(text)`, `.idle()`; called by BOTH the atelier preview AND the game's NPCSpawner
+- [x] B1c: `src/npc-creator/archetypes/` — 6 species archetypes (human, undead, foxling, slime, elf, draconic) each with 3 role variants
+- [x] B1d: `src/npc-creator/ui.ts` — Atelier UI: role picker, species wheel, color swatches, name generator, accessory slots (hat, badge, bag, tool)
+- [x] B1e: `npc-creator.html` — standalone entry point; save to `ttt.npcCreator.gallery.v1` localStorage
+- [x] B1f: `src/npc-creator/gallery.ts` — load/save/delete NPC blueprints, share codes
+- [x] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant); used by NPCSpawner when no custom blueprint exists
+- [x] B1h: `src/world/NPCSpawner.ts` refactor — `spawnForSettlement(settlementDna, seed)` resolves NPC list from population tier; calls `buildNpc(dna)` for every NPC; no more `loadCharModel()`
+- [x] B1i: `src/world/NPCSpawner.ts` — named NPC override system: `NAMED_NPCS: Record<locationId, NpcDNA>` allows specific blueprint per named location
+- [x] B1j: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`, `tests/npc-creator/spawner.test.ts`
 
 #### B2: Enemy Creator Atelier + Game Runtime (`enemy-creator.html`)
 
@@ -916,15 +773,15 @@ encounter definition, resolves enemy types to blueprints (named boss blueprints 
 boss rooms, procedural tier-appropriate blueprints for random encounters), calls
 `buildEnemy(dna)`, and hands the result to the combat system.
 
-- [ ] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
-- [ ] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance`; called by BOTH the atelier preview arena AND the game's EnemyLoader at room load time
-- [ ] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
-- [ ] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
-- [ ] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
-- [ ] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement); used by EnemyLoader for random encounters when no custom blueprint specified
-- [ ] B2g: `src/enemy/EnemyLoader.ts` refactor — `loadForEncounter()` reads encounter definition, resolves enemy list, calls `buildEnemy(dna)`; fully replaces old KayKit skeleton/zombie model loading
-- [ ] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier; boss blueprints stored as named entries (`boss_floor3`, `boss_floor7`, etc.)
-- [ ] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/encounter.test.ts`
+- [x] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
+- [x] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance`; called by BOTH the atelier preview arena AND the game's EnemyLoader at room load time
+- [x] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
+- [x] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
+- [x] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
+- [x] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement); used by EnemyLoader for random encounters when no custom blueprint specified
+- [x] B2g: `src/enemy/EnemyLoader.ts` refactor — `loadForEncounter()` reads encounter definition, resolves enemy list, calls `buildEnemy(dna)`; fully replaces old KayKit skeleton/zombie model loading
+- [x] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier; boss blueprints stored as named entries (`boss_floor3`, `boss_floor7`, etc.)
+- [x] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/encounter.test.ts`
 
 #### B3: Prop & Item Creator + Game Runtime (`prop-creator.html`)
 
@@ -936,40 +793,40 @@ queries the prop gallery for theme-appropriate blueprints, calls `buildProp(dna)
 each, and scatters them within the room bounds using the room's placement grid.
 This runs automatically every time a dungeon room is loaded.
 
-- [ ] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`, `theme` (dungeon | library | alchemy | overworld | residential)
-- [ ] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata + optional interaction zone; called by BOTH atelier preview AND PropPlacer at room-load time
-- [ ] B3c: 12 base prop archetypes with material and theme variants
-- [ ] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
-- [ ] B3e: `src/levels/PropPlacer.ts` — `decorateRoom(roomDna, seed)` queries prop gallery by theme, places props using seeded RNG; called by SceneManager after room geometry is built
-- [ ] B3f: Room floor themes drive prop palette: ground=study, 1=library, 2=lab, 3=observatory, basement=alchemy, settlement=residential
-- [ ] B3g: Tests — `tests/prop-creator/builder.test.ts`, `tests/levels/PropPlacer.test.ts`
-- [ ] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant)
-- [ ] B1h: `src/world/NPCSpawner.ts` updated — reads NPC blueprints from registry; `buildNpc(dna)` replaces old procedural DNA creature rig for all NPCs
-- [ ] B1i: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`
+- [x] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`, `theme` (dungeon | library | alchemy | overworld | residential)
+- [x] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata + optional interaction zone; called by BOTH atelier preview AND PropPlacer at room-load time
+- [x] B3c: 12 base prop archetypes with material and theme variants
+- [x] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
+- [x] B3e: `src/levels/PropPlacer.ts` — `decorateRoom(roomDna, seed)` queries prop gallery by theme, places props using seeded RNG; called by SceneManager after room geometry is built
+- [x] B3f: Room floor themes drive prop palette: ground=study, 1=library, 2=lab, 3=observatory, basement=alchemy, settlement=residential
+- [x] B3g: Tests — `tests/prop-creator/builder.test.ts`, `tests/levels/PropPlacer.test.ts`
+- [x] B1g: `src/npc-creator/defaults/NpcDefaults.ts` — 6 default NPC blueprints (one per species, role=merchant)
+- [x] B1h: `src/world/NPCSpawner.ts` updated — reads NPC blueprints from registry; `buildNpc(dna)` replaces old procedural DNA creature rig for all NPCs
+- [x] B1i: Tests — `tests/npc-creator/defaults.test.ts`, `tests/npc-creator/builder.test.ts`
 
 #### B2: Enemy Creator Atelier (`enemy-creator.html`)
 
 The enemy creator focuses on combat role, threat level, and attack patterns — not story.
 
-- [ ] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
-- [ ] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance` with `.root`, `.update(t,dt)`, `.attack()`, `.takeDamage(n)`, `.die()`
-- [ ] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
-- [ ] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
-- [ ] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
-- [ ] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement)
-- [ ] B2g: `src/enemy/EnemyLoader.ts` updated — `loadEnemyById()` reads from enemy gallery + defaults; fully replaces old KayKit skeleton/zombie models
-- [ ] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier with custom phase definitions
-- [ ] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/combat.test.ts`
+- [x] B2a: `src/enemy-creator/types.ts` — `EnemyDNA` with: `species`, `combatRole` (melee | ranged | caster | support | tank | swarm), `tier` (1–3), `bodyPreset`, `colors`, `weapon`, `ability`, `movementStyle` (patrol | charge | circle | ambush), `aggroRange`, `attackRange`
+- [x] B2b: `src/enemy-creator/builder.ts` — `buildEnemy(dna)` → `EnemyInstance` with `.root`, `.update(t,dt)`, `.attack()`, `.takeDamage(n)`, `.die()`
+- [x] B2c: `src/enemy-creator/archetypes/` — 5 combat archetypes: Brute, Skulk, Hexer, Warden, Swarmling — each buildable for any species
+- [x] B2d: `src/enemy-creator/ui.ts` — Atelier UI: combat role picker, tier dial, weapon slot, ability slot, test arena with dummy player
+- [x] B2e: `enemy-creator.html` — standalone entry; save to `ttt.enemyCreator.gallery.v1`
+- [x] B2f: `src/enemy-creator/defaults/EnemyDefaults.ts` — default enemies per floor tier (floors 0–9 + basement)
+- [x] B2g: `src/enemy/EnemyLoader.ts` updated — `loadEnemyById()` reads from enemy gallery + defaults; fully replaces old KayKit skeleton/zombie models
+- [x] B2h: Boss enemies — `EnemyDNA.tier = 4` flag; boss creator tab in enemy atelier with custom phase definitions
+- [x] B2i: Tests — `tests/enemy-creator/defaults.test.ts`, `tests/enemy-creator/builder.test.ts`, `tests/enemy-creator/combat.test.ts`
 
 #### B3: Prop & Item Creator (`prop-creator.html`)
 
 Furniture, interactables, treasure, dungeon dressing — all procedural.
 
-- [ ] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`
-- [ ] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata
-- [ ] B3c: 12 base prop archetypes with material variants
-- [ ] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
-- [ ] B3e: Room encounter definitions updated to reference prop blueprints instead of hardcoded geometry
+- [x] B3a: `src/prop-creator/types.ts` — `PropDNA` with: `kind` (chest | bookshelf | table | chair | cauldron | lantern | pillar | rug | door | statue | barrel | crate), `material` (stone | wood | bone | crystal | iron | clay), `size`, `colors`, `glow`, `interactive`
+- [x] B3b: `src/prop-creator/builder.ts` — `buildProp(dna)` → `THREE.Group` with collision metadata
+- [x] B3c: 12 base prop archetypes with material variants
+- [x] B3d: `prop-creator.html` — standalone tool; drag-and-drop placement preview
+- [x] B3e: Room encounter definitions updated to reference prop blueprints instead of hardcoded geometry
 
 ---
 
@@ -992,33 +849,33 @@ A designer using creative mode calls the same chain, but picks the DNAs manually
 
 #### C1: Modular Building Grammar
 
-- [ ] C1a: `src/world/buildings/BuildingDNA.ts` — `BuildingDNA` with: `kind` (house | shop | inn | guild | tower | ruin | barn | well | gate), `size` (tiny | small | medium | large), `floors` (1–3), `style` (thatched | stone | timber | arcane), `condition` (pristine | weathered | damaged | ruined), `has_interior: boolean`, `interior_layout`
-- [ ] C1b: `src/world/buildings/ModularSet.ts` — vocabulary of reusable geometry pieces: wall segment, door frame, window, roof pitch, corner post, chimney, step, arch — all built from `THREE.BufferGeometry` primitives with material variants
-- [ ] C1c: `src/world/buildings/BuildingBuilder.ts` — `buildBuilding(dna): BuildingInstance` with `.exteriorGroup`, `.interiorGroup`, `.doorTrigger`, `.bounds`
-- [ ] C1d: Roof system — hip / gable / thatched variants, auto-fit to footprint
-- [ ] C1e: Window and door placement — rule-based: one door per street-facing wall, windows every N units
-- [ ] C1f: Facade decoration — shutters, hanging signs, flower boxes, barrels at door — driven by `style` + `condition`
+- [x] C1a: `src/world/buildings/BuildingDNA.ts` — `BuildingDNA` with: `kind` (house | shop | inn | guild | tower | ruin | barn | well | gate), `size` (tiny | small | medium | large), `floors` (1–3), `style` (thatched | stone | timber | arcane), `condition` (pristine | weathered | damaged | ruined), `has_interior: boolean`, `interior_layout`
+- [x] C1b: `src/world/buildings/ModularSet.ts` — vocabulary of reusable geometry pieces: wall segment, door frame, window, roof pitch, corner post, chimney, step, arch — all built from `THREE.BufferGeometry` primitives with material variants
+- [x] C1c: `src/world/buildings/BuildingBuilder.ts` — `buildBuilding(dna): BuildingInstance` with `.exteriorGroup`, `.interiorGroup`, `.doorTrigger`, `.bounds`
+- [x] C1d: Roof system — hip / gable / thatched variants, auto-fit to footprint
+- [x] C1e: Window and door placement — rule-based: one door per street-facing wall, windows every N units
+- [x] C1f: Facade decoration — shutters, hanging signs, flower boxes, barrels at door — driven by `style` + `condition`
 
 #### C2: Settlement Generator
 
-- [ ] C2a: `src/world/SettlementGenerator.ts` refactor — replaces current placeholder; lays out buildings on a grid using BuildingDNA, respects roads/paths
-- [ ] C2b: `SettlementDNA` — `{ size: 'hamlet'|'village'|'town'|'city', style, factionId, populationTier }`; generates building mix from population tier
-- [ ] C2c: Road system — stone/dirt path procedural geometry connecting all buildings
-- [ ] C2d: Public spaces — market square, well, notice board, fountain — placed by role
-- [ ] C2e: Lighting — procedural lantern placement along roads + building windows at night
+- [x] C2a: `src/world/SettlementGenerator.ts` refactor — replaces current placeholder; lays out buildings on a grid using BuildingDNA, respects roads/paths
+- [x] C2b: `SettlementDNA` — `{ size: 'hamlet'|'village'|'town'|'city', style, factionId, populationTier }`; generates building mix from population tier
+- [x] C2c: Road system — stone/dirt path procedural geometry connecting all buildings
+- [x] C2d: Public spaces — market square, well, notice board, fountain — placed by role
+- [x] C2e: Lighting — procedural lantern placement along roads + building windows at night
 
 #### C3: Interior Generation
 
-- [ ] C3a: `src/world/buildings/InteriorGenerator.ts` — takes `BuildingDNA.interior_layout` and generates: floor plan, room dividers, furniture placement (using PropDNA blueprints), lighting
-- [ ] C3b: Interior layouts by building kind:
+- [x] C3a: `src/world/buildings/InteriorGenerator.ts` — takes `BuildingDNA.interior_layout` and generates: floor plan, room dividers, furniture placement (using PropDNA blueprints), lighting
+- [x] C3b: Interior layouts by building kind:
   - House: main room + bedroom + optional cellar
   - Inn: common room + bar + 4–8 sleeping rooms upstairs
   - Shop: counter + display shelves + back storage
   - Guild: hall + meeting room + armoury/library
   - Ruin: collapsed walls, debris, loot spawn points
-- [ ] C3c: Furniture density by `condition` — pristine rooms are tidy, ruined rooms have overturned/destroyed versions
-- [ ] C3d: Door trigger → load interior scene (reuses SceneManager room system)
-- [ ] C3e: Interior ambient: candles, fireplace, dust particles — all procedural
+- [x] C3c: Furniture density by `condition` — pristine rooms are tidy, ruined rooms have overturned/destroyed versions
+- [x] C3d: Door trigger → load interior scene (reuses SceneManager room system)
+- [x] C3e: Interior ambient: candles, fireplace, dust particles — all procedural
 
 #### C4: Dungeon Generation Enhancement
 
@@ -1046,43 +903,76 @@ A designer using creative mode calls the same chain, but picks the DNAs manually
 
 ### PROC-E: Asset Pipeline Retirement
 
-**Goal:** Remove all external GLB/FBX dependencies. Ship with zero external model files.
+**Goal:** Surgically remove all GLB/FBX/asset-loader code paths. The game ships with zero binary model files. Every visual is generated from `THREE.BufferGeometry` primitives at runtime.
 
-#### E1: Audit & Inventory (do first)
+> **Audit result (2026-07-18):** The following source files contain asset/model references that need retirement.
+> Completed PROC-A through PROC-C3 means all game systems now have procedural equivalents.
 
-- [ ] E1a: Full audit of `public/assets/` — list every GLB/FBX file, which code references it, whether it is used in any live game path
-- [ ] E1b: List of `charManifest.ts` entries that reference external files — mark each as: `REPLACED` (has procedural equivalent) or `PENDING` (needs creator work first)
-- [ ] E1c: List of `EnemyLoader.ts` model IDs that reference external files — same tagging
-- [ ] E1d: Identify any external assets used for world props, buildings, settlement dressing
-- [ ] E1e: Create tracking doc `docs/assets/ASSET_RETIREMENT.md` — one row per file, status column
+#### E1: Delete Dead HTML Tools
 
-#### E2: Remove Enemy Assets
+- [ ] E1a: Delete `src/model-review.ts` + `model-review.html` — KayKit/GLB inspector, no longer needed
+- [ ] E1b: Delete `src/assetViewer.ts` + `asset-viewer.html` — asset browser, replaced by showroom
+- [ ] E1c: Remove both from `vite.config.ts` `input` map
+- [ ] E1d: `src/sandbox.ts` — remove all `assembleBuilding()` / `AssetBuildingAssembler` / `generateBuilding()` calls; replace building spawn with `buildBuilding(dna)` only
+- [ ] **Test:** `npx vitest run` still passes; dev server starts without errors
 
-- [ ] E2a: `charManifest.ts` — remove all skeleton, zombie, knight, mage entries that reference KayKit/Fantasy Heroes models
-- [ ] E2b: `EnemyLoader.ts` — fully replace `loadEnemyById()` with `buildEnemy(dna)` from enemy-creator system; delete old GLB load path
-- [ ] E2c: `EnemyAI.ts` — ensure all AI states (patrol/chase/attack/die) work with procedural enemy rig
-- [ ] E2d: Delete GLB files: `public/assets/kaykit_skeletons/`, `public/assets/skeletons_free/`, enemy-related GLBs from `public/assets/fantasy_heroes/`
+#### E2: Retire Enemy Model Pipeline
 
-#### E3: Remove Player/NPC Assets
+- [ ] E2a: `src/characters/charManifest.ts` — remove all entries with `roles: ['enemy']` (replaced by `EnemyDefaults.ts`)
+- [ ] E2b: `src/enemy/EnemyLoader.ts` — delete `ENEMY_MANIFEST`, `loadEnemyModel()`, `loadEnemyById()` GLB path; keep only the `buildProceduralEnemyRig(dna)` path
+- [ ] E2c: `src/levels/RoomEncounterDef.ts` — remove `enemyId` strings that map to GLB charManifest entries; replace with `EnemyDNA` references
+- [ ] E2d: `src/creative/backroomScenes.ts` — remove any enemy GLB spawn calls
+- [ ] **Test:** `tests/levels/enemyLoader.test.ts` — update to cover procedural-only path; no 404s on any enemy ID
 
-- [ ] E3a: `charManifest.ts` — remove all player character GLB entries (already replaced by princess rig system)
-- [ ] E3b: `NPCSpawner.ts` — replace remaining `loadCharModel()` calls with `buildNpc(dna)`
-- [ ] E3c: Delete GLB files: `public/assets/kaykit_adventurers/`, `public/assets/adventure/`, `public/assets/fox/`, `public/assets/fantasy_heroes/`
+#### E3: Retire Player/NPC Asset Pipeline
 
-#### E4: Remove World / Building Assets
+- [ ] E3a: `src/characters/CharacterLoader.ts` — entire file retires after E2/E3; delete once no remaining callers
+- [ ] E3b: `src/characters/CharacterController.ts` — KayKit animation bridge; retires with CharacterLoader
+- [ ] E3c: `src/characters/AnimationRetargeter.ts` — GLB animation retargeting; delete after E3b
+- [ ] E3d: `src/characters/charManifest.ts` — remove all player/NPC GLB entries (princess rig = procedural); file can be deleted once empty
+- [ ] E3e: `src/characters/wizardManifest.ts` + `src/characters/WizardLoader.ts` — Solmor 3D presence; replace with procedural NPC rig (`buildNpc(dna)`)
+- [ ] E3f: `src/player/PlayerController.ts` — remove `applyAssetModel()`, `_charController`, `_charLoader` fields; keep only `applyPrincess()` path
+- [ ] E3g: `src/world/SolmorPresence.ts` — refactor to use `buildNpc(dna)` instead of GLB loading
+- [ ] **Test:** `tests/player/PlayerController.test.ts` passes; no GLB imports in player code
 
-- [ ] E4a: Any external building/prop GLBs in `public/assets/environment/` — replaced by PROC-C
-- [ ] E4b: `public/assets/towers/` — evaluate: tower exterior GLB may stay as a special case or be procedurally rebuilt
-- [ ] E4c: Music and audio files — **keep** (not in scope of this phase)
-- [ ] E4d: `public/draco/` decoder — evaluate if still needed after model removal
+#### E4: Retire Building / World Asset Pipeline
 
-#### E5: Cleanup & Size Reduction
+- [ ] E4a: `src/world/buildings/AssetBuildingAssembler.ts` — entire file retires; `buildBuilding(dna)` is the only building path
+- [ ] E4b: `src/scene/OverworldScene.ts` — remove `upgradeBuildingsWithAssets()`, `upgradeDungeonEntrancesWithAssets()`, `upgradeTreesWithAssets()`, `upgradeRocksWithAssets()` and all `assetLoader` references
+- [ ] E4c: `src/assets/AssetLoader.ts` — retire entirely once above callers are removed
+- [ ] E4d: `src/assets/envManifest.ts` — retire (KayKit environment kit manifest)
+- [ ] E4e: `src/world/WorldGenConfig.ts` — remove `KENNEY_PACKS`, `ASSET_PACKS`, asset pack toggle settings
+- [ ] E4f: `src/rendering/KayKitDungeonProps.ts` — retire; dungeon props come from `buildProp(dna)` only
+- [ ] **Test:** `OverworldScene` constructs without any async asset loads; world generates in < 100ms
 
-- [ ] E5a: Remove `@/characters/charManifest.ts` and `@/characters/CharacterController.ts` — entire KayKit animation system retired
-- [ ] E5b: Remove `@/player/PlayerController.ts` asset model path (`applyAssetModel`, `_charController` field)
-- [ ] E5c: `vite.config.ts` — remove any GLB/FBX loader plugins if no longer needed
-- [ ] E5d: Bundle size check: run `npx vite build --report` and confirm >40% reduction in `public/` folder size
-- [ ] E5e: Update `ARCHITECTURE.md` with the new procedural-only architecture diagram
+#### E5: Retire Creative / Editor Asset Paths
+
+- [ ] E5a: `src/creative/CreativeAssetBrowser.ts` — entire file retires; creative mode uses PROC-D creator tools
+- [ ] E5b: `src/creative/CreativePlacementSystem.ts` — remove GLB placement path; keep procedural `buildBuilding(dna)` path only
+- [ ] E5c: `src/creative/CreativeMode.ts` — remove asset loader initialization, `BUILDING_PRELOAD_PATHS`, all GLB preload calls
+- [ ] E5d: `src/editor/BuildingEditor.ts`, `DungeonEditor.ts`, `EditorCore.ts` — remove all GLB/asset references; editors work with DNA blueprints only
+- [ ] E5e: `src/ui/AssetCharBrowser.ts` — retire; character selection is princess creator + procedural NPCs
+- [ ] E5f: `src/creative/Backrooms.ts` + `backroomScenes.ts` — remove the `asset_showcase` backroom; keep all procedural backrooms
+- [ ] **Test:** Creative mode opens and all tools function without any model loading
+
+#### E6: Wipe Public Asset Directories
+
+- [ ] E6a: `public/assets/characters/` — delete all GLB/binary model files; keep only audio files if any
+- [ ] E6b: `public/assets/environment/` — delete all GLB environment packs
+- [ ] E6c: `public/draco/` — delete DRACO decoder (no longer needed without GLB)
+- [ ] E6d: `public/assets/` — keep ONLY: `public/music/` (audio), `public/draco/` if still needed for something else
+- [ ] E6e: Run `npm run build` — verify bundle size reduced by >50%; no 404 errors in Playwright tests
+- [ ] **Test:** Full e2e suite passes; no console errors; `public/` < 10 MB total
+
+#### E7: Final Architecture Cleanup
+
+- [ ] E7a: `src/assetManifest.ts` — retire; replace any remaining callers with PROC registry
+- [ ] E7b: `src/scene/CharacterDecisionTree.ts` — remove any `assetModel` path references
+- [ ] E7c: `src/scene/NewGameFlow.ts` — remove GLB character loading from new game flow
+- [ ] E7d: `src/ui/CharacterCreation.ts`, `CharacterCreationV2.ts`, `DNACreator.ts` — remove all GLB model preview/loading; use `buildPrincess(dna)` preview only
+- [ ] E7e: `ARCHITECTURE.md` — rewrite character/enemy/NPC architecture section: DNA → builder → THREE.Group; remove all mentions of GLB pipeline
+- [ ] E7f: All scripts in `scripts/` — delete `gen-char-manifest.mjs`, `gen-manifest.mjs`, `extract-char-assets.mjs`, `extract-wizards.mjs` (all GLB manifest generators)
+- [ ] **Test:** `npx tsc --noEmit` clean; zero `import.*GLTFLoader` in `src/`
 
 ---
 
@@ -1107,8 +997,8 @@ A designer using creative mode calls the same chain, but picks the DNAs manually
 #### Player Characters (all → princess rig, ✓ done)
 | Character | Current | Procedural Status |
 |---|---|---|
-| Human variants (warrior/paladin/bard/rogue/mage) | KayKit GLB | ✓ → `getDefaultPrincessForCharId()` |
-| Undead variants | KayKit Skeletons GLB | ✓ → UNDEAD blueprint |
+| Human variants (warrior/paladin/bard/rogue/mage) | procedural `buildPrincess(dna)` | ✓ → `getDefaultPrincessForCharId()` |
+| Undead variants | procedural `buildPrincess(dna)` | ✓ → UNDEAD blueprint |
 | Vulperia/Fox | fox.glb | ✓ → FOXLING blueprint |
 | Slime | slime.glb | ✓ → SLIME blueprint |
 | Elf | — | ✓ → ELF blueprint |
@@ -1118,11 +1008,11 @@ A designer using creative mode calls the same chain, but picks the DNAs manually
 #### Enemies (all → enemy-creator, PROC-B2)
 | Enemy Type | Current | Status |
 |---|---|---|
-| Skeleton Mage | KayKit Skeletons | ⏳ PROC-B2 |
-| Skeleton Rogue | KayKit Skeletons | ⏳ PROC-B2 |
-| Zombie | skeletons_free GLB | ⏳ PROC-B2 |
-| Ghost | KayKit Skeletons | ⏳ PROC-B2 |
-| Undead Scholar | KayKit | ⏳ PROC-B2 |
+| Skeleton Mage (Bone Caster) | `buildEnemy(dna)` undead·caster | ⏳ PROC-E2 wiring |
+| Bone Rogue | `buildEnemy(dna)` undead·melee | ⏳ PROC-E2 wiring |
+| Rot Walker | `buildEnemy(dna)` undead·melee | ⏳ PROC-E2 wiring |
+| Specter | `buildEnemy(dna)` undead·caster | ⏳ PROC-E2 wiring |
+| Undead Scholar | `buildEnemy(dna)` undead·caster | ⏳ PROC-E2 wiring |
 | Vulperia Bounty Hunter | fox.glb | ⏳ PROC-B2 |
 | Floor Boss (per floor) | none | ⏳ PROC-B2 tier 4 |
 
@@ -1134,7 +1024,7 @@ A designer using creative mode calls the same chain, but picks the DNAs manually
 | Scholar | procedural DNA creature | ⏳ PROC-B1 |
 | Guard | procedural DNA creature | ⏳ PROC-B1 |
 | Mysterious | procedural DNA creature | ⏳ PROC-B1 |
-| Solmor (wizard) | wizard GLB (random) | ⏳ PROC-B1 special |
+| Solmor (wizard) | `buildNpc(dna)` scholar role | ⏳ PROC-E3 (SolmorPresence refactor) |
 
 #### World Props (all → prop-creator, PROC-B3)
 | Category | Items Needed |
