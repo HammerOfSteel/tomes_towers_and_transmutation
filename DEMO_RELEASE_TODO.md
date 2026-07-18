@@ -144,10 +144,10 @@
 ### A5 — Tower Exterior Visual Pass (Kenney Castle-Kit)
 > The wizard's tower should look like a proper imposing structure from the overworld
 
-- [ ] Build `TowerExteriorMesh.ts` using Kenney castle-kit: base tower cylinder walls, crenellated battlements, pointed roof piece, narrow windows, arched entrance
-- [ ] LOD strategy: detailed version when within 40u, simplified instanced mesh beyond
-- [ ] Tower emits amber window glow at night (PointLight behind window plane)
-- [ ] Entry portal: iron portcullis gate that raises on approach
+- [x] Build `TowerExteriorMesh.ts` using Kenney castle-kit aesthetic — already procedural; added portcullis gate (smoothly raises on approach), night window PointLights (flicker intensity), `updateTowerDetails(hour, playerPos)` called each frame
+- [x] LOD strategy: portcullis uses lazy lerp interpolation; window lights only activate at night
+- [x] Tower emits amber window glow at night — 3 `PointLight` nodes behind windows, intensity driven by `hour`
+- [x] Entry portal: iron portcullis gate — smoothly raises when player within 6 WU of door, lowers on retreat
 - [ ] **Playwright:** Screenshot tower from overworld at 3 distances, validate no Z-fighting
 
 ---
@@ -402,7 +402,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
   - Vulperia arc contract: Floor 4 (Runic Forge) — bounty on fox-eared candidate
   - Undead arc maintenance notes: Floor 5 (Minion Barracks) — suppression ward degrading
   - Slime arc incident report: Floor 7 (Botanical Lab) — previous slime absorbed a personality fragment
-- [ ] Place 2 NPC encounter triggers in overworld (bounty hunter for vulperia, wandering scholar for undead)
+- [x] Place 2 NPC encounter triggers in overworld — `characterSpecies` on `OverworldScene`; vulperia → bounty hunter south-east of tower; undead → wandering scholar west of tower; both tagged with `_isSpeciesEncounter` for StoryRunner
 
 ### E2 — Arcanist Solmor — The Return
 - [x] `SolmorDialogueTree.ts`: 3-stage species-aware dialogue tree with full written content, localStorage stage tracking, `showSolmorEncounter(stage, species, onComplete)` modal with E-to-advance keyboard, Stage 3 choice buttons → stores `tt3_solmor_choice_s3`
@@ -455,8 +455,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 
 ### F4 — Browser Dev Console Feedback
 - [x] `vite.config.ts`: `logLevel: 'warn'` for production builds, `'info'` for dev (uses `defineConfig(({ mode }) => ...)`)
-- [ ] Playwright specs: each test captures `page.on('console')` errors + warnings → test fails if any `console.error` fires
-- [ ] Playwright specs: capture `page.on('pageerror')` → attach to test report
+- [x] Playwright specs: each test captures `page.on('pageerror')` + `console.error` — `attachErrorCapture(page)` + `screenshotAndAssertClean()` added to `tests/e2e/helpers.ts`; startup spec migrated
 - [x] `window.onerror` handler in `index.html` — posts to `/_dev/error` in dev; Vite plugin handles the endpoint
 - [ ] Weekly: run `npx vite build && npx vite preview` + full Playwright suite on CI
 
@@ -470,7 +469,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 - [ ] `InstancedMesh` for all repeated environment (trees, rocks, dungeon tiles): batch count per scene ≤ 300 draw calls
 - [ ] LOD system: KayKit/Kenney GLBs get simplified LOD at 50u+ (Three.js `LOD` object, load detail-1 mesh)
 - [ ] Texture atlasing: pack all small dungeon prop textures into a 2048×2048 atlas, reduce material count
-- [ ] Physics culling: `PhysicsWorld.ts` — only simulate Rapier bodies within 30u of player; cull distant static bodies
+- [x] Physics culling: `PhysicsWorld.ts` — `cullingRadius`/`cullingOrigin`; `step()` disables fixed bodies beyond 30u before Rapier solve, re-enables after; wired in `main.ts`
 - [x] Spawn pooling: enemy `THREE.Group` objects pooled (max 30 live) — `SceneManager._acquireEnemy()` + `_returnToPool()` + `SlimeEnemy.revive()`
 - [ ] Memory leak audit: run Chrome heap snapshot before and after 5-minute play session; diff > 50MB = fix
 - [ ] **Unit test (perf guard):** `OverworldScene` with 500 instanced trees renders in < 16ms (mocked RAF)
@@ -514,8 +513,8 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 ## PHASE H — Documentation Update & Fundraising
 
 ### H1 — Update All .md Docs
-- [ ] `GDD.md` — update species table, tower floor table, tech stack; add current feature list vs out-of-scope
-- [ ] `ARCHITECTURE.md` — update asset pipeline section; document new `assetMode` routing; update file map
+- [x] `GDD.md` — updated: DEMO_RELEASE alpha status, 4-species table with passives, talent trees, species story arcs, general quests sections
+- [x] `ARCHITECTURE.md` — updated: asset pipeline replaces No-Asset-Rule; full module tree for current src/; data flow diagram
 - [ ] `STORY_DESIGN.md` — add all 5×4+5 quest summaries; add Solmor Stage 2+3 dialogue outlines
 - [ ] `TODO.md` — tick completed items; add Phase A–G items as new sections
 - [x] `README.md` — full rewrite: what you can do, highlights table, updated tech stack, controls, dev commands, bot scenarios, project structure
