@@ -1,0 +1,182 @@
+// ── MaterialKit: shared, retintable materials per archetype ─────────────────
+//
+//  Parts and synths NEVER create raw materials — they take kit slots, which is
+//  what makes one-click palette swaps restyle everything (incl. parts) with
+//  zero rebuild. kit.apply(dna) retints in place.
+
+import * as THREE from 'three';
+import type { Archetype, PrincessDNA } from './types';
+
+export interface MaterialKit {
+  archetype: Archetype;
+  /** flat-shaded low-poly look (fox / skeleton) vs smooth toon (human). */
+  flat: boolean;
+  primary: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+  secondary: THREE.MeshStandardMaterial;
+  accent: THREE.MeshStandardMaterial;
+  skin: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+  hair: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+  eyes: THREE.MeshStandardMaterial;
+  metal: THREE.MeshStandardMaterial;
+  glow: THREE.MeshBasicMaterial;
+  dark: THREE.MeshStandardMaterial;
+  white: THREE.MeshStandardMaterial;
+  blush: THREE.MeshStandardMaterial;
+  apply(dna: PrincessDNA): void;
+  dispose(): void;
+}
+
+function std(color: string, opts: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, ...opts });
+}
+
+function jelly(color: string, translucency: number): THREE.MeshPhysicalMaterial {
+  return new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.12,
+    metalness: 0.05,
+    transmission: translucency,
+    thickness: 2.0,
+    ior: 1.4,
+    envMapIntensity: 1.6,
+  });
+}
+
+export function createMaterialKit(dna: PrincessDNA): MaterialKit {
+  const a = dna.archetype;
+  const c = dna.colors;
+  const flat = a === 'fox' || a === 'skeleton';
+
+  let primary: MaterialKit['primary'];
+  let skin: MaterialKit['skin'];
+  let hairMat: MaterialKit['hair'];
+
+  if (a === 'slime') {
+    primary = jelly(c.primary, dna.traits.translucency);
+    skin = jelly(c.skin, dna.traits.translucency);
+    hairMat = jelly(c.hair, Math.min(0.85, dna.traits.translucency + 0.1));
+  } else {
+    primary = std(c.primary, { roughness: flat ? 0.75 : 0.8, flatShading: flat });
+    skin = std(c.skin, { roughness: flat ? 0.9 : 0.45, flatShading: flat });
+    // DoubleSide: hair shells (bob curtain, long-hair panels) are open surfaces.
+    hairMat = std(c.hair, { roughness: 0.7, flatShading: flat, side: THREE.DoubleSide });
+  }
+
+  // Luminous species: skin carries a faint inner glow (doc: celestial/high
+  // elf glow warm; undead pale-luminous; ignis ember-lit; fae green-gold).
+  const skinGlowFor = (d: PrincessDNA): number => {
+    if (d.species === 'celestial') return 0.14 + d.aura.intensity * 0.1;
+    if (d.species === 'high_elf') return 0.08 + d.aura.intensity * 0.06;
+    if (d.species === 'undead') return 0.05 + d.aura.intensity * 0.05;
+    if (d.species === 'ignis') return 0.12 + d.aura.intensity * 0.12;
+    if (d.species === 'fae') return 0.06 + d.aura.intensity * 0.05;
+    if (d.species === 'specter') return 0.06 + d.aura.intensity * 0.04;
+    if (d.species === 'moonborn') return 0.07 + d.aura.intensity * 0.06;
+    return 0;
+  };
+  const skinGlow = skinGlowFor(dna);
+  if (skinGlow > 0 && 'emissive' in skin) {
+    (skin as THREE.MeshStandardMaterial).emissive = new THREE.Color(c.glow);
+    (skin as THREE.MeshStandardMaterial).emissiveIntensity = skinGlow;
+  }
+
+  // Specter: semi-translucent — she can appear almost solid or almost absent.
+  if (dna.species === 'specter') {
+    const ghost = (m: THREE.Material, opacity: number): void => {
+      m.transparent = true;
+      m.opacity = opacity;
+    };
+    ghost(skin, 0.72);
+    ghost(primary, 0.82);
+    ghost(hairMat, 0.55);
+  }
+
+  // Naiad: wet, slightly iridescent — deep-water sheen on skin, hair, dress.
+  if (dna.species === 'naiad') {
+    const wet = (m: THREE.Material): void => {
+      const phys = m as THREE.MeshPhysicalMaterial;
+      if (!('clearcoat' in phys)) return;
+      phys.clearcoat = 1.0;
+      phys.clearcoatRoughness = 0.12;
+      phys.iridescence = 0.4;
+      phys.iridescenceIOR = 1.3;
+    };
+    // skin/primary/hair are MeshStandardMaterial here — rebuild them physical.
+    const upgrade = (base: THREE.MeshStandardMaterial, rough: number): THREE.MeshPhysicalMaterial => {
+      const phys = new THREE.MeshPhysicalMaterial({ color: base.color.getHex(), roughness: rough });
+      base.dispose();
+      wet(phys);
+      return phys;
+    };
+    skin = upgrade(skin as THREE.MeshStandardMaterial, 0.35);
+    primary = upgrade(primary as THREE.MeshStandardMaterial, 0.4);
+    hairMat = upgrade(hairMat as THREE.MeshStandardMaterial, 0.25);
+  }
+
+  // Moonborn: hair lit from within.
+  if (dna.species === 'moonborn' && 'emissive' in hairMat) {
+    (hairMat as THREE.MeshStandardMaterial).emissive = new THREE.Color(c.glow);
+    (hairMat as THREE.MeshStandardMaterial).emissiveIntensity = 0.22 + dna.aura.intensity * 0.15;
+  }
+
+  const kit: MaterialKit = {
+    archetype: a,
+    flat,
+    primary,
+    secondary: std(c.secondary, { roughness: 0.8, flatShading: flat }),
+    accent: std(c.accent, { roughness: 0.6, flatShading: flat }),
+    skin,
+    hair: hairMat,
+    eyes: std(c.eyes, { roughness: 0.25 }),
+    metal: std(c.metal, { roughness: 0.3, metalness: 0.85, flatShading: flat }),
+    glow: new THREE.MeshBasicMaterial({ color: c.glow }),
+    dark: std('#22222a', { roughness: 0.95, flatShading: flat }),
+    white: std('#ffffff', { roughness: 0.35 }),
+    blush: std('#ff7799', { transparent: true, opacity: 0.5, roughness: 0.9 }),
+
+    apply(next: PrincessDNA): void {
+      const n = next.colors;
+      kit.primary.color.set(n.primary);
+      kit.secondary.color.set(n.secondary);
+      kit.accent.color.set(n.accent);
+      kit.skin.color.set(n.skin);
+      kit.hair.color.set(n.hair);
+      kit.eyes.color.set(n.eyes);
+      kit.metal.color.set(n.metal);
+      kit.glow.color.set(n.glow);
+      // Blush follows accent hue family, softened toward pink.
+      kit.blush.color.set(n.accent).lerp(new THREE.Color('#ff7799'), 0.55);
+      if (a === 'slime') {
+        const t = next.traits.translucency;
+        (kit.primary as THREE.MeshPhysicalMaterial).transmission = t;
+        (kit.skin as THREE.MeshPhysicalMaterial).transmission = t;
+        (kit.hair as THREE.MeshPhysicalMaterial).transmission = Math.min(0.85, t + 0.1);
+      }
+      const glow = skinGlowFor(next);
+      if ('emissive' in kit.skin) {
+        (kit.skin as THREE.MeshStandardMaterial).emissive ??= new THREE.Color(0x000000);
+        (kit.skin as THREE.MeshStandardMaterial).emissive.set(glow > 0 ? n.glow : '#000000');
+        (kit.skin as THREE.MeshStandardMaterial).emissiveIntensity = glow;
+      }
+      if ('emissive' in kit.hair) {
+        const hm = kit.hair as THREE.MeshStandardMaterial;
+        hm.emissive ??= new THREE.Color(0x000000);
+        if (next.species === 'moonborn') {
+          hm.emissive.set(n.glow);
+          hm.emissiveIntensity = 0.22 + next.aura.intensity * 0.15;
+        } else {
+          hm.emissive.set('#000000');
+          hm.emissiveIntensity = 0;
+        }
+      }
+    },
+
+    dispose(): void {
+      for (const m of [
+        kit.primary, kit.secondary, kit.accent, kit.skin, kit.hair,
+        kit.eyes, kit.metal, kit.glow, kit.dark, kit.white, kit.blush,
+      ]) m.dispose();
+    },
+  };
+  return kit;
+}

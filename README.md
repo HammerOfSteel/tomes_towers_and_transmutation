@@ -16,6 +16,7 @@
 | **Monster recruitment** | Spare enemies below 10% HP to add them to your party |
 | **Power fantasy arc** | Intentionally exponential power curve — the final boss is a narrative punchline |
 | **In-house level editor** | Toggleable dev tool to build/export rooms as JSON blueprints |
+| **Princess Atelier** | Standalone Spore-style character creator — 21 species, DNA share codes, full 24-clip animation set, game-ready JSON/GLB/PNG exports |
 
 ---
 
@@ -120,6 +121,7 @@ Full details in [TODO.md](TODO.md).
 | [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) | Procedural art style guide and shader conventions |
 | [TESTING_AND_TOOLS.md](TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
 | [docs/BLUEPRINT_SCHEMA.md](docs/BLUEPRINT_SCHEMA.md) | JSON level format specification |
+| [docs/princess-creator/README.md](docs/princess-creator/README.md) | Princess Atelier — standalone character creator (docs index, status, roadmap) |
 
 ---
 

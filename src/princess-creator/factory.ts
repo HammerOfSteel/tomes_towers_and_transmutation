@@ -1,0 +1,101 @@
+// ── PrincessFactory: the game-facing façade ──────────────────────────────────
+//
+//  The ONLY module the main game should import from the Atelier
+//  (docs/princess-creator/INTEGRATION.md, path A). Zero DOM/UI dependencies —
+//  give it DNA (object or share code), get a living princess.
+//
+//  import { buildPrincess } from '@/princess-creator/factory';
+//  const p = buildPrincess('P2.…', { targetHeight: 1.6 });
+//  scene.add(p.root);           // each frame: p.update(t, dt)
+
+import * as THREE from 'three';
+import type { PrincessDNA } from './types';
+import { sanitizeDna, shareCodeToDna, cloneDna } from './dna';
+import { createMaterialKit } from './materials';
+import { composePrincess } from './compose';
+import { Animator, type EmoteId } from './animate';
+import type { AnimId, ClipSet, TweakMap } from './anim/clips';
+import type { PrincessRig, Sockets } from './synth/contracts';
+
+export interface PrincessInstance {
+  root: THREE.Group;
+  dna: PrincessDNA;
+  rig: PrincessRig;
+  sockets: Sockets;
+  /** Resolved species-flavored clip set (null when animate:false). */
+  clips: ClipSet | null;
+  /** Call every frame: drives states/one-shots + secondary motion + slime re-blob. */
+  update(t: number, dt: number): void;
+  /** One-shot: attack_1, cast_spell_2, get_hit_1, die_1… Deaths hold their last frame. */
+  play(id: AnimId): void;
+  /** Base loop: idle, idle_alt, walk, run, jump_idle, block_1, stunned, read. */
+  setState(id: AnimId): void;
+  /** Gameplay hooks fired at key frames: hit, cast_release, step, liftoff, land, parry. */
+  onEvent(cb: (id: string) => void): void;
+  playEmote(id: EmoteId): void;
+  setWalking(on: boolean): void;
+  dispose(): void;
+}
+
+export interface FactoryOptions {
+  /** Rescale so the full build stands this many world units tall (game: ~1.6). */
+  targetHeight?: number;
+  /** false → skip the built-in Animator (drive the rig yourself). Default true. */
+  animate?: boolean;
+  /** Per-clip speed/amp overrides (e.g. from a .anim.json export's tweaks block). */
+  tweaks?: TweakMap;
+}
+
+export function buildPrincess(
+  source: PrincessDNA | string,
+  opts: FactoryOptions = {},
+): PrincessInstance {
+  const dna = typeof source === 'string'
+    ? shareCodeToDna(source)
+    : sanitizeDna(cloneDna(source));
+  if (!dna) throw new Error('buildPrincess: invalid share code');
+
+  const kit = createMaterialKit(dna);
+  const result = composePrincess(dna, kit);
+
+  if (opts.targetHeight && opts.targetHeight > 0) {
+    result.root.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(result.root);
+    const h = box.max.y - box.min.y;
+    if (h > 0.001) result.root.scale.multiplyScalar(opts.targetHeight / h);
+  }
+
+  const animator = opts.animate === false ? null : new Animator();
+  animator?.bind(result, dna, opts.tweaks ?? {});
+
+  return {
+    root: result.root,
+    dna,
+    rig: result.rig,
+    sockets: result.sockets,
+    clips: animator?.clips ?? null,
+    update(t, dt) {
+      animator?.update(t);
+      result.update(t, dt);
+    },
+    play(id) {
+      animator?.play(id);
+    },
+    setState(id) {
+      animator?.setState(id);
+    },
+    onEvent(cb) {
+      if (animator) animator.onEvent = cb;
+    },
+    playEmote(id) {
+      animator?.playEmote(id);
+    },
+    setWalking(on) {
+      animator?.setWalking(on);
+    },
+    dispose() {
+      result.dispose();
+      kit.dispose();
+    },
+  };
+}
