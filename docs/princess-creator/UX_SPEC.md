@@ -102,12 +102,20 @@ Chips: rounded toggle pills w/ tiny glyphs; selected = gold ring.
 | 1–4 | switch archetype |
 | Ctrl+S | save to gallery |
 
-## 6. Phase 7 (later): direct manipulation layer
+## 6. Direct manipulation layer (SHIPPED — Phase 7)
 
-Raycast hover glow on parts → mouse-wheel scales hovered part (Spore's
-signature), drag part between sockets, drag-and-pull proportion handles on
-torso/head, palette drag-onto-part. Spec'd in TODO Phase 7; sliders remain the
-fallback so the tool never depends on it.
+- **Hover**: any part or region glows (pulsing emissive) with a tooltip naming
+  it and its affordances. Cursor: `grab` on parts, `ns-resize` on regions.
+- **Scroll** on the hovered thing resizes it (alt+scroll tilts crown/eyes).
+- **Pull**: press-drag vertically on head / dress / body / arms / legs / eyes
+  to inflate-deflate that dial. One undo entry per gesture; Esc cancels.
+- **Drag parts**: pull a part away → red tint → release removes it; hand items
+  drop onto the other hand to swap (screen-space snap ghost + marker).
+- **Paint-drop**: drag a palette-card dot onto her to retint just that slot.
+- **Portrait drop**: exported PNGs carry the DNA in-pixels (Spore homage) —
+  drop any Atelier portrait (or .princess.json) onto the page to load her.
+- Orbit stays on empty-space drags; sliders remain the always-available
+  fallback for every one of these.
 
 ## 7. Micro-delight (cheap, high value)
 

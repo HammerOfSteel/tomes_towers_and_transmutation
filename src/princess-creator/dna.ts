@@ -218,6 +218,15 @@ export function dnaToShareCode(dna: PrincessDNA): string {
   return `P${DNA_VERSION}.${toBase64Url(JSON.stringify(dna))}`;
 }
 
+/** Import a raw DNA object (e.g. a dropped .princess.json) with migrations. */
+export function dnaFromRaw(raw: unknown): PrincessDNA {
+  const v = typeof raw === 'object' && raw !== null &&
+    typeof (raw as { v?: unknown }).v === 'number'
+    ? (raw as { v: number }).v
+    : 1;
+  return sanitizeDna(migrate(raw, Math.min(Math.max(1, v), DNA_VERSION)));
+}
+
 /** Parse a share code. Returns null for garbage; migrates + sanitizes valid ones. */
 export function shareCodeToDna(code: string): PrincessDNA | null {
   const trimmed = code.trim();

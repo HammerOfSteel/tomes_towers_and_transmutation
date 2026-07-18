@@ -37,6 +37,8 @@ export interface UiActions {
   undo(): void;
   redo(): void;
   applyPalette(species: SpeciesId, paletteId: string): void;
+  /** Palette-dot drag → paint-drop onto the princess (D5). */
+  startPaintDrag(hex: string): void;
 }
 
 type TabId = 'body' | 'face' | 'hair' | 'parts' | 'colors' | 'motion';
@@ -341,12 +343,20 @@ export class Ui {
     } else if (this.activeTab === 'colors') {
       const species = this.store.dna.species;
       const s0 = this.section(c, `${SPECIES_DEFS[species].label} palettes`);
+      const hint = el('div', 'chip-label', s0);
+      hint.textContent = 'click a card to apply · drag a dot onto her to paint one spot';
       for (const pal of PALETTES[species]) {
         const card = el('button', 'palette-card', s0);
         const dots = el('span', 'palette-dots', card);
         for (const key of ['primary', 'secondary', 'accent', 'skin'] as const) {
           const dot = el('span', 'dot', dots);
           dot.style.background = pal.colors[key];
+          dot.style.cursor = 'grab';
+          dot.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.actions.startPaintDrag(pal.colors[key]);
+          });
         }
         const lab = el('span', 'palette-label', card);
         lab.textContent = pal.label;

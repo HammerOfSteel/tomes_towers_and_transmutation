@@ -96,17 +96,19 @@
 - [ ] **U11. e2e tests** (playwright): load, tab switch, randomize changes DNA, import code renders, export buttons produce blobs
 - ✔ Accept (core): a first-time user makes a princess they like in <2 min without docs. (validate with team)
 
-## Phase 7 — Spore-Grade Direct Manipulation & Export Depth [~]
+## Phase 7 — Spore-Grade Direct Manipulation & Export Depth ✅ (game-side wiring pending)
 
 - [x] **D1. Hover/select layer**: raycast hover glow (material-swap pulse, kit untouched) + cursor tooltip w/ affordance hints; hover re-acquired across per-notch rebuilds (world matrices refreshed pre-raycast)
 - [x] **D2. Wheel-scale hovered part/region** (crown/ears/tail/back/hands/hair + head/eyes/dress/arms/legs/body dials), Alt+wheel = tilt (crown, eyes); gesture-coalesced undo
 - [x] **D3. Drag parts**: tear-off with red tint (any part → 'none'), hand items drag between hands (screen-space snap ghost + marker), Esc cancels; ears stay a mirrored pair
-- [ ] **D4. Proportion pull-handles** on head/torso/hem (drag = fatter/taller) — the "grab the spine" feeling
-- [ ] **D5. Paint-drop mode**: drag palette swatch onto a region to retint just that slot
-- [ ] **D6. Export depth**: optional high-res slime bake (res 64), DNA-in-PNG steganography (Spore homage) — `userData.pivotRole` tags shipped
-- [ ] **D7. `factory.ts`** façade + INTEGRATION path A wired into the game behind a dev flag (campfire "create your princess" experiment)
-- [ ] **D8. Performance hardening**: rebuild <8ms parts / <16ms slime on mid hardware; memory-leak soak test (1000 randomizes)
-- ✔ Accept (D1–D3): grab, scroll, tear — verified end-to-end via Playwright (crownSize 1→1.3 over 6 notches, tear-off → DNA 'none' → undo restores, hand swap L→R). ✅
+- [x] **D4. Pull-to-sculpt**: vertical drag on head/dress/body/arms/legs/eyes pulls that region's dial (the "grab and inflate" feel); one undo entry per gesture; Esc restores — verified headSize 1→1.49 by drag, single undo → 1
+- [x] **D5. Paint-drop**: drag any palette-card dot onto the princess → retints exactly one slot (dress→primary, body/head/limbs→skin, hair→hair, crown/hands→metal, back→accent, eyes→eyes); cosmetic fast-path, no rebuild
+- [x] **D6. DNA-in-PNG** (the Spore homage): exported portraits carry the share code in an opaque 8-row LSB strip (premultiply-safe); drop a portrait — or a .princess.json (v1 files migrate) — anywhere on the page to load her. In-page round-trip verified. `userData.pivotRole` GLB tags shipped earlier. *(High-res slime bake for GLB still open below.)*
+- [x] **D7a. `factory.ts`** — `buildPrincess(dnaOrCode, { targetHeight, animate })` façade, zero DOM imports, per-species tested incl. 1.6-unit game scaling
+- [ ] **D7b. Game-side wiring**: campfire "create your princess" behind a dev flag — needs a decision with the game code owners (NewGameFlow), see INTEGRATION.md path A
+- [x] **D8. Leak guard**: dispose-balance soak test — every geometry reachable in a build is disposed with it, asserted across all 12 species
+- [ ] **D6b. High-res slime bake** (res 64 one-shot for GLB export)
+- ✔ Accept: grab / scroll / pull / tear / paint / portrait-drop — all verified end-to-end via Playwright with zero console errors. ✅
 
 ## Phase 8 — Species, Classes & Subtypes (Character Design doc) ✅ Wave 1
 

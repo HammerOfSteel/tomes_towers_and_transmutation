@@ -7,7 +7,7 @@ import { createMaterialKit } from '../materials';
 import { composePrincess } from '../compose';
 import {
   wheelTargetFor, tiltTargetFor, resolveDrop, removalFor, tagPickables,
-  DRAGGABLE, type PickId,
+  paintSlotFor, DRAGGABLE, PULLABLE, type PickId,
 } from '../interact';
 
 const ALL_PICKS: PickId[] = [
@@ -30,6 +30,19 @@ describe('wheel mapping', () => {
     expect(tiltTargetFor('face')?.path).toBe('face.eyeTilt');
     expect(tiltTargetFor('tail')).toBeNull();
     expect(wheelTargetFor('crown').range).toEqual(RANGES.parts.crownSize);
+  });
+
+  it('every pullable region has a dial; paint drop maps every pick to a slot', () => {
+    for (const pick of PULLABLE) {
+      expect(wheelTargetFor(pick).path).toBeTruthy();
+    }
+    for (const pick of ALL_PICKS) {
+      expect(typeof paintSlotFor(pick)).toBe('string');
+    }
+    expect(paintSlotFor('dress')).toBe('primary');
+    expect(paintSlotFor('hair')).toBe('hair');
+    expect(paintSlotFor('crown')).toBe('metal');
+    expect(paintSlotFor('head')).toBe('skin');
   });
 });
 

@@ -5,17 +5,21 @@
 
 ## 1. Three consumption paths
 
-### A. `PrincessFactory` (recommended — live procedural)
+### A. `PrincessFactory` (recommended — live procedural) — SHIPPED
 ```ts
 import { buildPrincess } from '@/princess-creator/factory';
 
-const { root, rig, update, dispose } = buildPrincess(dna /* or share code */);
-scene.add(root);
-// per frame: update(t, dt)  — secondary motion (slime re-blob, tail swish)
-// drive rig joints yourself OR reuse the creator's Animator
+const p = buildPrincess(dnaOrShareCode, { targetHeight: 1.6 });
+scene.add(p.root);
+// per frame: p.update(t, dt)   — idle/walk/emotes + secondary motion
+p.playEmote('twirl');           // wave | twirl | dance | cast
+p.setWalking(true);
+// or pass { animate: false } and drive p.rig joints yourself
+p.dispose();                    // frees geometries + material kit
 ```
-- `factory.ts` is a thin façade over `synth/` + `parts.ts` + `materials.ts`
-  with zero DOM/UI imports — safe to import from game code.
+- `factory.ts` is a thin façade over compose/synth/parts/materials with zero
+  DOM/UI imports — safe to import from game code (unit-tested per species,
+  incl. `targetHeight` game-unit scaling and a dispose-balance leak guard).
 - The game's existing `AnimationRetargeter`/controller can drive `rig`
   (same pivot-Group convention as `src/creatures` rigs).
 

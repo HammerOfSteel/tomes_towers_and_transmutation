@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import type { PrincessDNA, SpeciesId, ClassId } from './types';
 import { SPECIES_IDS } from './types';
-import { defaultDna, dnaToShareCode, shareCodeToDna, cloneDna } from './dna';
+import { defaultDna, dnaToShareCode, shareCodeToDna, dnaFromRaw, cloneDna } from './dna';
 import { mulberry32, hashString, freshSeed, pick } from './rng';
 import { randomDna, mutateDna } from './randomize';
 import { generateName } from './names';
@@ -20,6 +20,7 @@ import { Animator, EMOTES, type EmoteId } from './animate';
 import { DirectManipulator } from './interact';
 import { Ui } from './ui';
 import { exportPng, exportGlb, exportJson } from './exporter';
+import { extractFromImageFile } from './stegano';
 import { loadGallery, addToGallery, removeFromGallery } from './gallery';
 
 // ── Daily curated starter ──
@@ -118,7 +119,7 @@ const ui = new Ui(store, {
     store.setDna(dna);
     return true;
   },
-  exportPng: () => exportPng(stage, store.dna),
+  exportPng: () => { void exportPng(stage, store.dna); },
   exportGlb: () => { void exportGlb(result, store.dna); },
   exportJson: () => exportJson(store.dna),
   saveToGallery: () => {
@@ -150,6 +151,7 @@ const ui = new Ui(store, {
     dna.colors = { ...pal.colors };
     store.setDna(dna);
   },
+  startPaintDrag: (hex: string) => manipulator.startPaintDrag(hex),
 });
 
 ui.setGallery(loadGallery());
@@ -198,6 +200,38 @@ window.addEventListener('keydown', (e) => {
 
 canvas.addEventListener('dblclick', () => stage.focusFace());
 
+// ── Drop a portrait (or .princess.json) anywhere → load the princess ────────
+function importFeedback(ok: boolean): void {
+  const field = document.getElementById('import-code') as HTMLInputElement;
+  if (ok) return;
+  field.classList.remove('shake');
+  void field.offsetWidth;
+  field.classList.add('shake');
+}
+
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  void (async () => {
+    if (file.type === 'image/png' || file.name.endsWith('.png')) {
+      const code = await extractFromImageFile(file);
+      const dna = code ? shareCodeToDna(code) : null;
+      if (dna) store.setDna(dna);
+      importFeedback(dna !== null);
+    } else if (file.name.endsWith('.json')) {
+      try {
+        const parsed: unknown = JSON.parse(await file.text());
+        store.setDna(dnaFromRaw(parsed)); // runs v1→v2 migration + sanitize
+        importFeedback(true);
+      } catch {
+        importFeedback(false);
+      }
+    }
+  })();
+});
+
 // ── Main loop ──
 const clock = new THREE.Clock();
 function loop(): void {
@@ -217,5 +251,8 @@ loop();
   store,
   stage,
   manipulator,
+  dnaToShareCode,
+  shareCodeToDna,
+  stegano: { embed: import('./stegano') },
   get result() { return result; },
 };

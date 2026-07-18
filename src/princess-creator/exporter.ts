@@ -5,6 +5,8 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import type { PrincessDNA } from './types';
 import type { BuildResult } from './synth/contracts';
 import type { Stage } from './scene';
+import { dnaToShareCode } from './dna';
+import { embedInPngDataUrl } from './stegano';
 
 function fileSafe(name: string): string {
   return (name || 'princess').toLowerCase().replace(/[^a-z0-9-_]+/g, '_').slice(0, 40);
@@ -19,8 +21,19 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export function exportPng(stage: Stage, dna: PrincessDNA): void {
-  const dataUrl = stage.snapshot(1024, true);
+/**
+ * Portrait PNG with the full DNA hidden in its bottom-strip pixels (Spore's
+ * "the image IS the save file" trick) — drop it back onto the Atelier and the
+ * princess loads.
+ */
+export async function exportPng(stage: Stage, dna: PrincessDNA): Promise<void> {
+  const plain = stage.snapshot(1024, true);
+  let dataUrl = plain;
+  try {
+    dataUrl = await embedInPngDataUrl(plain, dnaToShareCode(dna));
+  } catch {
+    // portrait still ships without embedded DNA
+  }
   const bytes = atob(dataUrl.split(',')[1]);
   const arr = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);

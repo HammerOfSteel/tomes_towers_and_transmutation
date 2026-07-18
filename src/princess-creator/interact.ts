@@ -26,6 +26,30 @@ export type PickId =
 export const DRAGGABLE: readonly PickId[] =
   ['crown', 'ears', 'tail', 'back', 'handL', 'handR', 'hair'];
 
+/** Regions you can grab and PULL bigger/smaller (Spore's inflate feel). */
+export const PULLABLE: readonly PickId[] =
+  ['head', 'dress', 'body', 'arm', 'leg', 'face'];
+
+/** Dropping a palette color onto a pickable retints exactly one slot. */
+export function paintSlotFor(pick: PickId):
+  'primary' | 'secondary' | 'accent' | 'skin' | 'hair' | 'eyes' | 'metal' | 'glow' {
+  switch (pick) {
+    case 'dress': return 'primary';
+    case 'hair': return 'hair';
+    case 'face': return 'eyes';
+    case 'crown': return 'metal';
+    case 'handL':
+    case 'handR': return 'metal';
+    case 'back': return 'accent';
+    case 'ears':
+    case 'tail':
+    case 'head':
+    case 'arm':
+    case 'leg':
+    case 'body': return 'skin';
+  }
+}
+
 const LABEL: Record<PickId, string> = {
   crown: 'crown', ears: 'ears', tail: 'tail', back: 'back item',
   handL: 'left hand', handR: 'right hand', hair: 'hair',
@@ -210,6 +234,9 @@ export class DirectManipulator {
   private highlight = new HighlightSwap();
   private pending: { x: number; y: number; pick: PickId; group: THREE.Object3D } | null = null;
   private drag: DragState | null = null;
+  private pendingPull: { y: number; pick: PickId } | null = null;
+  private pulling: { pick: PickId; target: WheelTarget; startValue: number; startY: number } | null = null;
+  private paint: { hex: string; ghost: HTMLDivElement } | null = null;
   private wheelEndTimer: ReturnType<typeof setTimeout> | null = null;
   private lastPointer: { x: number; y: number; overCanvas: boolean } | null = null;
   private tip: HTMLDivElement;
@@ -240,10 +267,13 @@ export class DirectManipulator {
     const canvas = stage.renderer.domElement;
     const onMove = (e: PointerEvent): void => this.onPointerMove(e, canvas);
     const onDown = (e: PointerEvent): void => this.onPointerDown(e, canvas);
-    const onUp = (): void => this.onPointerUp();
+    const onUp = (e: PointerEvent): void => this.onPointerUp(e);
     const onWheel = (e: WheelEvent): void => this.onWheel(e, canvas);
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && this.drag) this.cancelDrag(true);
+      if (e.key !== 'Escape') return;
+      if (this.drag) this.cancelDrag(true);
+      if (this.pulling) this.cancelPull();
+      if (this.paint) this.endPaintDrag(null);
     };
     // Capture phase on window → we run before OrbitControls' canvas listeners.
     window.addEventListener('pointermove', onMove, true);
@@ -291,6 +321,37 @@ export class DirectManipulator {
 
   // ── Hover ──
   private onPointerMove(e: PointerEvent, canvas: HTMLCanvasElement): void {
+    if (this.paint) {
+      this.paint.ghost.style.left = `${e.clientX - 9}px`;
+      this.paint.ghost.style.top = `${e.clientY - 9}px`;
+      return;
+    }
+    if (this.pulling) {
+      const { target, startValue, startY, pick } = this.pulling;
+      const span = target.range.max - target.range.min;
+      const value = startValue + ((startY - e.clientY) / 240) * span;
+      this.store.set(target.path, value, 'none');
+      this.tip.textContent = `${LABEL[pick]} — pull ↑ bigger · ↓ smaller · esc cancels`;
+      this.tip.style.display = 'block';
+      this.tip.style.left = `${e.clientX + 16}px`;
+      this.tip.style.top = `${e.clientY + 20}px`;
+      return;
+    }
+    if (this.pendingPull) {
+      if (Math.abs(e.clientY - this.pendingPull.y) > 5) {
+        const pick = this.pendingPull.pick;
+        const target = wheelTargetFor(pick);
+        const startValue = target.path.split('.').reduce<unknown>(
+          (o, k) => (o as Record<string, unknown>)[k], this.store.dna,
+        ) as number;
+        this.store.beginDrag();
+        this.pulling = { pick, target, startValue, startY: this.pendingPull.y };
+        this.pendingPull = null;
+        this.highlight.clear();
+        canvas.style.cursor = 'ns-resize';
+      }
+      return;
+    }
     if (this.drag) {
       this.moveDrag(e, canvas);
       return;
@@ -380,15 +441,19 @@ export class DirectManipulator {
     this.wheelEndTimer = setTimeout(() => this.store.endDrag(), 450);
   }
 
-  // ── Drag ──
+  // ── Drag / pull ──
   private onPointerDown(e: PointerEvent, canvas: HTMLCanvasElement): void {
     if (e.target !== canvas || e.button !== 0 || !this.hovered) return;
-    if (!DRAGGABLE.includes(this.hovered.pick)) return;
-    this.pending = {
-      x: e.clientX, y: e.clientY,
-      pick: this.hovered.pick, group: this.hovered.group,
-    };
-    this.stage.controls.enabled = false;
+    if (DRAGGABLE.includes(this.hovered.pick)) {
+      this.pending = {
+        x: e.clientX, y: e.clientY,
+        pick: this.hovered.pick, group: this.hovered.group,
+      };
+      this.stage.controls.enabled = false;
+    } else if (PULLABLE.includes(this.hovered.pick)) {
+      this.pendingPull = { y: e.clientY, pick: this.hovered.pick };
+      this.stage.controls.enabled = false;
+    }
   }
 
   private startDrag(e: PointerEvent, canvas: HTMLCanvasElement): void {
@@ -498,7 +563,23 @@ export class DirectManipulator {
     this.tip.style.top = `${e.clientY + 20}px`;
   }
 
-  private onPointerUp(): void {
+  private onPointerUp(e?: PointerEvent): void {
+    if (this.paint) {
+      this.endPaintDrag(e ?? null);
+      return;
+    }
+    if (this.pulling) {
+      this.store.endDrag();
+      this.pulling = null;
+      this.stage.controls.enabled = true;
+      this.tip.style.display = 'none';
+      return;
+    }
+    if (this.pendingPull) {
+      this.pendingPull = null;
+      this.stage.controls.enabled = true;
+      return;
+    }
     if (this.pending) {
       this.pending = null;
       this.stage.controls.enabled = true;
@@ -530,6 +611,46 @@ export class DirectManipulator {
     const source = this.drag.sourceGroup;
     this.teardownDragVisuals();
     if (unhide) source.visible = true;
+  }
+
+  private cancelPull(): void {
+    if (!this.pulling) return;
+    this.store.set(this.pulling.target.path, this.pulling.startValue, 'none');
+    this.store.endDrag();
+    this.pulling = null;
+    this.stage.controls.enabled = true;
+    this.tip.style.display = 'none';
+  }
+
+  // ── Paint drop (palette dot → region) ──
+
+  /** Called by the UI when a palette dot starts being dragged. */
+  startPaintDrag(hex: string): void {
+    if (this.paint) this.endPaintDrag(null);
+    const ghost = document.createElement('div');
+    ghost.style.cssText =
+      'position:fixed;z-index:40;width:18px;height:18px;border-radius:50%;' +
+      `background:${hex};border:2px solid rgba(255,255,255,0.8);` +
+      'pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.5);left:-30px;top:-30px';
+    document.body.appendChild(ghost);
+    this.paint = { hex, ghost };
+    this.stage.controls.enabled = false;
+  }
+
+  private endPaintDrag(e: PointerEvent | null): void {
+    if (!this.paint) return;
+    const { hex, ghost } = this.paint;
+    ghost.remove();
+    this.paint = null;
+    this.stage.controls.enabled = true;
+    const canvas = this.stage.renderer.domElement;
+    if (e && e.target === canvas) {
+      const hit = this.raycastAt(e.clientX, e.clientY, canvas);
+      if (hit) {
+        const slot = paintSlotFor(hit.pick);
+        this.store.set(`colors.${slot}`, hex); // cosmetic fast-path + one undo
+      }
+    }
   }
 
   /** Removes ghost + marker, re-enables controls. Never touches DNA. */
