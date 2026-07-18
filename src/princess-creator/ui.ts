@@ -71,6 +71,10 @@ const SIGNATURE: Record<Archetype, Array<{ label: string; path: string; range: R
     { label: 'Bone Gauge', path: 'traits.boneThickness', range: RANGES.traits.boneThickness },
     { label: 'Soul Glow', path: 'traits.eyeGlowIntensity', range: RANGES.traits.eyeGlowIntensity },
   ],
+  lamia: [
+    { label: 'Tail Length', path: 'body.legLength', range: RANGES.body.legLength },
+    { label: 'Coil Girth', path: 'body.chubbiness', range: RANGES.body.chubbiness },
+  ],
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(

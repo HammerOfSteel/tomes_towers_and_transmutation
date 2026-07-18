@@ -19,6 +19,7 @@ const FLAVOR: Record<Archetype, string[]> = {
   fox: ['Vixen ', 'Kit '],
   slime: ['Goo-', 'Blob-'],
   skeleton: ['Bone-', 'Grave-'],
+  lamia: ['Coil-', 'Sss-'],
 };
 
 export function generateName(rng: Rng, archetype: Archetype): string {

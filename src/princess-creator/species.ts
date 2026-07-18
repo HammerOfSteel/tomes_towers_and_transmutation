@@ -627,6 +627,115 @@ export const SPECIES_DEFS: Record<SpeciesId, SpeciesDef> = {
     },
   },
 
+  // ── 🐍 Lamia — she stands upright because she decided to ──
+  lamia: {
+    id: 'lamia', label: 'Lamia', icon: '🐍', synth: 'lamia',
+    blurb: 'It took three weeks. She would do it again.',
+    apply(d) {
+      d.archetype = 'lamia';
+      d.body.chubbiness = 1.05; d.body.armLength = 1.05;
+      d.hair = { style: 'bun', length: 1.1 }; // high coil, of course
+      d.parts.crown = 'none'; d.parts.back = 'none'; d.parts.tail = 'none';
+      d.face.eyeStyle = 'slit'; d.face.blush = 0.3; d.face.mouth = 'smile';
+      d.dress.style = 'slim'; d.dress.trim = true; d.dress.sash = true;
+      d.dress.puffSleeves = false;
+      d.aura = { style: 'none', intensity: 0.5 };
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.4; d.motion.bounce = 0.2;
+    },
+    skinTones: ['#3f8a7a', '#8a2438', '#2e6b4f', '#c9952a'],
+    hairColors: ['#1c1a22', '#2f2a26', '#3d2e3d'],
+    palettes: [
+      pal('teal-and-gold', 'Teal & Gold', { primary: '#1e5c5c', secondary: '#e8c46e', accent: '#c8a24a', skin: '#3f8a7a', hair: '#1c1a22', eyes: '#ffd166', metal: '#e8c46e', glow: '#aef7e8' }),
+      pal('scarlet-black', 'Scarlet & Black', { primary: '#26222e', secondary: '#8a2438', accent: '#c8a24a', skin: '#8a2438', hair: '#2f2a26', eyes: '#ff8a5c', metal: '#9aa1b5', glow: '#ff8a9a' }),
+      pal('emerald-coil', 'Emerald Coil', { primary: '#1e4d3a', secondary: '#c8ece4', accent: '#b5952a', skin: '#2e6b4f', hair: '#3d2e3d', eyes: '#8ab84f', metal: '#c8a24a', glow: '#baf5d2' }),
+    ],
+    rand: {
+      dress: [['slim', 6], ['layered', 2], ['aline', 2]], // wraps that work with the silhouette
+      hair: [['bun', 4], ['long', 3], ['braided', 2], ['none', 1]],
+      eyes: [['slit', 6], ['sleepy', 2], ['glow', 1], ['lash', 1]],
+      mouth: [['smile', 4], ['fang', 3], ['pout', 2]],
+      crown: [['none', 5], ['classic', 2], ['tiara', 2], ['halo', 1]],
+      ears: [['none', 7], ['fin', 2], ['horn_small', 1]],
+      tail: [['none', 1]], // she IS the tail
+      back: [['none', 7], ['cape', 2], ['grimoire', 1]],
+    },
+  },
+
+  // ── 💪 Orc — visual definition, detailed expansion was "TBD Phase 2". It's Phase 2. ──
+  orc: {
+    id: 'orc', label: 'Orc', icon: '💪', synth: 'human',
+    blurb: 'Broad shoulders, harvested armor plates, zero apologies.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.height = 1.08; d.body.chubbiness = 1.35;
+      d.body.shoulderWidth = 1.3; d.body.hipWidth = 1.2;
+      d.hair = { style: 'braided', length: 1.1 };
+      d.parts.crown = 'none'; d.parts.back = 'cape';
+      d.face.eyeStyle = 'round'; d.face.eyeSize = 0.9; d.face.blush = 0.25;
+      d.face.mouth = 'tusks';
+      d.dress.style = 'slim'; d.dress.sash = true; d.dress.trim = false;
+      d.dress.puffSleeves = false;
+      d.aura = { style: 'none', intensity: 0.5 };
+      d.motion.idleStyle = 'bob'; d.motion.energy = 0.7; d.motion.bounce = 0.5;
+    },
+    lockBody: { chubbiness: 1.35, shoulderWidth: 1.3 },
+    skinTones: ['#5c7a4a', '#6b8a5c', '#7a6b4a', '#8a9a7a'],
+    hairColors: ['#221e26', '#4a2e22', '#8a3b1e'],
+    palettes: [
+      pal('war-iron', 'War Iron', { primary: '#3d3a42', secondary: '#8a2438', accent: '#c8a24a', skin: '#5c7a4a', hair: '#221e26', eyes: '#ffd166', metal: '#8a8f9c', glow: '#ff8a5c' }),
+      pal('moss-hide', 'Moss & Hide', { primary: '#5c4a32', secondary: '#c9bfa0', accent: '#3d5c3d', skin: '#6b8a5c', hair: '#4a2e22', eyes: '#c9c95e', metal: '#b5952a', glow: '#d6f2b0' }),
+      pal('crimson-banner', 'Crimson Banner', { primary: '#6b1c2a', secondary: '#2e2a32', accent: '#e8c46e', skin: '#7a6b4a', hair: '#8a3b1e', eyes: '#ff8a5c', metal: '#c8a24a', glow: '#ffb05e' }),
+    ],
+    rand: {
+      dress: [['slim', 5], ['aline', 3], ['hex', 1], ['layered', 1]],
+      hair: [['braided', 4], ['wild', 3], ['ponytail', 2], ['none', 1]],
+      eyes: [['round', 4], ['sleepy', 2], ['slit', 2], ['glow', 1]],
+      mouth: [['tusks', 7], ['fang', 2], ['smile', 1]],
+      crown: [['none', 5], ['crooked', 3], ['classic', 2]],
+      ears: [['none', 6], ['long', 3], ['horn_small', 1]],
+      tail: [['none', 1]],
+      back: [['cape', 5], ['none', 4], ['grimoire', 1]],
+    },
+  },
+
+  // ── 🧌 Troll — slow, enormous, surprisingly gentle about it ──
+  troll: {
+    id: 'troll', label: 'Troll', icon: '🧌', synth: 'human',
+    blurb: 'Under the bridge was a rental. The tower has better light.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.height = 1.32; d.body.chubbiness = 1.65;
+      d.body.headSize = 0.92; d.body.armLength = 1.25;
+      d.body.shoulderWidth = 1.25; d.body.hipWidth = 1.3;
+      d.hair = { style: 'wild', length: 0.9 };
+      d.parts.crown = 'none'; d.parts.back = 'none';
+      d.parts.ears = 'long'; d.parts.earSize = 1.3;
+      d.face.eyeStyle = 'sleepy'; d.face.eyeSize = 0.85; d.face.blush = 0.35;
+      d.face.mouth = 'tusks';
+      d.dress.style = 'aline'; d.dress.trim = true; d.dress.puffSleeves = false;
+      d.aura = { style: 'none', intensity: 0.5 };
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.2; d.motion.bounce = 0.2;
+    },
+    lockBody: { height: 1.32, chubbiness: 1.65, armLength: 1.25 },
+    skinTones: ['#7a8a94', '#6b7a6b', '#8a8a7a', '#5c6b7a'],
+    hairColors: ['#3d4a42', '#5a4632', '#6b7a6b'],
+    palettes: [
+      pal('mossy-stone', 'Mossy Stone', { primary: '#4a5c52', secondary: '#c9bfa0', accent: '#8a6b3a', skin: '#7a8a94', hair: '#3d4a42', eyes: '#c9c95e', metal: '#8a8f9c', glow: '#d6f2e0' }),
+      pal('cave-dusk', 'Cave Dusk', { primary: '#3d3a4a', secondary: '#8a94a8', accent: '#c9952a', skin: '#5c6b7a', hair: '#5a4632', eyes: '#ffd166', metal: '#b5bdc4', glow: '#c4d4ff' }),
+      pal('river-boulder', 'River Boulder', { primary: '#5c5a52', secondary: '#e8dcc0', accent: '#3d5c8a', skin: '#8a8a7a', hair: '#6b7a6b', eyes: '#78b3e0', metal: '#9aa1b5', glow: '#d6ecff' }),
+    ],
+    rand: {
+      dress: [['aline', 5], ['bell', 2], ['slim', 2], ['hex', 1]],
+      hair: [['wild', 4], ['none', 3], ['bun', 2], ['afro', 1]],
+      eyes: [['sleepy', 5], ['round', 3], ['void', 1]],
+      mouth: [['tusks', 7], ['smile', 2], ['open', 1]],
+      crown: [['none', 6], ['flower', 2], ['crooked', 2]], // flowers look great on trolls
+      ears: [['long', 6], ['round', 3], ['none', 1]],
+      tail: [['none', 1]],
+      back: [['none', 7], ['cape', 2], ['bow', 1]],
+    },
+  },
+
   // ── 🟢 Slime — absorbed a spellbook; retains information differently ──
   slime: {
     id: 'slime', label: 'Slime', icon: '💧', synth: 'slime',

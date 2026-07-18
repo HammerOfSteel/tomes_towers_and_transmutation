@@ -27,7 +27,7 @@ aura                        = none | motes | cold | warm  (+ intensity)
   at thumbnail size.
 - v1 share codes migrate: `fox→foxling`, knobs `species{}` → `traits{}`.
 
-## 2. Roster (18 species — all live)
+## 2. Roster (21 species — the complete Character Design doc, all live)
 
 | Species | Tech | Silhouette hook | Signature defaults | Aura | Canonical palette |
 |---|---|---|---|---|---|
@@ -47,6 +47,9 @@ aura                        = none | motes | cold | warm  (+ intensity)
 | 🌊 Naiad | smooth | temple fins + WET iridescent clearcoat sheen | pearls at the collar, layered flowing dress, always-damp long hair | bubbles | Deep Current |
 | 🌙 Moonborn | smooth | crescent moon grown in hair (phase = subtype), silver pattern arcs | lit-from-within hair, pooling cape, pale luminous skin | motes (silver) | Midnight & Silver |
 | 🌺 Verdant | smooth | LIVING WREATH + blooms growing in the hair | vine arm bands, branch staff, warm brown/green skin | motes (pollen) | Rootsong |
+| 🐍 Lamia | **lamia** (serpent synth) | human upper body atop a coiled serpent tail with gold rings + spine ridges | slit eyes, high-coil bun, hip wrap, self-leveling coil | — | Teal & Gold |
+| 💪 Orc | smooth | broad build (1.35 chub, 1.3 shoulders, lock), tusks | braided hair, cape, war-iron wardrobe | — | War Iron |
+| 🧌 Troll | smooth | HUGE (1.32×, 1.65 chub, long arms), tusks + big ears | sleepy eyes, wild moss hair, slow sway (energy 0.2) | — | Mossy Stone |
 | 💧 Slime | metaballs | translucent blob + jelly twintails | halo, wisp trail, open mouth, float | — | Mint Jelly |
 | 💀 Skeleton | bones | skull + glow sockets + cape | crooked crown, teeth, rattle idle | cold (low) | Gothic Royal |
 
@@ -94,8 +97,8 @@ stay coherent; reapplied on species switch when chosen.
 | 🌊 Naiad | wet clearcoat+iridescence kit, fin ears, pearls, bubble aura | ✅ SHIPPED |
 | 🌙 Moonborn | crescent/full/eclipse crown subtypes, silver limb arcs, glowing hair | ✅ SHIPPED (skin pattern *lines* still upgrade with the paint phase) |
 | 🌺 Verdant | living wreath, blooms in hair, vine bands, branch staff | ✅ SHIPPED |
-| 🐍 Lamia | serpent lower-body synth variant (biggest lift — new tech) | backlog |
-| 💪 Orc / 🧌 Troll | broad-build preset + tusk part (small lift) | backlog |
+| 🐍 Lamia | fifth body synth: nested serpent chain, forward coil, self-leveling | ✅ SHIPPED |
+| 💪 Orc / 🧌 Troll | broad/huge presets + `tusks` mouth | ✅ SHIPPED |
 
 Also backlogged: outfit vocabulary expansions (corset, ballgown skirt, veil,
 mantle…), `familiar_shoulder`, tail bell-charms, and boon-flavored accessory

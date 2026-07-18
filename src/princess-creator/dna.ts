@@ -22,6 +22,7 @@ const NAME_DEFAULTS: Record<SpeciesId, string> = {
   gnome: 'Podkin', goblin: 'Snikret', foxling: 'Maribel',
   ignis: 'Cindra', specter: 'Vesper', fae: 'Briarwyn',
   naiad: 'Nerissa', moonborn: 'Selenne', verdant: 'Rowana',
+  lamia: 'Zafirah', orc: 'Ghazka', troll: 'Brumhilde',
   slime: 'Blobette', skeleton: 'Mortica',
 };
 

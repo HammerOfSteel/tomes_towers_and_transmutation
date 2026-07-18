@@ -22,7 +22,9 @@ Renames/extensions:
   back `wings_butterfly/wings_feather/wings_leaf/grimoire`; eyes `slit`;
   aura `ember`, `bubbles`; ears `fin`; crowns `crescent` (subtype-aware),
   `wreath`. Species grew to 15 with Wave 2a (`fae`, `ignis`, `specter`) and
-  to 18 with Wave 2b (`naiad`, `moonborn` + phase subtypes, `verdant`) —
+  to 18 with Wave 2b (`naiad`, `moonborn` + phase subtypes, `verdant`) and to
+  the complete 21 with `lamia` (new fifth `archetype`/synth), `orc`, `troll`
+  (+ mouth `tusks`) —
   additive enum growth stays within v2 (old codes import; old builds fall
   back unknown species to human).
 - `body.height` range widened to 0.5–1.35 (pixie/gnome/goblin ↔ high elf);

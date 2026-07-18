@@ -4,8 +4,8 @@
 //  for a princess. See docs/princess-creator/DNA_SCHEMA.md.
 
 /** Body construction TECH (synthesizer selection) — see synth/. */
-export type Archetype = 'human' | 'fox' | 'slime' | 'skeleton';
-export const ARCHETYPES: readonly Archetype[] = ['human', 'fox', 'slime', 'skeleton'];
+export type Archetype = 'human' | 'fox' | 'slime' | 'skeleton' | 'lamia';
+export const ARCHETYPES: readonly Archetype[] = ['human', 'fox', 'slime', 'skeleton', 'lamia'];
 
 /**
  * Species — the princess's identity (docs/princess-creator/SPECIES.md).
@@ -14,11 +14,13 @@ export const ARCHETYPES: readonly Archetype[] = ['human', 'fox', 'slime', 'skele
 export type SpeciesId =
   | 'human' | 'elf' | 'high_elf' | 'pixie' | 'fae' | 'undead' | 'celestial'
   | 'draconic' | 'gnome' | 'goblin' | 'foxling' | 'ignis' | 'specter'
-  | 'naiad' | 'moonborn' | 'verdant' | 'slime' | 'skeleton';
+  | 'naiad' | 'moonborn' | 'verdant' | 'lamia' | 'orc' | 'troll'
+  | 'slime' | 'skeleton';
 export const SPECIES_IDS: readonly SpeciesId[] = [
   'human', 'elf', 'high_elf', 'pixie', 'fae', 'undead', 'celestial',
   'draconic', 'gnome', 'goblin', 'foxling', 'ignis', 'specter',
-  'naiad', 'moonborn', 'verdant', 'slime', 'skeleton',
+  'naiad', 'moonborn', 'verdant', 'lamia', 'orc', 'troll',
+  'slime', 'skeleton',
 ];
 
 /** Class — outfit/accessory vocabulary preset ('none' = pure species look). */
@@ -31,7 +33,8 @@ export const AURA_STYLES: readonly AuraStyle[] = ['none', 'motes', 'cold', 'warm
 export type DressStyle = 'bell' | 'aline' | 'hex' | 'layered' | 'slim';
 export type EyeStyle =
   | 'sparkle' | 'round' | 'lash' | 'sleepy' | 'star' | 'glow' | 'void' | 'button' | 'slit';
-export type MouthStyle = 'smile' | 'open' | 'cat' | 'pout' | 'fang' | 'teeth' | 'none';
+export type MouthStyle =
+  | 'smile' | 'open' | 'cat' | 'pout' | 'fang' | 'teeth' | 'tusks' | 'none';
 export type HairStyle =
   | 'none' | 'bob' | 'pigtails' | 'twintails' | 'bun' | 'long'
   | 'braided' | 'ponytail' | 'wild' | 'afro';
@@ -48,7 +51,9 @@ export type IdleStyle = 'sway' | 'bob' | 'float' | 'rattle';
 
 export const DRESS_STYLES: readonly DressStyle[] = ['bell', 'aline', 'hex', 'layered', 'slim'];
 export const EYE_STYLES: readonly EyeStyle[] = ['sparkle', 'round', 'lash', 'sleepy', 'star', 'glow', 'void', 'button', 'slit'];
-export const MOUTH_STYLES: readonly MouthStyle[] = ['smile', 'open', 'cat', 'pout', 'fang', 'teeth', 'none'];
+export const MOUTH_STYLES: readonly MouthStyle[] = [
+  'smile', 'open', 'cat', 'pout', 'fang', 'teeth', 'tusks', 'none',
+];
 export const HAIR_STYLES: readonly HairStyle[] = [
   'none', 'bob', 'pigtails', 'twintails', 'bun', 'long', 'braided', 'ponytail', 'wild', 'afro',
 ];

@@ -190,6 +190,19 @@ export function buildFace(
       mouth.add(fang);
       break;
     }
+    case 'tusks': {
+      // Orc/Troll: under-jaw tusks framing a confident little smile.
+      const geo = new THREE.TorusGeometry(0.085 * R, 0.02 * R, 8, 16, Math.PI);
+      geo.rotateZ(Math.PI);
+      mouth.add(new THREE.Mesh(geo, kit.dark));
+      for (const side of [-1, 1]) {
+        const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.045 * R, 0.16 * R, 5), kit.white);
+        tusk.position.set(0.13 * R * side, 0.015 * R, 0.01 * R);
+        tusk.rotation.z = -0.22 * side;
+        mouth.add(tusk);
+      }
+      break;
+    }
     case 'teeth': {
       for (let i = -2; i <= 2; i++) {
         const tooth = new THREE.Mesh(

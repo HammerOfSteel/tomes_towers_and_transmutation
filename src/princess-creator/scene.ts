@@ -12,6 +12,7 @@ const RIM_TINT: Record<Archetype, string> = {
   fox: '#ffb383',
   slime: '#8affe0',
   skeleton: '#8a9bff',
+  lamia: '#9fe8c9',
 };
 
 interface Burst {
