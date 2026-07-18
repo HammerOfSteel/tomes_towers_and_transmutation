@@ -860,10 +860,13 @@ async function main() {
         progression.grantXP(xp);
         if (gold > 0) inventory.add('gold', gold);
         _storyToast(text, 'beat');
-        objTracker.clear(); // beat done — onBeatActivate fires next and will set the new one
+        objTracker.clear();
+        hud.setQuestTracker(null);   // G2: hide until next beat activates
       };
       _storyRunner.onBeatActivate = (title, desc) => {
         objTracker.setObjective(title, desc, true);
+        // G2: update quest tracker widget with active beat
+        hud.setQuestTracker({ title, beat: desc });
       };
       _storyRunner.onActBegin = (title, intro) => {
         _storyToast(intro, 'act');
@@ -916,6 +919,7 @@ async function main() {
         player: {
           ...(player as Parameters<typeof CreativeMode.init>[0]['player']),
           applyAssetModel: (def) => player.applyAssetModel(def),
+          applyPrincess:   (dna) => player.applyPrincess(dna),
         },
         regularHUD:   { el: (hud as unknown as { el?: HTMLElement }).el },
         sceneManager: sceneManager as Parameters<typeof CreativeMode.init>[0]['sceneManager'],
@@ -2077,6 +2081,14 @@ async function main() {
         TimeSystem.instance.update(dt);
         _dayNight.update(TimeSystem.instance.hour);
         hud.setTime(TimeSystem.instance.formatted);
+        // NS4: night-touched boon — apply damage boost at night (hours 18–6)
+        if (progression.mods.hasNightTouched) {
+          const _hr = TimeSystem.instance.hour % 24;
+          const _isNight = _hr >= 18 || _hr < 6;
+          progression.mods.spellDamageMult = _isNight
+            ? Math.max(progression.mods.spellDamageMult, 1.15)
+            : (progression.mods.spellDamageMult > 1.14 ? 1.0 : progression.mods.spellDamageMult);
+        }
         const _dayNum = Math.floor(TimeSystem.instance.hour / 24);
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();

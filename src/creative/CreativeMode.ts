@@ -36,6 +36,8 @@ export interface CreativeModeContext {
     teleport(pos: THREE.Vector3): void;
     group: THREE.Group;
     applyAssetModel?: (def: import('@/characters/charManifest').CharModelDef) => Promise<void>;
+    /** PC4: Apply a princess-creator character model. */
+    applyPrincess?: (dna: import('@/princess-creator/types').PrincessDNA) => Promise<void>;
   };
   regularHUD:   { el?: HTMLElement; hide?(): void; show?(): void };
   sceneManager: { currentFloor: number; loadRoomImmediate(id: string): void; currentRoomId?: string };
@@ -577,15 +579,16 @@ function _openSkinPicker(): void {
     const state = getCreativeState();
 
     // Role filter tabs
-    type RoleFilter = 'all' | 'player' | 'enemy' | 'npc';
+    type RoleFilter = 'all' | 'player' | 'enemy' | 'npc' | 'princess';
     let roleFilter: RoleFilter = 'all';
     const tabBar = document.createElement('div');
     tabBar.style.cssText = 'display:flex;gap:4px;padding:0 2px 8px;flex-shrink:0;';
     const ROLE_TABS: Array<{ id: RoleFilter; label: string }> = [
-      { id: 'all',    label: '🌍 All' },
-      { id: 'player', label: '🧙 Playable' },
-      { id: 'enemy',  label: '👹 Enemies' },
-      { id: 'npc',    label: '🧑 NPCs' },
+      { id: 'all',      label: '🌍 All' },
+      { id: 'player',   label: '🧙 Playable' },
+      { id: 'enemy',    label: '👹 Enemies' },
+      { id: 'npc',      label: '🧑 NPCs' },
+      { id: 'princess', label: '👸 Custom' },
     ];
     const mkTab = (r: typeof ROLE_TABS[0]) => {
       const btn = document.createElement('button');
@@ -600,6 +603,41 @@ function _openSkinPicker(): void {
 
     const renderSkins = (filter = '') => {
       grid.innerHTML = '';
+
+      // NS8: Princess gallery tab
+      if (roleFilter === 'princess') {
+        import('@/princess-creator/gallery').then(({ loadGallery }) => {
+          import('@/princess-creator/dna').then(({ shareCodeToDna }) => {
+            const entries = loadGallery();
+            if (entries.length === 0) {
+              grid.innerHTML = '<div style="color:rgba(255,255,255,0.2);font-size:10px;padding:16px;grid-column:1/-1;text-align:center">No custom princesses saved yet.<br><br>Visit the Princess Atelier to create one.</div>';
+              return;
+            }
+            for (const entry of entries) {
+              const dna = shareCodeToDna(entry.code);
+              const card = document.createElement('div');
+              card.style.cssText = 'background:rgba(20,12,36,0.8);border:1px solid rgba(180,100,255,0.3);border-radius:6px;padding:8px 4px 6px;cursor:pointer;text-align:center;transition:border-color 0.1s;';
+              card.innerHTML = `
+                <div style="font-size:22px;line-height:1.3">👸</div>
+                <div style="font-size:8px;color:rgba(200,180,230,0.6);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${entry.name}</div>
+                <div style="font-size:7px;color:rgba(180,140,255,0.35);margin-top:1px">${dna?.species ?? '?'}</div>
+              `;
+              card.title = `${entry.name} (${dna?.species ?? 'unknown'})`;
+              card.addEventListener('click', async () => {
+                if (!dna || !_ctx || !_ctx.player.applyPrincess) { _hudToast('Princess data unavailable'); return; }
+                try {
+                  await _ctx.player.applyPrincess(dna);
+                  overlay.remove();
+                  _hudToast(`👸 ${entry.name}`);
+                } catch { _hudToast('Failed to load princess'); }
+              });
+              grid.appendChild(card);
+            }
+          });
+        });
+        return;
+      }
+
       const filtered = CHAR_MODELS.filter(m => {
         const roleOk = roleFilter === 'all' ? true : m.roles.includes(roleFilter as never);
         const textOk = !filter || m.name.toLowerCase().includes(filter) || m.packId.toLowerCase().includes(filter);

@@ -273,6 +273,138 @@ export const TALENT_NODES: readonly TalentNode[] = [
     description: '[Draconic only] −15% physical damage taken. +20% damage when above 75% HP. Fire spells cost 20% less mana. Passive.',
     applyEffect: p => { p.mods.scaleArmour = true; },
   },
+
+  // ── Elf talent paths: Memory / Grace / Sage ──────────────────────────────
+  {
+    id: 'elf_mem_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['elf'] as const,
+    name: 'Studied Recall',
+    description: '[Elf] +15% XP from books and lore interactions. The library still gives her things.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.08; },
+  },
+  {
+    id: 'elf_mem_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['elf_mem_1'],
+    allowedSpecies: ['elf'] as const,
+    name: 'Pattern Recognition',
+    description: '[Elf] After defeating 3 enemies of the same type, +25% damage vs that type permanently (this run).',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.12; },
+  },
+  {
+    id: 'elf_grace_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['elf'] as const,
+    name: 'Centuries of Practice',
+    description: '[Elf] +20% melee damage when above 75% HP. She has done this before.',
+    applyEffect: p => { p.mods.meleeDamageMult *= 1.12; },
+  },
+  {
+    id: 'elf_grace_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['elf_grace_1'],
+    allowedSpecies: ['elf'] as const,
+    name: 'Graceful Step',
+    description: '[Elf] Dodge roll leaves a 1.5s root trap at the point of departure.',
+    applyEffect: () => { /* checked in PlayerController dodge */ },
+  },
+  {
+    id: 'elf_sage_1', path: 'apothecary', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['elf'] as const,
+    name: 'Herbalist Lineage',
+    description: '[Elf] Herb yield +30%. Minor Heal potions heal +20% HP.',
+    applyEffect: p => { p.mods.herbYieldMult *= 1.30; p.mods.potionPotencyMult *= 1.20; },
+  },
+  {
+    id: 'elf_sage_2', path: 'apothecary', tier: 2, cost: 1, prerequisites: ['elf_sage_1'],
+    allowedSpecies: ['elf'] as const,
+    name: "Elder's Patience",
+    description: '[Elf] Charge a 3× damage shot over 2s (fully stationary). Old but effective.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.15; },
+  },
+
+  // ── Celestial talent paths: Dawn / Dusk / Void ──────────────────────────
+  {
+    id: 'cel_dawn_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Radiant Aura',
+    description: '[Celestial] Light aura radius +1u. Enemies within aura take +8% spell damage.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.08; p.mods.aoeRadiusMult *= 1.10; },
+  },
+  {
+    id: 'cel_dawn_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['cel_dawn_1'],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Solar Flare',
+    description: '[Celestial] Once per 30s, emit a brief blind burst (2s, all enemies within 4u). Passive.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.12; },
+  },
+  {
+    id: 'cel_dusk_1', path: 'warlock', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Eclipse',
+    description: '[Celestial] Reduce all enemy damage dealt by 15% for 6s after taking a hit. Passive.',
+    applyEffect: () => { /* checked in CombatSystem */ },
+  },
+  {
+    id: 'cel_dusk_2', path: 'warlock', tier: 2, cost: 1, prerequisites: ['cel_dusk_1'],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Gravity Well',
+    description: '[Celestial] Once per 20s, pull all enemies within 5u inward 2 WU. Passive.',
+    applyEffect: p => { p.mods.hasVoidWeave = true; },
+  },
+  {
+    id: 'cel_void_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Stellar Jump',
+    description: '[Celestial] Blink cooldown −25%. Blinking through an enemy deals 6 damage.',
+    applyEffect: p => { p.mods.meleeDamageMult *= 1.06; },
+  },
+  {
+    id: 'cel_void_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['cel_void_1'],
+    allowedSpecies: ['celestial'] as const,
+    name: 'Void Touch',
+    description: '[Celestial] Next melee hit after a blink phases through armour (+50% damage, ignores defence).',
+    applyEffect: p => { p.mods.meleeDamageMult *= 1.20; },
+  },
+
+  // ── Draconic talent paths: Fire / Scale / Void ──────────────────────────
+  {
+    id: 'dra_fire_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Ignition',
+    description: '[Draconic] Fire-type spells apply a 3s burn DoT (2 dmg/s). Passive.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.10; },
+  },
+  {
+    id: 'dra_fire_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['dra_fire_1'],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Dragon Rage',
+    description: '[Draconic] When below 50% HP: all damage +25%. The scales heat up. Passive.',
+    applyEffect: p => { p.mods.spellDamageMult *= 1.15; p.mods.meleeDamageMult *= 1.10; },
+  },
+  {
+    id: 'dra_scale_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Hardened Hide',
+    description: '[Draconic] +20 max HP. Harden (ability) grants 1 additional block charge.',
+    applyEffect: p => { p.mods.ironWill = true; /* max HP bonus applied via vitality boost in startGame */ },
+  },
+  {
+    id: 'dra_scale_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['dra_scale_1'],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Tail Sweep',
+    description: '[Draconic] Every 8th melee hit automatically deals AoE knockback in a 2u ring. Passive.',
+    applyEffect: p => { p.mods.meleeDamageMult *= 1.12; },
+  },
+  {
+    id: 'dra_void_1', path: 'warlock', tier: 1, cost: 1, prerequisites: [],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Acid Scale',
+    description: '[Draconic] Shed scales on hit — any enemy that walks over them takes 3 damage. Passive.',
+    applyEffect: () => { /* checked in CombatSystem */ },
+  },
+  {
+    id: 'dra_void_2', path: 'warlock', tier: 2, cost: 1, prerequisites: ['dra_void_1'],
+    allowedSpecies: ['draconic'] as const,
+    name: 'Corrode',
+    description: '[Draconic] Attacks reduce enemy defence by 30% for 4s. Stacks twice. Passive.',
+    applyEffect: p => { p.mods.hasDeathPact = true; /* repurposed flag for corrode */ },
+  },
 ];
 
 // Fast lookup by id

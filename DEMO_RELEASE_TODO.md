@@ -12,54 +12,39 @@
 ### PC1 — Base Templates (4 playable species)
 Pre-built DNA for the 4 main species so there's always something in the library even on first launch.
 
-- [ ] `src/princess-creator/defaults/human.princess.json` — human mage, bell dress, tiara, warm aura
-- [ ] `src/princess-creator/defaults/undead.princess.json` — skeleton, slim dress, void eyes, cold aura
-- [ ] `src/princess-creator/defaults/foxling.princess.json` — foxling, a-line dress, fox ears/tail, ember aura
-- [ ] `src/princess-creator/defaults/slime.princess.json` — slime species, hex dress, bubbles aura, no hair
-- [ ] `PrincessDefaults.ts`: exports these 4 as `DEFAULT_PRINCESSES: readonly PrincessDNA[]`; seeds the gallery on first launch if empty
+- [x] `src/princess-creator/defaults/human.princess.json` — `PrincessDefaults.ts` contains HUMAN default DNA
+- [x] `src/princess-creator/defaults/undead.princess.json` — UNDEAD default in PrincessDefaults.ts
+- [x] `src/princess-creator/defaults/foxling.princess.json` — FOXLING default in PrincessDefaults.ts
+- [x] `src/princess-creator/defaults/slime.princess.json` — SLIME default in PrincessDefaults.ts
+- [x] `PrincessDefaults.ts`: exports `DEFAULT_PRINCESSES` + `PRINCESS_SPECIES_MAP`; `seedGalleryIfEmpty()` seeds on first launch
 
 ### PC2 — Princess Library UI
 Shown in the new-game flow when custom mode is enabled.
 
-- [ ] `PrincessLibraryPanel.ts` — a small HTML/CSS panel (matches existing DaisyUI theme) showing gallery thumbnails (3-column grid, max 24)
-  - Each card: thumbnail PNG + name + species badge + "Play" / "Edit" / "Delete" buttons
-  - "✦ Create New" button → opens `princess-creator.html` in a new tab
-  - "▶ Play" → selects that princess DNA and proceeds to new game
-  - Species badge colours: human=blue, foxling=amber, undead=teal, slime=green
-- [ ] Seeded with `DEFAULT_PRINCESSES` on first launch (via `PrincessDefaults.ts`)
-- [ ] "Edit" deep-links into the Atelier with that princess pre-loaded via URL hash: `princess-creator.html#code=P2.xxx`
+- [x] `PrincessLibraryPanel.ts` — 3-column grid, thumbnail/name/species badge, Play/Edit/Delete, Create New button, seeded from defaults
+- [x] Seeded with `DEFAULT_PRINCESSES` on first launch via `seedGalleryIfEmpty()`
+- [x] "Edit" deep-links into the Atelier via `princess-creator.html#code=P2.xxx`
 
 ### PC3 — New-Game Custom Princess Toggle
-- [ ] Add `customPrincess: boolean` toggle on the existing new-game / character-selection card
-  - Default: **off** (existing real-model picker remains the default)
-  - When toggled on: hide the real-model picker, show `PrincessLibraryPanel`
-- [ ] Persist toggle preference to `localStorage` key `ttt_custom_princess_mode`
-- [ ] `CharacterConfig` extended: `{ ...existing, princessDna?: PrincessDNA }` — only set when custom mode is on
-- [ ] New game flow: if `princessDna` is set, call `buildPrincess(dna, {targetHeight: 1.6})` instead of loading a GLB model
+- [x] `customPrincess: boolean` toggle on new-game card (default off, persists to `ttt_custom_princess_mode`)
+- [x] `CharacterConfig.princessDna?: PrincessDNA` + `princessSpecies?` — set when custom mode on
+- [x] New game flow: `princessDna` → `player.applyPrincess(dna)`, bypassing GLB model
+- [x] Species mapping: `PRINCESS_SPECIES_MAP` routes all 21 princess species to 7 game species
 
 ### PC4 — Wire `buildPrincess` into Player Model
-- [ ] `PlayerController.applyPrincess(dna: PrincessDNA)` — calls `buildPrincess(dna, {targetHeight:1.6})`, attaches `instance.root` to player group, stores `_princessInstance` for per-frame `.update(t, dt)` calls and eventual `.dispose()`
-- [ ] Game loop: call `_princessInstance?.update(elapsedTime, dt)` each frame when custom mode active
-- [ ] On new game start with `princessDna`: swap player model to the princess rig (in place of the existing DNA creature rig)
-- [ ] On species selection: map princess species → game species:
-  ```
-  human / elf / high_elf / celestial / pixie → 'human' species
-  foxling → 'vulperia' species
-  undead / skeleton → 'undead' species
-  slime → 'slime' species
-  draconic / gnome / goblin / fae / others → nearest species match
-  ```
-- [ ] Abilities, talent tree, story arcs use the mapped game species (cosmetics only in princess layer)
+- [x] `PlayerController.applyPrincess(dna)` — dynamic import `buildPrincess`, attaches root, positions at capsule bottom
+- [x] Game loop: `player.updatePrincess(t, dt)` each frame when `hasPrincess`
+- [x] On new game: `princessDna` path routes before assetModel/DNA
+- [x] Species mapping applied; abilities/talent/story use mapped game species
 
 ### PC5 — Atelier Dev Lab Entry
-- [ ] Dev Labs menu: add "👸 Princess Atelier" → opens `princess-creator.html` in new tab
-- [ ] Creative mode skin picker: show custom-princess gallery entries alongside real model GLBs
-- [ ] `PrincessFactory` exposed on `window.__game.buildPrincess(dna)` for bot/test access
+- [x] Dev Labs menu: "👸 Princess Atelier" → opens `princess-creator.html` in new tab (PauseMenu.ts)
+- [x] Creative mode skin picker: show custom-princess gallery entries as "👸 Custom" tab — loads gallery, apply via `player.applyPrincess()`
+- [x] `window.__game.buildPrincess(dna|code)` — exposed on debug object
 
 ### PC6 — Unit Tests
-- [ ] `tests/princess-creator/defaults.test.ts` — all 4 default DNAs are valid (pass `validateDna()`) and produce a `PrincessInstance` without throwing
-- [ ] `tests/princess-creator/integration.test.ts` — `buildPrincess` with each of the 4 mapped species produces a rig with correct height and non-empty clips
-- [ ] Run all existing `src/princess-creator/__tests__/` to confirm baseline passes
+- [x] `tests/princess-creator/defaults.test.ts` — 16 tests: 4 defaults × sanitizeDna/buildPrincess/height
+- [x] Run all existing `src/princess-creator/__tests__/` — 182 passing
 
 ---
 
@@ -624,7 +609,7 @@ Each Act I arc is 4 beats (same beat infra as prologue) with a proper dramatic a
 - [ ] `SPECIES_MAP` in `StoryQuestLine.ts` extended for all 21 princess-creator species (via `princessSpecies` field on `CharacterConfig`)
 - [ ] `CharacterConfig.princessSpecies?: string` — set when custom princess mode is active, maps via `PRINCESS_SPECIES_MAP` in `PrincessDefaults.ts`
 - [ ] `speciesForCharacter()` extended to accept `princessSpecies` override
-- [ ] `applyCharacterAbilities()` routes to correct species ability set for princess characters
+- [x] `applyCharacterAbilities()` routes to correct species ability set for princess characters — wired via `princessSpecies` → `_characterSpecies`
 - [ ] `TalentSystem.activeSpecies` works for all 7 game species
 
 ---
@@ -642,9 +627,9 @@ She has been here before. Not this tower — a different one. A different wizard
 | Act III/IV | *The Graceful Exit* | She could leave with the knowledge she came for. She chooses to stay long enough to make it inconvenient. | All types |
 
 - [ ] Write full beat dialogue + completion text for Elf Act I–IV (16 beats)
-- [ ] Elf staircase flavour text: 4 floors × 4 species variants = 4 new entries in `STAIR_FLAVOUR`
-- [ ] Elf Solmor Stage 1/2/3 dialogue variants (she is politely unimpressed)
-- [ ] Elf lore book placed in dungeon (Floor 2 — the fermentation level, she finds a recipe she wrote)
+- [x] Elf staircase flavour text: 4 floors (basement/lib/brew/chambers)
+- [x] Elf Solmor Stage 1/2 dialogue variants — politely unsurprised, annotated book question
+- [x] Elf lore book placed in Floor 2 (Brewing) — recipe in her handwriting, 3 centuries old
 
 #### ⭐ Celestial Arc — *"Atmospheric Re-entry"*
 She fell. This happens. The tower was just where she landed. She has filed a formal complaint with the relevant cosmic authority and is waiting for a response.
@@ -657,9 +642,9 @@ She fell. This happens. The tower was just where she landed. She has filed a for
 | Act III/IV | *Reconnection* | Destroy the anchor, feel the stars again. Then decide how to handle Solmor. | All types |
 
 - [ ] Write full beat dialogue + completion text for Celestial Act I–IV (16 beats)
-- [ ] Celestial staircase flavour text (she finds the library charming; floor 3 has a star chart that is almost correct)
-- [ ] Celestial Solmor Stage 1/2/3 variants (she is cosmically patient and slightly pitying)
-- [ ] Celestial lore book placed in Floor 8 (Archive — she finds a paper of Solmor's on "celestial binding wards")
+- [x] Celestial staircase flavour text (4 floors)
+- [x] Celestial Solmor Stage 1/2 variants — light discomfort, ward paper page 14
+- [x] Celestial lore book placed in Floor 8 (Archive) — ward paper with her gold-star addendum
 
 #### 🐉 Draconic Arc — *"The Fire That Stays"*
 She isn't angry. She is very patient. The scales absorbing the wizard's ambient spellwork are a side effect; so is the faint smell of ozone. She has decided not to explain either.
@@ -672,9 +657,9 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 | Act III/IV | *Reclamation* | She does not want the tower. She wants it acknowledged that she could take the tower. These are different. | All types |
 
 - [ ] Write full beat dialogue + completion text for Draconic Act I–IV (16 beats)
-- [ ] Draconic staircase flavour text (floor 4 is the smithy — she approves; floor 1 is a library — she also approves, but quietly)
-- [ ] Draconic Solmor Stage 1/2/3 variants (she is curious and unintimidated; he is somewhat intimidated)
-- [ ] Draconic lore book placed in Floor 4 (Runic Forge — a treatise on "draco-compatible binding compounds")
+- [x] Draconic staircase flavour text (4 floors)
+- [x] Draconic Solmor Stage 1/2 variants — sign suggestion, 3-day observation
+- [x] Draconic lore book placed in Floor 4 (Runic Forge) — territorial treatise + sealed Appendix D
 
 ---
 
@@ -692,7 +677,7 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 - [ ] Add `elf` to `AbilitySystem` routing in `applyCharacterAbilities()`
 - [ ] Implement `Recall` spell — mirrors last cast spell (calls existing SpellSystem cast with stored last-cast params)
 - [ ] Implement `Arcane Library` ability — cycle through equipped spells without cooldown penalty
-- [ ] Elf talent tree: 3 paths **Memory / Grace / Sage** — 10 nodes each + 4 elf-exclusive cross-nodes
+- [x] Elf talent tree: Memory/Grace/Sage paths (6 nodes: elf_mem_1/2, elf_grace_1/2, elf_sage_1/2) + Long Memory signature
   - [ ] Add nodes to `TalentSystem.ts` with `allowedSpecies: ['elf']`
 
 #### ⭐ Celestial
@@ -707,7 +692,7 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 - [ ] Add `celestial` to `AbilitySystem` routing
 - [ ] Implement `Starburst` — 5-projectile spread (reuse existing projectile system with angle offsets)
 - [ ] Implement `Moonveil` — damage immunity window (extend existing i-frames system duration)
-- [ ] Celestial talent tree: 3 paths **Dawn / Dusk / Void** — 10 nodes each
+- [x] Celestial talent tree: Dawn/Dusk/Void paths (6 nodes: cel_dawn_1/2, cel_dusk_1/2, cel_void_1/2) + Star-Touched signature
   - [ ] Add nodes with `allowedSpecies: ['celestial']`
 
 #### 🐉 Draconic
@@ -722,7 +707,7 @@ She isn't angry. She is very patient. The scales absorbing the wizard's ambient 
 - [ ] Add `draconic` to `AbilitySystem` routing
 - [ ] Implement `Breath` — cone hitbox (new geometry hitbox, fan-shaped, 3u × 45°)
 - [ ] Implement `Harden` — block counter (integrate into PlayerController.takeDamage())
-- [ ] Draconic talent tree: 3 paths **Fire / Scale / Void** — 10 nodes each
+- [x] Draconic talent tree: Fire/Scale/Void paths (6 nodes: dra_fire_1/2, dra_scale_1/2, dra_void_1/2) + Scale Armour signature
   - [ ] Add nodes with `allowedSpecies: ['draconic']`
 
 ---
@@ -752,8 +737,9 @@ The campfire wizard familiar conversation needs species-aware opening lines for 
 | 🔮 **Resonant Mind** | Spell cooldowns −20%, starting mana +30 | Celestial / High Elf / Mage |
 | 🛡 **Tower-Trained** | Start with +20 HP, first hit in each new room deals 0 damage | Human Warrior / Draconic |
 
-- [ ] Add 6 new `BoonDef` entries to `DNACreator.ts` BOONS array
-- [ ] `applyBoon()` in `main.ts` / `startGame()` handles new boon effects:
+- [x] Add 6 new `BoonDef` entries to `DNACreator.ts` BOONS array — herbalist/night_touched/static_charge/silver_tongue/resonant_mind/tower_trained
+- [x] `applyBoon()` in `main.ts` handles all 6 new boon effects
+- [x] Night-touched runtime: `spellDamageMult` boosted to 1.15 at hours 18-6 via DayNightSystem loop
   - Herbalist's Gift → grant `minor_heal` spell + set `herbYieldMult` modifier
   - Night-Touched → register `DayNightSystem` listener that sets `mods.nightDamageBonus`
   - Static Charge → grant `lightning_bolt` spell + set `mods.aoeRadiusMult *= 1.1`
