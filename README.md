@@ -34,6 +34,8 @@
 | **Monster recruitment** | Spare enemies below 15% HP → add to party (PatrolBehavior FSM, TacticalBrute tier-2 AI) |
 | **Creative Mode** | Fly mode, asset browser, drag-place, undo/redo, spawn palette, backroom portals, quest builder |
 | **Game Bot** | `npm run bot` — Playwright scenarios: creative-smoke, quest-chain, explore-floor, bot-place-forest… |
+| **Princess Atelier** | Standalone Spore-style creator — 21 species, DNA share codes, 24-clip animation set (`/princess-creator.html`) |
+| **Princess Atelier** | Standalone Spore-style character creator — 21 species, DNA share codes, 24-clip animation set, game-ready export (`/princess-creator.html`) |
 | **In-house level editor** | Toggleable world editor with blueprint versioning and asset-kit prop placement |
 | **Species talent trees** | 30 nodes per species (Blade Dancer / Arcanist / Warlock / … paths) + 4 species-gated signature nodes |
 
