@@ -38,11 +38,13 @@
   sliders pinned to the TOP of Body tab per archetype: fox → snout/fluff,
   slime → wobble/translucency/glow, skeleton → bone gauge/eye glow).
 - **Right panel** — create/share/export/gallery. Always visible.
-- **Archetype dock** — 4 big rounded cards, bottom center. Switching keeps
-  shared DNA (name, body proportions, motion energy/bounce) and applies the
-  archetype's curated defaults for everything else — colors reset to that
-  archetype's canonical palette so every card lands looking its best; any
-  palette is one click away in the Colors tab.
+- **Species dock** — 12 species chips (icon + label + blurb tooltip), bottom
+  center, with a second row of class chips (✦ Free / 📖 Scholar / 🔮 Mage /
+  ⚔️ Warrior) and, when the species declares subtypes, a contextual subtype
+  row (foxling: One/Three/Nine-tail). Species switching keeps name, seed and
+  chosen class (reapplied), and lands on the species' canonical look —
+  proportion presets and palette included. Camera auto-frames by species
+  height (pixie fills the frame; high elf gets headroom).
 - **Emote bar** — bottom right: wave / twirl / dance / cast + walk toggle
   (🚶 ⇄ 🧍). This is our Test Drive.
 

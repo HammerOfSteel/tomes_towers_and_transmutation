@@ -26,7 +26,7 @@ export const foxSynth: BodySynthesizer = {
     rig.head.add(head);
 
     // Snout + nose
-    const snoutLen = 0.62 * R * dna.species.snoutLength;
+    const snoutLen = 0.62 * R * dna.traits.snoutLength;
     const snoutGeo = new THREE.ConeGeometry(0.34 * R, snoutLen, 5);
     snoutGeo.rotateX(Math.PI / 2);
     const snout = shadowed(new THREE.Mesh(snoutGeo, kit.hair));
@@ -38,7 +38,7 @@ export const foxSynth: BodySynthesizer = {
 
     // Cheek fluff tufts (angled down-out, like fur ruff)
     for (const side of [-1, 1]) {
-      const tuftGeo = new THREE.ConeGeometry(0.16 * R, 0.42 * R * dna.species.fluff * 0.7, 4);
+      const tuftGeo = new THREE.ConeGeometry(0.16 * R, 0.42 * R * dna.traits.fluff * 0.7, 4);
       tuftGeo.rotateZ((Math.PI / 2 + 0.55) * side);
       const tuft = shadowed(new THREE.Mesh(tuftGeo, kit.hair));
       tuft.position.set(0.82 * R * side, -0.32 * R, 0.1 * R);

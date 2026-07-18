@@ -107,7 +107,7 @@ function buildEarL(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Gro
     const dims = {
       fox: { r: 0.42, h: 1.3, tilt: -Math.PI / 6 },
       cat: { r: 0.46, h: 0.8, tilt: -Math.PI / 7 },
-      long: { r: 0.24, h: 1.8, tilt: -Math.PI / 14 },
+      long: { r: 0.2, h: 1.15, tilt: -Math.PI / 3.2 }, // elfin: splayed sideways
     }[id];
     const outerGeo = new THREE.ConeGeometry(dims.r * headR * s, dims.h * headR * s, 4);
     outerGeo.translate(0, dims.h * headR * s * 0.5, 0);
@@ -118,6 +118,32 @@ function buildEarL(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Gro
     g.add(outer, inner);
     g.rotation.z = dims.tilt;
     g.rotation.x = -Math.PI / 14;
+  } else if (id === 'horn_small' || id === 'horn_curved') {
+    // Draconic horns (she doesn't hide them). kit.hair = dark tones in
+    // draconic palettes, so horns read as keratin.
+    if (id === 'horn_small') {
+      const geo = new THREE.ConeGeometry(0.15 * headR * s, 0.6 * headR * s, 5);
+      geo.translate(0, 0.3 * headR * s, 0);
+      const horn = shadowed(new THREE.Mesh(geo, kit.hair));
+      horn.rotation.x = -0.5;
+      horn.rotation.z = -0.12;
+      g.add(horn);
+    } else {
+      // three chained segments sweeping back
+      let parent: THREE.Object3D = g;
+      for (let i = 0; i < 3; i++) {
+        const len = (0.34 - i * 0.06) * headR * s;
+        const geo = new THREE.ConeGeometry((0.15 - i * 0.035) * headR * s, len, 5);
+        geo.translate(0, len / 2, 0);
+        const seg = shadowed(new THREE.Mesh(geo, kit.hair));
+        seg.rotation.x = -0.45;
+        const next = new THREE.Group();
+        next.position.y = len * 0.85;
+        seg.add(next);
+        parent.add(seg);
+        parent = next;
+      }
+    }
   } else {
     // round
     const outer = shadowed(new THREE.Mesh(new THREE.SphereGeometry(0.42 * headR * s, 12, 10), kit.skin));
@@ -133,7 +159,39 @@ function buildEarL(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Gro
 
 // ── Tails ────────────────────────────────────────────────────────────────────
 
-interface TailBuild { group: THREE.Group; segments: THREE.Group[] }
+interface TailBuild { group: THREE.Group; chains: THREE.Group[][] }
+
+/** Kitsune subtype → fluffy tail count (power level; she won't discuss it). */
+function tailCountFor(dna: PrincessDNA): number {
+  if (dna.species !== 'foxling' || dna.parts.tail !== 'fluffy') return 1;
+  return { '1': 1, '3': 3, '9': 9 }[dna.subtype] ?? 1;
+}
+
+function buildFluffyChain(
+  dna: PrincessDNA, kit: MaterialKit, size: number,
+): { chain: THREE.Group; segments: THREE.Group[] } {
+  const chain = new THREE.Group();
+  const segments: THREE.Group[] = [];
+  let parent: THREE.Object3D = chain;
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const seg = new THREE.Group();
+    const scale = (Math.sin((i / (n - 1)) * Math.PI) * 1.22 * dna.traits.fluff + 0.42) * size;
+    const mesh = shadowed(new THREE.Mesh(
+      new THREE.IcosahedronGeometry(scale, 1),
+      i === n - 1 ? kit.hair : kit.skin,
+    ));
+    mesh.position.z = -scale;
+    seg.add(mesh);
+    const next = new THREE.Group();
+    next.position.z = -scale * 1.5;
+    seg.add(next);
+    parent.add(seg);
+    segments.push(seg);
+    parent = next;
+  }
+  return { chain, segments };
+}
 
 function buildTail(dna: PrincessDNA, kit: MaterialKit): TailBuild | null {
   const id = dna.parts.tail;
@@ -141,26 +199,23 @@ function buildTail(dna: PrincessDNA, kit: MaterialKit): TailBuild | null {
   const g = new THREE.Group();
   g.name = `part:tail.${id}`;
   const size = dna.parts.tailSize;
+  const chains: THREE.Group[][] = [];
   const segments: THREE.Group[] = [];
   let parent: THREE.Object3D = g;
 
   if (id === 'fluffy') {
-    const n = 5;
-    for (let i = 0; i < n; i++) {
-      const seg = new THREE.Group();
-      const scale = (Math.sin((i / (n - 1)) * Math.PI) * 1.22 * dna.species.fluff + 0.42) * size;
-      const mesh = shadowed(new THREE.Mesh(
-        new THREE.IcosahedronGeometry(scale, kit.flat ? 1 : 1),
-        i === n - 1 ? kit.hair : kit.skin,
-      ));
-      mesh.position.z = -scale;
-      seg.add(mesh);
-      const next = new THREE.Group();
-      next.position.z = -scale * 1.5;
-      seg.add(next);
-      parent.add(seg);
-      segments.push(seg);
-      parent = next;
+    const count = tailCountFor(dna);
+    // More tails → each slightly slimmer so the fan stays readable.
+    const per = size * (count === 1 ? 1 : count === 3 ? 0.78 : 0.55);
+    for (let k = 0; k < count; k++) {
+      const { chain, segments: segs } = buildFluffyChain(dna, kit, per);
+      // Fan out around the vertical axis (nine tails = full peacock).
+      const spreadIdx = k - (count - 1) / 2;
+      const spread = count === 1 ? 0 : count === 3 ? 0.55 : 0.38;
+      chain.rotation.y = spreadIdx * spread;
+      chain.rotation.x = Math.abs(spreadIdx) * (count === 9 ? 0.16 : 0.08);
+      g.add(chain);
+      chains.push(segs);
     }
   } else if (id === 'thin' || id === 'bone') {
     const n = 4;
@@ -189,6 +244,7 @@ function buildTail(dna: PrincessDNA, kit: MaterialKit): TailBuild | null {
       : new THREE.Mesh(new THREE.SphereGeometry(0.24 * size, 10, 8), kit.hair);
     shadowed(tip as THREE.Mesh);
     parent.add(tip);
+    chains.push(segments);
   } else {
     // wisp: fading emissive blobs
     for (let i = 0; i < 3; i++) {
@@ -204,15 +260,21 @@ function buildTail(dna: PrincessDNA, kit: MaterialKit): TailBuild | null {
       segments.push(seg);
       parent = next;
     }
+    chains.push(segments);
   }
   // Lift enough that the tail crests above the hem in silhouette.
   g.rotation.x = id === 'fluffy' ? 0.3 : 0.18;
-  return { group: g, segments };
+  return { group: g, chains };
 }
 
 // ── Back items ───────────────────────────────────────────────────────────────
 
-interface BackBuild { group: THREE.Group; capeSegments?: THREE.Group[]; wings?: THREE.Mesh[] }
+interface BackBuild {
+  group: THREE.Group;
+  capeSegments?: THREE.Group[];
+  wings?: THREE.Object3D[];
+  grimoire?: THREE.Group;
+}
 
 function buildBack(dna: PrincessDNA, kit: MaterialKit, hemDrop: number): BackBuild | null {
   const id = dna.parts.back;
@@ -250,9 +312,68 @@ function buildBack(dna: PrincessDNA, kit: MaterialKit, hemDrop: number): BackBui
       parent = next;
     }
     return { group: g, capeSegments: segments };
+  } else if (id === 'wings_butterfly') {
+    // Pixie/fae: two-lobed patterned wings. They do not fold neatly.
+    const wings: THREE.Object3D[] = [];
+    for (const side of [1, -1]) {
+      const wing = new THREE.Group();
+      const upperGeo = new THREE.SphereGeometry(1.25, 14, 10);
+      upperGeo.scale(1.5, 1.05, 0.08);
+      const upper = shadowed(new THREE.Mesh(upperGeo, kit.secondary));
+      upper.position.set(1.7 * side, 1.65, 0);
+      upper.rotation.z = 0.5 * side;
+      const lowerGeo = new THREE.SphereGeometry(0.9, 12, 9);
+      lowerGeo.scale(1.25, 0.95, 0.08);
+      const lower = shadowed(new THREE.Mesh(lowerGeo, kit.secondary));
+      lower.position.set(1.2 * side, 0.25, 0);
+      lower.rotation.z = -0.3 * side;
+      wing.add(upper, lower);
+      // Accent spots — the pattern
+      for (const [sx, sy, r] of [[2.0, 1.85, 0.38], [1.2, 0.2, 0.25]] as const) {
+        const spot = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), kit.accent);
+        spot.scale.set(1, 1, 0.3);
+        spot.position.set(sx * side, sy, 0.06);
+        wing.add(spot);
+      }
+      wing.rotation.y = -0.4 * side;
+      g.add(wing);
+      wings.push(wing);
+    }
+    return { group: g, wings };
+  } else if (id === 'wings_feather') {
+    // Celestial: three soft layered feathers per side.
+    const wings: THREE.Object3D[] = [];
+    for (const side of [1, -1]) {
+      const wing = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const geo = new THREE.SphereGeometry(1.2, 14, 10);
+        geo.scale(1.7 - i * 0.28, 0.52 - i * 0.08, 0.09);
+        const feather = shadowed(new THREE.Mesh(geo, i === 0 ? kit.white : kit.secondary));
+        feather.position.set((1.9 - i * 0.2) * side, 1.7 - i * 0.5, -0.05 * i);
+        feather.rotation.z = (0.6 - i * 0.28) * side;
+        wing.add(feather);
+      }
+      wing.rotation.y = -0.35 * side;
+      g.add(wing);
+      wings.push(wing);
+    }
+    return { group: g, wings };
+  } else if (id === 'grimoire') {
+    // The mage's floating spellbook — orbits behind the shoulder.
+    const book = new THREE.Group();
+    const cover = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.1, 0.3), kit.accent));
+    const pages = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.98, 0.22), kit.white);
+    pages.position.z = 0.02;
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.13), kit.glow);
+    gem.position.z = 0.2;
+    book.add(cover, pages, gem);
+    book.position.set(1.6, 1.2, -0.4);
+    book.rotation.y = 0.5;
+    g.add(book);
+    return { group: g, grimoire: book };
   } else {
-    // wings
-    const wings: THREE.Mesh[] = [];
+    // wings (bat/fairy generic)
+    const wings: THREE.Object3D[] = [];
     for (const side of [1, -1]) {
       const geo = new THREE.SphereGeometry(1, kit.flat ? 8 : 16, kit.flat ? 6 : 12);
       geo.scale(1.7, 0.85, 0.12);
@@ -265,7 +386,7 @@ function buildBack(dna: PrincessDNA, kit: MaterialKit, hemDrop: number): BackBui
     }
     return { group: g, wings };
   }
-  return { group: g };
+  return { group: g }; // bow
 }
 
 // ── Hand items ───────────────────────────────────────────────────────────────
@@ -372,14 +493,100 @@ function buildHair(dna: PrincessDNA, kit: MaterialKit, headR: number): HairBuild
     tie.rotation.x = Math.PI / 2.4;
     g.add(bun, tie);
   } else if (style === 'long') {
+    const eLen = Math.min(len, 1.25); // panel stays behind the torso, not a tower
     const backGeo = new THREE.SphereGeometry(headR * 0.95, seg, seg);
-    backGeo.scale(0.85, 1.7 * len, 0.5);
+    backGeo.scale(0.85, 1.7 * eLen, 0.5);
     const back = shadowed(new THREE.Mesh(backGeo, kit.hair));
-    back.position.set(0, -headR * 0.75 * len, -headR * 0.62);
+    back.position.set(0, -headR * 0.95 * eLen, -headR * 0.62);
     g.add(back);
+  } else if (style === 'braided') {
+    // One thick braid down the back: shrinking sphere chain + tie
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const r = headR * (0.3 - i * 0.035) * (0.8 + len * 0.3);
+      const bead = shadowed(new THREE.Mesh(new THREE.SphereGeometry(r, seg / 2, seg / 2), kit.hair));
+      bead.scale.set(1, 1.25, 1);
+      bead.position.set(0, headR * 0.1 - i * r * 2.1 * 0.82, -headR * 0.72 - i * headR * 0.06);
+      g.add(bead);
+    }
+    const tie = shadowed(new THREE.Mesh(new THREE.TorusGeometry(headR * 0.09, headR * 0.04, 6, 10), kit.accent));
+    tie.position.set(0, headR * 0.1 - 4 * headR * 0.42, -headR * 0.95);
+    g.add(tie);
+  } else if (style === 'ponytail') {
+    const tailLen = headR * 1.5 * len;
+    const tailGeo = new THREE.ConeGeometry(headR * 0.34, tailLen, seg / 2);
+    tailGeo.translate(0, -tailLen * 0.42, 0);
+    const tail = new THREE.Group();
+    tail.position.set(0, headR * 0.62, -headR * 0.75);
+    const scrunchie = shadowed(new THREE.Mesh(new THREE.TorusGeometry(headR * 0.14, headR * 0.06, 8, 12), kit.accent));
+    scrunchie.rotation.x = Math.PI / 2.5;
+    tail.add(scrunchie);
+    const mesh = shadowed(new THREE.Mesh(tailGeo, kit.hair));
+    mesh.rotation.x = -0.55; // swings out behind
+    tail.add(mesh);
+    g.add(tail);
+    pigtails.push(tail); // reuse the pigtail sway hook
+  } else if (style === 'wild') {
+    // Textured, voluminous, uncontrolled — deterministic spike crown
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const el = 0.35 + ((i * 31) % 7) / 7 * 0.5; // pseudo-random but stable
+      const spikeLen = headR * (0.45 + ((i * 17) % 5) / 5 * 0.4) * len;
+      const spike = shadowed(new THREE.Mesh(
+        new THREE.ConeGeometry(headR * 0.16, spikeLen, 5), kit.hair,
+      ));
+      const dir = new THREE.Vector3(
+        Math.cos(a) * Math.cos(el), Math.sin(el), Math.sin(a) * Math.cos(el) - 0.25,
+      ).normalize();
+      spike.position.copy(dir.clone().multiplyScalar(headR * 0.92));
+      spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      g.add(spike);
+    }
+  } else if (style === 'afro') {
+    // A structural achievement (gnome signature)
+    const main = shadowed(new THREE.Mesh(
+      new THREE.SphereGeometry(headR * (0.85 + 0.35 * len), seg, seg), kit.hair,
+    ));
+    main.position.set(0, headR * 0.55, -headR * 0.12);
+    g.add(main);
+    for (const [ox, oy, r] of [
+      [0.62, 0.25, 0.42], [-0.62, 0.25, 0.42], [0.35, 0.85, 0.38], [-0.35, 0.85, 0.38],
+    ] as const) {
+      const puff = shadowed(new THREE.Mesh(
+        new THREE.SphereGeometry(headR * r * (0.8 + 0.3 * len), seg / 2, seg / 2), kit.hair,
+      ));
+      puff.position.set(headR * ox, headR * oy, -headR * 0.15);
+      g.add(puff);
+    }
   }
 
   return { group: g, pigtails };
+}
+
+// ── Glasses (scholar signature) ──────────────────────────────────────────────
+
+function buildGlasses(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'part:glasses';
+  const ex = 0.37 * headR * dna.face.eyeSpacing;
+  const ey = -0.1 * headR;
+  const ez = headR * 0.97;
+  const rimR = 0.17 * headR * dna.face.eyeSize;
+  for (const side of [1, -1]) {
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(rimR, rimR * 0.14, 6, 18), kit.metal);
+    rim.position.set(ex * side, ey, ez);
+    rim.rotation.y = (Math.PI / 14) * side;
+    g.add(rim);
+  }
+  const bridge = new THREE.Mesh(
+    new THREE.CylinderGeometry(rimR * 0.12, rimR * 0.12, ex * 2 - rimR * 1.8, 6),
+    kit.metal,
+  );
+  bridge.rotation.z = Math.PI / 2;
+  bridge.position.set(0, ey + rimR * 0.3, ez);
+  g.add(bridge);
+  return g;
 }
 
 // ── Attach pipeline ──────────────────────────────────────────────────────────
@@ -440,13 +647,16 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   if (tail) {
     tail.group.userData.pick = 'tail';
     result.sockets.tail.add(tail.group);
-    const segs = tail.segments;
+    const chains = tail.chains;
     result.hooks.tick.push((t) => {
       const speed = dna.parts.tail === 'bone' ? 2.2 : 3.2;
-      const amp = dna.parts.tail === 'bone' ? 0.1 : 0.3;
-      segs.forEach((seg, i) => {
-        seg.rotation.y = Math.sin(t * speed - i * 0.55) * amp;
-        seg.rotation.x = Math.sin(t * 1.8 + i) * 0.04 + 0.025;
+      const amp = (dna.parts.tail === 'bone' ? 0.1 : 0.3) / Math.sqrt(chains.length);
+      chains.forEach((segs, k) => {
+        const phase = k * 1.1; // each kitsune tail sways on its own beat
+        segs.forEach((seg, i) => {
+          seg.rotation.y = Math.sin(t * speed - i * 0.55 + phase) * amp;
+          seg.rotation.x = Math.sin(t * 1.8 + i + phase) * 0.04 + 0.025;
+        });
       });
     });
   }
@@ -468,10 +678,20 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
     }
     if (back.wings) {
       const wings = back.wings;
+      const baseZ = wings.map((w) => w.rotation.z);
+      const speed = dna.parts.back === 'wings_butterfly' ? 5.5 : 2.6;
       result.hooks.tick.push((t) => {
-        const flap = Math.sin(t * 3.4) * 0.22;
-        wings[0].rotation.z = 0.45 + flap;
-        wings[1].rotation.z = -0.45 - flap;
+        const flap = Math.sin(t * speed) * 0.22;
+        wings[0].rotation.z = baseZ[0] + flap;
+        wings[1].rotation.z = baseZ[1] - flap;
+      });
+    }
+    if (back.grimoire) {
+      const book = back.grimoire;
+      result.hooks.tick.push((t) => {
+        book.position.y = 1.2 + Math.sin(t * 1.8) * 0.25;
+        book.rotation.y = 0.5 + Math.sin(t * 0.7) * 0.3;
+        book.rotation.z = Math.sin(t * 1.3) * 0.08;
       });
     }
   }
@@ -489,6 +709,12 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
     right.scale.set(-hs, hs, hs);
     right.userData.pick = 'handR';
     result.sockets.handR.add(right);
+  }
+
+  // Glasses ride the head just off the face surface
+  if (dna.parts.glasses) {
+    const glasses = buildGlasses(dna, kit, p.headR);
+    result.rig.head.add(glasses);
   }
 
   // Hair — slime hair is rendered as metaballs by the slime synth

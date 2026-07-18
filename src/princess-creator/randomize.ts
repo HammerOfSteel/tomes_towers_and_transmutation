@@ -1,141 +1,120 @@
-// ── Curated randomizer & mutator ─────────────────────────────────────────────
+// ── Curated randomizer & mutator (species-driven) ────────────────────────────
 //
-//  "Curated randomness beats pure randomness" (Hytale lesson): pools are
-//  weighted per archetype so shuffled princesses look designed, and numeric
-//  sliders are mid-biased so extremes are rare spice, not the norm.
+//  "Curated randomness beats pure randomness" (Hytale lesson): every pool is
+//  weighted per species (SPECIES_DEFS.rand), silhouette-critical proportions
+//  are pinned near the species preset (lockBody ± 8%), palettes come from the
+//  species set, and skin/hair tones swap within species-correct pools so the
+//  result always reads as "designed" — colour communicates story.
 
-import type { Archetype, PrincessDNA, Range } from './types';
+import type { PrincessDNA, SpeciesId, ClassId, Range, BodyDna } from './types';
 import { RANGES, EYE_STYLES, MOUTH_STYLES } from './types';
 import type { Rng } from './rng';
 import { mulberry32, randFloatMid, pick, pickWeighted, chance } from './rng';
 import { defaultDna, sanitizeDna, cloneDna } from './dna';
-import { PALETTES } from './palettes';
+import { SPECIES_DEFS, CLASS_DEFS } from './species';
 import { generateName } from './names';
 
 type W<T> = readonly (readonly [T, number])[];
 
-// Weighted pools per archetype. Signature looks get heavy weights; comedy
-// options (bone ears on a fox…) get token weights so 🎲 occasionally winks.
-const POOLS = {
-  human: {
-    dress: [['bell', 5], ['layered', 3], ['aline', 2], ['slim', 2], ['hex', 1]] as W<PrincessDNA['dress']['style']>,
-    hair: [['bob', 4], ['pigtails', 3], ['long', 3], ['bun', 2], ['twintails', 2], ['none', 1]] as W<PrincessDNA['hair']['style']>,
-    eyes: [['sparkle', 4], ['round', 3], ['lash', 3], ['sleepy', 2], ['star', 1], ['button', 1]] as W<PrincessDNA['face']['eyeStyle']>,
-    mouth: [['smile', 5], ['open', 2], ['pout', 2], ['cat', 1]] as W<PrincessDNA['face']['mouth']>,
-    crown: [['tiara', 4], ['classic', 3], ['flower', 2], ['none', 1], ['halo', 1]] as W<PrincessDNA['parts']['crown']>,
-    ears: [['none', 8], ['cat', 1], ['round', 1]] as W<PrincessDNA['parts']['ears']>,
-    tail: [['none', 9], ['thin', 1]] as W<PrincessDNA['parts']['tail']>,
-    back: [['bow', 4], ['none', 3], ['cape', 2], ['wings', 1]] as W<PrincessDNA['parts']['back']>,
-  },
-  fox: {
-    dress: [['hex', 5], ['bell', 2], ['aline', 2], ['slim', 1], ['layered', 1]] as W<PrincessDNA['dress']['style']>,
-    hair: [['none', 5], ['bob', 2], ['bun', 1], ['long', 1]] as W<PrincessDNA['hair']['style']>,
-    eyes: [['button', 4], ['round', 3], ['sparkle', 2], ['sleepy', 2], ['star', 1]] as W<PrincessDNA['face']['eyeStyle']>,
-    mouth: [['cat', 5], ['smile', 3], ['fang', 2], ['open', 1]] as W<PrincessDNA['face']['mouth']>,
-    crown: [['classic', 4], ['flower', 3], ['tiara', 2], ['none', 2], ['crooked', 1]] as W<PrincessDNA['parts']['crown']>,
-    ears: [['fox', 8], ['cat', 2], ['long', 1]] as W<PrincessDNA['parts']['ears']>,
-    tail: [['fluffy', 7], ['thin', 2], ['wisp', 1]] as W<PrincessDNA['parts']['tail']>,
-    back: [['none', 5], ['bow', 2], ['cape', 2], ['wings', 1]] as W<PrincessDNA['parts']['back']>,
-  },
-  slime: {
-    dress: [['bell', 6], ['slim', 2], ['hex', 1], ['aline', 1], ['layered', 1]] as W<PrincessDNA['dress']['style']>,
-    hair: [['twintails', 5], ['bun', 2], ['none', 2], ['bob', 1]] as W<PrincessDNA['hair']['style']>,
-    eyes: [['sparkle', 4], ['round', 3], ['sleepy', 2], ['star', 2], ['void', 1]] as W<PrincessDNA['face']['eyeStyle']>,
-    mouth: [['open', 4], ['smile', 4], ['pout', 1], ['none', 1]] as W<PrincessDNA['face']['mouth']>,
-    crown: [['halo', 4], ['classic', 2], ['tiara', 2], ['flower', 1], ['none', 2]] as W<PrincessDNA['parts']['crown']>,
-    ears: [['none', 7], ['fox', 1], ['cat', 1], ['round', 1]] as W<PrincessDNA['parts']['ears']>,
-    tail: [['wisp', 5], ['none', 4], ['thin', 1]] as W<PrincessDNA['parts']['tail']>,
-    back: [['none', 6], ['bow', 2], ['wings', 2]] as W<PrincessDNA['parts']['back']>,
-  },
-  skeleton: {
-    dress: [['aline', 5], ['layered', 2], ['bell', 2], ['slim', 2], ['hex', 1]] as W<PrincessDNA['dress']['style']>,
-    hair: [['none', 6], ['long', 2], ['bob', 1], ['bun', 1]] as W<PrincessDNA['hair']['style']>,
-    eyes: [['glow', 5], ['void', 3], ['star', 1], ['round', 1]] as W<PrincessDNA['face']['eyeStyle']>,
-    mouth: [['teeth', 6], ['smile', 2], ['fang', 2], ['none', 1]] as W<PrincessDNA['face']['mouth']>,
-    crown: [['crooked', 5], ['classic', 2], ['tiara', 1], ['halo', 1], ['none', 2]] as W<PrincessDNA['parts']['crown']>,
-    ears: [['none', 9], ['fox', 1]] as W<PrincessDNA['parts']['ears']>,
-    tail: [['none', 5], ['bone', 4], ['wisp', 1]] as W<PrincessDNA['parts']['tail']>,
-    back: [['cape', 5], ['none', 3], ['wings', 1], ['bow', 1]] as W<PrincessDNA['parts']['back']>,
-  },
-} as const;
-
 const HAND_POOL: W<PrincessDNA['parts']['handL']> =
   [['none', 6], ['wand', 2], ['tome', 2], ['staff', 1], ['fan', 1]];
+
+const CLASS_POOL: W<ClassId> = [['none', 4], ['scholar', 2], ['mage', 2], ['warrior', 2]];
+
+const SUBTYPE_WEIGHTS = [5, 3, 2];
 
 function mid(rng: Rng, r: Range): number {
   return randFloatMid(rng, r.min, r.max);
 }
 
-/** Full random princess for an archetype. Deterministic per seed. */
-export function randomDna(archetype: Archetype, seed: number): PrincessDNA {
-  const rng = mulberry32(seed);
-  const d = defaultDna(archetype);
-  const pool = POOLS[archetype];
-  const palette = pick(rng, PALETTES[archetype]);
+/** Locked keys sample near the species preset; free keys roam mid-biased. */
+function sampleBody(rng: Rng, species: SpeciesId): BodyDna {
+  const lock = SPECIES_DEFS[species].lockBody ?? {};
+  const out = {} as BodyDna;
+  for (const key of Object.keys(RANGES.body) as Array<keyof BodyDna>) {
+    const range = RANGES.body[key];
+    const pinned = lock[key];
+    out[key] = pinned !== undefined
+      ? pinned + (rng() * 2 - 1) * (range.max - range.min) * 0.08
+      : mid(rng, range);
+  }
+  return out;
+}
 
-  const dna: PrincessDNA = {
-    ...d,
-    name: generateName(rng, archetype),
-    seed,
-    body: {
-      height: mid(rng, RANGES.body.height),
-      headSize: mid(rng, RANGES.body.headSize),
-      chubbiness: mid(rng, RANGES.body.chubbiness),
-      armLength: mid(rng, RANGES.body.armLength),
-      legLength: mid(rng, RANGES.body.legLength),
-      shoulderWidth: mid(rng, RANGES.body.shoulderWidth),
-      hipWidth: mid(rng, RANGES.body.hipWidth),
-    },
-    dress: {
-      style: pickWeighted(rng, pool.dress),
-      flare: mid(rng, RANGES.dress.flare),
-      length: mid(rng, RANGES.dress.length),
-      trim: chance(rng, 0.7),
-      sash: chance(rng, 0.6),
-      puffSleeves: archetype === 'human' ? chance(rng, 0.6) : chance(rng, 0.25),
-    },
-    face: {
-      eyeStyle: pickWeighted(rng, pool.eyes),
-      eyeSize: mid(rng, RANGES.face.eyeSize),
-      eyeSpacing: mid(rng, RANGES.face.eyeSpacing),
-      eyeTilt: mid(rng, RANGES.face.eyeTilt),
-      blush: archetype === 'skeleton' ? (chance(rng, 0.2) ? 0.4 : 0) : mid(rng, RANGES.face.blush),
-      mouth: pickWeighted(rng, pool.mouth),
-    },
-    hair: {
-      style: pickWeighted(rng, pool.hair),
-      length: mid(rng, RANGES.hair.length),
-    },
-    parts: {
-      crown: pickWeighted(rng, pool.crown),
-      crownTilt: archetype === 'skeleton' ? -0.25 + rng() * 0.1 : (chance(rng, 0.25) ? mid(rng, RANGES.parts.crownTilt) : 0),
-      crownSize: mid(rng, RANGES.parts.crownSize),
-      ears: pickWeighted(rng, pool.ears),
-      earSize: mid(rng, RANGES.parts.earSize),
-      tail: pickWeighted(rng, pool.tail),
-      tailSize: mid(rng, RANGES.parts.tailSize),
-      back: pickWeighted(rng, pool.back),
-      backSize: mid(rng, RANGES.parts.backSize),
-      handL: pickWeighted(rng, HAND_POOL),
-      handR: chance(rng, 0.75) ? 'none' : pickWeighted(rng, HAND_POOL),
-      handSize: mid(rng, RANGES.parts.handSize),
-    },
-    colors: { ...palette.colors },
-    species: {
-      snoutLength: mid(rng, RANGES.species.snoutLength),
-      fluff: mid(rng, RANGES.species.fluff),
-      wobble: mid(rng, RANGES.species.wobble),
-      translucency: mid(rng, RANGES.species.translucency),
-      coreGlow: mid(rng, RANGES.species.coreGlow),
-      boneThickness: mid(rng, RANGES.species.boneThickness),
-      eyeGlowIntensity: mid(rng, RANGES.species.eyeGlowIntensity),
-    },
-    motion: {
-      energy: mid(rng, RANGES.motion.energy),
-      bounce: mid(rng, RANGES.motion.bounce),
-      idleStyle: d.motion.idleStyle,
-    },
-  };
+/** Full random princess of a species. Deterministic per seed. */
+export function randomDna(species: SpeciesId, seed: number): PrincessDNA {
+  const rng = mulberry32(seed);
+  const def = SPECIES_DEFS[species];
+  const dna = cloneDna(defaultDna(species));
+
+  dna.seed = seed;
+  dna.name = generateName(rng, def.synth);
+  dna.body = sampleBody(rng, species);
+
+  dna.dress.style = pickWeighted(rng, def.rand.dress);
+  dna.dress.flare = mid(rng, RANGES.dress.flare);
+  dna.dress.length = mid(rng, RANGES.dress.length);
+  dna.dress.trim = chance(rng, 0.7);
+  dna.dress.sash = chance(rng, 0.6);
+  dna.dress.puffSleeves = species === 'human' ? chance(rng, 0.6) : chance(rng, 0.2);
+
+  dna.face.eyeStyle = pickWeighted(rng, def.rand.eyes);
+  dna.face.eyeSize = mid(rng, RANGES.face.eyeSize);
+  dna.face.eyeSpacing = mid(rng, RANGES.face.eyeSpacing);
+  dna.face.eyeTilt = mid(rng, RANGES.face.eyeTilt);
+  dna.face.blush = species === 'skeleton' || species === 'undead'
+    ? (chance(rng, 0.2) ? 0.4 : 0)
+    : mid(rng, RANGES.face.blush);
+  dna.face.mouth = pickWeighted(rng, def.rand.mouth);
+
+  dna.hair.style = pickWeighted(rng, def.rand.hair);
+  dna.hair.length = mid(rng, RANGES.hair.length);
+
+  dna.parts.crown = pickWeighted(rng, def.rand.crown);
+  dna.parts.crownTilt = species === 'skeleton' || species === 'goblin'
+    ? -0.25 + rng() * 0.35
+    : (chance(rng, 0.25) ? mid(rng, RANGES.parts.crownTilt) : 0);
+  dna.parts.crownSize = mid(rng, RANGES.parts.crownSize);
+  dna.parts.ears = pickWeighted(rng, def.rand.ears);
+  dna.parts.earSize = mid(rng, RANGES.parts.earSize);
+  dna.parts.tail = pickWeighted(rng, def.rand.tail);
+  dna.parts.tailSize = mid(rng, RANGES.parts.tailSize);
+  dna.parts.back = pickWeighted(rng, def.rand.back);
+  dna.parts.backSize = mid(rng, RANGES.parts.backSize);
+  dna.parts.handL = pickWeighted(rng, HAND_POOL);
+  dna.parts.handR = chance(rng, 0.75) ? 'none' : pickWeighted(rng, HAND_POOL);
+  dna.parts.handSize = mid(rng, RANGES.parts.handSize);
+  dna.parts.glasses = chance(rng, species === 'gnome' ? 0.75 : 0.12);
+
+  if (def.subtypes) {
+    dna.subtype = pickWeighted(
+      rng,
+      def.subtypes.map((s, i) => [s.id, SUBTYPE_WEIGHTS[i] ?? 1] as const),
+    );
+  }
+
+  dna.aura.intensity = mid(rng, RANGES.aura.intensity);
+
+  dna.traits.snoutLength = mid(rng, RANGES.traits.snoutLength);
+  dna.traits.fluff = mid(rng, RANGES.traits.fluff);
+  dna.traits.wobble = mid(rng, RANGES.traits.wobble);
+  dna.traits.translucency = mid(rng, RANGES.traits.translucency);
+  dna.traits.coreGlow = mid(rng, RANGES.traits.coreGlow);
+  dna.traits.boneThickness = mid(rng, RANGES.traits.boneThickness);
+  dna.traits.eyeGlowIntensity = mid(rng, RANGES.traits.eyeGlowIntensity);
+
+  dna.motion.energy = mid(rng, RANGES.motion.energy);
+  dna.motion.bounce = mid(rng, RANGES.motion.bounce);
+
+  // Palette first, then species-correct skin/hair swaps for extra variety.
+  dna.colors = { ...pick(rng, def.palettes).colors };
+  if (chance(rng, 0.55)) dna.colors.skin = pick(rng, def.skinTones);
+  if (chance(rng, 0.55)) dna.colors.hair = pick(rng, def.hairColors);
+
+  // Class vocabulary applies LAST so its outfit patch stays coherent.
+  const rolledClass = pickWeighted(rng, CLASS_POOL);
+  CLASS_DEFS[rolledClass].apply(dna);
+
   return sanitizeDna(dna);
 }
 
@@ -144,11 +123,12 @@ const MUTABLE_NUM_PATHS: readonly (readonly [keyof typeof RANGES, string])[] = [
   ['body', 'legLength'], ['body', 'hipWidth'], ['dress', 'flare'],
   ['dress', 'length'], ['face', 'eyeSize'], ['face', 'eyeSpacing'],
   ['face', 'blush'], ['hair', 'length'], ['parts', 'earSize'],
-  ['parts', 'tailSize'], ['parts', 'crownSize'], ['species', 'fluff'], ['species', 'wobble'],
-  ['species', 'snoutLength'], ['motion', 'energy'], ['motion', 'bounce'],
+  ['parts', 'tailSize'], ['parts', 'crownSize'], ['aura', 'intensity'],
+  ['traits', 'fluff'], ['traits', 'wobble'], ['traits', 'snoutLength'],
+  ['motion', 'energy'], ['motion', 'bounce'],
 ];
 
-/** Nudge 2–4 numeric fields ±15% of their range, occasionally reroll one chip. */
+/** Nudge 2–4 numeric fields ±15% of their range, occasionally reroll a chip. */
 export function mutateDna(dna: PrincessDNA, seed: number): PrincessDNA {
   const rng = mulberry32(seed);
   const out = cloneDna(dna);

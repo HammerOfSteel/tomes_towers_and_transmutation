@@ -3,29 +3,56 @@
 //  Pure data — no three.js imports here. The DNA is the single source of truth
 //  for a princess. See docs/princess-creator/DNA_SCHEMA.md.
 
+/** Body construction TECH (synthesizer selection) — see synth/. */
 export type Archetype = 'human' | 'fox' | 'slime' | 'skeleton';
 export const ARCHETYPES: readonly Archetype[] = ['human', 'fox', 'slime', 'skeleton'];
 
+/**
+ * Species — the princess's identity (docs/princess-creator/SPECIES.md).
+ * Each species maps onto one body tech + presets + curated pools.
+ */
+export type SpeciesId =
+  | 'human' | 'elf' | 'high_elf' | 'pixie' | 'undead' | 'celestial'
+  | 'draconic' | 'gnome' | 'goblin' | 'foxling' | 'slime' | 'skeleton';
+export const SPECIES_IDS: readonly SpeciesId[] = [
+  'human', 'elf', 'high_elf', 'pixie', 'undead', 'celestial',
+  'draconic', 'gnome', 'goblin', 'foxling', 'slime', 'skeleton',
+];
+
+/** Class — outfit/accessory vocabulary preset ('none' = pure species look). */
+export type ClassId = 'none' | 'scholar' | 'mage' | 'warrior';
+export const CLASS_IDS: readonly ClassId[] = ['none', 'scholar', 'mage', 'warrior'];
+
+export type AuraStyle = 'none' | 'motes' | 'cold' | 'warm';
+export const AURA_STYLES: readonly AuraStyle[] = ['none', 'motes', 'cold', 'warm'];
+
 export type DressStyle = 'bell' | 'aline' | 'hex' | 'layered' | 'slim';
 export type EyeStyle =
-  | 'sparkle' | 'round' | 'lash' | 'sleepy' | 'star' | 'glow' | 'void' | 'button';
+  | 'sparkle' | 'round' | 'lash' | 'sleepy' | 'star' | 'glow' | 'void' | 'button' | 'slit';
 export type MouthStyle = 'smile' | 'open' | 'cat' | 'pout' | 'fang' | 'teeth' | 'none';
-export type HairStyle = 'none' | 'bob' | 'pigtails' | 'twintails' | 'bun' | 'long';
+export type HairStyle =
+  | 'none' | 'bob' | 'pigtails' | 'twintails' | 'bun' | 'long'
+  | 'braided' | 'ponytail' | 'wild' | 'afro';
 export type CrownId = 'none' | 'classic' | 'tiara' | 'crooked' | 'flower' | 'halo';
-export type EarId = 'none' | 'fox' | 'cat' | 'round' | 'long';
+export type EarId = 'none' | 'fox' | 'cat' | 'round' | 'long' | 'horn_small' | 'horn_curved';
 export type TailId = 'none' | 'fluffy' | 'thin' | 'bone' | 'wisp';
-export type BackId = 'none' | 'bow' | 'cape' | 'wings';
+export type BackId =
+  | 'none' | 'bow' | 'cape' | 'wings' | 'wings_butterfly' | 'wings_feather' | 'grimoire';
 export type HandItemId = 'none' | 'wand' | 'staff' | 'fan' | 'tome';
 export type IdleStyle = 'sway' | 'bob' | 'float' | 'rattle';
 
 export const DRESS_STYLES: readonly DressStyle[] = ['bell', 'aline', 'hex', 'layered', 'slim'];
-export const EYE_STYLES: readonly EyeStyle[] = ['sparkle', 'round', 'lash', 'sleepy', 'star', 'glow', 'void', 'button'];
+export const EYE_STYLES: readonly EyeStyle[] = ['sparkle', 'round', 'lash', 'sleepy', 'star', 'glow', 'void', 'button', 'slit'];
 export const MOUTH_STYLES: readonly MouthStyle[] = ['smile', 'open', 'cat', 'pout', 'fang', 'teeth', 'none'];
-export const HAIR_STYLES: readonly HairStyle[] = ['none', 'bob', 'pigtails', 'twintails', 'bun', 'long'];
+export const HAIR_STYLES: readonly HairStyle[] = [
+  'none', 'bob', 'pigtails', 'twintails', 'bun', 'long', 'braided', 'ponytail', 'wild', 'afro',
+];
 export const CROWN_IDS: readonly CrownId[] = ['none', 'classic', 'tiara', 'crooked', 'flower', 'halo'];
-export const EAR_IDS: readonly EarId[] = ['none', 'fox', 'cat', 'round', 'long'];
+export const EAR_IDS: readonly EarId[] = ['none', 'fox', 'cat', 'round', 'long', 'horn_small', 'horn_curved'];
 export const TAIL_IDS: readonly TailId[] = ['none', 'fluffy', 'thin', 'bone', 'wisp'];
-export const BACK_IDS: readonly BackId[] = ['none', 'bow', 'cape', 'wings'];
+export const BACK_IDS: readonly BackId[] = [
+  'none', 'bow', 'cape', 'wings', 'wings_butterfly', 'wings_feather', 'grimoire',
+];
 export const HAND_ITEM_IDS: readonly HandItemId[] = ['none', 'wand', 'staff', 'fan', 'tome'];
 export const IDLE_STYLES: readonly IdleStyle[] = ['sway', 'bob', 'float', 'rattle'];
 
@@ -75,6 +102,18 @@ export interface PartsDna {
   handL: HandItemId;
   handR: HandItemId;
   handSize: number;       // 0.6–1.6  (wheel-scalable, both hands)
+  glasses: boolean;       // wire-rimmed reading glasses (scholar signature)
+}
+
+export interface AuraDna {
+  style: AuraStyle;
+  intensity: number;      // 0–1
+}
+
+export interface Palette {
+  id: string;
+  label: string;
+  colors: ColorsDna;
 }
 
 export interface ColorsDna {
@@ -88,7 +127,7 @@ export interface ColorsDna {
   glow: string;           // emissive accents
 }
 
-export interface SpeciesDna {
+export interface TraitsDna {
   snoutLength: number;      // 0.5–1.6  (fox)
   fluff: number;            // 0.5–2.0  (fox tail/ears)
   wobble: number;           // 0–1      (slime)
@@ -105,26 +144,37 @@ export interface MotionDna {
 }
 
 export interface PrincessDNA {
-  v: 1;
+  v: 2;
   name: string;
   seed: number;
+  /** Identity — drives synth choice, presets, pools (SPECIES_DEFS). */
+  species: SpeciesId;
+  /** Derived body tech (kept explicit for synth/material selection). */
   archetype: Archetype;
+  /** Outfit vocabulary preset (Scholar / Mage / Warrior). */
+  pclass: ClassId;
+  /** Species-specific variant (foxling: tail count '1' | '3' | '9'). */
+  subtype: string;
+  aura: AuraDna;
   body: BodyDna;
   dress: DressDna;
   face: FaceDna;
   hair: HairDna;
   parts: PartsDna;
   colors: ColorsDna;
-  species: SpeciesDna;
+  traits: TraitsDna;
   motion: MotionDna;
 }
 
 /** Numeric field ranges, used by clampDna + UI sliders. */
 export interface Range { min: number; max: number }
 export const RANGES = {
+  aura: {
+    intensity: { min: 0, max: 1 },
+  },
   body: {
-    height: { min: 0.8, max: 1.25 },
-    headSize: { min: 0.75, max: 1.5 },
+    height: { min: 0.5, max: 1.35 },   // pixie 0.55 … high elf 1.2
+    headSize: { min: 0.75, max: 1.65 },
     chubbiness: { min: 0.6, max: 1.8 },
     armLength: { min: 0.7, max: 1.3 },
     legLength: { min: 0.7, max: 1.3 },
@@ -152,7 +202,7 @@ export const RANGES = {
     backSize: { min: 0.6, max: 1.6 },
     handSize: { min: 0.6, max: 1.6 },
   },
-  species: {
+  traits: {
     snoutLength: { min: 0.5, max: 1.6 },
     fluff: { min: 0.5, max: 2.0 },
     wobble: { min: 0, max: 1 },

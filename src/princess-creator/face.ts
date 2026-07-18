@@ -93,17 +93,19 @@ export function buildFace(
         break;
       }
       case 'star': {
-        const star = new THREE.Mesh(new THREE.OctahedronGeometry(r0 * 0.95), kit.glow);
+        const star = new THREE.Mesh(new THREE.OctahedronGeometry(r0 * 0.95), kit.eyes);
         star.scale.set(0.9, 1.1, 0.35);
         star.rotation.z = Math.PI / 4;
-        eye.add(star);
+        const twinkle = new THREE.Mesh(new THREE.SphereGeometry(r0 * 0.2, 8, 6), kit.white);
+        twinkle.position.set(r0 * 0.25, r0 * 0.3, r0 * 0.3);
+        eye.add(star, twinkle);
         break;
       }
       case 'glow': {
         const socketBox = new THREE.Mesh(new THREE.BoxGeometry(eh * 0.95, eh * 1.15, eh * 0.5), kit.dark);
         const pupil = new THREE.Mesh(new THREE.SphereGeometry(r0 * 0.5, 14, 10), kit.glow);
         pupil.position.z = eh * 0.2;
-        const intensity = 0.55 * dna.species.eyeGlowIntensity;
+        const intensity = 0.55 * dna.traits.eyeGlowIntensity;
         if (intensity > 0.01) {
           const light = new THREE.PointLight(kit.glow.color, intensity, 6);
           // Share the kit's Color instance so palette retints recolor the light.
@@ -123,6 +125,18 @@ export function buildFace(
       case 'button': {
         const bead = new THREE.Mesh(new THREE.BoxGeometry(eh * 0.6, eh, eh * 0.28), kit.dark);
         eye.add(bead);
+        break;
+      }
+      case 'slit': {
+        // Draconic: vivid iris, vertical pupil — distinctly not mammalian.
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(r0, 24, 16), kit.eyes);
+        ball.scale.set(0.8, 1.15, 0.3);
+        const slit = new THREE.Mesh(new THREE.SphereGeometry(r0 * 0.55, 12, 10), kit.dark);
+        slit.scale.set(0.26, 1.05, 0.35);
+        slit.position.z = r0 * 0.12;
+        const hl = new THREE.Mesh(new THREE.SphereGeometry(r0 * 0.16, 8, 6), kit.white);
+        hl.position.set(-r0 * 0.22 * side, r0 * 0.4, r0 * 0.3);
+        eye.add(ball, slit, hl);
         break;
       }
     }

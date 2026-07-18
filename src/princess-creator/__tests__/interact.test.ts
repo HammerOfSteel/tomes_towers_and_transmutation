@@ -1,7 +1,7 @@
 // ── Direct-manipulation logic (pure parts; DOM wiring is exercised by e2e) ──
 
 import { describe, it, expect } from 'vitest';
-import { ARCHETYPES, RANGES } from '../types';
+import { SPECIES_IDS, RANGES } from '../types';
 import { defaultDna } from '../dna';
 import { createMaterialKit } from '../materials';
 import { composePrincess } from '../compose';
@@ -59,7 +59,7 @@ describe('resolveDrop', () => {
 });
 
 describe('tagPickables', () => {
-  it.each(ARCHETYPES)('%s: default princess exposes hoverable parts and regions', (a) => {
+  it.each(SPECIES_IDS)('%s: default princess exposes hoverable parts and regions', (a) => {
     const dna = defaultDna(a);
     const kit = createMaterialKit(dna);
     const result = composePrincess(dna, kit);
@@ -73,20 +73,21 @@ describe('tagPickables', () => {
       expect(picks.has('dress')).toBe(true);
       expect(picks.has('arm')).toBe(true);
     }
-    if (a === 'fox') {
+    if (a === 'foxling') {
       expect(picks.has('ears')).toBe(true);
       expect(picks.has('tail')).toBe(true);
     }
     if (a === 'human') expect(picks.has('hair')).toBe(true);
-    // Every default has some crown
-    expect(picks.has('crown')).toBe(true);
+    // Species whose default look includes a crown expose it as a pickable
+    // (draconic wears horns instead; gnome's hair IS the crown).
+    if (dna.parts.crown !== 'none') expect(picks.has('crown')).toBe(true);
 
     result.dispose();
     kit.dispose();
   });
 
   it('nearest tag wins: crown meshes are crown, not head', () => {
-    const dna = defaultDna('fox');
+    const dna = defaultDna('foxling');
     const kit = createMaterialKit(dna);
     const result = composePrincess(dna, kit);
     const map = tagPickables(result);

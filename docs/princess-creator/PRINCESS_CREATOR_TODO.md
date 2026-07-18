@@ -96,17 +96,32 @@
 - [ ] **U11. e2e tests** (playwright): load, tab switch, randomize changes DNA, import code renders, export buttons produce blobs
 - ✔ Accept (core): a first-time user makes a princess they like in <2 min without docs. (validate with team)
 
-## Phase 7 — Spore-Grade Direct Manipulation & Export Depth [ ]
+## Phase 7 — Spore-Grade Direct Manipulation & Export Depth [~]
 
-- [ ] **D1. Hover/select layer**: raycast part hover glow + click select (outline pass)
-- [ ] **D2. Wheel-scale hovered part** (Spore's signature feel), Alt+wheel = rotate
-- [ ] **D3. Drag parts between sockets** with ghost preview + snap; symmetry maintained
+- [x] **D1. Hover/select layer**: raycast hover glow (material-swap pulse, kit untouched) + cursor tooltip w/ affordance hints; hover re-acquired across per-notch rebuilds (world matrices refreshed pre-raycast)
+- [x] **D2. Wheel-scale hovered part/region** (crown/ears/tail/back/hands/hair + head/eyes/dress/arms/legs/body dials), Alt+wheel = tilt (crown, eyes); gesture-coalesced undo
+- [x] **D3. Drag parts**: tear-off with red tint (any part → 'none'), hand items drag between hands (screen-space snap ghost + marker), Esc cancels; ears stay a mirrored pair
 - [ ] **D4. Proportion pull-handles** on head/torso/hem (drag = fatter/taller) — the "grab the spine" feeling
 - [ ] **D5. Paint-drop mode**: drag palette swatch onto a region to retint just that slot
-- [ ] **D6. Export depth**: GLB rig metadata (`userData.pivotRole`), optional high-res slime bake (res 64 `generateGeometry()`), DNA-in-PNG steganography (Spore homage, LSB in portrait border)
+- [ ] **D6. Export depth**: optional high-res slime bake (res 64), DNA-in-PNG steganography (Spore homage) — `userData.pivotRole` tags shipped
 - [ ] **D7. `factory.ts`** façade + INTEGRATION path A wired into the game behind a dev flag (campfire "create your princess" experiment)
 - [ ] **D8. Performance hardening**: rebuild <8ms parts / <16ms slime on mid hardware; memory-leak soak test (1000 randomizes)
-- ✔ Accept: editing feels like Spore — grab, scroll, drag; game spawns a DNA princess end-to-end.
+- ✔ Accept (D1–D3): grab, scroll, tear — verified end-to-end via Playwright (crownSize 1→1.3 over 6 notches, tear-off → DNA 'none' → undo restores, hand swap L→R). ✅
+
+## Phase 8 — Species, Classes & Subtypes (Character Design doc) ✅ Wave 1
+
+- [x] **S1. SPECIES.md** — design-doc distillation + per-species visual contract + Wave 2 backlog
+- [x] **S2. DNA v2**: species/pclass/subtype/aura fields, traits rename, P1→P2 migration (tested)
+- [x] **S3. SPECIES_DEFS registry** — 12 species: synth mapping, proportion presets + lockBody randomizer pins, signature defaults, skin/hair tone pools, 40 curated palettes, weighted pools
+- [x] **S4. Classes**: Free/Scholar/Mage/Warrior preset patches, dock chips, randomizer roll
+- [x] **S5. New parts**: butterfly + feather wings, horns ×2, orbiting grimoire, glasses; hair braided/ponytail/wild/afro; slit + star eye upgrades
+- [x] **S6. Kitsune subtypes**: 1/3/9 fanned tails with independent sway, dock chips
+- [x] **S7. Aura module**: motes / cold / warm, palette-tracking lights
+- [x] **S8. Species dock UI** (12 chips + class row + contextual subtype row), height-aware camera framing, keyboard 1–9
+- [x] **S9. Tests**: 91 green (12-species round-trips, v1 migration, 200-seed validity ×12, build smoke ×12, tagging)
+- [ ] **S10. Wave 2 species** (fae, naiad, moonborn, verdant, ignis, specter, lamia, orc/troll) — see SPECIES.md §5
+- [ ] **S11. Outfit vocabulary expansions** (corset, ballgown, veil, mantle…) + boon accessory sets
+- ✔ Accept (Wave 1): all 12 species land canonical-looking from their dock chip, survive 🎲, and pass silhouette review. ✅
 
 ---
 

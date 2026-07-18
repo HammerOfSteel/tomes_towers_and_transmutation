@@ -41,8 +41,8 @@ export const slimeSynth: BodySynthesizer = {
 
     // Inner glow core (a little heart of the slime)
     const core = shadowed(new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), kit.glow));
-    core.visible = dna.species.coreGlow > 0.03;
-    core.scale.setScalar(0.6 + dna.species.coreGlow * 0.7);
+    core.visible = dna.traits.coreGlow > 0.03;
+    core.scale.setScalar(0.6 + dna.traits.coreGlow * 0.7);
     rig.torso.add(core);
 
     // ── Blob math ──
@@ -71,7 +71,7 @@ export const slimeSynth: BodySynthesizer = {
       addBlobLocal(v, strength);
     };
 
-    const wobbleAmp = dna.species.wobble;
+    const wobbleAmp = dna.traits.wobble;
 
     const update = (t: number): void => {
       characterGroup.updateWorldMatrix(true, true);

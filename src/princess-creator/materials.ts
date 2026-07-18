@@ -52,14 +52,28 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
   let hairMat: MaterialKit['hair'];
 
   if (a === 'slime') {
-    primary = jelly(c.primary, dna.species.translucency);
-    skin = jelly(c.skin, dna.species.translucency);
-    hairMat = jelly(c.hair, Math.min(0.85, dna.species.translucency + 0.1));
+    primary = jelly(c.primary, dna.traits.translucency);
+    skin = jelly(c.skin, dna.traits.translucency);
+    hairMat = jelly(c.hair, Math.min(0.85, dna.traits.translucency + 0.1));
   } else {
     primary = std(c.primary, { roughness: flat ? 0.75 : 0.8, flatShading: flat });
     skin = std(c.skin, { roughness: flat ? 0.9 : 0.45, flatShading: flat });
     // DoubleSide: hair shells (bob curtain, long-hair panels) are open surfaces.
     hairMat = std(c.hair, { roughness: 0.7, flatShading: flat, side: THREE.DoubleSide });
+  }
+
+  // Luminous species: skin carries a faint inner glow (doc: celestial/high
+  // elf glow warm; undead is pale-luminous in darkness).
+  const skinGlowFor = (d: PrincessDNA): number => {
+    if (d.species === 'celestial') return 0.14 + d.aura.intensity * 0.1;
+    if (d.species === 'high_elf') return 0.08 + d.aura.intensity * 0.06;
+    if (d.species === 'undead') return 0.05 + d.aura.intensity * 0.05;
+    return 0;
+  };
+  const skinGlow = skinGlowFor(dna);
+  if (skinGlow > 0 && 'emissive' in skin) {
+    (skin as THREE.MeshStandardMaterial).emissive = new THREE.Color(c.glow);
+    (skin as THREE.MeshStandardMaterial).emissiveIntensity = skinGlow;
   }
 
   const kit: MaterialKit = {
@@ -90,10 +104,16 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
       // Blush follows accent hue family, softened toward pink.
       kit.blush.color.set(n.accent).lerp(new THREE.Color('#ff7799'), 0.55);
       if (a === 'slime') {
-        const t = next.species.translucency;
+        const t = next.traits.translucency;
         (kit.primary as THREE.MeshPhysicalMaterial).transmission = t;
         (kit.skin as THREE.MeshPhysicalMaterial).transmission = t;
         (kit.hair as THREE.MeshPhysicalMaterial).transmission = Math.min(0.85, t + 0.1);
+      }
+      const glow = skinGlowFor(next);
+      if ('emissive' in kit.skin) {
+        (kit.skin as THREE.MeshStandardMaterial).emissive ??= new THREE.Color(0x000000);
+        (kit.skin as THREE.MeshStandardMaterial).emissive.set(glow > 0 ? n.glow : '#000000');
+        (kit.skin as THREE.MeshStandardMaterial).emissiveIntensity = glow;
       }
     },
 

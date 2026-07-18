@@ -9,6 +9,7 @@ import type { BuildResult } from './synth/contracts';
 import { SYNTHS } from './synth';
 import { buildFace } from './face';
 import { attachParts } from './parts';
+import { attachAura } from './aura';
 
 /** Face feature radius per archetype (blob/snout surfaces differ slightly). */
 function faceSurfaceR(dna: PrincessDNA, headR: number): number {
@@ -26,5 +27,6 @@ export function composePrincess(dna: PrincessDNA, kit: MaterialKit): BuildResult
   );
   result.hooks.setBlink = face.setBlink;
   attachParts(result, dna, kit);
+  attachAura(result, dna, kit);
   return result;
 }

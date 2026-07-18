@@ -27,7 +27,8 @@ npm run dev
 | [DNA_SCHEMA.md](DNA_SCHEMA.md) | The versioned `PrincessDNA` format, ranges, defaults, share-code encoding, migration rules |
 | [PARTS_CATALOG.md](PARTS_CATALOG.md) | Socket system, part categories, morph params, per-archetype material adaptation, part authoring guide |
 | [UX_SPEC.md](UX_SPEC.md) | Editor layout, interactions, test-drive mode, gallery, exports, keyboard shortcuts |
-| [PRINCESS_CREATOR_TODO.md](PRINCESS_CREATOR_TODO.md) | **The master phased roadmap** — phases 0–7 with tasks, subtasks and acceptance checks |
+| [SPECIES.md](SPECIES.md) | The princess multiverse: 12 Wave-1 species, classes, subtypes, auras + Wave-2 backlog |
+| [PRINCESS_CREATOR_TODO.md](PRINCESS_CREATOR_TODO.md) | **The master phased roadmap** — phases 0–8 with tasks, subtasks and acceptance checks |
 | [INTEGRATION.md](INTEGRATION.md) | How the main game consumes DNA / GLB / `PrincessFactory`; scale conventions |
 
 ## Design pillars (the short version)
@@ -52,6 +53,8 @@ npm run dev
 ## Status
 
 Phase tracker lives in [PRINCESS_CREATOR_TODO.md](PRINCESS_CREATOR_TODO.md).
-Built this session (2026-07-18): docs suite, tool scaffold, DNA core,
-all four body synthesizers, starter part set, palette system, idle/emote
-animation, randomizer, share codes, gallery, PNG/GLB/JSON export, unit tests.
+Session 1 (2026-07-18): docs suite, scaffold, DNA core, four body
+synthesizers, parts, palettes, animation, randomizer, share codes, gallery,
+exports, tests. Session 2: Phase 7 direct manipulation (hover glow,
+wheel-scale, drag/tear-off) + Phase 8 Wave-1 species system — 12 species,
+classes, kitsune subtypes, auras, DNA v2 (see SPECIES.md).

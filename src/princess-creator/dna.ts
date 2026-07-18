@@ -1,91 +1,74 @@
-// ── DNA core: defaults, validation, migration, share codes ──────────────────
+// ── DNA core v2: defaults, validation, migration, share codes ───────────────
 //
-//  Share code format:  P1.<base64url(JSON.stringify(dna))>
-//  Decoding is forgiving: unknown fields dropped, missing fields defaulted,
-//  numerics clamped. See docs/princess-creator/DNA_SCHEMA.md.
+//  Share code format:  P<version>.<base64url(JSON.stringify(dna))>
+//  v1 codes (4 archetypes) migrate to v2 (species/class/subtype/aura/traits)
+//  on import. Decoding is forgiving: unknown fields dropped, missing fields
+//  defaulted, numerics clamped. See docs/princess-creator/DNA_SCHEMA.md.
 
-import type {
-  Archetype, PrincessDNA, ColorsDna, Range,
-} from './types';
+import type { PrincessDNA, SpeciesId, Range } from './types';
 import {
-  ARCHETYPES, RANGES, DRESS_STYLES, EYE_STYLES, MOUTH_STYLES, HAIR_STYLES,
+  SPECIES_IDS, CLASS_IDS, AURA_STYLES, RANGES,
+  DRESS_STYLES, EYE_STYLES, MOUTH_STYLES, HAIR_STYLES,
   CROWN_IDS, EAR_IDS, TAIL_IDS, BACK_IDS, HAND_ITEM_IDS, IDLE_STYLES,
 } from './types';
-import { defaultColors } from './palettes';
+import { SPECIES_DEFS, defaultColors } from './species';
 
-export const DNA_VERSION = 1;
+export const DNA_VERSION = 2;
 const CODE_PREFIX = /^P(\d+)\./;
+
+const NAME_DEFAULTS: Record<SpeciesId, string> = {
+  human: 'Amelie', elf: 'Sylvael', high_elf: 'Aurelienne', pixie: 'Pip',
+  undead: 'Morwen', celestial: 'Seraphel', draconic: 'Emberlyn',
+  gnome: 'Podkin', goblin: 'Snikret', foxling: 'Maribel',
+  slime: 'Blobette', skeleton: 'Mortica',
+};
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
-const BASE_BODY = {
-  height: 1, headSize: 1, chubbiness: 1, armLength: 1, legLength: 1,
-  shoulderWidth: 1, hipWidth: 1,
-};
-
-const BASE_SPECIES = {
-  snoutLength: 1, fluff: 1.2, wobble: 0.5, translucency: 0.6,
-  coreGlow: 0.35, boneThickness: 1, eyeGlowIntensity: 1,
-};
-
-export function defaultDna(archetype: Archetype): PrincessDNA {
-  const colors: ColorsDna = defaultColors(archetype);
-  const base: PrincessDNA = {
-    v: 1,
+/** Neutral chibi base — species defs stamp identity on top of this. */
+function baseDna(): PrincessDNA {
+  return {
+    v: 2,
     name: 'Amelie',
     seed: 1,
-    archetype,
-    body: { ...BASE_BODY },
+    species: 'human',
+    archetype: 'human',
+    pclass: 'none',
+    subtype: '',
+    aura: { style: 'none', intensity: 0.5 },
+    body: {
+      height: 1, headSize: 1, chubbiness: 1, armLength: 1, legLength: 1,
+      shoulderWidth: 1, hipWidth: 1,
+    },
     dress: { style: 'bell', flare: 1, length: 1, trim: true, sash: true, puffSleeves: true },
     face: { eyeStyle: 'sparkle', eyeSize: 1, eyeSpacing: 1, eyeTilt: 0.08, blush: 0.5, mouth: 'smile' },
     hair: { style: 'bob', length: 1 },
     parts: {
       crown: 'tiara', crownTilt: 0, crownSize: 1, ears: 'none', earSize: 1.1,
       tail: 'none', tailSize: 1, back: 'bow', backSize: 1,
-      handL: 'none', handR: 'none', handSize: 1,
+      handL: 'none', handR: 'none', handSize: 1, glasses: false,
     },
-    colors,
-    species: { ...BASE_SPECIES },
+    colors: defaultColors('human'),
+    traits: {
+      snoutLength: 1, fluff: 1.2, wobble: 0.5, translucency: 0.6,
+      coreGlow: 0.35, boneThickness: 1, eyeGlowIntensity: 1,
+    },
     motion: { energy: 0.55, bounce: 0.5, idleStyle: 'sway' },
   };
+}
 
-  switch (archetype) {
-    case 'human':
-      return base;
-    case 'fox':
-      return {
-        ...base,
-        name: 'Maribel',
-        body: { ...BASE_BODY, chubbiness: 1.1, legLength: 0.95, hipWidth: 1.05 },
-        dress: { ...base.dress, style: 'hex', flare: 1.1, puffSleeves: false },
-        face: { ...base.face, eyeStyle: 'button', eyeTilt: 0.12, blush: 0.4, mouth: 'cat' },
-        hair: { style: 'none', length: 1 },
-        parts: { ...base.parts, crown: 'classic', ears: 'fox', earSize: 1.2, tail: 'fluffy', back: 'none' },
-        motion: { energy: 0.65, bounce: 0.55, idleStyle: 'bob' },
-      };
-    case 'slime':
-      return {
-        ...base,
-        name: 'Blobette',
-        body: { ...BASE_BODY, height: 0.95, headSize: 1.1, chubbiness: 1.2, armLength: 0.9, legLength: 0.85, hipWidth: 1.15 },
-        dress: { ...base.dress, style: 'bell', trim: false, sash: false, puffSleeves: false },
-        face: { ...base.face, eyeStyle: 'sparkle', eyeSize: 1.15, blush: 0.35, mouth: 'open' },
-        hair: { style: 'twintails', length: 1 },
-        parts: { ...base.parts, crown: 'halo', back: 'none', tail: 'wisp' },
-        motion: { energy: 0.5, bounce: 0.65, idleStyle: 'float' },
-      };
-    case 'skeleton':
-      return {
-        ...base,
-        name: 'Mortica',
-        body: { ...BASE_BODY, chubbiness: 0.85, armLength: 1.05, legLength: 1.05, shoulderWidth: 0.95, hipWidth: 0.9 },
-        dress: { ...base.dress, style: 'aline', puffSleeves: false },
-        face: { ...base.face, eyeStyle: 'glow', eyeSize: 1.05, blush: 0, mouth: 'teeth' },
-        hair: { style: 'none', length: 1 },
-        parts: { ...base.parts, crown: 'crooked', crownTilt: -0.22, back: 'cape', tail: 'none' },
-        motion: { energy: 0.5, bounce: 0.4, idleStyle: 'rattle' },
-      };
-  }
+/** Species default WITHOUT sanitize recursion (sanitize calls this). */
+function speciesBase(species: SpeciesId): PrincessDNA {
+  const dna = baseDna();
+  dna.species = species;
+  dna.name = NAME_DEFAULTS[species];
+  dna.colors = defaultColors(species);
+  SPECIES_DEFS[species].apply(dna);
+  return dna;
+}
+
+export function defaultDna(species: SpeciesId): PrincessDNA {
+  return sanitizeDna(speciesBase(species));
 }
 
 export function cloneDna(dna: PrincessDNA): PrincessDNA {
@@ -116,21 +99,33 @@ function hex(v: unknown, fallback: string): string {
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 /**
- * Sanitize arbitrary input into a valid PrincessDNA: unknown enum values and
- * malformed colors fall back to archetype defaults, numerics are clamped.
+ * Sanitize arbitrary input into valid v2 DNA. `species` is authoritative:
+ * `archetype` is always re-derived from the species def, and `subtype` must
+ * be one of the species' declared subtypes (or '').
  */
 export function sanitizeDna(raw: unknown): PrincessDNA {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as DeepPartial<PrincessDNA>;
-  const archetype = oneOf(r.archetype, ARCHETYPES, 'human');
-  const d = defaultDna(archetype);
+  const species = oneOf(r.species, SPECIES_IDS, 'human');
+  const def = SPECIES_DEFS[species];
+  const d = speciesBase(species);
   const rb = r.body ?? {}, rd = r.dress ?? {}, rf = r.face ?? {}, rh = r.hair ?? {};
-  const rp = r.parts ?? {}, rc = r.colors ?? {}, rs = r.species ?? {}, rm = r.motion ?? {};
+  const rp = r.parts ?? {}, rc = r.colors ?? {}, rt = r.traits ?? {}, rm = r.motion ?? {};
+  const ra = r.aura ?? {};
+
+  const subtypeIds = def.subtypes?.map((s) => s.id) ?? [];
 
   return {
-    v: 1,
+    v: 2,
     name: typeof r.name === 'string' ? r.name.slice(0, 24) : d.name,
     seed: typeof r.seed === 'number' && Number.isFinite(r.seed) ? r.seed >>> 0 : d.seed,
-    archetype,
+    species,
+    archetype: def.synth,
+    pclass: oneOf(r.pclass, CLASS_IDS, 'none'),
+    subtype: subtypeIds.length > 0 ? oneOf(r.subtype, subtypeIds, d.subtype) : '',
+    aura: {
+      style: oneOf(ra.style, AURA_STYLES, d.aura.style),
+      intensity: clampNum(ra.intensity, RANGES.aura.intensity, d.aura.intensity),
+    },
     body: {
       height: clampNum(rb.height, RANGES.body.height, d.body.height),
       headSize: clampNum(rb.headSize, RANGES.body.headSize, d.body.headSize),
@@ -173,6 +168,7 @@ export function sanitizeDna(raw: unknown): PrincessDNA {
       handL: oneOf(rp.handL, HAND_ITEM_IDS, d.parts.handL),
       handR: oneOf(rp.handR, HAND_ITEM_IDS, d.parts.handR),
       handSize: clampNum(rp.handSize, RANGES.parts.handSize, d.parts.handSize),
+      glasses: bool(rp.glasses, d.parts.glasses),
     },
     colors: {
       primary: hex(rc.primary, d.colors.primary),
@@ -184,14 +180,14 @@ export function sanitizeDna(raw: unknown): PrincessDNA {
       metal: hex(rc.metal, d.colors.metal),
       glow: hex(rc.glow, d.colors.glow),
     },
-    species: {
-      snoutLength: clampNum(rs.snoutLength, RANGES.species.snoutLength, d.species.snoutLength),
-      fluff: clampNum(rs.fluff, RANGES.species.fluff, d.species.fluff),
-      wobble: clampNum(rs.wobble, RANGES.species.wobble, d.species.wobble),
-      translucency: clampNum(rs.translucency, RANGES.species.translucency, d.species.translucency),
-      coreGlow: clampNum(rs.coreGlow, RANGES.species.coreGlow, d.species.coreGlow),
-      boneThickness: clampNum(rs.boneThickness, RANGES.species.boneThickness, d.species.boneThickness),
-      eyeGlowIntensity: clampNum(rs.eyeGlowIntensity, RANGES.species.eyeGlowIntensity, d.species.eyeGlowIntensity),
+    traits: {
+      snoutLength: clampNum(rt.snoutLength, RANGES.traits.snoutLength, d.traits.snoutLength),
+      fluff: clampNum(rt.fluff, RANGES.traits.fluff, d.traits.fluff),
+      wobble: clampNum(rt.wobble, RANGES.traits.wobble, d.traits.wobble),
+      translucency: clampNum(rt.translucency, RANGES.traits.translucency, d.traits.translucency),
+      coreGlow: clampNum(rt.coreGlow, RANGES.traits.coreGlow, d.traits.coreGlow),
+      boneThickness: clampNum(rt.boneThickness, RANGES.traits.boneThickness, d.traits.boneThickness),
+      eyeGlowIntensity: clampNum(rt.eyeGlowIntensity, RANGES.traits.eyeGlowIntensity, d.traits.eyeGlowIntensity),
     },
     motion: {
       energy: clampNum(rm.energy, RANGES.motion.energy, d.motion.energy),
@@ -238,12 +234,32 @@ export function shareCodeToDna(code: string): PrincessDNA | null {
   }
 }
 
-/** Version migrations. v1 is current; future versions chain pure upgrades here. */
+// ── Migrations ───────────────────────────────────────────────────────────────
+
+const V1_ARCHETYPE_TO_SPECIES: Record<string, SpeciesId> = {
+  human: 'human', fox: 'foxling', slime: 'slime', skeleton: 'skeleton',
+};
+
+/** Pure version upgrades; sanitize handles field-level repair afterwards. */
 function migrate(raw: unknown, fromVersion: number): unknown {
-  // e.g. when v2 lands:
-  //   let data = raw;
-  //   if (fromVersion < 2) data = migrateV1toV2(data);
-  //   return data;
-  void fromVersion;
-  return raw;
+  let data = raw;
+  if (fromVersion < 2) data = migrateV1toV2(data);
+  return data;
+}
+
+function migrateV1toV2(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const v1 = raw as Record<string, unknown>;
+  const archetype = typeof v1.archetype === 'string' ? v1.archetype : 'human';
+  const species = V1_ARCHETYPE_TO_SPECIES[archetype] ?? 'human';
+  return {
+    ...v1,
+    v: 2,
+    species,
+    pclass: 'none',
+    subtype: species === 'foxling' ? '1' : '',
+    // v1 kept the signature knobs in a field named `species` — now `traits`.
+    traits: typeof v1.species === 'object' && v1.species !== null ? v1.species : undefined,
+    aura: undefined, // species default fills in
+  };
 }

@@ -5,13 +5,13 @@
 //  rebuilt on tab/archetype changes and value-synced otherwise (so an open
 //  slider never gets yanked out from under the pointer).
 
-import type { Archetype, PrincessDNA, Range } from './types';
+import type { Archetype, PrincessDNA, Range, SpeciesId, ClassId } from './types';
 import {
-  ARCHETYPES, DRESS_STYLES, EYE_STYLES, MOUTH_STYLES, HAIR_STYLES,
+  SPECIES_IDS, CLASS_IDS, DRESS_STYLES, EYE_STYLES, MOUTH_STYLES, HAIR_STYLES,
   CROWN_IDS, EAR_IDS, TAIL_IDS, BACK_IDS, HAND_ITEM_IDS, IDLE_STYLES, RANGES,
 } from './types';
 import { defaultDna } from './dna';
-import { PALETTES } from './palettes';
+import { SPECIES_DEFS, CLASS_DEFS, PALETTES } from './species';
 import type { DnaStore } from './store';
 import type { GalleryEntry } from './gallery';
 import type { EmoteId } from './animate';
@@ -21,7 +21,9 @@ export interface UiActions {
   randomize(): void;
   mutate(): void;
   rollName(): void;
-  setArchetype(a: Archetype): void;
+  setSpecies(s: SpeciesId): void;
+  setClass(c: ClassId): void;
+  setSubtype(id: string): void;
   copyCode(): void;
   importCode(code: string): boolean;
   exportPng(): void;
@@ -34,7 +36,7 @@ export interface UiActions {
   toggleWalk(): boolean;
   undo(): void;
   redo(): void;
-  applyPalette(archetype: Archetype, paletteId: string): void;
+  applyPalette(species: SpeciesId, paletteId: string): void;
 }
 
 type TabId = 'body' | 'face' | 'hair' | 'parts' | 'colors' | 'motion';
@@ -47,13 +49,6 @@ const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'motion', label: 'Motion' },
 ];
 
-const ARCH_META: Record<Archetype, { icon: string; label: string }> = {
-  human: { icon: '👑', label: 'Human' },
-  fox: { icon: '🦊', label: 'Fox' },
-  slime: { icon: '💧', label: 'Slime' },
-  skeleton: { icon: '💀', label: 'Skeleton' },
-};
-
 const EMOTE_META: Record<EmoteId, string> = {
   wave: '👋 Wave', twirl: '🌀 Twirl', dance: '💃 Dance', cast: '✨ Cast',
 };
@@ -62,17 +57,17 @@ const EMOTE_META: Record<EmoteId, string> = {
 const SIGNATURE: Record<Archetype, Array<{ label: string; path: string; range: Range }>> = {
   human: [],
   fox: [
-    { label: 'Snout', path: 'species.snoutLength', range: RANGES.species.snoutLength },
-    { label: 'Fluffiness', path: 'species.fluff', range: RANGES.species.fluff },
+    { label: 'Snout', path: 'traits.snoutLength', range: RANGES.traits.snoutLength },
+    { label: 'Fluffiness', path: 'traits.fluff', range: RANGES.traits.fluff },
   ],
   slime: [
-    { label: 'Wobble', path: 'species.wobble', range: RANGES.species.wobble },
-    { label: 'Translucency', path: 'species.translucency', range: RANGES.species.translucency },
-    { label: 'Core Glow', path: 'species.coreGlow', range: RANGES.species.coreGlow },
+    { label: 'Wobble', path: 'traits.wobble', range: RANGES.traits.wobble },
+    { label: 'Translucency', path: 'traits.translucency', range: RANGES.traits.translucency },
+    { label: 'Core Glow', path: 'traits.coreGlow', range: RANGES.traits.coreGlow },
   ],
   skeleton: [
-    { label: 'Bone Gauge', path: 'species.boneThickness', range: RANGES.species.boneThickness },
-    { label: 'Soul Glow', path: 'species.eyeGlowIntensity', range: RANGES.species.eyeGlowIntensity },
+    { label: 'Bone Gauge', path: 'traits.boneThickness', range: RANGES.traits.boneThickness },
+    { label: 'Soul Glow', path: 'traits.eyeGlowIntensity', range: RANGES.traits.eyeGlowIntensity },
   ],
 };
 
@@ -103,6 +98,7 @@ export class Ui {
   private walkBtn: HTMLButtonElement;
   private undoBtn: HTMLButtonElement;
   private redoBtn: HTMLButtonElement;
+  private subtypeWrap!: HTMLElement;
 
   constructor(private store: DnaStore, private actions: UiActions) {
     this.tabContent = document.getElementById('tab-content') as HTMLElement;
@@ -131,13 +127,28 @@ export class Ui {
       };
     }
 
-    for (const a of ARCHETYPES) {
-      const meta = ARCH_META[a];
-      const card = el('button', 'arch-card', this.dock);
-      card.dataset.arch = a;
-      card.innerHTML = `<span class="arch-icon">${meta.icon}</span><span>${meta.label}</span>`;
-      card.onclick = () => this.actions.setArchetype(a);
+    // Species row
+    const speciesRow = el('div', 'dock-row species-row', this.dock);
+    for (const s of SPECIES_IDS) {
+      const def = SPECIES_DEFS[s];
+      const card = el('button', 'arch-card', speciesRow);
+      card.dataset.species = s;
+      card.title = def.blurb;
+      card.innerHTML = `<span class="arch-icon">${def.icon}</span><span>${def.label}</span>`;
+      card.onclick = () => this.actions.setSpecies(s);
     }
+    // Class + subtype row
+    const metaRow = el('div', 'dock-row meta-row', this.dock);
+    const classWrap = el('div', 'dock-chips', metaRow);
+    for (const c of CLASS_IDS) {
+      const def = CLASS_DEFS[c];
+      const chip = el('button', 'chip class-chip', classWrap);
+      chip.dataset.pclass = c;
+      chip.title = def.blurb;
+      chip.textContent = `${def.icon} ${def.label}`;
+      chip.onclick = () => this.actions.setClass(c);
+    }
+    this.subtypeWrap = el('div', 'dock-chips subtype-chips', metaRow);
 
     const emoteBar = document.getElementById('emote-buttons') as HTMLElement;
     for (const id of EMOTES) {
@@ -198,7 +209,7 @@ export class Ui {
     });
     input.addEventListener('change', () => this.store.endDrag());
     input.addEventListener('dblclick', () => {
-      const def = get(defaultDna(this.store.dna.archetype), path) as number;
+      const def = get(defaultDna(this.store.dna.species), path) as number;
       this.store.set(path, def);
     });
     this.updaters.push((dna) => {
@@ -276,7 +287,7 @@ export class Ui {
     if (this.activeTab === 'body') {
       const sig = SIGNATURE[arch];
       if (sig.length > 0) {
-        const s = this.section(c, `${ARCH_META[arch].label} signature`);
+        const s = this.section(c, `${SPECIES_DEFS[this.store.dna.species].label} signature`);
         for (const def of sig) this.slider(s, def.label, def.path, def.range);
       }
       const s1 = this.section(c, 'Proportions');
@@ -324,9 +335,13 @@ export class Ui {
       this.chips(s3, 'Left Hand', 'parts.handL', HAND_ITEM_IDS);
       this.chips(s3, 'Right Hand', 'parts.handR', HAND_ITEM_IDS);
       this.slider(s3, 'Item Size', 'parts.handSize', RANGES.parts.handSize);
+      const s4 = this.section(c, 'Extras');
+      const extras = el('div', 'chips', s4);
+      this.toggle(extras, 'glasses', 'parts.glasses');
     } else if (this.activeTab === 'colors') {
-      const s0 = this.section(c, 'Palettes');
-      for (const pal of PALETTES[arch]) {
+      const species = this.store.dna.species;
+      const s0 = this.section(c, `${SPECIES_DEFS[species].label} palettes`);
+      for (const pal of PALETTES[species]) {
         const card = el('button', 'palette-card', s0);
         const dots = el('span', 'palette-dots', card);
         for (const key of ['primary', 'secondary', 'accent', 'skin'] as const) {
@@ -335,7 +350,7 @@ export class Ui {
         }
         const lab = el('span', 'palette-label', card);
         lab.textContent = pal.label;
-        card.onclick = () => this.actions.applyPalette(arch, pal.id);
+        card.onclick = () => this.actions.applyPalette(species, pal.id);
       }
       const s = this.section(c, 'Custom');
       this.colorRow(s, 'Dress', 'colors.primary');
@@ -359,10 +374,22 @@ export class Ui {
   sync(dna: PrincessDNA): void {
     for (const u of this.updaters) u(dna);
     if (document.activeElement !== this.nameField) this.nameField.value = dna.name;
-    for (const card of this.dock.children) {
-      (card as HTMLElement).classList.toggle(
-        'active', (card as HTMLElement).dataset.arch === dna.archetype,
-      );
+    this.dock.querySelectorAll<HTMLElement>('.arch-card').forEach((card) => {
+      card.classList.toggle('active', card.dataset.species === dna.species);
+    });
+    this.dock.querySelectorAll<HTMLElement>('.class-chip').forEach((chip) => {
+      chip.classList.toggle('active', chip.dataset.pclass === dna.pclass);
+    });
+    // Subtype chips (kitsune tails etc.) render only when the species has them
+    const subtypes = SPECIES_DEFS[dna.species].subtypes;
+    this.subtypeWrap.innerHTML = '';
+    if (subtypes) {
+      for (const sub of subtypes) {
+        const chip = el('button', 'chip class-chip', this.subtypeWrap);
+        chip.textContent = sub.label;
+        chip.classList.toggle('active', dna.subtype === sub.id);
+        chip.onclick = () => this.actions.setSubtype(sub.id);
+      }
     }
     this.undoBtn.disabled = !this.store.canUndo;
     this.redoBtn.disabled = !this.store.canRedo;

@@ -56,10 +56,12 @@ export interface BuildResult {
   /** Per-frame: secondary motion + (slime) re-blob. Call AFTER the Animator. */
   update(t: number, dt: number): void;
   dispose(): void;
-  /** Optional hooks registered by face/parts modules. */
+  /** Optional hooks registered by face/parts/aura modules. */
   hooks: {
     setBlink?: (v: number) => void;
     tick: Array<(t: number, dt: number) => void>;
+    /** Extra cleanup (custom materials etc.) run by dispose(). */
+    disposers: Array<() => void>;
   };
 }
 

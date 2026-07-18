@@ -1,12 +1,37 @@
-# DNA_SCHEMA — PrincessDNA v1
+# DNA_SCHEMA — PrincessDNA v2
 
 > The DNA is the ONLY persistent description of a princess. Small, versioned,
 > forward-migratable. If a feature isn't representable in DNA, it doesn't ship.
 
+## 0. v2 changes (2026-07-18 — species/class expansion)
+
+New top-level fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `species` | 12-value `SpeciesId` | AUTHORITATIVE identity; `archetype` is now derived from `SPECIES_DEFS[species].synth` on sanitize. See SPECIES.md |
+| `pclass` | `'none' \| 'scholar' \| 'mage' \| 'warrior'` | outfit vocabulary preset last applied |
+| `subtype` | string | species-declared variants (foxling `'1'\|'3'\|'9'` tails); '' otherwise |
+| `aura` | `{ style: 'none'\|'motes'\|'cold'\|'warm'; intensity: 0–1 }` | motes/cold/warm systems in aura.ts |
+
+Renames/extensions:
+- v1 `species` (signature knobs object) → **`traits`** (same fields).
+- `parts` gains `crownSize`, `backSize`, `handSize` (0.6–1.6, wheel-scalable)
+  and `glasses: boolean`.
+- Enums extended: hair `braided/ponytail/wild/afro`; ears `horn_small/horn_curved`;
+  back `wings_butterfly/wings_feather/grimoire`; eyes `slit`.
+- `body.height` range widened to 0.5–1.35 (pixie/gnome/goblin ↔ high elf);
+  `body.headSize` to 0.75–1.65.
+
+**Migration v1→v2** (`dna.ts migrateV1toV2`): archetype→species map
+(`human→human, fox→foxling, slime→slime, skeleton→skeleton`), old `species`
+object copied to `traits`, `pclass:'none'`, foxling `subtype:'1'`, aura from
+species default. Old `P1.` codes import forever; new codes emit `P2.`.
+
 ## 1. Share code format
 
 ```
-P1.eyJ2IjoxLCJuYW1lIjoiTHVuYSIsIC4uLn0
+P2.eyJ2IjoyLCJuYW1lIjoiTHVuYSIsIC4uLn0
 └┬┘ └──────────────┬──────────────────┘
  │                 └ base64url(JSON.stringify(dna))  (no padding)
  └ prefix: P + schema major version

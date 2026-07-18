@@ -138,10 +138,15 @@ export class Stage {
     this.rimLight.color.set(RIM_TINT[archetype]);
   }
 
-  /** Re-frame the camera on archetype swaps (keeps user orbit otherwise). */
-  frame(): void {
-    this.controls.target.set(0, 5.4, 0);
-    this.camera.position.set(3, 9.5, 27);
+  /**
+   * Re-frame the camera on species swaps (keeps user orbit otherwise).
+   * Height-aware: a pixie fills the frame at 0.55×, a high elf needs room.
+   */
+  frame(height = 1): void {
+    const targetY = 3.1 + 2.4 * height;
+    const dist = 17 + 11 * height;
+    this.controls.target.set(0, targetY, 0);
+    this.camera.position.set(3, targetY + 3.4 + height, dist);
   }
 
   focusFace(): void {

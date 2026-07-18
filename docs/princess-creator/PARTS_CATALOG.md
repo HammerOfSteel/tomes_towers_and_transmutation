@@ -131,6 +131,15 @@ blob chains; the mesh part is skipped there).
 7. Eyeball on ALL allowed archetypes at slider extremes (min/max headSize,
    chubbiness) before merging.
 
+## 5b. Wave-1 species additions (shipped)
+
+Ears slot: `horn_small`, `horn_curved` (draconic — mutually exclusive with
+animal ears by design). Back slot: `wings_butterfly` (patterned, fast flap),
+`wings_feather` (3-layer, slow flap), `grimoire` (orbiting spellbook).
+Hair: `braided`, `ponytail`, `wild`, `afro`. Face extras: `parts.glasses`
+(wire rims sized off the live eye metrics). Kitsune tails: the fluffy tail
+becomes a 1/3/9 fan driven by `subtype`, per-tail phase sway.
+
 ## 6. Future parts backlog (Phase 4+)
 
 Necklaces/chokers (reference art: studded choker), shoulder pads, gloves,

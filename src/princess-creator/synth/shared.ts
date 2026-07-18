@@ -234,7 +234,7 @@ export function makeResult(
   update: (t: number, dt: number) => void,
   extraDispose?: () => void,
 ): BuildResult {
-  const hooks: BuildResult['hooks'] = { tick: [] };
+  const hooks: BuildResult['hooks'] = { tick: [], disposers: [] };
   return {
     root: scaffold.characterGroup,
     rig: scaffold.rig,
@@ -247,6 +247,7 @@ export function makeResult(
     },
     dispose() {
       disposeTree(scaffold.characterGroup);
+      for (const fn of hooks.disposers) fn();
       extraDispose?.();
     },
   };

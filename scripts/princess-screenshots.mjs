@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Quick visual QA: screenshots the Princess Atelier for all four archetypes.
-// Usage: npx vite --port 5199 &  then  node scripts/princess-screenshots.mjs [outDir]
+// Quick visual QA: screenshots the Princess Atelier for every species.
+// Usage: npx vite --port 5199 &  then  node scripts/princess-screenshots.mjs [outDir] [species...]
 import { chromium } from '@playwright/test';
 
-const out = process.argv[2] ?? '/tmp';
+const args = process.argv.slice(2);
+const out = args[0] ?? '/tmp';
+const only = args.slice(1);
 const base = process.env.PC_URL ?? 'http://localhost:5199/princess-creator.html';
 
 const browser = await chromium.launch();
@@ -14,10 +16,16 @@ page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', String(e).slice(0, 40
 await page.goto(base, { waitUntil: 'networkidle' });
 await page.waitForTimeout(2500);
 
-for (const arch of ['human', 'fox', 'slime', 'skeleton']) {
-  await page.click(`.arch-card[data-arch="${arch}"]`);
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: `${out}/shot_${arch}.png` });
-  console.log('shot', arch);
+const species = only.length > 0 ? only : await page.evaluate(() =>
+  [...document.querySelectorAll('.arch-card')].map((c) => c.dataset.species),
+);
+for (const s of species) {
+  await page.evaluate((id) => {
+    document.querySelector(`.arch-card[data-species="${id}"]`)
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }, s);
+  await page.waitForTimeout(1600);
+  await page.screenshot({ path: `${out}/species_${s}.png` });
+  console.log('shot', s);
 }
 await browser.close();

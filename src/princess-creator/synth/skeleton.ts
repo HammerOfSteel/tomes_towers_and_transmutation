@@ -32,7 +32,7 @@ export const skeletonSynth: BodySynthesizer = {
     const scaffold = makeScaffold(dna, p);
     const { rig } = scaffold;
     const R = p.headR;
-    const bt = 0.16 * dna.species.boneThickness * (0.8 + 0.2 * dna.body.chubbiness);
+    const bt = 0.16 * dna.traits.boneThickness * (0.8 + 0.2 * dna.body.chubbiness);
 
     // Skull: icosahedron with a flattened jaw
     const skullGeo = new THREE.IcosahedronGeometry(R, 2);

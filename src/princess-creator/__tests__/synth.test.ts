@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { ARCHETYPES } from '../types';
+import { SPECIES_IDS } from '../types';
 import { defaultDna } from '../dna';
 import { randomDna } from '../randomize';
 import { createMaterialKit } from '../materials';
@@ -14,7 +14,7 @@ import { SOCKET_IDS } from '../synth/contracts';
 import { Animator } from '../animate';
 
 describe('composePrincess', () => {
-  it.each(ARCHETYPES)('%s builds rig, sockets and meshes', (a) => {
+  it.each(SPECIES_IDS)('%s builds rig, sockets and meshes', (a) => {
     const dna = defaultDna(a);
     const kit = createMaterialKit(dna);
     const result = composePrincess(dna, kit);
@@ -35,7 +35,7 @@ describe('composePrincess', () => {
     kit.dispose();
   });
 
-  it.each(ARCHETYPES)('%s update() runs headless without a renderer', (a) => {
+  it.each(SPECIES_IDS)('%s update() runs headless without a renderer', (a) => {
     const dna = defaultDna(a);
     const kit = createMaterialKit(dna);
     const result = composePrincess(dna, kit);
@@ -48,7 +48,7 @@ describe('composePrincess', () => {
   });
 
   it('mirrored right-hand items and ears use negative x scale', () => {
-    const dna = defaultDna('fox');
+    const dna = defaultDna('foxling');
     dna.parts.handL = 'wand';
     dna.parts.handR = 'wand';
     const kit = createMaterialKit(dna);
@@ -84,7 +84,7 @@ describe('composePrincess', () => {
   });
 
   it('random DNA builds for 25 seeds per archetype without throwing', () => {
-    for (const a of ARCHETYPES) {
+    for (const a of SPECIES_IDS) {
       for (let seed = 1; seed <= 25; seed++) {
         const dna = randomDna(a, seed);
         const kit = createMaterialKit(dna);
