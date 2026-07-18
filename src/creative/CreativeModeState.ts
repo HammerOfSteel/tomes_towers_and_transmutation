@@ -11,17 +11,21 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface CreativeState {
-  active:         boolean;
-  flyEnabled:     boolean;
-  noClip:         boolean;
-  godMode:        boolean;
-  frozenEnemies:  boolean;
-  speedTier:      0 | 1 | 2 | 3;   // 0=1× 1=3× 2=10× 3=50×
-  currentSkin:    string | null;
-  activeTool:     CreativeTool;
-  hotbar:         Array<string | null>;  // 8 slots, asset path or null
+  active:           boolean;
+  flyEnabled:       boolean;
+  noClip:           boolean;
+  godMode:          boolean;
+  frozenEnemies:    boolean;
+  speedTier:        0 | 1 | 2 | 3;
+  currentSkin:      string | null;
+  activeTool:       CreativeTool;
+  hotbar:           Array<string | null>;
   activeHotbarSlot: number;
-  currentZone:    string;
+  currentZone:      string;
+  /** Snap placed objects to GRID_SIZE grid. Default: true. */
+  gridSnap:         boolean;
+  /** Show code-first (procedural) assets in a separate inventory tab. Default: false. */
+  codeFirstAssets:  boolean;
 }
 
 export type CreativeTool = 'select' | 'place' | 'delete' | 'inspect';
@@ -36,12 +40,14 @@ const _state: CreativeState = {
   noClip:           false,
   godMode:          true,
   frozenEnemies:    false,
-  speedTier:        1,        // default 3×
+  speedTier:        1,
   currentSkin:      null,
   activeTool:       'select',
   hotbar:           Array(8).fill(null) as Array<string | null>,
   activeHotbarSlot: 0,
   currentZone:      'Tower',
+  gridSnap:         true,
+  codeFirstAssets:  false,
 };
 
 // ── Read API ──────────────────────────────────────────────────────────────────
@@ -55,6 +61,8 @@ export function getSpeedMultiplier(): number               { return SPEED_MULTIP
 export function setCreativeActive(v: boolean): void       { _state.active = v; }
 export function setFlyEnabled(v: boolean): void           { _state.flyEnabled = v; }
 export function setNoClip(v: boolean): void               { _state.noClip = v; }
+export function setGridSnap(v: boolean): void             { _state.gridSnap = v; }
+export function setCodeFirstAssets(v: boolean): void      { _state.codeFirstAssets = v; }
 export function setGodMode(v: boolean): void              { _state.godMode = v; }
 export function setFrozenEnemies(v: boolean): void        { _state.frozenEnemies = v; }
 export function setCurrentZone(zone: string): void        { _state.currentZone = zone; }

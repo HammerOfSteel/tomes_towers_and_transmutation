@@ -29,28 +29,28 @@ and showcase rooms that exist outside the main world timeline.
 
 ## Phase C1 — Core Creative Flag & Entry
 
-- [ ] Add `CreativeModeState` to game state manager
+- [x] Add `CreativeModeState` to game state manager
   - `active: boolean`
   - `flyEnabled: boolean`
   - `noClip: boolean`
   - `godMode: boolean` (infinite health/mana, no death)
   - `currentSkin: string`
   - `frozenEnemies: boolean`
-- [ ] `enterCreativeMode(spawnFloor?)` function — teleports player to top tower room (F9 Observatory), activates flag
-- [ ] `exitCreativeMode()` — returns to last normal-mode position, restores HP/mana to pre-creative values, deactivates flag
-- [ ] Guard all creative-only APIs behind `if (!CREATIVE_MODE_ACTIVE) return` in prod
-- [ ] Dev Labs menu entry in pause screen (hidden in prod builds via `import.meta.env.DEV`)
+- [x] `enterCreativeMode(spawnFloor?)` function — teleports player to top tower room (F9 Observatory), activates flag
+- [x] `exitCreativeMode()` — returns to last normal-mode position, restores HP/mana to pre-creative values, deactivates flag
+- [x] Guard all creative-only APIs behind `if (!CREATIVE_MODE_ACTIVE) return` in prod
+- [x] Dev Labs menu entry in pause screen (hidden in prod builds via `import.meta.env.DEV`)
 
 ---
 
 ## Phase C2 — Creative Movement
 
-- [ ] **Fly mode** — hold Space to ascend, Shift to descend; WASD moves horizontally relative to camera yaw; no gravity
-- [ ] **Speed multiplier** — `[` / `]` keys cycle through 1× / 3× / 10× / 50× movement speed
-- [ ] **No-clip toggle** — `N` key, disables collision so you can phase through walls and floors
-- [ ] **Teleport to floor** — quick-select overlay (`T` key) shows all tower floors + overworld + backrooms; click to teleport instantly
-- [ ] Smooth lerp camera when teleporting (0.3s ease)
-- [ ] Camera orbit unlocked — free look, no collision-based push-back
+- [x] **Fly mode** — hold Space to ascend, Shift to descend; WASD moves horizontally relative to camera yaw; no gravity
+- [x] **Speed multiplier** — `[` / `]` keys cycle through 1× / 3× / 10× / 50× movement speed
+- [x] **No-clip toggle** — `N` key, disables collision so you can phase through walls and floors
+- [x] **Teleport to floor** — quick-select overlay (`T` key) shows all tower floors + overworld + backrooms; click to teleport instantly
+- [x] Smooth lerp camera when teleporting (0.3s ease)
+- [x] Camera orbit unlocked — free look, no collision-based push-back
 
 ---
 
@@ -79,13 +79,13 @@ Replace the gameplay HUD with a purpose-built creative overlay:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- [ ] **Status bar** — top strip: mode tag, current zone name, speed, noclip status, coordinates
-- [ ] **Quick Tools panel** — floating right-side mini panel, toggled with `E` key
-- [ ] **Asset Hotbar** — bottom 8-slot bar; drag assets from the asset browser into slots; press 1–8 to select; left-click to place in world
-- [ ] **Asset Browser overlay** — `B` key opens full-screen asset browser (same kit tree as model-review but inline); selecting an asset puts it in the active hotbar slot
-- [ ] **Skin Selector** — `K` key opens character picker showing all available character models; click to switch instantly
-- [ ] **Inspector tooltip** — hovering an object shows its id, asset path, position, scale in a small tooltip
-- [ ] Creative mode indicator badge on screen (cannot be dismissed — clear visual reminder you're in creative)
+- [x] **Status bar** — top strip: mode tag, current zone name, speed, noclip status, coordinates
+- [x] **Quick Tools panel** — floating right-side mini panel, toggled with `E` key
+- [x] **Asset Hotbar** — bottom 8-slot bar; drag assets from the asset browser into slots; press 1–8 to select; left-click to place in world
+- [x] **Asset Browser overlay** — `B` key opens full-screen asset browser (same kit tree as model-review but inline); selecting an asset puts it in the active hotbar slot
+- [x] **Skin Selector** — `K` key opens character picker showing all available character models; click to switch instantly
+- [x] **Inspector tooltip** — hovering an object shows its id, asset path, position, scale in a small tooltip
+- [x] Creative mode indicator badge on screen (cannot be dismissed — clear visual reminder you're in creative)
 
 ---
 
@@ -93,24 +93,24 @@ Replace the gameplay HUD with a purpose-built creative overlay:
 
 These work the same as the model-review editor but while walking around inside the game:
 
-- [ ] **Place mode** — active hotbar slot shows a ghost preview of the asset attached to cursor; click to place; `R` rotates in 45° snapped steps; `+`/`-` scales; `G` toggles grid snap
-- [ ] **Select / Move** — click an existing object to select it; drag to reposition; `Delete` to remove
-- [ ] **Clone** — `Ctrl+D` duplicates selected object
-- [ ] **Undo / Redo** — `Ctrl+Z` / `Ctrl+Y`, persists within session
-- [ ] **Save to game** — `Ctrl+S` saves placed objects to `public/editor-output/<zone>/default.ttt-level.json` (same endpoint as model-review editor)
-- [ ] **Grid overlay** — `G` key toggles visible floor grid aligned to current zone's cell size
-- [ ] Selection highlight outline (same shader as regular selection)
+- [x] **Place mode** — active hotbar slot shows a ghost preview of the asset attached to cursor; click to place; `R` rotates in 45° snapped steps; `+`/`-` scales; `G` toggles grid snap
+- [x] **Select / Move** — click an existing object to select it; drag to reposition; `Delete` to remove
+- [x] **Clone** — `Ctrl+D` duplicates selected object
+- [x] **Undo / Redo** — `Ctrl+Z` / `Ctrl+Y`, persists within session
+- [x] **Save to game** — `Ctrl+S` saves placed objects to `public/editor-output/<zone>/default.ttt-level.json` (same endpoint as model-review editor)
+- [x] **Grid overlay** — `G` key toggles visible floor grid aligned to current zone's cell size
+- [x] Selection highlight outline (same shader as regular selection)
 
 ---
 
 ## Phase C5 — Character & Skin System
 
-- [ ] `CharacterRegistry` — list of all available skins (player wizards + NPCs + enemies as playable characters)
-- [ ] Skin picker UI (triggered by `K`) — grid of character thumbnails; click to hot-swap the player model
-- [ ] Stats stay the same regardless of skin (purely cosmetic in creative mode)
-- [ ] "I am the slime" mode — can switch to Slimey or any enemy character
-- [ ] Skin preference persisted in localStorage per creative session
-- [ ] Walk/idle/cast animations carry over to new skin if animation names match; graceful fallback if not
+- [x] `CharacterRegistry` — list of all available skins (player wizards + NPCs + enemies as playable characters)
+- [x] Skin picker UI (triggered by `K`) — grid of character thumbnails; click to hot-swap the player model
+- [x] Stats stay the same regardless of skin (purely cosmetic in creative mode)
+- [x] "I am the slime" mode — can switch to Slimey or any enemy character
+- [x] Skin preference persisted in localStorage per creative session
+- [x] Walk/idle/cast animations carry over to new skin if animation names match; graceful fallback if not
 
 ---
 
@@ -147,11 +147,11 @@ interface BackroomDef {
 | `sound_room` | The Sound Room | Trigger any SFX or music track, test spatial audio positioning |
 
 ### Backroom Portal System
-- [ ] Physical portals placed in the tower (basement has "The Backroom Door" — a hidden maintenance hatch)
-- [ ] Portal object renders a swirling void effect
-- [ ] Entering a portal transitions to the backroom; a matching return portal is always present
-- [ ] Backrooms exist outside the world timeline — no quests, no save impact, time frozen
-- [ ] `BackroomManager` class handles portal registration, scene switching, return stack
+- [x] Physical portals placed in the tower (basement has "The Backroom Door" — a hidden maintenance hatch)
+- [x] Portal object renders a swirling void effect
+- [x] Entering a portal transitions to the backroom; a matching return portal is always present
+- [x] Backrooms exist outside the world timeline — no quests, no save impact, time frozen
+- [x] `BackroomManager` class handles portal registration, scene switching, return stack
 
 ---
 
@@ -159,12 +159,12 @@ interface BackroomDef {
 
 The most important backroom for game development and spell balancing:
 
-- [ ] **Dummy targets** — 3 summonable golems with configurable HP (100 / 1000 / 10000); show floating damage numbers
-- [ ] **Spell workbench** — UI to compose spell components (element + shape + modifier) and cast the result
-- [ ] **Stats overlay** — real-time DPS, cast time, mana cost, AoE radius, status effect duration
-- [ ] **Replay last cast** — `R` key re-casts the last tested spell
-- [ ] **Balance export** — generates a JSON snippet with the spell's measured stats for copy-paste into SpellRegistry
-- [ ] **Effect visualiser** — slow-motion option (0.1× game speed) to inspect spell VFX frame by frame
+- [x] **Dummy targets** — 3 summonable golems with configurable HP (100 / 1000 / 10000); show floating damage numbers
+- [x] **Spell workbench** — UI to compose spell components (element + shape + modifier) and cast the result
+- [x] **Stats overlay** — real-time DPS, cast time, mana cost, AoE radius, status effect duration
+- [x] **Replay last cast** — `R` key re-casts the last tested spell (opens workbench pre-filled + fires immediately)
+- [x] **Balance export** — generates a JSON snippet with the spell's measured stats for copy-paste into SpellRegistry
+- [x] **Effect visualiser** — slow-motion option (0.1× game speed) to inspect spell VFX frame by frame
 
 ---
 
@@ -172,11 +172,11 @@ The most important backroom for game development and spell balancing:
 
 Creative mode changes should feed back into the game properly:
 
-- [ ] Object placements auto-saved to `public/editor-output/<zone>/<id>.ttt-level.json` on `Ctrl+S`
-- [ ] Same version-control system as model-review (EditorVersioning — localStorage snapshots, up to 25)
-- [ ] "Publish to game" button — marks the current save as the canonical game version (same as saving from model-review)
-- [ ] Base template protection — first save is always the immutable base; always revertable
-- [ ] Creative mode changes do NOT affect the active game save (separate data path)
+- [x] Object placements auto-saved to `public/editor-output/<zone>/<id>.ttt-level.json` on `Ctrl+S`
+- [x] Same version-control system as model-review (EditorVersioning — localStorage snapshots, up to 25)
+- [x] "Publish to game" button — marks the current save as the canonical game version (same as saving from model-review)
+- [x] Base template protection — first save is always the immutable base; always revertable
+- [x] Creative mode changes do NOT affect the active game save (separate data path)
 
 ---
 
@@ -197,9 +197,9 @@ DEV LABS
   └── Export World State     → dump current world to JSON for bug reports
 ```
 
-- [ ] Dev Labs accessible from pause menu (shown only in dev builds)
-- [ ] Each tool opens in the appropriate context (in-game overlay vs new tab)
-- [ ] All Dev Labs tools stripped from prod build via tree-shaking (`import.meta.env.DEV` guards)
+- [x] Dev Labs accessible from pause menu (shown only in dev builds)
+- [x] Each tool opens in the appropriate context (in-game overlay vs new tab)
+- [x] All Dev Labs tools stripped from prod build via tree-shaking (`import.meta.env.DEV` guards)
 
 ---
 
@@ -223,3 +223,71 @@ DEV LABS
 - The model-review.html and world-editor.html remain as power-tools for batch work and precise asset review, but creative mode replaces them for in-world placement.
 - Creative mode is dev-only and MUST be stripped from release builds. Use `import.meta.env.DEV` guards everywhere, not runtime flags.
 - The backroom concept is intentionally evocative — lean into the "extra-dimensional maintenance space" aesthetic (liminal lighting, low ambient music, grid floors).
+
+---
+
+## Phase C10 — Quest & Scenario Design ⬜
+> *Build quests and encounters in creative mode using existing game systems.*
+> Rule: **player-created content only** — never touches or overwrites game-defined quests.
+
+- [x] **Spawn palette tab** in inventory `[C]` — separate from model assets, shows:
+  - Enemy spawns (all enemy types with configurable tier 1–3 / boss)
+  - NPC spawns (all NPC types)
+  - Wave spawners (place a wave trigger zone on the floor)
+  - Quest trigger zones (invisible volume that fires an event)
+  - Interactable objects (bookshelf, chest, lectern, stall)
+- [x] **Right-click spawn palette item → place marker** in the world (yellow ghost preview for spawns, cyan for NPCs, red zone for waves)
+- [x] **Inspector for placed spawns** — click any placed spawn marker to edit:
+  - Enemy: type, tier, count, patrol/static/ambush pattern
+  - NPC: name, dialogue ID (type or select from existing dialogue IDs)
+  - Wave: wave count, enemy composition, trigger radius
+  - Interactable: type, content text, spell unlock (optional)
+- [x] **NPC dialogue editor** — when an NPC spawn is selected in inspector, a "Edit Dialogue" button opens a small text editor:
+  - Write dialogue lines (one per row)
+  - Assign an ID (auto-generated or custom)
+  - Saves to `public/editor-output/dialogue/<id>.json`
+  - Player-created dialogues only — game NPC dialogues are read-only
+- [x] **Quest builder panel** — `Q` key opens quest builder (only in creative):
+  - Quest name, description
+  - Objectives: list of `{ type, target, count }` pairs
+    - `type`: kill / interact / collect / reach / talk
+    - Target: enemy type / interactable ID / NPC ID / zone ID
+  - Rewards: XP, items (from existing item registry)
+  - Save as `public/editor-output/quests/<id>.json`
+  - Cannot edit or overwrite game-defined quests (IDs are prefixed `player_`)
+- [x] **Scenario runner** — test a placed quest/scenario:
+  - "Play from here" button: exits creative, respawns player at current position, starts the placed scenario
+  - Returns to creative when scenario is completed or player presses `Ctrl+Shift+C`
+- [x] **Wave designer** — place a wave trigger zone, then configure waves:
+  - Number of waves
+  - Per-wave enemy list (type + count)
+  - Spawn radius
+  - Trigger condition (player enter zone / interact / timed)
+- [x] **Scenario export** — export a full scenario (objects + spawns + quests) as a single `.ttt-scenario.json` file
+- [x] **Scenario import** — load a `.ttt-scenario.json` into the current zone
+
+---
+
+## Phase C11 — Inspector & Selection Polish ⬜
+
+- [x] **Hover tooltip** — when cursor is over a placed object, show a small tooltip: asset name, position (x/y/z), `[Click to select]`
+- [x] **Selection outline** — selected object gets a subtle coloured outline (pure client-side, uses emissive highlight for now; replace with outline pass when render pipeline supports it)
+- [x] **Multi-select** — hold Shift and left-click multiple objects; move/delete/clone applies to all selected
+- [x] **Marquee select** — hold Shift and drag a rectangle to select all objects within it
+- [x] **Align tools** — in inspector panel when multiple objects selected: align to X/Y/Z axis, distribute evenly
+
+---
+
+## Phase C12 — Backroom Scene Integration ⬜
+
+- [x] **Scene transition on portal enter** — walking into a portal fades to black, unloads current zone, loads the backroom scene, fades in
+- [x] **Return portal** always spawned at backroom entry point (same void effect, slightly different colour to distinguish)
+- [x] **Scene isolation** — backroom scenes add to a dedicated group inside the main scene; main world geometry hidden on entry via `visible=false` rather than unload, preventing bleed without requiring a full separate renderer
+- [x] **Backroom persistence** — if `BackroomDef.persistent` is true, placed objects survive between visits (saved to `public/editor-output/backrooms/<id>/`)
+- [x] **Asset Showcase Hall** implemented:
+  - All extracted kit folders scanned on entry
+  - Each kit gets a row of pedestals with one representative asset from each kit
+  - Can be browsed and assets picked directly into hotbar
+- [x] **Dungeon Prototype Room** implemented:
+  - Empty room using actual dungeon shader/lighting
+  - All blueprint room templates available as spawn items from the spawn palette

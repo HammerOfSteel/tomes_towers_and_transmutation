@@ -211,6 +211,8 @@ export interface BackroomContext {
   loadScene:      (roomId: string) => Promise<() => void>;
   /** Restore the previous game scene. */
   restoreScene:   () => void;
+  /** Scene for spawning return portals (optional). */
+  scene?:         import('three').Scene;
 }
 
 export class BackroomManager {
@@ -249,10 +251,31 @@ export class BackroomManager {
     this._returnStack.push({ roomId, pos: fromPos });
     this._currentCleanup = await this.ctx.loadScene(roomId);
     this.ctx.teleportPlayer(def.spawnPoint);
+
+    // Load persisted objects if the backroom is persistent
+    if (def.persistent) {
+      await this._loadPersistedBackroom(roomId);
+    }
+
+    // Spawn a return portal at the entry point (slightly behind the spawn)
+    const returnPos = { x: def.spawnPoint.x, y: def.spawnPoint.y, z: def.spawnPoint.z + 3 };
+    const returnPortal = new BackroomPortal(`return_${roomId}`, 0xccaaff, returnPos);
+    returnPortal.group.userData['returnPortal'] = true;
+    returnPortal.group.userData['onEnter'] = () => this.exitBackroom();
+    this.ctx.scene?.add(returnPortal.group);
+    this._activePortals.push(returnPortal);
   }
 
   /** Return to the previous location (use the return portal). */
   exitBackroom(): void {
+    // Persist placed objects if the backroom is marked persistent
+    const roomId = this.currentBackroomId;
+    if (roomId) {
+      const def = BackroomRegistry.get(roomId);
+      if (def?.persistent) {
+        this._persistBackroom(roomId);
+      }
+    }
     this._currentCleanup?.();
     this._currentCleanup = null;
     const prev = this._returnStack.pop();
@@ -260,6 +283,47 @@ export class BackroomManager {
       this.ctx.restoreScene();
       if (prev.pos) this.ctx.teleportPlayer(prev.pos);
     }
+  }
+
+  /** Save the current scene's placed objects for a persistent backroom. */
+  private _persistBackroom(roomId: string): void {
+    const key = `ttt_backroom_persist_${roomId}`;
+    // Collect all creativeObject userData groups from the scene
+    const objects: Array<{ path: string; x: number; y: number; z: number; ry: number; scale: number }> = [];
+    this.ctx.scene?.traverse(obj => {
+      if (obj.userData['creativeObject'] && obj.userData['path']) {
+        objects.push({
+          path:  obj.userData['path'] as string,
+          x: obj.position.x, y: obj.position.y, z: obj.position.z,
+          ry: obj.rotation.y,
+          scale: obj.scale.x,
+        });
+      }
+    });
+    try { localStorage.setItem(key, JSON.stringify(objects)); } catch { /* quota */ }
+  }
+
+  /** Load persisted objects back into the scene when entering a persistent backroom. */
+  private async _loadPersistedBackroom(roomId: string): Promise<void> {
+    const key = `ttt_backroom_persist_${roomId}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    try {
+      const objects = JSON.parse(raw) as Array<{ path: string; x: number; y: number; z: number; ry: number; scale: number }>;
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+      const loader = new GLTFLoader();
+      for (const o of objects) {
+        loader.loadAsync(o.path).then(gltf => {
+          const root = gltf.scene;
+          root.position.set(o.x, o.y, o.z);
+          root.rotation.y = o.ry;
+          root.scale.setScalar(o.scale);
+          root.userData['creativeObject'] = true;
+          root.userData['path'] = o.path;
+          this.ctx.scene?.add(root);
+        }).catch(() => {});
+      }
+    } catch { /* ignore corrupt data */ }
   }
 
   dispose(): void {

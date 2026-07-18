@@ -1386,6 +1386,10 @@ async function main() {
             openCharCreation: (slotId = 0) => charCreation.show(slotId),
             /** Snapshot of current character creation state — for Playwright tests. */
             getCharCreationState: () => charCreation.getState(),
+            /** Set game time scale (1=normal, 0.1=slow-motion, 2=fast). */
+            setGameSpeed: (scale) => { gameLoop.timeScale = Math.max(0.01, Math.min(4, scale)); },
+            /** Get current game time scale. */
+            getGameSpeed: () => gameLoop.timeScale,
         };
     }
     // ── Centralised key routing ──────────────────────────────────────────────

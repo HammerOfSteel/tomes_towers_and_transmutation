@@ -1,151 +1,214 @@
 /**
  * CreativeAssetBrowser.ts
  *
- * Full-screen inventory overlay (press C) showing all ENV_KITS and their
- * assets grouped by kit. Click any asset to pick it up into the active
- * hotbar slot and enter "place" mode.
+ * Compact floating asset picker — like WoW bags or Minecraft creative inventory.
+ * Opens with C key. Sits bottom-right of the screen, never covers the full viewport.
  *
- * Layout mirrors Minecraft's creative inventory:
- *  ┌─────────────────────────────────────────────────────────────┐
- *  │  🎨 Creative Inventory                              [✕]     │
- *  │  [Search…]                                                   │
- *  ├─── Kit groups ─────────┬─── Asset grid ───────────────────  │
- *  │  ▸ KayKit              │  [thumb] [thumb] [thumb] [thumb]   │
- *  │    KayKit Dungeon Pack  │  [thumb] [thumb] [thumb] [thumb]   │
- *  │    KayKit Nature Pack  │  …                                  │
- *  │  ▸ Kenney              │                                     │
- *  │    Fantasy Town Kit    │                                     │
- *  │  ▸ Kenney Modular      │  [Hotbar]                           │
- *  └────────────────────────┴──────────────────────────────────  ┘
+ * Layout:
+ *   ┌─ Kit picker (left column) ────────┐
+ *   │  KayKit ▸                         │
+ *   │    Dungeon Pack  Forest  Weapons   │  ← scrollable kit grid
+ *   │  Kenney ▸                         │
+ *   │    Town  Castle  Furniture  ...   │
+ *   ├─ Asset grid (right, main area) ───┤
+ *   │  [🧱][🧱][🧱][🧱][🧱][🧱][🧱]  │  ← asset icon tiles
+ *   │  [🧱][🧱][🧱][🧱][🧱][🧱][🧱]  │
+ *   ├─ Action bar (bottom, 8 slots) ────┤
+ *   │  [1][2][3][4][5][6][7][8]        │  ← drag/drop hotbar
+ *   └───────────────────────────────────┘
+ *
+ * Drag an asset card onto a hotbar slot to assign it.
+ * Click an asset card to immediately put it in the active slot.
  */
 
-import { ENV_KITS, ENV_ASSETS, type EnvAssetDef } from '@/assets/envManifest';
-import { setHotbarSlot, setActiveHotbarSlot, setActiveTool, getCreativeState } from './CreativeModeState';
-
-export interface AssetBrowserCallbacks {
-  /** Called when an asset is picked and should be loaded as the ghost. */
+import { ENV_KITS, type EnvAssetDef } from '@/assets/envManifest';
+import {
+  setHotbarSlot, setActiveHotbarSlot, setActiveTool,
+  getCreativeState,
+} from './CreativeModeState';
+import { SPAWN_CATEGORIES, ALL_SPAWN_ITEMS, type SpawnItem } from './SpawnPalette';export interface AssetBrowserCallbacks {
   onPickAsset: (assetPath: string) => void;
+  onPickSpawn: (item: SpawnItem) => void;
 }
+
+// ── CSS ───────────────────────────────────────────────────────────────────────
 
 const CSS = `
-#creative-browser-overlay {
-  position: fixed; inset: 0; z-index: 9500;
-  background: rgba(4,2,12,0.94); backdrop-filter: blur(6px);
-  display: flex; flex-direction: column;
+#cab-root {
+  position: fixed;
+  bottom: 68px;
+  right: 16px;
+  width: 520px;
+  max-height: 70vh;
+  background: rgba(8,5,18,0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(140,80,220,0.35);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  z-index: 9400;
   font-family: 'Segoe UI', system-ui, sans-serif;
-  color: rgba(220,200,255,0.85);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  overflow: hidden;
+  user-select: none;
 }
-#cb-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 18px; border-bottom: 1px solid rgba(140,80,220,0.25);
+
+/* Header */
+#cab-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid rgba(140,80,220,0.2);
   flex-shrink: 0;
 }
-#cb-header h2 { font-size: 13px; letter-spacing: 3px; color: #cc88ff; flex: 1; }
-#cb-search {
-  background: rgba(20,12,36,0.9); border: 1px solid rgba(140,80,220,0.3);
-  color: #eee; padding: 5px 10px; border-radius: 4px; font-size: 12px;
-  width: 220px; outline: none;
+#cab-title { color: #cc88ff; font-size: 11px; letter-spacing: 2px; font-weight:700; flex:1; }
+#cab-search {
+  background: rgba(20,12,36,0.9); border: 1px solid rgba(140,80,220,0.25);
+  color: #eee; padding: 3px 8px; border-radius: 4px; font-size: 11px;
+  outline: none; width: 130px;
 }
-#cb-search:focus { border-color: rgba(200,140,255,0.6); }
-#cb-close {
-  background: transparent; border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px 10px;
-  border-radius: 4px; font-size: 11px;
+#cab-search:focus { border-color: rgba(200,140,255,0.5); }
+#cab-close {
+  background: transparent; border: none; color: rgba(255,255,255,0.3);
+  cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1;
 }
-#cb-close:hover { color: #ff6666; border-color: #ff6666; }
+#cab-close:hover { color: #ff6666; }
 
-#cb-body { display: flex; flex: 1; overflow: hidden; }
+/* Body: kit strip + asset grid */
+#cab-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
-/* Sidebar */
-#cb-sidebar {
-  width: 200px; flex-shrink: 0; overflow-y: auto;
-  border-right: 1px solid rgba(140,80,220,0.2);
-  padding: 8px 0;
+/* Kit strip (top horizontal row of kit buttons) */
+#cab-kits {
+  width: 120px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid rgba(140,80,220,0.15);
+  padding: 4px 0;
 }
-.cb-group-hdr {
-  padding: 6px 14px; font-size: 10px; font-weight: 700;
-  letter-spacing: 2px; color: rgba(200,140,255,0.5);
-  text-transform: uppercase; cursor: pointer;
-  display: flex; align-items: center; gap: 6px;
+.cab-group-label {
+  padding: 5px 8px 2px;
+  font-size: 8px; font-weight: 700;
+  letter-spacing: 2px; color: rgba(200,140,255,0.4);
+  text-transform: uppercase;
 }
-.cb-group-hdr:hover { color: #cc88ff; }
-.cb-kit-btn {
-  display: block; width: 100%; text-align: left; padding: 5px 12px 5px 22px;
-  background: transparent; border: none; font-size: 10px;
-  color: rgba(200,180,230,0.55); cursor: pointer; transition: all 0.1s;
-}
-.cb-kit-btn:hover, .cb-kit-btn.active { color: #cc88ff; background: rgba(100,40,180,0.2); }
-.cb-kit-btn.unextracted { opacity: 0.5; }
-.cb-kit-btn.unextracted::after { content: ' ⬜'; font-size: 7px; opacity: 0.5; }
-
-/* Asset grid */
-#cb-grid-wrap { flex: 1; overflow-y: auto; padding: 12px; }
-#cb-grid-title { font-size: 10px; letter-spacing: 2px; color: rgba(200,140,255,0.4); margin-bottom: 10px; text-transform: uppercase; }
-#cb-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px;
-}
-.cb-asset-card {
-  background: rgba(20,12,36,0.7); border: 1px solid rgba(100,60,180,0.3);
-  border-radius: 6px; padding: 8px 6px 6px; cursor: pointer;
-  text-align: center; transition: all 0.1s; position: relative;
-}
-.cb-asset-card:hover { border-color: rgba(200,100,255,0.6); background: rgba(40,20,70,0.8); }
-.cb-asset-card.active { border-color: #cc88ff; background: rgba(80,40,140,0.5); }
-.cb-asset-card .icon { font-size: 24px; display: block; margin-bottom: 4px; }
-.cb-asset-card .name { font-size: 8px; color: rgba(200,180,230,0.6); line-height: 1.3; word-break: break-word; }
-.cb-asset-card .scale { position: absolute; top: 3px; right: 4px; font-size: 7px; font-family: monospace; color: rgba(255,255,255,0.2); }
-.cb-asset-card .kit-tag { font-size: 7px; color: rgba(160,120,200,0.4); margin-top: 2px; }
-
-/* Hotbar at bottom */
-#cb-hotbar-row {
-  display: flex; align-items: center; gap: 8px; padding: 10px 18px;
-  border-top: 1px solid rgba(140,80,220,0.2); flex-shrink: 0;
-  background: rgba(8,4,18,0.8);
-}
-#cb-hotbar-row .hotbar-label { font-size: 9px; color: rgba(255,255,255,0.25); letter-spacing: 1px; margin-right: 4px; }
-.cb-slot {
-  width: 40px; height: 40px; background: rgba(20,12,36,0.8);
-  border: 1.5px solid rgba(100,60,180,0.4); border-radius: 5px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 8px; color: rgba(200,180,230,0.4); cursor: pointer; position: relative;
+.cab-kit-btn {
+  display: block; width: 100%;
+  text-align: left; padding: 4px 8px;
+  background: transparent; border: none;
+  font-size: 9px; color: rgba(200,180,230,0.5);
+  cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
   transition: all 0.1s;
 }
-.cb-slot:hover { border-color: rgba(200,100,255,0.6); }
-.cb-slot.active { border-color: #cc88ff; background: rgba(80,40,140,0.5); }
-.cb-slot .snum { position: absolute; top: 2px; left: 3px; font-size: 7px; color: rgba(255,255,255,0.2); }
-.cb-slot .sicon { font-size: 16px; }
-.cb-slot .sname { font-size: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 36px; }
+.cab-kit-btn:hover { background: rgba(100,40,180,0.2); color: #cc88ff; }
+.cab-kit-btn.active { background: rgba(100,40,180,0.3); color: #cc88ff; font-weight: 600; }
+.cab-kit-btn .cab-dot {
+  display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: rgba(255,255,255,0.15);
+  margin-right: 4px; vertical-align: middle;
+}
+.cab-kit-btn.has-assets .cab-dot { background: #44ffaa; }
+
+/* Asset grid */
+#cab-grid-wrap { flex:1; overflow-y: auto; padding: 6px; }
+#cab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 4px;
+}
+.cab-card {
+  background: rgba(20,12,36,0.8);
+  border: 1px solid rgba(100,60,180,0.25);
+  border-radius: 5px; padding: 5px 3px 4px;
+  cursor: grab; text-align: center;
+  transition: border-color 0.1s, background 0.1s;
+  position: relative;
+}
+.cab-card:hover { border-color: rgba(200,100,255,0.5); background: rgba(40,20,70,0.9); }
+.cab-card.active { border-color: #cc88ff; background: rgba(80,40,140,0.5); }
+.cab-card:active { cursor: grabbing; }
+.cab-card .ci { font-size: 20px; display: block; line-height: 1.2; }
+.cab-card .cn { font-size: 7px; color: rgba(200,180,230,0.5); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cab-card.drag-over { border-color: #ffcc44; background: rgba(80,60,0,0.4); }
+
+/* Empty state */
+.cab-empty {
+  padding: 20px; text-align: center;
+  color: rgba(255,255,255,0.2); font-size: 10px; line-height: 1.8;
+  grid-column: 1 / -1;
+}
+
+/* Hotbar */
+#cab-hotbar {
+  display: flex; gap: 3px; align-items: center;
+  padding: 6px 8px;
+  border-top: 1px solid rgba(140,80,220,0.2);
+  background: rgba(5,3,12,0.6);
+  flex-shrink: 0;
+}
+.cab-slot {
+  width: 42px; height: 42px;
+  background: rgba(15,10,28,0.9);
+  border: 1.5px solid rgba(100,60,180,0.35);
+  border-radius: 4px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  cursor: pointer; position: relative;
+  transition: border-color 0.1s;
+  flex-shrink: 0;
+}
+.cab-slot:hover { border-color: rgba(200,100,255,0.6); }
+.cab-slot.active { border-color: #cc88ff; background: rgba(60,30,110,0.5); }
+.cab-slot.drag-over { border-color: #ffcc44; background: rgba(60,50,0,0.5); }
+.cab-slot .sn { position:absolute; top:2px; left:3px; font-size:7px; color:rgba(255,255,255,0.25); }
+.cab-slot .si { font-size:16px; }
+.cab-slot .sl { font-size:6px; color:rgba(200,180,230,0.4); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:38px; }
 `;
 
 function injectCSS(): void {
-  if (document.getElementById('creative-browser-css')) return;
-  const el = document.createElement('style');
-  el.id = 'creative-browser-css';
-  el.textContent = CSS;
-  document.head.appendChild(el);
+  if (document.getElementById('cab-css')) return;
+  const s = document.createElement('style');
+  s.id = 'cab-css';
+  s.textContent = CSS;
+  document.head.appendChild(s);
 }
 
-type KitGroup = 'kaykit' | 'kenney' | 'kenney_modular';
-const GROUP_LABELS: Record<KitGroup, string> = {
-  kaykit:          'KayKit',
-  kenney:          'Kenney',
-  kenney_modular:  'Kenney Modular',
-};
+// ── Lazy asset cache ──────────────────────────────────────────────────────────
+// Assets are stored in /assets-index/<kitId>.json (generated at build time).
+// Cache maps kitId → asset array so each kit JSON is only fetched once.
+
+const _assetCache = new Map<string, EnvAssetDef[]>();
+let _cacheLoading = new Set<string>();
+
+async function loadKitAssets(kitId: string): Promise<EnvAssetDef[]> {
+  if (_assetCache.has(kitId)) return _assetCache.get(kitId)!;
+  try {
+    const r = await fetch(`/assets-index/${kitId}.json`);
+    if (!r.ok) { _assetCache.set(kitId, []); return []; }
+    const raw = await r.json() as Array<{ path: string; name: string; category: string; gameScale: number }>;
+    const assets: EnvAssetDef[] = raw.map(a => ({ ...a, category: a.category as EnvAssetDef['category'], kitId }));
+    _assetCache.set(kitId, assets);
+    return assets;
+  } catch {
+    _assetCache.set(kitId, []);
+    return [];
+  }
+}
+
+// ── Browser class ─────────────────────────────────────────────────────────────
 
 export class CreativeAssetBrowser {
-  private _el:      HTMLElement | null = null;
-  private _visible  = false;
-  private _activeKit: string = 'all';
-  private _searchText = '';
+  private _el:        HTMLElement | null = null;
+  private _visible    = false;
+  private _activeKit  = 'all';
+  private _search     = '';
+  private _dragging:  string | null = null;
+  private _tab:       'models' | 'code' = 'models';
 
   constructor(private readonly cb: AssetBrowserCallbacks) {}
 
   get visible(): boolean { return this._visible; }
 
-  toggle(): void {
-    if (this._visible) this.hide();
-    else               this.show();
-  }
+  toggle(): void { if (this._visible) this.hide(); else this.show(); }
 
   show(): void {
     if (this._visible) return;
@@ -161,200 +224,266 @@ export class CreativeAssetBrowser {
     this._visible = false;
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   private _build(): void {
     const root = document.createElement('div');
-    root.id = 'creative-browser-overlay';
-
-    // Header
+    root.id = 'cab-root';
     root.innerHTML = `
-      <div id="cb-header">
-        <h2>🎨 Creative Inventory</h2>
-        <input id="cb-search" type="text" placeholder="Search assets…" />
-        <button id="cb-close">✕ Close [C]</button>
+      <div id="cab-header">
+        <span id="cab-title">🎨 ASSETS</span>
+        <div id="cab-tabs" style="display:flex;gap:2px;margin:0 6px;"></div>
+        <input id="cab-search" type="text" placeholder="search…" />
+        <button id="cab-close">✕</button>
       </div>
-      <div id="cb-body">
-        <div id="cb-sidebar"></div>
-        <div id="cb-grid-wrap">
-          <div id="cb-grid-title">ALL ASSETS</div>
-          <div id="cb-grid"></div>
-        </div>
+      <div id="cab-body">
+        <div id="cab-kits"></div>
+        <div id="cab-grid-wrap"><div id="cab-grid"></div></div>
       </div>
-      <div id="cb-hotbar-row">
-        <span class="hotbar-label">HOTBAR</span>
-      </div>
+      <div id="cab-hotbar"></div>
     `;
-
     this._el = root;
     document.body.appendChild(root);
 
-    this._buildSidebar();
-    this._buildGrid('all');
-    this._buildHotbar();
-
-    root.querySelector('#cb-close')?.addEventListener('click', () => this.hide());
-    root.querySelector('#cb-search')?.addEventListener('input', (e) => {
-      this._searchText = (e.target as HTMLInputElement).value.toLowerCase();
-      this._buildGrid(this._activeKit);
+    root.querySelector('#cab-close')?.addEventListener('click', () => this.hide());
+    root.querySelector('#cab-search')?.addEventListener('input', e => {
+      this._search = (e.target as HTMLInputElement).value.toLowerCase();
+      void this._renderGrid();
     });
 
-    // Click outside the card area closes
-    root.addEventListener('click', (e) => {
-      if (e.target === root) this.hide();
-    });
+    this._renderTabs();
+    this._renderKits();
+    void this._renderGrid();
+    this._renderHotbar();
   }
 
-  private _buildSidebar(): void {
-    const sidebar = this._el?.querySelector('#cb-sidebar');
-    if (!sidebar) return;
+  private _renderTabs(): void {
+    const bar = this._el?.querySelector('#cab-tabs');
+    if (!bar) return;
+    bar.innerHTML = '';
+    const tabStyle = (active: boolean) =>
+      `font-size:9px;padding:2px 8px;background:${active ? 'rgba(100,40,180,0.4)' : 'transparent'};` +
+      `border:1px solid ${active ? 'rgba(200,100,255,0.5)' : 'rgba(100,60,180,0.25)'};` +
+      `color:${active ? '#cc88ff' : 'rgba(200,180,230,0.4)'};border-radius:3px;cursor:pointer;`;
+    const mkTab = (label: string, tab: 'models' | 'code') => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = tabStyle(this._tab === tab);
+      btn.addEventListener('click', () => { this._tab = tab; this._renderTabs(); this._renderKits(); void this._renderGrid(); });
+      bar.appendChild(btn);
+    };
+    mkTab('📦 Models', 'models');
+    if (getCreativeState().codeFirstAssets) mkTab('⚙ Code', 'code');
+  }
+
+  private _renderKits(): void {
+    const panel = this._el?.querySelector('#cab-kits');
+    if (!panel) return;
+    panel.innerHTML = '';
+
+    if (this._tab === 'code') {
+      // Code-first categories
+      const allBtn = document.createElement('button');
+      allBtn.className = 'cab-kit-btn has-assets' + (this._activeKit === 'all' ? ' active' : '');
+      allBtn.dataset['kitId'] = 'all';
+      allBtn.innerHTML = `<span class="cab-dot"></span>All Spawns`;
+      allBtn.addEventListener('click', () => this._select('all'));
+      panel.appendChild(allBtn);
+
+      for (const cat of SPAWN_CATEGORIES) {
+        const btn = document.createElement('button');
+        btn.className = 'cab-kit-btn has-assets' + (this._activeKit === cat.id ? ' active' : '');
+        btn.dataset['kitId'] = cat.id;
+        btn.innerHTML = `<span class="cab-dot"></span>${cat.icon} ${cat.label}`;
+        btn.addEventListener('click', () => this._select(cat.id));
+        panel.appendChild(btn);
+      }
+      return;
+    }
 
     // All button
     const allBtn = document.createElement('button');
-    allBtn.className = 'cb-kit-btn' + (this._activeKit === 'all' ? ' active' : '');
-    allBtn.dataset['kitId'] = 'all';
-    allBtn.textContent = '🌍  All Assets';
-    allBtn.addEventListener('click', () => this._selectKit('all'));
-    sidebar.appendChild(allBtn);
+    allBtn.className = 'cab-kit-btn has-assets' + (this._activeKit === 'all' ? ' active' : '');
+    allBtn.innerHTML = `<span class="cab-dot"></span>All`;
+    allBtn.addEventListener('click', () => this._select('all'));
+    panel.appendChild(allBtn);
 
-    const groups: KitGroup[] = ['kaykit', 'kenney', 'kenney_modular'];
-    for (const group of groups) {
+    const groups: Array<{ group: string; label: string }> = [
+      { group: 'kaykit',         label: 'KayKit' },
+      { group: 'kenney',         label: 'Kenney' },
+      { group: 'kenney_modular', label: 'Modular' },
+    ];
+
+    for (const { group, label } of groups) {
       const hdr = document.createElement('div');
-      hdr.className = 'cb-group-hdr';
-      hdr.innerHTML = `<span>▸</span><span>${GROUP_LABELS[group]}</span>`;
-      sidebar.appendChild(hdr);
+      hdr.className = 'cab-group-label';
+      hdr.textContent = label;
+      panel.appendChild(hdr);
 
-      const kits = ENV_KITS.filter(k => k.group === group);
-      for (const kit of kits) {
+      for (const kit of ENV_KITS.filter(k => k.group === group)) {
         const btn = document.createElement('button');
-        btn.className = 'cb-kit-btn' +
-          (this._activeKit === kit.id ? ' active' : '') +
-          (kit.extracted ? '' : ' unextracted');
+        btn.className = 'cab-kit-btn has-assets' +
+          (this._activeKit === kit.id ? ' active' : '');
         btn.dataset['kitId'] = kit.id;
-        btn.textContent = `${kit.icon} ${kit.label}`;
-        btn.title = kit.extracted ? kit.archive : `${kit.archive}\n\nNot yet extracted — click to see info`;
-        btn.addEventListener('click', () => this._selectKit(kit.id));
-        sidebar.appendChild(btn);
+        btn.title = kit.label;
+        btn.innerHTML = `<span class="cab-dot"></span>${kit.icon} ${kit.label.replace(/^(KayKit |Kenney )/, '')}`;
+        btn.addEventListener('click', () => this._select(kit.id));
+        panel.appendChild(btn);
       }
     }
   }
 
-  private _selectKit(kitId: string): void {
+  private _select(kitId: string): void {
     this._activeKit = kitId;
-    // Update active state using data-kit-id for reliable matching
-    this._el?.querySelectorAll<HTMLElement>('.cb-kit-btn').forEach(btn => {
-      const bid = btn.dataset['kitId'];
-      const isAll = !bid && btn.textContent?.includes('All Assets');
-      btn.classList.toggle('active',
-        kitId === 'all' ? !!isAll : bid === kitId
-      );
+    this._el?.querySelectorAll<HTMLElement>('.cab-kit-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset['kitId'] === kitId || (kitId === 'all' && b.textContent?.includes('All')));
     });
-    const titleEl = this._el?.querySelector('#cb-grid-title');
-    if (titleEl) {
-      const kit = ENV_KITS.find(k => k.id === kitId);
-      titleEl.textContent = kitId === 'all' ? 'ALL ASSETS'
-        : kit ? `${kit.icon}  ${kit.label.toUpperCase()}${kit.extracted ? '' : '  ⬜ NOT EXTRACTED'}`
-        : kitId.toUpperCase();
-    }
-    this._buildGrid(kitId);
+    void this._renderGrid();
   }
 
-  private _buildGrid(kitId: string): void {
-    const grid = this._el?.querySelector('#cb-grid');
+  private async _renderGrid(): Promise<void> {
+    const grid = this._el?.querySelector('#cab-grid');
     if (!grid) return;
+    grid.innerHTML = '<div class="cab-empty">Loading…</div>';
+
+    // Code-first tab — show procedural asset categories
+    if (this._tab === 'code') {
+      grid.innerHTML = '';
+
+      const cat = SPAWN_CATEGORIES.find(c => c.id === this._activeKit);
+      const items = this._activeKit === 'all'
+        ? ALL_SPAWN_ITEMS.filter(i => !this._search || i.label.toLowerCase().includes(this._search))
+        : (cat?.items ?? []).filter(i => !this._search || i.label.toLowerCase().includes(this._search));
+
+      if (!items.length) {
+        grid.innerHTML = '<div class="cab-empty">No spawn items match.</div>';
+        return;
+      }
+
+      for (const item of items) {
+        const card = document.createElement('div');
+        card.className = 'cab-card';
+        card.title = `${item.label}\nCategory: ${item.category}\nClick to hold for placement`;
+        card.innerHTML = `<span class="ci">${item.icon}</span><span class="cn">${item.label}</span>`;
+        card.style.borderColor = `#${item.color.toString(16).padStart(6,'0')}44`;
+        card.addEventListener('click', () => this._pickSpawnItem(item));
+        grid.appendChild(card);
+      }
+      return;
+    }
+
+    // Build the asset list — fetch from JSON files lazily
+    let assets: EnvAssetDef[] = [];
+
+    if (this._activeKit === 'all') {
+      // Load all 48 kits (cached after first load)
+      const promises = ENV_KITS.map(k => loadKitAssets(k.id));
+      const results  = await Promise.all(promises);
+      assets = results.flat();
+    } else if (['kaykit', 'kenney', 'kenney_modular'].includes(this._activeKit)) {
+      const groupKits = ENV_KITS.filter(k => k.group === this._activeKit);
+      const results   = await Promise.all(groupKits.map(k => loadKitAssets(k.id)));
+      assets = results.flat();
+    } else {
+      assets = await loadKitAssets(this._activeKit);
+    }
+
+    // Apply search filter
+    if (this._search) {
+      assets = assets.filter(a =>
+        a.name.toLowerCase().includes(this._search) ||
+        a.kitId.includes(this._search)
+      );
+    }
+
     grid.innerHTML = '';
-
-    const isGroup = (id: string) => ['kaykit', 'kenney', 'kenney_modular'].includes(id);
-    const assets = ENV_ASSETS.filter(a => {
-      const kitOk = kitId === 'all' ? true
-        : isGroup(kitId) ? (ENV_KITS.find(k => k.id === a.kitId)?.group === kitId)
-        : a.kitId === kitId;
-      const textOk = !this._searchText || a.name.toLowerCase().includes(this._searchText) || a.kitId.toLowerCase().includes(this._searchText);
-      return kitOk && textOk;
-    });
-
     const state = getCreativeState();
+
+    if (!assets.length) {
+      const empty = document.createElement('div');
+      empty.className = 'cab-empty';
+      empty.textContent = this._search ? 'No assets match.' : 'No assets in this kit.';
+      grid.appendChild(empty);
+      return;
+    }
 
     for (const asset of assets) {
       const kit  = ENV_KITS.find(k => k.id === asset.kitId);
       const card = document.createElement('div');
-      card.className = 'cb-asset-card';
-      if (state.hotbar[state.activeHotbarSlot] === asset.path) card.classList.add('active');
-      card.innerHTML = `
-        <span class="icon">${kit?.icon ?? '📦'}</span>
-        <span class="scale">×${asset.gameScale}</span>
-        <div class="name">${asset.name}</div>
-        <div class="kit-tag">${kit?.label ?? asset.kitId}</div>
-      `;
-      card.addEventListener('click', () => this._pickAsset(asset));
+      card.className = 'cab-card' + (state.hotbar[state.activeHotbarSlot] === asset.path ? ' active' : '');
+      card.draggable = true;
+      card.title = `${asset.name}\n${asset.path}`;
+      card.innerHTML = `<span class="ci">${kit?.icon ?? '📦'}</span><span class="cn">${asset.name}</span>`;
+      card.addEventListener('click', () => this._pick(asset));
+      card.addEventListener('dragstart', e => {
+        this._dragging = asset.path;
+        e.dataTransfer!.effectAllowed = 'copy';
+        e.dataTransfer!.setData('text/plain', asset.path);
+      });
+      card.addEventListener('dragend', () => { this._dragging = null; });
       grid.appendChild(card);
-    }
-
-    if (!assets.length) {
-      const empty = document.createElement('div');
-      empty.style.cssText = 'grid-column:1/-1;padding:24px;text-align:center;';
-      // Show helpful info for unextracted kits
-      const kit = ENV_KITS.find(k => k.id === kitId);
-      if (kit && !kit.extracted && !this._searchText) {
-        empty.innerHTML = `
-          <div style="font-size:32px;margin-bottom:12px">${kit.icon}</div>
-          <div style="color:rgba(255,255,255,0.5);font-size:12px;font-weight:600;margin-bottom:8px">${kit.label}</div>
-          <div style="color:rgba(255,255,255,0.3);font-size:10px;line-height:1.6">
-            ${kit.models} models — <code style="font-size:9px">${kit.archive}</code>
-          </div>
-        `;
-      } else {
-        empty.style.color = 'rgba(255,255,255,0.2)';
-        empty.style.fontSize = '11px';
-        empty.textContent = this._searchText ? 'No assets match your search.' : 'No extracted assets in this kit yet.';
-      }
-      grid.appendChild(empty);
     }
   }
 
-  private _pickAsset(asset: EnvAssetDef): void {
+  private _pickSpawnItem(item: SpawnItem): void {
+    this.cb.onPickSpawn(item);
+    this.hide();
+  }
+
+  private _pick(asset: EnvAssetDef): void {
     const state = getCreativeState();
     setHotbarSlot(state.activeHotbarSlot, asset.path);
     setActiveTool('place');
     this.cb.onPickAsset(asset.path);
-    this._updateHotbar();
-    this._buildGrid(this._activeKit); // refresh active state
+    this._renderHotbar();
+    this._renderGrid();
     this.hide();
   }
 
-  private _buildHotbar(): void {
-    const row = this._el?.querySelector('#cb-hotbar-row');
-    if (!row) return;
+  private _renderHotbar(): void {
+    const bar = this._el?.querySelector('#cab-hotbar');
+    if (!bar) return;
+    bar.innerHTML = '';
     const state = getCreativeState();
+
     for (let i = 0; i < 8; i++) {
       const slot = document.createElement('div');
-      slot.className = 'cb-slot' + (i === state.activeHotbarSlot ? ' active' : '');
+      slot.className = 'cab-slot' + (i === state.activeHotbarSlot ? ' active' : '');
       slot.dataset['slot'] = String(i);
+
       const path = state.hotbar[i];
+      const name = path ? (path.split('/').pop()?.replace(/\.(gltf|glb)$/, '') ?? '') : '';
+      const kit  = path ? ENV_KITS.find(k => path.startsWith(k.path ?? '__')) : null;
+
       slot.innerHTML = `
-        <span class="snum">${i + 1}</span>
-        <span class="sicon">${path ? '📦' : '—'}</span>
-        <span class="sname">${path ? (path.split('/').pop()?.replace(/\.(gltf|glb)$/,'') ?? '') : 'Empty'}</span>
+        <span class="sn">${i + 1}</span>
+        <span class="si">${kit?.icon ?? (path ? '📦' : '—')}</span>
+        <span class="sl">${name || 'empty'}</span>
       `;
+
       slot.addEventListener('click', () => {
         setActiveHotbarSlot(i);
-        this._updateHotbar();
+        this._renderHotbar();
+        this._renderGrid();
       });
-      row.appendChild(slot);
-    }
-  }
 
-  private _updateHotbar(): void {
-    const row = this._el?.querySelector('#cb-hotbar-row');
-    if (!row) return;
-    const state = getCreativeState();
-    row.querySelectorAll<HTMLElement>('.cb-slot').forEach((el, i) => {
-      el.classList.toggle('active', i === state.activeHotbarSlot);
-      const path = state.hotbar[i];
-      const sicon = el.querySelector('.sicon');
-      const sname = el.querySelector('.sname');
-      if (sicon) sicon.textContent = path ? '📦' : '—';
-      if (sname) sname.textContent = path ? (path.split('/').pop()?.replace(/\.(gltf|glb)$/,'') ?? '') : 'Empty';
-    });
+      // Drop target
+      slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+      slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+      slot.addEventListener('drop', e => {
+        e.preventDefault();
+        slot.classList.remove('drag-over');
+        const dropped = e.dataTransfer?.getData('text/plain') ?? this._dragging;
+        if (dropped) {
+          setHotbarSlot(i, dropped);
+          setActiveHotbarSlot(i);
+          this.cb.onPickAsset(dropped);
+          this._renderHotbar();
+          this._renderGrid();
+        }
+      });
+
+      bar.appendChild(slot);
+    }
   }
 }

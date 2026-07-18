@@ -34,7 +34,7 @@ import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
-import { CreativeMode } from '@/creative/CreativeMode';
+import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
@@ -50,7 +50,7 @@ import { animateCreature } from '@/creatures/CreatureAnimator';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
 import { LevelUpBanner } from '@/ui/LevelUpBanner';
-import { QuestLog } from '@/ui/QuestLog';
+import { QuestJournal } from '@/ui/QuestJournal';
 import { DiscoveryTracker } from '@/world/DiscoveryTracker';
 import { Inventory } from '@/core/Inventory';
 import { CraftingUI } from '@/interactables/CraftingUI';
@@ -73,6 +73,7 @@ import { ConsumableInventory } from '@/core/ConsumableInventory';
 import { injectHudTheme } from '@/ui/hudTheme';
 import { BuffBar } from '@/ui/BuffBar';
 import { PartyStrip } from '@/ui/PartyStrip';
+import { SolmorPresence } from '@/world/SolmorPresence';
 import { ObjectiveTracker } from '@/ui/ObjectiveTracker';
 import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
 import { ControlsOverlay }  from '@/ui/ControlsOverlay';
@@ -216,6 +217,11 @@ async function main() {
       const floorName = getFloorDef(bp.floor)?.name;
       if (floorName) _floorToast(floorName);
 
+      // E3: Binding circle on Floor 0 — visible only to undead, shows lore on interact
+      if (bp.floor === 0 && _characterSpecies === 'undead' && isFirstVisit) {
+        _spawnBindingCircle(_s);
+      }
+
       // Per-species staircase flavour toast — only during the prologue, only on first visit.
       if (!_towerPrologueDone && isFirstVisit && _characterSpecies) {
         const STAIR_FLAVOUR: Partial<Record<SpeciesId, Partial<Record<number, string>>>> = {
@@ -259,6 +265,9 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   let minimap:   OWMinimap | null = null;
+  // E2: Solmor 3D presence near tower entrance (shown after prologue complete)
+  const solmorPresence = new SolmorPresence(scene);
+  solmorPresence.load().catch(() => {});  // fire-and-forget
   let owEditor:  OverworldEditor | null = null;
   // Rigs spawned via the Creature Lab sandbox — animated each tick.
   const _spawnedRigs: Array<{
@@ -391,6 +400,8 @@ async function main() {
     overworld.enter();
     _weatherSys.setActive(true);
     minimap?.show();
+    // E2: Show Solmor at tower entrance after prologue
+    if (_towerPrologueDone) solmorPresence.show();
     // Spawn just south of the tower door, high enough that the KCC capsule
     // starts above the heightfield surface and falls cleanly to ground.
     player.teleport(new THREE.Vector3(0, 1.5, 8));
@@ -456,7 +467,7 @@ async function main() {
 
   // ── Progression & interactables ───────────────────────────────────────────
   const progression      = new ProgressionSystem();
-  const questLog         = new QuestLog();
+  const questLog         = new QuestJournal();
   const discoveryTracker = new DiscoveryTracker();
   let _activeDungeonId: number | null = null;
   let _questCheckTimer = 0;
@@ -686,6 +697,7 @@ async function main() {
 
   const gameMenu = new GameMenu({
     openQuestLog:   () => questLog.show(),
+    openQuestJournal: () => questLog.showJournal(),
     openSpellBook:  () => spellBook.open(),
     openStatPanel:  () => statPanel.open(progression),
     openTalentTree: () => talentTree.open(progression, talentSystem),
@@ -778,10 +790,20 @@ async function main() {
     hud.setConsumables({ minorHealCount: 0, majorHealCount: 0 });
     if (cfg?.characterId) {
       _characterSpecies = speciesForCharacter(cfg.characterId);
+      // D6: gate species-specific talent nodes
+      talentSystem.activeSpecies = _characterSpecies as import('@/progression/TalentSystem').TalentSpecies;
       mainMenu.setActiveSpecies(_characterSpecies);
       // Apply species-specific active abilities (D1/D6)
       applyCharacterAbilities(abilities, cfg.characterId);
       _storyRunner = new StoryRunner(cfg.characterId, questLog);
+      // C1: Update quest journal species tab with the story arc title (fire-and-forget)
+      import('@/world/StoryQuestLine').then(({ getStoryLine, speciesForCharacter }) => {
+        const species = speciesForCharacter(cfg.characterId as any);
+        if (species) {
+          const line = getStoryLine(species as any);
+          if (line) questLog.setSpeciesTitle(line.displayTitle);
+        }
+      });
       _storyRunner.onBeatComplete = (text, xp, gold) => {
         progression.grantXP(xp);
         if (gold > 0) inventory.add('gold', gold);
@@ -794,13 +816,28 @@ async function main() {
       _storyRunner.onActBegin = (title, intro) => {
         _storyToast(intro, 'act');
         // The prologue ends when the first non-prologue act begins.
-        // Unlocking here means the front door opens exactly when the story
-        // says the player found the master key.
         if (title !== 'Prologue — The Tower') _towerPrologueDone = true;
+        // E2: Advance Solmor to Stage 2 when Act I begins (after prologue)
+        if (title !== 'Prologue — The Tower' && _characterSpecies) {
+          import('@/world/SolmorDialogueTree').then(({ getSolmorStage, advanceSolmorStage }) => {
+            if (getSolmorStage() === 1) {
+              advanceSolmorStage();  // → stage 2
+              solmorPresence.show(); // ensure he's visible
+            }
+          });
+        }
       };
       _storyRunner.onStoryComplete = () => {
         _storyToast('Your story is complete. The world will remember this — probably.', 'act');
         objTracker.clear();
+        // E2: Advance Solmor to Stage 3 when all species quests are done
+        if (_characterSpecies) {
+          import('@/world/SolmorDialogueTree').then(({ getSolmorStage, advanceSolmorStage }) => {
+            if (getSolmorStage() === 2) {
+              advanceSolmorStage();  // → stage 3 — the final encounter
+            }
+          });
+        }
       };
       _storyRunner.start({
         killCount:            sceneManager.killCount,
@@ -824,13 +861,17 @@ async function main() {
     // Initialise creative mode with game context (dev only)
     if (import.meta.env.DEV) {
       CreativeMode.init({
-        player:       player as Parameters<typeof CreativeMode.init>[0]['player'],
+        player: {
+          ...(player as Parameters<typeof CreativeMode.init>[0]['player']),
+          applyAssetModel: (def) => player.applyAssetModel(def),
+        },
         regularHUD:   { el: (hud as unknown as { el?: HTMLElement }).el },
         sceneManager: sceneManager as Parameters<typeof CreativeMode.init>[0]['sceneManager'],
         scene,
         camera:       cameraRig.camera,
         canvas:       renderer.domElement,
         openCharSheet: () => statPanel.open(progression),
+        orbit: orbit as CreativeModeContext['orbit'],
       });
     }
 
@@ -1308,6 +1349,75 @@ async function main() {
   }
 
   /** Location card — shown at the top-centre whenever the player enters a new floor. */
+  /**
+   * E3: Spawn the binding circle interactable on Floor 0 for undead species.
+   * The circle is a faintly glowing floor rune with an [E] interact prompt that
+   * shows species lore about the ward keeping the player's agency suppressed.
+   */
+  function _spawnBindingCircle(roomScene: THREE.Scene): void {
+    const group = new THREE.Group();
+    group.name  = 'binding_circle_f0';
+    // Position the circle in the centre of Floor 0 (slightly under the rug)
+    group.position.set(0, 0.03, 0);
+
+    // Glowing rune disc
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.2, 32),
+      new THREE.MeshBasicMaterial({ color: 0x4400aa, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    group.add(disc);
+
+    // Thin outer ring
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.2, 0.04, 6, 48),
+      new THREE.MeshBasicMaterial({ color: 0x6622ff, transparent: true, opacity: 0.6 }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    group.add(ring);
+
+    // Subtle pulse light
+    const light = new THREE.PointLight(0x4400aa, 0.6, 5);
+    light.position.y = 0.5;
+    group.add(light);
+
+    roomScene.add(group);
+
+    // Pulse animation driven by rAF — stops when group is removed
+    let age = 0;
+    const mat = disc.material as THREE.MeshBasicMaterial;
+    const animFrame = () => {
+      if (!group.parent) return;
+      age += 0.016;
+      mat.opacity  = 0.2 + Math.abs(Math.sin(age * 0.8)) * 0.2;
+      light.intensity = 0.4 + Math.abs(Math.sin(age * 0.8)) * 0.4;
+      requestAnimationFrame(animFrame);
+    };
+    requestAnimationFrame(animFrame);
+
+    // Proximity lore trigger: when player steps within 1.8 WU, show lore text once
+    let loreFired = false;
+    const LORE_TEXT = [
+      'A binding circle. Old work — centuries, at minimum.',
+      'You can feel it even now, a subtle tugging at the root of what you are.',
+      'The arcane notation around the edge is Solmor\'s hand, but the original design is older.',
+      'Whatever it was meant to contain, it was never fully closed.',
+    ].join('\n');
+
+    const checkProximity = setInterval(() => {
+      if (loreFired) { clearInterval(checkProximity); return; }
+      if (!group.parent) { clearInterval(checkProximity); return; }
+      const pPos = player.group.position;
+      const dx = pPos.x - group.position.x;
+      const dz = pPos.z - group.position.z;
+      if (dx*dx + dz*dz < 1.8 * 1.8) {
+        loreFired = true;
+        _storyToast(LORE_TEXT, 'beat');
+        clearInterval(checkProximity);
+      }
+    }, 200);
+  }
+
   function _floorToast(name: string): void {
     const el = document.createElement('div');
     Object.assign(el.style, {
@@ -1439,6 +1549,16 @@ async function main() {
       openCharCreation: (slotId = 0) => charCreation.show(slotId),
       /** Snapshot of current character creation state — for Playwright tests. */
       getCharCreationState: () => charCreation.getState(),
+      /** Enter creative mode (dev only). */
+      enterCreativeMode: () => { if (import.meta.env.DEV) CreativeMode.enter(); },
+      /** Exit creative mode (dev only). */
+      exitCreativeMode: () => { if (import.meta.env.DEV) CreativeMode.exit(); },
+      /** Whether creative mode is currently active. */
+      isCreativeActive: () => import.meta.env.DEV && CreativeMode.active,
+      /** Current tower floor index (-1=basement, 0–9=floors). */
+      getCurrentFloor: () => _currentFloor,
+      /** Current room ID as loaded in SceneManager. */
+      getCurrentRoom: () => sceneManager.currentFloor,
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
@@ -1893,6 +2013,7 @@ async function main() {
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();
         overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
+        solmorPresence.update(dt);   // E2: bob + anim tick
         party.pruneDead();
         tamingGame.update(dt);
 

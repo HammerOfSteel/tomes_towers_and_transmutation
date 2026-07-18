@@ -337,3 +337,215 @@ export class StationaryShootBehavior {
     return { state: this._state, shouldShoot, animState, justDetected: detected };
   }
 }
+
+// ── TacticalBrute ─────────────────────────────────────────────────────────────
+
+/**
+ * B4: Tier-2 melee FSM with special ability, retreat-to-heal, and repositioning.
+ *
+ * States:
+ *   idle      → chase when player within alertRange
+ *   chase     → close distance at bruteSpeed
+ *   attack    → melee strike on cooldown; fires special at specialCooldown
+ *   special   → special ability (stomp/charge), short animation window
+ *   retreat   → back away when HP ≤ retreatHpFrac; heals slowly; returns to chase
+ *   dead
+ *
+ * Usage:
+ *   const brute = new TacticalBrute({ alertRange: 10, specialCooldown: 25 });
+ *   // in enemy update():
+ *   const out = brute.tick(selfPos, playerPos, currentHp, maxHp, dt);
+ *   if (out.shouldAttack)  doMeleeAttack(out.specialActive ? 'stomp' : 'normal');
+ *   move(out.velocity.x, out.velocity.z);
+ */
+
+export type BruteFSMState = 'idle' | 'chase' | 'attack' | 'special' | 'retreat' | 'dead';
+
+export interface TacticalBruteOutput {
+  state:         BruteFSMState;
+  animState:     EnemyAnimTarget;
+  velocity:      { x: number; z: number };
+  facingYaw:     number;
+  shouldAttack:  boolean;
+  /** True this frame when the special ability fires (stomp / charge). */
+  specialActive: boolean;
+  justDetected:  boolean;
+}
+
+export interface TacticalBruteOptions {
+  alertRange:      number;  // detect range
+  attackRange:     number;  // melee engagement range
+  dropRange:       number;  // give up chase
+  chaseSpeed:      number;  // WU/s
+  retreatSpeed:    number;  // WU/s away from player
+  attackCooldown:  number;  // seconds between normal attacks
+  specialCooldown: number;  // seconds between special ability uses
+  specialDuration: number;  // seconds special state lasts
+  retreatHpFrac:   number;  // retreat when HP below this fraction (0–1)
+  healRate:        number;  // HP/s recovered during retreat
+}
+
+const BRUTE_DEFAULTS: TacticalBruteOptions = {
+  alertRange:      10,
+  attackRange:     1.8,
+  dropRange:       18,
+  chaseSpeed:      2.8,
+  retreatSpeed:    2.0,
+  attackCooldown:  1.8,
+  specialCooldown: 25,
+  specialDuration: 1.2,
+  retreatHpFrac:   0.2,
+  healRate:        2,    // 2 HP/s during retreat
+};
+
+export class TacticalBrute {
+  private readonly o: TacticalBruteOptions;
+  private _state:        BruteFSMState = 'idle';
+  private _attackTimer:  number = 0;
+  private _specialTimer: number = 0;
+  private _specialCd:    number = 0;
+  private _retreatTimer: number = 0;
+
+  constructor(opts: Partial<TacticalBruteOptions> = {}) {
+    this.o = { ...BRUTE_DEFAULTS, ...opts };
+  }
+
+  get state(): BruteFSMState { return this._state; }
+
+  kill(): void { this._state = 'dead'; }
+
+  /**
+   * Tick the FSM.
+   * @param self       Enemy world position
+   * @param player     Player world position
+   * @param currentHp  Current HP (used for retreat threshold)
+   * @param maxHp      Max HP (used for retreat threshold)
+   * @param dt         Frame delta
+   * @returns          Movement + action output for this frame
+   */
+  tick(
+    self:      { x: number; z: number },
+    player:    { x: number; z: number },
+    currentHp: number,
+    maxHp:     number,
+    dt:        number,
+  ): TacticalBruteOutput {
+    if (this._state === 'dead') {
+      return this._out('dead', 'death', 0, 0, 0, false, false, false);
+    }
+
+    const o = this.o;
+    const dx = player.x - self.x;
+    const dz = player.z - self.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const hpFrac = maxHp > 0 ? currentHp / maxHp : 1;
+
+    // Tick cooldowns
+    if (this._attackTimer  > 0) this._attackTimer  -= dt;
+    if (this._specialCd    > 0) this._specialCd    -= dt;
+    if (this._specialTimer > 0) this._specialTimer -= dt;
+    if (this._retreatTimer > 0) this._retreatTimer -= dt;
+
+    let shouldAttack = false;
+    let specialActive = false;
+    let detected = false;
+
+    switch (this._state) {
+      case 'idle':
+        if (dist < o.alertRange) { this._state = 'chase'; detected = true; }
+        break;
+
+      case 'chase':
+        if (dist > o.dropRange) {
+          this._state = 'idle';
+        } else if (hpFrac <= o.retreatHpFrac) {
+          this._state = 'retreat'; this._retreatTimer = 3.0;
+        } else if (dist < o.attackRange) {
+          this._state = 'attack';
+        }
+        break;
+
+      case 'attack':
+        if (dist > o.attackRange * 1.4) {
+          this._state = 'chase';
+          break;
+        }
+        if (hpFrac <= o.retreatHpFrac) {
+          this._state = 'retreat'; this._retreatTimer = 3.0;
+          break;
+        }
+        // Fire special if off cooldown
+        if (this._specialCd <= 0) {
+          this._state        = 'special';
+          this._specialTimer = o.specialDuration;
+          this._specialCd    = o.specialCooldown;
+          break;
+        }
+        // Normal attack
+        if (this._attackTimer <= 0) {
+          shouldAttack      = true;
+          this._attackTimer = o.attackCooldown;
+        }
+        break;
+
+      case 'special':
+        specialActive = true;
+        shouldAttack  = true;  // special counts as an attack this frame
+        if (this._specialTimer <= 0) {
+          this._state = dist < o.attackRange ? 'attack' : 'chase';
+        }
+        break;
+
+      case 'retreat':
+        // Heal during retreat
+        if (this._retreatTimer <= 0 || hpFrac > o.retreatHpFrac + 0.05) {
+          this._state = 'chase';
+        }
+        break;
+    }
+
+    // ── Movement ──────────────────────────────────────────────────────────────
+    let vx = 0, vz = 0, yaw = 0;
+
+    if (dist > 0.05) {
+      const ndx = dx / dist;
+      const ndz = dz / dist;
+      yaw = Math.atan2(ndx, ndz);
+
+      if (this._state === 'chase' || this._state === 'attack') {
+        vx = ndx * o.chaseSpeed;
+        vz = ndz * o.chaseSpeed;
+        if (this._state === 'attack') { vx = 0; vz = 0; }  // hold position while attacking
+      } else if (this._state === 'retreat') {
+        // Move away from player
+        vx = -ndx * o.retreatSpeed;
+        vz = -ndz * o.retreatSpeed;
+        yaw = Math.atan2(-ndx, -ndz);
+      }
+    }
+
+    const anim = this._resolveAnim(specialActive);
+    return this._out(this._state, anim, vx, vz, yaw, shouldAttack, specialActive, detected);
+  }
+
+  private _resolveAnim(specialActive: boolean): EnemyAnimTarget {
+    switch (this._state) {
+      case 'chase':   return 'run';
+      case 'attack':  return specialActive ? 'attack' : 'attack';
+      case 'special': return 'attack';
+      case 'retreat': return 'walk';
+      case 'dead':    return 'death';
+      default:        return 'idle';
+    }
+  }
+
+  private _out(
+    state: BruteFSMState, anim: EnemyAnimTarget,
+    vx: number, vz: number, yaw: number,
+    shouldAttack: boolean, specialActive: boolean, justDetected: boolean,
+  ): TacticalBruteOutput {
+    return { state, animState: anim, velocity: { x: vx, z: vz }, facingYaw: yaw,
+      shouldAttack, specialActive, justDetected };
+  }
+}
+

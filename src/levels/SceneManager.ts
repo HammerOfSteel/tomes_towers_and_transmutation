@@ -67,6 +67,13 @@ export class SceneManager {
   private pendingFromId: string | null = null;
   private triggerCooldown = 0;
 
+  /** B3: Reward orbs spawned on room clear — ticked each frame, removed on pickup / timeout. */
+  private _rewardOrbs: THREE.Group[] = [];
+
+  /** Called when the player walks into a reward orb (proximity pickup).
+   *  Wire in main.ts to grant XP / display message. */
+  onRewardOrbPickup: (() => void) | null = null;
+
   // Kill tracking across rooms
   private accumulatedKills = 0;
 
@@ -296,6 +303,9 @@ export class SceneManager {
     this.activeEnemies = [];
     this._waveState = null;
     AggroSystem.instance.clearAll();
+    // Remove any uncollected reward orbs from previous room
+    for (const orb of this._rewardOrbs) this.scene.remove(orb);
+    this._rewardOrbs = [];
     this.scene.remove(this.currentRoom.group);
     this.currentRoom.dispose();
     this.currentRoom = null;
@@ -354,6 +364,18 @@ export class SceneManager {
 
     // ── Cleared-room check ────────────────────────────────────────────────
     this._checkRoomCleared();
+
+    // ── Reward orb tick + proximity pickup ───────────────────────────────
+    for (let i = this._rewardOrbs.length - 1; i >= 0; i--) {
+      const orb = this._rewardOrbs[i]!;
+      (orb as any)._tick?.(dt);
+      // Pickup: player within 1.2 WU
+      if (playerPos.distanceTo(orb.position) < 1.2) {
+        this.scene.remove(orb);
+        this._rewardOrbs.splice(i, 1);
+        this.onRewardOrbPickup?.();
+      }
+    }
 
     // ── Door trigger checks ───────────────────────────────────────────────
     this.triggerCooldown = Math.max(0, this.triggerCooldown - dt);
@@ -558,8 +580,65 @@ export class SceneManager {
     if (this.activeEnemies.every((e) => e.isDead)) {
       this.clearedRooms.add(this.currentBpId);
       this._saveClearedRooms();
+      this._spawnClearReward();
       this.onRoomCleared?.();
     }
+  }
+
+  /** Spawn a glowing orb reward at the room centre when all enemies are defeated. */
+  private _spawnClearReward(): void {
+    const bp = this.currentBpId ? this.blueprints.get(this.currentBpId) : null;
+    if (!bp) return;
+
+    // Place orb at room centre (0, 0.6, 0) — most rooms are centred at origin
+    const orbGroup = new THREE.Group();
+    orbGroup.name  = '__clear_reward';
+    orbGroup.position.set(0, 0.6, 0);
+
+    // Core glow sphere
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffd966, transparent: true, opacity: 0.9 }),
+    );
+    orbGroup.add(core);
+
+    // Outer halo ring
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.32, 0.04, 8, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.5 }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    orbGroup.add(ring);
+
+    // Point light so it illuminates the floor
+    const light = new THREE.PointLight(0xffcc44, 1.2, 6);
+    orbGroup.add(light);
+
+    this.scene.add(orbGroup);
+
+    // Animate: bob up/down + spin ring + fade in
+    let age = 0;
+    const startY = 0.6;
+    const onTick = (dt: number) => {
+      age += dt;
+      orbGroup.position.y = startY + Math.sin(age * 2.5) * 0.12;
+      ring.rotation.y += dt * 1.8;
+      core.material.opacity = Math.min(0.9, age * 4);
+    };
+
+    // Store tick ref on group so SceneManager can call it
+    (orbGroup as any)._tick = onTick;
+    (orbGroup as any)._isReward = true;
+
+    // Remove after 18s if not picked up
+    setTimeout(() => {
+      if (orbGroup.parent) {
+        this.scene.remove(orbGroup);
+        this._rewardOrbs = this._rewardOrbs.filter(o => o !== orbGroup);
+      }
+    }, 18_000);
+
+    this._rewardOrbs.push(orbGroup);
   }
 
   /**

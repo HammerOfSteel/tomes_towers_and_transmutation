@@ -13,6 +13,9 @@ export type TalentPath =
   | 'conductor'    | 'artificer' | 'apothecary'
   | 'naturalist'   | 'cross';
 
+/** Species IDs that mirror StoryQuestLine.SpeciesId — kept local to avoid circular imports. */
+export type TalentSpecies = 'human' | 'undead' | 'vulperia' | 'slime';
+
 export interface TalentNode {
   id: string;
   path: TalentPath;
@@ -22,6 +25,11 @@ export interface TalentNode {
   prerequisites: string[];
   name: string;
   description: string;
+  /**
+   * Optional species gate.  When set, only characters of these species can
+   * purchase this node.  Unset = available to all species.
+   */
+  allowedSpecies?: readonly TalentSpecies[];
   /** Applied once, immediately when the node is purchased. */
   applyEffect(prog: ProgressionSystem): void;
 }
@@ -206,6 +214,40 @@ export const TALENT_NODES: readonly TalentNode[] = [
     description: 'Harvest herbs without a crafting station. Ingredients have +1 potency.',
     applyEffect: () => { /* applied in GardenPlot / harvest logic */ },
   },
+
+  // ── D6: Species-gated signature nodes ─────────────────────────────────────
+  {
+    id: 'sp_human_iron_will', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['bd_1'],
+    allowedSpecies: ['human'] as const,
+    name: 'Iron Will',
+    description: '[Human only] HP below 25%: all damage reduced by 20%. Passive — always active.',
+    applyEffect: p => { p.mods.ironWill = true; },
+  },
+  {
+    id: 'sp_undead_undying', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['wl_1'],
+    allowedSpecies: ['undead'] as const,
+    name: 'Undying Hunger',
+    description: '[Undead only] On kill, restore 5% max HP. Passive — always active.',
+    applyEffect: p => { p.mods.undyingHunger = true; },
+  },
+  {
+    id: 'sp_vulperia_predator', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['bd_2'],
+    allowedSpecies: ['vulperia'] as const,
+    name: "Predator's Eye",
+    description: '[Vulperia only] First hit on each new enemy always crits. Passive — resets per enemy.',
+    applyEffect: p => { p.mods.predatorsEye = true; },
+  },
+  {
+    id: 'sp_slime_amorphous', path: 'cross', tier: 3, cost: 2,
+    prerequisites: ['na_1'],
+    allowedSpecies: ['slime'] as const,
+    name: 'Amorphous',
+    description: '[Slime only] Immune to knockback; take 15% reduced fall damage. Passive — always active.',
+    applyEffect: p => { p.mods.amorphous = true; },
+  },
 ];
 
 // Fast lookup by id
@@ -219,6 +261,8 @@ export function getTalentNode(id: string): TalentNode | undefined {
 
 export class TalentSystem {
   private readonly _bought = new Set<string>();
+  /** Active species — set after character creation so species-gated nodes gate correctly. */
+  activeSpecies: TalentSpecies | null = null;
 
   /** Called when a node is successfully purchased. Use for particle/sound FX. */
   onNodeBought: ((nodeId: string) => void) | null = null;
@@ -227,12 +271,15 @@ export class TalentSystem {
 
   hasNode(id: string): boolean { return this._bought.has(id); }
 
-  /** True if all prerequisites are met and the node hasn't been bought. */
+  /** True if all prerequisites are met, species matches, and the node hasn't been bought. */
   canBuy(id: string, progression: ProgressionSystem): boolean {
     const node = NODE_MAP.get(id);
     if (!node) return false;
     if (this._bought.has(id)) return false;
     if (progression.talentPoints < node.cost) return false;
+    // D6: species gate
+    if (node.allowedSpecies && this.activeSpecies &&
+        !node.allowedSpecies.includes(this.activeSpecies)) return false;
     return node.prerequisites.every(p => this._bought.has(p));
   }
 

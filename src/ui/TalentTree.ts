@@ -21,6 +21,7 @@
 import type { ProgressionSystem } from '@/progression/ProgressionSystem';
 import type { TalentSystem } from '@/progression/TalentSystem';
 import { TALENT_NODES, getTalentNode } from '@/progression/TalentSystem';
+import { spawnTalentUnlockVFX } from '@/ui/TalentUnlockVFX';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -359,6 +360,12 @@ export class TalentTree {
   private _tryBuy(nodeId: string): void {
     if (!this._prog || !this._talents) return;
     if (this._talents.buyNode(nodeId, this._prog)) {
+      // G3: particle burst + chime at node screen position
+      const nodeEl = this._nodeEls.get(nodeId);
+      if (nodeEl) {
+        const r = nodeEl.getBoundingClientRect();
+        spawnTalentUnlockVFX(r.left + r.width / 2, r.top + r.height / 2);
+      }
       this._refresh();
     }
   }

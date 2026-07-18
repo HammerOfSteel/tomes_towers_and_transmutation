@@ -12,6 +12,21 @@
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
+    <!-- F4: dev-mode error reporter — posts uncaught errors to /_dev/error so
+         Playwright specs can detect console.error events during test runs. -->
+    <script>
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        window.onerror = function(msg, src, line, col, err) {
+          var body = JSON.stringify({ msg: String(msg), src: src, line: line, col: col, stack: err && err.stack });
+          fetch('/_dev/error', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }).catch(function(){});
+          return false;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+          var body = JSON.stringify({ msg: 'UnhandledRejection: ' + String(e.reason), stack: e.reason && e.reason.stack });
+          fetch('/_dev/error', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }).catch(function(){});
+        });
+      }
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

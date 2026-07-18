@@ -1,0 +1,67 @@
+name: Bot CI
+
+on:
+  workflow_dispatch:   # manual trigger only
+
+jobs:
+  creative-smoke:
+    name: Creative Mode Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Start Vite dev server
+        run: npm run dev -- --port 5174 &
+        env:
+          NODE_ENV: development
+
+      - name: Wait for dev server
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:5174/ > /dev/null && echo "Server ready" && break
+            echo "Waiting… ($i/30)"
+            sleep 2
+          done
+
+      - name: Run creative-smoke scenario
+        run: npm run bot:ci -- --scenario creative-smoke --record
+        env:
+          CI: true
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-screenshots
+          path: tests/bot/screenshots/**/*.png
+          retention-days: 7
+
+      - name: Upload bot report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-report
+          path: tests/bot/reports/*.html
+          retention-days: 14
+
+      - name: Upload video on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-video
+          path: tests/bot/videos/*.webm
+          retention-days: 7

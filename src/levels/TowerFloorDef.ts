@@ -326,6 +326,20 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'writing_desk', x: 4, z: 12, rotation: 90 as const },
       // Star-map rug at centre
       { type: 'rug', x: 8, z: 8 },
+      // E1: Act I lore book — Human arc (Raiders on the Rise)
+      // A military ledger hinting that the raider warlords have inside information.
+      {
+        type: 'lectern', x: 13, z: 12,
+        content:
+          'A slim intelligence ledger, stamped with a kingdom crest.\n\n' +
+          '"SUMMARY — Northern Incursion Assessment\n\n' +
+          'The raids are not opportunistic. Movement patterns suggest advance knowledge ' +
+          'of patrol schedules and supply routes. The information is recent and precise.\n\n' +
+          'Source of the leak is unknown. Access to this level of detail requires either ' +
+          'a spy within the garrison, or someone with access to the tower\'s observation records.\n\n' +
+          'Recommend immediate investigation of the eastern warlord camp.\n\n' +
+          '— Filed: Office of the Kingdom\'s Keeper"',
+      },
     ],
   },
 
@@ -355,6 +369,22 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'cooling_trough', x: 11, z: 5, rotation: 90 as const },
       { type: 'barrel', x: 3, z: 8,
         content: 'A barrel of coal dust mixed with arcane reagent. The label says "GRADE A SCORCHITE". It is very illegal.' },
+      // E1: Act I lore book — Vulperia arc (Someone Wants You Dead)
+      // A contract notice referencing an unnamed "fox-eared candidate".
+      {
+        type: 'lectern', x: 13, z: 4,
+        content:
+          'A folded notice, stamped with the Baron\'s Keep seal.\n\n' +
+          '"TO: All Registered Bounty Contractors\n\n' +
+          'SUBJECT: Active Acquisition Contract\n\n' +
+          'One (1) target: fox-eared, female-presenting, last seen in the vicinity of ' +
+          'the Arcanist\'s Tower. Contract placed anonymously. Fee: substantial.\n\n' +
+          'Acquisition only. Target is to be delivered intact.\n\n' +
+          'Enquiries should be directed to the Keep\'s eastern gate quartermaster.\n\n' +
+          'This notice is NOT to be distributed to independent contractors ' +
+          'without guild clearance.\n\n' +
+          '[Unsigned]"',
+      },
     ],
     encounterPool: ENCOUNTER_POOL_F4,
   },
@@ -384,6 +414,24 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'bunk', x: 4, z: 12 },
       { type: 'bunk', x: 12, z: 12 },
       { type: 'mess_table', x: 8, z: 10 },
+      // E1: Act I lore book — Undead arc (Why Am I Moving?)
+      // Solmor's maintenance notes on the undead-preservation mechanism.
+      {
+        type: 'lectern', x: 13, z: 8,
+        content:
+          'A ring-bound technical manual, heavily annotated.\n\n' +
+          '"UNDEAD PRESERVATION SYSTEM — MAINTENANCE LOG\n\n' +
+          'Primary animating coil: stable. Secondary resonance matrix: stable. ' +
+          'Tertiary suppression ward: DEGRADED — replaced 12 cycles ago, degrading again.\n\n' +
+          'THEORY: The suppression ward\'s degradation is not equipment failure. ' +
+          'The subject is actively resisting it at a sub-conscious level. ' +
+          'This has not happened before.\n\n' +
+          'CRITICAL NOTE: The maintenance point for the tertiary suppression ward ' +
+          'is located at the bog shrine, grid ref 7-N. If the ward fails completely, ' +
+          'the animating mechanism may become \'aware\'.\n\n' +
+          'This may not be a problem. This may be a significant problem.\n\n' +
+          '— Ongoing"',
+      },
     ],
     encounterPool: ENCOUNTER_POOL_F5,
   },
@@ -445,6 +493,25 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
       { type: 'plant_pot', x: 10, z: 13 },
       { type: 'plant_pot', x: 3, z: 8 },
       { type: 'plant_pot', x: 13, z: 8 },
+      // E1: Act I lore book — Slime arc (What Is This?)
+      // Solmor's notes on a previous slime candidate who absorbed something unusual.
+      {
+        type: 'lectern', x: 4, z: 11,
+        content:
+          'A research journal, water-damaged.\n\n' +
+          '"INCIDENT REPORT — CANDIDATE #7 (Slime, Classification IV)\n\n' +
+          'The subject absorbed a personality fragment from a decommissioned construct ' +
+          'in the lower laboratory. Fragment contained partial linguistic matrix and ' +
+          'approximately 40 years of accumulated grievances.\n\n' +
+          'The subject now has opinions.\n\n' +
+          'Previously the subject did not have opinions. This is a significant change.\n\n' +
+          'The personality fragment appears to retain access to certain structural ' +
+          'knowledge of the tower, including an exit route I was not aware of.\n\n' +
+          'RECOMMENDATION: Do not allow future candidates near the construct remains ' +
+          'in the lab\'s NW quadrant.\n\n' +
+          'I have not followed this recommendation myself. I am curious.\n\n' +
+          '— S."',
+      },
     ],
     encounterPool: ENCOUNTER_POOL_F7,
   },

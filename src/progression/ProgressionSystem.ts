@@ -43,6 +43,11 @@ export interface TalentModifiers {
   hasVoidWeave: boolean;       // cross_ar_wl
   hasDeathPact: boolean;       // cross_wl_co
   hasSpellBlade: boolean;      // cross_bd_ar
+  // D6: Species passive flags
+  ironWill: boolean;           // human — damage reduced at <25% HP
+  undyingHunger: boolean;      // undead — restore 5% HP on kill
+  predatorsEye: boolean;       // vulperia — first hit on each enemy crits
+  amorphous: boolean;          // slime — knockback immune, reduced fall damage
 }
 
 const BASE_MODS: TalentModifiers = {
@@ -50,6 +55,7 @@ const BASE_MODS: TalentModifiers = {
   extraPartySlots: 0, herbYieldMult: 1, buildCostMult: 1, potionPotencyMult: 1,
   hasCurseTouch: false, hasSoulDrain: false,
   hasVoidWeave: false, hasDeathPact: false, hasSpellBlade: false,
+  ironWill: false, undyingHunger: false, predatorsEye: false, amorphous: false,
 };
 
 // ── Main class ────────────────────────────────────────────────────────────

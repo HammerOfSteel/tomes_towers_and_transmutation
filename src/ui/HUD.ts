@@ -369,6 +369,10 @@ export class HUD {
   private readonly _potSlots:  [HTMLElement, HTMLElement] = [document.createElement('div'), document.createElement('div')];
   /** Slot glyph elements, updated with the spell icon */
   private readonly _slotGlyphs: HTMLElement[] = [];
+  /** G2: Quest tracker widget */
+  private _questTracker!: HTMLElement;
+  private _questTrackerCollapsed = false;
+  private _questTrackerData: { title: string; beat: string } | null = null;
 
   constructor() {
     this._ensureStyles();
@@ -623,6 +627,26 @@ export class HUD {
       this._potRoot.appendChild(s);
     }
     document.body.appendChild(this._potRoot);
+
+    // ── Quest tracker (bottom-right) ─────────────────────────────────────
+    this._questTracker = document.createElement('div');
+    this._questTracker.id = 'hud-quest-tracker';
+    this._questTracker.style.cssText = [
+      'position:fixed;bottom:88px;right:14px;',
+      'background:rgba(4,2,14,0.82);backdrop-filter:blur(4px);',
+      'border:1px solid rgba(180,140,255,0.18);border-radius:7px;',
+      'padding:7px 10px;min-width:180px;max-width:260px;',
+      'font-family:"Segoe UI",system-ui,sans-serif;font-size:9.5px;',
+      'color:rgba(220,200,255,0.75);z-index:400;cursor:pointer;',
+      'transition:opacity 0.3s;',
+    ].join('');
+    this._questTracker.innerHTML = '';
+    this._questTracker.style.display = 'none';
+    this._questTracker.addEventListener('click', () => {
+      this._questTrackerCollapsed = !this._questTrackerCollapsed;
+      this._renderQuestTracker();
+    });
+    document.body.appendChild(this._questTracker);
   }
 
   update(
@@ -822,7 +846,37 @@ export class HUD {
     }
   }
 
-  /** Set weather icon in the clock widget.  Provide a state key. */
+  /** G2: Update the quest tracker widget.
+   *  Pass `null` to hide it (no active quest).
+   *  @param title  Quest name (e.g. "The Missing Familiar")
+   *  @param beat   Current objective text (e.g. "Find the construct in the overworld")
+   */
+  setQuestTracker(data: { title: string; beat: string } | null): void {
+    this._questTrackerData = data;
+    this._renderQuestTracker();
+  }
+
+  private _renderQuestTracker(): void {
+    const el  = this._questTracker;
+    const dat = this._questTrackerData;
+    if (!dat) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const col = this._questTrackerCollapsed;
+    el.innerHTML = col
+      ? `<div style="display:flex;align-items:center;gap:5px">
+           <span style="color:rgba(180,140,255,0.6);font-size:8px">📜</span>
+           <span style="color:rgba(200,180,255,0.5);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px">${dat.title}</span>
+           <span style="margin-left:auto;color:rgba(180,140,255,0.3);font-size:8px">▸</span>
+         </div>`
+      : `<div style="margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">
+           <span style="color:rgba(180,140,255,0.7);font-size:8px;letter-spacing:1px">ACTIVE QUEST</span>
+           <span style="color:rgba(180,140,255,0.3);font-size:8px">▾</span>
+         </div>
+         <div style="color:rgba(220,200,255,0.9);font-size:10px;font-weight:600;margin-bottom:4px">${dat.title}</div>
+         <div style="color:rgba(180,160,220,0.55);font-size:8.5px;line-height:1.4">${dat.beat}</div>`;
+  }
+
+  /** G2: Set weather icon in the clock widget.  Provide a state key. */
   setWeather(state: 'clear' | 'cloudy' | 'rain' | 'storm' | null): void {
     this._pendingWeather = state;
     // Actually applied in setTime() when the clock element exists

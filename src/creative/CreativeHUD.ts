@@ -25,6 +25,7 @@ import {
   getCreativeState, isCreativeActive,
   getSpeedMultiplier, SPEED_MULTIPLIERS,
   setActiveTool, setActiveHotbarSlot, setNoClip, setHotbarSlot,
+  setGridSnap, setCodeFirstAssets,
   cycleSpeedUp, cycleSpeedDown,
   type CreativeTool,
 } from './CreativeModeState';
@@ -114,6 +115,32 @@ const CSS = `
 .chb-slot .slot-icon { font-size: 18px; line-height: 1; }
 .chb-slot .slot-name { font-size: 7px; color: rgba(200,180,230,0.5); text-overflow: ellipsis; overflow: hidden; max-width: 38px; white-space: nowrap; }
 
+/* ── Settings panel ── */
+#creative-settings-panel {
+  position:fixed; bottom:68px; right:210px;
+  background:rgba(8,4,18,0.97); backdrop-filter:blur(8px);
+  border:1px solid rgba(140,80,220,0.4); border-radius:8px;
+  padding:14px; min-width:220px; z-index:9001; pointer-events:auto;
+  font-family:'Segoe UI',system-ui,sans-serif; font-size:11px;
+  color:rgba(220,200,255,0.85);
+}
+#creative-settings-panel h3 { color:#cc88ff; font-size:10px; letter-spacing:2px; margin-bottom:12px; text-transform:uppercase; }
+.cs-row { display:flex; align-items:center; justify-content:space-between; margin:8px 0; gap:10px; }
+.cs-label { color:rgba(200,180,230,0.7); font-size:10px; flex:1; }
+.cs-desc  { color:rgba(200,180,230,0.35); font-size:8px; margin-top:1px; }
+.cs-toggle {
+  width:34px; height:18px; border-radius:9px; cursor:pointer;
+  background:rgba(60,40,100,0.5); border:1px solid rgba(140,80,220,0.35);
+  position:relative; flex-shrink:0; transition:background 0.2s;
+}
+.cs-toggle.on { background:rgba(100,40,180,0.7); border-color:rgba(200,100,255,0.5); }
+.cs-toggle::after {
+  content:''; position:absolute; top:2px; left:2px;
+  width:12px; height:12px; border-radius:50%;
+  background:rgba(255,255,255,0.4); transition:left 0.2s, background 0.2s;
+}
+.cs-toggle.on::after { left:18px; background:#cc88ff; }
+
 /* ── Teleport panel ── */
 #creative-teleport-panel {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -151,7 +178,8 @@ export class CreativeHUD {
   private _quickTools:  HTMLElement | null = null;
   private _hotbar:      HTMLElement | null = null;
   private _teleportPanel: HTMLElement | null = null;
-  private _toolsVisible = true;
+  private _toolsVisible   = true;
+  private _settingsEl:    HTMLElement | null = null;
   private _kbHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(private readonly cb: CreativeHUDCallbacks) {}
@@ -179,9 +207,12 @@ export class CreativeHUD {
     qt.id = 'creative-quick-tools';
     const tools: Array<{ icon: string; label: string; key: string; action: () => void }> = [
       { icon: '🎨', label: 'Inventory',  key: 'C',  action: () => {} },  // handled by CreativeMode keys
-      { icon: '🌍', label: 'Teleport',  key: 'T',  action: () => this._toggleTeleport() },
-      { icon: '🧪', label: 'Backrooms', key: 'B',  action: () => this.cb.onOpenBackrooms() },
-      { icon: '👤', label: 'Skin',      key: 'K',  action: () => this.cb.onOpenSkinPicker() },
+      { icon: '📜', label: 'Quests',     key: 'Q',  action: () => {} },
+      { icon: '▶',  label: 'Play Here',  key: 'F5', action: () => this.cb.onExit() },
+      { icon: '🌍', label: 'Teleport',   key: 'T',  action: () => this._toggleTeleport() },
+      { icon: '🧪', label: 'Backrooms',  key: 'B',  action: () => this.cb.onOpenBackrooms() },
+      { icon: '👤', label: 'Skin',       key: 'K',  action: () => this.cb.onOpenSkinPicker() },
+      { icon: '⚙️',  label: 'Settings',  key: 'O',  action: () => this._toggleSettings() },
     ];
     for (const t of tools) {
       const btn = document.createElement('button');
@@ -247,6 +278,8 @@ export class CreativeHUD {
   unmount(): void {
     if (!this._root) return;
     this._root.remove();
+    this._settingsEl?.remove();
+    this._settingsEl = null;
     this._root = null;
     if (this._kbHandler) {
       window.removeEventListener('keydown', this._kbHandler);
@@ -307,6 +340,7 @@ export class CreativeHUD {
       case 'p': case 'P': setActiveTool('place');   this.refresh(); break;
       case 'i': case 'I': setActiveTool('inspect'); this.refresh(); break;
       case 'n': case 'N': { const s = getCreativeState(); setNoClip(!s.noClip); this.refresh(); break; }
+      case 'o': case 'O': this._toggleSettings(); break;
       case 't': case 'T': this._toggleTeleport(); break;
       case 'b': case 'B': this.cb.onOpenBackrooms(); break;
       case 'k': case 'K': this.cb.onOpenSkinPicker(); break;
@@ -318,6 +352,43 @@ export class CreativeHUD {
         this.refresh();
         break;
     }
+  }
+
+  private _toggleSettings(): void {
+    if (this._settingsEl) {
+      this._settingsEl.remove();
+      this._settingsEl = null;
+      return;
+    }
+    const panel = document.createElement('div');
+    panel.id = 'creative-settings-panel';
+    this._settingsEl = panel;
+
+    const rebuild = () => {
+      const s = getCreativeState();
+      panel.innerHTML = `<h3>⚙ Creative Settings</h3>`;
+
+      const addToggle = (label: string, desc: string, value: boolean, onChange: (v: boolean) => void) => {
+        const row = document.createElement('div');
+        row.className = 'cs-row';
+        row.innerHTML = `
+          <div><div class="cs-label">${label}</div><div class="cs-desc">${desc}</div></div>
+          <div class="cs-toggle ${value ? 'on' : ''}"></div>
+        `;
+        row.querySelector<HTMLElement>('.cs-toggle')!.addEventListener('click', () => {
+          onChange(!value);
+          rebuild();
+          this.refresh();
+        });
+        panel.appendChild(row);
+      };
+
+      addToggle('Grid Snap',         'Snap objects to 2 WU grid',                        s.gridSnap,        setGridSnap);
+      addToggle('Code-First Assets', 'Show procedural assets tab in inventory [C]',       s.codeFirstAssets, setCodeFirstAssets);
+    };
+
+    rebuild();
+    document.body.appendChild(panel);
   }
 
   private _toggleTeleport(): void {

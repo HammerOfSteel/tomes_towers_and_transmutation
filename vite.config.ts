@@ -13,7 +13,16 @@ function levelEditorPlugin(): Plugin {
   return {
     name: 'level-editor-save',
     configureServer(server) {
-      // ── POST /api/save-level — write level JSON to public/editor-output/ ──
+      // ── POST /_dev/error — receive window.onerror payloads from the browser ──
+      server.middlewares.use('/_dev/error', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        let body = '';
+        req.on('data', (c: Buffer) => { body += c.toString(); });
+        req.on('end', () => {
+          try { console.error('[browser-error]', JSON.parse(body)); } catch { console.error('[browser-error]', body); }
+          res.statusCode = 204; res.end();
+        });
+      });
       server.middlewares.use('/api/save-level', (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
         let body = '';
@@ -67,8 +76,10 @@ function levelEditorPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [levelEditorPlugin()],
+  // F4: 'warn' in production builds, 'info' in dev — suppress noisy info logs in prod
+  logLevel: mode === 'production' ? 'warn' : 'info',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -100,4 +111,4 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
     },
   },
-});
+}));

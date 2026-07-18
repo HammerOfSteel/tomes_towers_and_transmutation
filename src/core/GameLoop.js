@@ -10,6 +10,8 @@ export class GameLoop {
     callbacks = [];
     /** Remaining frames of hit-stop freeze (dt passed as 0 while > 0). */
     _freezeFrames = 0;
+    /** Global time scale multiplier (1 = normal, 0.1 = slow-motion). Clamped [0.01, 2]. */
+    timeScale = 1;
     /** Register a callback to be called every frame. Returns an unsubscribe fn. */
     onTick(cb) {
         this.callbacks.push(cb);
@@ -49,6 +51,8 @@ export class GameLoop {
         if (this._freezeFrames > 0) {
             this._freezeFrames--;
             effectiveDt = 0;
+        } else {
+            effectiveDt *= Math.max(0.01, Math.min(2, this.timeScale));
         }
         for (const cb of this.callbacks)
             cb(effectiveDt);
