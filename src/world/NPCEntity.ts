@@ -49,12 +49,16 @@ let _dialoguePanel: HTMLDivElement | null = null;
 let _dialogueCloseKey: ((e: KeyboardEvent) => void) | null = null;
 
 const ROLE_BADGE_LABEL: Record<string, string> = {
-  merchant:   'Merchant',
-  guard:      'Guard',
-  citizen:    'Citizen',
-  scholar:    'Scholar',
-  innkeeper:  'Innkeeper',
-  blacksmith: 'Blacksmith',
+  merchant:          'Merchant',
+  guard:             'Guard',
+  citizen:           'Citizen',
+  scholar:           'Scholar',
+  innkeeper:         'Innkeeper',
+  blacksmith:        'Blacksmith',
+  // C1: Quest-giver archetypes
+  quest_giver:       'Wandering Merchant',
+  settlement_elder:  'Village Elder',
+  mysterious:        '???',
 };
 
 function _showDialogue(npcName: string, lines: string, role?: string): void {

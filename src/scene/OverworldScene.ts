@@ -1809,6 +1809,22 @@ export class OverworldScene {
         position: new THREE.Vector3(wx, wy, wz),
         label:    'Ruined Greenhouse',
       });
+
+      // C1: Spawn a mysterious NPC near each ruin
+      const mCol = Math.round((wx + 3) / T + GHW);
+      const mRow = Math.round((wz + 1) / T + GHH);
+      const mystNpc = new NPCEntity(
+        mCol, mRow, wx + 3, wz + 1,
+        'mysterious',
+        { seed: (mCol * 73856093) ^ (mRow * 19349663), type: 'village', population: 0,
+          name: 'Ruins', col: mCol, row: mRow } as any,   // synthetic settlement
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      if (this.onQuestGiven) mystNpc.onQuestGiven = this.onQuestGiven;
+      mystNpc.group.position.y = wy;
+      this._npcs.push(mystNpc);
     }
   }
 
@@ -2241,9 +2257,9 @@ export class OverworldScene {
     const histEvents = history?.events ?? [];
 
     // Role distributions per settlement type
-    const VILLAGE_ROLES: NPCRole[] = ['citizen','citizen','citizen','merchant','guard'];
-    const TOWN_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith'];
-    const CITY_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','scholar'];
+    const VILLAGE_ROLES: NPCRole[] = ['citizen','citizen','citizen','merchant','guard','quest_giver'];
+    const TOWN_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','settlement_elder'];
+    const CITY_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','scholar','settlement_elder','quest_giver'];
 
     for (const entry of settlements) {
       const { plan, seed } = entry;

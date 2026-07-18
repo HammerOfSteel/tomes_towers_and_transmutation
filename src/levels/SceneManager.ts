@@ -70,6 +70,10 @@ export class SceneManager {
   /** B3: Reward orbs spawned on room clear — ticked each frame, removed on pickup / timeout. */
   private _rewardOrbs: THREE.Group[] = [];
 
+  /** G1: Spawn pool — reuse dead SlimeEnemy instances rather than creating new ones. */
+  private readonly _enemyPool: SlimeEnemy[] = [];
+  private static readonly POOL_MAX = 30;
+
   /** Called when the player walks into a reward orb (proximity pickup).
    *  Wire in main.ts to grant XP / display message. */
   onRewardOrbPickup: (() => void) | null = null;
@@ -298,7 +302,12 @@ export class SceneManager {
       const rig = enemy.group.userData['enemyRig'] as EnemyRig | undefined;
       if (rig) disposeEnemyRig(rig);
       this.scene.remove(enemy.group);
-      enemy.dispose(this.physics);
+      // G1: return dead enemies to pool; dispose live ones (safer)
+      if (enemy.isDead) {
+        this._returnToPool(enemy);
+      } else {
+        enemy.dispose(this.physics);
+      }
     }
     this.activeEnemies = [];
     this._waveState = null;
@@ -549,6 +558,40 @@ export class SceneManager {
   }
 
   /** Mark the current room cleared when all enemies are dead. */
+  /** G1: Acquire a SlimeEnemy from the pool or create a new one.
+   *  Pool limit: POOL_MAX live enemies max; excess are not spawned (drops silently). */
+  private _acquireEnemy(
+    spawnPos: THREE.Vector3,
+    onHit: (dmg: number) => void,
+  ): SlimeEnemy | null {
+    // Hard cap — don't spawn if we're already at the limit
+    if (this.activeEnemies.length >= SceneManager.POOL_MAX) return null;
+
+    // Recycle a dead pooled enemy
+    for (let i = 0; i < this._enemyPool.length; i++) {
+      const candidate = this._enemyPool[i]!;
+      if (candidate.isDead) {
+        this._enemyPool.splice(i, 1);
+        candidate.revive(spawnPos);
+        return candidate;
+      }
+    }
+
+    // Pool is fresh — create a new instance
+    const enemy = new SlimeEnemy(spawnPos, this.physics, onHit);
+    return enemy;
+  }
+
+  /** G1: Return a dead enemy to the pool (or dispose if pool is full). */
+  private _returnToPool(enemy: SlimeEnemy): void {
+    if (this._enemyPool.length < SceneManager.POOL_MAX) {
+      this._enemyPool.push(enemy);
+    } else {
+      // Pool full — dispose properly
+      enemy.dispose(this.physics);
+    }
+  }
+
   private _checkRoomCleared(): void {
     if (!this.currentBpId) return;
     if (this.clearedRooms.has(this.currentBpId)) return;
@@ -691,11 +734,12 @@ export class SceneManager {
         const z = (rng() * 0.7 - 0.35) * bp_d;
         const spawnPos = new THREE.Vector3(x, 1.5, z);
 
-        // Create SlimeEnemy for physics + AI (capsule collider, FSM, health).
-        const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) => {
+        // G1: Acquire from pool or create new (capped at POOL_MAX live enemies).
+        const enemy = this._acquireEnemy(spawnPos, (dmg) => {
           this.player.health.takeDamage(dmg);
           if (dmg > 0) this.onPlayerHit?.(dmg);
         });
+        if (!enemy) continue;  // pool cap reached
         enemy.group.userData['enemyId'] = group.enemyId;
 
         // B4: attach patrol behavior for patrol-pattern encounters.

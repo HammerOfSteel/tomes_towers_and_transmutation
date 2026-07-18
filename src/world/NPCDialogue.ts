@@ -78,6 +78,33 @@ const GREETINGS: Templates = {
     ['Weapons, armour, tools — you name it. I\'ve got coal and iron, that\'s enough.',
      '{settlement} folk know to come to me before any expedition {dir_dungeon}.'],
   ],
+  // C1: Quest-giver archetypes
+  quest_giver: [
+    ['Name\'s {name}. Wandering merchant by trade, information broker by necessity.',
+     '{settlement} sits on a crossroads — I hear everything that moves through here.',
+     'And something has been moving from {dungeon}.'],
+    ['I\'ve seen a lot of strange things on the road.',
+     'What\'s coming out of {dungeon} to the {dir_dungeon} is stranger than most.',
+     'I have coin for someone willing to take a closer look.'],
+    ['You look capable. I\'ve been waiting for someone capable.',
+     '{settlement} won\'t talk about it but I will — there is something in {dungeon}.'],
+  ],
+  settlement_elder: [
+    ['Welcome to {settlement}. I am {name}, elder here for thirty years.',
+     'These lands were peaceful once. The {dungeon} was quiet.',
+     'It is not quiet anymore.'],
+    ['You arrive at a troubled time, stranger.',
+     '{settlement} has faced {event} and we are not as strong as we were.',
+     'Perhaps you are what we\'ve been waiting for.'],
+  ],
+  mysterious: [
+    ['...You found me. Not many do.',
+     'The ruins here hold answers. Also questions. Mostly questions.',
+     'But I know which ones are worth asking.'],
+    ['I have been here since before {settlement} had its current name.',
+     'The {dungeon} to the {dir_dungeon} — I know what sleeps there.',
+     'I will tell you, if you wish to know.'],
+  ],
 };
 
 const QUEST_HINTS: Templates = {
@@ -116,6 +143,29 @@ const QUEST_HINTS: Templates = {
      'Bring me a load and I\'ll make it worth your while.'],
     ['Those creatures from {dungeon} have been taking tools.',
      'Get them back and I\'ll outfit you for free.'],
+  ],
+  // C1: Quest-giver archetypes
+  quest_giver: [
+    ['I\'ve been travelling these roads for years. {settlement} is a good rest stop.',
+     'But I\'ve heard things about {dungeon} that would make your hair stand on end.',
+     'I\'d make it worth someone\'s while to look into it.'],
+    ['Word travels fast on the merchant roads.',
+     'Something unusual is coming out of {dungeon} to the {dir_dungeon}.',
+     'I have a proposition for anyone with the courage to find out what.'],
+  ],
+  settlement_elder: [
+    ['{settlement} has stood here for generations. We\'ve seen things come and go.',
+     'But what stirs in {dungeon} now is different from anything in our records.',
+     'I have been waiting for someone like you.'],
+    ['The old ways say that when the {dungeon} wakes, a wanderer will come.',
+     'You arrived at the right moment. We have need of you.'],
+  ],
+  mysterious: [
+    ['...', 'I wondered when someone would come this way.',
+     'The ruins remember things the living have forgotten.'],
+    ['You found me. That means you were meant to.',
+     'There is something in {dungeon} that should not remain buried.',
+     'But I cannot retrieve it myself.'],
   ],
 };
 
