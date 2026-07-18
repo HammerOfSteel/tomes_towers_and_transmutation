@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import type { PrincessDNA } from './types';
 import type { MaterialKit } from './materials';
-import type { BuildResult } from './synth/contracts';
+import type { BuildResult, Proportions } from './synth/contracts';
 import { shadowed } from './synth/shared';
 
 // ── Crowns ───────────────────────────────────────────────────────────────────
@@ -52,6 +52,60 @@ function buildCrown(
     const gem = shadowed(new THREE.Mesh(new THREE.OctahedronGeometry(headR * 0.07), kit.accent));
     gem.position.set(0, centerY + bandR + headR * 0.02, 0);
     g.add(gem);
+  } else if (id === 'crescent') {
+    // Moonborn: natural growth, not jewellery. Shape follows the lunar phase.
+    const phase = dna.species === 'moonborn' && dna.subtype ? dna.subtype : 'crescent';
+    const moon = new THREE.Group();
+    if (phase === 'full') {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(headR * 0.34, headR * 0.05, 8, 24), kit.glow,
+      );
+      const discGeo = new THREE.CylinderGeometry(headR * 0.3, headR * 0.3, headR * 0.03, 24);
+      discGeo.rotateX(Math.PI / 2);
+      moon.add(ring, new THREE.Mesh(discGeo, kit.glow));
+    } else if (phase === 'eclipse') {
+      // Something else entirely: a dark disc with a burning rim.
+      const discGeo = new THREE.CylinderGeometry(headR * 0.3, headR * 0.3, headR * 0.04, 24);
+      discGeo.rotateX(Math.PI / 2);
+      const rim = new THREE.Mesh(
+        new THREE.TorusGeometry(headR * 0.31, headR * 0.035, 8, 20), kit.glow,
+      );
+      moon.add(new THREE.Mesh(discGeo, kit.dark), rim);
+    } else {
+      // A clear waxing "C": half-ring, horns tipped up-right, slightly tapered
+      const arc = new THREE.Mesh(
+        new THREE.TorusGeometry(headR * 0.3, headR * 0.05, 8, 24, Math.PI), kit.glow,
+      );
+      arc.rotation.z = Math.PI * 0.62;
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(headR * 0.05, 8, 6), kit.glow);
+      tip.position.set(Math.cos(Math.PI * 0.62) * headR * 0.3, Math.sin(Math.PI * 0.62) * headR * 0.3, 0);
+      moon.add(arc, tip);
+    }
+    moon.position.y = headR * 0.42;
+    g.add(moon);
+    g.userData.halo = moon; // reuse the halo float/bob hook
+  } else if (id === 'wreath') {
+    // Verdant: a LIVING wreath — vine ring, leaves, small blooms.
+    const vineGeo = new THREE.TorusGeometry(headR * 0.44, headR * 0.045, 6, 20);
+    vineGeo.rotateX(Math.PI / 2);
+    g.add(shadowed(new THREE.Mesh(vineGeo, kit.hair)));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      if (i % 2 === 0) {
+        const leafGeo = new THREE.ConeGeometry(headR * 0.09, headR * 0.3, 5);
+        leafGeo.translate(0, headR * 0.15, 0);
+        leafGeo.scale(1, 1, 0.35);
+        const leaf = shadowed(new THREE.Mesh(leafGeo, kit.primary));
+        leaf.position.set(Math.cos(a) * headR * 0.44, 0.02, Math.sin(a) * headR * 0.44);
+        leaf.rotation.y = -a;
+        leaf.rotation.z = 0.5;
+        g.add(leaf);
+      } else {
+        const bloom = shadowed(new THREE.Mesh(new THREE.SphereGeometry(headR * 0.08, 8, 6), kit.accent));
+        bloom.position.set(Math.cos(a) * headR * 0.44, headR * 0.05, Math.sin(a) * headR * 0.44);
+        g.add(bloom);
+      }
+    }
   } else if (id === 'flower') {
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
@@ -118,6 +172,23 @@ function buildEarL(dna: PrincessDNA, kit: MaterialKit, headR: number): THREE.Gro
     g.add(outer, inner);
     g.rotation.z = dims.tilt;
     g.rotation.x = -Math.PI / 14;
+  } else if (id === 'fin') {
+    // Naiad: webbed temple fin — a translucent-reading fan swept back.
+    const finGeo = new THREE.ConeGeometry(0.55 * headR * s, 0.9 * headR * s, 5, 1, false, -Math.PI / 2, Math.PI);
+    finGeo.translate(0, 0.45 * headR * s, 0);
+    finGeo.scale(1, 1, 0.12);
+    const fin = shadowed(new THREE.Mesh(finGeo, kit.secondary));
+    fin.rotation.z = -Math.PI / 3.2; // swept back-out from the temple
+    fin.rotation.y = Math.PI / 7;
+    g.add(fin);
+    for (let i = 0; i < 3; i++) {
+      const spineGeo = new THREE.ConeGeometry(0.035 * headR * s, (0.85 - i * 0.18) * headR * s, 4);
+      spineGeo.translate(0, (0.42 - i * 0.09) * headR * s, 0);
+      const spine = new THREE.Mesh(spineGeo, kit.skin);
+      spine.rotation.z = -Math.PI / 3.2 + i * 0.28;
+      spine.rotation.y = Math.PI / 7;
+      g.add(spine);
+    }
   } else if (id === 'horn_small' || id === 'horn_curved') {
     // Draconic horns (she doesn't hide them). kit.hair = dark tones in
     // draconic palettes, so horns read as keratin.
@@ -708,8 +779,10 @@ function buildMistHair(
   return { group: g, trail };
 }
 
-/** Fae: small leaves grow from the hair — not placed there, simply there. */
-function sprinkleLeaves(hairGroup: THREE.Group, headR: number, kit: MaterialKit): void {
+/** Fae/Verdant: leaves (and blooms) grow from the hair — simply there. */
+function sprinkleGrowth(
+  hairGroup: THREE.Group, headR: number, kit: MaterialKit, flowers = 0,
+): void {
   const SPOTS: ReadonlyArray<readonly [number, number, number]> = [
     [0.3, 0.75, 0.5], [2.2, 0.6, 0.62], [4.1, 0.8, 0.45],
     [5.3, 0.55, 0.6], [1.3, 0.35, 0.72], [3.3, 0.4, 0.7], [5.9, 0.9, 0.35],
@@ -727,6 +800,63 @@ function sprinkleLeaves(hairGroup: THREE.Group, headR: number, kit: MaterialKit)
     leaf.rotation.z += (a * 7) % 1 - 0.5;
     hairGroup.add(leaf);
   }
+  const BLOOM_SPOTS: ReadonlyArray<readonly [number, number, number]> = [
+    [1.0, 0.65, 0.6], [2.9, 0.5, 0.66], [4.7, 0.7, 0.52], [0.1, 0.4, 0.7],
+  ];
+  for (let i = 0; i < Math.min(flowers, BLOOM_SPOTS.length); i++) {
+    const [a, el, ring] = BLOOM_SPOTS[i];
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(headR * 0.09, 8, 6), kit.accent);
+    const dir = new THREE.Vector3(
+      Math.cos(a) * Math.cos(el), Math.sin(el), Math.sin(a) * Math.cos(el) - 0.2,
+    ).normalize();
+    bloom.position.copy(dir.clone().multiplyScalar(headR * ring * 1.6));
+    const center = new THREE.Mesh(new THREE.SphereGeometry(headR * 0.045, 6, 5), kit.metal);
+    center.position.z = headR * 0.06;
+    bloom.add(center);
+    hairGroup.add(bloom);
+  }
+}
+
+/** Naiad: a string of pearls at the collar (she makes them; don't ask). */
+function addPearls(result: BuildResult, kit: MaterialKit, p: Proportions): void {
+  const n = 9;
+  const r = p.topR * 0.92;
+  for (let i = 0; i < n; i++) {
+    const a = (i / (n - 1)) * Math.PI * 1.3 + Math.PI * 0.35; // front arc
+    const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.13 + (i % 2) * 0.03, 10, 8), kit.white);
+    pearl.position.set(
+      Math.cos(a) * r,
+      p.neckY - 0.25 - Math.sin(Math.abs(a - Math.PI / 2 - Math.PI * 0.35)) * 0.1,
+      Math.sin(a) * r,
+    );
+    result.rig.torso.add(pearl);
+  }
+}
+
+/** Moonborn silver arcs / Verdant vines wrapped around the limbs + hem. */
+function addLimbBands(
+  result: BuildResult, material: THREE.Material, p: Proportions, arcs: boolean,
+): void {
+  const bandArc = arcs ? Math.PI * 1.35 : Math.PI * 2;
+  const mk = (radius: number): THREE.Mesh => {
+    const geo = new THREE.TorusGeometry(radius, 0.045, 6, 14, bandArc);
+    geo.rotateX(Math.PI / 2);
+    return new THREE.Mesh(geo, material);
+  };
+  for (let i = 0; i < 2; i++) {
+    const upper = mk(p.armThick * 1.18);
+    upper.position.y = -p.armUpper * 0.55;
+    upper.rotation.y = i * Math.PI * 0.5;
+    result.rig.shoulders[i].add(upper);
+    const lower = mk(p.armThick * 1.05);
+    lower.position.y = -p.armLower * 0.5;
+    lower.rotation.y = 0.8 + i;
+    result.rig.elbows[i].add(lower);
+  }
+  // One pattern arc low on the dress
+  const hem = mk(p.hemR * 0.55);
+  hem.position.y = 0.9 - p.dressH * 0.72;
+  result.rig.torso.add(hem);
 }
 
 // ── Glasses (scholar signature) ──────────────────────────────────────────────
@@ -762,8 +892,13 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
   const sink = isSlime ? -p.headR * 0.08 : 0;
 
   // Crown — lifted a touch so bands don't sink into the scalp, more when
-  // a hair cap adds volume under it.
-  const hairLift = !isSlime && dna.hair.style !== 'none' ? p.headR * 0.12 : 0;
+  // hair adds volume under it (an afro is a structural achievement).
+  const HAIR_LIFT: Partial<Record<PrincessDNA['hair']['style'], number>> = {
+    afro: 0.45, wild: 0.22, bun: 0.18,
+  };
+  const hairLift = !isSlime && dna.hair.style !== 'none'
+    ? p.headR * (HAIR_LIFT[dna.hair.style] ?? 0.12)
+    : 0;
   const crownLift = p.headR * 0.07 + hairLift;
   const crown = buildCrown(dna, kit, p.headR, crownLift);
   if (crown) {
@@ -882,6 +1017,11 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
     result.rig.head.add(glasses);
   }
 
+  // Species extras (doc-signature accessories)
+  if (dna.species === 'naiad') addPearls(result, kit, p);
+  if (dna.species === 'moonborn') addLimbBands(result, kit.metal, p, true);
+  if (dna.species === 'verdant') addLimbBands(result, kit.primary, p, false);
+
   // Hair — slime hair is rendered as metaballs by the slime synth;
   // ignis hair is shaped fire; specter hair trails into mist.
   if (!isSlime && dna.hair.style !== 'none') {
@@ -911,7 +1051,8 @@ export function attachParts(result: BuildResult, dna: PrincessDNA, kit: Material
       const hair = buildHair(dna, kit, p.headR);
       if (hair) {
         hair.group.userData.pick = 'hair';
-        if (dna.species === 'fae') sprinkleLeaves(hair.group, p.headR, kit);
+        if (dna.species === 'fae') sprinkleGrowth(hair.group, p.headR, kit);
+        if (dna.species === 'verdant') sprinkleGrowth(hair.group, p.headR, kit, 4);
         result.rig.head.add(hair.group);
         if (hair.pigtails.length > 0) {
           const tails = hair.pigtails;

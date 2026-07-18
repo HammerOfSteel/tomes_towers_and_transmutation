@@ -515,6 +515,118 @@ export const SPECIES_DEFS: Record<SpeciesId, SpeciesDef> = {
     },
   },
 
+  // ── 🌊 Naiad — the tower is technically quite damp if you know where to look ──
+  naiad: {
+    id: 'naiad', label: 'Naiad', icon: '🌊', synth: 'human',
+    blurb: 'From still water originally. Adapts. Makes pearls; don\'t ask.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.height = 1.1; d.body.chubbiness = 0.85; d.body.armLength = 1.08;
+      d.hair = { style: 'long', length: 1.35 }; // always partially wet
+      d.parts.ears = 'fin'; d.parts.earSize = 1.0;
+      d.parts.crown = 'none'; d.parts.back = 'none';
+      d.dress.style = 'layered'; d.dress.trim = true; d.dress.puffSleeves = false;
+      d.face.eyeStyle = 'round'; d.face.blush = 0.3; d.face.mouth = 'smile';
+      d.aura = { style: 'bubbles', intensity: 0.5 };
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.45; d.motion.bounce = 0.35;
+    },
+    lockBody: { height: 1.1, chubbiness: 0.85 },
+    skinTones: ['#a8d4cf', '#8fc4c9', '#c4d2d8', '#b8dcd0'],
+    hairColors: ['#1e5c5c', '#2e7a6b', '#1c2a3a', '#3d8a8a'],
+    palettes: [
+      pal('deep-current', 'Deep Current', { primary: '#1e5c6b', secondary: '#c8ece4', accent: '#3fbfae', skin: '#a8d4cf', hair: '#1e5c5c', eyes: '#2e9fbf', metal: '#e8ecf2', glow: '#aef7e8' }),
+      pal('river-stone', 'River Stone', { primary: '#6b7a8a', secondary: '#e8ecf0', accent: '#8fc4c9', skin: '#c4d2d8', hair: '#1c2a3a', eyes: '#78b3e0', metal: '#c0c8d8', glow: '#d6ecff' }),
+      pal('lagoon-dusk', 'Lagoon Dusk', { primary: '#14323d', secondary: '#3d8a8a', accent: '#5edcc4', skin: '#8fc4c9', hair: '#2e7a6b', eyes: '#5edcc4', metal: '#9aa1b5', glow: '#7ff2dc' }),
+    ],
+    rand: {
+      dress: [['layered', 5], ['aline', 3], ['slim', 2]], // nothing constricting
+      hair: [['long', 5], ['braided', 3], ['wild', 1], ['bun', 1]],
+      eyes: [['round', 4], ['sparkle', 3], ['sleepy', 2], ['void', 1]],
+      mouth: [['smile', 4], ['open', 3], ['pout', 2]],
+      crown: [['none', 5], ['tiara', 2], ['flower', 2], ['halo', 1]],
+      ears: [['fin', 1]],
+      tail: [['none', 8], ['wisp', 2]],
+      back: [['none', 8], ['bow', 1], ['cape', 1]],
+    },
+  },
+
+  // ── 🌙 Moonborn — stronger at night; has stopped pretending otherwise ──
+  moonborn: {
+    id: 'moonborn', label: 'Moonborn', icon: '🌙', synth: 'human',
+    blurb: 'Connected to lunar cycles in ways she considers a private matter.',
+    apply(d) {
+      d.archetype = 'human';
+      d.subtype = 'crescent';
+      d.body.height = 1.12; d.body.chubbiness = 0.85;
+      d.hair = { style: 'long', length: 1.4 }; // silver-white from birth, straight
+      d.parts.crown = 'crescent'; // natural growth, not jewellery
+      d.parts.back = 'cape'; d.parts.backSize = 1.1; // the cloak that pools
+      d.face.eyeStyle = 'round'; d.face.blush = 0.15; d.face.mouth = 'pout';
+      d.dress.style = 'aline'; d.dress.length = 1.2; d.dress.trim = false;
+      d.dress.puffSleeves = false;
+      d.aura = { style: 'motes', intensity: 0.4 };
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.3; d.motion.bounce = 0.25;
+    },
+    lockBody: { height: 1.12, chubbiness: 0.85 },
+    skinTones: ['#eef0f7', '#e4e8f2', '#f4f2f7'],
+    hairColors: ['#f4f2ee', '#e8ecf7', '#d8dce8'],
+    palettes: [
+      pal('midnight-silver', 'Midnight & Silver', { primary: '#1c2038', secondary: '#c4ccd8', accent: '#8a94b5', skin: '#eef0f7', hair: '#f4f2ee', eyes: '#c4d4ff', metal: '#c0c8d8', glow: '#dce4ff' }),
+      pal('violet-eclipse', 'Violet Eclipse', { primary: '#2a1c3d', secondary: '#9a8ab5', accent: '#5c4a8a', skin: '#e4e8f2', hair: '#e8ecf7', eyes: '#b98aff', metal: '#8a8f9c', glow: '#c8b0ff' }),
+      pal('moonrise', 'Moonrise', { primary: '#3d4468', secondary: '#e8ecf7', accent: '#c9b8de', skin: '#f4f2f7', hair: '#d8dce8', eyes: '#9fb8e8', metal: '#e8ecf2', glow: '#eef2ff' }),
+    ],
+    rand: {
+      dress: [['aline', 4], ['layered', 3], ['slim', 2], ['bell', 1]],
+      hair: [['long', 7], ['braided', 2], ['bun', 1]], // long, always, straight
+      eyes: [['round', 4], ['void', 3], ['star', 2], ['lash', 1]],
+      mouth: [['pout', 4], ['smile', 3], ['none', 2]],
+      crown: [['crescent', 8], ['halo', 1], ['none', 1]], // the moon is the point
+      ...NO_EXTRAS,
+      back: [['cape', 6], ['none', 3], ['grimoire', 1]],
+    },
+    subtypes: [
+      { id: 'crescent', label: 'Crescent' },
+      { id: 'full', label: 'Full' },
+      { id: 'eclipse', label: 'Eclipse' },
+    ],
+  },
+
+  // ── 🌺 Verdant — the forest helped her find the door; she is here on purpose ──
+  verdant: {
+    id: 'verdant', label: 'Verdant', icon: '🌺', synth: 'human',
+    blurb: 'The staff came from somewhere specific.',
+    apply(d) {
+      d.archetype = 'human';
+      d.body.chubbiness = 1.05; d.body.hipWidth = 1.1;
+      d.hair = { style: 'afro', length: 1.15 }; // thick, textured, with growing things
+      d.parts.crown = 'wreath'; // living, not woven
+      d.parts.back = 'none';
+      d.parts.handL = 'staff'; // a branch from somewhere specific
+      d.dress.style = 'layered'; d.dress.trim = true; d.dress.sash = true;
+      d.dress.puffSleeves = false;
+      d.face.eyeStyle = 'sparkle'; d.face.blush = 0.5; d.face.mouth = 'smile';
+      d.aura = { style: 'motes', intensity: 0.35 }; // drifting pollen
+      d.motion.idleStyle = 'sway'; d.motion.energy = 0.5; d.motion.bounce = 0.45;
+    },
+    skinTones: ['#8a6b4a', '#6b4a32', '#5c7a4a', '#3d5c3d'],
+    hairColors: ['#2e5c3f', '#3d2e22', '#8a3b1e', '#5a4632'],
+    palettes: [
+      pal('rootsong', 'Rootsong', { primary: '#4a5c32', secondary: '#d8cfa8', accent: '#c2452d', skin: '#8a6b4a', hair: '#2e5c3f', eyes: '#8ab84f', metal: '#b5952a', glow: '#c8f2a0' }),
+      pal('bloom-meadow', 'Bloom Meadow', { primary: '#5c7a5c', secondary: '#f2e8d8', accent: '#e878ad', skin: '#6b4a32', hair: '#3d2e22', eyes: '#d9772f', metal: '#c8a24a', glow: '#ffd1e8' }),
+      pal('autumn-harvest', 'Autumn Harvest', { primary: '#6b3d22', secondary: '#e8cfa0', accent: '#c9952a', skin: '#5c7a4a', hair: '#8a3b1e', eyes: '#ffd166', metal: '#8a6b3a', glow: '#ffe9a8' }),
+    ],
+    rand: {
+      dress: [['layered', 5], ['bell', 2], ['aline', 2], ['hex', 1]],
+      hair: [['afro', 4], ['braided', 3], ['wild', 2], ['long', 2]],
+      eyes: [['sparkle', 4], ['round', 3], ['sleepy', 1], ['star', 1]],
+      mouth: MOUTH_SWEET,
+      crown: [['wreath', 7], ['flower', 2], ['none', 1]],
+      ears: [['none', 7], ['long', 2], ['round', 1]],
+      tail: [['none', 1]],
+      back: [['none', 6], ['wings_leaf', 2], ['cape', 1], ['grimoire', 1]],
+    },
+  },
+
   // ── 🟢 Slime — absorbed a spellbook; retains information differently ──
   slime: {
     id: 'slime', label: 'Slime', icon: '💧', synth: 'slime',

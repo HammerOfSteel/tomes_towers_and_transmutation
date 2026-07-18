@@ -57,10 +57,13 @@ function rebuild(dna: PrincessDNA, archetypeChanged: boolean): void {
   result.dispose();
   const speciesChanged = dna.species !== lastSpecies;
   lastSpecies = dna.species;
-  if (archetypeChanged) {
+  // Kits carry species-specific material tech (specter transparency, naiad
+  // clearcoat, moonborn hair glow…) — rebuild on ANY species change, not just
+  // body-tech swaps, so nothing leaks between same-synth species.
+  if (archetypeChanged || speciesChanged) {
     kit.dispose();
     kit = createMaterialKit(dna);
-    stage.setArchetypeMood(dna.archetype);
+    if (archetypeChanged) stage.setArchetypeMood(dna.archetype);
   } else {
     kit.apply(dna);
   }

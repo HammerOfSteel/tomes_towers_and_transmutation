@@ -122,6 +122,55 @@ describe('composePrincess', () => {
     rF.dispose(); kitF.dispose();
   });
 
+  it('wave 2b species tech: wet kit, moon phases, wreath + growth', () => {
+    // Naiad: clearcoat/iridescence wet materials + fin ears + bubbles
+    const naiad = defaultDna('naiad');
+    const kitN = createMaterialKit(naiad);
+    const physSkin = kitN.skin as THREE.MeshPhysicalMaterial;
+    expect(physSkin.clearcoat).toBeGreaterThan(0.5);
+    expect(physSkin.iridescence).toBeGreaterThan(0);
+    expect(naiad.parts.ears).toBe('fin');
+    expect(naiad.aura.style).toBe('bubbles');
+    const rN = composePrincess(naiad, kitN);
+    rN.update(0.5, 0.016);
+    rN.dispose(); kitN.dispose();
+
+    // Moonborn: crescent crown geometry changes per subtype
+    const counts: number[] = [];
+    for (const phase of ['crescent', 'full', 'eclipse']) {
+      const moon = defaultDna('moonborn');
+      moon.subtype = phase;
+      const kitM = createMaterialKit(moon);
+      expect((kitM.hair as THREE.MeshStandardMaterial).emissiveIntensity).toBeGreaterThan(0.1);
+      const rM = composePrincess(moon, kitM);
+      const crown = rM.sockets.headTop.children[0];
+      let verts = 0;
+      crown.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) verts += m.geometry.getAttribute('position').count;
+      });
+      counts.push(verts);
+      rM.dispose(); kitM.dispose();
+    }
+    // Each lunar phase produces distinct geometry
+    expect(new Set(counts).size).toBe(3);
+
+    // Verdant: living wreath + flowers in the hair + vine bands
+    const verdant = defaultDna('verdant');
+    const kitV = createMaterialKit(verdant);
+    const rV = composePrincess(verdant, kitV);
+    expect(verdant.parts.crown).toBe('wreath');
+    const hairV = rV.rig.head.children.find((c) => c.name.startsWith('hair:'));
+    expect(hairV).toBeTruthy();
+    let blooms = 0;
+    hairV!.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.material === kitV.metal) blooms++; // flower centers
+    });
+    expect(blooms).toBeGreaterThanOrEqual(3);
+    rV.dispose(); kitV.dispose();
+  });
+
   it('random DNA builds for 25 seeds per archetype without throwing', () => {
     for (const a of SPECIES_IDS) {
       for (let seed = 1; seed <= 25; seed++) {

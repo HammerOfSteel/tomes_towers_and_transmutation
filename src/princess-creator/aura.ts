@@ -100,6 +100,38 @@ export function attachAura(result: BuildResult, dna: PrincessDNA, kit: MaterialK
     });
   }
 
+  // ── Rising bubbles (naiad) ──
+  if (style === 'bubbles') {
+    const count = Math.round(6 + intensity * 5);
+    const bubbleGeo = new THREE.SphereGeometry(0.12, 8, 6);
+    result.hooks.disposers.push(() => bubbleGeo.dispose());
+    const bubbles: Array<{ mesh: THREE.Mesh; phase: number; r: number; speed: number; drift: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(bubbleGeo, moteMat);
+      bubbles.push({
+        mesh,
+        phase: (i * 0.61) % 1,
+        r: 1.2 + ((i * 41) % 100) / 100 * (p.hemR + 0.8),
+        speed: 0.05 + ((i * 59) % 100) / 100 * 0.05,
+        drift: (i * 1.7) % (Math.PI * 2),
+      });
+      result.rig.root.add(mesh);
+    }
+    const rise = p.headCY + p.headR + 2;
+    result.hooks.tick.push((t) => {
+      for (const b of bubbles) {
+        const u = (t * b.speed + b.phase) % 1;
+        b.mesh.position.set(
+          Math.cos(b.drift) * b.r + Math.sin(t * 1.1 + b.drift) * 0.35,
+          u * rise,
+          Math.sin(b.drift) * b.r + Math.cos(t * 0.9 + b.drift) * 0.35,
+        );
+        // grow gently, pop near the top
+        b.mesh.scale.setScalar(Math.sin(Math.min(u, 0.92) * Math.PI) * (0.5 + intensity * 0.5) + 0.12);
+      }
+    });
+  }
+
   // ── Ambient light + soft shell (cold & warm) ──
   if (style === 'cold' || style === 'warm') {
     const light = new THREE.PointLight(0xffffff, (style === 'cold' ? 0.5 : 0.8) * intensity, 14);

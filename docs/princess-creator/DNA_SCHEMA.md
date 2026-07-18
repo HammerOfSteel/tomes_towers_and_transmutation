@@ -20,7 +20,9 @@ Renames/extensions:
   and `glasses: boolean`.
 - Enums extended: hair `braided/ponytail/wild/afro`; ears `horn_small/horn_curved`;
   back `wings_butterfly/wings_feather/wings_leaf/grimoire`; eyes `slit`;
-  aura `ember`. Species grew to 15 with Wave 2a (`fae`, `ignis`, `specter`) —
+  aura `ember`, `bubbles`; ears `fin`; crowns `crescent` (subtype-aware),
+  `wreath`. Species grew to 15 with Wave 2a (`fae`, `ignis`, `specter`) and
+  to 18 with Wave 2b (`naiad`, `moonborn` + phase subtypes, `verdant`) —
   additive enum growth stays within v2 (old codes import; old builds fall
   back unknown species to human).
 - `body.height` range widened to 0.5–1.35 (pixie/gnome/goblin ↔ high elf);

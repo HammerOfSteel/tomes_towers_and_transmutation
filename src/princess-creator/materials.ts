@@ -71,6 +71,7 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
     if (d.species === 'ignis') return 0.12 + d.aura.intensity * 0.12;
     if (d.species === 'fae') return 0.06 + d.aura.intensity * 0.05;
     if (d.species === 'specter') return 0.06 + d.aura.intensity * 0.04;
+    if (d.species === 'moonborn') return 0.07 + d.aura.intensity * 0.06;
     return 0;
   };
   const skinGlow = skinGlowFor(dna);
@@ -88,6 +89,34 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
     ghost(skin, 0.72);
     ghost(primary, 0.82);
     ghost(hairMat, 0.55);
+  }
+
+  // Naiad: wet, slightly iridescent — deep-water sheen on skin, hair, dress.
+  if (dna.species === 'naiad') {
+    const wet = (m: THREE.Material): void => {
+      const phys = m as THREE.MeshPhysicalMaterial;
+      if (!('clearcoat' in phys)) return;
+      phys.clearcoat = 1.0;
+      phys.clearcoatRoughness = 0.12;
+      phys.iridescence = 0.4;
+      phys.iridescenceIOR = 1.3;
+    };
+    // skin/primary/hair are MeshStandardMaterial here — rebuild them physical.
+    const upgrade = (base: THREE.MeshStandardMaterial, rough: number): THREE.MeshPhysicalMaterial => {
+      const phys = new THREE.MeshPhysicalMaterial({ color: base.color.getHex(), roughness: rough });
+      base.dispose();
+      wet(phys);
+      return phys;
+    };
+    skin = upgrade(skin as THREE.MeshStandardMaterial, 0.35);
+    primary = upgrade(primary as THREE.MeshStandardMaterial, 0.4);
+    hairMat = upgrade(hairMat as THREE.MeshStandardMaterial, 0.25);
+  }
+
+  // Moonborn: hair lit from within.
+  if (dna.species === 'moonborn' && 'emissive' in hairMat) {
+    (hairMat as THREE.MeshStandardMaterial).emissive = new THREE.Color(c.glow);
+    (hairMat as THREE.MeshStandardMaterial).emissiveIntensity = 0.22 + dna.aura.intensity * 0.15;
   }
 
   const kit: MaterialKit = {
@@ -128,6 +157,17 @@ export function createMaterialKit(dna: PrincessDNA): MaterialKit {
         (kit.skin as THREE.MeshStandardMaterial).emissive ??= new THREE.Color(0x000000);
         (kit.skin as THREE.MeshStandardMaterial).emissive.set(glow > 0 ? n.glow : '#000000');
         (kit.skin as THREE.MeshStandardMaterial).emissiveIntensity = glow;
+      }
+      if ('emissive' in kit.hair) {
+        const hm = kit.hair as THREE.MeshStandardMaterial;
+        hm.emissive ??= new THREE.Color(0x000000);
+        if (next.species === 'moonborn') {
+          hm.emissive.set(n.glow);
+          hm.emissiveIntensity = 0.22 + next.aura.intensity * 0.15;
+        } else {
+          hm.emissive.set('#000000');
+          hm.emissiveIntensity = 0;
+        }
       }
     },
 

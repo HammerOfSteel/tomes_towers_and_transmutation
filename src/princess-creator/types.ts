@@ -14,19 +14,19 @@ export const ARCHETYPES: readonly Archetype[] = ['human', 'fox', 'slime', 'skele
 export type SpeciesId =
   | 'human' | 'elf' | 'high_elf' | 'pixie' | 'fae' | 'undead' | 'celestial'
   | 'draconic' | 'gnome' | 'goblin' | 'foxling' | 'ignis' | 'specter'
-  | 'slime' | 'skeleton';
+  | 'naiad' | 'moonborn' | 'verdant' | 'slime' | 'skeleton';
 export const SPECIES_IDS: readonly SpeciesId[] = [
   'human', 'elf', 'high_elf', 'pixie', 'fae', 'undead', 'celestial',
   'draconic', 'gnome', 'goblin', 'foxling', 'ignis', 'specter',
-  'slime', 'skeleton',
+  'naiad', 'moonborn', 'verdant', 'slime', 'skeleton',
 ];
 
 /** Class — outfit/accessory vocabulary preset ('none' = pure species look). */
 export type ClassId = 'none' | 'scholar' | 'mage' | 'warrior';
 export const CLASS_IDS: readonly ClassId[] = ['none', 'scholar', 'mage', 'warrior'];
 
-export type AuraStyle = 'none' | 'motes' | 'cold' | 'warm' | 'ember';
-export const AURA_STYLES: readonly AuraStyle[] = ['none', 'motes', 'cold', 'warm', 'ember'];
+export type AuraStyle = 'none' | 'motes' | 'cold' | 'warm' | 'ember' | 'bubbles';
+export const AURA_STYLES: readonly AuraStyle[] = ['none', 'motes', 'cold', 'warm', 'ember', 'bubbles'];
 
 export type DressStyle = 'bell' | 'aline' | 'hex' | 'layered' | 'slim';
 export type EyeStyle =
@@ -35,8 +35,10 @@ export type MouthStyle = 'smile' | 'open' | 'cat' | 'pout' | 'fang' | 'teeth' | 
 export type HairStyle =
   | 'none' | 'bob' | 'pigtails' | 'twintails' | 'bun' | 'long'
   | 'braided' | 'ponytail' | 'wild' | 'afro';
-export type CrownId = 'none' | 'classic' | 'tiara' | 'crooked' | 'flower' | 'halo';
-export type EarId = 'none' | 'fox' | 'cat' | 'round' | 'long' | 'horn_small' | 'horn_curved';
+export type CrownId =
+  | 'none' | 'classic' | 'tiara' | 'crooked' | 'flower' | 'halo' | 'crescent' | 'wreath';
+export type EarId =
+  | 'none' | 'fox' | 'cat' | 'round' | 'long' | 'horn_small' | 'horn_curved' | 'fin';
 export type TailId = 'none' | 'fluffy' | 'thin' | 'bone' | 'wisp';
 export type BackId =
   | 'none' | 'bow' | 'cape' | 'wings' | 'wings_butterfly' | 'wings_feather'
@@ -50,8 +52,12 @@ export const MOUTH_STYLES: readonly MouthStyle[] = ['smile', 'open', 'cat', 'pou
 export const HAIR_STYLES: readonly HairStyle[] = [
   'none', 'bob', 'pigtails', 'twintails', 'bun', 'long', 'braided', 'ponytail', 'wild', 'afro',
 ];
-export const CROWN_IDS: readonly CrownId[] = ['none', 'classic', 'tiara', 'crooked', 'flower', 'halo'];
-export const EAR_IDS: readonly EarId[] = ['none', 'fox', 'cat', 'round', 'long', 'horn_small', 'horn_curved'];
+export const CROWN_IDS: readonly CrownId[] = [
+  'none', 'classic', 'tiara', 'crooked', 'flower', 'halo', 'crescent', 'wreath',
+];
+export const EAR_IDS: readonly EarId[] = [
+  'none', 'fox', 'cat', 'round', 'long', 'horn_small', 'horn_curved', 'fin',
+];
 export const TAIL_IDS: readonly TailId[] = ['none', 'fluffy', 'thin', 'bone', 'wisp'];
 export const BACK_IDS: readonly BackId[] = [
   'none', 'bow', 'cape', 'wings', 'wings_butterfly', 'wings_feather',

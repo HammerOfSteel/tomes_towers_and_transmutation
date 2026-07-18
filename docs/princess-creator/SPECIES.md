@@ -27,7 +27,7 @@ aura                        = none | motes | cold | warm  (+ intensity)
   at thumbnail size.
 - v1 share codes migrate: `fox→foxling`, knobs `species{}` → `traits{}`.
 
-## 2. Roster (Wave 1 + Wave 2a — all live)
+## 2. Roster (18 species — all live)
 
 | Species | Tech | Silhouette hook | Signature defaults | Aura | Canonical palette |
 |---|---|---|---|---|---|
@@ -44,11 +44,16 @@ aura                        = none | motes | cold | warm  (+ intensity)
 | 🌿 Fae | smooth | LEAF WINGS + leaves growing in hair | flower crown, elf ears, green-gold glow skin, float idle | motes (fireflies) | Forest Court |
 | 🔥 Ignis | smooth | hair is SHAPED FIRE (style→flame layout) | ember-lit skin, glow eyes, structured dark dress, firelight flicker | ember (rising sparks) | Emberheart |
 | 👻 Specter | smooth | translucent body + mist-trail hair | void eyes, no mouth, wisp trail, the tome she can't put down | cold | The Grey Passage |
+| 🌊 Naiad | smooth | temple fins + WET iridescent clearcoat sheen | pearls at the collar, layered flowing dress, always-damp long hair | bubbles | Deep Current |
+| 🌙 Moonborn | smooth | crescent moon grown in hair (phase = subtype), silver pattern arcs | lit-from-within hair, pooling cape, pale luminous skin | motes (silver) | Midnight & Silver |
+| 🌺 Verdant | smooth | LIVING WREATH + blooms growing in the hair | vine arm bands, branch staff, warm brown/green skin | motes (pollen) | Rootsong |
 | 💧 Slime | metaballs | translucent blob + jelly twintails | halo, wisp trail, open mouth, float | — | Mint Jelly |
 | 💀 Skeleton | bones | skull + glow sockets + cape | crooked crown, teeth, rattle idle | cold (low) | Gothic Royal |
 
 **Subtypes:** Foxling `1` / `3` / `9` tails (novice → adept → mythic; tails fan
-and sway on independent beats, per-tail size drops so the mass stays readable).
+and sway on independent beats). Moonborn `crescent` / `full` / `eclipse` — the
+moon grown in her hair changes shape: waxing C, full glowing disc, or a dark
+disc with a burning rim (something else entirely).
 
 ## 3. Classes (outfit vocabulary)
 
@@ -86,9 +91,9 @@ stay coherent; reapplied on species switch when chosen.
 | 🌿 Fae | leaf wings, leaf-sprinkled hair, firefly motes | ✅ SHIPPED (leaf-hem dress profile still backlog) |
 | 🔥 Ignis | flame hair (style→fire layout), ember aura, ember-lit skin | ✅ SHIPPED (ember skin *patterns* wait for paint phase) |
 | 👻 Specter | translucent material kit, mist-trail hair | ✅ SHIPPED (motion-lag cloth backlog) |
-| 🌊 Naiad | iridescent/wet materials, temple fins part, water palettes | backlog |
-| 🌙 Moonborn | silver skin pattern lines (paint phase), crescent hair, Crescent/Full/Eclipse subtypes | backlog |
-| 🌺 Verdant | growing-things hair, living wreath, bark accessories | backlog |
+| 🌊 Naiad | wet clearcoat+iridescence kit, fin ears, pearls, bubble aura | ✅ SHIPPED |
+| 🌙 Moonborn | crescent/full/eclipse crown subtypes, silver limb arcs, glowing hair | ✅ SHIPPED (skin pattern *lines* still upgrade with the paint phase) |
+| 🌺 Verdant | living wreath, blooms in hair, vine bands, branch staff | ✅ SHIPPED |
 | 🐍 Lamia | serpent lower-body synth variant (biggest lift — new tech) | backlog |
 | 💪 Orc / 🧌 Troll | broad-build preset + tusk part (small lift) | backlog |
 

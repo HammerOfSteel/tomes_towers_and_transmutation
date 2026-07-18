@@ -121,7 +121,7 @@
 - [x] **S7. Aura module**: motes / cold / warm, palette-tracking lights
 - [x] **S8. Species dock UI** (12 chips + class row + contextual subtype row), height-aware camera framing, keyboard 1–9
 - [x] **S9. Tests**: 91 green (12-species round-trips, v1 migration, 200-seed validity ×12, build smoke ×12, tagging)
-- [~] **S10. Wave 2 species** — SHIPPED 2a: 🌿 fae (leaf wings + hair leaves + firefly motes), 🔥 ignis (shaped-fire hair mapped from any hair style, ember aura + firelight, ember-lit skin), 👻 specter (translucent kit, mist-trail hair, keepsake tome). Remaining: naiad, moonborn, verdant, lamia, orc/troll — see SPECIES.md §5
+- [~] **S10. Wave 2 species** — SHIPPED 2a: 🌿 fae, 🔥 ignis, 👻 specter. SHIPPED 2b: 🌊 naiad (wet clearcoat+iridescence kit, temple fins, pearls, bubbles), 🌙 moonborn (crescent/full/eclipse moon subtypes, silver limb arcs, lit-from-within hair), 🌺 verdant (living wreath, blooms in hair, vine bands). Also fixed: material kits now rebuild on ANY species change so species tech never leaks between same-synth species. Remaining: lamia (new lower-body synth), orc/troll (broad preset + tusks) — see SPECIES.md §5
 - [ ] **S11. Outfit vocabulary expansions** (corset, ballgown, veil, mantle…) + boon accessory sets
 - ✔ Accept (Wave 1): all 12 species land canonical-looking from their dock chip, survive 🎲, and pass silhouette review. ✅
 
