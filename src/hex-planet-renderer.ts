@@ -281,65 +281,84 @@ export class HexPlanetRenderer {
       return s.cells[gy]![gx]!;
     }
 
-    // ── Terrain sphere: dense mesh, every vertex samples realm data ──────
-    // 192×96 = ~18k vertices each independently displaced → sub-tile terrain
-    // Hex tile edges float above as overlay (Goldberg grid visual only)
+    // ── Sub-hex tile geometry ─────────────────────────────────────────────
+    // Two-level Goldberg: sub=24 for TERRITORY borders, sub=48 for fine tiles
+    // Each sub=48 tile (~23k) is a flat coloured hex polygon — discrete biome cells.
+    // Visible gaps between tiles (tilePct=0.88) show the mosaic structure.
+    // Sub=24 territory lines sit on top as bright overlay.
 
-    const TERRAIN_SEG_W = 192, TERRAIN_SEG_H = 96;
-    const terrainGeo = new THREE.SphereGeometry(BASE_R, TERRAIN_SEG_W, TERRAIN_SEG_H);
-    const tPos   = terrainGeo.attributes.position as THREE.BufferAttribute;
-    const tColor = new Float32Array(tPos.count * 3);
+    // ── Fine tiles: sub=48 flat hex mosaic ──
+    const HS_FINE_SUB = 48;
+    const HexasphereFine = (Hexasphere as any);
+    const hs_fine = new HexasphereFine(BASE_R, HS_FINE_SUB, 0.88);
 
-    const TIER: Record<string, number> = {
+    const TIER2: Record<string, number> = {
       deep_ocean: 0.955, ocean: 0.968, beach: 0.982,
-      desert: 1.000,  savanna: 1.004, grassland: 1.008,
-      forest: 1.013,  taiga:   1.018, tundra:    1.023, snow: 1.030,
+      desert: 1.000, savanna: 1.004, grassland: 1.008,
+      forest: 1.013, taiga: 1.018, tundra: 1.023, snow: 1.030,
     };
-    const microAmp = s.roughness * 0.016;
+    const microAmp2 = s.roughness * 0.016;
 
-    for (let vi2 = 0; vi2 < tPos.count; vi2++) {
-      const vx = tPos.getX(vi2), vy = tPos.getY(vi2), vz = tPos.getZ(vi2);
-      const vlen = Math.sqrt(vx*vx+vy*vy+vz*vz);
-      const cell2  = sampleCell(vx, vy, vz, vlen);
+    const pos2: number[] = [];
+    const col2: number[] = [];
+
+    for (const tile of hs_fine.tiles) {
+      const cp = tile.centerPoint as { x: number; y: number; z: number };
+      const cLen = Math.sqrt(cp.x*cp.x + cp.y*cp.y + cp.z*cp.z);
+      const cell2 = sampleCell(cp.x, cp.y, cp.z, cLen);
       const biome2 = cell2.biome as BiomeName;
-      const [cr, cg, cb] = BIOME_COLOR[biome2] ?? BIOME_COLOR.deep_ocean;
-      tColor[vi2*3]   = cr/255;
-      tColor[vi2*3+1] = cg/255;
-      tColor[vi2*3+2] = cb/255;
-      // Displace vertex along its normal
-      const tierH  = TIER[biome2] ?? 1.0;
-      const dispH  = tierH + (cell2.elevation - 0.5) * microAmp;
-      const scale  = BASE_R * dispH / vlen;
-      tPos.setXYZ(vi2, vx*scale, vy*scale, vz*scale);
-    }
-    tPos.needsUpdate = true;
-    terrainGeo.setAttribute('color', new THREE.BufferAttribute(tColor, 3));
-    terrainGeo.computeVertexNormals();
+      const [tr, tg, tb] = BIOME_COLOR[biome2] ?? BIOME_COLOR.deep_ocean;
+      const rn = tr/255, gn = tg/255, bn = tb/255;
 
-    const terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    this.tileMesh = new THREE.Mesh(terrainGeo, terrainMat);
-    this.scene.add(this.tileMesh);
+      const tierH = TIER2[biome2] ?? 1.0;
+      const dispH = BASE_R * (tierH + (cell2.elevation - 0.5) * microAmp2);
 
-    // ── Hex tile edges: float above terrain as grid overlay ─────────────
-    // Only edges, no filled geometry — tile visual is the terrain sphere
-    const edgePts: number[] = [];
-    for (const tile of hs.tiles) {
-      const nt = tile.boundary.length;
-      for (let i = 0; i < nt; i++) {
-        const b0 = tile.boundary[i]!;
-        const b1 = tile.boundary[(i+1)%nt]!;
-        const bL0 = Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
-        const bL1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
-        // Float edge lines 0.5% above surface
-        const ef = BASE_R * 1.005;
-        edgePts.push(b0.x*(ef/bL0), b0.y*(ef/bL0), b0.z*(ef/bL0));
-        edgePts.push(b1.x*(ef/bL1), b1.y*(ef/bL1), b1.z*(ef/bL1));
+      // Scale center + each boundary vertex uniformly by dispH/len
+      const cScale = dispH / cLen;
+      const cx = cp.x*cScale, cy = cp.y*cScale, cz = cp.z*cScale;
+
+      const bnd = tile.boundary as { x: number; y: number; z: number }[];
+      const N = bnd.length;
+      for (let ti2 = 0; ti2 < N; ti2++) {
+        const b0 = bnd[ti2]!;
+        const b1 = bnd[(ti2+1)%N]!;
+        const s0 = dispH / Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
+        const s1 = dispH / Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
+        pos2.push(cx, cy, cz,
+                  b0.x*s0, b0.y*s0, b0.z*s0,
+                  b1.x*s1, b1.y*s1, b1.z*s1);
+        col2.push(rn,gn,bn, rn,gn,bn, rn,gn,bn);
       }
     }
-    const edgeGeo = new THREE.BufferGeometry();
-    edgeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(edgePts), 3));
-    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false });
-    this.edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+
+    const tileGeo2 = new THREE.BufferGeometry();
+    tileGeo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos2), 3));
+    tileGeo2.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(col2), 3));
+    tileGeo2.computeVertexNormals();
+
+    const tileMat2 = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.tileMesh  = new THREE.Mesh(tileGeo2, tileMat2);
+    this.scene.add(this.tileMesh);
+
+    // ── Territory borders: sub=24 hex edge lines (bright overlay) ──
+    const edgePts2: number[] = [];
+    for (const tile of hs.tiles) {
+      const bnd2 = tile.boundary as { x: number; y: number; z: number }[];
+      const NT = bnd2.length;
+      const ef = BASE_R * 1.012; // float above tile surface
+      for (let i = 0; i < NT; i++) {
+        const b0 = bnd2[i]!;
+        const b1 = bnd2[(i+1)%NT]!;
+        const bL0 = Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
+        const bL1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
+        edgePts2.push(b0.x*(ef/bL0), b0.y*(ef/bL0), b0.z*(ef/bL0));
+        edgePts2.push(b1.x*(ef/bL1), b1.y*(ef/bL1), b1.z*(ef/bL1));
+      }
+    }
+    const edgeGeo2 = new THREE.BufferGeometry();
+    edgeGeo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(edgePts2), 3));
+    const edgeMat2 = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.30, depthWrite: false });
+    this.edgeMesh  = new THREE.LineSegments(edgeGeo2, edgeMat2);
     this.scene.add(this.edgeMesh);
 
     // Atmosphere sphere
