@@ -481,13 +481,15 @@ export class HexPlanetRenderer {
   }
 
   setDayOnly(enabled: boolean): void {
-    // In day-only mode, boost ambient to full and remove directional shadow
     this.scene.traverse(obj => {
       if (obj instanceof THREE.AmbientLight) {
-        obj.intensity = enabled ? 1.8 : 0.55;
+        // Day-only: pure white ambient at full strength
+        obj.color.setHex(enabled ? 0xffffff : 0x203050);
+        obj.intensity = enabled ? 1.6 : 0.55;
       }
       if (obj instanceof THREE.DirectionalLight) {
-        obj.intensity = enabled ? 0.0 : 2.0;
+        // Day-only: keep sun but add fill from opposite side too
+        obj.intensity = enabled ? 1.8 : 2.0;
       }
     });
   }
