@@ -440,6 +440,7 @@ export class HexPlanetRenderer {
   start(): void {
     if (this.active) return;
     this.active = true;
+    this.labelRenderer.domElement.style.visibility = '';
     this.clock.start();
     const loop = () => {
       if (!this.active) return;
@@ -463,7 +464,7 @@ export class HexPlanetRenderer {
     loop();
   }
 
-  stop(): void { this.active = false; cancelAnimationFrame(this.raf); }
+  stop(): void { this.active = false; cancelAnimationFrame(this.raf); this.labelRenderer.domElement.style.visibility = 'hidden'; }
 
   setVisible(layer: 'atmosphere', show: boolean): void {
     if (layer === 'atmosphere' && this.atmosMesh) this.atmosMesh.visible = show;

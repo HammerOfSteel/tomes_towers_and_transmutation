@@ -423,6 +423,7 @@ export class PlanetRenderer {
   start(): void {
     if (this.active) return;
     this.active = true;
+    this.labelRenderer.domElement.style.visibility = '';
     this.clock.start();
     const loop = () => {
       if (!this.active) return;
@@ -462,6 +463,7 @@ export class PlanetRenderer {
   stop(): void {
     this.active = false;
     cancelAnimationFrame(this.raf);
+    this.labelRenderer.domElement.style.visibility = 'hidden';
   }
 
   resize(w: number, h: number): void {
