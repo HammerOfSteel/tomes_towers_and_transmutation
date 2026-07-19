@@ -379,9 +379,34 @@ Before shipping this phase, all of the following must be green.
 > **Key insight:** Use Three.js ShaderMaterial + IcosahedronGeometry for the planet view — not canvas 2D. The biome data becomes a CanvasTexture (day map), city lights become a second CanvasTexture (night map). This gives drag rotation, real-time animation, and GLSL shader quality.
 > **Code-first always** — no texture assets. All planet visuals procedurally generated.
 
-### OW-F1 — Planet Renderer v3: Three.js Sphere + GLSL
+### OW-F1 — Planet Renderer v3: Three.js Sphere + GLSL ✅ (shipped 2026-07-19)
+- [x] SphereGeometry(64,64) + OrbitControls + rAF loop
+- [x] GLSL planet shader: day/night blend, twilight, ocean specular, cloud alpha, atmosphere rim
+- [x] Cloud sphere: ShaderMaterial + ridged multifractal cloud texture (5-octave fBm + domain warp)
+- [x] Atmosphere sphere: additive BackSide rim shader
+- [x] Star field: 2000 THREE.Points, twinkling vertex shader, color temperature
+- [x] Procedural textures from RealmData (day/night/specular/cloud)
+- [x] CSS2DRenderer settlement labels: parented to planetMesh, back-face culled
+- [x] Layer toggles: Clouds / Atmosphere / Auto Rotate
 
-**Research spike (do first):**
+### OW-F1v4 — Goldberg Polyhedron Planet (Hexagonal Tiles)
+
+> **Concept (confirmed):** Goldberg polyhedron = sphere tiled with hexagons + exactly 12 pentagons (Euler's formula). Each tile is a physical face with elevation, biome, optional highlight. Like Civilization 6 on a sphere.
+> **Library confirmed:** `hexasphere` (TypeScript, MIT, no deps) on npm — generates tiles with centerPoint, boundary vertices, neighbour links.
+
+- [ ] **OW-F1v4-R1** Install + study hexasphere API: `new Hexasphere(radius, subdivisions, tilePct)` → tiles[]
+- [ ] **OW-F1v4-1** `npm install hexasphere` — verify TypeScript types resolve
+- [ ] **OW-F1v4-2** `HexPlanetRenderer` class: generate hexasphere(2, 16, 0.96) → ~2562 tiles
+- [ ] **OW-F1v4-3** For each tile: sample fBm noise at tile.centerPoint → elevation + biome
+- [ ] **OW-F1v4-4** Extrude each tile outward by elevation: mountains raised, ocean sunk, each tile = flat-top extruded polygon
+- [ ] **OW-F1v4-5** Single BufferGeometry with vertex colors (one draw call) + optional LineSegments for tile edges
+- [ ] **OW-F1v4-6** Settlement tiles: highlight nearest tiles with gold rim color
+- [ ] **OW-F1v4-7** Settlement labels: same CSS2DRenderer approach, parented to hex tile group
+- [ ] **OW-F1v4-8** Cloud + atmosphere: reuse existing shaders as overlay spheres
+- [ ] **OW-F1v4-9** DNA integration: PlanetType drives noise params + colour palette
+- [ ] **OW-F1v4-10** Add as 3rd view option: 🌐 Hex | 🌍 Planet | 🗺 Map
+
+**Old research spikes (completed):**
 - [ ] **OW-F1-R1** Study Three.js Journey Lesson 38 shader structure: vertex (position, normal, UV), fragment (day/night mix, twilight, specular, atmosphere rim)
 - [ ] **OW-F1-R2** Confirm OrbitControls import from `three/examples/jsm/controls/OrbitControls.js` works in standalone html entrypoint (no react, no vite plugin)
 - [ ] **OW-F1-R3** Test: embed secondary `THREE.WebGLRenderer` in same page as existing canvas — confirm no GPU context conflicts

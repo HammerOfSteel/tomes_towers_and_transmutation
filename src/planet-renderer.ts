@@ -328,8 +328,11 @@ export class PlanetRenderer {
     this.scene.add(ambient);
 
     // ── Settlement labels (CSS2D, projected onto sphere) ─────────────────
-    // Remove old labels first
-    for (const obj of this.labelObjects) { this.scene.remove(obj); obj.element.remove(); }
+    // Remove old labels first (from planetMesh if it exists, else scene)
+    for (const obj of this.labelObjects) {
+      (obj.parent ?? this.scene).remove(obj);
+      obj.element.remove();
+    }
     this.labelObjects = [];
 
     const TWO_PI = Math.PI * 2;
@@ -361,7 +364,8 @@ export class PlanetRenderer {
 
       const obj = new CSS2DObject(wrap);
       obj.position.copy(pos);
-      this.scene.add(obj);
+      // Parent to planetMesh so labels rotate with the terrain texture
+      this.planetMesh!.add(obj);
       this.labelObjects.push(obj);
     }
   }
@@ -429,6 +433,17 @@ export class PlanetRenderer {
         (this.cloudMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
       }
       if (this.planetMesh) this.planetMesh.rotation.y = t * 0.03;
+
+      // Back-face cull settlement labels (hide when behind planet)
+      if (this.labelObjects.length > 0) {
+        const camDir = this.camera.position.clone().normalize();
+        for (const obj of this.labelObjects) {
+          const wPos = new THREE.Vector3();
+          obj.getWorldPosition(wPos);
+          const onFront = camDir.dot(wPos.normalize()) > 0.05;
+          (obj.element as HTMLElement).style.opacity = onFront ? '1' : '0';
+        }
+      }
 
       // Update star twinkle time
       if (this.starPoints) {
