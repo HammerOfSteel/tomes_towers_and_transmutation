@@ -2483,28 +2483,57 @@ function getBiomePal(data: CaveData): BiomePal {
  * Rule: a cell is floor if ≥ 5 of its 8 neighbours are floor.
  * Border is always wall.
  */
+// ── Biome structural parameters + labels ─────────────────────────────────────
+
+/** CA rule overrides per cave biome (applied on top of user density slider). */
+const BIOME_CA: Record<CaveBiome, { fillOffset: number; iter: number; survive: number; birth: number }> = {
+  stone:    { fillOffset:  0.00, iter: 5, survive: 5, birth: 5 },
+  coastal:  { fillOffset: -0.08, iter: 4, survive: 4, birth: 5 },
+  volcanic: { fillOffset: +0.07, iter: 6, survive: 5, birth: 6 },
+  desert:   { fillOffset: -0.14, iter: 3, survive: 4, birth: 4 },
+  verdant:  { fillOffset: -0.04, iter: 7, survive: 5, birth: 4 },
+  frozen:   { fillOffset: +0.04, iter: 5, survive: 5, birth: 5 },
+};
+
+const CAVE_FEAT_LABELS: Record<CaveBiome, Partial<Record<CaveFeature['kind'], string>>> = {
+  stone:    { water:'Underground Lake', mineral:'Ore Vein',    spawn:'Cave Beast',    treasure:'Treasure Cache', mushroom:'Fungus' },
+  coastal:  { water:'Tidal Pool',       mineral:'Coral',        spawn:'Sea Creature',  treasure:'Sunken Cache',   flower:'Anemone' },
+  volcanic: { water:'Lava River',       mineral:'Obsidian',     spawn:'Fire Imp',      treasure:'Dragon Hoard' },
+  desert:   { water:'Hidden Oasis',     mineral:'Sandstone',    spawn:'Scorpion',      treasure:'Buried Relic' },
+  verdant:  { water:'Glowing Pool',     mineral:'Cave Moss',    spawn:'Cave Toad',     treasure:'Crystal Cache',  mushroom:'Giant Mushroom' },
+  frozen:   { water:'Frozen Lake',      mineral:'Ice Crystal',  spawn:'Frost Beast',   treasure:'Frozen Relic' },
+};
+
+const GLADE_FEAT_LABELS: Record<GladeBiome, Partial<Record<CaveFeature['kind'], string>>> = {
+  forest:  { water:'Forest Pool', tree:'Oak',          flower:'Wildflower',    mushroom:'Toadstool',   spawn:'Forest Beast' },
+  autumn:  { water:'Autumn Pool', tree:'Oak',           flower:'Fallen Leaf',   mushroom:'Bracket Fungus',spawn:'Forest Spirit' },
+  blossom: { water:'Petal Pool',  tree:'Cherry Tree',   flower:'Cherry Blossom',mushroom:'Pink Cap',    spawn:'Sprite' },
+  wetland: { water:'Marsh Pool',  tree:'Willow',        flower:'Lily Pad',      mushroom:'Swamp Shroom',spawn:'Marsh Creature' },
+  tundra:  { water:'Ice Melt',    tree:'Pine',          flower:'Frost Flower',  mushroom:'Frost Cap',   spawn:'Tundra Beast' },
+};
+
 function generateCaveData(
   seed: number,
   type: CaveType,
   biome: string = type === 'cave' ? 'stone' : 'forest',
-  size: number  = 2,    // 1=small, 2=medium, 3=large
+  size: number = 2,
   density: number = 0.47,
 ): CaveData {
   const SIZES: Record<number, [number, number]> = { 1: [52, 40], 2: [72, 54], 3: [92, 68] };
   const [W, H] = SIZES[size] ?? SIZES[2]!;
   const rand = mulberry32(seed);
-
   let grid: boolean[][];
 
   if (type === 'cave') {
-    // ── Cellular automata cave ─────────────────────────────────────────────
+    const ca = BIOME_CA[biome as CaveBiome] ?? BIOME_CA.stone;
+    const fill = Math.min(0.65, Math.max(0.25, density + ca.fillOffset));
     grid = Array.from({ length: H }, (_, y) =>
       Array.from({ length: W }, (_, x) => {
         if (x < 2 || y < 2 || x > W - 3 || y > H - 3) return false;
-        return rand() > density;
+        return rand() > fill;
       }),
     );
-    for (let iter = 0; iter < 5; iter++) {
+    for (let iter = 0; iter < ca.iter; iter++) {
       grid = grid.map((row, y) =>
         row.map((_, x) => {
           if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
@@ -2512,11 +2541,24 @@ function generateCaveData(
           for (let dy = -1; dy <= 1; dy++)
             for (let dx = -1; dx <= 1; dx++)
               if (grid[y + dy]?.[x + dx]) n++;
-          return n >= 5;
+          return n >= ca.survive;
         }),
       );
     }
-    // Keep only largest connected region
+    // Desert: extra wind-erosion pass = wider passages
+    if (biome === 'desert') {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= 3;
+        }),
+      );
+    }
+    // Flood-fill: keep only the largest connected region
     const visited = Array.from({ length: H }, () => new Array<boolean>(W).fill(false));
     let bestCells: Array<[number, number]> = [];
     for (let sy = 1; sy < H - 1; sy++) {
@@ -2537,22 +2579,32 @@ function generateCaveData(
     }
     const mainSet = new Set(bestCells.map(([x, y]) => `${x},${y}`));
     grid = grid.map((row, y) => row.map((v, x) => v && mainSet.has(`${x},${y}`)));
-
+    // Desert: scatter rock pillar islands in open areas
+    if (biome === 'desert') {
+      const nPillars = 2 + Math.floor(rand() * 3);
+      for (let p = 0; p < nPillars; p++) {
+        const px = 5 + Math.floor(rand() * (W - 10));
+        const py = 5 + Math.floor(rand() * (H - 10));
+        const r  = 1 + Math.floor(rand() * 2);
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++)
+            if (dx*dx + dy*dy <= r*r + 1 && py+dy >= 1 && py+dy < H-1 && px+dx >= 1 && px+dx < W-1)
+              grid[py+dy]![px+dx] = false;
+      }
+    }
   } else {
-    // ── Organic glade: ellipse with jagged forest edge ─────────────────────
+    // Organic glade: ellipse clearing with noisy CA-smoothed edge
     const cx = W / 2, cy = H / 2;
-    const rx = W * (0.20 + rand() * 0.08);    // smaller clearing
+    const rx = W * (0.20 + rand() * 0.08);
     const ry = H * (0.22 + rand() * 0.08);
     grid = Array.from({ length: H }, (_, y) =>
       Array.from({ length: W }, (_, x) => {
         const dx = (x - cx) / rx, dy = (y - cy) / ry;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        // Perlin-like jitter by summing a few sin terms
         const jitter = Math.sin(x * 0.8) * 0.18 + Math.cos(y * 0.9) * 0.14 + (rand() - 0.5) * 0.2;
         return dist + jitter < 1.0;
       }),
     );
-    // 3 rounds of smoothing for organic edge
     for (let iter = 0; iter < 3; iter++) {
       grid = grid.map((row, y) =>
         row.map((_, x) => {
@@ -2565,7 +2617,6 @@ function generateCaveData(
         }),
       );
     }
-    // Add 2-3 internal clearings branching off the main one
     const numBranch = 1 + Math.floor(rand() * 2);
     for (let b = 0; b < numBranch; b++) {
       const angle = rand() * Math.PI * 2;
@@ -2578,7 +2629,6 @@ function generateCaveData(
           const ddx = x - brx, ddy = y - bry;
           if (ddx*ddx + ddy*ddy < brR*brR) grid[y]![x] = true;
         }
-      // Carve a narrow path connecting branch to main clearing
       const steps = 12;
       for (let s = 0; s <= steps; s++) {
         const t = s / steps;
@@ -2609,43 +2659,122 @@ function generateCaveData(
   const shuffled = (arr: Array<[number,number]>) => [...arr].sort(() => rand() - 0.5);
 
   if (type === 'cave') {
-    // Underground lake clusters
-    const lakeSeeds = shuffled(floorCells).slice(0, 2 + Math.floor(rand() * 2));
-    for (const [sx, sy] of lakeSeeds) {
-      const r = 2 + Math.floor(rand() * 3);
-      for (let dy = -r; dy <= r; dy++)
-        for (let dx = -r; dx <= r; dx++)
-          if (dx*dx+dy*dy <= r*r && grid[sy+dy]?.[sx+dx])
-            features.push({ x: sx+dx, y: sy+dy, kind: 'water' });
-    }
-    for (const [x, y] of shuffled(edgeCells).slice(0, 12 + Math.floor(rand() * 10)))
-      features.push({ x, y, kind: 'mineral' });
-    for (const [x, y] of shuffled(floorCells).slice(0, 4 + Math.floor(rand() * 5)))
-      features.push({ x, y, kind: 'spawn' });
-    for (const [x, y] of shuffled(floorCells).slice(0, 1 + Math.floor(rand() * 2)))
-      features.push({ x, y, kind: 'treasure' });
-    // Biome-specific extras
-    if (biome === 'verdant') {
-      for (const [x, y] of shuffled(floorCells).slice(0, 12))
+    const b = biome as CaveBiome;
+    if (b === 'coastal') {
+      // Sea floods bottom 35% — continuous water floor
+      const seaLine = Math.floor(H * 0.65);
+      for (let y = seaLine; y < H; y++)
+        for (let x = 0; x < W; x++)
+          if (grid[y]?.[x]) features.push({ x, y, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells.filter(([,ey]) => ey < seaLine)).slice(0, 14))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(edgeCells.filter(([,ey]) => ey < seaLine)).slice(0, 6))
+        features.push({ x, y, kind: 'flower' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'volcanic') {
+      // 1-2 lava rivers: diagonal strips crossing the cave
+      const nRivers = 1 + Math.floor(rand() * 2);
+      for (let r = 0; r < nRivers; r++) {
+        const sy = 4 + Math.floor(rand() * (H - 8));
+        const drift = Math.floor((rand() - 0.5) * H * 0.4);
+        for (let x = 1; x < W - 1; x++) {
+          const y = Math.round(sy + drift * x / (W - 2));
+          for (let dy = -1; dy <= 1; dy++) {
+            const ty = y + dy;
+            if (ty >= 1 && ty < H - 1 && grid[ty]?.[x])
+              features.push({ x, y: ty, kind: 'water' });
+          }
+        }
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 16 + Math.floor(rand() * 8)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 5 + Math.floor(rand() * 5)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'desert') {
+      // Single rare oasis
+      const [ox, oy] = shuffled(floorCells)[0] ?? [W/2|0, H/2|0];
+      const or = 1 + Math.floor(rand() * 2);
+      for (let dy = -or; dy <= or; dy++)
+        for (let dx = -or; dx <= or; dx++)
+          if (dx*dx+dy*dy <= or*or && grid[oy+dy]?.[ox+dx])
+            features.push({ x: ox+dx, y: oy+dy, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells).slice(0, 18 + Math.floor(rand() * 8)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 6 + Math.floor(rand() * 4)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 2))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'verdant') {
+      // Winding bioluminescent cave streams
+      const nStreams = 1 + Math.floor(rand() * 2);
+      for (let s = 0; s < nStreams; s++) {
+        const [sx, sy] = floorCells[Math.floor(rand() * floorCells.length)] ?? [W/2|0, H/2|0];
+        let [wx, wy] = [sx, sy];
+        for (let step = 0; step < 24; step++) {
+          if (grid[wy]?.[wx]) features.push({ x: wx, y: wy, kind: 'water' });
+          const DXDY: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+          const [ndx, ndy] = DXDY[Math.floor(rand() * 4)]!;
+          const nx = wx + ndx, ny = wy + ndy;
+          if (nx >= 1 && nx < W-1 && ny >= 1 && ny < H-1 && grid[ny]?.[nx]) { wx = nx; wy = ny; }
+        }
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 20))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 18))
+        features.push({ x, y, kind: 'mushroom' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 5))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 2))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'frozen') {
+      // Large central frozen lake
+      const [lx, ly] = shuffled(floorCells)[Math.floor(floorCells.length * 0.5)] ?? [W/2|0, H/2|0];
+      const lr = 4 + Math.floor(rand() * 4);
+      for (let dy = -lr; dy <= lr; dy++)
+        for (let dx = -lr; dx <= lr; dx++)
+          if (dx*dx+dy*dy <= lr*lr && grid[ly+dy]?.[lx+dx])
+            features.push({ x: lx+dx, y: ly+dy, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells).slice(0, 14))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else {
+      // Stone (default)
+      const lakeSeeds = shuffled(floorCells).slice(0, 2 + Math.floor(rand() * 2));
+      for (const [sx, sy] of lakeSeeds) {
+        const r = 2 + Math.floor(rand() * 3);
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++)
+            if (dx*dx+dy*dy <= r*r && grid[sy+dy]?.[sx+dx])
+              features.push({ x: sx+dx, y: sy+dy, kind: 'water' });
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 12 + Math.floor(rand() * 10)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4 + Math.floor(rand() * 5)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1 + Math.floor(rand() * 2)))
+        features.push({ x, y, kind: 'treasure' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 6))
         features.push({ x, y, kind: 'mushroom' });
     }
-    if (biome === 'coastal') {
-      for (const [x, y] of shuffled(edgeCells).slice(0, 8))
-        features.push({ x, y, kind: 'flower' });   // coral
-    }
   } else {
-    // Water pool
+    // Glade features
     const [pw, ph] = floorCells[Math.floor(rand() * floorCells.length)] ?? [W/2|0, H/2|0];
     const pr = 2 + Math.floor(rand() * 3);
     for (let dy = -pr; dy <= pr; dy++)
       for (let dx = -pr; dx <= pr; dx++)
         if (dx*dx+dy*dy <= pr*pr && grid[(ph+dy)]?.[(pw+dx)])
           features.push({ x: pw+dx, y: ph+dy, kind: 'water' });
-    // Flora (biome-specific ratios)
-    const flowerRatio = biome === 'blossom' ? 0.3 : biome === 'wetland' ? 0.15 : 0.2;
+    const flowerRatio = biome === 'blossom' ? 0.5 : biome === 'wetland' ? 0.2 : 0.3;
     for (const [x, y] of shuffled(floorCells).slice(0, 20 + Math.floor(rand() * 10)))
       features.push({ x, y, kind: rand() < flowerRatio ? 'flower' : rand() < 0.3 ? 'mushroom' : 'flower' });
-    // Trees at forest edge
     for (let y = 1; y < H - 1; y++)
       for (let x = 1; x < W - 1; x++) {
         if (grid[y]![x]) continue;
@@ -2654,6 +2783,8 @@ function generateCaveData(
           if (grid[y+dy]?.[x+dx]) { adjFloor = true; break; }
         if (adjFloor && rand() > 0.45) features.push({ x, y, kind: 'tree' });
       }
+    for (const [x, y] of shuffled(floorCells).slice(0, 2))
+      features.push({ x, y, kind: 'spawn' });
   }
 
   return { grid, W, H, seed, type, biome, features };
@@ -2665,6 +2796,7 @@ function generateCaveData(
 export function drawCaveGlade(data: CaveData, canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d')!;
   const { grid, W, H, type, features, seed } = data;
+  const biome = data.biome;
   const pal = getBiomePal(data);
 
   const CELL = Math.min(Math.floor((canvas.width  - 8) / W),
@@ -2740,6 +2872,54 @@ export function drawCaveGlade(data: CaveData, canvas: HTMLCanvasElement): void {
   ctx.strokeStyle = pal.border;
   ctx.lineWidth = 2;
   ctx.strokeRect(offX, offY, W * CELL, H * CELL);
+
+  // ── On-canvas legend ───────────────────────────────────────────────────────
+  const featLabels = type === 'cave'
+    ? (CAVE_FEAT_LABELS[biome as CaveBiome] ?? {})
+    : (GLADE_FEAT_LABELS[biome as GladeBiome] ?? {});
+
+  // Build legend entries from features actually present
+  const seenKinds = new Set(features.map(f => f.kind));
+  type LegendEntry = { color: string; symbol: string; label: string };
+  const legendEntries: LegendEntry[] = [];
+
+  const kindMeta: Partial<Record<CaveFeature['kind'], { color: ()=>string; symbol: string }>> = {
+    water:    { color: () => pal.water,    symbol: '■' },
+    mineral:  { color: () => pal.mineral,  symbol: '●' },
+    spawn:    { color: () => pal.spawn,    symbol: '●' },
+    treasure: { color: () => pal.treasure, symbol: '★' },
+    mushroom: { color: () => pal.mushroom, symbol: '●' },
+    flower:   { color: () => pal.flower,   symbol: '●' },
+    tree:     { color: () => pal.tree,     symbol: '▲' },
+  };
+
+  for (const [kind, label] of Object.entries(featLabels) as Array<[CaveFeature['kind'], string]>) {
+    if (!label || !seenKinds.has(kind)) continue;
+    const meta = kindMeta[kind];
+    if (!meta) continue;
+    legendEntries.push({ color: meta.color(), symbol: meta.symbol, label });
+  }
+
+  if (legendEntries.length > 0) {
+    const LH = 13, LW = 118;
+    const LX = offX + 5;
+    const LY = offY + H * CELL - LH * legendEntries.length - 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(LX - 2, LY - 3, LW, LH * legendEntries.length + 6);
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < legendEntries.length; i++) {
+      const e = legendEntries[i]!;
+      const ly = LY + i * LH + LH * 0.5;
+      ctx.fillStyle = e.color;
+      ctx.font = `${Math.max(6, CELL)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(e.symbol, LX + 6, ly);
+      ctx.fillStyle = 'rgba(240,235,220,0.92)';
+      ctx.font = '7px Georgia, serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(e.label, LX + 14, ly);
+    }
+  }
 
   ctx.fillStyle = pal.label;
   ctx.font = '10px Georgia, serif';
