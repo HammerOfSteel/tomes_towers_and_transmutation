@@ -320,21 +320,23 @@ export class HexPlanetRenderer {
       const biome = cell.biome as BiomeName;
       const [r,g,b] = BIOME_COLOR[biome] ?? BIOME_COLOR.deep_ocean;
 
-      // ── Height tiers — roughness only controls amplitude, not frequency ─
-      // Use cell elevation for fine variation within each biome tier
-      const amp    = 0.06 + s.roughness * 0.22;   // vertical exaggeration
-      const oceanD = 0.06 + s.roughness * 0.10;   // ocean depth
-      let tileElev: number;
-      if      (biome === 'deep_ocean') tileElev = BASE_R * (1.0 - oceanD * 1.6);
-      else if (biome === 'ocean')      tileElev = BASE_R * (1.0 - oceanD * 0.8);
-      else if (biome === 'beach')      tileElev = BASE_R * (1.0 - oceanD * 0.05);
-      else if (biome === 'desert')     tileElev = BASE_R * (1.0 + amp * 0.20 + elev * amp * 0.10);
-      else if (biome === 'savanna')    tileElev = BASE_R * (1.0 + amp * 0.30 + elev * amp * 0.15);
-      else if (biome === 'grassland')  tileElev = BASE_R * (1.0 + amp * 0.40 + elev * amp * 0.20);
-      else if (biome === 'forest')     tileElev = BASE_R * (1.0 + amp * 0.55 + elev * amp * 0.25);
-      else if (biome === 'taiga')      tileElev = BASE_R * (1.0 + amp * 0.72 + elev * amp * 0.30);
-      else if (biome === 'tundra')     tileElev = BASE_R * (1.0 + amp * 0.85 + elev * amp * 0.35);
-      else /* snow */                  tileElev = BASE_R * (1.0 + amp * 1.00 + elev * amp * 0.60);
+      // ── Fixed biome tier heights — NOT roughness-dependent ─────────────
+      // Tier centers are always the same. Roughness only adds micro-variation
+      // WITHIN each tier (never crossing tier boundaries).
+      //
+      // Minimum gap between adjacent tiers = 0.04 (safe sub-variation cap = 0.012)
+      // ocean tiers deeper for dramatic look, land tiers clearly stepped
+      const TIER: Record<string, number> = {
+        deep_ocean: 0.78, ocean: 0.90, beach: 0.97,
+        desert: 1.03,  savanna: 1.07, grassland: 1.11,
+        forest: 1.16,  taiga:   1.21, tundra:    1.26, snow: 1.32,
+      };
+      const tierBase = TIER[biome] ?? 1.0;
+
+      // Roughness = micro-variation within the tier (smooth, never crosses tier)
+      // roughness 0 → perfectly flat tiers; roughness 1 → subtle ridges ±0.012
+      const microAmp = s.roughness * 0.012;
+      const tileElev = BASE_R * (tierBase + (elev - 0.5) * microAmp);
 
       const scale = tileElev / len;
       const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;

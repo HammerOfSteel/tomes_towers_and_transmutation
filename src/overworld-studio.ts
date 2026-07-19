@@ -3809,15 +3809,18 @@ function redrawRealm(): void {
     ).normalize();
     // Derive subdivision from realm Size slider: S=6, M=8, L=12, XL=16, Planet=20
     const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 24 };
+    void SIZE_TO_SUB;  // kept for reference
     const realmSize   = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
     const roughness   = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
     const shape       = (document.querySelector('#realm-shape-pills .pill.active')  as HTMLElement)?.dataset.shape   as RealmShape   ?? 'island';
     const climate     = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate  ?? 'temperate';
-    const subdivisions = SIZE_TO_SUB[realmSize] ?? 8;
-    const tileCount   = 10 * subdivisions * subdivisions + 2;
-    // Update tile display
+    void shape; void climate;  // shape+climate baked into cells
+    // Tile count: always maximum (sub 24 = 5762 tiles). Size controls realm resolution.
+    const subdivisions = 24;
+    void realmSize;
+    const tileCount = 10 * 24 * 24 + 2;
     const hexSubVal = document.getElementById('hex-sub-val');
-    if (hexSubVal) hexSubVal.textContent = `${tileCount} (sub ${subdivisions})`;
+    if (hexSubVal) hexSubVal.textContent = `${tileCount} tiles (sub 24)`;
     hr.loadPlanet({
       seed: d.seed,
       subdivisions,
@@ -4045,9 +4048,9 @@ document.getElementById('realm-size')?.addEventListener('input', () => {
   (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
   currentRealmData = null;
   // Update hex tile display immediately
-  const SUB = [0,6,8,12,16,24][v] ?? 8;
-  const hexSubVal = document.getElementById('hex-sub-val');
-  if (hexSubVal) hexSubVal.textContent = `${10*SUB*SUB+2} (sub ${SUB})`;
+  const SUB = 24;  // always 5762 tiles; display remains static
+  const hexSubVal2 = document.getElementById('hex-sub-val');
+  if (hexSubVal2) hexSubVal2.textContent = `${10*SUB*SUB+2} tiles (sub ${SUB})`;
   generateRealmView();
 });
 
