@@ -378,7 +378,7 @@ export class HexPlanetRenderer {
     for (const settle of s.settlements) {
       const lon = (settle.x / s.W) * TWO_PI - Math.PI;
       const lat = (settle.y / s.H - 0.5) * Math.PI;
-      const r2  = BASE_R * 1.12;
+      const r2  = BASE_R * 1.01;  // just above tile surface
       const pos = new THREE.Vector3(
         r2 * Math.cos(lat) * Math.sin(lon),
         r2 * Math.sin(lat),

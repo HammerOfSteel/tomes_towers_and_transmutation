@@ -345,7 +345,7 @@ export class PlanetRenderer {
       // Convert grid (x,y) to lon/lat
       const lon = (s.x / tex.W) * TWO_PI - Math.PI;
       const lat = (s.y / tex.H - 0.5) * Math.PI;
-      const r   = 2.06;  // just above cloud layer
+      const r   = 2.02;  // just above planet surface
       const pos = new THREE.Vector3(
         r * Math.cos(lat) * Math.sin(lon),
         r * Math.sin(lat),
