@@ -1774,6 +1774,7 @@ canvas.addEventListener('pointermove', e => {
 // ── Ward hover inspection ─────────────────────────────────────────────────────
 
 canvas.addEventListener('mousemove', e => {
+  if (studioMode !== 'settlement') return;
   if (!currentModel) return;
   const rect = canvas.getBoundingClientRect();
   const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
@@ -1806,6 +1807,7 @@ canvas.addEventListener('mousemove', e => {
   }
 });
 canvas.addEventListener('mouseleave', () => {
+  if (studioMode !== 'settlement') return;
   hoverEl.textContent = 'hover a ward to inspect';
   overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
 });
@@ -1832,6 +1834,274 @@ for (const [type, col] of Object.entries(WARD_COLORS)) {
 // ── Dungeon Floor Plan Renderer (OW-B) ───────────────────────────────────────
 
 /** Dungeon canvas color palette — ink-map on parchment style. */
+// ── Rich Procedural Floor Plan Generator (OW-B) ──────────────────────────────
+//
+// Creates a branching multi-room dungeon entirely in-memory (no JSON blueprints).
+// Each room is a Blueprint built from scratch: perimeter walls, typed content,
+// doors wired to neighbours.  Used by the Overworld Studio dungeon tab only —
+// the game's DungeonGenerator is unchanged.
+
+type RoomCategory = 'entry' | 'library' | 'barracks' | 'armory' | 'treasure' | 'ritual' | 'boss' | 'corridor';
+
+interface RichRoomDef {
+  id:   string;
+  cat:  RoomCategory;
+  col:  number;   // virtual grid column (1 slot per room)
+  row:  number;
+  w:    number;   // cell width
+  d:    number;   // cell depth
+  connections: Array<{ dir: 'N'|'S'|'E'|'W'; toId: string }>;
+}
+
+const ROOM_SIZES: Record<RoomCategory, [number, number][]> = {
+  entry:    [[7,7],[7,9]],
+  library:  [[9,9],[9,7],[11,9]],
+  barracks: [[9,7],[11,7],[9,9]],
+  armory:   [[7,7],[7,9]],
+  treasure: [[5,7],[7,7],[7,5]],
+  ritual:   [[9,9],[11,11]],
+  boss:     [[13,13],[11,13],[13,11]],
+  corridor: [[3,7],[7,3]],
+};
+
+const ROOM_FLOOR_TYPE: Record<RoomCategory, import('@/levels/blueprint').FloorType> = {
+  entry:    'stone_herald',
+  library:  'wood',
+  barracks: 'stone',
+  armory:   'stone_scorched',
+  treasure: 'stone',
+  ritual:   'stone_alchemy',
+  boss:     'stone_damp',
+  corridor: 'stone',
+};
+
+/** Floor display color per floor type. */
+const FLOOR_TYPE_COLOR: Partial<Record<string, string>> = {
+  stone:          '#d0c8b8',
+  stone_herald:   '#d8d4c4',
+  stone_alchemy:  '#ccc4d4',   // slight lavender
+  stone_scorched: '#d0b8a8',   // warm terracotta
+  stone_damp:     '#b8c4b8',   // cool green-grey
+  stone_celestial:'#c4d0e0',   // pale blue
+  wood:           '#d4c0a0',   // warm tan
+  grass:          '#c4d0b0',
+  dirt:           '#c8b898',
+};
+
+const ROOM_INTERACTABLES: Record<RoomCategory, import('@/levels/blueprint').InteractableType[]> = {
+  entry:    ['lectern', 'candelabra'],
+  library:  ['bookshelf', 'bookshelf', 'lectern', 'reading_table'],
+  barracks: ['bunk', 'bunk', 'mess_table'],
+  armory:   ['anvil', 'weapon_stand', 'weapon_stand'],
+  treasure: ['chest', 'chest', 'candelabra'],
+  ritual:   ['containment_ring', 'cauldron', 'candelabra'],
+  boss:     ['quest_board'],
+  corridor: [],
+};
+
+const ROOM_SPAWN_COUNTS: Record<RoomCategory, number> = {
+  entry: 0, library: 1, barracks: 3, armory: 2, treasure: 1, ritual: 2, boss: 5, corridor: 0,
+};
+
+/** Build wall tiles for a W×D room (perimeter only) with optional corner pillars. */
+function buildRoomTiles(w: number, d: number): import('@/levels/blueprint').TileEntry[] {
+  const tiles: import('@/levels/blueprint').TileEntry[] = [];
+  for (let x = 0; x < w; x++) {
+    tiles.push({ x, z: 0,   type: 'wall' });
+    tiles.push({ x, z: d-1, type: 'wall' });
+  }
+  for (let z = 1; z < d-1; z++) {
+    tiles.push({ x: 0,   z, type: 'wall' });
+    tiles.push({ x: w-1, z, type: 'wall' });
+  }
+  // Corner pillars for larger rooms
+  if (w >= 9 && d >= 9) {
+    const ip = 2;
+    for (const [px, pz] of [[ip,ip],[w-1-ip,ip],[ip,d-1-ip],[w-1-ip,d-1-ip]] as [number,number][]) {
+      tiles.push({ x: px, z: pz, type: 'pillar' });
+    }
+  }
+  return tiles;
+}
+
+/** Remove a wall tile at (tx, tz) from a tile list (for door placement). */
+function openWallAt(tiles: import('@/levels/blueprint').TileEntry[], tx: number, tz: number): void {
+  const idx = tiles.findIndex(t => t.x === tx && t.z === tz);
+  if (idx !== -1) tiles.splice(idx, 1);
+}
+
+/** Door position for a direction on a room of size w×d. */
+function doorPos(dir: 'N'|'S'|'E'|'W', w: number, d: number): {x:number,z:number,facing:import('@/levels/blueprint').DoorFacing} {
+  switch (dir) {
+    case 'N': return { x: Math.floor(w/2), z: 0,   facing: 'north' };
+    case 'S': return { x: Math.floor(w/2), z: d-1, facing: 'south' };
+    case 'E': return { x: w-1, z: Math.floor(d/2), facing: 'east'  };
+    case 'W': return { x: 0,   z: Math.floor(d/2), facing: 'west'  };
+  }
+}
+
+/** Scatter N interactables pseudo-randomly inside a room (interior cells only). */
+function placeInteractables(
+  types: import('@/levels/blueprint').InteractableType[],
+  w: number, d: number, rand: ()=>number,
+): import('@/levels/blueprint').InteractableEntry[] {
+  const result: import('@/levels/blueprint').InteractableEntry[] = [];
+  const used = new Set<string>();
+  for (const type of types) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const x = 1 + Math.floor(rand() * (w - 2));
+      const z = 1 + Math.floor(rand() * (d - 2));
+      const key = `${x},${z}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      result.push({ x, z, type });
+      break;
+    }
+  }
+  return result;
+}
+
+/** Scatter N enemy spawns inside a room. */
+function placeSpawns(count: number, w: number, d: number, rand: ()=>number): import('@/levels/blueprint').SpawnEntry[] {
+  const result: import('@/levels/blueprint').SpawnEntry[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const x = 2 + Math.floor(rand() * (w - 4));
+      const z = 2 + Math.floor(rand() * (d - 4));
+      const key = `${x},${z}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      result.push({ x, z, type: 'slime' });
+      break;
+    }
+  }
+  return result;
+}
+
+const CATEGORY_SEQ: RoomCategory[] = ['library','barracks','armory','ritual','treasure','library','barracks'];
+
+/**
+ * Generate a branching dungeon floor plan with typed rooms.
+ * Returns a DungeonPlan compatible with drawDungeonFloorPlan().
+ */
+export function generateRichFloorPlan(seed: number, complexity: number): DungeonPlan {
+  const rand = mulberry32(seed);
+  const occupied = new Set<string>();
+  const defs: RichRoomDef[] = [];
+  let idx = 0;
+
+  function tryPlace(cat: RoomCategory, col: number, row: number): RichRoomDef | null {
+    const key = `${col},${row}`;
+    if (occupied.has(key)) return null;
+    const sizes = ROOM_SIZES[cat];
+    const [w, d] = sizes[Math.floor(rand() * sizes.length)]!;
+    const def: RichRoomDef = { id: `room_${idx++}`, cat, col, row, w, d, connections: [] };
+    occupied.add(key);
+    defs.push(def);
+    return def;
+  }
+
+  // Start room
+  const entry = tryPlace('entry', 0, 0)!;
+
+  // BFS expansion
+  const queue: RichRoomDef[] = [entry];
+  const targetRooms = 4 + Math.floor(complexity * 1.2);
+  const DIRS: Array<['N'|'S'|'E'|'W', number, number]> = [['N',0,-1],['S',0,1],['E',1,0],['W',-1,0]];
+
+  let catIdx = 0;
+  while (queue.length && defs.length < targetRooms) {
+    const parent = queue[Math.floor(rand() * Math.min(queue.length, 3))]!;
+    const branches = 1 + Math.floor(rand() * 2);
+    const shuffledDirs = [...DIRS].sort(() => rand() - 0.5);
+    let added = 0;
+    for (const [dir, dc, dr] of shuffledDirs) {
+      if (added >= branches || defs.length >= targetRooms) break;
+      // Skip dir if parent already has a connection that way
+      if (parent.connections.some(c => c.dir === dir)) continue;
+      const nc = parent.col + dc, nr = parent.row + dr;
+      const cat: RoomCategory = defs.length >= targetRooms - 1 ? 'boss'
+                               : CATEGORY_SEQ[catIdx % CATEGORY_SEQ.length]!;
+      const child = tryPlace(cat, nc, nr);
+      if (!child) continue;
+      const opp: Record<string, 'N'|'S'|'E'|'W'> = {N:'S',S:'N',E:'W',W:'E'};
+      parent.connections.push({ dir, toId: child.id });
+      child.connections.push({ dir: opp[dir]!, toId: parent.id });
+      queue.push(child);
+      catIdx++;
+      added++;
+    }
+    queue.splice(queue.indexOf(parent), 1);
+  }
+
+  // Always add a boss room connected to the furthest room from entry
+  if (defs.length >= 3) {
+    const furthest = defs.reduce((a, b) =>
+      Math.abs(b.col) + Math.abs(b.row) > Math.abs(a.col) + Math.abs(a.row) ? b : a);
+    const bossDir = DIRS.find(([dir]) => !furthest.connections.some(c => c.dir === dir));
+    if (bossDir) {
+      const [dir, dc, dr] = bossDir;
+      const nc = furthest.col + dc, nr = furthest.row + dr;
+      const boss = tryPlace('boss', nc, nr);
+      if (boss) {
+        const opp: Record<string, 'N'|'S'|'E'|'W'> = {N:'S',S:'N',E:'W',W:'E'};
+        furthest.connections.push({ dir, toId: boss.id });
+        boss.connections.push({ dir: opp[dir]!, toId: furthest.id });
+      }
+    }
+  }
+
+  // Build Blueprint map
+  const rooms = new Map<string, Blueprint>();
+  for (const def of defs) {
+    const { id, cat, w, d, connections } = def;
+    const tiles = buildRoomTiles(w, d);
+    const doors: import('@/levels/blueprint').DoorEntry[] = [];
+
+    for (const conn of connections) {
+      const dp = doorPos(conn.dir, w, d);
+      openWallAt(tiles, dp.x, dp.z);
+      doors.push({ x: dp.x, z: dp.z, facing: dp.facing, targetId: conn.toId });
+    }
+
+    const bp: Blueprint = {
+      id, version: 1 as const,
+      width: w, depth: d,
+      cellSize: 2, wallHeight: 3,
+      tiles, doors,
+      staircases: [],
+      spawns:          cat === 'corridor' ? [] : placeSpawns(ROOM_SPAWN_COUNTS[cat], w, d, rand),
+      interactables:   cat === 'corridor' ? [] : placeInteractables(ROOM_INTERACTABLES[cat], w, d, rand),
+      floor: 0,
+      floorType: ROOM_FLOOR_TYPE[cat],
+    };
+    rooms.set(id, bp);
+  }
+
+  return { rooms, startRoomId: 'room_0', seed };
+}
+
+// ── Rich name labels ──────────────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<RoomCategory, string> = {
+  entry: 'Entry', library: 'Library', barracks: 'Barracks', armory: 'Armory',
+  treasure: 'Treasure', ritual: 'Ritual Chamber', boss: 'Boss Chamber', corridor: '',
+};
+
+function guessRoomLabel(id: string, floorType?: string): string {
+  if (id.includes('cell_start'))   return 'Cell';
+  if (id.includes('library_large'))return 'Grand Library';
+  if (id.includes('library'))      return 'Library';
+  if (id.includes('corridor'))     return '';
+  if (id.includes('chamber'))      return 'Chamber';
+  if (id.includes('boss'))         return 'Boss';
+  if (floorType === 'stone_alchemy') return 'Ritual';
+  if (floorType === 'stone_scorched') return 'Forge';
+  if (floorType === 'wood')          return 'Library';
+  return '';
+}
+
 const DMAP = {
   bg:          '#e4dece',   // parchment background
   floor:       '#d0c8b8',   // room floor (slightly darker than bg)
@@ -1995,9 +2265,20 @@ export function drawDungeonFloorPlan(
     const rw   = room.width  * CELL;
     const rd   = room.depth  * CELL;
 
-    // Floor fill
-    ctx.fillStyle = rid === startId ? '#d8e8d0' : DMAP.floor;
+    // Floor fill — color-coded by room type
+    const floorCol = rid === startId
+      ? '#d0e8d4'   // green entry
+      : (FLOOR_TYPE_COLOR[room.floorType ?? 'stone'] ?? DMAP.floor);
+    ctx.fillStyle = floorCol;
     ctx.fillRect(ox, oy, rw, rd);
+
+    // Subtle drop shadow for depth
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur  = 4;
+    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+    ctx.fillRect(ox, oy, rw, rd);  // shadow pass
+    ctx.restore();
 
     // Build wall/pillar lookup
     const wallSet = new Set(room.tiles.map(t => `${t.x},${t.z}`));
@@ -2019,12 +2300,12 @@ export function drawDungeonFloorPlan(
     // Draw doors
     for (const door of room.doors) {
       const isExit = !door.targetId;
-      ctx.fillStyle = isExit ? DMAP.door_exit : DMAP.door;
+      const doorCol = isExit ? DMAP.door_exit : DMAP.door;
       // Erase wall cell at door position (draw floor color)
-      ctx.fillStyle = rid === startId ? '#d8e8d0' : DMAP.floor;
+      ctx.fillStyle = floorCol;
       ctx.fillRect(ox + door.x * CELL, oy + door.z * CELL, CELL, CELL);
-      // Draw door marker
-      ctx.fillStyle = isExit ? DMAP.door_exit : DMAP.door;
+      // Draw door dot
+      ctx.fillStyle = doorCol;
       const dcx = ox + door.x * CELL + CELL / 2;
       const dcy = oy + door.z * CELL + CELL / 2;
       ctx.beginPath(); ctx.arc(dcx, dcy, CELL * 0.3, 0, Math.PI * 2); ctx.fill();
@@ -2080,12 +2361,15 @@ export function drawDungeonFloorPlan(
       ctx.beginPath(); ctx.arc(spx, spy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Room ID label (small, below or inside room)
-    ctx.fillStyle    = DMAP.label;
-    ctx.font         = `6px Georgia, serif`;
-    ctx.textAlign    = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(room.id, ox + 2, oy + 2);
+    // Room label — human-readable name centred in room
+    const label = guessRoomLabel(room.id, room.floorType);
+    if (label) {
+      ctx.fillStyle    = 'rgba(58,48,40,0.55)';
+      ctx.font         = `bold ${Math.min(8, Math.floor(rw / label.length * 1.2))}px Georgia, serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label.toUpperCase(), ox + rw / 2, oy + rd / 2);
+    }
   }
 
   // Title
@@ -2105,12 +2389,13 @@ let currentDungeonPlan: DungeonPlan | null = null;
 function generateDungeonView() {
   const seed       = parseInt(seedInput.value) || Date.now();
   const dtype      = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
-  const floorCount = parseInt((document.getElementById('dfloors') as HTMLInputElement).value);
+  const complexity = parseInt((document.getElementById('dfloors') as HTMLInputElement).value);
   try {
     if (dtype === 'tower') {
       currentDungeonPlan = generateTower(seed);
     } else {
-      currentDungeonPlan = generateDungeon(seed, floorCount);
+      // Use the rich procedural generator for the visual floor plan
+      currentDungeonPlan = generateRichFloorPlan(seed, complexity);
     }
   } catch (e) {
     console.error('Dungeon generation failed:', e);
@@ -2148,6 +2433,8 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
   if (mode === 'dungeon') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
     if (!currentDungeonPlan) generateDungeonView();
     else redrawDungeon();
   } else {
