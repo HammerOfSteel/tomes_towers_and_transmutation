@@ -333,105 +333,141 @@ function convexHullExpanded(pts: Vec2[], centre: Vec2, expand: number): Vec2[] {
   });
 }
 
-// ── 2.5D / Plan-oblique renderer ─────────────────────────────────────────────
+// ── 2.5D cartographic renderer ─────────────────────────────────────────────
+// Inspired by Watabou's city-generator: cream background, grey buildings,
+// streets visible as negative space between ward polygons, subtle 2px shadow.
+// Building lots are grid-filled aligned to the dominant ward edge direction.
 
-/** Building heights in world units per ward type */
-const WARD_HEIGHT: Record<WardType, number> = {
-  market:     1.2,
-  church:     5.5,   // tall spire
-  inn:        3.0,
-  smithy:     2.2,
-  craftsmen:  1.8,
-  merchant:   2.8,
-  patriciate: 3.2,
-  slum:       1.4,
-  gateward:   3.0,
-  farm:       0.8,
-  park:       0,
+// ── Colour palette ────────────────────────────────────────────────────────────
+
+const CARTO = {
+  bg:       '#ddd8c8',   // cream background (streets + fields)
+  field:    '#cac2ae',   // slightly darker for farms
+  city_gnd: '#d4cebb',   // city ground between wards
+  bldg:     '#9a9288',   // generic building grey
+  bldg_dk:  '#2a2520',   // church / citadel
+  bldg_mkt: '#b0a890',   // market area
+  shadow:   'rgba(0,0,0,0.28)',
+  road_dk:  '#b8b0a0',
+  road_lt:  '#ccc4b4',
+  wall:     '#6a6258',
+  water:    '#8aacbe',
+  label:    'rgba(40,35,28,0.85)',
 };
 
-/** Oblique extrusion direction (upper-right, 45°) */
-const OBL_X = 0.55, OBL_Y = -0.55;
-/** Pixels per world unit of height */
-const H_SCALE = 14;
-
-/** Darken a CSS hex colour by `amount` (0–1). */
-function darkenHex(hex: string, amount: number): string {
-  const c = parseInt(hex.slice(1), 16);
-  const r = Math.round(((c >> 16) & 0xFF) * (1 - amount));
-  const g = Math.round(((c >>  8) & 0xFF) * (1 - amount));
-  const b = Math.round((c & 0xFF) * (1 - amount));
-  return `rgb(${r},${g},${b})`;
+/** Angle of the longest polygon edge — dominant street direction. */
+function dominantEdgeAngle(poly: Vec2[]): number {
+  let max = 0, ang = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!, b = poly[(i+1) % poly.length]!;
+    const d = (b.x-a.x)**2 + (b.y-a.y)**2;
+    if (d > max) { max = d; ang = Math.atan2(b.y-a.y, b.x-a.x); }
+  }
+  return ang;
 }
 
-/** Draw a single building box using plan-oblique projection. */
-function drawBox(
+/** Minimum distance from pt to any edge of poly. */
+function minDistToEdge(pt: Vec2, poly: Vec2[]): number {
+  let minD = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!, b = poly[(i+1) % poly.length]!;
+    const dx = b.x-a.x, dy = b.y-a.y, len2 = dx*dx+dy*dy;
+    if (len2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((pt.x-a.x)*dx+(pt.y-a.y)*dy)/len2));
+    const ex = a.x+t*dx-pt.x, ey = a.y+t*dy-pt.y;
+    minD = Math.min(minD, Math.sqrt(ex*ex+ey*ey));
+  }
+  return minD;
+}
+
+/** Draw a flat building rectangle (shadow then fill). */
+function drawBldg(
   ctx: CanvasRenderingContext2D,
-  bx: number, by: number, bw: number, bh: number,
-  rot: number, height: number, topColor: string,
+  cx: number, cy: number, bw: number, bh: number,
+  rot: number, fill: string,
 ): void {
-  const hw  = height * H_SCALE;
-  const ex  = OBL_X * hw, ey = OBL_Y * hw;
-  const hw2 = bw / 2,     hh2 = bh / 2;
   const cos = Math.cos(rot), sin = Math.sin(rot);
-
-  const c = (dx: number, dy: number): [number, number] => [
-    bx + cos * dx - sin * dy,
-    by + sin * dx + cos * dy,
+  const hw = bw/2, hh = bh/2;
+  const pts: [number,number][] = [
+    [cx + cos*-hw - sin*-hh, cy + sin*-hw + cos*-hh],
+    [cx + cos* hw - sin*-hh, cy + sin* hw + cos*-hh],
+    [cx + cos* hw - sin* hh, cy + sin* hw + cos* hh],
+    [cx + cos*-hw - sin* hh, cy + sin*-hw + cos* hh],
   ];
-  const tl = c(-hw2, -hh2), tr = c(hw2, -hh2);
-  const br = c(hw2,  hh2),  bl = c(-hw2, hh2);
-
-  // Right face (darker)
+  // Shadow (offset upper-right)
+  const SX = 2, SY = -2;
   ctx.beginPath();
-  ctx.moveTo(tr[0], tr[1]);       ctx.lineTo(tr[0]+ex, tr[1]+ey);
-  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(br[0], br[1]);
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x+SX, y+SY) : ctx.moveTo(x+SX, y+SY));
   ctx.closePath();
-  ctx.fillStyle = darkenHex(topColor, 0.48);
+  ctx.fillStyle = CARTO.shadow;
   ctx.fill();
-
-  // Front face (darkest)
+  // Building face
   ctx.beginPath();
-  ctx.moveTo(bl[0], bl[1]);       ctx.lineTo(bl[0]+ex, bl[1]+ey);
-  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(br[0], br[1]);
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
   ctx.closePath();
-  ctx.fillStyle = darkenHex(topColor, 0.62);
+  ctx.fillStyle = fill;
   ctx.fill();
-
-  // Top face
-  ctx.beginPath();
-  ctx.moveTo(tl[0]+ex, tl[1]+ey); ctx.lineTo(tr[0]+ex, tr[1]+ey);
-  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(bl[0]+ex, bl[1]+ey);
-  ctx.closePath();
-  ctx.fillStyle = topColor;
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 0.6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 0.5;
   ctx.stroke();
 }
 
-/** Draw a church with a slender spire on top of the base box. */
-function drawChurch(
+/** Fill a ward polygon with a dense aligned grid of buildings. */
+function fillWithBuildings(
   ctx: CanvasRenderingContext2D,
-  bx: number, by: number, bw: number, bh: number, rot: number, col: string,
+  poly: Vec2[],
+  wardType: WardType,
+  wardSeed: number,
 ): void {
-  const BASE_H = 2.5, SPIRE_H = WARD_HEIGHT.church - BASE_H;
-  drawBox(ctx, bx, by, bw, bh, rot, BASE_H, col);
+  if (poly.length < 3) return;
 
-  // Spire: thin tall box centred on the building
-  const eh = BASE_H * H_SCALE;
-  const sx = bx + OBL_X * eh, sy = by + OBL_Y * eh;
-  const spireH = SPIRE_H * H_SCALE;
-  const sw = bw * 0.32, sd = bh * 0.32;
-  drawBox(ctx, sx, sy, sw, sd, rot, SPIRE_H, darkenHex(col, 0.15));
+  const angle  = dominantEdgeAngle(poly);
+  const cos    = Math.cos(-angle), sin = Math.sin(-angle);
+  const uncos  = Math.cos(angle),  unsin = Math.sin(angle);
 
-  // Cross on spire tip
-  const topH = (BASE_H + SPIRE_H) * H_SCALE;
-  const tx = bx + OBL_X * topH, ty = by + OBL_Y * topH;
-  ctx.strokeStyle = col;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(tx - 3, ty); ctx.lineTo(tx + 3, ty); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(tx, ty - 5); ctx.lineTo(tx, ty + 2); ctx.stroke();
+  // Rotate polygon into local (street-aligned) space
+  const rot = poly.map(p => ({ x: p.x*cos - p.y*sin, y: p.x*sin + p.y*cos }));
+  const minX = Math.min(...rot.map(p => p.x));
+  const maxX = Math.max(...rot.map(p => p.x));
+  const minY = Math.min(...rot.map(p => p.y));
+  const maxY = Math.max(...rot.map(p => p.y));
+
+  // Building and street dimensions — vary by ward type
+  const BW = wardType === 'slum'       ?  7
+           : wardType === 'patriciate' ? 14
+           : wardType === 'craftsmen'  ? 10
+           : 11;
+  const BH = wardType === 'slum'       ?  8
+           : wardType === 'patriciate' ? 18
+           : wardType === 'craftsmen'  ? 14
+           : 15;
+  const GAP     = 3;     // gap between buildings within block (alley)
+  const STREET  = 5;     // setback from ward polygon edge (= street width)
+
+  const col = wardType === 'church' || wardType === 'gateward' ? CARTO.bldg_dk
+            : wardType === 'market' ? CARTO.bldg_mkt
+            : CARTO.bldg;
+
+  const rand = mulberry32(wardSeed);
+
+  for (let ry = minY + STREET; ry + BH < maxY - STREET + 1; ry += BH + GAP) {
+    for (let rx = minX + STREET; rx + BW < maxX - STREET + 1; rx += BW + GAP) {
+      // Centre of this grid cell in rotated space
+      const rcx = rx + BW*0.5, rcy = ry + BH*0.5;
+      // Back to world space
+      const wcx = rcx*uncos - rcy*unsin;
+      const wcy = rcx*unsin + rcy*uncos;
+
+      if (!pointInPolygon({x:wcx, y:wcy}, poly)) continue;
+      if (minDistToEdge({x:wcx, y:wcy}, poly) < STREET - 1) continue;
+
+      // Slight size variation for organic feel
+      const bw = BW * (0.82 + rand() * 0.22);
+      const bh = BH * (0.78 + rand() * 0.26);
+
+      drawBldg(ctx, wcx, wcy, bw, bh, angle, col);
+    }
+  }
 }
 
 export function drawSettlement2D5(
@@ -441,147 +477,142 @@ export function drawSettlement2D5(
 ): void {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
-
   ctx.clearRect(0, 0, W, H);
 
-  // ── Background ──────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#0c0e11';
+  // ── Background ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = CARTO.bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Ground plane: fields / green areas outside city
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.045)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // ── Fields (outer wards) — hachure fill ─────────────────────────────────────
   for (const ward of model.wards) {
     if (ward.withinCity || !ward.polygon.length) continue;
     ctx.beginPath();
-    ward.polygon.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(28, 42, 18, 0.7)';
+    ctx.fillStyle = CARTO.field;
     ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(80,70,50,0.12)'; ctx.lineWidth = 0.8;
+    for (let x = -H; x < W+H; x += 10) {
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+H,H); ctx.stroke();
+    }
+    ctx.restore();
   }
 
-  // City ground blocks (just flat fill, buildings drawn on top)
-  for (const ward of model.wards) {
-    if (!ward.withinCity || !ward.polygon.length) continue;
-    ctx.beginPath();
-    ward.polygon.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(22, 28, 18, 0.9)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(60,60,40,0.3)';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-  }
-
-  // ── Roads ────────────────────────────────────────────────────────────────────
+  // ── Roads ─────────────────────────────────────────────────────────────────────
   for (let ri = 0; ri < model.roads.length; ri++) {
     const road = model.roads[ri]!;
     if (road.points.length < 2) continue;
-    const isMain = ri === 0;
+    const main = ri === 0;
     ctx.beginPath();
-    road.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-    ctx.strokeStyle = isMain ? '#8a7048' : '#706038';
-    ctx.lineWidth   = isMain ? 4.5 : 3;
+    road.points.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.strokeStyle = CARTO.road_dk;
+    ctx.lineWidth   = main ? 5 : 3.5;
     ctx.lineCap = ctx.lineJoin = 'round';
     ctx.stroke();
-    // Raised road highlight
-    ctx.strokeStyle = isMain ? '#b09060' : '#927844';
-    ctx.lineWidth   = isMain ? 2.5 : 1.5;
+    ctx.strokeStyle = CARTO.road_lt;
+    ctx.lineWidth   = main ? 3 : 2;
     ctx.stroke();
     ctx.lineCap = 'butt';
   }
 
+  // ── Buildings (painter order: low Y last = in front) ─────────────────────────
+  const sorted = model.wards.filter(w => w.withinCity)
+    .sort((a,b) => a.center.y - b.center.y);
+
+  for (const ward of sorted) {
+    if (!ward.polygon.length) continue;
+
+    if (ward.type === 'church') {
+      // Prominent church: large footprint + spire cross
+      const cx = ward.center.x, cy = ward.center.y;
+      drawBldg(ctx, cx, cy, 20, 28, dominantEdgeAngle(ward.polygon), CARTO.bldg_dk);
+      // Spire (smaller, offset via 2px shadow so it reads as taller)
+      drawBldg(ctx, cx-1, cy-3, 7, 7, 0, '#1a1512');
+      // Cross at apex
+      ctx.strokeStyle = '#0a0a08'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx-5,cy-7); ctx.lineTo(cx+5,cy-7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,cy-11); ctx.lineTo(cx,cy-4); ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'market') {
+      // Open market square: light fill + perimeter stalls
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#ccc4b4';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+      // Small stalls along edges
+      for (let i = 0; i < ward.polygon.length; i++) {
+        const a = ward.polygon[i]!, b = ward.polygon[(i+1)%ward.polygon.length]!;
+        const ang = Math.atan2(b.y-a.y, b.x-a.x);
+        const len = Math.hypot(b.x-a.x, b.y-a.y);
+        for (let t = 0.1; t < 0.9; t += 12/len) {
+          const sx = a.x+(b.x-a.x)*t, sy = a.y+(b.y-a.y)*t;
+          if (minDistToEdge({x:sx,y:sy}, ward.polygon) < 3) continue;
+          drawBldg(ctx, sx, sy, 6, 8, ang, CARTO.bldg_mkt);
+        }
+      }
+      // Well/fountain
+      ctx.beginPath();
+      ctx.arc(ward.center.x, ward.center.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.water; ctx.fill();
+      ctx.strokeStyle = CARTO.bldg_dk; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'park') {
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#b8c8a0'; ctx.fill();
+      ctx.strokeStyle = '#8aaa70'; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    fillWithBuildings(ctx, ward.polygon, ward.type,
+      Math.round(ward.center.x * 97 + ward.center.y * 53));
+  }
+
   // ── Wall ─────────────────────────────────────────────────────────────────────
   if (model.wall && model.wall.length > 2) {
-    const wc = '#b09060', wh = 2.5 * H_SCALE;
-    const ex = OBL_X * wh, ey = OBL_Y * wh;
-
-    // Wall shadow fill
+    const wall = model.wall;
     ctx.beginPath();
-    model.wall.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    wall.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
     ctx.closePath();
-    ctx.strokeStyle = darkenHex(wc, 0.5);
-    ctx.lineWidth = 10;
-    ctx.stroke();
-
-    // Wall top
-    ctx.beginPath();
-    model.wall.forEach((p, i) => i ? ctx.lineTo(p.x+ex, p.y+ey) : ctx.moveTo(p.x+ex, p.y+ey));
-    ctx.closePath();
-    ctx.strokeStyle = wc;
-    ctx.lineWidth = 3;
-    ctx.setLineDash([8, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Crenellations (every ~14px along wall)
-    for (let i = 0; i < model.wall.length; i++) {
-      const a = model.wall[i]!, b = model.wall[(i+1) % model.wall.length]!;
-      const len = Math.hypot(b.x-a.x, b.y-a.y);
-      const steps = Math.floor(len / 14);
-      for (let s = 0; s < steps; s++) {
-        const t = (s + 0.5) / steps;
-        const mx = a.x + (b.x-a.x)*t, my = a.y + (b.y-a.y)*t;
-        drawBox(ctx, mx+ex, my+ey, 3.5, 3.5, 0, 0.6, wc);
-      }
+    ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = '#8a8070';  ctx.lineWidth = 2; ctx.stroke();
+    // Towers at corners
+    for (let i = 0; i < wall.length; i += Math.max(1, Math.floor(wall.length/8))) {
+      const p = wall[i]!;
+      ctx.fillStyle = CARTO.wall;
+      ctx.fillRect(p.x-4, p.y-4, 8, 8);
+      ctx.strokeStyle = '#6a6258'; ctx.lineWidth = 1; ctx.strokeRect(p.x-4, p.y-4, 8, 8);
     }
-
-    // Gate arches
+    // Gates
     for (const gate of model.gates) {
-      const gex = OBL_X * 3.5 * H_SCALE, gey = OBL_Y * 3.5 * H_SCALE;
-      drawBox(ctx, gate.x+gex*0.5, gate.y+gey*0.5, 10, 8, 0, 3.5, darkenHex(wc, 0.1));
-      // Arch hole
-      ctx.beginPath();
-      ctx.arc(gate.x+gex*0.5, gate.y+gey*0.5, 3.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#050608';
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(gate.x, gate.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.bg; ctx.fill();
+      ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 2; ctx.stroke();
     }
   }
 
-  // ── Buildings (painter's algorithm: high-Y last) ───────────────────────────
-  const sortedWards = model.wards.filter(w => w.withinCity).sort((a, b) => a.center.y - b.center.y);
-
-  for (const ward of sortedWards) {
-    const col  = WARD_COLORS[ward.type];
-    const h    = WARD_HEIGHT[ward.type];
-    if (h === 0) continue; // parks: just ground
-
-    const cx = ward.center.x, cy = ward.center.y;
-    const rand2 = mulberry32(Math.round(cx * 97 + cy * 53));
-
-    const count = ward.type === 'market'     ? 5
-                : ward.type === 'craftsmen'  ? 4
-                : ward.type === 'slum'       ? 6
-                : ward.type === 'church'     ? 1
-                : 2;
-
-    for (let b = 0; b < count; b++) {
-      const angle = rand2() * Math.PI * 2;
-      const r     = b === 0 ? 0 : 4 + rand2() * 9;
-      const bx    = cx + Math.cos(angle) * r;
-      const by    = cy + Math.sin(angle) * r;
-      const bw    = ward.type === 'church' ? 9 : 4 + rand2() * 7;
-      const bh    = ward.type === 'church' ? 7 : 4 + rand2() * 5;
-      const rot   = rand2() * Math.PI;
-
-      if (ward.type === 'church') {
-        drawChurch(ctx, bx, by, bw, bh, rot, col);
-      } else {
-        drawBox(ctx, bx, by, bw, bh, rot, h * (0.85 + rand2() * 0.3), col);
-      }
-    }
-  }
-
-  // ── Ward labels ──────────────────────────────────────────────────────────────
+  // ── Labels ───────────────────────────────────────────────────────────────────
   if (showLabels) {
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font         = '9px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '9px Georgia, "Times New Roman", serif';
     for (const ward of model.wards) {
       if (!ward.withinCity) continue;
-      const h = WARD_HEIGHT[ward.type] * H_SCALE;
-      const lx = ward.center.x + OBL_X * h;
-      const ly = ward.center.y + OBL_Y * h - 4;
-      ctx.fillStyle = WARD_COLORS[ward.type];
-      ctx.fillText(WARD_LABELS[ward.type], lx, ly);
+      ctx.fillStyle = CARTO.label;
+      ctx.fillText(WARD_LABELS[ward.type].toUpperCase(), ward.center.x, ward.center.y);
     }
   }
 }
