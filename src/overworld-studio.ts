@@ -184,6 +184,57 @@ export function generateBaseSeeds(p: GeneratorParams): Vec2[] {
 }
 
 /** Step 2: Build SettlementModel from existing (possibly user-warped) seeds. */
+type WeightedPalette = ReadonlyArray<[LayoutType, number]>;
+
+// prettier-ignore
+const ZONE_PALETTES: Record<SettlementType, Record<WardType, Record<DistZone, WeightedPalette>>> = {
+  // ── Village — organic dominant, linear fringes, never grid ────────────────
+  village: {
+    market:     { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+    church:     { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+    inn:        { inner: [['organic',1]],                                         mid: [['organic',.8], ['linear',.2]],                                 outer: [['linear',.6],  ['organic',.4]] },
+    smithy:     { inner: [['organic',.7], ['linear',.3]],                         mid: [['linear',.6],  ['organic',.4]],                                outer: [['linear',.7],  ['organic',.3]] },
+    craftsmen:  { inner: [['organic',1]],                                         mid: [['organic',.7], ['linear',.2],  ['terraced',.1]],               outer: [['linear',.5],  ['organic',.35], ['terraced',.15]] },
+    merchant:   { inner: [['organic',1]],                                         mid: [['organic',.8], ['linear',.2]],                                 outer: [['linear',.5],  ['organic',.5]] },
+    patriciate: { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+    slum:       { inner: [['terraced',.7], ['organic',.3]],                       mid: [['terraced',.8], ['linear',.2]],                                outer: [['terraced',1]] },
+    gateward:   { inner: [['linear',1]],                                          mid: [['linear',1]],                                                  outer: [['linear',1]] },
+    farm:       { inner: [['linear',1]],                                          mid: [['linear',1]],                                                  outer: [['linear',1]] },
+    park:       { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+  },
+
+  // ── Town — organic core, terraced expansion, grid only outer commercial ──
+  town: {
+    market:     { inner: [['organic',1]],                                         mid: [['organic',.8], ['perimeter',.2]],                              outer: [['organic',.7], ['perimeter',.3]] },
+    church:     { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+    inn:        { inner: [['organic',1]],                                         mid: [['organic',.9], ['linear',.1]],                                 outer: [['organic',.8], ['linear',.2]] },
+    smithy:     { inner: [['organic',.6], ['linear',.4]],                         mid: [['linear',.6],  ['organic',.4]],                                outer: [['linear',.5],  ['terraced',.3], ['grid',.2]] },
+    craftsmen:  { inner: [['organic',1]],                                         mid: [['organic',.5], ['terraced',.4], ['linear',.1]],                outer: [['terraced',.5], ['organic',.2], ['linear',.2], ['grid',.1]] },
+    merchant:   { inner: [['organic',1]],                                         mid: [['organic',.6], ['terraced',.3], ['grid',.1]],                  outer: [['terraced',.4], ['organic',.3], ['grid',.2], ['linear',.1]] },
+    patriciate: { inner: [['organic',1]],                                         mid: [['organic',.5], ['perimeter',.5]],                              outer: [['perimeter',.7], ['organic',.3]] },
+    slum:       { inner: [['terraced',.8], ['organic',.2]],                       mid: [['terraced',1]],                                                outer: [['terraced',1]] },
+    gateward:   { inner: [['linear',1]],                                          mid: [['linear',1]],                                                  outer: [['linear',.7], ['grid',.3]] },
+    farm:       { inner: [['linear',1]],                                          mid: [['linear',1]],                                                  outer: [['linear',1]] },
+    park:       { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+  },
+
+  // ── City — organic core, perimeter/terraced mid, varied outer ────────────
+  city: {
+    market:     { inner: [['perimeter',.7], ['organic',.3]],                      mid: [['perimeter',1]],                                               outer: [['perimeter',.7], ['grid',.3]] },
+    church:     { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+    inn:        { inner: [['organic',1]],                                         mid: [['organic',.8], ['terraced',.2]],                               outer: [['organic',.7], ['terraced',.3]] },
+    smithy:     { inner: [['organic',.5], ['linear',.5]],                         mid: [['linear',.5],  ['terraced',.3], ['grid',.2]],                  outer: [['terraced',.4], ['grid',.35], ['linear',.25]] },
+    craftsmen:  { inner: [['organic',1]],                                         mid: [['organic',.4], ['terraced',.4], ['perimeter',.2]],             outer: [['terraced',.45], ['grid',.3], ['organic',.15], ['linear',.1]] },
+    merchant:   { inner: [['organic',.7], ['perimeter',.3]],                      mid: [['perimeter',.4], ['terraced',.35], ['grid',.25]],              outer: [['grid',.35], ['terraced',.35], ['perimeter',.2], ['organic',.1]] },
+    patriciate: { inner: [['organic',.6], ['perimeter',.4]],                      mid: [['perimeter',.75], ['organic',.25]],                            outer: [['perimeter',.8], ['organic',.2]] },
+    slum:       { inner: [['terraced',.9], ['organic',.1]],                       mid: [['terraced',1]],                                                outer: [['terraced',1]] },
+    gateward:   { inner: [['linear',1]],                                          mid: [['linear',.6],  ['terraced',.4]],                               outer: [['linear',.5],  ['grid',.3], ['terraced',.2]] },
+    farm:       { inner: [['linear',1]],                                          mid: [['linear',1]],                                                  outer: [['linear',1]] },
+    park:       { inner: [['organic',1]],                                         mid: [['organic',1]],                                                 outer: [['organic',1]] },
+  },
+};
+
+
 export function assignWardLayouts(
   wards:    Ward[],
   centre:   Vec2,
@@ -195,17 +246,26 @@ export function assignWardLayouts(
     if (!ward.withinCity) { ward.wardLayout = 'linear'; continue; }
 
     if (global !== 'auto') {
-      // Uniform override — all wards use the selected layout
       ward.wardLayout = global;
       continue;
     }
 
-    // Auto mode: use mixing rules
-    const d = dist(ward.center, centre);
-    const r = radius > 0 ? d / radius : 0;
+    // Auto mode: look up base layout from zone table
+    const d    = dist(ward.center, centre);
+    const r    = radius > 0 ? d / radius : 0;
     const zone: DistZone = r < 0.35 ? 'inner' : r < 0.65 ? 'mid' : 'outer';
-    const rules = ZONE_LAYOUTS[type]?.[ward.type];
-    ward.wardLayout = rules?.[zone] ?? 'organic';
+    const palette = ZONE_PALETTES[type]?.[ward.type]?.[zone] ?? [['organic', 1]] as WeightedPalette;
+
+    // DNA mutation: seeded per-ward so every settlement feels unique
+    const wardRand = mulberry32((Math.round(ward.seed.x * 7919) ^ Math.round(ward.seed.y * 31337)) >>> 0);
+    const roll = wardRand();
+    let accum = 0;
+    let chosen: LayoutType = palette[0]![0];
+    for (const [layout, weight] of palette) {
+      accum += weight;
+      if (roll < accum) { chosen = layout; break; }
+    }
+    ward.wardLayout = chosen;
   }
 }
 
@@ -618,61 +678,22 @@ function fillWardOrganically(
   }
 }
 
-// ── Ward layout mixing rules ──────────────────────────────────────────────────
+// ── Ward layout mixing rules + DNA mutation ─────────────────────────────────
 //
-// Real urban morphology pattern (confirmed by research):
-//   Inner core (dist < 0.35R)  → always organic (oldest, grew first)
-//   Middle ring (0.35–0.65R)   → ward-type dependent (planned expansion)
-//   Outer ring (> 0.65R)       → grid / linear / terraced (latest expansion)
+// Weighted palettes: each entry is [LayoutType, probability].  Weights sum to 1.
+// DNA mutation is baked in — different ward seeds produce natural variety.
 //
-// Village: organic + sparse linear edges
-// Town   : organic core → terraced mid → grid outer; patriciate=perimeter; slum=terraced
-// City   : organic core → perimeter/terraced mid → grid outer; market=perimeter; slum=terraced
+// Key philosophy (from research):
+//   inner always organic (first growth, historic core)
+//   mid = planned expansion character (depends heavily on ward type)
+//   outer = organic reduced, terraced/grid grows — but NOT dominated by pure grid
+//   Slum always terraced; church always organic; gateward always linear
+//
+// Village: mostly organic + linear edges — never grid
+// Town:    organic core → terraced expansion — grid only in outer commercial
+// City:    organic core → perimeter/terraced mid → varied outer (terraced dominates)
 
 type DistZone = 'inner' | 'mid' | 'outer';
-
-const ZONE_LAYOUTS: Record<SettlementType, Record<WardType, Record<DistZone, LayoutType>>> = {
-  village: {
-    market:     { inner: 'organic', mid: 'organic',   outer: 'organic'  },
-    church:     { inner: 'organic', mid: 'organic',   outer: 'organic'  },
-    inn:        { inner: 'organic', mid: 'organic',   outer: 'linear'   },
-    smithy:     { inner: 'organic', mid: 'linear',    outer: 'linear'   },
-    craftsmen:  { inner: 'organic', mid: 'organic',   outer: 'linear'   },
-    merchant:   { inner: 'organic', mid: 'organic',   outer: 'linear'   },
-    patriciate: { inner: 'organic', mid: 'organic',   outer: 'organic'  },
-    slum:       { inner: 'organic', mid: 'linear',    outer: 'linear'   },
-    gateward:   { inner: 'linear',  mid: 'linear',    outer: 'linear'   },
-    farm:       { inner: 'linear',  mid: 'linear',    outer: 'linear'   },
-    park:       { inner: 'organic', mid: 'organic',   outer: 'organic'  },
-  },
-  town: {
-    market:     { inner: 'organic', mid: 'organic',   outer: 'organic'   },
-    church:     { inner: 'organic', mid: 'organic',   outer: 'organic'   },
-    inn:        { inner: 'organic', mid: 'organic',   outer: 'organic'   },
-    smithy:     { inner: 'linear',  mid: 'linear',    outer: 'grid'      },
-    craftsmen:  { inner: 'organic', mid: 'terraced',  outer: 'grid'      },
-    merchant:   { inner: 'organic', mid: 'grid',      outer: 'grid'      },
-    patriciate: { inner: 'organic', mid: 'perimeter', outer: 'perimeter' },
-    slum:       { inner: 'terraced',mid: 'terraced',  outer: 'terraced'  },
-    gateward:   { inner: 'linear',  mid: 'linear',    outer: 'linear'    },
-    farm:       { inner: 'linear',  mid: 'linear',    outer: 'linear'    },
-    park:       { inner: 'organic', mid: 'organic',   outer: 'organic'   },
-  },
-  city: {
-    market:     { inner: 'perimeter', mid: 'perimeter', outer: 'grid'      },
-    church:     { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
-    inn:        { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
-    smithy:     { inner: 'linear',    mid: 'grid',      outer: 'grid'      },
-    craftsmen:  { inner: 'organic',   mid: 'terraced',  outer: 'grid'      },
-    merchant:   { inner: 'organic',   mid: 'grid',      outer: 'grid'      },
-    patriciate: { inner: 'organic',   mid: 'perimeter', outer: 'perimeter' },
-    slum:       { inner: 'terraced',  mid: 'terraced',  outer: 'terraced'  },
-    gateward:   { inner: 'linear',    mid: 'linear',    outer: 'grid'      },
-    farm:       { inner: 'linear',    mid: 'linear',    outer: 'linear'    },
-    park:       { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
-  },
-};
-
 
 function fillWardGrid(
   ctx: CanvasRenderingContext2D,
@@ -1050,6 +1071,8 @@ export function drawSettlement2D5(
     }
   }
 }
+
+// ── Canvas 2D Renderer ────────────────────────────────────────────────────────
 
 // ── Canvas 2D Renderer ────────────────────────────────────────────────────────
 
