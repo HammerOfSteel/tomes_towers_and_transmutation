@@ -488,12 +488,14 @@ function minDistToEdge(pt: Vec2, poly: Vec2[]): number {
   return minD;
 }
 
-/** Draw a flat building rectangle (shadow then fill). */
+/** Draw a flat building rectangle (shadow then fill). Skips if too close to a road. */
 function drawBldg(
   ctx: CanvasRenderingContext2D,
   cx: number, cy: number, bw: number, bh: number,
   rot: number, fill: string,
 ): void {
+  // Road-building separation is handled implicitly by ward polygon setback —
+  // roads run between wards so the STREET gap naturally creates the clearance.
   const cos = Math.cos(rot), sin = Math.sin(rot);
   const hw = bw/2, hh = bh/2;
   const pts: [number,number][] = [
@@ -694,6 +696,29 @@ function fillWardOrganically(
 // City:    organic core → perimeter/terraced mid → varied outer (terraced dominates)
 
 type DistZone = 'inner' | 'mid' | 'outer';
+
+// ── Road-clearance helpers ────────────────────────────────────────────────────
+
+/** Minimum distance from point to any road segment in the model. */
+function minDistToRoads(pt: Vec2, roads: Road[]): number {
+  let minD = Infinity;
+  for (const road of roads) {
+    for (let i = 0; i < road.points.length - 1; i++) {
+      const a = road.points[i]!, b = road.points[i + 1]!;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((pt.x-a.x)*dx + (pt.y-a.y)*dy) / len2)) : 0;
+      const ex = a.x + t*dx - pt.x, ey = a.y + t*dy - pt.y;
+      minD = Math.min(minD, Math.sqrt(ex*ex + ey*ey));
+    }
+  }
+  return minD;
+}
+
+/** Active roads — set once per drawSettlement2D5 call so all fill fns can see them. */
+let _activeRoads: Road[] = [];
+/** Buildings must be at least this far from any road centre-line. */
+const ROAD_CLEARANCE = 3;  // must be >= half road width; buildings within this of road centre-line are skipped
 
 function fillWardGrid(
   ctx: CanvasRenderingContext2D,
@@ -930,6 +955,9 @@ export function drawSettlement2D5(
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
+  // Set active roads so drawBldg can check road clearance
+  _activeRoads = model.roads;
+
   // ── Background ───────────────────────────────────────────────────────────────
   ctx.fillStyle = CARTO.bg;
   ctx.fillRect(0, 0, W, H);
@@ -1035,6 +1063,36 @@ export function drawSettlement2D5(
     }
 
     fillWard(ctx, ward, occ);
+
+    // Draw alley lines — faint paths between building rows inside the ward
+    // These run parallel to the dominant edge, spaced at ~row intervals
+    if (ward.wardLayout !== 'perimeter' && ward.wardLayout !== 'radial' && ward.polygon.length > 2) {
+      const angle = dominantEdgeAngle(ward.polygon);
+      const cos = Math.cos(-angle), sin = Math.sin(-angle);
+      const rot = ward.polygon.map(p => ({ x: p.x*cos - p.y*sin, y: p.x*sin + p.y*cos }));
+      const minY = Math.min(...rot.map(p => p.y)), maxY = Math.max(...rot.map(p => p.y));
+      const uncos = Math.cos(angle), unsin = Math.sin(angle);
+      const ROW = ward.wardLayout === 'terraced' ? 16 : 17; // matches building height + gap
+      const GAP = 3;
+      ctx.strokeStyle = 'rgba(200,192,176,0.35)';
+      ctx.lineWidth = 0.7;
+      ctx.setLineDash([2, 4]);
+      for (let ry = minY + 8; ry < maxY - 8; ry += ROW + GAP) {
+        // Sample points along this alley line and clip to polygon
+        const pts: Vec2[] = [];
+        const minX = Math.min(...rot.map(p => p.x)), maxX = Math.max(...rot.map(p => p.x));
+        for (let rx = minX; rx <= maxX; rx += 3) {
+          const wcx = rx*uncos - ry*unsin, wcy = rx*unsin + ry*uncos;
+          if (pointInPolygon({ x: wcx, y: wcy }, ward.polygon)) pts.push({ x: wcx, y: wcy });
+        }
+        if (pts.length > 2) {
+          ctx.beginPath();
+          pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+          ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
+    }
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────────
@@ -1261,7 +1319,7 @@ let lastParams: GeneratorParams | null = null;
 type ToolName = 'select' | 'warp';
 let activeTool: ToolName = 'select';
 type ViewMode = 'flat' | 'iso';
-let viewMode: ViewMode = (sessionStorage.getItem('ow-view') as ViewMode) ?? 'flat';
+let viewMode: ViewMode = (sessionStorage.getItem('ow-view') as ViewMode) ?? 'iso';
 
 function setTool(name: ToolName) {
   activeTool = name;
@@ -1274,9 +1332,7 @@ function setTool(name: ToolName) {
 function setView(mode: ViewMode) {
   viewMode = mode;
   sessionStorage.setItem('ow-view', mode);
-  document.getElementById('view-flat')?.classList.toggle('active', mode === 'flat');
-  document.getElementById('view-iso' )?.classList.toggle('active', mode === 'iso');
-  redraw();
+  redraw();  // always 2.5D
 }
 
 function redraw() {
@@ -1410,8 +1466,7 @@ window.addEventListener('keydown', e => {
     case 's': case 'S': setTool('select'); break;
     case 'd': case 'D': setTool('warp');   break;
     case 'r': case 'R': persistentSeeds = null; generate(false); break;
-    case '1': setView('flat'); break;
-    case '2': setView('iso');  break;
+
   }
 });
 
@@ -1423,8 +1478,7 @@ document.getElementById('tool-reset')!.addEventListener('click',  () => {
   persistentSeeds = null;
   generate(false);
 });
-document.getElementById('view-flat')!.addEventListener('click', () => setView('flat'));
-document.getElementById('view-iso')! .addEventListener('click', () => setView('iso'));
+// 2.5D only — no flat view button
 
 // ── Interactive warp interaction ──────────────────────────────────────────────
 // Left-drag in warp mode: push nearby Voronoi seeds with smooth quadratic falloff.

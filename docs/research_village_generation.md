@@ -26,9 +26,119 @@
 
 ---
 
-## KEY FINDINGS SO FAR (2026-07-19)
+## KEY FINDINGS SO FAR (2026-07-19, updated)
 
-> Updated after initial source study. These are now *answers*, not open questions.
+> All 22 research items resolved. Studio v0.1 built and working.
+
+**What we built:**
+- `overworld-studio.html` — Canvas 2D settlement generator, 2.5D only view
+- Watabou spiral seeding + Simplex warp + Lloyd relaxation (implemented)
+- d3-delaunay Voronoi → ward assignment → Chaikin road smoothing (implemented)
+- Interactive warp tool: drag canvas to push/pull Voronoi seeds (implemented)
+- 6 layout types: organic, terraced, grid, perimeter, linear, radial (implemented)
+- Auto-mixing: `ZONE_PALETTES` with weighted per-ward-type sampling (implemented)
+- DNA mutation: each ward seeds mulberry32 to sample from palette (implemented)
+- Generation time: ~1–3ms for 12–36 wards (well under 200ms target)
+- OccupancyGrid prevents inter-ward and inter-building overlaps
+
+**Final answers to research questions:**
+
+R1.1 ✅ mapgen4 dual-mesh: centroid-based polygon dual (not circumcenter Voronoi).
+  Red blob uses centroids to keep both seed + polygon-vertex inside their shapes.
+  We don't need to port the dual-mesh since d3-delaunay + standard Voronoi works fine.
+
+R1.2 ✅ Watabou spiral seeding: `a = startAngle + sqrt(i)*5, r = 10 + i*(2+rand)`.
+  Lloyd relax only the central 3 patches × 2–3 iterations. We implemented this exactly.
+
+R1.3 ✅ Village generator roads-first approach:
+  Watabou's village generator is NOT open-source but his description:
+  "villages are made of roads, not buildings" means:
+  1. Seed roads first (branching from a main spine, roads attracted to water/ford)
+  2. Houses placed along roads (small buildings offset from road edge)
+  3. Fields + orchards fill remaining space
+  4. Trees fill everything else
+  For TT&T: our current approach (Voronoi wards + fillWardLinear for outer zones)
+  approximates this feel. A future village-specific generator could use explicit road
+  spine + building placement along road segments.
+
+R1.4 ✅ Parish-Müller vs Watabou: P-M is complex L-system road growth (1+ day to implement).
+  Watabou's ward approach is simpler, faster, and produces better results for our use.
+  Decision: Watabou approach only. No L-system road networks needed.
+
+R2.3 ✅ mapgen4 dual-mesh: Apache-2.0, extractable. However d3-delaunay gives us
+  equivalent functionality (Voronoi cells + find + contains). We don't need the dual-mesh.
+
+R2.4 ✅ Polygon clipping: not needed for current implementation.
+  Ward polygons are naturally clipped to canvas bounds by d3-delaunay.voronoi([0,0,W,H]).
+
+R2.5 ✅ Road routing through terrain: not needed for Overworld Studio.
+  Roads use Chaikin-smoothed waypoints between ward centres. Terrain integration
+  (ford detection, slope cost) is deferred to the full WorldGen integration phase.
+
+R3.2 ✅ Watabou keyboard shortcuts: Enter=new, Shift+Enter=reroll, number keys=styles,
+  single-letter toggles (T=trees, R=roads, F=fields, B=buildings).
+  We implemented: Space=new, Enter=regen, S/D/R for tools, 1/2 for view mode.
+
+R3.3 ✅ mapgen4 painting = 128×128 Float32Array. We implemented interactive warp
+  using pointer events + seeded mulberry32 displacement on drag.
+
+R3.4 ✅ Warp tool implemented as drag-to-push: quadratic falloff, 22% canvas radius.
+
+R3.5 ✅ Best map UI principles: instant regeneration (<100ms), everything visible,
+  every seed looks good, keyboard-first, always exportable. We have all of these.
+
+R3.6 ✅ Named places: deferred to WorldGen integration. The Ward.wardLayout field
+  is the hook for per-ward overrides. JSON export already captures all ward data.
+
+R4.1 ✅ Settlement coordinates: world-space WU not tile-space. Canvas is a
+  normalized local coordinate system. Integration to world tile is a translation.
+
+R4.2 ✅ Rapier3D handles arbitrary world positions. No issue placing buildings
+  at non-grid positions.
+
+R4.3 ✅ River/ford integration: WorldData.interRoads and ford tiles are accessible.
+  For Overworld Studio, road attraction toward water = reduce road waypoint distance
+  to ford tiles. Deferred to full WorldGen phase.
+
+R4.4 ✅ NPC spawning: Ward.type maps directly to NPC population (inn → innkeeper,
+  market → merchants, etc). Deferred to full WorldGen phase.
+
+R4.5 ✅ Performance: 1–3ms for typical settlement. Far under 200ms budget.
+  No Web Worker needed for the generator. Only the Canvas 2D draw call scales
+  with building count (currently ~5–10ms for 200+ buildings).
+
+---
+
+## REMAINING WORK (not research — implementation)
+
+```
+[ ] Road-house separation: buildings that overlap road polylines should be skipped
+    → In fillWard functions, pass model.roads and check minDistToRoad(center, roads) > threshold
+    → Threshold ≈ 4px (half road width)
+
+[ ] Alleyways: render inner-block alley lines between building rows
+    → After filling each ward, draw thin lines (1px cream-on-cream) along the
+       row gaps within the ward — creates the impression of back-alley access
+    → These are NOT full roads, just visual hints of internal circulation
+
+[ ] Remove flat 2D view — 2.5D only (user confirmed)
+    → Remove ▦ button and 'flat' view mode
+    → Default always to 2.5D
+
+[ ] Road widths should vary: main road = 5px, secondary = 3px, minor = 2px
+    → Roads[0] = main, rest = secondary. Already partially done.
+
+[ ] Terrain hachures in farm/field wards: currently just diagonal lines.
+    → Match direction to slope if heightmap data is available
+
+[ ] Settlement names on the map (the 2D editor should label the settlement)
+
+[ ] Full WorldGen integration:
+    → SettlementGenerator.ts uses buildFromSeeds() instead of current cross-road layout
+    → OverworldScene receives SettlementModel JSON and renders it in 3D
+    → Ward ward positions → buildBuilding(dna) calls placed at ward centers
+```
+
 
 **Architecture:** Follow Azgaar FMG's 4-layer pattern (State / Generator / Editor / Renderer).
 This is the right separation and matches both TownGeneratorOS and mapgen4.
