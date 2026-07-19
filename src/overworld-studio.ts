@@ -27,6 +27,8 @@ import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
+import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularCloudTexture } from './planet-renderer';
+import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1481,7 +1483,14 @@ function resize() {
   canvas.height = overlay.height = wrap.clientHeight;
 }
 resize();
-window.addEventListener('resize', () => { resize(); generate(); });
+window.addEventListener('resize', () => {
+  resize();
+  if (planetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  generate();
+});
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -3709,7 +3718,61 @@ let realmViewMode: RealmViewMode = 'map';
 
 let currentRealmData: RealmData | null = null;
 
-function generateRealmView() {
+// Lazily-created Three.js planet renderer (only when first needed)
+let planetRenderer: PlanetRenderer | null = null;
+
+const planet3dCanvas = document.getElementById('planet-3d-canvas') as HTMLCanvasElement;
+
+function getPlanetRenderer(): PlanetRenderer {
+  if (!planetRenderer) {
+    planetRenderer = new PlanetRenderer(planet3dCanvas);
+    // Keep it sized to the canvas-wrap
+    const wrap = planet3dCanvas.parentElement!;
+    planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  return planetRenderer;
+}
+
+function showPlanetCanvas(show: boolean): void {
+  planet3dCanvas.style.display = show ? '' : 'none';
+  canvas.style.display         = show ? 'none' : '';
+  overlay.style.display        = show ? 'none' : '';
+}
+
+function redrawRealm(): void {
+  if (!currentRealmData) return;
+  if (realmViewMode === 'planet') {
+    showPlanetCanvas(true);
+    const pr  = getPlanetRenderer();
+    const d   = currentRealmData;
+
+    // Build textures from realm data
+    const dayTex   = buildDayTexture(d.cells, d.W, d.H);
+    const nightTex = buildNightTexture(d.settlements.map(s => ({ x: s.x, y: s.y, size: s.size })), d.W, d.H);
+    const scTex    = buildSpecularCloudTexture(d.cells, d.W, d.H, d.seed);
+
+    // Sun direction — bias toward front of planet so day side faces camera
+    const sunLon  = ((d.seed * 0.00137) % 1) * Math.PI * 2;
+    const sunElev = 0.35 + ((d.seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+    const sunDir  = new THREE.Vector3(
+      Math.cos(sunElev) * Math.sin(sunLon) * 0.6,   // reduced X/Z so Z stays positive
+      -Math.sin(sunElev) * 0.4,
+      Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,  // bias toward +Z (camera dir)
+    ).normalize();
+
+    // Atmosphere colour from climate / dominant biome
+    const atmColor = new THREE.Color(0x4896ff);
+
+    pr.loadPlanet({ day: dayTex, night: nightTex, specularCloud: scTex, sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed });
+    pr.start();
+  } else {
+    showPlanetCanvas(false);
+    if (planetRenderer) planetRenderer.stop();
+    drawRealm(currentRealmData, canvas);
+  }
+}
+
+function generateRealmView(): void {
   const seed = parseInt(seedInput.value) || Date.now();
   const size     = parseInt((document.getElementById('realm-size')         as HTMLInputElement)?.value ?? '2');
   const nS       = parseInt((document.getElementById('realm-settlements')  as HTMLInputElement)?.value ?? '6');
@@ -3723,12 +3786,6 @@ function generateRealmView() {
   redrawRealm();
   const ms = (performance.now()-t0).toFixed(1);
   genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
-}
-
-function redrawRealm() {
-  if (!currentRealmData) return;
-  if (realmViewMode === 'planet') drawRealmPlanet(currentRealmData, canvas);
-  else drawRealm(currentRealmData, canvas);
 }
 
 
@@ -3747,6 +3804,11 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
   document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
+  // Stop 3D planet loop when leaving realm tab
+  if (mode !== 'realm' && planetRenderer) {
+    planetRenderer.stop();
+    showPlanetCanvas(false);
+  }
   if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
     hoverEl.textContent = '';
