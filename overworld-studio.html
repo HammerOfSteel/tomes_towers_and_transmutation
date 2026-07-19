@@ -356,15 +356,38 @@
           </div>
         </div>
 
+        <div class="section" id="cave-biome-section">
+          <div class="section-title">Cave Biome</div>
+          <div class="pill-row pill-row--wrap" id="cave-biome-pills">
+            <button class="pill active" data-biome="stone"    title="Grey rock, mineral veins">🪨 Stone</button>
+            <button class="pill"        data-biome="coastal"  title="Ocean cave, blue water, coral">🌊 Coastal</button>
+            <button class="pill"        data-biome="volcanic" title="Magma pools, ash floor">🌋 Volcanic</button>
+            <button class="pill"        data-biome="desert"   title="Sandy, warm, sparse">🏜 Desert</button>
+            <button class="pill"        data-biome="verdant"  title="Mossy green, mushrooms">🌿 Verdant</button>
+            <button class="pill"        data-biome="frozen"   title="Ice crystals, pale blue">❄ Frozen</button>
+          </div>
+        </div>
+
+        <div class="section" id="glade-biome-section" style="display:none">
+          <div class="section-title">Forest Biome</div>
+          <div class="pill-row pill-row--wrap" id="glade-biome-pills">
+            <button class="pill active" data-gbiome="forest"  title="Classic dark forest clearing">🌲 Forest</button>
+            <button class="pill"        data-gbiome="autumn"  title="Orange-brown autumn woodland">🍂 Autumn</button>
+            <button class="pill"        data-gbiome="blossom" title="Pink cherry blossoms">🌸 Blossom</button>
+            <button class="pill"        data-gbiome="wetland" title="Marshland, murky pools">🌊 Wetland</button>
+            <button class="pill"        data-gbiome="tundra"  title="Sparse, pale, frozen ground">❄ Tundra</button>
+          </div>
+        </div>
+
         <div class="section">
-          <div class="section-title">Legend</div>
-          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
-            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#3e3830;border-radius:1px"></span> Cave floor</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#221c14;border-radius:1px"></span> Rock wall</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#2040a0;border-radius:1px"></span> Underground water</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c03020;font-size:12px">●</span> Enemy spawn</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#e0b030;font-size:12px">★</span> Treasure</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#909888;font-size:12px">●</span> Mineral vein</div>
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Size</span><span id="cave-size-val">M</span></div>
+            <input type="range" id="cave-size" min="1" max="3" value="2" />
+          </div>
+          <div class="slider-row" id="cave-density-row">
+            <div class="slider-label"><span>Density</span><span id="cave-density-val">0.47</span></div>
+            <input type="range" id="cave-density" min="35" max="60" value="47" />
           </div>
         </div>
 
