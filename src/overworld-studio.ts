@@ -73,6 +73,7 @@ interface GeneratorParams {
   seed:          number;
   type:          SettlementType;
   layout:        LayoutType;
+  faction:       SettlementFaction;
   nPatches:      number;   // number of Voronoi cells
   warp:          number;   // 0–1 Simplex noise displacement
   nGates:        number;   // number of road entrances
@@ -104,6 +105,113 @@ const WARD_LABELS: Record<WardType, string> = {
   craftsmen: 'Craftsmen', merchant: 'Merchant', patriciate: 'Patriciate',
   slum: 'Slum', gateward: 'Gate', farm: 'Farm', park: 'Park',
 };
+
+// ── Faction system ────────────────────────────────────────────────────────────
+
+export type SettlementFaction =
+  'human' | 'elven' | 'dwarven' | 'orcish' |
+  'vampire' | 'undead' | 'vulperia' | 'slime' | 'fae';
+
+/** Ward display names per faction — what "church" is called in an elven village, etc. */
+const FACTION_WARD_NAMES: Partial<Record<SettlementFaction, Partial<Record<WardType, string>>>> = {
+  undead: {
+    church: 'Bone Shrine',   park: 'Graveyard',     market: 'Wraith Bazaar',
+    patriciate: 'Lich Tower', craftsmen: 'Bonecrafters', slum: 'Shambling Dead',
+    inn: 'Carrion Inn',       merchant: 'Specter Trade',  farm: 'Bone Fields',
+    smithy: 'Death Forge',    gateward: 'Crypt Gate',
+  },
+  elven: {
+    church: 'Ancient Shrine', park: 'Sacred Grove',  market: 'Moonlit Exchange',
+    patriciate: "Elder's Hall", craftsmen: 'Artisan Quarter', slum: 'Outcast Wood',
+    inn: 'Wayhouse',          merchant: 'Trade Post',      farm: 'Moon Garden',
+    smithy: 'Elven Workshop', gateward: 'Forest Gate',
+  },
+  dwarven: {
+    church: 'Stone Temple',  park: 'Mushroom Hall',  market: 'Trade Vault',
+    patriciate: 'Guild Hall', craftsmen: 'Forge Quarter', slum: "Miner's Row",
+    inn: "Traveler's Vault", merchant: 'Merchant Vault', farm: 'Mushroom Farm',
+    smithy: 'Great Forge',   gateward: 'Iron Gate',
+  },
+  orcish: {
+    church: 'War Shrine',    park: 'Pit Arena',      market: 'Loot Pile',
+    patriciate: 'Warlord Hall', craftsmen: 'Weapon Works', slum: 'Slave Pens',
+    inn: 'Mead Hall',        merchant: 'War Merchant',   farm: 'Slave Farm',
+    smithy: 'Armory',        gateward: 'Warband Camp',
+  },
+  vampire: {
+    church: 'Blood Chapel',  park: 'Moon Courtyard', market: 'Blood Market',
+    patriciate: "Count's Tower", craftsmen: 'Servant Quarter', slum: 'Thrall Quarter',
+    inn: 'Blood House',      merchant: 'Coven House',    farm: 'Blood Garden',
+    smithy: 'Torture Chamber', gateward: 'Castle Gate',
+  },
+  vulperia: {
+    church: "Den Mother's Hall", park: 'Burrow Commons', market: 'Night Market',
+    patriciate: 'Fox Den',   craftsmen: "Tinker's Row",  slum: 'Poor Burrows',
+    inn: "Wanderer's Den",   merchant: 'Merchant Den',   farm: 'Fox Garden',
+    smithy: "Tinkerer's Shop", gateward: 'Burrow Gate',
+  },
+  slime: {
+    church: 'Pulse Pool',    park: 'Slime Pool',     market: 'Goo Stall',
+    patriciate: 'Elder Blob', craftsmen: 'Ooze Workshop', slum: 'Puddle Quarter',
+    inn: 'Sludge Tavern',    merchant: 'Trade Blob',     farm: 'Spore Garden',
+    smithy: 'Slime Forge',   gateward: 'Ooze Gate',
+  },
+  fae: {
+    church: 'Faerie Ring',   park: 'Enchanted Glade', market: 'Twilight Market',
+    patriciate: 'Fae Court', craftsmen: 'Craft Hollow',  slum: "Waif's Glen",
+    inn: 'Dream Lodge',      merchant: 'Moonlit Market', farm: 'Petal Farm',
+    smithy: 'Glamour Forge', gateward: 'Veil Gate',
+  },
+};
+
+/** Canvas building/map colors per faction. */
+interface FactionPalette { bldg: string; bldg_dk: string; bg: string; road: string; field: string; }
+const FACTION_PALETTE: Record<SettlementFaction, FactionPalette> = {
+  human:    { bldg: '#9a9288', bldg_dk: '#2a2520', bg: '#ddd8c8', road: '#b8b0a0', field: '#cac2ae' },
+  elven:    { bldg: '#a0b888', bldg_dk: '#2a5020', bg: '#d4e0cc', road: '#8fae80', field: '#b8cfa8' },
+  dwarven:  { bldg: '#9a8870', bldg_dk: '#3a2810', bg: '#cec4b0', road: '#a89070', field: '#b8a888' },
+  orcish:   { bldg: '#7a8060', bldg_dk: '#283018', bg: '#c8ccb0', road: '#88907a', field: '#aaae90' },
+  vampire:  { bldg: '#786080', bldg_dk: '#180828', bg: '#c0b8cc', road: '#806880', field: '#aaa0b8' },
+  undead:   { bldg: '#787068', bldg_dk: '#201810', bg: '#c4bcb0', road: '#8a8278', field: '#a89e92' },
+  vulperia: { bldg: '#c09060', bldg_dk: '#4a2808', bg: '#ddd0b4', road: '#c0a060', field: '#caac7a' },
+  slime:    { bldg: '#70cc88', bldg_dk: '#186030', bg: '#c4e8ce', road: '#80b890', field: '#aad8b8' },
+  fae:      { bldg: '#c0a0c8', bldg_dk: '#4a2870', bg: '#e0d4e8', road: '#b080c0', field: '#cdb8d8' },
+};
+
+/**
+ * Preferred layout per faction — used when global layout is 'auto'.
+ * Dwarven packs tight grids; elves radiate from a grove; orcs march in lines.
+ */
+const FACTION_LAYOUT_PREF: Partial<Record<SettlementFaction, LayoutType>> = {
+  dwarven:  'grid',
+  elven:    'radial',
+  orcish:   'linear',
+  vampire:  'perimeter',
+  slime:    'radial',
+  fae:      'radial',
+};
+
+/**
+ * Extra ward assignments injected after the standard ones — gives each
+ * faction its cultural flavour without removing the base settlement logic.
+ * Each entry: [wardType, minPatches to trigger, placement style].
+ */
+type WardPlacement = 'random' | 'central' | 'outer';
+const FACTION_EXTRA_ASSIGNS: Partial<Record<SettlementFaction, Array<[WardType, number, WardPlacement]>>> = {
+  undead:   [['park', 0, 'random'], ['slum', 6, 'outer']],
+  elven:    [['park', 0, 'central']],
+  dwarven:  [['smithy', 0, 'central'], ['smithy', 10, 'random']],
+  orcish:   [['smithy', 0, 'random'], ['slum', 6, 'outer']],
+  vampire:  [['patriciate', 0, 'central'], ['slum', 6, 'outer']],
+  slime:    [['park', 0, 'central']],
+  fae:      [['park', 0, 'central'], ['park', 10, 'random']],
+  vulperia: [['inn', 0, 'central']],
+};
+
+/** Look up the faction-flavoured display name for a ward type. */
+function factionWardLabel(faction: SettlementFaction, type: WardType): string {
+  return FACTION_WARD_NAMES[faction]?.[type] ?? WARD_LABELS[type];
+}
 
 // ── Deterministic PRNG (mulberry32) ──────────────────────────────────────────
 
@@ -350,6 +458,19 @@ export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementMod
   if (p.nPatches >= 10) assign('merchant',   () => rand());
   if (p.nPatches >= 12) assign('slum',       w => rateSlum(w, centre));
   if (p.nPatches >= 16) assign('park',       () => rand());
+
+  // Faction extra assigns — cultural flavour on top of standard types
+  const factionExtras = FACTION_EXTRA_ASSIGNS[p.faction];
+  if (factionExtras) {
+    for (const [type, minP, placement] of factionExtras) {
+      if (p.nPatches >= minP && unassigned.length > 0) {
+        const rateFn = placement === 'central' ? (w: Ward) => dist(w.seed, centre)
+                     : placement === 'outer'   ? (w: Ward) => -dist(w.seed, centre)
+                     : () => rand();
+        assign(type, rateFn);
+      }
+    }
+  }
   // rest stay 'craftsmen'
 
   // 9. Gate points — distribute around the city perimeter
@@ -403,8 +524,10 @@ export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementMod
 
   const cityRadius = inner.reduce((r, w) => Math.max(r, dist(w.seed, centre)), 0);
 
-  // 11. Assign per-ward layout types (mixing rules)
-  assignWardLayouts(wards, centre, cityRadius, p.type, p.layout);
+  // 11. Assign per-ward layout types — faction overrides layout when auto
+  const factionLayoutPref = FACTION_LAYOUT_PREF[p.faction];
+  const effectiveLayout = p.layout === 'auto' && factionLayoutPref ? factionLayoutPref : p.layout;
+  assignWardLayouts(wards, centre, cityRadius, p.type, effectiveLayout);
 
   return {
     wards, roads, wall, gates, centre,
@@ -523,11 +646,6 @@ function drawBldg(
 }
 
 // ── Organic building layout helpers ──────────────────────────────────────────
-
-/**
- * Lightweight occupancy grid — 6px cells.
- * Mark building footprints; reject new buildings that would overlap.
- */
 class OccupancyGrid {
   private readonly cells = new Set<number>();
   private readonly W: number;
@@ -624,9 +742,9 @@ function fillWardOrganically(
               : wardType === 'patriciate' ? 16
               : wardType === 'craftsmen'  ? 14
               : 14;
-  const BLDG_GAP  = 3;    // gap between buildings in the same row (alley-width)
+  const BLDG_GAP  = 3;    // gap between buildings in the same row
   const STREET    = 6;    // setback from ward polygon edge → visible street
-  const ROW_GAP   = 6;    // gap between rows → the alley / back lane shows as cream background
+  const ROW_GAP   = 3;    // gap between rows of buildings
   const MAX_ROWS  = 3;    // max rows per ward (prevents overcrowding small wards)
 
   const col = wardType === 'gateward' ? CARTO.bldg_dk
@@ -667,6 +785,7 @@ function fillWardOrganically(
 
       if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
       if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+      if (_activeRoads.length > 0 && minDistToRoads({ x: bx, y: by }, _activeRoads) < ROAD_CLEARANCE) continue;
 
       // Slight size + angle variation (seeded)
       const aw    = ALONG * (0.75 + rand() * 0.35);
@@ -681,6 +800,9 @@ function fillWardOrganically(
 }
 
 // ── Ward layout mixing rules + DNA mutation ─────────────────────────────────
+//
+// Weighted palettes: each entry is [LayoutType, probability].  Weights sum to 1.
+// DNA mutation is baked in — different ward seeds produce natural variety.
 //
 // Weighted palettes: each entry is [LayoutType, probability].  Weights sum to 1.
 // DNA mutation is baked in — different ward seeds produce natural variety.
@@ -718,7 +840,7 @@ function minDistToRoads(pt: Vec2, roads: Road[]): number {
 /** Active roads — set once per drawSettlement2D5 call so all fill fns can see them. */
 let _activeRoads: Road[] = [];
 /** Buildings must be at least this far from any road centre-line. */
-const ROAD_CLEARANCE = 3;  // must be >= half road width; buildings within this of road centre-line are skipped
+const ROAD_CLEARANCE = 10; // buildings must be at least this far from any road centre-line
 
 function fillWardGrid(
   ctx: CanvasRenderingContext2D,
@@ -740,6 +862,7 @@ function fillWardGrid(
       const wcx = rcx * uncos - rcy * unsin, wcy = rcx * unsin + rcy * uncos;
       if (!pointInPolygon({ x: wcx, y: wcy }, poly)) continue;
       if (minDistToEdge({ x: wcx, y: wcy }, poly) < STREET - 1) continue;
+      if (_activeRoads.length > 0 && minDistToRoads({ x: wcx, y: wcy }, _activeRoads) < ROAD_CLEARANCE) continue;
       const aw = BW * (0.82 + rand() * 0.2), dh = BH * (0.82 + rand() * 0.2);
       if (occ.blocked(wcx, wcy, aw, dh, angle)) continue;
       occ.mark(wcx, wcy, aw, dh, angle);
@@ -778,6 +901,7 @@ function fillWardLinear(
       const bx = ex + nx * insetDist, by = ey + ny * insetDist;
       if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
       if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+      if (_activeRoads.length > 0 && minDistToRoads({ x: bx, y: by }, _activeRoads) < ROAD_CLEARANCE) continue;
       const aw = ALONG * (0.8 + rand() * 0.3), dh = DEPTH * (0.8 + rand() * 0.25);
       const jitter = (rand() - 0.5) * 0.08;
       const fa = angle + jitter;
@@ -815,7 +939,8 @@ function fillWardTerraced(
     for (let rx = minX; rx <= maxX; rx += 2) {
       const wcx = rx * uncos - rowCY * unsin, wcy = rx * unsin + rowCY * uncos;
       if (pointInPolygon({ x: wcx, y: wcy }, poly) &&
-          minDistToEdge({ x: wcx, y: wcy }, poly) >= STREET - 1) {
+          minDistToEdge({ x: wcx, y: wcy }, poly) >= STREET - 1 &&
+          (_activeRoads.length === 0 || minDistToRoads({ x: wcx, y: wcy }, _activeRoads) >= ROAD_CLEARANCE)) {
         rowMinX = Math.min(rowMinX, rx);
         rowMaxX = Math.max(rowMaxX, rx);
       }
@@ -835,6 +960,7 @@ function fillWardTerraced(
       const wcy   = rcx * unsin + rcy * uncos;
       const bw    = actualW - 0.5;  // tiny gap = party walls implied
       const bh    = ROW_H * (0.88 + rand() * 0.12);
+      if (_activeRoads.length > 0 && minDistToRoads({ x: wcx, y: wcy }, _activeRoads) < ROAD_CLEARANCE) continue;
       if (occ.blocked(wcx, wcy, bw, bh, angle)) continue;
       occ.mark(wcx, wcy, bw, bh, angle);
       drawBldg(ctx, wcx, wcy, bw, bh, angle, col);
@@ -870,6 +996,7 @@ function fillWardPerimeter(
     const bx = ex + nx * inset, by = ey + ny * inset;
     if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
     if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 1) continue;
+    if (_activeRoads.length > 0 && minDistToRoads({ x: bx, y: by }, _activeRoads) < ROAD_CLEARANCE) continue;
     const aw = ALONG * (0.8 + rand() * 0.3), dh = DEPTH * (0.85 + rand() * 0.2);
     const jitter = (rand() - 0.5) * 0.1;
     const fa = edgeAngle + jitter;
@@ -919,6 +1046,7 @@ function fillWardRadial(
       const by = cent.y + Math.sin(a) * r;
       if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
       if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+      if (_activeRoads.length > 0 && minDistToRoads({ x: bx, y: by }, _activeRoads) < ROAD_CLEARANCE) continue;
       const aw = ALONG * (0.82 + rand() * 0.25), dh = DEPTH * (0.82 + rand() * 0.25);
       const fa = a + Math.PI * 0.5 + (rand() - 0.5) * 0.12;  // tangent to ring
       if (occ.blocked(bx, by, aw, dh, fa)) continue;
@@ -950,10 +1078,19 @@ export function drawSettlement2D5(
   canvas: HTMLCanvasElement,
   showLabels = true,
   layout: LayoutType = 'organic',
+  faction: SettlementFaction = 'human',
 ): void {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
+
+  // Apply faction palette (mutates CARTO — each draw resets it)
+  const pal = FACTION_PALETTE[faction];
+  CARTO.bldg    = pal.bldg;
+  CARTO.bldg_dk = pal.bldg_dk;
+  CARTO.bg      = pal.bg;
+  CARTO.road_dk = pal.road;
+  CARTO.field   = pal.field;
 
   // Set active roads so drawBldg can check road clearance
   _activeRoads = model.roads;
@@ -1095,7 +1232,7 @@ export function drawSettlement2D5(
     for (const ward of model.wards) {
       if (!ward.withinCity) continue;
       ctx.fillStyle = CARTO.label;
-      ctx.fillText(WARD_LABELS[ward.type].toUpperCase(), ward.center.x, ward.center.y);
+      ctx.fillText(factionWardLabel(faction, ward.type).toUpperCase(), ward.center.x, ward.center.y);
     }
   }
 }
@@ -1310,17 +1447,20 @@ function redraw() {
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
   const layoutParam = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
-  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels, layoutParam);
+  const faction     = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction ?? 'human';
+  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels, layoutParam, faction);
   else                    drawSettlement(currentModel, canvas, showLabels, showBuildings);
 }
 
 function getParams(): GeneratorParams {
-  const type = (document.querySelector('#type-pills .pill.active') as HTMLElement)?.dataset.type as SettlementType ?? 'village';
-  const layout = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
+  const type    = (document.querySelector('#type-pills .pill.active')    as HTMLElement)?.dataset.type    as SettlementType    ?? 'village';
+  const layout  = (document.querySelector('#layout-pills .pill.active')  as HTMLElement)?.dataset.layout  as LayoutType        ?? 'organic';
+  const faction = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction  ?? 'human';
   return {
     seed:       parseInt(seedInput.value) || Date.now(),
     type,
     layout,
+    faction,
     nPatches:   parseInt((document.getElementById('patches') as HTMLInputElement).value),
     warp:       parseFloat((document.getElementById('warp')    as HTMLInputElement).value),
     nGates:     parseInt((document.getElementById('roads')   as HTMLInputElement).value),
@@ -1361,6 +1501,14 @@ document.getElementById('layout-pills')!.addEventListener('click', e => {
   document.querySelectorAll('#layout-pills .pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
   generate(true);  // keep seeds when switching layout style
+});
+
+document.getElementById('faction-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#faction-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(false);  // regen — faction changes ward assignments
 });
 
 // Sliders — live update with value display

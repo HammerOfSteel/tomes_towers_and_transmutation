@@ -127,7 +127,8 @@
     }
 
     /* ── Type pills ── */
-    .pill-row { display: flex; flex-wrap: wrap; gap: 4px; }
+    .pill-row { display: flex; flex-wrap: nowrap; gap: 4px; }
+    .pill-row--wrap { flex-wrap: wrap; }
     .pill {
       padding: 3px 8px; border-radius: 12px; cursor: pointer; font-size: 11px;
       border: 1px solid var(--border); background: transparent; color: var(--text);
@@ -194,6 +195,21 @@
           <button class="pill active" data-type="village">Village</button>
           <button class="pill" data-type="town">Town</button>
           <button class="pill" data-type="city">City</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Faction</div>
+        <div class="pill-row pill-row--wrap" id="faction-pills">
+          <button class="pill active" data-faction="human"    title="Human — organic streets, mixed wards">🧍 Human</button>
+          <button class="pill"        data-faction="elven"    title="Elven — radial grove-centred, no slums">🌿 Elven</button>
+          <button class="pill"        data-faction="dwarven"  title="Dwarven — tight grid, forge-heavy">⛏️ Dwarven</button>
+          <button class="pill"        data-faction="orcish"   title="Orcish — linear war camp, armory + slave pens">⚔️ Orcish</button>
+          <button class="pill"        data-faction="vampire"  title="Vampire — perimeter ring, crypt gate, thrall quarter">🧛 Vampire</button>
+          <button class="pill"        data-faction="undead"   title="Undead — graveyards, bone shrines, shambling dead">💀 Undead</button>
+          <button class="pill"        data-faction="vulperia" title="Vulperia — den mother's hall at centre, night market">🦊 Vulperia</button>
+          <button class="pill"        data-faction="slime"    title="Slime — radial, communal pools, spore gardens">🫧 Slime</button>
+          <button class="pill"        data-faction="fae"      title="Fae — enchanted glades, radial, dream lodges">🧚 Fae</button>
         </div>
       </div>
 
