@@ -137,11 +137,12 @@ function classifyBiome(elev: number, moist: number, temp: number): BiomeName {
 
 export interface HexPlanetSettings {
   seed:         number;
-  subdivisions: number;   // 6=252 tiles (fast), 8=642, 12=1452, 16=2562
+  subdivisions: number;   // derived from realm Size: S=6, M=8, L=12, XL=16, Planet=20
+  roughness:    number;   // 0-1 from roughness slider — controls elevation amplitude + octaves
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
-  W: number; H: number;  // realm grid dims for settlement lon/lat mapping
+  W: number; H: number;
 }
 
 export class HexPlanetRenderer {
@@ -225,13 +226,19 @@ export class HexPlanetRenderer {
     const T0 = makeGrid(5, 3, rand3);
 
     function fbm3(x: number, y: number, z: number): number {
-      // Project 3D point to 2D via spherical coords for noise
       const lon = (Math.atan2(z, x) / (Math.PI * 2) + 0.5);
       const lat = (Math.asin(Math.max(-1, Math.min(1, y / Math.sqrt(x*x+y*y+z*z)))) / Math.PI + 0.5);
-      return valueNoise2D(lon*3, lat*1.5, G0,5,3)*0.46
-           + valueNoise2D(lon*6, lat*3,   G1,9,5)*0.28
-           + valueNoise2D(lon*12,lat*6,   G2,17,9)*0.14
-           + valueNoise2D(lon*24,lat*12,  G3,33,17)*0.12;
+      // More roughness = more octaves + higher frequency
+      const scale = 1.0 + s.roughness * 1.5;
+      let v = valueNoise2D(lon*3*scale, lat*1.5*scale, G0,5,3)*0.46
+            + valueNoise2D(lon*6*scale, lat*3*scale,   G1,9,5)*0.28
+            + valueNoise2D(lon*12*scale,lat*6*scale,   G2,17,9)*0.14
+            + valueNoise2D(lon*24*scale,lat*12*scale,  G3,33,17)*0.12;
+      if (s.roughness > 0.5) {
+        // Extra octave for rugged terrain
+        v = v * 0.9 + valueNoise2D(lon*48*scale,lat*24*scale, makeGrid(65,33,mulberry32(s.seed^0xABCD)),65,33) * 0.1;
+      }
+      return v;
     }
 
     function moistureAt(x: number, y: number, z: number): number {
@@ -272,12 +279,13 @@ export class HexPlanetRenderer {
       const biome    = classifyBiome(rawElev, moist, temp);
       const [r,g,b]  = BIOME_COLOR[biome];
 
-      // Elevation offset: ocean sinks in, mountains pop out
+      // Elevation offset: roughness scales how much tiles stick up/sink down
+      const elevRange = 0.04 + s.roughness * 0.18;   // flat (0.04) → very rugged (0.22)
       let elev: number;
-      if (biome === 'deep_ocean') elev = BASE_R * 0.93;
-      else if (biome === 'ocean') elev = BASE_R * 0.96;
-      else if (biome === 'snow')  elev = BASE_R * (1.04 + rawElev * 0.12);
-      else                        elev = BASE_R * (0.98 + rawElev * 0.08);
+      if (biome === 'deep_ocean') elev = BASE_R * (0.92 - s.roughness * 0.02);
+      else if (biome === 'ocean') elev = BASE_R * (0.95 - s.roughness * 0.01);
+      else if (biome === 'snow')  elev = BASE_R * (1.02 + rawElev * elevRange * 2.0);
+      else                        elev = BASE_R * (0.97 + rawElev * elevRange);
 
       const scale = elev / len;
 

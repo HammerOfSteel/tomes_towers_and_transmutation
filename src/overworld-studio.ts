@@ -3805,10 +3805,19 @@ function redrawRealm(): void {
       -Math.sin(sunElev) * 0.4,
       Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,
     ).normalize();
-    const subdivisions = parseInt((document.getElementById('hex-subdivisions') as HTMLInputElement)?.value ?? '8');
+    // Derive subdivision from realm Size slider: S=6, M=8, L=12, XL=16, Planet=20
+    const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 20 };
+    const realmSize   = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
+    const roughness   = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+    const subdivisions = SIZE_TO_SUB[realmSize] ?? 8;
+    const tileCount   = 10 * subdivisions * subdivisions + 2;
+    // Update tile display
+    const hexSubVal = document.getElementById('hex-sub-val');
+    if (hexSubVal) hexSubVal.textContent = `${tileCount} (sub ${subdivisions})`;
     hr.loadPlanet({
       seed: d.seed,
       subdivisions,
+      roughness,
       sunDirection: sunDir,
       atmosphereColor: new THREE.Color(0xd0e8ff),
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
@@ -3985,13 +3994,9 @@ document.getElementById('hex-show-edges')?.addEventListener('change', e => {
   hexPlanetRenderer?.setEdgeLines((e.target as HTMLInputElement).checked);
 });
 
-const HEX_TILE_COUNTS: Record<number, number> = {4:252,6:492,8:642,10:912,12:1212,14:1482,16:2562};
-document.getElementById('hex-subdivisions')?.addEventListener('input', () => {
-  const v = parseInt((document.getElementById('hex-subdivisions') as HTMLInputElement).value);
-  (document.getElementById('hex-sub-val') as HTMLElement).textContent = String(HEX_TILE_COUNTS[v] ?? v*v*10 + 'tiles');
-  currentRealmData = null;
-  if (realmViewMode === 'hex') redrawRealm();
-});
+// HEX_TILE_COUNTS kept for reference; actual count derived from realm Size slider
+const HEX_TILE_COUNTS: Record<number, number> = {6:362,8:642,12:1442,16:2562,20:4002};
+void HEX_TILE_COUNTS;
 
 // ── Realm controls event wiring ───────────────────────────────────────────────
 
@@ -4027,7 +4032,12 @@ const REALM_SIZE_LABELS = ['','S','M','L','XL','Planet'];
 document.getElementById('realm-size')?.addEventListener('input', () => {
   const v = parseInt((document.getElementById('realm-size') as HTMLInputElement).value);
   (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
-  currentRealmData = null; generateRealmView();
+  currentRealmData = null;
+  // Update hex tile display immediately
+  const SUB = [0,6,8,12,16,20][v] ?? 8;
+  const hexSubVal = document.getElementById('hex-sub-val');
+  if (hexSubVal) hexSubVal.textContent = `${10*SUB*SUB+2} (sub ${SUB})`;
+  generateRealmView();
 });
 
 document.getElementById('realm-settlements')?.addEventListener('input', () => {
@@ -4039,7 +4049,8 @@ document.getElementById('realm-settlements')?.addEventListener('input', () => {
 document.getElementById('realm-roughness')?.addEventListener('input', () => {
   const v = Math.round(parseFloat((document.getElementById('realm-roughness') as HTMLInputElement).value));
   (document.getElementById('realm-roughness-val') as HTMLElement).textContent = ['Flat','Gentle','Moderate','Rugged','Wild'][Math.round(v/25)] ?? 'Moderate';
-  currentRealmData = null; generateRealmView();
+  currentRealmData = null;
+  generateRealmView();  // regenerates both realm map + hex planet
 });
 
 document.getElementById('btn-realm-png')?.addEventListener('click', () => {
