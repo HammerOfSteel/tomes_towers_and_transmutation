@@ -152,26 +152,30 @@ export function hippedRoof(w: number, d: number, pitch = 0.50, hipFrac = 0.28, m
   return mesh;
 }
 
-/** Thatched roof: pitched + straw-band overlays along Z. */
+/** Thatched roof: pitched + straw-band overlays running along Z. */
 export function thatchedRoof(w: number, d: number, mat: THREE.Material): THREE.Group {
   const g = new THREE.Group();
   g.add(pitchedRoof(w, d, 0.52, mat));
-  // Straw bands — thin quads running across each slope face
-  const bandMat = makeBuildingMat('#a08040');
-  const rh = w * 0.52, hw = w / 2;
+  // Straw bands — thin strips lying on the slope faces, running full depth (Z axis)
+  const bandMat  = makeBuildingMat('#b09050');
+  const rh       = w * 0.52;          // ridge height
+  const hw       = w / 2;             // half-width
   const slopeLen = Math.sqrt(hw * hw + rh * rh);
-  const angle    = Math.atan2(rh, hw);
-  const bands    = Math.max(3, Math.floor(d / 0.9));
-  for (let i = 0; i < bands; i++) {
-    const t  = (i + 0.5) / bands;
-    const bz = -d / 2 + t * d;
-    for (const side of [-1, 1]) {
+  const angle    = Math.atan2(rh, hw); // slope angle from horizontal
+  const numBands = Math.max(3, Math.floor(slopeLen / 0.85));
+
+  for (let i = 0; i < numBands; i++) {
+    const t  = (i + 0.5) / numBands;  // 0 = near eave, 1 = near ridge
+    const bx = hw * (1 - t);           // X from centre: hw at eave, 0 at ridge
+    const by = rh * t;                  // Y: 0 at eave, rh at ridge
+    for (const side of [-1, 1] as const) {
       const band = new THREE.Mesh(
-        new THREE.BoxGeometry(slopeLen, 0.1, 0.2),
+        new THREE.BoxGeometry(0.16, 0.14, d * 0.97), // strip runs along Z
         bandMat,
       );
-      band.rotation.z = side * angle;
-      band.position.set(side * hw / 2, rh / 2, bz);
+      // Tilt band to lie flush against the sloped face
+      band.rotation.z = -side * angle;
+      band.position.set(side * bx, by, 0);
       g.add(band);
     }
   }
