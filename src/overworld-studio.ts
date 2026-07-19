@@ -412,60 +412,160 @@ function drawBldg(
   ctx.stroke();
 }
 
-/** Fill a ward polygon with a dense aligned grid of buildings. */
-function fillWithBuildings(
+// ── Organic building layout helpers ──────────────────────────────────────────
+
+/**
+ * Lightweight occupancy grid — 6px cells.
+ * Mark building footprints; reject new buildings that would overlap.
+ */
+class OccupancyGrid {
+  private readonly cells = new Set<number>();
+  private readonly W: number;
+  private static readonly CELL = 6;
+
+  constructor(canvasW: number, canvasH: number) {
+    this.W = Math.ceil(canvasW / OccupancyGrid.CELL) + 1;
+    void canvasH;
+  }
+
+  private _key(gx: number, gy: number): number { return gx + gy * this.W; }
+
+  /** Returns true if the rotated rect would touch any occupied cell. */
+  blocked(cx: number, cy: number, bw: number, bh: number, angle: number): boolean {
+    const C = OccupancyGrid.CELL;
+    const hw = bw * 0.5 + 1, hh = bh * 0.5 + 1;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    // Axis-aligned bounding box of the rotated rect
+    const dx = Math.abs(cos * hw) + Math.abs(sin * hh);
+    const dy = Math.abs(sin * hw) + Math.abs(cos * hh);
+    const x0 = Math.floor((cx - dx) / C), x1 = Math.ceil((cx + dx) / C);
+    const y0 = Math.floor((cy - dy) / C), y1 = Math.ceil((cy + dy) / C);
+    for (let gx = x0; gx <= x1; gx++)
+      for (let gy = y0; gy <= y1; gy++)
+        if (this.cells.has(this._key(gx, gy))) return true;
+    return false;
+  }
+
+  /** Mark the rotated rect as occupied. */
+  mark(cx: number, cy: number, bw: number, bh: number, angle: number): void {
+    const C = OccupancyGrid.CELL;
+    const hw = bw * 0.5, hh = bh * 0.5;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const dx = Math.abs(cos * hw) + Math.abs(sin * hh);
+    const dy = Math.abs(sin * hw) + Math.abs(cos * hh);
+    const x0 = Math.floor((cx - dx) / C), x1 = Math.ceil((cx + dx) / C);
+    const y0 = Math.floor((cy - dy) / C), y1 = Math.ceil((cy + dy) / C);
+    for (let gx = x0; gx <= x1; gx++)
+      for (let gy = y0; gy <= y1; gy++)
+        this.cells.add(this._key(gx, gy));
+  }
+}
+
+/** Total perimeter length of a polygon. */
+function polygonPerimeter(poly: Vec2[]): number {
+  let t = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!, b = poly[(i+1) % poly.length]!;
+    t += Math.hypot(b.x-a.x, b.y-a.y);
+  }
+  return t;
+}
+
+/** Sample a point and tangent angle at normalised parameter t along the perimeter. */
+function samplePerimeter(poly: Vec2[], t: number): { x: number; y: number; angle: number } {
+  const total = polygonPerimeter(poly);
+  const target = ((t % 1) + 1) % 1 * total;
+  let acc = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!, b = poly[(i+1) % poly.length]!;
+    const len = Math.hypot(b.x-a.x, b.y-a.y);
+    if (acc + len >= target) {
+      const f = (target - acc) / len;
+      return { x: a.x+(b.x-a.x)*f, y: a.y+(b.y-a.y)*f, angle: Math.atan2(b.y-a.y, b.x-a.x) };
+    }
+    acc += len;
+  }
+  const a = poly[poly.length-1]!, b = poly[0]!;
+  return { x: a.x, y: a.y, angle: Math.atan2(b.y-a.y, b.x-a.x) };
+}
+
+/**
+ * Organic building fill — samples points along the ward polygon perimeter,
+ * pushes each building inward toward the centroid, and orients it to the
+ * local street edge direction.  Multiple rows fan inward.
+ *
+ * This produces medieval-looking rows of buildings that curve with the street.
+ */
+function fillWardOrganically(
   ctx: CanvasRenderingContext2D,
   poly: Vec2[],
   wardType: WardType,
   wardSeed: number,
+  occ: OccupancyGrid,
 ): void {
   if (poly.length < 3) return;
 
-  const angle  = dominantEdgeAngle(poly);
-  const cos    = Math.cos(-angle), sin = Math.sin(-angle);
-  const uncos  = Math.cos(angle),  unsin = Math.sin(angle);
+  // Building footprint (along-street × depth into block)
+  const ALONG = wardType === 'slum'       ? 14
+              : wardType === 'patriciate' ? 22
+              : wardType === 'craftsmen'  ? 17
+              : 18;
+  const DEPTH = wardType === 'slum'       ? 11
+              : wardType === 'patriciate' ? 16
+              : wardType === 'craftsmen'  ? 14
+              : 14;
+  const BLDG_GAP  = 3;    // gap between buildings in the same row
+  const STREET    = 6;    // setback from ward polygon edge → visible street
+  const ROW_GAP   = 3;    // gap between rows of buildings
+  const MAX_ROWS  = 3;    // max rows per ward (prevents overcrowding small wards)
 
-  // Rotate polygon into local (street-aligned) space
-  const rot = poly.map(p => ({ x: p.x*cos - p.y*sin, y: p.x*sin + p.y*cos }));
-  const minX = Math.min(...rot.map(p => p.x));
-  const maxX = Math.max(...rot.map(p => p.x));
-  const minY = Math.min(...rot.map(p => p.y));
-  const maxY = Math.max(...rot.map(p => p.y));
-
-  // Building and street dimensions — vary by ward type
-  const BW = wardType === 'slum'       ?  7
-           : wardType === 'patriciate' ? 14
-           : wardType === 'craftsmen'  ? 10
-           : 11;
-  const BH = wardType === 'slum'       ?  8
-           : wardType === 'patriciate' ? 18
-           : wardType === 'craftsmen'  ? 14
-           : 15;
-  const GAP     = 3;     // gap between buildings within block (alley)
-  const STREET  = 5;     // setback from ward polygon edge (= street width)
-
-  const col = wardType === 'church' || wardType === 'gateward' ? CARTO.bldg_dk
-            : wardType === 'market' ? CARTO.bldg_mkt
-            : CARTO.bldg;
+  const col = wardType === 'gateward' ? CARTO.bldg_dk
+            : wardType === 'merchant' ? '#908878' : CARTO.bldg;
 
   const rand = mulberry32(wardSeed);
+  const cent = centroid(poly);
+  const perimeter = polygonPerimeter(poly);
 
-  for (let ry = minY + STREET; ry + BH < maxY - STREET + 1; ry += BH + GAP) {
-    for (let rx = minX + STREET; rx + BW < maxX - STREET + 1; rx += BW + GAP) {
-      // Centre of this grid cell in rotated space
-      const rcx = rx + BW*0.5, rcy = ry + BH*0.5;
-      // Back to world space
-      const wcx = rcx*uncos - rcy*unsin;
-      const wcy = rcx*unsin + rcy*uncos;
+  // Number of buildings that fit along the perimeter at this step
+  const step = ALONG + BLDG_GAP;
+  const nSamples = Math.max(4, Math.floor(perimeter / step));
 
-      if (!pointInPolygon({x:wcx, y:wcy}, poly)) continue;
-      if (minDistToEdge({x:wcx, y:wcy}, poly) < STREET - 1) continue;
+  // Estimate ward "depth" = min distance from centroid to any edge
+  const centInset = minDistToEdge(cent, poly);
+  const wardDepth = Math.max(DEPTH, centInset - STREET);
 
-      // Slight size variation for organic feel
-      const bw = BW * (0.82 + rand() * 0.22);
-      const bh = BH * (0.78 + rand() * 0.26);
+  const nRows = Math.min(MAX_ROWS, Math.max(1, Math.floor((wardDepth) / (DEPTH + ROW_GAP))));
 
-      drawBldg(ctx, wcx, wcy, bw, bh, angle, col);
+  for (let row = 0; row < nRows; row++) {
+    const insetDist = STREET + row * (DEPTH + ROW_GAP) + DEPTH * 0.5;
+
+    // Phase-offset each row so buildings stagger (brick-pattern feel)
+    const phaseOffset = row % 2 === 1 ? 0.5 / nSamples : 0;
+
+    for (let si = 0; si < nSamples; si++) {
+      const t = (si + phaseOffset) / nSamples;
+      const { x: ex, y: ey, angle: edgeAngle } = samplePerimeter(poly, t);
+
+      // Inward direction: from this edge point toward centroid
+      const inDx = cent.x - ex, inDy = cent.y - ey;
+      const inLen = Math.hypot(inDx, inDy);
+      if (inLen < 1) continue;
+      const nx = inDx / inLen, ny = inDy / inLen;
+
+      const bx = ex + nx * insetDist;
+      const by = ey + ny * insetDist;
+
+      if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
+      if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+
+      // Slight size + angle variation (seeded)
+      const aw    = ALONG * (0.75 + rand() * 0.35);
+      const dh    = DEPTH * (0.75 + rand() * 0.35);
+      const jitter = (rand() - 0.5) * 0.15;
+      const finalAngle = edgeAngle + jitter;
+      if (occ.blocked(bx, by, aw, dh, finalAngle)) continue;
+      occ.mark(bx, by, aw, dh, finalAngle);
+      drawBldg(ctx, bx, by, aw, dh, finalAngle, col);
     }
   }
 }
@@ -523,6 +623,7 @@ export function drawSettlement2D5(
   }
 
   // ── Buildings (painter order: low Y last = in front) ─────────────────────────
+  const occ = new OccupancyGrid(W, H);
   const sorted = model.wards.filter(w => w.withinCity)
     .sort((a,b) => a.center.y - b.center.y);
 
@@ -532,7 +633,9 @@ export function drawSettlement2D5(
     if (ward.type === 'church') {
       // Prominent church: large footprint + spire cross
       const cx = ward.center.x, cy = ward.center.y;
-      drawBldg(ctx, cx, cy, 20, 28, dominantEdgeAngle(ward.polygon), CARTO.bldg_dk);
+      const churchAngle = dominantEdgeAngle(ward.polygon);
+      occ.mark(cx, cy, 20, 28, churchAngle);
+      drawBldg(ctx, cx, cy, 20, 28, churchAngle, CARTO.bldg_dk);
       // Spire (smaller, offset via 2px shadow so it reads as taller)
       drawBldg(ctx, cx-1, cy-3, 7, 7, 0, '#1a1512');
       // Cross at apex
@@ -558,6 +661,8 @@ export function drawSettlement2D5(
         for (let t = 0.1; t < 0.9; t += 12/len) {
           const sx = a.x+(b.x-a.x)*t, sy = a.y+(b.y-a.y)*t;
           if (minDistToEdge({x:sx,y:sy}, ward.polygon) < 3) continue;
+          if (occ.blocked(sx, sy, 6, 8, ang)) continue;
+          occ.mark(sx, sy, 6, 8, ang);
           drawBldg(ctx, sx, sy, 6, 8, ang, CARTO.bldg_mkt);
         }
       }
@@ -578,8 +683,8 @@ export function drawSettlement2D5(
       continue;
     }
 
-    fillWithBuildings(ctx, ward.polygon, ward.type,
-      Math.round(ward.center.x * 97 + ward.center.y * 53));
+    fillWardOrganically(ctx, ward.polygon, ward.type,
+      Math.round(ward.center.x * 97 + ward.center.y * 53), occ);
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────────
@@ -804,7 +909,7 @@ let lastParams: GeneratorParams | null = null;
 type ToolName = 'select' | 'warp';
 let activeTool: ToolName = 'select';
 type ViewMode = 'flat' | 'iso';
-let viewMode: ViewMode = 'flat';
+let viewMode: ViewMode = (sessionStorage.getItem('ow-view') as ViewMode) ?? 'flat';
 
 function setTool(name: ToolName) {
   activeTool = name;
@@ -816,6 +921,7 @@ function setTool(name: ToolName) {
 
 function setView(mode: ViewMode) {
   viewMode = mode;
+  sessionStorage.setItem('ow-view', mode);
   document.getElementById('view-flat')?.classList.toggle('active', mode === 'flat');
   document.getElementById('view-iso' )?.classList.toggle('active', mode === 'iso');
   redraw();
