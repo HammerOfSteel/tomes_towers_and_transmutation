@@ -349,36 +349,17 @@ Before shipping this phase, all of the following must be green.
 > **Architecture:** `docs/OVERWORLD_PLAN.md`
 > **Principle:** Code-first always — no FBX/GLB for world gen. Asset packs are opt-in overlay only.
 
-### Shipped (v0.2, 2026-07-19) ✅
-- [x] 7 layout types: organic, grid, linear, radial, terraced, perimeter, **cluster** (Islamic medina / hosh)
-- [x] 9 factions — ward label remapping (Graveyard, Bone Shrine, Pit Arena…), unique palettes, layout prefs, extra ward assigns
+### Shipped (v0.3 — OW-A through OW-C complete, 2026-07-19) ✅
+- [x] 7 layout types: organic, grid, linear, radial, terraced, perimeter, cluster
+- [x] 9 factions — ward label remapping, unique palettes, layout prefs, ward composition
 - [x] Road clearance — buildings never placed on roads
-- [x] Faction + layout pill rows in UI
+- [x] **OW-A**: Realm tab — multi-continent, biomes (10 types), rivers (downhill gradient), settlements + roads, contour lines, compass rose, cartographic renderer
+- [x] **OW-A**: World shapes (Island/Continents/Archipelago/Pangaea), Climate (Tropical/Temperate/Arctic), Roughness, XL size (220×164)
+- [x] **OW-A Planet view**: Orthographic sphere projection, per-pixel ImageData renderer, day/night terminator, diffuse lighting, ocean specular, atmosphere limb, cloud layer, polar ice caps, city lights, star field
+- [x] **OW-B**: Dungeon tab — BSP floor plan renderer, 8 typed room categories, colour-coded floors, rich procedural generator
+- [x] **OW-C**: Cave/Glade tab — CA cave (6 biomes structural differences), glade (5 biomes), canvas legend, size + density params
 
-### OW-A — Realm Layer (macro world map)
-- [ ] **OW-A1** Research: check Perilous Shores open-source (`github.com/watabou`); study coastline + contour rendering
-- [ ] **OW-A2** Research: port Bloom `biome.ts` Whittaker temp/moisture classifier → 9 biomes, seamless Gaussian blending
-- [ ] **OW-A3** Multi-octave elevation + moisture noise → biome grid
-- [ ] **OW-A4** Downhill drainage → river paths (gradient descent) → Chaikin smooth
-- [ ] **OW-A5** Poisson-disk settlement placement; tower always at centre
-- [ ] **OW-A6** Canvas renderer: topographic contour lines, hatch forests, mountain symbols, river curves, settlement dots
-- [ ] **OW-A7** Realm tab in Overworld Studio UI
-
-### OW-B — Dungeon Layer (2D floor plan view)
-> `DungeonGenerator.ts` already exists — renderer only
-
-- [ ] **OW-B1** Canvas renderer for `DungeonGenerator` output: rooms, corridors, door notches
-- [ ] **OW-B2** Special symbols: ☩ boss, ✦ treasure, ⬡ ritual, ⊕ entrance, ↑↓ stairs
-- [ ] **OW-B3** Faction-themed dungeon palette (undead: dark bone; dwarven: carved stone)
-- [ ] **OW-B4** Dungeon tab in Overworld Studio UI
-
-### OW-C — Cave / Glade Layer
-- [ ] **OW-C1** Research: Watabou cave-generator + cellular automata cave gen (Roguebasin)
-- [ ] **OW-C2** CA grid (5-step fill) → polygon boundary trace
-- [ ] **OW-C3** Glade variant: Voronoi patch + Poisson tree scatter + clearing cutout
-- [ ] **OW-C4** Cave tab in UI; cave vs glade toggle
-
-### OW-D — Dwelling Layer (single building floor plan)
+### OW-D — Dwelling Layer
 > `InteriorGenerator.ts` already exists — renderer only
 
 - [ ] **OW-D1** 2D floor plan renderer: walls, doors, furniture symbols, stair positions
@@ -386,11 +367,114 @@ Before shipping this phase, all of the following must be green.
 - [ ] **OW-D3** Dwelling tab in Overworld Studio UI
 
 ### OW-E — Layer Navigation + WorldGen Integration
-- [ ] **OW-E1** Tab strip: `🌍 Realm · 🏙 City · ⚔ Dungeon · 🌿 Cave · 🏠 Dwelling`
-- [ ] **OW-E2** Realm → City drill-down (click settlement dot → load City view with that seed)
-- [ ] **OW-E3** City → Dungeon drill-down (click dungeon entrance → Dungeon view)
-- [ ] **OW-E4** `OverworldScene.ts` reads `SettlementModel` JSON → places 3D buildings at ward centres via `BuildingDNA` + `BuildingBuilder`
-- [ ] **OW-E5** Faction drives 3D building style in `OverworldScene` (uses `FACTION_PRESETS` from `BuildingDNA.ts`)
+- [ ] **OW-E1** Tab strip navigation: click settlement on Realm → City view; dungeon entrance → Dungeon view
+- [ ] **OW-E2** `OverworldScene.ts` reads `SettlementModel` JSON → 3D buildings at ward centres via `BuildingDNA`
+- [ ] **OW-E3** Faction drives 3D building style in `OverworldScene`
+
+---
+
+## OW-F: Planet Studio — Polish, DNA & Solar System
+
+> **Research sources:** Three.js Journey Lesson 38 (Earth Shaders) · RedBlobGames planet-generation · Three.js TSL Earth (webgpu_tsl_earth.html)
+> **Key insight:** Use Three.js ShaderMaterial + IcosahedronGeometry for the planet view — not canvas 2D. The biome data becomes a CanvasTexture (day map), city lights become a second CanvasTexture (night map). This gives drag rotation, real-time animation, and GLSL shader quality.
+> **Code-first always** — no texture assets. All planet visuals procedurally generated.
+
+### OW-F1 — Planet Renderer v3: Three.js Sphere + GLSL
+
+**Research spike (do first):**
+- [ ] **OW-F1-R1** Study Three.js Journey Lesson 38 shader structure: vertex (position, normal, UV), fragment (day/night mix, twilight, specular, atmosphere rim)
+- [ ] **OW-F1-R2** Confirm OrbitControls import from `three/examples/jsm/controls/OrbitControls.js` works in standalone html entrypoint (no react, no vite plugin)
+- [ ] **OW-F1-R3** Test: embed secondary `THREE.WebGLRenderer` in same page as existing canvas — confirm no GPU context conflicts
+
+**Implementation:**
+- [ ] **OW-F1-1** `PlanetRenderer` class:
+  - `THREE.WebGLRenderer` → writes to a `<canvas id="planet-canvas">` (overlay on the map canvas, shown only in planet view)
+  - `THREE.Scene` + `THREE.PerspectiveCamera(45, 1, 0.1, 100)`
+  - `IcosahedronGeometry(2, 6)` for sphere mesh
+  - `OrbitControls` for mouse drag rotation
+  - `requestAnimationFrame` loop while planet view is active; stops on tab switch
+- [ ] **OW-F1-2** Procedural planet textures (generated from `RealmData`):
+  - `buildDayTexture(data)` → 512×256 CanvasTexture: biome colours + elevation shading + ridge noise texture
+  - `buildNightTexture(data)` → 256×128: black + amber dots at settlement positions (city lights)
+  - `buildSpecularCloudTexture(data, seed)` → 256×128: R=ocean mask (specularity), G=multi-octave fBm cloud noise
+- [ ] **OW-F1-3** Planet GLSL shader (fragment):
+  - Day/night mix: `mix(dayColor, nightColor, smoothstep(-0.1, 0.2, sunDot))`
+  - Twilight band: orange-red tint where `sunDot ∈ [-0.1, 0.2]`
+  - Ocean specular: Phong from specular texture R channel
+  - Cloud layer: mix with white using texture G channel
+  - Atmosphere rim: `pow(1 - max(0, dot(normal, viewDir)), 3.0)` * atmosphereColor
+- [ ] **OW-F1-4** Cloud sphere: second `IcosahedronGeometry(2.02, 6)`, `MeshStandardMaterial` with `alphaMap=cloudTexture`, `transparent=true`, rotates `0.05×` faster than planet
+- [ ] **OW-F1-5** Atmosphere sphere: `IcosahedronGeometry(2.1, 6)`, custom shader with additive blending for rim glow (blue-white)
+- [ ] **OW-F1-6** Star field: `THREE.Points` with `BufferGeometry` (2000 stars), custom fragment shader:
+  - Soft circular disc sprite: `1 - smoothstep(0.3, 0.5, distance(vUv, vec2(0.5)))`
+  - Twinkle: `brightness * (0.85 + 0.15 * sin(uTime * twinkleFreq + starId))`
+  - Color temperature: `mix(vec3(0.6,0.7,1.0), vec3(1.0,0.9,0.7), rand(starId))`
+- [ ] **OW-F1-7** Sun: `THREE.PointLight` + small glowing sprite in background (lens flare approach from Three.js docs)
+- [ ] **OW-F1-8** `resize()` handler keeps planet renderer canvas in sync with layout
+
+### OW-F2 — Planet DNA System
+
+- [ ] **OW-F2-1** `PlanetDNA` interface (in `src/overworld-studio.ts`):
+  ```
+  type PlanetType = 'rocky'|'ocean'|'gas_giant'|'ice'|'volcanic'|'toxic'|'desert'|'verdant'|'dead'|'ringed'
+  interface PlanetDNA { seed, type, size, atmosphereDensity, atmosphereColor, oceanCoverage, cloudCoverage, ringSystem, moons: MoonDNA[], faction? }
+  interface MoonDNA { seed, size, orbitRadius, orbitSpeed, color }
+  ```
+- [ ] **OW-F2-2** `generatePlanetDNA(seed, type?)` → deterministic DNA from seed
+- [ ] **OW-F2-3** Per-type visual presets for `buildDayTexture`:
+  - `gas_giant`: horizontal banded stripes (no solid surface render)
+  - `ice`: mostly white/blue, minimal land
+  - `volcanic`: dark base + red/orange lava seas replacing oceans
+  - `toxic`: desaturated with green/purple tint on atmosphere
+  - `ocean`: 90%+ water coverage, tiny island chains
+  - `dead`: greyscale, high elevation variation (craters)
+- [ ] **OW-F2-4** Moon rendering: small orbit circle per moon (drawn in planet 3D scene)
+- [ ] **OW-F2-5** Ring system: `THREE.RingGeometry` with gradient alpha texture
+- [ ] **OW-F2-6** Planet type pills in UI; 🎲 generates a random PlanetDNA
+
+### OW-F3 — Solar System Tab
+
+> **5th studio tab: ☀ Solar System**
+
+- [ ] **OW-F3-R1** Research: Kepler orbital mechanics simplified for top-down 2D view (no physics sim needed — just orbital period formula for display)
+- [ ] **OW-F3-R2** Research: How to render convincing gas giant band shader in Canvas 2D vs Three.js sphere (same per-pixel ImageData technique but with horizontal bands instead of biome lookup)
+
+**Generator `generateSolarSystem(seed)`:**
+- [ ] **OW-F3-1** Star DNA: spectral type (O/B/A/F/G/K/M) → size multiplier (0.3-4.0), color (blue→orange→red), luminosity; seeded from `seed`
+- [ ] **OW-F3-2** Planet placement: Titius-Bode-inspired spacing `r[i] = 0.4 + 0.3 × 2^i` + seed jitter; 4-9 planets
+- [ ] **OW-F3-3** Planet type by zone: inner (hot) = rocky/volcanic/desert; mid (habitable) = rocky/ocean/verdant; outer (cold) = ice/gas_giant/ringed
+- [ ] **OW-F3-4** Tower planet: always at position 3-4 (habitable zone); its PlanetDNA drives the realm/settlement content
+- [ ] **OW-F3-5** Asteroid belt: between inner and outer zones; ring of 80-200 tiny dots
+- [ ] **OW-F3-6** Comet DNA: 1-3 comets with high eccentricity orbit (0.7-0.95); visible near perihelion
+
+**Renderer `drawSolarSystem(data, canvas)`:**
+- [ ] **OW-F3-7** Dark nebula background (fBm noise in soft pastels, very subtle)
+- [ ] **OW-F3-8** Central star: multi-layer radial gradient (hot core → corona), animated flicker via `requestAnimationFrame`
+- [ ] **OW-F3-9** Orbital paths: thin semi-transparent ellipses
+- [ ] **OW-F3-10** Planet circles: sized by `PlanetDNA.size`, coloured by type palette, small glow
+- [ ] **OW-F3-11** Gas giants: mini banded texture rendered into a circle (canvas ImageData in miniature)
+- [ ] **OW-F3-12** Moons: tiny dots orbiting planet circles
+- [ ] **OW-F3-13** Asteroid belt: ring of `Math.sin(angle + seed)*jitter` dots
+- [ ] **OW-F3-14** Comets: tiny oval + animated tail gradient line
+- [ ] **OW-F3-15** Tower planet highlighted: `⬡` symbol + golden ring
+- [ ] **OW-F3-16** Animation loop: planets orbit in real-time at correct relative speeds
+- [ ] **OW-F3-17** Click planet → switches to Planet view + loads that planet's DNA
+- [ ] **OW-F3-18** Hover tooltip: planet name, type, distance from star
+
+### OW-F4 — Full Drill-Down Chain
+
+```
+☀ Solar System  →  click planet
+🌍 Planet view  →  click "Map" button
+🗺 Realm map    →  click settlement dot
+🏙 Settlement   →  click dungeon/cave entrance
+⚔ Dungeon / 🌿 Cave
+```
+
+- [ ] **OW-F4-1** Breadcrumb nav bar (shows current level, back button at each level)
+- [ ] **OW-F4-2** Solar System → Planet: stores selected `PlanetDNA` + generates matching `RealmData`
+- [ ] **OW-F4-3** Planet → Realm: "View Surface Map" button; faction-coloured settlements from `PlanetDNA.faction`
+- [ ] **OW-F4-4** Realm → Settlement: click settlement dot → run city generator with matching faction+seed
 
 ---
 
