@@ -23,6 +23,10 @@
 import { Delaunay } from 'd3-delaunay';
 // @ts-expect-error no declaration file — import works fine at runtime
 import { createNoise2D } from '@/core/SimplexNoise';
+import { generateDungeon } from '@/levels/DungeonGenerator';
+import type { DungeonPlan } from '@/levels/DungeonGenerator';
+import { generateTower } from '@/levels/TowerGenerator';
+import type { Blueprint } from '@/levels/blueprint';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1507,6 +1511,7 @@ function setView(mode: ViewMode) {
 }
 
 function redraw() {
+  if (studioMode === 'dungeon') { redrawDungeon(); return; }
   if (!currentModel) return;
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
@@ -1823,6 +1828,363 @@ for (const [type, col] of Object.entries(WARD_COLORS)) {
   row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${WARD_LABELS[type as WardType]}</span>`;
   legendEl.appendChild(row);
 }
+
+// ── Dungeon Floor Plan Renderer (OW-B) ───────────────────────────────────────
+
+/** Dungeon canvas color palette — ink-map on parchment style. */
+const DMAP = {
+  bg:          '#e4dece',   // parchment background
+  floor:       '#d0c8b8',   // room floor (slightly darker than bg)
+  wall:        '#3a3028',   // thick ink walls
+  pillar:      '#2a2018',   // darker pillars
+  door:        '#a06828',   // warm amber door gap
+  door_exit:   '#d08030',   // brighter amber for exterior exits
+  stair_up:    '#4870c0',   // blue stair up
+  stair_dn:    '#c07040',   // orange stair down
+  spawn:       '#c03020',   // red enemy spawn
+  interactable:'#506090',   // blue-grey interactable
+  corridor:    '#c8c0b0',   // corridor connection line
+  label:       'rgba(58,48,40,0.75)',
+  start_mark:  '#40a060',   // green for start room
+};
+
+/** Interactable single-character symbols — legible at 7px. */
+const DMAP_SYMBOLS: Partial<Record<string, string>> = {
+  bookshelf: '≡', lectern: '♦', cauldron: '◎', telescope: '○',
+  forge: '⊓', quest_board: '□', chest: '▪', candelabra: '·',
+  anvil: '⊓', workbench_key: '⚿', locked_door: '⊠',
+  bed: '═', wardrobe: '▫', writing_desk: '▭', bunk: '║', mess_table: '▬',
+  reading_table: '▭', globe: '○', map_table: '▭', weapon_stand: '↑',
+  plant_pot: '✿', raised_planter: '⊟', containment_ring: '⊕', astrolabe: '✦',
+  banner: '|', rug: '▬',
+};
+
+interface RoomPos { px: number; py: number; }
+
+/**
+ * Draw a single dungeon floor plan from a DungeonPlan on a canvas.
+ * Lays rooms out via BFS from startRoom, aligning door cells between rooms.
+ */
+export function drawDungeonFloorPlan(
+  plan: DungeonPlan,
+  canvas: HTMLCanvasElement,
+  floorFilter?: number,   // if set, only draw rooms with blueprint.floor === floorFilter
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  // Clear
+  ctx.fillStyle = DMAP.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const CELL = 9;   // pixels per grid cell
+  const GAP  = 14;  // pixel gap between rooms
+
+  // Filter rooms by floor if requested (tower mode)
+  const rooms = floorFilter !== undefined
+    ? new Map([...plan.rooms].filter(([, bp]) => bp.floor === floorFilter))
+    : plan.rooms;
+
+  if (rooms.size === 0) {
+    ctx.fillStyle = DMAP.label;
+    ctx.font = '12px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No rooms on this floor', W / 2, H / 2);
+    return;
+  }
+
+  // BFS layout: assign top-left canvas position to each room
+  const positions = new Map<string, RoomPos>();
+  const startId = rooms.has(plan.startRoomId) ? plan.startRoomId : rooms.keys().next().value!;
+  positions.set(startId, { px: 0, py: 0 });
+
+  const visited = new Set([startId]);
+  const queue   = [startId];
+
+  while (queue.length) {
+    const rid   = queue.shift()!;
+    const room  = rooms.get(rid);
+    if (!room) continue;
+    const pos   = positions.get(rid)!;
+
+    for (const door of room.doors) {
+      if (!door.targetId || visited.has(door.targetId)) continue;
+      if (!rooms.has(door.targetId)) continue;
+      visited.add(door.targetId);
+      queue.push(door.targetId);
+
+      const target = rooms.get(door.targetId)!;
+      // Find the reciprocal door in the target room
+      const oppDoor = target.doors.find(d => d.targetId === rid);
+      const ox = oppDoor?.x ?? 0;
+      const oz = oppDoor?.z ?? 0;
+
+      let npx: number, npy: number;
+      switch (door.facing) {
+        case 'north':
+          npx = pos.px + (door.x - ox) * CELL;
+          npy = pos.py - target.depth * CELL - GAP;
+          break;
+        case 'south':
+          npx = pos.px + (door.x - ox) * CELL;
+          npy = pos.py + room.depth * CELL + GAP;
+          break;
+        case 'east':
+          npx = pos.px + room.width * CELL + GAP;
+          npy = pos.py + (door.z - oz) * CELL;
+          break;
+        case 'west':
+          npx = pos.px - target.width * CELL - GAP;
+          npy = pos.py + (door.z - oz) * CELL;
+          break;
+      }
+      positions.set(door.targetId, { px: npx!, py: npy! });
+    }
+
+    // Follow staircases too (tower mode)
+    for (const stair of room.staircases) {
+      if (!stair.targetId || visited.has(stair.targetId)) continue;
+      if (!rooms.has(stair.targetId)) continue;
+      // Don't follow inter-floor stairs in BFS — just mark as seen
+      visited.add(stair.targetId);
+    }
+  }
+
+  // Compute bounding box and centre on canvas
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    minX = Math.min(minX, pos.px);
+    minY = Math.min(minY, pos.py);
+    maxX = Math.max(maxX, pos.px + room.width * CELL);
+    maxY = Math.max(maxY, pos.py + room.depth * CELL);
+  }
+
+  const PAD = 24;
+  const totalW = maxX - minX, totalH = maxY - minY;
+  const offX   = (W - totalW) / 2 - minX;
+  const offY   = (H - totalH) / 2 - minY;
+
+  // ── Draw corridor lines between connected doors ─────────────────────────
+  ctx.strokeStyle = DMAP.corridor;
+  ctx.lineWidth   = CELL - 2;
+  ctx.lineCap     = 'round';
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    for (const door of room.doors) {
+      if (!door.targetId || !positions.has(door.targetId)) continue;
+      if (!rooms.has(door.targetId)) continue;
+      const ax = offX + pos.px + door.x * CELL + CELL / 2;
+      const ay = offY + pos.py + door.z * CELL + CELL / 2;
+      const tpos  = positions.get(door.targetId)!;
+      const troom = rooms.get(door.targetId)!;
+      const oppDoor = troom.doors.find(d => d.targetId === rid);
+      if (!oppDoor) continue;
+      const bx = offX + tpos.px + oppDoor.x * CELL + CELL / 2;
+      const by = offY + tpos.py + oppDoor.z * CELL + CELL / 2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+  }
+  void PAD;
+
+  // ── Draw each room ───────────────────────────────────────────────────────
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    const ox   = offX + pos.px;
+    const oy   = offY + pos.py;
+    const rw   = room.width  * CELL;
+    const rd   = room.depth  * CELL;
+
+    // Floor fill
+    ctx.fillStyle = rid === startId ? '#d8e8d0' : DMAP.floor;
+    ctx.fillRect(ox, oy, rw, rd);
+
+    // Build wall/pillar lookup
+    const wallSet = new Set(room.tiles.map(t => `${t.x},${t.z}`));
+
+    // Draw wall and pillar cells
+    for (const tile of room.tiles) {
+      ctx.fillStyle = tile.type === 'pillar' ? DMAP.pillar : DMAP.wall;
+      ctx.fillRect(ox + tile.x * CELL, oy + tile.z * CELL, CELL, CELL);
+    }
+
+    // Fill cells NOT in tiles and not floor as wall (implicit solid border)
+    // (walls are already explicit in tile entries — this handles edge cells)
+
+    // Draw room border (thin outline)
+    ctx.strokeStyle = DMAP.wall;
+    ctx.lineWidth   = 0.5;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, rw - 1, rd - 1);
+
+    // Draw doors
+    for (const door of room.doors) {
+      const isExit = !door.targetId;
+      ctx.fillStyle = isExit ? DMAP.door_exit : DMAP.door;
+      // Erase wall cell at door position (draw floor color)
+      ctx.fillStyle = rid === startId ? '#d8e8d0' : DMAP.floor;
+      ctx.fillRect(ox + door.x * CELL, oy + door.z * CELL, CELL, CELL);
+      // Draw door marker
+      ctx.fillStyle = isExit ? DMAP.door_exit : DMAP.door;
+      const dcx = ox + door.x * CELL + CELL / 2;
+      const dcy = oy + door.z * CELL + CELL / 2;
+      ctx.beginPath(); ctx.arc(dcx, dcy, CELL * 0.3, 0, Math.PI * 2); ctx.fill();
+      // If exit door — draw small arrowhead indicating direction
+      if (isExit) {
+        ctx.strokeStyle = DMAP.door_exit;
+        ctx.lineWidth   = 1.5;
+        const [ax, ay] = {
+          north: [dcx, dcy - CELL * 0.55],
+          south: [dcx, dcy + CELL * 0.55],
+          east:  [dcx + CELL * 0.55, dcy],
+          west:  [dcx - CELL * 0.55, dcy],
+        }[door.facing] as [number, number];
+        ctx.beginPath(); ctx.moveTo(dcx, dcy); ctx.lineTo(ax, ay); ctx.stroke();
+      }
+    }
+
+    // Draw staircases
+    for (const stair of room.staircases) {
+      const sx = ox + stair.x * CELL + CELL / 2;
+      const sy = oy + stair.z * CELL + CELL / 2;
+      // Clear wall tile if it exists
+      if (wallSet.has(`${stair.x},${stair.z}`)) {
+        ctx.fillStyle = DMAP.floor;
+        ctx.fillRect(ox + stair.x * CELL, oy + stair.z * CELL, CELL, CELL);
+      }
+      ctx.fillStyle  = stair.direction === 'up' ? DMAP.stair_up : DMAP.stair_dn;
+      ctx.font       = `bold ${CELL + 1}px sans-serif`;
+      ctx.textAlign  = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(stair.direction === 'up' ? '↑' : '↓', sx, sy);
+    }
+
+    // Draw interactables
+    ctx.font      = `${CELL - 1}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const item of room.interactables) {
+      const ix = ox + item.x * CELL + CELL / 2;
+      const iy = oy + item.z * CELL + CELL / 2;
+      // Draw a small colored square under the symbol
+      ctx.fillStyle = DMAP.interactable + '55';
+      ctx.fillRect(ox + item.x * CELL + 1, oy + item.z * CELL + 1, CELL - 2, CELL - 2);
+      ctx.fillStyle = DMAP.interactable;
+      ctx.fillText(DMAP_SYMBOLS[item.type] ?? '◆', ix, iy);
+    }
+
+    // Draw spawns
+    for (const spawn of room.spawns) {
+      const spx = ox + spawn.x * CELL + CELL / 2;
+      const spy = oy + spawn.z * CELL + CELL / 2;
+      ctx.fillStyle = DMAP.spawn;
+      ctx.beginPath(); ctx.arc(spx, spy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Room ID label (small, below or inside room)
+    ctx.fillStyle    = DMAP.label;
+    ctx.font         = `6px Georgia, serif`;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(room.id, ox + 2, oy + 2);
+  }
+
+  // Title
+  ctx.fillStyle    = DMAP.label;
+  ctx.font         = '10px Georgia, serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`Dungeon · seed ${plan.seed} · ${rooms.size} room${rooms.size !== 1 ? 's' : ''}`, W / 2, H - 6);
+}
+
+// ── Studio mode state ─────────────────────────────────────────────────────────
+
+type StudioMode = 'settlement' | 'dungeon';
+let studioMode: StudioMode = 'settlement';
+let currentDungeonPlan: DungeonPlan | null = null;
+
+function generateDungeonView() {
+  const seed       = parseInt(seedInput.value) || Date.now();
+  const dtype      = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  const floorCount = parseInt((document.getElementById('dfloors') as HTMLInputElement).value);
+  try {
+    if (dtype === 'tower') {
+      currentDungeonPlan = generateTower(seed);
+    } else {
+      currentDungeonPlan = generateDungeon(seed, floorCount);
+    }
+  } catch (e) {
+    console.error('Dungeon generation failed:', e);
+    return;
+  }
+  redrawDungeon();
+  const rooms = currentDungeonPlan.rooms;
+  genTimeEl.textContent = `${rooms.size} rooms  ·  seed ${seed}`;
+}
+
+function redrawDungeon() {
+  if (!currentDungeonPlan) return;
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  let floorFilter: number | undefined;
+  if (dtype === 'tower') {
+    floorFilter = parseInt((document.getElementById('dfloor') as HTMLInputElement).value);
+  }
+  drawDungeonFloorPlan(currentDungeonPlan, canvas, floorFilter);
+}
+
+// ── Ward legend ───────────────────────────────────────────────────────────────
+// (declared earlier in file — this is the duplicate, remove it)
+
+// ── Studio mode tab switching ─────────────────────────────────────────────────
+
+document.getElementById('studio-tabs')!.addEventListener('click', e => {
+  const tab = (e.target as HTMLElement).closest('.studio-tab') as HTMLElement | null;
+  if (!tab) return;
+  const mode = tab.dataset.mode as StudioMode;
+  if (mode === studioMode) return;
+  studioMode = mode;
+  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
+  document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
+  (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
+  if (mode === 'dungeon') {
+    if (!currentDungeonPlan) generateDungeonView();
+    else redrawDungeon();
+  } else {
+    redraw();
+  }
+});
+
+// ── Dungeon controls event wiring ─────────────────────────────────────────────
+
+document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  const isTower = pill.dataset.dtype === 'tower';
+  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
+  generateDungeonView();
+});
+
+document.getElementById('dfloors')!.addEventListener('input', () => {
+  (document.getElementById('dfloors-val') as HTMLElement).textContent =
+    (document.getElementById('dfloors') as HTMLInputElement).value;
+  generateDungeonView();
+});
+
+document.getElementById('dfloor')!.addEventListener('input', () => {
+  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
+  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
+  redrawDungeon();
+});
+
+document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `dungeon-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
 
 // ── Initial generation ────────────────────────────────────────────────────────
 

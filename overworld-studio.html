@@ -126,6 +126,20 @@
       color: var(--muted); margin-bottom: 8px;
     }
 
+    /* ── Studio mode tabs ── */
+    .studio-tabs {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      margin-bottom: 0; flex-shrink: 0;
+    }
+    .studio-tab {
+      flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.5px; cursor: pointer; border: none; background: transparent;
+      color: var(--muted); border-bottom: 2px solid transparent;
+      transition: .12s; margin-bottom: -1px;
+    }
+    .studio-tab:hover { color: var(--text); }
+    .studio-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     /* ── Type pills ── */
     .pill-row { display: flex; flex-wrap: nowrap; gap: 4px; }
     .pill-row--wrap { flex-wrap: wrap; }
@@ -189,6 +203,15 @@
     </div>
 
     <aside class="sidebar">
+
+      <!-- ── Studio mode tabs ─────────────────────────────────────── -->
+      <div class="studio-tabs" id="studio-tabs">
+        <button class="studio-tab active" data-mode="settlement">🏙 Settlement</button>
+        <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
+      </div>
+
+      <!-- ── Settlement controls ──────────────────────────────────── -->
+      <div id="settlement-controls">
       <div class="section">
         <div class="section-title">Settlement Type</div>
         <div class="pill-row" id="type-pills">
@@ -276,6 +299,51 @@
           <button class="btn" id="btn-json" style="width:100%">📋 JSON</button>
         </div>
       </div>
+      </div><!-- /settlement-controls -->
+
+      <!-- ── Dungeon controls ──────────────────────────────────────── -->
+      <div id="dungeon-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">Dungeon Type</div>
+          <div class="pill-row" id="dungeon-type-pills">
+            <button class="pill active" data-dtype="generic" title="BSP corridor dungeon">Generic</button>
+            <button class="pill"        data-dtype="tower"   title="Circular tower chambers (all 11 floors)">Tower</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Complexity</span><span id="dfloors-val">3</span></div>
+            <input type="range" id="dfloors" min="1" max="9" value="3" />
+          </div>
+          <div class="slider-row" id="tower-floor-row" style="display:none">
+            <div class="slider-label"><span>Tower Floor</span><span id="dfloor-val">0</span></div>
+            <input type="range" id="dfloor" min="0" max="10" value="0" />
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Legend</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#3a3028;border-radius:1px"></span> Wall</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#c4b898;border-radius:1px"></span> Floor</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#a06828;border-radius:1px"></span> Door</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#4870c0;font-size:12px">↑</span> Stair up</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c07040;font-size:12px">↓</span> Stair down</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c03020;font-size:12px">●</span> Enemy spawn</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#5868a0;font-size:12px">◆</span> Interactable</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-dungeon-png" style="width:100%">📷 PNG</button>
+        </div>
+
+      </div><!-- /dungeon-controls -->
+
     </aside>
   </div>
 
