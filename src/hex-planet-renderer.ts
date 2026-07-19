@@ -257,81 +257,100 @@ export class HexPlanetRenderer {
     }
 
     // ── Build geometry ───────────────────────────────────────────────────
-    // Fan-triangulate each tile: (center, boundary[i], boundary[(i+1)%n])
-    // Count total triangles: sum of (boundary.length) across all tiles
-    const totalTris = hs.tiles.reduce((s, t) => s + t.boundary.length, 0);
-    const positions  = new Float32Array(totalTris * 3 * 3);   // 3 verts × xyz
-    const colors     = new Float32Array(totalTris * 3 * 3);   // 3 verts × rgb
-    const normals    = new Float32Array(totalTris * 3 * 3);
+        // Each tile: N top triangles + 2*N side triangles = 3*N total
+    const totalEdges = hs.tiles.reduce((sum, t) => sum + t.boundary.length, 0);
+    // 3 tris per edge × 3 verts × 3 floats = 27 floats per edge
+    const positions  = new Float32Array(totalEdges * 27);
+    const colors     = new Float32Array(totalEdges * 27);
+    const normals    = new Float32Array(totalEdges * 27);
+    const edgePositions = new Float32Array(totalEdges * 6);  // top edges only
 
-    // Edge lines: 2 points per boundary edge per tile
-    const edgePositions = new Float32Array(totalTris * 2 * 3);
-
+    const INNER_R = BASE_R * 0.86;
     let vi = 0, ei = 0;
+
+    const pushTri = (
+      x0: number, y0: number, z0: number,
+      x1: number, y1: number, z1: number,
+      x2: number, y2: number, z2: number,
+      nx: number, ny: number, nz: number,
+      rc: number, gc: number, bc: number,
+    ) => {
+      positions[vi*9+0]=x0; positions[vi*9+1]=y0; positions[vi*9+2]=z0;
+      positions[vi*9+3]=x1; positions[vi*9+4]=y1; positions[vi*9+5]=z1;
+      positions[vi*9+6]=x2; positions[vi*9+7]=y2; positions[vi*9+8]=z2;
+      for (let k=0;k<3;k++) {
+        normals[vi*9+k*3+0]=nx; normals[vi*9+k*3+1]=ny; normals[vi*9+k*3+2]=nz;
+        colors[vi*9+k*3+0]=rc;  colors[vi*9+k*3+1]=gc;  colors[vi*9+k*3+2]=bc;
+      }
+      vi++;
+    };
 
     for (const tile of hs.tiles) {
       const cp = tile.centerPoint;
-      const len = Math.sqrt(cp.x*cp.x + cp.y*cp.y + cp.z*cp.z);
-      // Raw elevation from noise (0-1)
-      const rawElev  = fbm3(cp.x, cp.y, cp.z);
-      const moist    = moistureAt(cp.x, cp.y, cp.z);
-      const temp     = tempAt(cp.y, rawElev);
-      const biome    = classifyBiome(rawElev, moist, temp);
-      const [r,g,b]  = BIOME_COLOR[biome];
+      const len = Math.sqrt(cp.x*cp.x+cp.y*cp.y+cp.z*cp.z);
+      const rawElev = fbm3(cp.x, cp.y, cp.z);
+      const moist   = moistureAt(cp.x, cp.y, cp.z);
+      const temp    = tempAt(cp.y, rawElev);
+      const biome   = classifyBiome(rawElev, moist, temp);
+      const [r,g,b] = BIOME_COLOR[biome];
 
-      // Elevation offset: roughness scales how much tiles stick up/sink down
-      const elevRange = 0.04 + s.roughness * 0.18;   // flat (0.04) → very rugged (0.22)
+      const elevRange = 0.04 + s.roughness * 0.18;
       let elev: number;
-      if (biome === 'deep_ocean') elev = BASE_R * (0.92 - s.roughness * 0.02);
-      else if (biome === 'ocean') elev = BASE_R * (0.95 - s.roughness * 0.01);
-      else if (biome === 'snow')  elev = BASE_R * (1.02 + rawElev * elevRange * 2.0);
-      else                        elev = BASE_R * (0.97 + rawElev * elevRange);
+      if      (biome==='deep_ocean') elev = BASE_R*(0.92 - s.roughness*0.02);
+      else if (biome==='ocean')      elev = BASE_R*(0.95 - s.roughness*0.01);
+      else if (biome==='snow')       elev = BASE_R*(1.02 + rawElev*elevRange*2.0);
+      else                           elev = BASE_R*(0.97 + rawElev*elevRange);
 
       const scale = elev / len;
+      const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;
+      const topNx = ecx/elev, topNy = ecy/elev, topNz = ecz/elev;
 
-      // Extruded center point
-      const ecx = cp.x * scale, ecy = cp.y * scale, ecz = cp.z * scale;
+      // Top face color; side face slightly darker (indirect lighting)
+      const rc=r/255, gc=g/255, bc=b/255;
+      const sd=0.60;
+      const src2=rc*sd, sgc=gc*sd, sbc=bc*sd;
 
-      const n = tile.boundary.length;
-      for (let i = 0; i < n; i++) {
+      const nt = tile.boundary.length;
+      for (let i=0; i<nt; i++) {
         const b0 = tile.boundary[i]!;
-        const b1 = tile.boundary[(i+1) % n]!;
+        const b1 = tile.boundary[(i+1)%nt]!;
+        const bL0 = Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
+        const bL1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
 
-        // Scale boundary points by same elevation factor
-        const bLen0 = Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
-        const bLen1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
-        const s0 = elev / bLen0, s1 = elev / bLen1;
-        const eb0x = b0.x*s0, eb0y = b0.y*s0, eb0z = b0.z*s0;
-        const eb1x = b1.x*s1, eb1y = b1.y*s1, eb1z = b1.z*s1;
+        // Top extruded
+        const t0=elev/bL0, t1=elev/bL1;
+        const e0x=b0.x*t0, e0y=b0.y*t0, e0z=b0.z*t0;
+        const e1x=b1.x*t1, e1y=b1.y*t1, e1z=b1.z*t1;
 
-        // Triangle: center, b0, b1
-        positions[vi*9+0] = ecx;  positions[vi*9+1] = ecy;  positions[vi*9+2] = ecz;
-        positions[vi*9+3] = eb0x; positions[vi*9+4] = eb0y; positions[vi*9+5] = eb0z;
-        positions[vi*9+6] = eb1x; positions[vi*9+7] = eb1y; positions[vi*9+8] = eb1z;
+        // Inner bottom
+        const i0s=INNER_R/bL0, i1s=INNER_R/bL1;
+        const ib0x=b0.x*i0s, ib0y=b0.y*i0s, ib0z=b0.z*i0s;
+        const ib1x=b1.x*i1s, ib1y=b1.y*i1s, ib1z=b1.z*i1s;
 
-        // Normal = centre direction (flat shading per face)
-        const nx = ecx/elev, ny = ecy/elev, nz = ecz/elev;
-        for (let k = 0; k < 3; k++) {
-          normals[vi*9+k*3+0] = nx; normals[vi*9+k*3+1] = ny; normals[vi*9+k*3+2] = nz;
-        }
+        // Top triangle
+        pushTri(ecx,ecy,ecz, e0x,e0y,e0z, e1x,e1y,e1z, topNx,topNy,topNz, rc,gc,bc);
 
-        // Color (r/g/b as 0-1 for Three.js vertex colors)
-        for (let k = 0; k < 3; k++) {
-          colors[vi*9+k*3+0] = r/255; colors[vi*9+k*3+1] = g/255; colors[vi*9+k*3+2] = b/255;
-        }
+        // Side normal (outward tangent at edge midpoint)
+        const smx=(e0x+e1x)*0.5, smy=(e0y+e1y)*0.5, smz=(e0z+e1z)*0.5;
+        const smL=Math.sqrt(smx*smx+smy*smy+smz*smz);
+        const snx=smx/smL, sny=smy/smL, snz=smz/smL;
 
-        // Edge line: b0 → b1
-        edgePositions[ei*6+0] = eb0x; edgePositions[ei*6+1] = eb0y; edgePositions[ei*6+2] = eb0z;
-        edgePositions[ei*6+3] = eb1x; edgePositions[ei*6+4] = eb1y; edgePositions[ei*6+5] = eb1z;
+        // Side quad: tri1 = top-b0, top-b1, inner-b0
+        pushTri(e0x,e0y,e0z, e1x,e1y,e1z, ib0x,ib0y,ib0z, snx,sny,snz, src2,sgc,sbc);
+        // Side quad: tri2 = top-b1, inner-b1, inner-b0
+        pushTri(e1x,e1y,e1z, ib1x,ib1y,ib1z, ib0x,ib0y,ib0z, snx,sny,snz, src2,sgc,sbc);
 
-        vi++; ei++;
+        // Top edge line
+        edgePositions[ei*6+0]=e0x; edgePositions[ei*6+1]=e0y; edgePositions[ei*6+2]=e0z;
+        edgePositions[ei*6+3]=e1x; edgePositions[ei*6+4]=e1y; edgePositions[ei*6+5]=e1z;
+        ei++;
       }
     }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
-    geo.setAttribute('normal',   new THREE.BufferAttribute(normals,   3));
+    geo.setAttribute('position', new THREE.BufferAttribute(positions.slice(0, vi*9), 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(colors.slice(0, vi*9),    3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(normals.slice(0, vi*9),   3));
 
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.tileMesh = new THREE.Mesh(geo, mat);

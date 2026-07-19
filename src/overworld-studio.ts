@@ -3806,7 +3806,7 @@ function redrawRealm(): void {
       Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,
     ).normalize();
     // Derive subdivision from realm Size slider: S=6, M=8, L=12, XL=16, Planet=20
-    const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 20 };
+    const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 24 };
     const realmSize   = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
     const roughness   = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
     const subdivisions = SIZE_TO_SUB[realmSize] ?? 8;
@@ -4034,7 +4034,7 @@ document.getElementById('realm-size')?.addEventListener('input', () => {
   (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
   currentRealmData = null;
   // Update hex tile display immediately
-  const SUB = [0,6,8,12,16,20][v] ?? 8;
+  const SUB = [0,6,8,12,16,24][v] ?? 8;
   const hexSubVal = document.getElementById('hex-sub-val');
   if (hexSubVal) hexSubVal.textContent = `${10*SUB*SUB+2} (sub ${SUB})`;
   generateRealmView();
