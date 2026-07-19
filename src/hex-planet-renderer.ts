@@ -290,7 +290,7 @@ export class HexPlanetRenderer {
     // ── Fine tiles: sub=48 flat hex mosaic ──
     const HS_FINE_SUB = 48;
     const HexasphereFine = (Hexasphere as any);
-    const hs_fine = new HexasphereFine(BASE_R, HS_FINE_SUB, 0.88);
+    const hs_fine = new HexasphereFine(BASE_R, HS_FINE_SUB, 0.96);
 
     const TIER2: Record<string, number> = {
       deep_ocean: 0.955, ocean: 0.968, beach: 0.982,
@@ -336,7 +336,7 @@ export class HexPlanetRenderer {
     tileGeo2.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(col2), 3));
     tileGeo2.computeVertexNormals();
 
-    const tileMat2 = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const tileMat2 = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.tileMesh  = new THREE.Mesh(tileGeo2, tileMat2);
     this.scene.add(this.tileMesh);
 
@@ -357,7 +357,7 @@ export class HexPlanetRenderer {
     }
     const edgeGeo2 = new THREE.BufferGeometry();
     edgeGeo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(edgePts2), 3));
-    const edgeMat2 = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.30, depthWrite: false });
+    const edgeMat2 = new THREE.LineBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.55, depthWrite: false });
     this.edgeMesh  = new THREE.LineSegments(edgeGeo2, edgeMat2);
     this.scene.add(this.edgeMesh);
 
