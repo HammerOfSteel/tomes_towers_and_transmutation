@@ -2964,6 +2964,9 @@ type RealmBiome =
   | 'deep_ocean' | 'ocean' | 'beach'
   | 'desert' | 'savanna' | 'grassland' | 'forest' | 'taiga' | 'tundra' | 'snow';
 
+type RealmShape   = 'island' | 'continents' | 'archipelago' | 'pangaea';
+type RealmClimate = 'tropical' | 'temperate' | 'arctic';
+
 interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
 interface RealmRiver { points: Vec2[]; }
 
@@ -3026,62 +3029,135 @@ function fbmR(noise: (x: number, y: number) => number, x: number, y: number, oct
   return (v / max + 1) / 2;
 }
 
-export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6): RealmData {
-  const rand   = mulberry32(seed);
-  const noiseE = createNoise2D(seed);
-  const rand2  = mulberry32(seed ^ 0xDEADBEEF);
-  const noiseM = createNoise2D(seed ^ 0xDEADBEEF);
-  const rand3  = mulberry32(seed ^ 0xC0FFEE);
-  const noiseT = createNoise2D(seed ^ 0xC0FFEE);
+export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6, shape: RealmShape = 'island', climate: RealmClimate = 'temperate', roughness: number = 0.5): RealmData {
+  const rand  = mulberry32(seed);
+  const rand2 = mulberry32(seed ^ 0xDEADBEEF);
+  const rand3 = mulberry32(seed ^ 0xC0FFEE);
+  const rand4 = mulberry32(seed ^ 0xF00DBABE);
 
+  const noiseE = createNoise2D(seed);
+  const noiseM = createNoise2D(seed ^ 0xDEADBEEF);
+  const noiseT = createNoise2D(seed ^ 0xC0FFEE);
+  const noiseR = createNoise2D(seed ^ 0xBADF00D);   // ridge/continent noise
+
+  // ── Continent mask per world shape ──────────────────────────────────────────
+  type MaskFn = (nx: number, ny: number) => number;
+  let mask: MaskFn;
+
+  if (shape === 'island') {
+    mask = (nx, ny) => Math.min(nx, 1-nx, ny, 1-ny) * 4.2;
+
+  } else if (shape === 'continents') {
+    const nC = 2 + Math.floor(rand() * 2);
+    const C = Array.from({ length: nC }, () => ({
+      cx: 0.12 + rand() * 0.76,  cy: 0.12 + rand() * 0.76,
+      rx: 0.14 + rand() * 0.20,  ry: 0.10 + rand() * 0.16,
+      rot: rand() * Math.PI,
+    }));
+    mask = (nx, ny) => {
+      let v = 0;
+      for (const c of C) {
+        const dx = nx - c.cx, dy = ny - c.cy;
+        const rx = dx * Math.cos(c.rot) + dy * Math.sin(c.rot);
+        const ry = -dx * Math.sin(c.rot) + dy * Math.cos(c.rot);
+        const d  = Math.sqrt((rx/c.rx)**2 + (ry/c.ry)**2);
+        v = Math.max(v, Math.max(0, 1.1 - d));
+      }
+      return v;
+    };
+
+  } else if (shape === 'archipelago') {
+    const nI = 12 + Math.floor(rand() * 10);
+    const islands = Array.from({ length: nI }, () => ({
+      cx: 0.04 + rand() * 0.92,  cy: 0.04 + rand() * 0.92,
+      r:  0.025 + rand() * 0.06,
+    }));
+    mask = (nx, ny) => {
+      let v = 0;
+      for (const isl of islands) {
+        const d = Math.hypot((nx-isl.cx)/isl.r, (ny-isl.cy)/isl.r);
+        v = Math.max(v, Math.max(0, 1 - d));
+      }
+      return v;
+    };
+
+  } else {
+    // Pangaea: one huge central landmass
+    mask = (nx, ny) => {
+      const dx = nx - 0.5, dy = ny - 0.5;
+      const jitter = Math.sin(nx * 8) * 0.06 + Math.cos(ny * 7) * 0.05;
+      return Math.max(0, 1 - Math.sqrt(dx*dx*1.5 + dy*dy*1.2) * 1.3 + jitter);
+    };
+  }
+
+  // ── Terrain roughness → noise params ────────────────────────────────────────
+  const oct   = 4 + Math.round(roughness * 2);   // 4-6 octaves
+  const scale = 1.8 + roughness * 1.2;            // 1.8-3.0
+
+  // ── Climate → temperature offset ─────────────────────────────────────────────
+  const climateBias = climate === 'tropical' ? 0.30 : climate === 'arctic' ? -0.30 : 0;
+
+  // ── Build cell grid ──────────────────────────────────────────────────────────
   const cells: RealmCell[][] = Array.from({ length: H }, (_, cy) =>
     Array.from({ length: W }, (_, cx) => {
       const nx = cx / W, ny = cy / H;
-      const edge  = Math.min(nx, 1-nx, ny, 1-ny) * 4;
-      const elev  = Math.min(1, fbmR(noiseE, nx, ny, 5, 2.5) * 0.85 + 0.15) * Math.min(1, edge);
-      const moist = fbmR(noiseM, nx+5, ny+5, 3, 1.8);
-      const latT  = 1 - Math.abs(ny - 0.5) * 1.4;
-      const elvT  = 1 - Math.max(0, elev - 0.5) * 1.6;
-      const temp  = Math.max(0, Math.min(1, latT*0.7 + elvT*0.3 + fbmR(noiseT, nx+10, ny+10, 2, 1.2)*0.15));
+
+      // Elevation: continent mask + fBm noise
+      const mVal   = Math.min(1, mask(nx, ny));
+      const noise  = fbmR(noiseE, nx, ny, oct, scale);
+      const ridge  = Math.abs(fbmR(noiseR, nx*1.3, ny*1.3, 3, 3.0) - 0.5) * 2;
+      const elev   = Math.min(1, mVal * (noise * 0.75 + ridge * 0.25 * roughness + 0.2));
+
+      // Moisture
+      const moist  = fbmR(noiseM, nx+5, ny+5, 3, 1.8);
+
+      // Temperature: latitude + elevation + climate bias + noise jitter
+      const latT   = 1 - Math.abs(ny - 0.5) * 1.5;
+      const elvT   = 1 - Math.max(0, elev - 0.4) * 2.0;
+      const tNoise = fbmR(noiseT, nx+10, ny+10, 2, 1.2) * 0.12;
+      const temp   = Math.max(0, Math.min(1, latT*0.65 + elvT*0.35 + tNoise + climateBias));
+
       return { elevation: elev, moisture: moist, biome: classifyBiome(elev, moist, temp) };
     }),
   );
 
-  // Rivers: downhill gradient descent from high-elevation sources
+  // ── Rivers ───────────────────────────────────────────────────────────────────
   const rivers: RealmRiver[] = [];
   const DIRS8: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]];
-  const rand4 = mulberry32(seed ^ 0xF00D);
-  for (let y = 2; y < H-2; y++) for (let x = 2; x < W-2; x++) {
-    const c = cells[y]![x]!;
-    if (c.elevation > 0.72 && c.biome !== 'deep_ocean' && c.biome !== 'ocean' && c.biome !== 'snow' && rand4() > 0.95) {
-      const pts: Vec2[] = [{ x: x+0.5, y: y+0.5 }];
-      let [cx, cy] = [x, y];
-      const visited = new Set<string>();
-      for (let step = 0; step < 180; step++) {
-        const key = `${cx},${cy}`;
-        if (visited.has(key)) break;
-        visited.add(key);
-        const b = cells[cy]![cx]!.biome;
-        if (b === 'ocean' || b === 'deep_ocean') break;
-        const curE = cells[cy]![cx]!.elevation;
-        let lowestE = curE-0.001, nx2 = cx, ny2 = cy;
-        for (const [dy, dx] of DIRS8) {
-          const ney = cy+dy, nex = cx+dx;
-          if (ney < 0||ney >= H||nex < 0||nex >= W) continue;
-          const e = cells[ney]![nex]!.elevation;
-          if (e < lowestE) { lowestE = e; nx2 = nex; ny2 = ney; }
+  let riverCount = 0;
+  const maxRivers = 4 + Math.floor(roughness * 8);
+
+  for (let y = 2; y < H-2 && riverCount < maxRivers; y++) {
+    for (let x = 2; x < W-2 && riverCount < maxRivers; x++) {
+      const c = cells[y]![x]!;
+      if (c.elevation > 0.68 && c.biome !== 'deep_ocean' && c.biome !== 'ocean' && c.biome !== 'snow' && rand4() > 0.965) {
+        const pts: Vec2[] = [{ x: x+0.5, y: y+0.5 }];
+        let [cx, cy2] = [x, y];
+        const visited = new Set<string>();
+        for (let step = 0; step < 220; step++) {
+          const key = `${cx},${cy2}`;
+          if (visited.has(key)) break;
+          visited.add(key);
+          const b = cells[cy2]![cx]!.biome;
+          if (b === 'ocean' || b === 'deep_ocean') break;
+          const curE = cells[cy2]![cx]!.elevation;
+          let lowestE = curE - 0.0005, nx2 = cx, ny2 = cy2;
+          for (const [dy, dx] of DIRS8) {
+            const ney = cy2+dy, nex = cx+dx;
+            if (ney < 0||ney >= H||nex < 0||nex >= W) continue;
+            const e = cells[ney]![nex]!.elevation;
+            if (e < lowestE) { lowestE = e; nx2 = nex; ny2 = ney; }
+          }
+          if (nx2 === cx && ny2 === cy2) break;
+          cx = nx2; cy2 = ny2;
+          pts.push({ x: cx+0.5, y: cy2+0.5 });
         }
-        if (nx2 === cx && ny2 === cy) break;
-        cx = nx2; cy = ny2;
-        pts.push({ x: cx+0.5, y: cy+0.5 });
+        if (pts.length >= 6) { rivers.push({ points: chaikin(pts, 2) }); riverCount++; }
       }
-      if (pts.length >= 5) rivers.push({ points: chaikin(pts, 2) });
-      if (rivers.length >= 10) break;
     }
-    if (rivers.length >= 10) break;
   }
 
-  // Settlements: Poisson-disk on valid biomes
+  // ── Settlements ──────────────────────────────────────────────────────────────
   const VALID = new Set<RealmBiome>(['grassland','forest','savanna','taiga','desert']);
   const validCells: Vec2[] = [];
   for (let y = 4; y < H-4; y++) for (let x = 4; x < W-4; x++)
@@ -3089,32 +3165,33 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
 
   const sv = [...validCells].sort(() => rand() - 0.5);
   const settlements: RealmSettlement[] = [];
-  const MIN_DIST = Math.floor(Math.min(W,H) / (nSettlements+1));
-  const FACTIONS: SettlementFaction[] = ['human','elven','dwarven','orcish','vulperia','slime'];
+  const MIN_DIST = Math.floor(Math.min(W,H) / (nSettlements + 2));
+  const FACTIONS: SettlementFaction[] = ['human','elven','dwarven','orcish','vulperia','slime','vampire','undead','fae'];
+
   for (const cell of sv) {
     if (settlements.length >= nSettlements) break;
-    const td = Math.hypot(cell.x-W/2, cell.y-H/2);
-    if (td < MIN_DIST*0.6) continue;
+    const td = Math.hypot(cell.x - W/2, cell.y - H/2);
+    if (td < MIN_DIST * 0.5) continue;
     if (settlements.every(s => Math.hypot(s.x-cell.x, s.y-cell.y) >= MIN_DIST)) {
       const b = cells[cell.y]![cell.x]!.biome;
-      const sz: 'village'|'town'|'city' = td > MIN_DIST*2.5 && b==='forest' ? 'city' : td > MIN_DIST*1.5 ? 'town' : 'village';
-      settlements.push({ x: cell.x, y: cell.y, name: realmName(rand), size: sz, faction: FACTIONS[Math.floor(rand()*FACTIONS.length)]! });
+      const sz: 'village'|'town'|'city' = td > MIN_DIST*2.5 && (b==='forest'||b==='grassland') ? 'city'
+                                        : td > MIN_DIST*1.2 ? 'town' : 'village';
+      const faction = FACTIONS[Math.floor(rand() * FACTIONS.length)]!;
+      settlements.push({ x: cell.x, y: cell.y, name: realmName(rand), size: sz, faction });
     }
   }
 
-  // Tower at centre (nudge to land if needed)
+  // Tower at map centre (nudge to land)
   let [towerX, towerY] = [Math.floor(W/2), Math.floor(H/2)];
-  if (cells[towerY]![towerX]!.biome === 'ocean' || cells[towerY]![towerX]!.biome === 'deep_ocean') {
-    for (let r = 1; r < 12; r++) {
-      let found = false;
-      for (const [dy, dx] of DIRS8) {
-        const ty = towerY+dy*r, tx = towerX+dx*r;
-        if (ty >= 0&&ty < H&&tx >= 0&&tx < W) {
-          const b = cells[ty]![tx]!.biome;
-          if (b !== 'ocean'&&b !== 'deep_ocean') { towerX = tx; towerY = ty; found = true; break; }
-        }
+  for (let r = 0; r < 14; r++) {
+    const b = cells[towerY]![towerX]!.biome;
+    if (b !== 'ocean' && b !== 'deep_ocean') break;
+    for (const [dy, dx] of DIRS8) {
+      const ty = towerY+dy*Math.ceil(r/2), tx = towerX+dx*Math.ceil(r/2);
+      if (ty >= 0&&ty < H&&tx >= 0&&tx < W) {
+        const tb = cells[ty]![tx]!.biome;
+        if (tb !== 'ocean' && tb !== 'deep_ocean') { towerX = tx; towerY = ty; break; }
       }
-      if (found) break;
     }
   }
 
@@ -3124,69 +3201,139 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
 export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d')!;
   const { cells, W, H, rivers, settlements, towerX, towerY, seed } = data;
-  const CELL = Math.min(Math.floor((canvas.width-4)/W), Math.floor((canvas.height-4)/H));
-  const offX = Math.floor((canvas.width  - W*CELL)/2);
-  const offY = Math.floor((canvas.height - H*CELL)/2);
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H)
+  ));
+  const offX = Math.floor((canvas.width  - W*CELL) / 2);
+  const offY = Math.floor((canvas.height - H*CELL) / 2);
 
+  // Background (outer ocean)
   ctx.fillStyle = '#1a2840'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Biome cells
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    ctx.fillStyle = REALM_BIOME_COLOR[cells[y]![x]!.biome];
-    ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
-  }
-
-  // Elevation highlight on mountains
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const c = cells[y]![x]!;
-    if (c.biome !== 'ocean' && c.biome !== 'deep_ocean' && c.elevation > 0.65) {
-      ctx.fillStyle = `rgba(255,255,255,${((c.elevation-0.65)/0.35)*0.22})`;
+  // ── Biome cells with ocean depth shading ──────────────────────────────────
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const c = cells[y]![x]!;
+      if (c.biome === 'deep_ocean') {
+        // Depth gradient: deeper = darker
+        const depth = Math.max(0, 1 - c.elevation / 0.28);
+        const r = Math.round(20 + (1-depth)*20),  g = Math.round(32 + (1-depth)*28),  b = Math.round(70 + (1-depth)*30);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else if (c.biome === 'ocean') {
+        const t = Math.max(0, 1 - (c.elevation - 0.28) / 0.07);
+        const r = Math.round(50 + t*15),  g = Math.round(80 + t*15),  b = Math.round(160 + t*20);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else {
+        ctx.fillStyle = REALM_BIOME_COLOR[c.biome];
+      }
       ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
     }
   }
 
-  // Mountain △ symbols
-  if (CELL >= 4) {
-    ctx.fillStyle = 'rgba(50,40,30,0.6)'; ctx.font = `${CELL+1}px sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  // ── Elevation shading on land (mountain height gradient) ──────────────────
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
       const c = cells[y]![x]!;
-      if (c.elevation > 0.78 && c.biome !== 'ocean' && c.biome !== 'deep_ocean')
-        ctx.fillText('△', offX+x*CELL+CELL/2, offY+y*CELL+CELL/2);
+      if (c.biome === 'ocean' || c.biome === 'deep_ocean') continue;
+      if (c.elevation > 0.60) {
+        const t = (c.elevation - 0.60) / 0.40;
+        ctx.fillStyle = `rgba(255,255,255,${t * 0.32})`;
+        ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
+      }
+      // Subtle terrain shadow (south face slightly darker)
+      if (c.elevation > 0.45 && y > 0) {
+        const above = cells[y-1]![x]!.elevation;
+        if (above > c.elevation + 0.04) {
+          ctx.fillStyle = `rgba(0,0,0,0.12)`;
+          ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
+        }
+      }
     }
   }
 
-  // Forest stipple dots
-  if (CELL >= 4) {
-    ctx.fillStyle = 'rgba(20,50,20,0.45)';
+  // ── Contour lines ─────────────────────────────────────────────────────────
+  if (CELL >= 3) {
+    for (const [level, alpha] of [[0.50, 0.12],[0.62, 0.16],[0.74, 0.22],[0.85, 0.28]] as [number,number][]) {
+      ctx.strokeStyle = `rgba(70,55,35,${alpha})`;
+      ctx.lineWidth = 0.5;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const e = cells[y]![x]!.elevation;
+        const eR = cells[y]?.[x+1]?.elevation ?? e;
+        const eD = cells[y+1]?.[x]?.elevation ?? e;
+        if ((e >= level) !== (eR >= level)) {
+          ctx.beginPath(); ctx.moveTo(offX+(x+1)*CELL, offY+y*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); ctx.stroke();
+        }
+        if ((e >= level) !== (eD >= level)) {
+          ctx.beginPath(); ctx.moveTo(offX+x*CELL, offY+(y+1)*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // ── Forest stipple ────────────────────────────────────────────────────────
+  if (CELL >= 3) {
+    ctx.fillStyle = 'rgba(20,50,20,0.42)';
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
-      if (cells[y]![x]!.biome === 'forest' && (x+y*3)%3 === 0) {
-        ctx.beginPath(); ctx.arc(offX+x*CELL+CELL/2, offY+y*CELL+CELL/2, CELL*0.2, 0, Math.PI*2); ctx.fill();
+      if (cells[y]![x]!.biome === 'forest' && (x*3 + y*7) % 5 === 0) {
+        ctx.beginPath(); ctx.arc(offX+x*CELL+CELL/2, offY+y*CELL+CELL/2, CELL*0.22, 0, Math.PI*2); ctx.fill();
       }
   }
 
-  // Coastline
-  ctx.strokeStyle = 'rgba(20,30,80,0.5)'; ctx.lineWidth = 0.7;
+  // ── Mountain △ symbols (only when cells are large enough) ─────────────────
+  if (CELL >= 5) {
+    ctx.font = `${CELL+1}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = cells[y]![x]!;
+      if (c.elevation > 0.78 && c.biome !== 'ocean' && c.biome !== 'deep_ocean') {
+        ctx.fillStyle = c.elevation > 0.88 ? 'rgba(240,240,255,0.7)' : 'rgba(60,50,35,0.6)';
+        ctx.fillText('△', offX+x*CELL+CELL/2, offY+y*CELL+CELL/2);
+      }
+    }
+  }
+
+  // ── Coastline border ───────────────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(20,30,80,0.45)'; ctx.lineWidth = 0.7;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const isO = (cells[y]![x]!.biome==='ocean'||cells[y]![x]!.biome==='deep_ocean');
+    const isO = cells[y]![x]!.biome === 'ocean' || cells[y]![x]!.biome === 'deep_ocean';
     for (const [dy, dx] of [[0,1],[1,0]] as [number,number][]) {
       const ny2=y+dy, nx2=x+dx;
       if (ny2>=H||nx2>=W) continue;
-      const nO = (cells[ny2]![nx2]!.biome==='ocean'||cells[ny2]![nx2]!.biome==='deep_ocean');
+      const nO = cells[ny2]![nx2]!.biome === 'ocean' || cells[ny2]![nx2]!.biome === 'deep_ocean';
       if (isO!==nO) {
         ctx.beginPath();
-        if (dx===1) { ctx.moveTo(offX+(x+1)*CELL,offY+y*CELL); ctx.lineTo(offX+(x+1)*CELL,offY+(y+1)*CELL); }
-        else        { ctx.moveTo(offX+x*CELL,offY+(y+1)*CELL); ctx.lineTo(offX+(x+1)*CELL,offY+(y+1)*CELL); }
+        if (dx===1) { ctx.moveTo(offX+(x+1)*CELL, offY+y*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); }
+        else        { ctx.moveTo(offX+x*CELL, offY+(y+1)*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); }
         ctx.stroke();
       }
     }
   }
 
-  // Rivers
-  ctx.strokeStyle = '#5090e0'; ctx.lineWidth = Math.max(1, CELL*0.45);
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (const river of rivers) {
+  // ── Settlement roads ───────────────────────────────────────────────────────
+  if (settlements.length > 1) {
+    ctx.strokeStyle = 'rgba(170,140,70,0.55)'; ctx.lineWidth = 0.8; ctx.setLineDash([2,3]);
+    for (let i = 0; i < settlements.length; i++) {
+      for (let j = i+1; j < settlements.length; j++) {
+        const d = Math.hypot(settlements[i].x - settlements[j].x, settlements[i].y - settlements[j].y);
+        if (d < W / 3.5) {
+          ctx.beginPath();
+          ctx.moveTo(offX+(settlements[i].x+0.5)*CELL, offY+(settlements[i].y+0.5)*CELL);
+          ctx.lineTo(offX+(settlements[j].x+0.5)*CELL, offY+(settlements[j].y+0.5)*CELL);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  // ── Rivers ────────────────────────────────────────────────────────────────
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for (let ri = 0; ri < rivers.length; ri++) {
+    const river = rivers[ri]!;
     if (river.points.length < 2) continue;
+    // Rivers get slightly wider downstream
+    const w = Math.max(0.8, Math.min(2.5, CELL * 0.4 + ri * 0.1));
+    ctx.strokeStyle = '#6090d8'; ctx.lineWidth = w;
     ctx.beginPath();
     river.points.forEach((p, i) => {
       const px = offX+p.x*CELL, py = offY+p.y*CELL;
@@ -3195,53 +3342,79 @@ export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
     ctx.stroke();
   }
 
-  // Tower hexagon
+  // ── Tower ─────────────────────────────────────────────────────────────────
   const tx = offX+(towerX+0.5)*CELL, ty2 = offY+(towerY+0.5)*CELL;
-  const tr = Math.max(4, CELL*1.4);
-  ctx.strokeStyle='#f0d020'; ctx.lineWidth=1.5;
-  ctx.beginPath();
-  for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)):ctx.lineTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)); }
-  ctx.closePath(); ctx.stroke();
+  const tr = Math.max(3, CELL*1.4);
+  // Glow
+  ctx.strokeStyle = 'rgba(240,200,30,0.3)'; ctx.lineWidth = 4;
+  ctx.beginPath(); for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*1.5*Math.cos(a),ty2+tr*1.5*Math.sin(a)):ctx.lineTo(tx+tr*1.5*Math.cos(a),ty2+tr*1.5*Math.sin(a)); } ctx.closePath(); ctx.stroke();
+  // Hex ring
+  ctx.strokeStyle = '#f0d020'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)):ctx.lineTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)); } ctx.closePath(); ctx.stroke();
   ctx.fillStyle='#f0d020'; ctx.font=`${Math.max(6,CELL)}px sans-serif`;
   ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('⬡',tx,ty2);
 
-  // Settlements
-  const dotR = Math.max(2, CELL*0.7);
-  ctx.font=`${Math.max(7,CELL+1)}px Georgia, serif`; ctx.textBaseline='top';
+  // ── Settlements ───────────────────────────────────────────────────────────
+  const dotR = Math.max(2, CELL*0.75);
+  ctx.font = `${Math.max(7,Math.min(10,CELL+2))}px Georgia, serif`; ctx.textBaseline='top';
   for (const s of settlements) {
     const sx=offX+(s.x+0.5)*CELL, sy=offY+(s.y+0.5)*CELL;
-    ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.arc(sx,sy,dotR+1,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(sx,sy,dotR+1.5,0,Math.PI*2); ctx.fill();
     ctx.fillStyle=SETTLEMENT_SIZE_COLOR[s.size]; ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='rgba(240,230,200,0.9)'; ctx.textAlign='center'; ctx.fillText(s.name,sx,sy+dotR+1);
+    // White ring for cities
+    if (s.size === 'city') { ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=0.8; ctx.beginPath(); ctx.arc(sx,sy,dotR+0.5,0,Math.PI*2); ctx.stroke(); }
+    ctx.fillStyle='rgba(240,230,200,0.95)'; ctx.textAlign='center'; ctx.fillText(s.name,sx,sy+dotR+1);
   }
 
-  // Frame
+  // ── Compass rose ───────────────────────────────────────────────────────────
+  const cr = Math.max(8, CELL * 2.5);
+  const crx = offX + W*CELL - cr - 8, cry = offY + H*CELL - cr - 8;
+  ctx.save(); ctx.translate(crx, cry);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(0, 0, cr*1.1, 0, Math.PI*2); ctx.fill();
+  // N petal
+  ctx.fillStyle = '#d8c888';
+  ctx.beginPath(); ctx.moveTo(0,-cr); ctx.lineTo(cr*0.28,0); ctx.lineTo(0,cr*0.38); ctx.closePath(); ctx.fill();
+  // S petal
+  ctx.fillStyle = '#6a6050';
+  ctx.beginPath(); ctx.moveTo(0,cr); ctx.lineTo(-cr*0.28,0); ctx.lineTo(0,-cr*0.38); ctx.closePath(); ctx.fill();
+  // E/W bars
+  ctx.strokeStyle = '#d8c888'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-cr*0.7,0); ctx.lineTo(cr*0.7,0); ctx.stroke();
+  // N label
+  ctx.fillStyle='#d8c888'; ctx.font=`bold ${Math.max(6,cr*0.5)}px Georgia,serif`;
+  ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText('N',0,-cr-2);
+  ctx.restore();
+
+  // ── Frame ─────────────────────────────────────────────────────────────────
   ctx.strokeStyle='#8a7a58'; ctx.lineWidth=2;
   ctx.strokeRect(offX, offY, W*CELL, H*CELL);
+  // Inner thin frame
+  ctx.strokeStyle='rgba(140,120,80,0.4)'; ctx.lineWidth=0.8;
+  ctx.strokeRect(offX+3, offY+3, W*CELL-6, H*CELL-6);
 
-  // Biome legend
+  // ── Biome legend ──────────────────────────────────────────────────────────
   const present = new Set(data.cells.flat().map(c=>c.biome));
   const lbs = (['ocean','beach','desert','savanna','grassland','forest','taiga','tundra','snow'] as RealmBiome[]).filter(b=>present.has(b));
   const LH=11, LX=offX+5, LY=offY+5;
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(LX-2, LY-2, 86, LH*lbs.length+4);
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(LX-2, LY-2, 86, LH*lbs.length+4);
   lbs.forEach((b, i) => {
     ctx.fillStyle=REALM_BIOME_COLOR[b]; ctx.fillRect(LX, LY+i*LH+2, 8, 7);
-    ctx.fillStyle='rgba(240,235,220,0.9)'; ctx.font='7px Georgia, serif';
+    ctx.fillStyle='rgba(240,235,220,0.92)'; ctx.font='7px Georgia, serif';
     ctx.textAlign='left'; ctx.textBaseline='top'; ctx.fillText(REALM_BIOME_LABEL[b], LX+11, LY+i*LH+2);
   });
 
-  // Settlement key
+  // ── Settlement size key ───────────────────────────────────────────────────
   const KX=offX+W*CELL-68, KY=offY+5;
-  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(KX-2, KY-2, 68, 40);
-  (['village','Village'] as const);
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(KX-2, KY-2, 68, 40);
   let ki=0;
   for (const [sz, lab] of [['village','Village'],['town','Town'],['city','City']] as Array<['village'|'town'|'city', string]>) {
     ctx.fillStyle=SETTLEMENT_SIZE_COLOR[sz]; ctx.beginPath(); ctx.arc(KX+5, KY+5+ki*12, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle='rgba(240,235,220,0.9)'; ctx.font='7px Georgia, serif';
+    ctx.fillStyle='rgba(240,235,220,0.92)'; ctx.font='7px Georgia, serif';
     ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(lab, KX+11, KY+5+ki*12);
     ki++;
   }
 
+  // ── Title ─────────────────────────────────────────────────────────────────
   ctx.fillStyle='rgba(220,210,180,0.75)'; ctx.font='10px Georgia, serif';
   ctx.textAlign='center'; ctx.textBaseline='bottom';
   ctx.fillText(`Realm  ·  seed ${seed}  ·  ${settlements.length} settlements`, canvas.width/2, canvas.height-4);
@@ -3253,147 +3426,53 @@ let currentRealmData: RealmData | null = null;
 
 function generateRealmView() {
   const seed = parseInt(seedInput.value) || Date.now();
-  const size = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
-  const REALM_SIZES: Record<number, [number,number]> = {1:[64,48],2:[96,72],3:[128,96]};
+  const size     = parseInt((document.getElementById('realm-size')         as HTMLInputElement)?.value ?? '2');
+  const nS       = parseInt((document.getElementById('realm-settlements')  as HTMLInputElement)?.value ?? '6');
+  const shape    = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement)?.dataset.shape as RealmShape ?? 'island';
+  const climate  = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate ?? 'temperate';
+  const roughness = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+  const REALM_SIZES: Record<number, [number,number]> = {1:[64,48],2:[96,72],3:[160,120],4:[220,164]};
   const [W, H] = REALM_SIZES[size] ?? REALM_SIZES[2]!;
-  const nS = parseInt((document.getElementById('realm-settlements') as HTMLInputElement)?.value ?? '6');
   const t0 = performance.now();
-  currentRealmData = generateRealmData(seed, W, H, nS);
+  currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);
   drawRealm(currentRealmData, canvas);
   const ms = (performance.now()-t0).toFixed(1);
+  const landCells = currentRealmData.cells.flat().filter(c => c.biome !== 'ocean' && c.biome !== 'deep_ocean').length;
   genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
+  void landCells;
 }
 
 function redrawRealm() { if (currentRealmData) drawRealm(currentRealmData, canvas); }
 
-// ── Ward legend ───────────────────────────────────────────────────────────────
-// (declared earlier in file — this is the duplicate, remove it)
 
-// ── Studio mode tab switching ─────────────────────────────────────────────────
+// ── Realm controls event wiring ───────────────────────────────────────────────
 
-document.getElementById('studio-tabs')!.addEventListener('click', e => {
-  const tab = (e.target as HTMLElement).closest('.studio-tab') as HTMLElement | null;
-  if (!tab) return;
-  const mode = tab.dataset.mode as StudioMode;
-  if (mode === studioMode) return;
-  studioMode = mode;
-  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
-  tab.classList.add('active');
-  document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
-  document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
-  document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
-  document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
-  (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
-  if (mode === 'dungeon') {
-    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
-    hoverEl.textContent = '';
-    if (!currentDungeonPlan) generateDungeonView();
-    else redrawDungeon();
-  } else if (mode === 'cave') {
-    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
-    hoverEl.textContent = '';
-    if (!currentCaveData) generateCaveView();
-    else redrawCave();
-  } else if (mode === 'realm') {
-    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
-    hoverEl.textContent = '';
-    if (!currentRealmData) generateRealmView();
-    else redrawRealm();
-  } else {
-    redraw();
-  }
-});
-
-// ── Dungeon controls event wiring ─────────────────────────────────────────────
-
-document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  const isTower = pill.dataset.dtype === 'tower';
-  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
-  generateDungeonView();
-});
-
-document.getElementById('dfloors')!.addEventListener('input', () => {
-  (document.getElementById('dfloors-val') as HTMLElement).textContent =
-    (document.getElementById('dfloors') as HTMLInputElement).value;
-  generateDungeonView();
-});
-
-document.getElementById('dfloor')?.addEventListener('input', () => {
-  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
-  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
-  redrawDungeon();
-});
-
-document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `dungeon-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
-
-// ── Cave controls event wiring ────────────────────────────────────────────────
-
-document.getElementById('cave-type-pills')!.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  const isCave = pill.dataset.ctype === 'cave';
-  document.getElementById('cave-biome-section')!.style.display  = isCave ? '' : 'none';
-  document.getElementById('glade-biome-section')!.style.display = isCave ? 'none' : '';
-  document.getElementById('cave-density-row')!.style.display    = isCave ? '' : 'none';
-  currentCaveData = null;
-  generateCaveView();
-});
-
-for (const id of ['cave-biome-pills', 'glade-biome-pills'] as const) {
-  document.getElementById(id)!.addEventListener('click', e => {
+for (const id of ['realm-shape-pills', 'realm-climate-pills'] as const) {
+  document.getElementById(id)?.addEventListener('click', e => {
     const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
     if (!pill) return;
     document.querySelectorAll(`#${id} .pill`).forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
-    currentCaveData = null;
-    generateCaveView();
+    currentRealmData = null; generateRealmView();
   });
 }
 
-const CAVE_SIZES = ['', 'S', 'M', 'L'];
-document.getElementById('cave-size')!.addEventListener('input', () => {
-  const v = parseInt((document.getElementById('cave-size') as HTMLInputElement).value);
-  (document.getElementById('cave-size-val') as HTMLElement).textContent = CAVE_SIZES[v] ?? 'M';
-  currentCaveData = null;
-  generateCaveView();
-});
-
-document.getElementById('cave-density')!.addEventListener('input', () => {
-  const v = (document.getElementById('cave-density') as HTMLInputElement).value;
-  (document.getElementById('cave-density-val') as HTMLElement).textContent = (parseInt(v) / 100).toFixed(2);
-  currentCaveData = null;
-  generateCaveView();
-});
-
-document.getElementById('btn-cave-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `cave-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
-
-// ── Realm controls event wiring ───────────────────────────────────────────────
-
+const REALM_SIZE_LABELS = ['','S','M','L','XL'];
 document.getElementById('realm-size')?.addEventListener('input', () => {
   const v = parseInt((document.getElementById('realm-size') as HTMLInputElement).value);
-  (document.getElementById('realm-size-val') as HTMLElement).textContent = ['','S','M','L'][v] ?? 'M';
+  (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
   currentRealmData = null; generateRealmView();
 });
 
 document.getElementById('realm-settlements')?.addEventListener('input', () => {
   const v = (document.getElementById('realm-settlements') as HTMLInputElement).value;
   (document.getElementById('realm-settlements-val') as HTMLElement).textContent = v;
+  currentRealmData = null; generateRealmView();
+});
+
+document.getElementById('realm-roughness')?.addEventListener('input', () => {
+  const v = Math.round(parseFloat((document.getElementById('realm-roughness') as HTMLInputElement).value));
+  (document.getElementById('realm-roughness-val') as HTMLElement).textContent = ['Flat','Gentle','Moderate','Rugged','Wild'][Math.round(v/25)] ?? 'Moderate';
   currentRealmData = null; generateRealmView();
 });
 
