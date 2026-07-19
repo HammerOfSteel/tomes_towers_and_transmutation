@@ -27,7 +27,7 @@ import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
-import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularCloudTexture } from './planet-renderer';
+import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -3445,7 +3445,7 @@ export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
 // Total cost: ~5–30 ms for a 600×600 canvas. No WebGL required.
 
 /** Value-noise cloud texture (256×128), precomputed once per seed. */
-function buildCloudTexture(W: number, H: number, seed: number): Float32Array {
+function buildCloudGrid(W: number, H: number, seed: number): Float32Array {
   const tex = new Float32Array(W * H);
   const rand = mulberry32(seed ^ 0x514C100D);
 
@@ -3511,7 +3511,7 @@ export function drawRealmPlanet(data: RealmData, canvas: HTMLCanvasElement): voi
 
   // Precompute cloud texture (256×128) — fast value noise
   const CLOUD_W = 256, CLOUD_H = 128;
-  const cloudTex = buildCloudTexture(CLOUD_W, CLOUD_H, seed);
+  const cloudTex = buildCloudGrid(CLOUD_W, CLOUD_H, seed);
 
   // Build image per-pixel using ImageData
   const imgData = ctx.createImageData(CW, CH);
@@ -3737,6 +3737,8 @@ function showPlanetCanvas(show: boolean): void {
   planet3dCanvas.style.display = show ? '' : 'none';
   canvas.style.display         = show ? 'none' : '';
   overlay.style.display        = show ? 'none' : '';
+  const layerCtrl = document.getElementById('planet-layer-controls');
+  if (layerCtrl) layerCtrl.style.display = show ? '' : 'none';
 }
 
 function redrawRealm(): void {
@@ -3749,7 +3751,8 @@ function redrawRealm(): void {
     // Build textures from realm data
     const dayTex   = buildDayTexture(d.cells, d.W, d.H);
     const nightTex = buildNightTexture(d.settlements.map(s => ({ x: s.x, y: s.y, size: s.size })), d.W, d.H);
-    const scTex    = buildSpecularCloudTexture(d.cells, d.W, d.H, d.seed);
+    const specTex  = buildSpecularTexture(d.cells, d.W, d.H);
+    const cloudTex = buildCloudTexture(d.seed);
 
     // Sun direction — bias toward front of planet so day side faces camera
     const sunLon  = ((d.seed * 0.00137) % 1) * Math.PI * 2;
@@ -3761,9 +3764,14 @@ function redrawRealm(): void {
     ).normalize();
 
     // Atmosphere colour from climate / dominant biome
-    const atmColor = new THREE.Color(0x4896ff);
+    const atmColor = new THREE.Color(0xd0e8ff);   // soft haze, not vivid blue
 
-    pr.loadPlanet({ day: dayTex, night: nightTex, specularCloud: scTex, sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed });
+    pr.loadPlanet({ day: dayTex, night: nightTex, specular: specTex, cloud: cloudTex, sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed });
+    // Apply current toggle states
+    const showClouds = (document.getElementById('planet-show-clouds') as HTMLInputElement)?.checked ?? true;
+    const showAtmos  = (document.getElementById('planet-show-atmos')  as HTMLInputElement)?.checked ?? true;
+    pr.setVisible('clouds',     showClouds);
+    pr.setVisible('atmosphere', showAtmos);
     pr.start();
   } else {
     showPlanetCanvas(false);
@@ -3906,6 +3914,18 @@ document.getElementById('btn-cave-png')?.addEventListener('click', () => {
   link.download = `cave-${seedInput.value}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
+});
+
+// ── Planet layer toggles ──────────────────────────────────────────────────────
+
+document.getElementById('planet-show-clouds')?.addEventListener('change', e => {
+  planetRenderer?.setVisible('clouds', (e.target as HTMLInputElement).checked);
+});
+document.getElementById('planet-show-atmos')?.addEventListener('change', e => {
+  planetRenderer?.setVisible('atmosphere', (e.target as HTMLInputElement).checked);
+});
+document.getElementById('planet-auto-rotate')?.addEventListener('change', e => {
+  planetRenderer?.setAutoRotate((e.target as HTMLInputElement).checked);
 });
 
 // ── Realm controls event wiring ───────────────────────────────────────────────

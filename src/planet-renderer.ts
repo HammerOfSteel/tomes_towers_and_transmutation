@@ -45,8 +45,8 @@ const PLANET_FRAG = /* glsl */`
     vec3 viewDir  = normalize(cameraPosition - vPosition);
     float sunDot  = dot(vNormal, uSunDirection);
 
-    // Day / night blend (soft terminator)
-    float dayMix = smoothstep(-0.30, 0.45, sunDot);
+    // Soft terminator — tighter so more of the front hemisphere is lit
+    float dayMix = smoothstep(-0.12, 0.30, sunDot);
 
     // Texture samples
     vec3  day       = texture2D(uDayTexture,      vUv).rgb;
@@ -69,10 +69,10 @@ const PLANET_FRAG = /* glsl */`
     float spec    = pow(max(0.0, dot(refl, viewDir)), 42.0) * specMask * dayMix;
     color        += vec3(0.65, 0.85, 1.0) * spec * 0.8;
 
-    // Atmosphere rim (Fresnel-like limb brightening)
+    // Atmosphere rim — subtle haze only, does not overpower terrain
     float rim = 1.0 - max(0.0, dot(vNormal, viewDir));
-    rim = pow(rim, 3.5) * (0.5 + 0.5 * dayMix);
-    color = mix(color, uAtmosphereColor, rim * 0.55);
+    rim = pow(rim, 4.0) * (0.4 + 0.6 * dayMix);
+    color = mix(color, uAtmosphereColor, rim * 0.18);
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -101,8 +101,54 @@ const ATMOS_FRAG = /* glsl */`
     float rim     = 1.0 - max(0.0, dot(vNormal, viewDir));
     rim = pow(rim, 2.2);
     float sunFacing = dot(vNormal, uSunDirection) * 0.5 + 0.5;
-    float alpha = rim * 0.72 * (0.45 + 0.55 * sunFacing);
+    float alpha = rim * 0.38 * (0.45 + 0.55 * sunFacing);
     gl_FragColor = vec4(uAtmosphereColor, alpha);
+  }
+`;
+
+// ── Cloud shader ──────────────────────────────────────────────────────────────
+
+const CLOUD_VERT = /* glsl */`
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+
+  void main() {
+    vUv      = uv;
+    vNormal  = normalize(normalMatrix * normal);
+    vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const CLOUD_FRAG = /* glsl */`
+  uniform sampler2D uCloudTex;
+  uniform float     uTime;
+  uniform vec3      uSunDirection;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+
+  void main() {
+    // Slowly drift clouds eastward
+    vec2 driftUv = vec2(mod(vUv.x + uTime * 0.007, 1.0), vUv.y);
+
+    float c = texture2D(uCloudTex, driftUv).r;
+
+    // Soft feathered cloud edge (no hard cutoff)
+    float alpha = smoothstep(0.28, 0.68, c) * 0.88;
+
+    // Day/night: fade clouds at terminator + night side
+    float sunDot = dot(normalize(vNormal), uSunDirection);
+    float day = smoothstep(-0.08, 0.25, sunDot);
+
+    // Cloud lighting: bright white top, slightly grey underside
+    vec3 viewDir = normalize(cameraPosition - vPosition);
+    float topLight = dot(normalize(vNormal), uSunDirection) * 0.3 + 0.7;
+    vec3 col = mix(vec3(0.72, 0.74, 0.82), vec3(0.98, 0.99, 1.0), topLight);
+
+    gl_FragColor = vec4(col, alpha * day);
   }
 `;
 
@@ -157,7 +203,8 @@ function mulberry32(seed: number): () => number {
 export interface PlanetTextures {
   day:          THREE.CanvasTexture;
   night:        THREE.CanvasTexture;
-  specularCloud: THREE.CanvasTexture;
+  specular:     THREE.CanvasTexture;   // R=ocean mask only
+  cloud:        THREE.CanvasTexture;   // dedicated high-quality cloud map
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   seed: number;
@@ -186,13 +233,13 @@ export class PlanetRenderer {
 
     this.scene  = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-    this.camera.position.set(0, 0, 4.5);
+    this.camera.position.set(0, 0, 6.0);
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.06;
     this.controls.enableZoom    = true;
-    this.controls.minDistance   = 2.5;
+    this.controls.minDistance   = 2.8;
     this.controls.maxDistance   = 12;
     this.controls.rotateSpeed   = 0.5;
     this.controls.autoRotate    = true;
@@ -217,7 +264,7 @@ export class PlanetRenderer {
       uniforms: {
         uDayTexture:    { value: tex.day },
         uNightTexture:  { value: tex.night },
-        uSpecularClouds:{ value: tex.specularCloud },
+        uSpecularClouds:{ value: tex.specular },
         uSunDirection:  { value: tex.sunDirection },
         uAtmosphereColor:{ value: tex.atmosphereColor },
       },
@@ -225,14 +272,19 @@ export class PlanetRenderer {
     this.planetMesh = new THREE.Mesh(sphere, planetMat);
     this.scene.add(this.planetMesh);
 
-    // ── Clouds (transparent sphere, 1% larger) ───────────────────────────
+    // ── Clouds (dedicated ShaderMaterial, soft drift animation) ──────────
     const cloudGeo = new THREE.SphereGeometry(2.022, 48, 48);
-    const cloudMat = new THREE.MeshStandardMaterial({
-      alphaMap:    tex.specularCloud,
-      transparent: true,
-      opacity:     0.78,
-      color:       new THREE.Color(0xeef4ff),
-      depthWrite:  false,
+    const cloudMat = new THREE.ShaderMaterial({
+      vertexShader:   CLOUD_VERT,
+      fragmentShader: CLOUD_FRAG,
+      side:           THREE.FrontSide,
+      transparent:    true,
+      depthWrite:     false,
+      uniforms: {
+        uCloudTex:    { value: tex.cloud },
+        uTime:        { value: 0 },
+        uSunDirection:{ value: tex.sunDirection },
+      },
     });
     this.cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
     this.scene.add(this.cloudMesh);
@@ -321,9 +373,11 @@ export class PlanetRenderer {
 
       this.controls.update();
 
-      // Animate cloud rotation
-      if (this.cloudMesh)  this.cloudMesh.rotation.y  = t * 0.06;
-      if (this.planetMesh) this.planetMesh.rotation.y = t * 0.04;
+      // Animate cloud drift via uTime uniform
+      if (this.cloudMesh) {
+        (this.cloudMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
+      }
+      if (this.planetMesh) this.planetMesh.rotation.y = t * 0.03;
 
       // Update star twinkle time
       if (this.starPoints) {
@@ -346,6 +400,15 @@ export class PlanetRenderer {
     this.renderer.setSize(w, h);
   }
 
+  setVisible(layer: 'clouds' | 'atmosphere', show: boolean): void {
+    if (layer === 'clouds'     && this.cloudMesh)  this.cloudMesh.visible  = show;
+    if (layer === 'atmosphere' && this.atmosMesh)  this.atmosMesh.visible  = show;
+  }
+
+  setAutoRotate(enabled: boolean): void {
+    this.controls.autoRotate = enabled;
+  }
+
   dispose(): void {
     this.stop();
     this.renderer.dispose();
@@ -356,16 +419,16 @@ export class PlanetRenderer {
 
 /** Biome color palette for the day texture. */
 const BIOME_RGB: Record<string, readonly [number, number, number]> = {
-  deep_ocean: [15,  32, 82],
-  ocean:      [28,  58, 140],
-  beach:      [196, 178, 100],
-  desert:     [204, 142, 50],
-  savanna:    [130, 154, 42],
-  grassland:  [45,  124, 35],
-  forest:     [22,  84, 25],
-  taiga:      [38,  82, 60],
-  tundra:     [84,  104, 120],
-  snow:       [215, 232, 245],
+  deep_ocean: [18,  45, 105],
+  ocean:      [32,  72, 168],
+  beach:      [210, 192, 112],
+  desert:     [218, 155, 58],
+  savanna:    [148, 172, 48],
+  grassland:  [52,  140, 40],
+  forest:     [24,  95,  28],
+  taiga:      [42,  92,  68],
+  tundra:     [90,  112, 130],
+  snow:       [222, 238, 250],
 };
 
 /** Build 512×256 day texture from biome cells. */
@@ -437,7 +500,114 @@ export function buildNightTexture(
   return tex;
 }
 
-/** Build 256×128 specular+cloud texture. R=ocean mask, G=cloud noise. */
+/** Build 512×256 specular mask: R=1 over ocean, R=0 over land. */
+export function buildSpecularTexture(
+  cells: Array<Array<{ biome: string }>>,
+  W: number, H: number,
+): THREE.CanvasTexture {
+  const tw = 256, th = 128;
+  const c  = document.createElement('canvas');
+  c.width = tw; c.height = th;
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(tw, th);
+  const d   = img.data;
+  for (let ty = 0; ty < th; ty++) {
+    for (let tx = 0; tx < tw; tx++) {
+      const gx = Math.max(0, Math.min(W-1, Math.floor(tx / tw * W)));
+      const gy = Math.max(0, Math.min(H-1, Math.floor(ty / th * H)));
+      const biome = cells[gy]?.[gx]?.biome ?? 'deep_ocean';
+      const isOcean = biome === 'ocean' || biome === 'deep_ocean';
+      const idx = (ty * tw + tx) * 4;
+      d[idx] = isOcean ? 215 : 12;
+      d[idx+1] = d[idx+2] = d[idx];
+      d[idx+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
+
+// ── Value noise helpers ───────────────────────────────────────────────────────
+
+function makeGrid(GW: number, GH: number, rand: () => number): Float32Array {
+  const g = new Float32Array(GW * GH);
+  for (let i = 0; i < g.length; i++) g[i] = rand();
+  return g;
+}
+
+function valueNoise2D(x: number, y: number, g: Float32Array, GW: number, GH: number): number {
+  const xi = ((Math.floor(x) % GW) + GW) % GW;
+  const yi = ((Math.floor(y) % GH) + GH) % GH;
+  const xi1= (xi + 1) % GW, yi1 = (yi + 1) % GH;
+  const fx = x - Math.floor(x), fy = y - Math.floor(y);
+  const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy);
+  const v00 = g[yi*GW+xi]!,  v10 = g[yi*GW+xi1]!;
+  const v01 = g[yi1*GW+xi]!, v11 = g[yi1*GW+xi1]!;
+  return v00*(1-ux)*(1-uy) + v10*ux*(1-uy) + v01*(1-ux)*uy + v11*ux*uy;
+}
+
+/**
+ * High-quality 512×256 cloud texture.
+ * 5-octave fBm value noise with domain warping for organic cloud formations.
+ * Latitude weighting creates realistic weather-band patterns.
+ */
+export function buildCloudTexture(seed: number): THREE.CanvasTexture {
+  const TW = 512, TH = 256;
+  const rand = mulberry32(seed ^ 0x47EA_C10D);
+
+  // Noise grids at 5 octaves
+  const G0 = makeGrid(5,  3,  rand);
+  const G1 = makeGrid(9,  5,  rand);
+  const G2 = makeGrid(17, 9,  rand);
+  const G3 = makeGrid(33, 17, rand);
+  const G4 = makeGrid(65, 33, rand);
+  // Warp grids (low-frequency, for domain warping)
+  const GW1 = makeGrid(7, 4, rand);
+  const GW2 = makeGrid(7, 4, rand);
+
+  const c   = document.createElement('canvas');
+  c.width = TW; c.height = TH;
+  const ctx = c.getContext('2d')!;
+  const img = ctx.createImageData(TW, TH);
+  const d   = img.data;
+
+  for (let ty = 0; ty < TH; ty++) {
+    for (let tx = 0; tx < TW; tx++) {
+      const u = tx / TW;
+      const v = ty / TH;
+
+      // Latitude-based cloud coverage
+      const lat = (v - 0.5) * Math.PI;
+      // Weather bands: peak coverage ~30–60° lat, less at equator and poles
+      const latBand  = Math.pow(Math.abs(Math.sin(lat * 2.2 + 0.3)), 0.4);
+      const latFactor = 0.55 + 0.45 * latBand;
+
+      // Domain warping: shift UV with low-freq noise for organic edges
+      const warpX = (valueNoise2D(u * 3, v * 3, GW1, 7, 4) - 0.5) * 0.12;
+      const warpY = (valueNoise2D(u * 3 + 4, v * 3 + 4, GW2, 7, 4) - 0.5) * 0.06;
+      const wu = u + warpX, wv = v + warpY;
+
+      // 5-octave fBm
+      const n0 = valueNoise2D(wu * 3,  wv * 1.5,  G0, 5,  3)  * 0.46;
+      const n1 = valueNoise2D(wu * 6,  wv * 3.0,  G1, 9,  5)  * 0.26;
+      const n2 = valueNoise2D(wu * 12, wv * 6.0,  G2, 17, 9)  * 0.14;
+      const n3 = valueNoise2D(wu * 24, wv * 12.0, G3, 33, 17) * 0.08;
+      const n4 = valueNoise2D(wu * 48, wv * 24.0, G4, 65, 33) * 0.06;
+      const raw = (n0 + n1 + n2 + n3 + n4) * latFactor;
+
+      // Soft threshold: gradual cloud edge rather than hard cut
+      const cloudVal = Math.pow(Math.max(0, raw - 0.32) / 0.68, 1.1);
+
+      const idx = (ty * TW + tx) * 4;
+      const v8  = Math.min(255, Math.round(cloudVal * 255));
+      d[idx] = v8; d[idx+1] = v8; d[idx+2] = v8; d[idx+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
+
+/** @deprecated use buildSpecularTexture + buildCloudTexture separately */
 export function buildSpecularCloudTexture(
   cells: Array<Array<{ biome: string; elevation: number }>>,
   W: number, H: number,
