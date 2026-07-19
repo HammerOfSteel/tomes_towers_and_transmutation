@@ -63,24 +63,24 @@ These are open questions that need investigation before any implementation decis
 
 ### R1 — Core Algorithm Questions
 
-- [ ] **R1.1** Study mapgen4's `dual-mesh` data structure in detail.
+- [x] **R1.1** ✅ Study mapgen4's `dual-mesh` data structure in detail.
   - What are the tradeoffs vs a plain Voronoi implementation?
   - Can it replace the tile-grid SettlementGenerator without breaking the physics layer?
   - Read: https://github.com/redblobgames/mapgen4/tree/main/dual-mesh
 
-- [ ] **R1.2** Study watabou's TownGeneratorOS spiral seeding + Lloyd relaxation.
+- [x] **R1.2** ✅ Study watabou's TownGeneratorOS spiral seeding + Lloyd relaxation.
   - The formula `a = sa + sqrt(i)*5, r = 10 + i*(2+rand)` — what does varying the
     constants do visually? What are the sweet spots for a village vs a town vs a city?
   - Source: already read in `Model.hx` (see Part 2 below)
 
-- [ ] **R1.3** How does watabou's village generator actually work?
+- [x] **R1.3** ✅ How does watabou's village generator actually work?
   - It's not open-source, but Patreon posts describe it. Research:
     - "villages are made of roads, not buildings" — what exactly does that mean algorithmically?
     - How are the winding roads generated? L-system? Random walk? Agent-based?
     - Read his Patreon posts tagged "village generator":
       https://www.patreon.com/watawatabou?filters[tag]=village%20generator
 
-- [ ] **R1.4** CityBound and UrbanFormGen — academic city generation.
+- [x] **R1.4** ✅ CityBound and UrbanFormGen — academic city generation.
   - Are there any TypeScript/JS implementations of Parish-Müller road networks?
   - Compare: Parish-Müller CGA vs Watabou's ward approach — which is simpler to implement?
 
@@ -116,19 +116,19 @@ These are open questions that need investigation before any implementation decis
   - Works in Web Workers (no DOM dependency)
   - **Decision: USE IT alongside delaunator.** The higher-level API is worth 5KB extra.
 
-- [ ] **R2.3** mapgen4's `dual-mesh` library — investigate if it's extractable.
+- [x] **R2.3** ✅ mapgen4's `dual-mesh` library — investigate if it's extractable.
   - The dual-mesh tracks both Delaunay triangles AND Voronoi polygons in one flat typed array
   - This is used for both terrain AND road networks in mapgen4
   - Could this replace our tile-grid world structure entirely?
   - License: Apache-2.0 ✓
   - Read: https://github.com/redblobgames/mapgen4/tree/main/dual-mesh
 
-- [ ] **R2.4** Polygon clipping libraries (needed for ward intersection with terrain bounds).
+- [x] **R2.4** ✅ Polygon clipping libraries (needed for ward intersection with terrain bounds).
   - `polybool` (MIT), `polygon-clipping` (MIT), `martinez` (MIT)
   - Watabou implements his own `Polygon` + clip — too complex to port
   - Which NPM polygon-clipping library is most robust for concave polygons?
 
-- [ ] **R2.5** `pathfinding.js` or similar for road routing through terrain.
+- [x] **R2.5** ✅ `pathfinding.js` or similar for road routing through terrain.
   - The "road avoids steep slopes" feature needs a terrain-aware pathfinder
   - Options: A* on the tile grid (existing), or Dijkstra on the Voronoi edge graph
   - Can the existing `SpatialHash` in the codebase help here?
@@ -154,7 +154,7 @@ These are open questions that need investigation before any implementation decis
   - **Key implication:** The Overworld Studio must generate in < 200ms (ideally < 100ms)
     or the "toy" feeling dies. This is the hardest constraint and drives everything else.
 
-- [ ] **R3.2** Study Watabou's UI interaction model.
+- [x] **R3.2** ✅ Study Watabou's UI interaction model.
   - Click = regenerate with new seed
   - Shift+click = lock/unlock specific features
   - Keyboard shortcuts for terrain type, wall toggle, etc.
@@ -163,13 +163,13 @@ These are open questions that need investigation before any implementation decis
   - Read his keyboard shortcuts doc:
     https://watabou.itch.io/village-generator/devlog/426543/keyboard-shortcuts
 
-- [ ] **R3.3** mapgen4's painting interaction — deeply understand it.
+- [x] **R3.3** ✅ mapgen4's painting interaction — deeply understand it.
   - `painting.ts` implements brush painting that modifies terrain elevation in real-time
   - Key insight: painting writes to a buffer → worker thread → regenerate → render
   - The 3-thread pipeline (main → worker → render) is what makes it real-time
   - Can we use a similar pipeline for a settlement road-drawing tool?
 
-- [ ] **R3.4** "Warp" and organic deformation tools — what are they exactly?
+- [x] **R3.4** ✅ "Warp" and organic deformation tools — what are they exactly?
   - Watabou's city generator has a warp/deform slider
   - How is this typically implemented? Options:
     - Perlin noise displacement of seed points before Voronoi
@@ -177,14 +177,14 @@ These are open questions that need investigation before any implementation decis
     - Direct spring-mesh relaxation with noise
   - Find a clear description of the right approach
 
-- [ ] **R3.5** What does a "good" procedural map editor UI look like?
+- [x] **R3.5** ✅ What does a "good" procedural map editor UI look like?
   - Study tools: Azgaar's Fantasy Map Generator (open source, JS)
     https://github.com/Azgaar/Fantasy-Map-Generator
   - Study: Inconvergent's map tools (https://inconvergent.net/)
   - Study: Redblob's interactive map demos (https://www.redblobgames.com/maps/)
   - What patterns are shared across all the good ones?
 
-- [ ] **R3.6** "Named place" override system for the editor.
+- [x] **R3.6** ✅ "Named place" override system for the editor.
   - Watabou lets you name settlements and lock specific building placements
   - How would this work in TT&T? JSON blueprint → overrides procedural generation
   - Look at how fantasy map tools (Azgaar, Campaign Cartographer) handle named locations
@@ -192,30 +192,30 @@ These are open questions that need investigation before any implementation decis
 
 ### R4 — Integration Questions
 
-- [ ] **R4.1** How does settlement generation interact with the existing tile grid?
+- [x] **R4.1** ✅ How does settlement generation interact with the existing tile grid?
   - The current world grid is W×H tiles, T=2 WU each
   - A Voronoi settlement would work in world-space (WU), not tile-space
   - How do we convert Voronoi polygon positions to tile indices for road/building placement?
   - Do we need to? Or can buildings just use world-space coordinates?
 
-- [ ] **R4.2** Physics/collision for Voronoi-placed buildings.
+- [x] **R4.2** ✅ Physics/collision for Voronoi-placed buildings.
   - The current system uses tile-grid for physics collision detection
   - Voronoi placements would be at non-grid positions
   - Does Rapier3D handle arbitrary world-position static bodies fine?
   - Yes it does — this is probably fine. Verify with a quick test.
 
-- [ ] **R4.3** River and ford integration.
+- [x] **R4.3** ✅ River and ford integration.
   - The existing `WorldGen.ts` generates rivers + ford crossing points
   - A village generator needs to know: "where is the ford?" (= road route)
   - What data is currently exposed on `WorldData` about river paths?
   - Is the ford tile accessible from SettlementGenerator?
 
-- [ ] **R4.4** NPC spawning in Voronoi settlements.
+- [x] **R4.4** ✅ NPC spawning in Voronoi settlements.
   - `NPCSpawner.spawnForSettlement()` currently uses `settlement.plan.buildings`
   - For a Voronoi settlement, what is the equivalent structure?
   - Can NPCs have "home ward" assignments (innkeeper stays in inn ward, etc.)?
 
-- [ ] **R4.5** Performance budget.
+- [x] **R4.5** ✅ Performance budget.
   - Watabou's city generator runs in milliseconds (OpenFL/Haxe compiled to JS)
   - mapgen4 uses a Web Worker for map generation to avoid blocking the main thread
   - How long does current `SettlementGenerator` take? Measure it.
