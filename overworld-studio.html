@@ -208,6 +208,7 @@
       <div class="studio-tabs" id="studio-tabs">
         <button class="studio-tab active" data-mode="settlement">🏙 Settlement</button>
         <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
+        <button class="studio-tab"        data-mode="cave">🌿 Cave</button>
       </div>
 
       <!-- ── Settlement controls ──────────────────────────────────── -->
@@ -343,6 +344,36 @@
         </div>
 
       </div><!-- /dungeon-controls -->
+
+      <!-- ── Cave / Glade controls ─────────────────────────────────── -->
+      <div id="cave-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">Type</div>
+          <div class="pill-row" id="cave-type-pills">
+            <button class="pill active" data-ctype="cave"  title="Cellular automata underground cave">🪨 Cave</button>
+            <button class="pill"        data-ctype="glade" title="Organic forest glade clearing">🌿 Glade</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Legend</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#3e3830;border-radius:1px"></span> Cave floor</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#221c14;border-radius:1px"></span> Rock wall</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#2040a0;border-radius:1px"></span> Underground water</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c03020;font-size:12px">●</span> Enemy spawn</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#e0b030;font-size:12px">★</span> Treasure</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#909888;font-size:12px">●</span> Mineral vein</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-cave-png" style="width:100%">📷 PNG</button>
+        </div>
+
+      </div><!-- /cave-controls -->
 
     </aside>
   </div>

@@ -1512,6 +1512,7 @@ function setView(mode: ViewMode) {
 
 function redraw() {
   if (studioMode === 'dungeon') { redrawDungeon(); return; }
+  if (studioMode === 'cave')    { redrawCave();    return; }
   if (!currentModel) return;
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
@@ -1599,9 +1600,19 @@ for (const id of ['walls', 'citadel', 'plaza']) {
 // Buttons
 document.getElementById('btn-roll')!.addEventListener('click', () => {
   seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
-  generate();
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  if (studioMode === 'cave')    generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else generate();
 });
-document.getElementById('btn-gen')!.addEventListener('click', () => generate(false));
+document.getElementById('btn-gen')!.addEventListener('click', () => {
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  if (studioMode === 'cave')    generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else generate(false);
+});
 
 // Export PNG
 document.getElementById('btn-png')!.addEventListener('click', () => {
@@ -2382,7 +2393,7 @@ export function drawDungeonFloorPlan(
 
 // ── Studio mode state ─────────────────────────────────────────────────────────
 
-type StudioMode = 'settlement' | 'dungeon';
+type StudioMode = 'settlement' | 'dungeon' | 'cave';
 let studioMode: StudioMode = 'settlement';
 let currentDungeonPlan: DungeonPlan | null = null;
 
@@ -2416,6 +2427,310 @@ function redrawDungeon() {
   drawDungeonFloorPlan(currentDungeonPlan, canvas, floorFilter);
 }
 
+// ── Cave / Glade Generator & Renderer (OW-C) ──────────────────────────────────
+
+type CaveType = 'cave' | 'glade';
+
+interface CaveFeature { x: number; y: number; kind: 'water'|'mineral'|'spawn'|'treasure'|'tree'|'flower'|'mushroom'; }
+
+interface CaveData {
+  grid: boolean[][];   // true = passable (floor / clearing), false = solid (wall / forest)
+  W: number; H: number;
+  seed: number;
+  type: CaveType;
+  features: CaveFeature[];
+}
+
+const CAVE_PAL = {
+  wall:     '#221c14',   // deep rock
+  floor:    '#3e3830',   // worn stone
+  floor2:   '#46403a',   // slightly lighter stone
+  water:    '#2040a0',   // underground lake
+  mineral:  '#909888',   // pale ore vein dot
+  spawn:    '#c03020',
+  treasure: '#e0b030',
+  bg:       '#16120c',
+};
+const GLADE_PAL = {
+  wall:     '#1e3818',   // dense forest
+  wall2:    '#2a4e22',   // mid forest
+  floor:    '#5a8a3a',   // clearing grass
+  floor2:   '#6ea046',   // bright grass
+  water:    '#3870b8',
+  tree:     '#1e3818',
+  flower:   '#d85080',
+  mushroom: '#c84020',
+  bg:       '#18300f',
+};
+
+/**
+ * 5-step cellular automata cave generation.
+ * Rule: a cell is floor if ≥ 5 of its 8 neighbours are floor.
+ * Border is always wall.
+ */
+function generateCaveData(seed: number, type: CaveType, W = 72, H = 54): CaveData {
+  const rand = mulberry32(seed);
+
+  let grid: boolean[][];
+
+  if (type === 'cave') {
+    // --- Cellular automata cave ---
+    const FILL = 0.47;
+    grid = Array.from({ length: H }, (_, y) =>
+      Array.from({ length: W }, (_, x) => {
+        if (x < 2 || y < 2 || x > W - 3 || y > H - 3) return false;
+        return rand() > FILL;
+      }),
+    );
+
+    for (let iter = 0; iter < 5; iter++) {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= 5;
+        }),
+      );
+    }
+
+    // Flood-fill to keep only the largest cave region
+    const visited = Array.from({ length: H }, () => new Array<boolean>(W).fill(false));
+    let bestCells: Array<[number, number]> = [];
+    for (let sy = 1; sy < H - 1; sy++) {
+      for (let sx = 1; sx < W - 1; sx++) {
+        if (!grid[sy]![sx] || visited[sy]![sx]) continue;
+        const region: Array<[number, number]> = [];
+        const q: Array<[number, number]> = [[sx, sy]];
+        while (q.length) {
+          const [cx, cy] = q.pop()!;
+          if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
+          if (visited[cy]![cx] || !grid[cy]![cx]) continue;
+          visited[cy]![cx] = true;
+          region.push([cx, cy]);
+          q.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+        }
+        if (region.length > bestCells.length) bestCells = region;
+      }
+    }
+    // Wipe non-main-region floor cells
+    const mainSet = new Set(bestCells.map(([x, y]) => `${x},${y}`));
+    grid = grid.map((row, y) => row.map((v, x) => v && mainSet.has(`${x},${y}`)));
+
+  } else {
+    // --- Organic glade: ellipse clearing with noisy edge ---
+    const cx = W / 2, cy = H / 2;
+    const rx = W * 0.38 + (rand() - 0.5) * W * 0.08;
+    const ry = H * 0.38 + (rand() - 0.5) * H * 0.08;
+    grid = Array.from({ length: H }, (_, y) =>
+      Array.from({ length: W }, (_, x) => {
+        const dx = (x - cx) / rx, dy = (y - cy) / ry;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const jitter = (rand() - 0.5) * 0.28;
+        return dist + jitter < 1.0;
+      }),
+    );
+    // Smooth the glade edge (2 rounds of CA)
+    for (let iter = 0; iter < 2; iter++) {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= 5;
+        }),
+      );
+    }
+  }
+
+  // --- Scatter features ---
+  const features: CaveFeature[] = [];
+  const floorCells: Array<[number, number]> = [];
+  const edgeCells:  Array<[number, number]> = [];
+
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      if (!grid[y]![x]) continue;
+      floorCells.push([x, y]);
+      // Edge cell = floor cell adjacent to a wall
+      let isEdge = false;
+      for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][])
+        if (!grid[y + dy]?.[x + dx]) { isEdge = true; break; }
+      if (isEdge) edgeCells.push([x, y]);
+    }
+  }
+
+  const shuffled = (arr: Array<[number,number]>) => [...arr].sort(() => rand() - 0.5);
+
+  if (type === 'cave') {
+    // Underground lake: cluster of water cells
+    const lakeSeeds = shuffled(floorCells).slice(0, 2 + Math.floor(rand() * 2));
+    for (const [sx, sy] of lakeSeeds) {
+      const r = 2 + Math.floor(rand() * 3);
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++)
+          if (dx*dx+dy*dy <= r*r && grid[sy+dy]?.[sx+dx])
+            features.push({ x: sx+dx, y: sy+dy, kind: 'water' });
+    }
+    // Mineral veins (edge cells)
+    for (const [x, y] of shuffled(edgeCells).slice(0, 12 + Math.floor(rand() * 10)))
+      features.push({ x, y, kind: 'mineral' });
+    // Enemy spawns
+    for (const [x, y] of shuffled(floorCells).slice(0, 4 + Math.floor(rand() * 5)))
+      features.push({ x, y, kind: 'spawn' });
+    // Treasure
+    for (const [x, y] of shuffled(floorCells).slice(0, 1 + Math.floor(rand() * 2)))
+      features.push({ x, y, kind: 'treasure' });
+  } else {
+    // Glade water pool
+    const [pw, ph] = floorCells[Math.floor(rand() * floorCells.length)] ?? [W/2|0, H/2|0];
+    const pr = 2 + Math.floor(rand() * 3);
+    for (let dy = -pr; dy <= pr; dy++)
+      for (let dx = -pr; dx <= pr; dx++)
+        if (dx*dx+dy*dy <= pr*pr && grid[(ph+dy)]?.[(pw+dx)])
+          features.push({ x: pw+dx, y: ph+dy, kind: 'water' });
+    // Flowers scattered in clearing
+    for (const [x, y] of shuffled(floorCells).slice(0, 18 + Math.floor(rand() * 12)))
+      features.push({ x, y, kind: rand() > 0.4 ? 'flower' : 'mushroom' });
+    // Trees at forest edge (wall cells adjacent to floor)
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        if (grid[y]![x]) continue;
+        let adjFloor = false;
+        for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][])
+          if (grid[y+dy]?.[x+dx]) { adjFloor = true; break; }
+        if (adjFloor && rand() > 0.55) features.push({ x, y, kind: 'tree' });
+      }
+  }
+
+  return { grid, W, H, seed, type, features };
+}
+
+/**
+ * Render a cave or glade map on a canvas. Cell-based rendering with
+ * organic appearance from the CA-generated grid.
+ */
+export function drawCaveGlade(data: CaveData, canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const { grid, W, H, type, features, seed } = data;
+
+  const CELL = Math.min(Math.floor((canvas.width  - 8) / W),
+                        Math.floor((canvas.height - 8) / H));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+
+  const pal = type === 'cave' ? CAVE_PAL : GLADE_PAL;
+
+  // Background
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Feature lookup for fast O(1) per cell
+  const featureMap = new Map<string, CaveFeature>();
+  for (const f of features) featureMap.set(`${f.x},${f.y}`, f);
+
+  // Draw cells
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const key = `${x},${y}`;
+      const feat = featureMap.get(key);
+      const floor = grid[y]![x];
+      const cx = offX + x * CELL, cy = offY + y * CELL;
+
+      if (feat?.kind === 'water') {
+        ctx.fillStyle = pal.water;
+      } else if (!floor) {
+        // Wall / forest — vary shade based on position for texture
+        ctx.fillStyle = type === 'glade'
+          ? (Math.sin(x * 3.7 + y * 2.1) > 0 ? GLADE_PAL.wall : GLADE_PAL.wall2)
+          : CAVE_PAL.wall;
+      } else {
+        // Floor — slight noise for texture
+        ctx.fillStyle = (x + y) % 2 === 0 ? pal.floor : pal.floor2;
+      }
+      ctx.fillRect(cx, cy, CELL, CELL);
+    }
+  }
+
+  // Draw feature symbols over floor
+  const SZ = Math.max(4, CELL - 1);
+  ctx.font = `${SZ}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const feat of features) {
+    if (feat.kind === 'water') continue;   // water already drawn as fill
+    const cx = offX + feat.x * CELL + CELL / 2;
+    const cy = offY + feat.y * CELL + CELL / 2;
+    switch (feat.kind) {
+      case 'mineral':
+        ctx.fillStyle = CAVE_PAL.mineral;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'spawn':
+        ctx.fillStyle = CAVE_PAL.spawn;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'treasure':
+        ctx.fillStyle = CAVE_PAL.treasure;
+        ctx.font = `bold ${SZ + 1}px sans-serif`;
+        ctx.fillText('★', cx, cy);
+        ctx.font = `${SZ}px sans-serif`;
+        break;
+      case 'tree':
+        ctx.fillStyle = GLADE_PAL.tree;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - CELL * 0.4);
+        ctx.lineTo(cx + CELL * 0.35, cy + CELL * 0.35);
+        ctx.lineTo(cx - CELL * 0.35, cy + CELL * 0.35);
+        ctx.closePath(); ctx.fill();
+        break;
+      case 'flower':
+        ctx.fillStyle = GLADE_PAL.flower;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.25, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'mushroom':
+        ctx.fillStyle = GLADE_PAL.mushroom;
+        ctx.beginPath(); ctx.arc(cx, cy - CELL * 0.1, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+    }
+  }
+
+  // Cartographic border
+  ctx.strokeStyle = type === 'cave' ? '#3a3028' : '#3a6020';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(offX, offY, W * CELL, H * CELL);
+
+  // Title
+  const title = type === 'cave' ? 'Cave System' : 'Forest Glade';
+  ctx.fillStyle = type === 'cave' ? 'rgba(200,190,170,0.7)' : 'rgba(180,210,140,0.8)';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${title}  ·  seed ${seed}`, canvas.width / 2, canvas.height - 4);
+}
+
+// ── Cave mode state ───────────────────────────────────────────────────────────
+
+let currentCaveData: CaveData | null = null;
+
+function generateCaveView() {
+  const seed = parseInt(seedInput.value) || Date.now();
+  const ctype = (document.querySelector('#cave-type-pills .pill.active') as HTMLElement)?.dataset.ctype as CaveType ?? 'cave';
+  currentCaveData = generateCaveData(seed, ctype);
+  ctx2d(canvas, currentCaveData);
+  const floors = currentCaveData.grid.flat().filter(Boolean).length;
+  genTimeEl.textContent = `${ctype}  ·  ${floors} open cells  ·  seed ${seed}`;
+}
+
+function ctx2d(c: HTMLCanvasElement, data: CaveData) { drawCaveGlade(data, c); }
+
+function redrawCave() { if (currentCaveData) drawCaveGlade(currentCaveData, canvas); }
+
 // ── Ward legend ───────────────────────────────────────────────────────────────
 // (declared earlier in file — this is the duplicate, remove it)
 
@@ -2431,12 +2746,18 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   tab.classList.add('active');
   document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
   document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
+  document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
   if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
     hoverEl.textContent = '';
     if (!currentDungeonPlan) generateDungeonView();
     else redrawDungeon();
+  } else if (mode === 'cave') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentCaveData) generateCaveView();
+    else redrawCave();
   } else {
     redraw();
   }
@@ -2460,7 +2781,7 @@ document.getElementById('dfloors')!.addEventListener('input', () => {
   generateDungeonView();
 });
 
-document.getElementById('dfloor')!.addEventListener('input', () => {
+document.getElementById('dfloor')?.addEventListener('input', () => {
   const v = (document.getElementById('dfloor') as HTMLInputElement).value;
   (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
   redrawDungeon();
@@ -2469,6 +2790,24 @@ document.getElementById('dfloor')!.addEventListener('input', () => {
 document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = `dungeon-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Cave controls event wiring ────────────────────────────────────────────────
+
+document.getElementById('cave-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('btn-cave-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `cave-${seedInput.value}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 });
