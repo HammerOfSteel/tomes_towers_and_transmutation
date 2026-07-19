@@ -139,35 +139,44 @@ function rateSlum(w: Ward, centre: Vec2)      { return -dist(w.seed, centre); }
 // ── Core generator ────────────────────────────────────────────────────────────
 
 export function buildSettlement(p: GeneratorParams): SettlementModel {
-  const t0   = performance.now();
+  const seeds = generateBaseSeeds(p);
+  return buildFromSeeds(seeds, p);
+}
+
+/** Step 1: Generate seed points (spiral + Simplex warp). Returns mutable Vec2[]. */
+export function generateBaseSeeds(p: GeneratorParams): Vec2[] {
   const rand = mulberry32(p.seed);
   const noise = (nx: number, ny: number) => {
-    // simple seeded noise using mulberry32
     const r = mulberry32(Math.round((nx * 73856093 ^ ny * 19349663) >>> 0) ^ p.seed);
     return r() * 2 - 1;
   };
 
-  const CX = p.width  / 2;
-  const CY = p.height / 2;
+  const CX = p.width / 2, CY = p.height / 2;
   const R  = Math.min(p.width, p.height) * 0.42;
-
-  // 1. Spiral-distribute seed points (Watabou's formula)
   const sa = rand() * Math.PI * 2;
-  const rawSeeds: Vec2[] = [];
+
+  const seeds: Vec2[] = [];
   for (let i = 0; i < p.nPatches * 8; i++) {
     const a = sa + Math.sqrt(i) * 5;
     const r = i === 0 ? 0 : R * 0.12 + i * (R * 0.018 + rand() * R * 0.012);
-    rawSeeds.push({ x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r });
+    const WARP_SCALE = 0.006;
+    const bx = CX + Math.cos(a) * r;
+    const by = CY + Math.sin(a) * r;
+    seeds.push({
+      x: bx + p.warp * R * 0.4 * noise(bx * WARP_SCALE, by * WARP_SCALE),
+      y: by + p.warp * R * 0.4 * noise(bx * WARP_SCALE + 100, by * WARP_SCALE + 100),
+    });
   }
+  return seeds;
+}
 
-  // 2. Apply Simplex warp
-  const WARP_SCALE = 0.006;
-  const seeds = rawSeeds.map(s => ({
-    x: s.x + p.warp * R * 0.4 * noise(s.x * WARP_SCALE, s.y * WARP_SCALE),
-    y: s.y + p.warp * R * 0.4 * noise(s.x * WARP_SCALE + 100, s.y * WARP_SCALE + 100),
-  }));
+/** Step 2: Build SettlementModel from existing (possibly user-warped) seeds. */
+export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementModel {
+  const t0   = performance.now();
+  const rand = mulberry32(p.seed);
+  const CX   = p.width / 2, CY = p.height / 2;
+  const R    = Math.min(p.width, p.height) * 0.42;
 
-  // 3. Build Voronoi (d3-delaunay)
   const delaunay = Delaunay.from(seeds, (s: Vec2) => s.x, (s: Vec2) => s.y);
   const voronoi   = delaunay.voronoi([0, 0, p.width, p.height]);
 
@@ -503,6 +512,21 @@ window.addEventListener('resize', () => { resize(); generate(); });
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let currentModel: SettlementModel | null = null;
+let persistentSeeds: Vec2[] | null = null;   // mutable seeds for interactive warp
+let lastParams: GeneratorParams | null = null;
+
+// ── Active tool ───────────────────────────────────────────────────────────────
+
+type ToolName = 'select' | 'warp';
+let activeTool: ToolName = 'select';
+
+function setTool(name: ToolName) {
+  activeTool = name;
+  document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tool-${name}`)?.classList.add('active');
+  canvas.classList.remove('tool-warp');
+  if (name === 'warp') canvas.classList.add('tool-warp');
+}
 
 function getParams(): GeneratorParams {
   const type = (document.querySelector('.pill.active') as HTMLElement)?.dataset.type as SettlementType ?? 'village';
@@ -520,9 +544,13 @@ function getParams(): GeneratorParams {
   };
 }
 
-function generate() {
+function generate(keepSeeds = false) {
   const params = getParams();
-  const model  = buildSettlement(params);
+  lastParams = params;
+  if (!keepSeeds || !persistentSeeds) {
+    persistentSeeds = generateBaseSeeds(params);
+  }
+  const model = buildFromSeeds(persistentSeeds, params);
   currentModel = model;
 
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
@@ -540,19 +568,23 @@ document.getElementById('type-pills')!.addEventListener('click', e => {
   if (!pill) return;
   document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
-  generate();
+  generate(false);
 });
 
 // Sliders — live update with value display
 for (const [id, valId] of [['patches', 'patches-val'], ['warp', 'warp-val'], ['roads', 'roads-val']] as const) {
   const input = document.getElementById(id) as HTMLInputElement;
   const valEl = document.getElementById(valId)!;
-  input.addEventListener('input', () => { valEl.textContent = input.value; generate(); });
+  const resetOn = id === 'patches';
+  input.addEventListener('input', () => { valEl.textContent = input.value; generate(!resetOn); });
 }
 
 // Checkboxes
-for (const id of ['walls', 'citadel', 'plaza', 'show-labels', 'show-buildings']) {
-  document.getElementById(id)!.addEventListener('change', generate);
+for (const id of ['show-labels', 'show-buildings']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
+}
+for (const id of ['walls', 'citadel', 'plaza']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
 }
 
 // Buttons
@@ -560,7 +592,7 @@ document.getElementById('btn-roll')!.addEventListener('click', () => {
   seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
   generate();
 });
-document.getElementById('btn-gen')!.addEventListener('click', generate);
+document.getElementById('btn-gen')!.addEventListener('click', () => generate(false));
 
 // Export PNG
 document.getElementById('btn-png')!.addEventListener('click', () => {
@@ -607,9 +639,127 @@ window.addEventListener('keydown', e => {
     case 'w': case 'W': {
       const el = document.getElementById('walls') as HTMLInputElement;
       el.checked = !el.checked;
-      generate(); break;
+      generate(true); break;  // keep seeds when toggling walls
+    }
+    case 's': case 'S': setTool('select'); break;
+    case 'd': case 'D': setTool('warp');   break;
+    case 'r': case 'R': persistentSeeds = null; generate(false); break;
+  }
+});
+
+// ── Tool button wiring ────────────────────────────────────────────────────────
+
+document.getElementById('tool-select')!.addEventListener('click', () => setTool('select'));
+document.getElementById('tool-warp')!.addEventListener('click',   () => setTool('warp'));
+document.getElementById('tool-reset')!.addEventListener('click',  () => {
+  persistentSeeds = null;  // force fresh seeds next generate
+  generate(false);
+});
+
+// ── Interactive warp interaction ──────────────────────────────────────────────
+// Left-drag in warp mode: push nearby Voronoi seeds with smooth quadratic falloff.
+// The influence radius = 22% of the canvas short side.
+// Strength scales linearly with drag speed but is capped to prevent explosion.
+
+let warpDragging = false;
+let warpPrevX = 0, warpPrevY = 0;
+const WARP_RADIUS_FRAC = 0.22;  // fraction of min(W,H)
+
+function canvasXY(e: PointerEvent): [number, number] {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    (e.clientX - rect.left) * (canvas.width  / rect.width),
+    (e.clientY - rect.top)  * (canvas.height / rect.height),
+  ];
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (activeTool !== 'warp' || e.button !== 0) return;
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('dragging');
+  warpDragging = true;
+  [warpPrevX, warpPrevY] = canvasXY(e);
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!warpDragging || activeTool !== 'warp' || !persistentSeeds || !lastParams) return;
+
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+
+  // Drag delta capped to prevent too-large single-frame jumps
+  const dx = Math.max(-30, Math.min(30, (mx - warpPrevX) * 0.8));
+  const dy = Math.max(-30, Math.min(30, (my - warpPrevY) * 0.8));
+  warpPrevX = mx; warpPrevY = my;
+
+  // Push seeds within radius (quadratic falloff: smooth at edge, strong at centre)
+  for (const seed of persistentSeeds) {
+    const d = Math.hypot(seed.x - mx, seed.y - my);
+    if (d < WARP_R) {
+      const t = d / WARP_R;
+      const strength = (1 - t * t);  // quadratic: 1 at centre, 0 at edge
+      seed.x += dx * strength;
+      seed.y += dy * strength;
     }
   }
+
+  // Rebuild Voronoi instantly (2–5ms)
+  const model = buildFromSeeds(persistentSeeds, lastParams);
+  currentModel = model;
+  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
+  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
+  drawSettlement(model, canvas, showLabels, showBuildings);
+  genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards`;
+
+  // Draw warp influence circle on overlay
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  // Outer ring
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.45)';
+  octx.lineWidth = 1.5;
+  octx.setLineDash([5, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
+  // Inner strength core (25% radius)
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R * 0.25, 0, Math.PI * 2);
+  octx.fillStyle = 'rgba(124, 106, 245, 0.12)';
+  octx.fill();
+  // Centre crosshair
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.7)';
+  octx.lineWidth = 1;
+  for (const [ax, ay, bx, by] of [[mx-6,my,mx+6,my],[mx,my-6,mx,my+6]] as const) {
+    octx.beginPath(); octx.moveTo(ax, ay); octx.lineTo(bx, by); octx.stroke();
+  }
+});
+
+canvas.addEventListener('pointerup', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+canvas.addEventListener('pointercancel', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+});
+
+// Show warp radius preview on hover when warp tool active (not dragging)
+canvas.addEventListener('pointermove', e => {
+  if (activeTool !== 'warp' || warpDragging) return;
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.25)';
+  octx.lineWidth = 1;
+  octx.setLineDash([4, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
 });
 
 // ── Ward hover inspection ─────────────────────────────────────────────────────
