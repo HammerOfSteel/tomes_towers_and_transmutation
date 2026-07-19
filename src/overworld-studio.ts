@@ -57,9 +57,19 @@ export interface SettlementModel {
   genTimeMs:  number;
 }
 
+export type LayoutType =
+  | 'organic'       // Voronoi-based, irregular — current default
+  | 'grid'          // Orthogonal streets, rectangular blocks (Roman, American)
+  | 'linear'        // One main road, buildings either side (Welsh valley, Strassendorf)
+  | 'radial'        // Streets radiate from central hub (Baroque, Paris)
+  | 'terraced'      // Parallel rows of row-houses (Welsh/English industrial)
+  | 'perimeter'     // Buildings around block edge with hollow courtyard (Barcelona)
+  ;
+
 interface GeneratorParams {
   seed:          number;
   type:          SettlementType;
+  layout:        LayoutType;
   nPatches:      number;   // number of Voronoi cells
   warp:          number;   // 0–1 Simplex noise displacement
   nGates:        number;   // number of road entrances
@@ -570,10 +580,241 @@ function fillWardOrganically(
   }
 }
 
+// ── Building layout strategies per LayoutType ────────────────────────────────
+
+/**
+ * Grid layout: buildings arranged in tight orthogonal rows aligned to the
+ * canvas axes (or a fixed dominant angle). Like Roman castra, American blocks.
+ */
+function fillWardGrid(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const BW = 16, BH = 13, GAP = 3, STREET = 5;
+  // Fixed axis: all buildings axis-aligned (grid)
+  const angle = 0;
+  const cos = 1, sin = 0, uncos = 1, unsin = 0;
+  const rot = poly.map(p => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
+  const minX = Math.min(...rot.map(p => p.x)), maxX = Math.max(...rot.map(p => p.x));
+  const minY = Math.min(...rot.map(p => p.y)), maxY = Math.max(...rot.map(p => p.y));
+  for (let ry = minY + STREET; ry + BH < maxY - STREET + 1; ry += BH + GAP) {
+    for (let rx = minX + STREET; rx + BW < maxX - STREET + 1; rx += BW + GAP) {
+      const rcx = rx + BW * 0.5, rcy = ry + BH * 0.5;
+      const wcx = rcx * uncos - rcy * unsin, wcy = rcx * unsin + rcy * uncos;
+      if (!pointInPolygon({ x: wcx, y: wcy }, poly)) continue;
+      if (minDistToEdge({ x: wcx, y: wcy }, poly) < STREET - 1) continue;
+      const aw = BW * (0.82 + rand() * 0.2), dh = BH * (0.82 + rand() * 0.2);
+      if (occ.blocked(wcx, wcy, aw, dh, angle)) continue;
+      occ.mark(wcx, wcy, aw, dh, angle);
+      drawBldg(ctx, wcx, wcy, aw, dh, angle, col);
+    }
+  }
+}
+
+/**
+ * Linear layout: all buildings squeezed into two rows flanking the main road.
+ * Classic Welsh valley / Strassendorf — creates very readable ribbon feel.
+ */
+function fillWardLinear(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col  = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const angle = dominantEdgeAngle(poly);
+  const cent  = centroid(poly);
+  const perimeter = polygonPerimeter(poly);
+  const ALONG = 18, DEPTH = 12, STREET = 5, GAP = 3;
+  const nSamples = Math.max(4, Math.floor(perimeter / (ALONG + GAP)));
+
+  // Only two rows — front and back flanking the main axis
+  for (const row of [0, 1]) {
+    const insetDist = STREET + row * (perimeter * 0.22); // front vs back
+    for (let si = 0; si < nSamples; si++) {
+      const t = si / nSamples;
+      const { x: ex, y: ey } = samplePerimeter(poly, t);
+      const inDx = cent.x - ex, inDy = cent.y - ey;
+      const inLen = Math.hypot(inDx, inDy);
+      if (inLen < 1) continue;
+      const nx = inDx / inLen, ny = inDy / inLen;
+      const bx = ex + nx * insetDist, by = ey + ny * insetDist;
+      if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
+      if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+      const aw = ALONG * (0.8 + rand() * 0.3), dh = DEPTH * (0.8 + rand() * 0.25);
+      const jitter = (rand() - 0.5) * 0.08;
+      const fa = angle + jitter;
+      if (occ.blocked(bx, by, aw, dh, fa)) continue;
+      occ.mark(bx, by, aw, dh, fa);
+      drawBldg(ctx, bx, by, aw, dh, fa, col);
+    }
+  }
+}
+
+/**
+ * Terraced rows: parallel continuous strips running across the ward.
+ * Each strip is a single long building (no gaps between individual houses).
+ * Very Welsh/English — valleys, Victorian, Georgian.
+ */
+function fillWardTerraced(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col   = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const angle = dominantEdgeAngle(poly);
+  const cos   = Math.cos(-angle), sin = Math.sin(-angle);
+  const uncos = Math.cos(angle),  unsin = Math.sin(angle);
+  const rot   = poly.map(p => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
+  const minX  = Math.min(...rot.map(p => p.x)), maxX = Math.max(...rot.map(p => p.x));
+  const minY  = Math.min(...rot.map(p => p.y)), maxY = Math.max(...rot.map(p => p.y));
+  const ROW_H = 13, STREET = 5, ROW_GAP = 4;
+
+  for (let ry = minY + STREET; ry + ROW_H < maxY - STREET + 1; ry += ROW_H + ROW_GAP) {
+    const rowCY  = ry + ROW_H * 0.5;
+    // Find left/right extents of the polygon at this row
+    let rowMinX = maxX, rowMaxX = minX;
+    for (let rx = minX; rx <= maxX; rx += 2) {
+      const wcx = rx * uncos - rowCY * unsin, wcy = rx * unsin + rowCY * uncos;
+      if (pointInPolygon({ x: wcx, y: wcy }, poly) &&
+          minDistToEdge({ x: wcx, y: wcy }, poly) >= STREET - 1) {
+        rowMinX = Math.min(rowMinX, rx);
+        rowMaxX = Math.max(rowMaxX, rx);
+      }
+    }
+    if (rowMaxX <= rowMinX) continue;
+
+    // Divide the row into terraced house units
+    const rowLen    = rowMaxX - rowMinX;
+    const houseW    = 12 + rand() * 6;  // each terrace unit width
+    const nHouses   = Math.max(1, Math.floor(rowLen / houseW));
+    const actualW   = rowLen / nHouses;
+
+    for (let h = 0; h < nHouses; h++) {
+      const rcx   = rowMinX + (h + 0.5) * actualW;
+      const rcy   = rowCY;
+      const wcx   = rcx * uncos - rcy * unsin;
+      const wcy   = rcx * unsin + rcy * uncos;
+      const bw    = actualW - 0.5;  // tiny gap = party walls implied
+      const bh    = ROW_H * (0.88 + rand() * 0.12);
+      if (occ.blocked(wcx, wcy, bw, bh, angle)) continue;
+      occ.mark(wcx, wcy, bw, bh, angle);
+      drawBldg(ctx, wcx, wcy, bw, bh, angle, col);
+    }
+  }
+}
+
+/**
+ * Perimeter block: buildings line the edge of the ward, leaving a hollow
+ * courtyard centre — Barcelona Eixample, Vienna, Helsinki.
+ */
+function fillWardPerimeter(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const DEPTH  = 14, STREET = 5, ALONG = 16, GAP = 2.5;
+  const perimeter = polygonPerimeter(poly);
+  const nSamples  = Math.max(4, Math.floor(perimeter / (ALONG + GAP)));
+  const cent      = centroid(poly);
+
+  // One ring of buildings just inside the perimeter
+  for (let si = 0; si < nSamples; si++) {
+    const t  = si / nSamples;
+    const { x: ex, y: ey, angle: edgeAngle } = samplePerimeter(poly, t);
+    const inDx = cent.x - ex, inDy = cent.y - ey;
+    const inLen = Math.hypot(inDx, inDy);
+    if (inLen < 1) continue;
+    const nx = inDx / inLen, ny = inDy / inLen;
+    const inset = STREET + DEPTH * 0.5;
+    const bx = ex + nx * inset, by = ey + ny * inset;
+    if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
+    if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 1) continue;
+    const aw = ALONG * (0.8 + rand() * 0.3), dh = DEPTH * (0.85 + rand() * 0.2);
+    const jitter = (rand() - 0.5) * 0.1;
+    const fa = edgeAngle + jitter;
+    if (occ.blocked(bx, by, aw, dh, fa)) continue;
+    occ.mark(bx, by, aw, dh, fa);
+    drawBldg(ctx, bx, by, aw, dh, fa, col);
+  }
+
+  // Hollow courtyard: render as lighter fill
+  const shrunkPoly = poly.map(p => {
+    const dx = cent.x - p.x, dy = cent.y - p.y;
+    const d  = Math.hypot(dx, dy);
+    const s  = (STREET + DEPTH + 4) / d;
+    return { x: p.x + dx * s, y: p.y + dy * s };
+  });
+  if (shrunkPoly.length > 2) {
+    ctx.beginPath();
+    shrunkPoly.forEach((pt, i) => i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y));
+    ctx.closePath();
+    ctx.fillStyle = '#ccc4b4';
+    ctx.fill();
+  }
+}
+
+/**
+ * Radial layout: buildings placed in concentric arcs around the ward centre.
+ * Like the rings around a plaza, or Baroque rond-point arrangement.
+ */
+function fillWardRadial(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col  = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const cent = centroid(poly);
+  const centInset = minDistToEdge(cent, poly);
+  const STREET = 5, DEPTH = 12, GAP = 3, ALONG = 15;
+
+  for (let ring = 0; ring * (DEPTH + GAP) < centInset - STREET - DEPTH; ring++) {
+    const r   = STREET + ring * (DEPTH + GAP) + DEPTH * 0.5;
+    const circ = 2 * Math.PI * r;
+    const n    = Math.max(3, Math.floor(circ / (ALONG + GAP)));
+    for (let i = 0; i < n; i++) {
+      const a  = (2 * Math.PI * i) / n;
+      const bx = cent.x + Math.cos(a) * r;
+      const by = cent.y + Math.sin(a) * r;
+      if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
+      if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 2) continue;
+      const aw = ALONG * (0.82 + rand() * 0.25), dh = DEPTH * (0.82 + rand() * 0.25);
+      const fa = a + Math.PI * 0.5 + (rand() - 0.5) * 0.12;  // tangent to ring
+      if (occ.blocked(bx, by, aw, dh, fa)) continue;
+      occ.mark(bx, by, aw, dh, fa);
+      drawBldg(ctx, bx, by, aw, dh, fa, col);
+    }
+  }
+}
+
+/** Dispatch to the correct fill strategy based on layout type. */
+function fillWard(
+  ctx: CanvasRenderingContext2D,
+  ward: Ward, layout: LayoutType, occ: OccupancyGrid,
+): void {
+  const wardSeed = Math.round(ward.center.x * 97 + ward.center.y * 53);
+  switch (layout) {
+    case 'grid':      return fillWardGrid     (ctx, ward.polygon, ward.type, wardSeed, occ);
+    case 'linear':    return fillWardLinear   (ctx, ward.polygon, ward.type, wardSeed, occ);
+    case 'terraced':  return fillWardTerraced (ctx, ward.polygon, ward.type, wardSeed, occ);
+    case 'perimeter': return fillWardPerimeter(ctx, ward.polygon, ward.type, wardSeed, occ);
+    case 'radial':    return fillWardRadial   (ctx, ward.polygon, ward.type, wardSeed, occ);
+    default:          return fillWardOrganically(ctx, ward.polygon, ward.type, wardSeed, occ);
+  }
+}
+
 export function drawSettlement2D5(
   model: SettlementModel,
   canvas: HTMLCanvasElement,
   showLabels = true,
+  layout: LayoutType = 'organic',
 ): void {
   const ctx = canvas.getContext('2d')!;
   const W = canvas.width, H = canvas.height;
@@ -683,8 +924,7 @@ export function drawSettlement2D5(
       continue;
     }
 
-    fillWardOrganically(ctx, ward.polygon, ward.type,
-      Math.round(ward.center.x * 97 + ward.center.y * 53), occ);
+    fillWard(ctx, ward, layout, occ);
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────────
@@ -931,15 +1171,18 @@ function redraw() {
   if (!currentModel) return;
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
-  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels);
+  const layoutParam = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
+  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels, layoutParam);
   else                    drawSettlement(currentModel, canvas, showLabels, showBuildings);
 }
 
 function getParams(): GeneratorParams {
-  const type = (document.querySelector('.pill.active') as HTMLElement)?.dataset.type as SettlementType ?? 'village';
+  const type = (document.querySelector('#type-pills .pill.active') as HTMLElement)?.dataset.type as SettlementType ?? 'village';
+  const layout = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
   return {
     seed:       parseInt(seedInput.value) || Date.now(),
     type,
+    layout,
     nPatches:   parseInt((document.getElementById('patches') as HTMLInputElement).value),
     warp:       parseFloat((document.getElementById('warp')    as HTMLInputElement).value),
     nGates:     parseInt((document.getElementById('roads')   as HTMLInputElement).value),
@@ -969,9 +1212,17 @@ function generate(keepSeeds = false) {
 document.getElementById('type-pills')!.addEventListener('click', e => {
   const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
   if (!pill) return;
-  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#type-pills .pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
   generate(false);
+});
+
+document.getElementById('layout-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#layout-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(true);  // keep seeds when switching layout style
 });
 
 // Sliders — live update with value display

@@ -226,7 +226,94 @@ These are open questions that need investigation before any implementation decis
 
 ## PART 2 — What We Already Know (from source study)
 
-### ✅ Watabou City Generator Algorithm (TownGeneratorOS — GPL-3.0)
+### ✅ Complete Urban Layout Taxonomy (2026-07-19)
+
+Research sources: Wikipedia (Grid plan, Urban morphology, City block, Urban block),
+Scott Turner's Here Dragons Abound (road network generation),
+Martin O'Leary's Generating Fantasy Maps, Amit Patel's Polygon Map Generation.
+
+---
+
+#### The Six Street Network Archetypes
+
+| # | Name | Origin | Geometry | Game scale |
+|---|---|---|---|---|
+| 1 | **Organic** | Medieval European, Welsh, Arab | Voronoi edges = streets, irregular blocks | village, small town |
+| 2 | **Grid** | Roman castrum, American frontier, Chinese | Perpendicular streets, square/rect blocks | town, city |
+| 3 | **Radial** | Baroque (Paris, Washington DC, Karlsruhe) | Streets radiate from central hub or monument | city |
+| 4 | **Linear** | English/Welsh strip village (Strassendorf) | One main road, buildings either side | village, hamlet |
+| 5 | **Terraced rows** | British industrial town, Welsh valley | Parallel rows of connected houses | town, industrial |
+| 6 | **Superblock/Modernist** | CIAM, Soviet, East Asian | Large arterial grid, internal cul-de-sac networks | city |
+
+---
+
+#### Building Arrangement Types (what fills each block)
+
+| Type | Description | Where |
+|---|---|---|
+| **Perimeter block** | Buildings around block edge, hollow interior courtyard | Barcelona Eixample, Vienna, Helsinki, Paris haussmanian |
+| **Terraced row** | Continuous wall-to-wall strip, no gaps | Welsh/English industrial town, London Georgian |
+| **Organic cluster** | Irregular footprints, setback varies, alleys between | Old medieval town, Arab medina, organic village |
+| **Tower in park** | Point towers, large open ground plane | Modernist housing estates, Soviet microrayon |
+| **Courtyard compound** | Single building enclosing a private court | Chinese hutong, Japanese machiya, Arab hosh |
+| **Detached suburban** | Free-standing buildings, setback from all sides | Suburb, garden city, North American residential |
+| **Grid lot** | Buildings aligned to street grid, front setback uniform | American main street, colonial town |
+
+---
+
+#### Village Morphology Types (specifically relevant)
+
+Based on historical settlement geography (English, Welsh, French, Dutch):
+
+| Type | Pattern | Character | Welsh relevance |
+|---|---|---|---|
+| **Nucleated** | Buildings cluster around green/church/pub | Cosy, community feel | Very common in Welsh lowland |
+| **Linear/Street** | Single road, buildings either side | Ribbon along valley road | Very common in Welsh valleys |
+| **Polyfocal** | Two or three distinct clusters joined | Grew from farm hamlets merging | Common upland Welsh |
+| **Dispersed/Farmstead** | Individual farmsteads, no cluster | Isolated homesteads + tracks | Common upland Welsh |
+| **Planned Medieval** | Grid or semi-grid, planted by lord | Bastide, burgage tenure | Edward I Welsh castles |
+| **Coastal/Harbour** | Buildings face water, harbour = focus | Fishing village | Welsh coastal |
+
+---
+
+#### Town Morphology Types
+
+| Type | Pattern | Examples | Generator approach |
+|---|---|---|---|
+| **Organic medieval** | Grew by accretion, irregular | Bruges, Siena, York | Watabou Voronoi (current) |
+| **Bastide** | Planned grid, market square, fortified | Monpazier, Carcassonne, Caernarfon | Grid + wall + central plaza |
+| **Market town** | Organic with wide market street or square | English market towns | Wide central road = market |
+| **Cathedral town** | Built around cathedral close | Salisbury, Wells | Cathedral as dominant feature |
+| **River town** | Built along river bank, bridge = origin | Most Welsh border towns | Linear along water edge |
+| **Colonial grid** | Spanish Laws of the Indies: central plaza + 8 streets from corners | Latin America | Plaza + radial streets |
+
+---
+
+#### City Morphology Types
+
+| Type | Pattern | Examples | Generator approach |
+|---|---|---|---|
+| **Organic + layers** | Old core + expansion rings | London, Rome, Istanbul | Concentric zone growth |
+| **Haussmann grand** | Wide boulevards + diagonal avenues, perimeter blocks | Paris, Brussels, Barcelona | Diagonal arteries + grid |
+| **American grid** | Pure orthogonal, numbered streets | Manhattan, Chicago, Melbourne | Regular grid, variable block size |
+| **Baroque radial** | Radial avenues from palace/monument | Versailles, Washington DC, Karlsruhe | Hub + spokes + connecting ring |
+| **Garden city** | Green belts, curved organic streets | Letchworth, Welwyn | Curvilinear + generous parks |
+| **Soviet microrayon** | Superblocks, towers in park, no street wall | Moscow outskirts, Warsaw | Superblock grid + tower points |
+| **Asian superblock** | Very large blocks (500m+) with internal street hierarchy | Beijing hutong, Tokyo, Osaka | Inner grid within outer grid |
+
+---
+
+#### Key Design Principles (from research)
+
+1. **Conzen's three elements**: streets, plots (lots), buildings — each layer adds to the next
+2. **Streets are the negative space** — blocks are defined by what's between buildings, not the buildings
+3. **Density gradient** — always denser at centre, sparser at edge (regardless of layout type)
+4. **Semantic coherence** drives legibility — church on hill, market at crossroads, slum by edge
+5. **Historical layering** — most real cities have organic old core + planned expansion
+6. **Perimeter block** = highest density without towers; hollow interior = private amenity
+7. **Terraced rows** = most efficient land use for medium density, very British/Welsh
+
+---
 
 Source: https://github.com/watabou/TownGeneratorOS
 
