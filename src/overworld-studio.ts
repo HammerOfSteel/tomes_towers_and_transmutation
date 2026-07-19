@@ -40,6 +40,8 @@ interface Ward {
   polygon:   Vec2[];         // Voronoi cell polygon
   withinCity: boolean;
   center:    Vec2;
+  /** Layout strategy assigned during generation (per mixing rules). */
+  wardLayout: LayoutType;
 }
 
 interface Road {
@@ -58,12 +60,13 @@ export interface SettlementModel {
 }
 
 export type LayoutType =
-  | 'organic'       // Voronoi-based, irregular — current default
-  | 'grid'          // Orthogonal streets, rectangular blocks (Roman, American)
-  | 'linear'        // One main road, buildings either side (Welsh valley, Strassendorf)
-  | 'radial'        // Streets radiate from central hub (Baroque, Paris)
-  | 'terraced'      // Parallel rows of row-houses (Welsh/English industrial)
-  | 'perimeter'     // Buildings around block edge with hollow courtyard (Barcelona)
+  | 'auto'       // smart mixing based on settlement type + ward position (default)
+  | 'organic'    // Voronoi-based, irregular — current default
+  | 'grid'       // Orthogonal streets, rectangular blocks (Roman, American)
+  | 'linear'     // One main road, buildings either side (Welsh valley, Strassendorf)
+  | 'radial'     // Streets radiate from central hub (Baroque, Paris)
+  | 'terraced'   // Parallel rows of row-houses (Welsh/English industrial)
+  | 'perimeter'  // Buildings around block edge with hollow courtyard (Barcelona)
   ;
 
 interface GeneratorParams {
@@ -181,6 +184,36 @@ export function generateBaseSeeds(p: GeneratorParams): Vec2[] {
 }
 
 /** Step 2: Build SettlementModel from existing (possibly user-warped) seeds. */
+export function assignWardLayouts(
+  wards:    Ward[],
+  centre:   Vec2,
+  radius:   number,
+  type:     SettlementType,
+  global:   LayoutType,
+): void {
+  for (const ward of wards) {
+    if (!ward.withinCity) { ward.wardLayout = 'linear'; continue; }
+
+    if (global !== 'auto') {
+      // Uniform override — all wards use the selected layout
+      ward.wardLayout = global;
+      continue;
+    }
+
+    // Auto mode: use mixing rules
+    const d = dist(ward.center, centre);
+    const r = radius > 0 ? d / radius : 0;
+    const zone: DistZone = r < 0.35 ? 'inner' : r < 0.65 ? 'mid' : 'outer';
+    const rules = ZONE_LAYOUTS[type]?.[ward.type];
+    ward.wardLayout = rules?.[zone] ?? 'organic';
+  }
+}
+
+/**
+ * Grid layout: buildings arranged in tight orthogonal rows aligned to the
+ * canvas axes (or a fixed dominant angle). Like Roman castra, American blocks.
+ */
+
 export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementModel {
   const t0   = performance.now();
   const rand = mulberry32(p.seed);
@@ -225,6 +258,7 @@ export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementMod
     polygon:    polygons[si] ?? [],
     withinCity: true,
     center:     centroid(polygons[si] ?? [{ x: seeds[si]!.x, y: seeds[si]!.y }]),
+    wardLayout: 'organic' as LayoutType,
   }));
 
   // Add outer farm patches for context
@@ -233,7 +267,8 @@ export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementMod
     if (dist(seeds[i]!, centre) > R * 1.5) continue;
     const poly = polygons[i] ?? [];
     wards.push({ type: 'farm', seed: seeds[i]!, polygon: poly,
-                 withinCity: false, center: centroid(poly.length ? poly : [seeds[i]!]) });
+                 withinCity: false, center: centroid(poly.length ? poly : [seeds[i]!]),
+                 wardLayout: 'linear' as LayoutType });
   }
 
   // 8. Assign ward types to inner city patches
@@ -307,6 +342,9 @@ export function buildFromSeeds(seeds: Vec2[], p: GeneratorParams): SettlementMod
   }
 
   const cityRadius = inner.reduce((r, w) => Math.max(r, dist(w.seed, centre)), 0);
+
+  // 11. Assign per-ward layout types (mixing rules)
+  assignWardLayouts(wards, centre, cityRadius, p.type, p.layout);
 
   return {
     wards, roads, wall, gates, centre,
@@ -580,12 +618,62 @@ function fillWardOrganically(
   }
 }
 
-// ── Building layout strategies per LayoutType ────────────────────────────────
+// ── Ward layout mixing rules ──────────────────────────────────────────────────
+//
+// Real urban morphology pattern (confirmed by research):
+//   Inner core (dist < 0.35R)  → always organic (oldest, grew first)
+//   Middle ring (0.35–0.65R)   → ward-type dependent (planned expansion)
+//   Outer ring (> 0.65R)       → grid / linear / terraced (latest expansion)
+//
+// Village: organic + sparse linear edges
+// Town   : organic core → terraced mid → grid outer; patriciate=perimeter; slum=terraced
+// City   : organic core → perimeter/terraced mid → grid outer; market=perimeter; slum=terraced
 
-/**
- * Grid layout: buildings arranged in tight orthogonal rows aligned to the
- * canvas axes (or a fixed dominant angle). Like Roman castra, American blocks.
- */
+type DistZone = 'inner' | 'mid' | 'outer';
+
+const ZONE_LAYOUTS: Record<SettlementType, Record<WardType, Record<DistZone, LayoutType>>> = {
+  village: {
+    market:     { inner: 'organic', mid: 'organic',   outer: 'organic'  },
+    church:     { inner: 'organic', mid: 'organic',   outer: 'organic'  },
+    inn:        { inner: 'organic', mid: 'organic',   outer: 'linear'   },
+    smithy:     { inner: 'organic', mid: 'linear',    outer: 'linear'   },
+    craftsmen:  { inner: 'organic', mid: 'organic',   outer: 'linear'   },
+    merchant:   { inner: 'organic', mid: 'organic',   outer: 'linear'   },
+    patriciate: { inner: 'organic', mid: 'organic',   outer: 'organic'  },
+    slum:       { inner: 'organic', mid: 'linear',    outer: 'linear'   },
+    gateward:   { inner: 'linear',  mid: 'linear',    outer: 'linear'   },
+    farm:       { inner: 'linear',  mid: 'linear',    outer: 'linear'   },
+    park:       { inner: 'organic', mid: 'organic',   outer: 'organic'  },
+  },
+  town: {
+    market:     { inner: 'organic', mid: 'organic',   outer: 'organic'   },
+    church:     { inner: 'organic', mid: 'organic',   outer: 'organic'   },
+    inn:        { inner: 'organic', mid: 'organic',   outer: 'organic'   },
+    smithy:     { inner: 'linear',  mid: 'linear',    outer: 'grid'      },
+    craftsmen:  { inner: 'organic', mid: 'terraced',  outer: 'grid'      },
+    merchant:   { inner: 'organic', mid: 'grid',      outer: 'grid'      },
+    patriciate: { inner: 'organic', mid: 'perimeter', outer: 'perimeter' },
+    slum:       { inner: 'terraced',mid: 'terraced',  outer: 'terraced'  },
+    gateward:   { inner: 'linear',  mid: 'linear',    outer: 'linear'    },
+    farm:       { inner: 'linear',  mid: 'linear',    outer: 'linear'    },
+    park:       { inner: 'organic', mid: 'organic',   outer: 'organic'   },
+  },
+  city: {
+    market:     { inner: 'perimeter', mid: 'perimeter', outer: 'grid'      },
+    church:     { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
+    inn:        { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
+    smithy:     { inner: 'linear',    mid: 'grid',      outer: 'grid'      },
+    craftsmen:  { inner: 'organic',   mid: 'terraced',  outer: 'grid'      },
+    merchant:   { inner: 'organic',   mid: 'grid',      outer: 'grid'      },
+    patriciate: { inner: 'organic',   mid: 'perimeter', outer: 'perimeter' },
+    slum:       { inner: 'terraced',  mid: 'terraced',  outer: 'terraced'  },
+    gateward:   { inner: 'linear',    mid: 'linear',    outer: 'grid'      },
+    farm:       { inner: 'linear',    mid: 'linear',    outer: 'linear'    },
+    park:       { inner: 'organic',   mid: 'organic',   outer: 'organic'   },
+  },
+};
+
+
 function fillWardGrid(
   ctx: CanvasRenderingContext2D,
   poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
@@ -794,12 +882,13 @@ function fillWardRadial(
   }
 }
 
-/** Dispatch to the correct fill strategy based on layout type. */
+/** Dispatch to the correct fill strategy using ward's assigned layout. */
 function fillWard(
   ctx: CanvasRenderingContext2D,
-  ward: Ward, layout: LayoutType, occ: OccupancyGrid,
+  ward: Ward, occ: OccupancyGrid,
 ): void {
   const wardSeed = Math.round(ward.center.x * 97 + ward.center.y * 53);
+  const layout = ward.wardLayout;
   switch (layout) {
     case 'grid':      return fillWardGrid     (ctx, ward.polygon, ward.type, wardSeed, occ);
     case 'linear':    return fillWardLinear   (ctx, ward.polygon, ward.type, wardSeed, occ);
@@ -924,7 +1013,7 @@ export function drawSettlement2D5(
       continue;
     }
 
-    fillWard(ctx, ward, layout, occ);
+    fillWard(ctx, ward, occ);
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────────
