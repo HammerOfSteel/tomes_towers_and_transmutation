@@ -3422,6 +3422,291 @@ export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
 
 // ── Realm mode state ──────────────────────────────────────────────────────────
 
+// ── Planet view renderer (OW-A v2 — per-pixel orthographic projection) ─────────
+//
+// Each canvas pixel is mapped to a sphere surface point via orthographic projection:
+//   dx,dy = normalised screen offset from planet centre
+//   dz = sqrt(1 - dx² - dy²)   (sphere surface normal Z component)
+//   lon = atan2(dx, dz) + lonOffset
+//   lat = asin(dy)
+//   → sample biome grid at (lon, lat)
+//
+// All shading (diffuse, specular, atmosphere limb, terminator) is computed per pixel.
+// Clouds, stars, and city lights are baked into the same ImageData loop.
+// Total cost: ~5–30 ms for a 600×600 canvas. No WebGL required.
+
+/** Value-noise cloud texture (256×128), precomputed once per seed. */
+function buildCloudTexture(W: number, H: number, seed: number): Float32Array {
+  const tex = new Float32Array(W * H);
+  const rand = mulberry32(seed ^ 0x514C100D);
+
+  // Two octave value noise
+  for (let oct = 0; oct < 2; oct++) {
+    const freq = oct === 0 ? 6 : 14;
+    const amp  = oct === 0 ? 0.65 : 0.35;
+    const GW = freq + 2, GH = Math.floor(freq * H / W) + 2;
+    const grid = new Float32Array(GW * GH);
+    for (let i = 0; i < grid.length; i++) grid[i] = rand();
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const gx = x / W * freq, gy = y / H * (freq * H / W);
+        const ix = Math.floor(gx), iy = Math.floor(gy);
+        const fx = gx - ix, fy = gy - iy;
+        const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy);
+        const gi = (ix % GW + GW) % GW, gj = (iy % GH + GH) % GH;
+        const v00 = grid[gj*GW + gi] ?? 0;
+        const v10 = grid[gj*GW + ((gi+1)%GW)] ?? 0;
+        const v01 = grid[((gj+1)%GH)*GW + gi] ?? 0;
+        const v11 = grid[((gj+1)%GH)*GW + ((gi+1)%GW)] ?? 0;
+        tex[y*W + x] += amp * (v00*(1-ux)*(1-uy) + v10*ux*(1-uy) + v01*(1-ux)*uy + v11*ux*uy);
+      }
+    }
+  }
+  return tex;
+}
+
+const PLANET_BIOME_RGB: Record<RealmBiome, readonly [number,number,number]> = {
+  deep_ocean: [18,  38, 88],
+  ocean:      [32,  62, 148],
+  beach:      [198, 182, 105],
+  desert:     [208, 148, 55],
+  savanna:    [135, 158, 45],
+  grassland:  [50,  128, 38],
+  forest:     [25,  88, 28],
+  taiga:      [40,  88, 65],
+  tundra:     [88,  108, 125],
+  snow:       [218, 235, 248],
+};
+
+export function drawRealmPlanet(data: RealmData, canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const { cells, W, H, rivers: _rivers, settlements, towerX, towerY, seed } = data;
+  void _rivers;
+  const CW = canvas.width, CH = canvas.height;
+  const planetR = Math.min(CW, CH) * 0.43;
+  const pcx = Math.floor(CW / 2), pcy = Math.floor(CH / 2);
+
+  // Seeded sun direction (longitude angle, elevation)
+  const sunLon  = ((seed * 0.00137) % 1) * Math.PI * 2;
+  const sunElev = 0.35 + ((seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+  const sunX    =  Math.cos(sunElev) * Math.sin(sunLon);
+  const sunY    = -Math.sin(sunElev);
+  const sunZ    =  Math.cos(sunElev) * Math.cos(sunLon);
+
+  // Centre view on the tower (tower appears at front of planet)
+  const towerLon = (towerX / W) * Math.PI * 2 - Math.PI;
+  const towerLat = (towerY / H - 0.5) * Math.PI;
+  const lonOffset = -towerLon;
+  const latOffset = -towerLat * 0.5;   // partial tilt toward tower
+
+  // Precompute cloud texture (256×128) — fast value noise
+  const CLOUD_W = 256, CLOUD_H = 128;
+  const cloudTex = buildCloudTexture(CLOUD_W, CLOUD_H, seed);
+
+  // Build image per-pixel using ImageData
+  const imgData = ctx.createImageData(CW, CH);
+  const px = imgData.data;
+
+  const invR = 1 / planetR;
+  const TWO_PI = Math.PI * 2;
+
+  for (let sy = 0; sy < CH; sy++) {
+    const dy = (sy - pcy) * invR;
+    const dy2 = dy * dy;
+
+    for (let sx = 0; sx < CW; sx++) {
+      const base = (sy * CW + sx) << 2;
+      const dx = (sx - pcx) * invR;
+      const r2 = dx * dx + dy2;
+
+      // ── Star field + deep space ─────────────────────────────────────────────
+      if (r2 > 1.12) {
+        // Simple hash-based stars — no extra pass needed
+        const sh = Math.sin(sx * 4127.1 + sy * 2931.7 + seed * 0.0001);
+        const sv = sh - Math.floor(sh);
+        if (sv > 0.9968) {
+          const b = Math.round(((sv - 0.9968) / 0.0032) * 255);
+          px[base] = b; px[base+1] = b; px[base+2] = b + Math.round(b * 0.15);
+        } else {
+          px[base] = 3; px[base+1] = 4; px[base+2] = 10;
+        }
+        px[base+3] = 255;
+        continue;
+      }
+
+      // ── Atmosphere corona (just outside planet) ─────────────────────────────
+      if (r2 > 1.0) {
+        const t   = (r2 - 1.0) / 0.12;
+        const atm = Math.pow(Math.max(0, 1 - t), 2.5) * 0.6;
+        px[base]   = Math.round(atm * 60  + 3);
+        px[base+1] = Math.round(atm * 130 + 4);
+        px[base+2] = Math.round(atm * 255 + 10);
+        px[base+3] = 255;
+        continue;
+      }
+
+      // ── On planet surface ──────────────────────────────────────────────────
+      const dz      = Math.sqrt(Math.max(0, 1 - r2));
+      const nrm_x   = dx, nrm_y = dy, nrm_z = dz;
+
+      // Diffuse lighting
+      const nDotL   = nrm_x * sunX + nrm_y * sunY + nrm_z * sunZ;
+      const diffuse = Math.max(0, nDotL);
+      const ambient = 0.10;
+      const light   = ambient + diffuse * (1 - ambient);
+
+      // Soft terminator (smooth day/night line)
+      const termMix = Math.min(1, Math.max(0, nDotL * 6 + 0.8));
+
+      // Sphere surface → lon / lat via orthographic projection
+      const lon = Math.atan2(nrm_x, nrm_z) + lonOffset;
+      const lat = Math.asin(Math.max(-1, Math.min(1, nrm_y + latOffset * dz)));
+
+      // Normalised UV [0,1]
+      const u = ((lon / TWO_PI % 1) + 1) % 1;
+      const v = lat / Math.PI + 0.5;
+
+      // Sample biome grid
+      const gx = Math.max(0, Math.min(W-1, Math.floor(u * W)));
+      const gy = Math.max(0, Math.min(H-1, Math.floor(v * H)));
+      const cell   = cells[gy]![gx]!;
+      const biome  = cell.biome;
+      const [br, bg, bb] = PLANET_BIOME_RGB[biome];
+
+      // Elevation brightness boost for mountains
+      const elev   = cell.elevation;
+      const eBoost = elev > 0.65 ? (elev - 0.65) / 0.35 * 0.28 : 0;
+
+      // Cloud layer
+      const cu   = Math.floor(u * CLOUD_W);
+      const cv   = Math.floor(v * CLOUD_H);
+      const cVal = cloudTex[cv * CLOUD_W + cu] ?? 0;
+      const cMix = cVal > 0.52 ? Math.pow((cVal - 0.52) / 0.48, 1.8) * 0.72 : 0;
+
+      // Polar ice caps (latitude-based)
+      const absLat = Math.abs(lat);
+      const iceMix = absLat > 1.28 ? Math.pow((absLat - 1.28) / 0.29, 1.5) : 0;
+
+      // Ocean specular (Phong)
+      let specBright = 0;
+      if (biome === 'ocean' || biome === 'deep_ocean') {
+        const rdz = 2 * nDotL * nrm_z - sunZ;
+        specBright = Math.pow(Math.max(0, rdz), 40) * 0.55 * diffuse;
+      }
+
+      // City lights on night side
+      let cityR = 0, cityG = 0, cityB = 0;
+      if (diffuse < 0.08) {
+        for (const s of settlements) {
+          const sU  = s.x / W;
+          const sLon2 = (sU * TWO_PI - Math.PI) + lonOffset;
+          const sV  = s.y / H;
+          const sLat2 = (sV - 0.5) * Math.PI + latOffset;
+          const scLat = Math.cos(sLat2), ssLat = Math.sin(sLat2);
+          const sdx = scLat * Math.sin(sLon2);
+          const sdy = ssLat;
+          const sdz = scLat * Math.cos(sLon2);
+          const dot = nrm_x*sdx + nrm_y*sdy + nrm_z*sdz;
+          if (dot > 0.978) {
+            const str = ((dot - 0.978) / 0.022) * (1 - diffuse * 12) * 1.2;
+            const glow = s.size === 'city' ? 1.4 : s.size === 'town' ? 1.0 : 0.65;
+            cityR += str * glow * 255;
+            cityG += str * glow * 170;
+            cityB += str * glow * 30;
+          }
+        }
+      }
+
+      // Atmosphere limb (blue tint at sphere edge where dz ≈ 0)
+      const limbAtm = Math.pow(1 - dz, 3.2) * 0.40;
+
+      // Compose terrain → clouds → ice
+      let tr = br * (1 + eBoost);
+      let tg = bg * (1 + eBoost);
+      let tb = bb * (1 + eBoost);
+
+      // Blend clouds
+      tr = tr * (1 - cMix) + 228 * cMix;
+      tg = tg * (1 - cMix) + 234 * cMix;
+      tb = tb * (1 - cMix) + 242 * cMix;
+
+      // Blend polar ice
+      tr = tr * (1 - iceMix) + 230 * iceMix;
+      tg = tg * (1 - iceMix) + 242 * iceMix;
+      tb = tb * (1 - iceMix) + 252 * iceMix;
+
+      // Apply lighting
+      tr = tr * light + specBright * 200 + cityR;
+      tg = tg * light + specBright * 210 + cityG;
+      tb = tb * light + specBright * 240 + cityB;
+
+      // Night side darkening with faint star-shine tint
+      tr = tr * termMix + (ambient * 0.6) * (1 - termMix) * br;
+      tg = tg * termMix + (ambient * 0.6) * (1 - termMix) * bg;
+      tb = tb * termMix + (ambient * 0.6) * (1 - termMix) * bb;
+
+      // Atmosphere limb tint (blue at edges)
+      tr = tr * (1 - limbAtm) + 65  * limbAtm;
+      tg = tg * (1 - limbAtm) + 148 * limbAtm;
+      tb = tb * (1 - limbAtm) + 255 * limbAtm;
+
+      px[base]   = Math.max(0, Math.min(255, Math.round(tr)));
+      px[base+1] = Math.max(0, Math.min(255, Math.round(tg)));
+      px[base+2] = Math.max(0, Math.min(255, Math.round(tb)));
+      px[base+3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // ── Post: atmosphere outer glow drawn over ImageData ──────────────────────
+  const atmGrad = ctx.createRadialGradient(pcx, pcy, planetR * 0.90, pcx, pcy, planetR * 1.14);
+  atmGrad.addColorStop(0,    'rgba(70,150,255,0)');
+  atmGrad.addColorStop(0.35, 'rgba(70,150,255,0.28)');
+  atmGrad.addColorStop(0.70, 'rgba(40,110,230,0.10)');
+  atmGrad.addColorStop(1,    'rgba(15,70,200,0)');
+  ctx.fillStyle = atmGrad;
+  ctx.beginPath(); ctx.arc(pcx, pcy, planetR * 1.14, 0, Math.PI * 2); ctx.fill();
+
+  // Specular bloom (top-left shine)
+  const bloom = ctx.createRadialGradient(pcx - planetR*0.25, pcy - planetR*0.28, 0, pcx, pcy, planetR);
+  bloom.addColorStop(0,   'rgba(255,255,255,0.10)');
+  bloom.addColorStop(0.4, 'rgba(255,255,255,0.03)');
+  bloom.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle = bloom;
+  ctx.beginPath(); ctx.arc(pcx, pcy, planetR, 0, Math.PI * 2); ctx.fill();
+
+  // Tower ⬡ marker (visible on day side)
+  const tLon = (towerX / W) * Math.PI * 2 - Math.PI + lonOffset;
+  const tLat = (towerY / H - 0.5) * Math.PI + latOffset;
+  const tDz  = Math.cos(tLat) * Math.cos(tLon);
+  if (tDz > 0.15) {  // on visible hemisphere
+    const tSx = pcx + Math.round(Math.cos(tLat) * Math.sin(tLon) * planetR);
+    const tSy = pcy + Math.round(Math.sin(tLat) * planetR);
+    const tr2  = Math.max(4, Math.floor(planetR * 0.025));
+    ctx.strokeStyle = `rgba(240,210,30,${0.6 + tDz * 0.4})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+      if (i === 0) ctx.moveTo(tSx + tr2*Math.cos(a), tSy + tr2*Math.sin(a));
+      else         ctx.lineTo(tSx + tr2*Math.cos(a), tSy + tr2*Math.sin(a));
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+
+  // Caption
+  ctx.fillStyle = 'rgba(155,185,220,0.65)';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`seed ${seed}  ·  ${W}×${H}  ·  ${settlements.length} settlements`, CW/2, CH-4);
+}
+
+
+type RealmViewMode = 'map' | 'planet';
+let realmViewMode: RealmViewMode = 'map';
+
 let currentRealmData: RealmData | null = null;
 
 function generateRealmView() {
@@ -3431,18 +3716,20 @@ function generateRealmView() {
   const shape    = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement)?.dataset.shape as RealmShape ?? 'island';
   const climate  = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate ?? 'temperate';
   const roughness = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
-  const REALM_SIZES: Record<number, [number,number]> = {1:[64,48],2:[96,72],3:[160,120],4:[220,164]};
+  const REALM_SIZES: Record<number, [number,number]> = {1:[64,48],2:[96,72],3:[160,120],4:[220,164],5:[300,225]};
   const [W, H] = REALM_SIZES[size] ?? REALM_SIZES[2]!;
   const t0 = performance.now();
   currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);
-  drawRealm(currentRealmData, canvas);
+  redrawRealm();
   const ms = (performance.now()-t0).toFixed(1);
-  const landCells = currentRealmData.cells.flat().filter(c => c.biome !== 'ocean' && c.biome !== 'deep_ocean').length;
   genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
-  void landCells;
 }
 
-function redrawRealm() { if (currentRealmData) drawRealm(currentRealmData, canvas); }
+function redrawRealm() {
+  if (!currentRealmData) return;
+  if (realmViewMode === 'planet') drawRealmPlanet(currentRealmData, canvas);
+  else drawRealm(currentRealmData, canvas);
+}
 
 
 // ── Studio mode tab switching ─────────────────────────────────────────────────
@@ -3561,6 +3848,15 @@ document.getElementById('btn-cave-png')?.addEventListener('click', () => {
 
 // ── Realm controls event wiring ───────────────────────────────────────────────
 
+document.getElementById('realm-view-pills')?.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  realmViewMode = pill.dataset.view as RealmViewMode ?? 'map';
+  redrawRealm();
+});
+
 for (const id of ['realm-shape-pills', 'realm-climate-pills'] as const) {
   document.getElementById(id)?.addEventListener('click', e => {
     const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
@@ -3571,7 +3867,7 @@ for (const id of ['realm-shape-pills', 'realm-climate-pills'] as const) {
   });
 }
 
-const REALM_SIZE_LABELS = ['','S','M','L','XL'];
+const REALM_SIZE_LABELS = ['','S','M','L','XL','Planet'];
 document.getElementById('realm-size')?.addEventListener('input', () => {
   const v = parseInt((document.getElementById('realm-size') as HTMLInputElement).value);
   (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
