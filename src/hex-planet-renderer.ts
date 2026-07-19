@@ -316,33 +316,31 @@ export class HexPlanetRenderer {
 
       // ── Sample directly from realm cells ───────────────────────────────
       const cell  = sampleCell(cp.x, cp.y, cp.z, len);
-      const elev  = cell.elevation;     // 0-1 from realm generator
+      const elev  = cell.elevation;
       const biome = cell.biome as BiomeName;
       const [r,g,b] = BIOME_COLOR[biome] ?? BIOME_COLOR.deep_ocean;
 
-      // ── Fixed biome tier heights — NOT roughness-dependent ─────────────
-      // Tier centers are always the same. Roughness only adds micro-variation
-      // WITHIN each tier (never crossing tier boundaries).
-      //
-      // Minimum gap between adjacent tiers = 0.04 (safe sub-variation cap = 0.012)
-      // ocean tiers deeper for dramatic look, land tiers clearly stepped
+      // ── Tier heights: subtle steps, ocean clearly below land ───────────
+      // Range compressed: 0.84–1.22 (38% vs old 54%). Tier gaps min=0.03.
+      // microAmp = roughness*0.014 → max ±0.007, safely within each tier.
       const TIER: Record<string, number> = {
-        deep_ocean: 0.78, ocean: 0.90, beach: 0.97,
-        desert: 1.03,  savanna: 1.07, grassland: 1.11,
-        forest: 1.16,  taiga:   1.21, tundra:    1.26, snow: 1.32,
+        deep_ocean: 0.84, ocean: 0.91, beach: 0.96,
+        desert: 1.00,  savanna: 1.03, grassland: 1.06,
+        forest: 1.10,  taiga:   1.14, tundra:    1.18, snow: 1.22,
       };
       const tierBase = TIER[biome] ?? 1.0;
+      // Per-vertex micro-variation: each corner samples its own realm cell
+      // Roughness=0 → flat-top tiles; Roughness=1 → smooth terrain surface
+      const microAmp = s.roughness * 0.014;
 
-      // Roughness = micro-variation within the tier (smooth, never crosses tier)
-      // roughness 0 → perfectly flat tiers; roughness 1 → subtle ridges ±0.012
-      const microAmp = s.roughness * 0.012;
-      const tileElev = BASE_R * (tierBase + (elev - 0.5) * microAmp);
+      // Center tile height (used for center triangle fan point)
+      const centerH = tierBase + (elev - 0.5) * microAmp;
+      const tileElev = BASE_R * centerH;
 
       const scale = tileElev / len;
       const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;
       const topNx = ecx/tileElev, topNy = ecy/tileElev, topNz = ecz/tileElev;
 
-      // Top face color; side face slightly darker (indirect lighting)
       const rc=r/255, gc=g/255, bc=b/255;
       const sd=0.60;
       const src2=rc*sd, sgc=gc*sd, sbc=bc*sd;
@@ -354,12 +352,18 @@ export class HexPlanetRenderer {
         const bL0 = Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
         const bL1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
 
-        // Top extruded
-        const t0=tileElev/bL0, t1=tileElev/bL1;
-        const e0x=b0.x*t0, e0y=b0.y*t0, e0z=b0.z*t0;
-        const e1x=b1.x*t1, e1y=b1.y*t1, e1z=b1.z*t1;
+        // Per-vertex elevation: sample realm cell at each corner position
+        // This makes the tile top face non-flat — smooth terrain surface
+        const v0cell  = sampleCell(b0.x, b0.y, b0.z, bL0);
+        const v1cell  = sampleCell(b1.x, b1.y, b1.z, bL1);
+        const v0H = BASE_R * (tierBase + (v0cell.elevation - 0.5) * microAmp);
+        const v1H = BASE_R * (tierBase + (v1cell.elevation - 0.5) * microAmp);
 
-        // Inner bottom
+        // Top extruded — each vertex at its own height
+        const e0x=b0.x*(v0H/bL0), e0y=b0.y*(v0H/bL0), e0z=b0.z*(v0H/bL0);
+        const e1x=b1.x*(v1H/bL1), e1y=b1.y*(v1H/bL1), e1z=b1.z*(v1H/bL1);
+
+        // Inner bottom (still constant depth for clean side walls)
         const i0s=INNER_R/bL0, i1s=INNER_R/bL1;
         const ib0x=b0.x*i0s, ib0y=b0.y*i0s, ib0z=b0.z*i0s;
         const ib1x=b1.x*i1s, ib1y=b1.y*i1s, ib1z=b1.z*i1s;
