@@ -290,7 +290,7 @@ export class HexPlanetRenderer {
     const normals    = new Float32Array(totalEdges * 27);
     const edgePositions = new Float32Array(totalEdges * 6);  // top edges only
 
-    const INNER_R = BASE_R * 0.80;  // deep inner shell → tall side walls for dramatic terrain
+    const INNER_R = BASE_R * 0.93;  // shallow inner shell — side walls thin (7% deep)
     let vi = 0, ei = 0;
 
     const pushTri = (
@@ -320,18 +320,17 @@ export class HexPlanetRenderer {
       const biome = cell.biome as BiomeName;
       const [r,g,b] = BIOME_COLOR[biome] ?? BIOME_COLOR.deep_ocean;
 
-      // ── Tier heights: subtle steps, ocean clearly below land ───────────
-      // Range compressed: 0.84–1.22 (38% vs old 54%). Tier gaps min=0.03.
-      // microAmp = roughness*0.014 → max ±0.007, safely within each tier.
+      // ── Flat tiers: ocean slightly below, land slightly above ───────────────
+      // Total range ~7% (0.955–1.030). Detail comes from per-vertex microAmp.
       const TIER: Record<string, number> = {
-        deep_ocean: 0.84, ocean: 0.91, beach: 0.96,
-        desert: 1.00,  savanna: 1.03, grassland: 1.06,
-        forest: 1.10,  taiga:   1.14, tundra:    1.18, snow: 1.22,
+        deep_ocean: 0.955, ocean: 0.968, beach: 0.982,
+        desert: 1.000,  savanna: 1.004, grassland: 1.008,
+        forest: 1.013,  taiga:   1.018, tundra:    1.023, snow: 1.030,
       };
       const tierBase = TIER[biome] ?? 1.0;
-      // Per-vertex micro-variation: each corner samples its own realm cell
-      // Roughness=0 → flat-top tiles; Roughness=1 → smooth terrain surface
-      const microAmp = s.roughness * 0.014;
+      // Per-vertex micro-variation — this is where detail lives
+      // roughness=0: perfectly flat tiers; roughness=1: ±0.008 per vertex
+      const microAmp = s.roughness * 0.016;
 
       // Center tile height (used for center triangle fan point)
       const centerH = tierBase + (elev - 0.5) * microAmp;
