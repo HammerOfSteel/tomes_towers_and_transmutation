@@ -3811,6 +3811,8 @@ function redrawRealm(): void {
     const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 24 };
     const realmSize   = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
     const roughness   = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+    const shape       = (document.querySelector('#realm-shape-pills .pill.active')  as HTMLElement)?.dataset.shape   as RealmShape   ?? 'island';
+    const climate     = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate  ?? 'temperate';
     const subdivisions = SIZE_TO_SUB[realmSize] ?? 8;
     const tileCount   = 10 * subdivisions * subdivisions + 2;
     // Update tile display
@@ -3820,6 +3822,8 @@ function redrawRealm(): void {
       seed: d.seed,
       subdivisions,
       roughness,
+      shape,
+      climate,
       sunDirection: sunDir,
       atmosphereColor: new THREE.Color(0xd0e8ff),
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),

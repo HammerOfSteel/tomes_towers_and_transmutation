@@ -137,12 +137,64 @@ function classifyBiome(elev: number, moist: number, temp: number): BiomeName {
 
 export interface HexPlanetSettings {
   seed:         number;
-  subdivisions: number;   // derived from realm Size: S=6, M=8, L=12, XL=16, Planet=20
-  roughness:    number;   // 0-1 from roughness slider — controls elevation amplitude + octaves
+  subdivisions: number;
+  roughness:    number;   // 0-1
+  shape:        'island' | 'continents' | 'archipelago' | 'pangaea';
+  climate:      'tropical' | 'temperate' | 'arctic';
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
   W: number; H: number;
+}
+
+// ── Continent mask (same algorithm as generateRealmData) ──────────────────────
+
+type MaskFn = (nx: number, ny: number) => number;
+
+function buildContinentMask(shape: string, rand: () => number): MaskFn {
+  if (shape === 'continents') {
+    const nC = 2 + Math.floor(rand() * 2);
+    const C = Array.from({ length: nC }, () => ({
+      cx: 0.12 + rand() * 0.76, cy: 0.12 + rand() * 0.76,
+      rx: 0.14 + rand() * 0.20, ry: 0.10 + rand() * 0.16,
+      rot: rand() * Math.PI,
+    }));
+    return (nx, ny) => {
+      let v = 0;
+      for (const c of C) {
+        const dx = nx - c.cx, dy = ny - c.cy;
+        const rx = dx * Math.cos(c.rot) + dy * Math.sin(c.rot);
+        const ry = -dx * Math.sin(c.rot) + dy * Math.cos(c.rot);
+        const d  = Math.sqrt((rx/c.rx)**2 + (ry/c.ry)**2);
+        v = Math.max(v, Math.max(0, 1.1 - d));
+      }
+      return v;
+    };
+  }
+  if (shape === 'archipelago') {
+    const nI = 12 + Math.floor(rand() * 10);
+    const islands = Array.from({ length: nI }, () => ({
+      cx: 0.04 + rand() * 0.92, cy: 0.04 + rand() * 0.92,
+      r:  0.025 + rand() * 0.06,
+    }));
+    return (nx, ny) => {
+      let v = 0;
+      for (const isl of islands) {
+        const d = Math.hypot((nx - isl.cx) / isl.r, (ny - isl.cy) / isl.r);
+        v = Math.max(v, Math.max(0, 1 - d));
+      }
+      return v;
+    };
+  }
+  if (shape === 'pangaea') {
+    return (nx, ny) => {
+      const dx = nx - 0.5, dy = ny - 0.5;
+      const jitter = Math.sin(nx * 8) * 0.06 + Math.cos(ny * 7) * 0.05;
+      return Math.max(0, 1 - Math.sqrt(dx*dx*1.5 + dy*dy*1.2) * 1.3 + jitter);
+    };
+  }
+  // Island (default)
+  return (nx, ny) => Math.min(nx, 1-nx, ny, 1-ny) * 4.2;
 }
 
 export class HexPlanetRenderer {
@@ -225,17 +277,21 @@ export class HexPlanetRenderer {
     const M0 = makeGrid(5, 3, rand2);  const M1 = makeGrid(9, 5, rand2);
     const T0 = makeGrid(5, 3, rand3);
 
+    // ── Continent mask + climate bias ─────────────────────────────────────
+    // Use a dedicated seed so continent placement is consistent across sizes
+    const maskRand     = mulberry32(s.seed ^ 0x5A9E55);
+    const maskFn: MaskFn = buildContinentMask(s.shape, maskRand);
+    const climateBias  = s.climate === 'tropical' ? 0.28 : s.climate === 'arctic' ? -0.28 : 0;
+
     function fbm3(x: number, y: number, z: number): number {
       const lon = (Math.atan2(z, x) / (Math.PI * 2) + 0.5);
       const lat = (Math.asin(Math.max(-1, Math.min(1, y / Math.sqrt(x*x+y*y+z*z)))) / Math.PI + 0.5);
-      // More roughness = more octaves + higher frequency
       const scale = 1.0 + s.roughness * 1.5;
       let v = valueNoise2D(lon*3*scale, lat*1.5*scale, G0,5,3)*0.46
             + valueNoise2D(lon*6*scale, lat*3*scale,   G1,9,5)*0.28
             + valueNoise2D(lon*12*scale,lat*6*scale,   G2,17,9)*0.14
             + valueNoise2D(lon*24*scale,lat*12*scale,  G3,33,17)*0.12;
       if (s.roughness > 0.5) {
-        // Extra octave for rugged terrain
         v = v * 0.9 + valueNoise2D(lon*48*scale,lat*24*scale, makeGrid(65,33,mulberry32(s.seed^0xABCD)),65,33) * 0.1;
       }
       return v;
@@ -249,11 +305,21 @@ export class HexPlanetRenderer {
     }
 
     function tempAt(y: number, elevation: number): number {
-      const lat = Math.abs(y / BASE_R);
+      const lat  = Math.abs(y / BASE_R);
       const latT = 1 - lat * 1.4;
       const elvT = 1 - Math.max(0, elevation - 0.5) * 1.6;
-      return Math.max(0, Math.min(1, latT * 0.7 + elvT * 0.3
-        + (valueNoise2D(y*3, elevation*5, T0,5,3) - 0.5) * 0.12));
+      return Math.max(0, Math.min(1,
+        latT * 0.7 + elvT * 0.3
+        + (valueNoise2D(y*3, elevation*5, T0,5,3) - 0.5) * 0.12
+        + climateBias,  // climate shifts temperature globally
+      ));
+    }
+
+    /** Map 3D tile centre to equirectangular UV for mask lookup. */
+    function tileUV(cx: number, cy: number, cz: number, len: number): [number, number] {
+      const nx = (Math.atan2(cz, cx) / (Math.PI * 2) + 0.5);
+      const ny = (Math.asin(Math.max(-1, Math.min(1, cy / len))) / Math.PI + 0.5);
+      return [nx, ny];
     }
 
     // ── Build geometry ───────────────────────────────────────────────────
@@ -290,29 +356,34 @@ export class HexPlanetRenderer {
       const len = Math.sqrt(cp.x*cp.x+cp.y*cp.y+cp.z*cp.z);
       const rawElev = fbm3(cp.x, cp.y, cp.z);
       const moist   = moistureAt(cp.x, cp.y, cp.z);
-      const temp    = tempAt(cp.y, rawElev);
-      const biome   = classifyBiome(rawElev, moist, temp);
+
+      // Apply world shape mask: tiles outside continent zones become ocean
+      const [nx, ny] = tileUV(cp.x, cp.y, cp.z, len);
+      const mVal    = Math.min(1, maskFn(nx, ny));
+      // Blend: mask=0 → tile forced to low elevation (ocean); mask=1 → full fBm
+      const elev    = Math.min(1, mVal * rawElev + Math.max(0, 0.28 - mVal * 0.28));
+
+      const temp    = tempAt(cp.y, elev);
+      const biome   = classifyBiome(elev, moist, temp);
       const [r,g,b] = BIOME_COLOR[biome];
 
-      // ── Discrete height tiers (Civ 6 style) ────────────────────────────
-      // roughness = 0 → flat, gentle steps; roughness = 1 → very dramatic terrain
-      const hBase  = 0.10 + s.roughness * 0.18;   // amplitude of land range
-      const hOcean = 0.08 + s.roughness * 0.10;   // ocean depth below surface
-      let elev: number;
-      if      (biome === 'deep_ocean') elev = BASE_R * (1.0 - hOcean * 1.6);
-      else if (biome === 'ocean')      elev = BASE_R * (1.0 - hOcean * 0.8);
-      else if (biome === 'beach')      elev = BASE_R * (1.0 - hOcean * 0.1);
-      else if (biome === 'desert')     elev = BASE_R * (1.0 + hBase * 0.2);
-      else if (biome === 'savanna')    elev = BASE_R * (1.0 + hBase * 0.3);
-      else if (biome === 'grassland')  elev = BASE_R * (1.0 + hBase * 0.4);
-      else if (biome === 'forest')     elev = BASE_R * (1.0 + hBase * 0.5);
-      else if (biome === 'taiga')      elev = BASE_R * (1.0 + hBase * 0.7);
-      else if (biome === 'tundra')     elev = BASE_R * (1.0 + hBase * 0.8 + rawElev * hBase * 0.3);
-      else /* snow */                  elev = BASE_R * (1.0 + hBase * 1.0 + rawElev * hBase * 0.5);
+      const hBase  = 0.10 + s.roughness * 0.18;
+      const hOcean = 0.08 + s.roughness * 0.10;
+      let tileElev: number;
+      if      (biome === 'deep_ocean') tileElev = BASE_R * (1.0 - hOcean * 1.6);
+      else if (biome === 'ocean')      tileElev = BASE_R * (1.0 - hOcean * 0.8);
+      else if (biome === 'beach')      tileElev = BASE_R * (1.0 - hOcean * 0.1);
+      else if (biome === 'desert')     tileElev = BASE_R * (1.0 + hBase * 0.2);
+      else if (biome === 'savanna')    tileElev = BASE_R * (1.0 + hBase * 0.3);
+      else if (biome === 'grassland')  tileElev = BASE_R * (1.0 + hBase * 0.4);
+      else if (biome === 'forest')     tileElev = BASE_R * (1.0 + hBase * 0.5);
+      else if (biome === 'taiga')      tileElev = BASE_R * (1.0 + hBase * 0.7);
+      else if (biome === 'tundra')     tileElev = BASE_R * (1.0 + hBase * 0.8 + elev * hBase * 0.3);
+      else /* snow */                  tileElev = BASE_R * (1.0 + hBase * 1.0 + elev * hBase * 0.5);
 
-      const scale = elev / len;
+      const scale = tileElev / len;
       const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;
-      const topNx = ecx/elev, topNy = ecy/elev, topNz = ecz/elev;
+      const topNx = ecx/tileElev, topNy = ecy/tileElev, topNz = ecz/tileElev;
 
       // Top face color; side face slightly darker (indirect lighting)
       const rc=r/255, gc=g/255, bc=b/255;
@@ -327,7 +398,7 @@ export class HexPlanetRenderer {
         const bL1 = Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
 
         // Top extruded
-        const t0=elev/bL0, t1=elev/bL1;
+        const t0=tileElev/bL0, t1=tileElev/bL1;
         const e0x=b0.x*t0, e0y=b0.y*t0, e0z=b0.z*t0;
         const e1x=b1.x*t1, e1y=b1.y*t1, e1z=b1.z*t1;
 
