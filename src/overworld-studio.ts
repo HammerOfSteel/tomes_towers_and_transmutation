@@ -333,6 +333,259 @@ function convexHullExpanded(pts: Vec2[], centre: Vec2, expand: number): Vec2[] {
   });
 }
 
+// ── 2.5D / Plan-oblique renderer ─────────────────────────────────────────────
+
+/** Building heights in world units per ward type */
+const WARD_HEIGHT: Record<WardType, number> = {
+  market:     1.2,
+  church:     5.5,   // tall spire
+  inn:        3.0,
+  smithy:     2.2,
+  craftsmen:  1.8,
+  merchant:   2.8,
+  patriciate: 3.2,
+  slum:       1.4,
+  gateward:   3.0,
+  farm:       0.8,
+  park:       0,
+};
+
+/** Oblique extrusion direction (upper-right, 45°) */
+const OBL_X = 0.55, OBL_Y = -0.55;
+/** Pixels per world unit of height */
+const H_SCALE = 14;
+
+/** Darken a CSS hex colour by `amount` (0–1). */
+function darkenHex(hex: string, amount: number): string {
+  const c = parseInt(hex.slice(1), 16);
+  const r = Math.round(((c >> 16) & 0xFF) * (1 - amount));
+  const g = Math.round(((c >>  8) & 0xFF) * (1 - amount));
+  const b = Math.round((c & 0xFF) * (1 - amount));
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Draw a single building box using plan-oblique projection. */
+function drawBox(
+  ctx: CanvasRenderingContext2D,
+  bx: number, by: number, bw: number, bh: number,
+  rot: number, height: number, topColor: string,
+): void {
+  const hw  = height * H_SCALE;
+  const ex  = OBL_X * hw, ey = OBL_Y * hw;
+  const hw2 = bw / 2,     hh2 = bh / 2;
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+
+  const c = (dx: number, dy: number): [number, number] => [
+    bx + cos * dx - sin * dy,
+    by + sin * dx + cos * dy,
+  ];
+  const tl = c(-hw2, -hh2), tr = c(hw2, -hh2);
+  const br = c(hw2,  hh2),  bl = c(-hw2, hh2);
+
+  // Right face (darker)
+  ctx.beginPath();
+  ctx.moveTo(tr[0], tr[1]);       ctx.lineTo(tr[0]+ex, tr[1]+ey);
+  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(br[0], br[1]);
+  ctx.closePath();
+  ctx.fillStyle = darkenHex(topColor, 0.48);
+  ctx.fill();
+
+  // Front face (darkest)
+  ctx.beginPath();
+  ctx.moveTo(bl[0], bl[1]);       ctx.lineTo(bl[0]+ex, bl[1]+ey);
+  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(br[0], br[1]);
+  ctx.closePath();
+  ctx.fillStyle = darkenHex(topColor, 0.62);
+  ctx.fill();
+
+  // Top face
+  ctx.beginPath();
+  ctx.moveTo(tl[0]+ex, tl[1]+ey); ctx.lineTo(tr[0]+ex, tr[1]+ey);
+  ctx.lineTo(br[0]+ex, br[1]+ey); ctx.lineTo(bl[0]+ex, bl[1]+ey);
+  ctx.closePath();
+  ctx.fillStyle = topColor;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+}
+
+/** Draw a church with a slender spire on top of the base box. */
+function drawChurch(
+  ctx: CanvasRenderingContext2D,
+  bx: number, by: number, bw: number, bh: number, rot: number, col: string,
+): void {
+  const BASE_H = 2.5, SPIRE_H = WARD_HEIGHT.church - BASE_H;
+  drawBox(ctx, bx, by, bw, bh, rot, BASE_H, col);
+
+  // Spire: thin tall box centred on the building
+  const eh = BASE_H * H_SCALE;
+  const sx = bx + OBL_X * eh, sy = by + OBL_Y * eh;
+  const spireH = SPIRE_H * H_SCALE;
+  const sw = bw * 0.32, sd = bh * 0.32;
+  drawBox(ctx, sx, sy, sw, sd, rot, SPIRE_H, darkenHex(col, 0.15));
+
+  // Cross on spire tip
+  const topH = (BASE_H + SPIRE_H) * H_SCALE;
+  const tx = bx + OBL_X * topH, ty = by + OBL_Y * topH;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(tx - 3, ty); ctx.lineTo(tx + 3, ty); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tx, ty - 5); ctx.lineTo(tx, ty + 2); ctx.stroke();
+}
+
+export function drawSettlement2D5(
+  model: SettlementModel,
+  canvas: HTMLCanvasElement,
+  showLabels = true,
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // ── Background ──────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0c0e11';
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground plane: fields / green areas outside city
+  for (const ward of model.wards) {
+    if (ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ward.polygon.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(28, 42, 18, 0.7)';
+    ctx.fill();
+  }
+
+  // City ground blocks (just flat fill, buildings drawn on top)
+  for (const ward of model.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ward.polygon.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(22, 28, 18, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(60,60,40,0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // ── Roads ────────────────────────────────────────────────────────────────────
+  for (let ri = 0; ri < model.roads.length; ri++) {
+    const road = model.roads[ri]!;
+    if (road.points.length < 2) continue;
+    const isMain = ri === 0;
+    ctx.beginPath();
+    road.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.strokeStyle = isMain ? '#8a7048' : '#706038';
+    ctx.lineWidth   = isMain ? 4.5 : 3;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.stroke();
+    // Raised road highlight
+    ctx.strokeStyle = isMain ? '#b09060' : '#927844';
+    ctx.lineWidth   = isMain ? 2.5 : 1.5;
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // ── Wall ─────────────────────────────────────────────────────────────────────
+  if (model.wall && model.wall.length > 2) {
+    const wc = '#b09060', wh = 2.5 * H_SCALE;
+    const ex = OBL_X * wh, ey = OBL_Y * wh;
+
+    // Wall shadow fill
+    ctx.beginPath();
+    model.wall.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+    ctx.strokeStyle = darkenHex(wc, 0.5);
+    ctx.lineWidth = 10;
+    ctx.stroke();
+
+    // Wall top
+    ctx.beginPath();
+    model.wall.forEach((p, i) => i ? ctx.lineTo(p.x+ex, p.y+ey) : ctx.moveTo(p.x+ex, p.y+ey));
+    ctx.closePath();
+    ctx.strokeStyle = wc;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Crenellations (every ~14px along wall)
+    for (let i = 0; i < model.wall.length; i++) {
+      const a = model.wall[i]!, b = model.wall[(i+1) % model.wall.length]!;
+      const len = Math.hypot(b.x-a.x, b.y-a.y);
+      const steps = Math.floor(len / 14);
+      for (let s = 0; s < steps; s++) {
+        const t = (s + 0.5) / steps;
+        const mx = a.x + (b.x-a.x)*t, my = a.y + (b.y-a.y)*t;
+        drawBox(ctx, mx+ex, my+ey, 3.5, 3.5, 0, 0.6, wc);
+      }
+    }
+
+    // Gate arches
+    for (const gate of model.gates) {
+      const gex = OBL_X * 3.5 * H_SCALE, gey = OBL_Y * 3.5 * H_SCALE;
+      drawBox(ctx, gate.x+gex*0.5, gate.y+gey*0.5, 10, 8, 0, 3.5, darkenHex(wc, 0.1));
+      // Arch hole
+      ctx.beginPath();
+      ctx.arc(gate.x+gex*0.5, gate.y+gey*0.5, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#050608';
+      ctx.fill();
+    }
+  }
+
+  // ── Buildings (painter's algorithm: high-Y last) ───────────────────────────
+  const sortedWards = model.wards.filter(w => w.withinCity).sort((a, b) => a.center.y - b.center.y);
+
+  for (const ward of sortedWards) {
+    const col  = WARD_COLORS[ward.type];
+    const h    = WARD_HEIGHT[ward.type];
+    if (h === 0) continue; // parks: just ground
+
+    const cx = ward.center.x, cy = ward.center.y;
+    const rand2 = mulberry32(Math.round(cx * 97 + cy * 53));
+
+    const count = ward.type === 'market'     ? 5
+                : ward.type === 'craftsmen'  ? 4
+                : ward.type === 'slum'       ? 6
+                : ward.type === 'church'     ? 1
+                : 2;
+
+    for (let b = 0; b < count; b++) {
+      const angle = rand2() * Math.PI * 2;
+      const r     = b === 0 ? 0 : 4 + rand2() * 9;
+      const bx    = cx + Math.cos(angle) * r;
+      const by    = cy + Math.sin(angle) * r;
+      const bw    = ward.type === 'church' ? 9 : 4 + rand2() * 7;
+      const bh    = ward.type === 'church' ? 7 : 4 + rand2() * 5;
+      const rot   = rand2() * Math.PI;
+
+      if (ward.type === 'church') {
+        drawChurch(ctx, bx, by, bw, bh, rot, col);
+      } else {
+        drawBox(ctx, bx, by, bw, bh, rot, h * (0.85 + rand2() * 0.3), col);
+      }
+    }
+  }
+
+  // ── Ward labels ──────────────────────────────────────────────────────────────
+  if (showLabels) {
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = '9px monospace';
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      const h = WARD_HEIGHT[ward.type] * H_SCALE;
+      const lx = ward.center.x + OBL_X * h;
+      const ly = ward.center.y + OBL_Y * h - 4;
+      ctx.fillStyle = WARD_COLORS[ward.type];
+      ctx.fillText(WARD_LABELS[ward.type], lx, ly);
+    }
+  }
+}
+
 // ── Canvas 2D Renderer ────────────────────────────────────────────────────────
 
 export function drawSettlement(
@@ -519,13 +772,30 @@ let lastParams: GeneratorParams | null = null;
 
 type ToolName = 'select' | 'warp';
 let activeTool: ToolName = 'select';
+type ViewMode = 'flat' | 'iso';
+let viewMode: ViewMode = 'flat';
 
 function setTool(name: ToolName) {
   activeTool = name;
-  document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll<HTMLElement>('.tool-btn[id^="tool-"]').forEach(b => b.classList.remove('active'));
   document.getElementById(`tool-${name}`)?.classList.add('active');
   canvas.classList.remove('tool-warp');
   if (name === 'warp') canvas.classList.add('tool-warp');
+}
+
+function setView(mode: ViewMode) {
+  viewMode = mode;
+  document.getElementById('view-flat')?.classList.toggle('active', mode === 'flat');
+  document.getElementById('view-iso' )?.classList.toggle('active', mode === 'iso');
+  redraw();
+}
+
+function redraw() {
+  if (!currentModel) return;
+  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
+  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
+  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels);
+  else                    drawSettlement(currentModel, canvas, showLabels, showBuildings);
 }
 
 function getParams(): GeneratorParams {
@@ -552,11 +822,7 @@ function generate(keepSeeds = false) {
   }
   const model = buildFromSeeds(persistentSeeds, params);
   currentModel = model;
-
-  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
-  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
-  drawSettlement(model, canvas, showLabels, showBuildings);
-
+  redraw();
   genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards  ·  ${model.roads.length} roads`;
 }
 
@@ -644,6 +910,8 @@ window.addEventListener('keydown', e => {
     case 's': case 'S': setTool('select'); break;
     case 'd': case 'D': setTool('warp');   break;
     case 'r': case 'R': persistentSeeds = null; generate(false); break;
+    case '1': setView('flat'); break;
+    case '2': setView('iso');  break;
   }
 });
 
@@ -652,9 +920,11 @@ window.addEventListener('keydown', e => {
 document.getElementById('tool-select')!.addEventListener('click', () => setTool('select'));
 document.getElementById('tool-warp')!.addEventListener('click',   () => setTool('warp'));
 document.getElementById('tool-reset')!.addEventListener('click',  () => {
-  persistentSeeds = null;  // force fresh seeds next generate
+  persistentSeeds = null;
   generate(false);
 });
+document.getElementById('view-flat')!.addEventListener('click', () => setView('flat'));
+document.getElementById('view-iso')! .addEventListener('click', () => setView('iso'));
 
 // ── Interactive warp interaction ──────────────────────────────────────────────
 // Left-drag in warp mode: push nearby Voronoi seeds with smooth quadratic falloff.
@@ -707,9 +977,7 @@ canvas.addEventListener('pointermove', e => {
   // Rebuild Voronoi instantly (2–5ms)
   const model = buildFromSeeds(persistentSeeds, lastParams);
   currentModel = model;
-  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
-  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
-  drawSettlement(model, canvas, showLabels, showBuildings);
+  redraw();
   genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards`;
 
   // Draw warp influence circle on overlay
