@@ -3445,6 +3445,120 @@ function generateRealmView() {
 function redrawRealm() { if (currentRealmData) drawRealm(currentRealmData, canvas); }
 
 
+// ── Studio mode tab switching ─────────────────────────────────────────────────
+
+document.getElementById('studio-tabs')!.addEventListener('click', e => {
+  const tab = (e.target as HTMLElement).closest('.studio-tab') as HTMLElement | null;
+  if (!tab) return;
+  const mode = tab.dataset.mode as StudioMode;
+  if (mode === studioMode) return;
+  studioMode = mode;
+  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
+  document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
+  document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
+  document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
+  (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
+  if (mode === 'dungeon') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentDungeonPlan) generateDungeonView();
+    else redrawDungeon();
+  } else if (mode === 'cave') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentCaveData) generateCaveView();
+    else redrawCave();
+  } else if (mode === 'realm') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentRealmData) generateRealmView();
+    else redrawRealm();
+  } else {
+    redraw();
+  }
+});
+
+// ── Dungeon controls event wiring ─────────────────────────────────────────────
+
+document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  const isTower = pill.dataset.dtype === 'tower';
+  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
+  generateDungeonView();
+});
+
+document.getElementById('dfloors')!.addEventListener('input', () => {
+  (document.getElementById('dfloors-val') as HTMLElement).textContent =
+    (document.getElementById('dfloors') as HTMLInputElement).value;
+  generateDungeonView();
+});
+
+document.getElementById('dfloor')?.addEventListener('input', () => {
+  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
+  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
+  redrawDungeon();
+});
+
+document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `dungeon-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Cave controls event wiring ────────────────────────────────────────────────
+
+document.getElementById('cave-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  const isCave = pill.dataset.ctype === 'cave';
+  document.getElementById('cave-biome-section')!.style.display  = isCave ? '' : 'none';
+  document.getElementById('glade-biome-section')!.style.display = isCave ? 'none' : '';
+  document.getElementById('cave-density-row')!.style.display    = isCave ? '' : 'none';
+  currentCaveData = null;
+  generateCaveView();
+});
+
+for (const id of ['cave-biome-pills', 'glade-biome-pills'] as const) {
+  document.getElementById(id)!.addEventListener('click', e => {
+    const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+    if (!pill) return;
+    document.querySelectorAll(`#${id} .pill`).forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentCaveData = null;
+    generateCaveView();
+  });
+}
+
+const CAVE_SIZES = ['', 'S', 'M', 'L'];
+document.getElementById('cave-size')!.addEventListener('input', () => {
+  const v = parseInt((document.getElementById('cave-size') as HTMLInputElement).value);
+  (document.getElementById('cave-size-val') as HTMLElement).textContent = CAVE_SIZES[v] ?? 'M';
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-density')!.addEventListener('input', () => {
+  const v = (document.getElementById('cave-density') as HTMLInputElement).value;
+  (document.getElementById('cave-density-val') as HTMLElement).textContent = (parseInt(v) / 100).toFixed(2);
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('btn-cave-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `cave-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
 // ── Realm controls event wiring ───────────────────────────────────────────────
 
 for (const id of ['realm-shape-pills', 'realm-climate-pills'] as const) {
