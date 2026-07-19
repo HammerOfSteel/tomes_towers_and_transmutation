@@ -624,9 +624,9 @@ function fillWardOrganically(
               : wardType === 'patriciate' ? 16
               : wardType === 'craftsmen'  ? 14
               : 14;
-  const BLDG_GAP  = 3;    // gap between buildings in the same row
+  const BLDG_GAP  = 3;    // gap between buildings in the same row (alley-width)
   const STREET    = 6;    // setback from ward polygon edge → visible street
-  const ROW_GAP   = 3;    // gap between rows of buildings
+  const ROW_GAP   = 6;    // gap between rows → the alley / back lane shows as cream background
   const MAX_ROWS  = 3;    // max rows per ward (prevents overcrowding small wards)
 
   const col = wardType === 'gateward' ? CARTO.bldg_dk
@@ -727,7 +727,7 @@ function fillWardGrid(
   if (poly.length < 3) return;
   const rand = mulberry32(seed);
   const col = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
-  const BW = 16, BH = 13, GAP = 3, STREET = 5;
+  const BW = 16, BH = 13, GAP = 6, STREET = 5;
   // Fixed axis: all buildings axis-aligned (grid)
   const angle = 0;
   const cos = 1, sin = 0, uncos = 1, unsin = 0;
@@ -806,7 +806,7 @@ function fillWardTerraced(
   const rot   = poly.map(p => ({ x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos }));
   const minX  = Math.min(...rot.map(p => p.x)), maxX = Math.max(...rot.map(p => p.x));
   const minY  = Math.min(...rot.map(p => p.y)), maxY = Math.max(...rot.map(p => p.y));
-  const ROW_H = 13, STREET = 5, ROW_GAP = 4;
+  const ROW_H = 13, STREET = 5, ROW_GAP = 6;
 
   for (let ry = minY + STREET; ry + ROW_H < maxY - STREET + 1; ry += ROW_H + ROW_GAP) {
     const rowCY  = ry + ROW_H * 0.5;
@@ -1063,36 +1063,6 @@ export function drawSettlement2D5(
     }
 
     fillWard(ctx, ward, occ);
-
-    // Draw alley lines — faint paths between building rows inside the ward
-    // These run parallel to the dominant edge, spaced at ~row intervals
-    if (ward.wardLayout !== 'perimeter' && ward.wardLayout !== 'radial' && ward.polygon.length > 2) {
-      const angle = dominantEdgeAngle(ward.polygon);
-      const cos = Math.cos(-angle), sin = Math.sin(-angle);
-      const rot = ward.polygon.map(p => ({ x: p.x*cos - p.y*sin, y: p.x*sin + p.y*cos }));
-      const minY = Math.min(...rot.map(p => p.y)), maxY = Math.max(...rot.map(p => p.y));
-      const uncos = Math.cos(angle), unsin = Math.sin(angle);
-      const ROW = ward.wardLayout === 'terraced' ? 16 : 17; // matches building height + gap
-      const GAP = 3;
-      ctx.strokeStyle = 'rgba(200,192,176,0.35)';
-      ctx.lineWidth = 0.7;
-      ctx.setLineDash([2, 4]);
-      for (let ry = minY + 8; ry < maxY - 8; ry += ROW + GAP) {
-        // Sample points along this alley line and clip to polygon
-        const pts: Vec2[] = [];
-        const minX = Math.min(...rot.map(p => p.x)), maxX = Math.max(...rot.map(p => p.x));
-        for (let rx = minX; rx <= maxX; rx += 3) {
-          const wcx = rx*uncos - ry*unsin, wcy = rx*unsin + ry*uncos;
-          if (pointInPolygon({ x: wcx, y: wcy }, ward.polygon)) pts.push({ x: wcx, y: wcy });
-        }
-        if (pts.length > 2) {
-          ctx.beginPath();
-          pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-          ctx.stroke();
-        }
-      }
-      ctx.setLineDash([]);
-    }
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────────
