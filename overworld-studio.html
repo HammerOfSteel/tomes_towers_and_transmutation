@@ -411,6 +411,7 @@
           <div class="pill-row" id="realm-view-pills">
             <button class="pill active" data-view="map">🗺 Map</button>
             <button class="pill"        data-view="planet">🌍 Planet</button>
+            <button class="pill"        data-view="hex">🌐 Hex</button>
           </div>
         </div>
           <div class="pill-row pill-row--wrap" id="realm-shape-pills">
@@ -454,15 +455,22 @@
         <div class="section" id="planet-layer-controls" style="display:none">
           <div class="section-title">Planet Layers</div>
           <div style="display:flex;flex-direction:column;gap:5px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer" id="cloud-toggle-row">
               <input type="checkbox" id="planet-show-clouds" checked /> ☁ Clouds
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
               <input type="checkbox" id="planet-show-atmos" checked /> 🌫 Atmosphere
             </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer" id="edge-toggle-row" style="display:none">
+              <input type="checkbox" id="hex-show-edges" checked /> ⬡ Tile Edges
+            </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
               <input type="checkbox" id="planet-auto-rotate" checked /> 🔄 Auto Rotate
             </label>
+          </div>
+          <div class="slider-row" id="hex-subdivision-row" style="display:none;margin-top:8px">
+            <div class="slider-label"><span>Tiles</span><span id="hex-sub-val">642</span></div>
+            <input type="range" id="hex-subdivisions" min="4" max="16" value="8" />
           </div>
         </div>
 

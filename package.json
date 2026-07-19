@@ -29,6 +29,7 @@
     "d3-delaunay": "^6.0.4",
     "delaunator": "^5.1.0",
     "fast-2d-poisson-disk-sampling": "^1.0.3",
+    "hexasphere": "^1.0.2",
     "postprocessing": "^6.39.2",
     "three": "^0.170.0",
     "tweakpane": "^4.0.5"

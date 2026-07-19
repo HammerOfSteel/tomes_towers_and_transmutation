@@ -28,6 +28,7 @@ import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
+import { HexPlanetRenderer } from './hex-planet-renderer';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1488,6 +1489,10 @@ window.addEventListener('resize', () => {
   if (planetRenderer) {
     const wrap = planet3dCanvas.parentElement!;
     planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  if (hexPlanetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
   }
   generate();
 });
@@ -3713,24 +3718,33 @@ export function drawRealmPlanet(data: RealmData, canvas: HTMLCanvasElement): voi
 }
 
 
-type RealmViewMode = 'map' | 'planet';
+type RealmViewMode = 'map' | 'planet' | 'hex';
 let realmViewMode: RealmViewMode = 'map';
 
 let currentRealmData: RealmData | null = null;
 
 // Lazily-created Three.js planet renderer (only when first needed)
 let planetRenderer: PlanetRenderer | null = null;
+let hexPlanetRenderer: HexPlanetRenderer | null = null;
 
 const planet3dCanvas = document.getElementById('planet-3d-canvas') as HTMLCanvasElement;
 
 function getPlanetRenderer(): PlanetRenderer {
   if (!planetRenderer) {
     planetRenderer = new PlanetRenderer(planet3dCanvas);
-    // Keep it sized to the canvas-wrap
     const wrap = planet3dCanvas.parentElement!;
     planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
   }
   return planetRenderer;
+}
+
+function getHexPlanetRenderer(): HexPlanetRenderer {
+  if (!hexPlanetRenderer) {
+    hexPlanetRenderer = new HexPlanetRenderer(planet3dCanvas);
+    const wrap = planet3dCanvas.parentElement!;
+    hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  return hexPlanetRenderer;
 }
 
 function showPlanetCanvas(show: boolean): void {
@@ -3745,6 +3759,7 @@ function redrawRealm(): void {
   if (!currentRealmData) return;
   if (realmViewMode === 'planet') {
     showPlanetCanvas(true);
+    if (hexPlanetRenderer) hexPlanetRenderer.stop();
     const pr  = getPlanetRenderer();
     const d   = currentRealmData;
 
@@ -3778,9 +3793,36 @@ function redrawRealm(): void {
     pr.setVisible('clouds',     showClouds);
     pr.setVisible('atmosphere', showAtmos);
     pr.start();
+  } else if (realmViewMode === 'hex') {
+    showPlanetCanvas(true);
+    if (planetRenderer) planetRenderer.stop();
+    const hr = getHexPlanetRenderer();
+    const d  = currentRealmData;
+    const sunLon  = ((d.seed * 0.00137) % 1) * Math.PI * 2;
+    const sunElev = 0.35 + ((d.seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+    const sunDir  = new THREE.Vector3(
+      Math.cos(sunElev) * Math.sin(sunLon) * 0.6,
+      -Math.sin(sunElev) * 0.4,
+      Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,
+    ).normalize();
+    const subdivisions = parseInt((document.getElementById('hex-subdivisions') as HTMLInputElement)?.value ?? '8');
+    hr.loadPlanet({
+      seed: d.seed,
+      subdivisions,
+      sunDirection: sunDir,
+      atmosphereColor: new THREE.Color(0xd0e8ff),
+      settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
+      W: d.W, H: d.H,
+    });
+    // Apply layer toggles
+    const showAtmos = (document.getElementById('planet-show-atmos') as HTMLInputElement)?.checked ?? true;
+    hr.setVisible('atmosphere', showAtmos);
+    hr.setAutoRotate((document.getElementById('planet-auto-rotate') as HTMLInputElement)?.checked ?? true);
+    hr.start();
   } else {
     showPlanetCanvas(false);
     if (planetRenderer) planetRenderer.stop();
+    if (hexPlanetRenderer) hexPlanetRenderer.stop();
     drawRealm(currentRealmData, canvas);
   }
 }
@@ -3821,6 +3863,9 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   if (mode !== 'realm' && planetRenderer) {
     planetRenderer.stop();
     showPlanetCanvas(false);
+  }
+  if (mode !== 'realm' && hexPlanetRenderer) {
+    hexPlanetRenderer.stop();
   }
   if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
@@ -3927,10 +3972,25 @@ document.getElementById('planet-show-clouds')?.addEventListener('change', e => {
   planetRenderer?.setVisible('clouds', (e.target as HTMLInputElement).checked);
 });
 document.getElementById('planet-show-atmos')?.addEventListener('change', e => {
-  planetRenderer?.setVisible('atmosphere', (e.target as HTMLInputElement).checked);
+  const v = (e.target as HTMLInputElement).checked;
+  planetRenderer?.setVisible('atmosphere', v);
+  hexPlanetRenderer?.setVisible('atmosphere', v);
 });
 document.getElementById('planet-auto-rotate')?.addEventListener('change', e => {
-  planetRenderer?.setAutoRotate((e.target as HTMLInputElement).checked);
+  const v = (e.target as HTMLInputElement).checked;
+  planetRenderer?.setAutoRotate(v);
+  hexPlanetRenderer?.setAutoRotate(v);
+});
+document.getElementById('hex-show-edges')?.addEventListener('change', e => {
+  hexPlanetRenderer?.setEdgeLines((e.target as HTMLInputElement).checked);
+});
+
+const HEX_TILE_COUNTS: Record<number, number> = {4:252,6:492,8:642,10:912,12:1212,14:1482,16:2562};
+document.getElementById('hex-subdivisions')?.addEventListener('input', () => {
+  const v = parseInt((document.getElementById('hex-subdivisions') as HTMLInputElement).value);
+  (document.getElementById('hex-sub-val') as HTMLElement).textContent = String(HEX_TILE_COUNTS[v] ?? v*v*10 + 'tiles');
+  currentRealmData = null;
+  if (realmViewMode === 'hex') redrawRealm();
 });
 
 // ── Realm controls event wiring ───────────────────────────────────────────────
@@ -3941,6 +4001,15 @@ document.getElementById('realm-view-pills')?.addEventListener('click', e => {
   document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
   realmViewMode = pill.dataset.view as RealmViewMode ?? 'map';
+  // Show hex-specific controls
+  const isHex = realmViewMode === 'hex';
+  const hexSubRow = document.getElementById('hex-subdivision-row');
+  const edgeRow   = document.getElementById('edge-toggle-row');
+  const cloudRow  = document.getElementById('cloud-toggle-row');
+  if (hexSubRow)  hexSubRow.style.display  = isHex ? '' : 'none';
+  if (edgeRow)    edgeRow.style.display    = isHex ? '' : 'none';
+  if (cloudRow)   cloudRow.style.display   = isHex ? 'none' : '';  // no cloud in hex mode
+  // Don't null currentRealmData — hex renderer uses seed+settlements from it
   redrawRealm();
 });
 
