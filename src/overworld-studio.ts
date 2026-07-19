@@ -3766,7 +3766,12 @@ function redrawRealm(): void {
     // Atmosphere colour from climate / dominant biome
     const atmColor = new THREE.Color(0xd0e8ff);   // soft haze, not vivid blue
 
-    pr.loadPlanet({ day: dayTex, night: nightTex, specular: specTex, cloud: cloudTex, sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed });
+    pr.loadPlanet({
+      day: dayTex, night: nightTex, specular: specTex, cloud: cloudTex,
+      sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed,
+      settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
+      W: d.W, H: d.H,
+    });
     // Apply current toggle states
     const showClouds = (document.getElementById('planet-show-clouds') as HTMLInputElement)?.checked ?? true;
     const showAtmos  = (document.getElementById('planet-show-atmos')  as HTMLInputElement)?.checked ?? true;

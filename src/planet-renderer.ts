@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 // ── GLSL shaders ──────────────────────────────────────────────────────────────
 
@@ -203,15 +204,19 @@ function mulberry32(seed: number): () => number {
 export interface PlanetTextures {
   day:          THREE.CanvasTexture;
   night:        THREE.CanvasTexture;
-  specular:     THREE.CanvasTexture;   // R=ocean mask only
-  cloud:        THREE.CanvasTexture;   // dedicated high-quality cloud map
+  specular:     THREE.CanvasTexture;
+  cloud:        THREE.CanvasTexture;
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   seed: number;
+  settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
+  W: number;   // realm grid width (for lon/lat conversion)
+  H: number;
 }
 
 export class PlanetRenderer {
   private renderer:   THREE.WebGLRenderer;
+  private labelRenderer: CSS2DRenderer;
   private scene:      THREE.Scene;
   private camera:     THREE.PerspectiveCamera;
   private controls:   OrbitControls;
@@ -221,6 +226,7 @@ export class PlanetRenderer {
   private cloudMesh:  THREE.Mesh | null  = null;
   private atmosMesh:  THREE.Mesh | null  = null;
   private starPoints: THREE.Points | null = null;
+  private labelObjects: CSS2DObject[] = [];
 
   private raf = 0;
   private active = false;
@@ -230,6 +236,13 @@ export class PlanetRenderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x000408);
     this.renderer.setSize(canvas.offsetWidth || 600, canvas.offsetHeight || 600);
+
+    // CSS2D overlay for settlement labels
+    this.labelRenderer = new CSS2DRenderer();
+    this.labelRenderer.setSize(canvas.offsetWidth || 600, canvas.offsetHeight || 600);
+    this.labelRenderer.domElement.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;';
+    canvas.parentElement?.appendChild(this.labelRenderer.domElement);
 
     this.scene  = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
@@ -313,6 +326,44 @@ export class PlanetRenderer {
 
     const ambient = new THREE.AmbientLight(0x203050, 0.5);
     this.scene.add(ambient);
+
+    // ── Settlement labels (CSS2D, projected onto sphere) ─────────────────
+    // Remove old labels first
+    for (const obj of this.labelObjects) { this.scene.remove(obj); obj.element.remove(); }
+    this.labelObjects = [];
+
+    const TWO_PI = Math.PI * 2;
+    const DOT_COLORS = { city: '#f0a828', town: '#e8d070', village: '#d0c890' };
+
+    for (const s of tex.settlements) {
+      // Convert grid (x,y) to lon/lat
+      const lon = (s.x / tex.W) * TWO_PI - Math.PI;
+      const lat = (s.y / tex.H - 0.5) * Math.PI;
+      const r   = 2.06;  // just above cloud layer
+      const pos = new THREE.Vector3(
+        r * Math.cos(lat) * Math.sin(lon),
+        r * Math.sin(lat),
+        r * Math.cos(lat) * Math.cos(lon),
+      );
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;';
+
+      const dot = document.createElement('div');
+      dot.style.cssText = `width:${s.size==='city'?7:s.size==='town'?5:4}px;height:${s.size==='city'?7:s.size==='town'?5:4}px;border-radius:50%;background:${DOT_COLORS[s.size]};box-shadow:0 0 4px ${DOT_COLORS[s.size]};`;
+
+      const label = document.createElement('div');
+      label.textContent = s.name;
+      label.style.cssText = `font:bold ${s.size==='city'?9:7}px Georgia,serif;color:rgba(240,228,200,0.9);text-shadow:0 0 4px rgba(0,0,0,0.9),0 0 8px rgba(0,0,0,0.7);white-space:nowrap;`;
+
+      wrap.appendChild(dot);
+      wrap.appendChild(label);
+
+      const obj = new CSS2DObject(wrap);
+      obj.position.copy(pos);
+      this.scene.add(obj);
+      this.labelObjects.push(obj);
+    }
   }
 
   private _buildStars(seed: number): void {
@@ -385,6 +436,7 @@ export class PlanetRenderer {
       }
 
       this.renderer.render(this.scene, this.camera);
+      this.labelRenderer.render(this.scene, this.camera);
     };
     loop();
   }
@@ -398,6 +450,7 @@ export class PlanetRenderer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.labelRenderer.setSize(w, h);
   }
 
   setVisible(layer: 'clouds' | 'atmosphere', show: boolean): void {
@@ -411,6 +464,9 @@ export class PlanetRenderer {
 
   dispose(): void {
     this.stop();
+    for (const obj of this.labelObjects) { this.scene.remove(obj); obj.element.remove(); }
+    this.labelObjects = [];
+    this.labelRenderer.domElement.remove();
     this.renderer.dispose();
   }
 }
@@ -547,23 +603,35 @@ function valueNoise2D(x: number, y: number, g: Float32Array, GW: number, GH: num
 }
 
 /**
- * High-quality 512×256 cloud texture.
- * 5-octave fBm value noise with domain warping for organic cloud formations.
- * Latitude weighting creates realistic weather-band patterns.
+ * High-quality 512×256 cloud texture — ridged multifractal for wispy cloud banks.
+ * Combines:
+ *   - Ridged noise (1 - |n|) for sharp cumulus-like towers
+ *   - Smooth value noise for large stratus banks
+ *   - Domain warping for organic curl/turbulence
+ *   - Latitude weighting (cloud bands at ±30-60°, clearer at equator/poles)
  */
 export function buildCloudTexture(seed: number): THREE.CanvasTexture {
   const TW = 512, TH = 256;
   const rand = mulberry32(seed ^ 0x47EA_C10D);
 
-  // Noise grids at 5 octaves
-  const G0 = makeGrid(5,  3,  rand);
-  const G1 = makeGrid(9,  5,  rand);
-  const G2 = makeGrid(17, 9,  rand);
-  const G3 = makeGrid(33, 17, rand);
-  const G4 = makeGrid(65, 33, rand);
-  // Warp grids (low-frequency, for domain warping)
-  const GW1 = makeGrid(7, 4, rand);
-  const GW2 = makeGrid(7, 4, rand);
+  // Noise grids at multiple resolutions
+  const G = [
+    makeGrid(5,  3,  rand),   // freq 3  — large cloud formations
+    makeGrid(9,  5,  rand),   // freq 6  — medium banks
+    makeGrid(17, 9,  rand),   // freq 12 — cloud clusters
+    makeGrid(33, 17, rand),   // freq 24 — detail
+    makeGrid(65, 33, rand),   // freq 48 — fine wisps
+    makeGrid(7,  4,  rand),   // warp X
+    makeGrid(7,  4,  rand),   // warp Y
+  ];
+
+  /** Value noise sample, wraps at boundary. */
+  const vn = (x: number, y: number, g: Float32Array, gw: number, gh: number) =>
+    valueNoise2D(x, y, g, gw, gh);
+
+  /** Ridged noise: sharp peaks like cumulus towers. */
+  const ridged = (x: number, y: number, g: Float32Array, gw: number, gh: number) =>
+    1 - Math.abs(vn(x, y, g, gw, gh) * 2 - 1);
 
   const c   = document.createElement('canvas');
   c.width = TW; c.height = TH;
@@ -576,30 +644,39 @@ export function buildCloudTexture(seed: number): THREE.CanvasTexture {
       const u = tx / TW;
       const v = ty / TH;
 
-      // Latitude-based cloud coverage
-      const lat = (v - 0.5) * Math.PI;
-      // Weather bands: peak coverage ~30–60° lat, less at equator and poles
-      const latBand  = Math.pow(Math.abs(Math.sin(lat * 2.2 + 0.3)), 0.4);
-      const latFactor = 0.55 + 0.45 * latBand;
+      // Latitude weather bands
+      const lat  = (v - 0.5) * Math.PI;
+      const sinL = Math.abs(Math.sin(lat));
+      // More cloud at ±30-60°, less at equator and poles
+      const band = Math.pow(Math.sin(sinL * Math.PI), 0.6);
+      const latFactor = 0.42 + 0.58 * band;
 
-      // Domain warping: shift UV with low-freq noise for organic edges
-      const warpX = (valueNoise2D(u * 3, v * 3, GW1, 7, 4) - 0.5) * 0.12;
-      const warpY = (valueNoise2D(u * 3 + 4, v * 3 + 4, GW2, 7, 4) - 0.5) * 0.06;
-      const wu = u + warpX, wv = v + warpY;
+      // Domain warp (curl-like)
+      const wx = (vn(u*3.5, v*2.5, G[5]!, 7, 4) - 0.5) * 0.14;
+      const wy = (vn(u*3.5+7, v*2.5+7, G[6]!, 7, 4) - 0.5) * 0.07;
+      const wu = u + wx, wv = v + wy;
 
-      // 5-octave fBm
-      const n0 = valueNoise2D(wu * 3,  wv * 1.5,  G0, 5,  3)  * 0.46;
-      const n1 = valueNoise2D(wu * 6,  wv * 3.0,  G1, 9,  5)  * 0.26;
-      const n2 = valueNoise2D(wu * 12, wv * 6.0,  G2, 17, 9)  * 0.14;
-      const n3 = valueNoise2D(wu * 24, wv * 12.0, G3, 33, 17) * 0.08;
-      const n4 = valueNoise2D(wu * 48, wv * 24.0, G4, 65, 33) * 0.06;
-      const raw = (n0 + n1 + n2 + n3 + n4) * latFactor;
+      // Large stratus banks (smooth)
+      const stratus = vn(wu*3, wv*1.5, G[0]!, 5, 3) * 0.40
+                    + vn(wu*6, wv*3,   G[1]!, 9, 5) * 0.22;
 
-      // Soft threshold: gradual cloud edge rather than hard cut
-      const cloudVal = Math.pow(Math.max(0, raw - 0.32) / 0.68, 1.1);
+      // Ridged cumulus (sharp towers)
+      const cumulus = ridged(wu*6,  wv*3,   G[1]!, 9,  5) * 0.18
+                    + ridged(wu*12, wv*6,   G[2]!, 17, 9) * 0.12;
+
+      // Fine wispy cirrus detail
+      const cirrus  = ridged(wu*24, wv*12, G[3]!, 33, 17) * 0.06
+                    + vn    (wu*48, wv*24, G[4]!, 65, 33) * 0.02;
+
+      const raw = (stratus * 0.6 + cumulus * 0.3 + cirrus * 0.1) * latFactor;
+
+      // Multi-tier threshold: dense core + wispy edges
+      const core  = Math.pow(Math.max(0, raw - 0.38) / 0.62, 1.4);
+      const wisp  = Math.pow(Math.max(0, raw - 0.22) / 0.78, 2.5) * 0.35;
+      const cloud = Math.min(1, core + wisp);
 
       const idx = (ty * TW + tx) * 4;
-      const v8  = Math.min(255, Math.round(cloudVal * 255));
+      const v8  = Math.min(255, Math.round(cloud * 255));
       d[idx] = v8; d[idx+1] = v8; d[idx+2] = v8; d[idx+3] = 255;
     }
   }
