@@ -705,3 +705,103 @@ These are things that seem obvious but need research to get right:
 - **Do NOT choose Canvas vs THREE.js for the editor yet** — depends on R2.6
 - **Do NOT write any generation code yet** — the research todos will likely change the approach
 - **Do NOT add more libraries yet** — evaluate delaunator + d3-delaunay first (R2.1/R2.2)
+
+---
+
+## STATUS UPDATE (2026-07-19) — Studio v0.2 shipped
+
+**What was implemented since v0.1:**
+
+- ✅ Road-house separation — `ROAD_CLEARANCE = 10px` wired into all 6 fill functions (`minDistToRoads` check)
+- ✅ **7th layout type: Cluster** — Islamic medina / hosh / campo style (buildings around shared courtyards). Poisson-disk cluster centres + radial building placement. Perfect for Slime, Fae, Vulperia factions.
+- ✅ **Faction system** — 9 factions (human/elven/dwarven/orcish/vampire/undead/vulperia/slime/fae). Each has: ward label remapping (Graveyard, Bone Shrine, Pit Arena, etc.), unique building palette, layout preference, extra ward type assigns.
+- ✅ Flat 2D view removed — 2.5D only (confirmed by user)
+
+**Updated layout type taxonomy (7 types, all implemented):**
+
+| # | Type | Urban reference | TT&T use |
+|---|---|---|---|
+| 1 | **Organic** | Medieval European, Welsh, Arab medina | Human villages, default |
+| 2 | **Grid** | Roman castrum, American frontier | Dwarven, planned towns |
+| 3 | **Radial** | Baroque (Paris, Washington DC) | Elven (grove-centred), city centres |
+| 4 | **Linear** | Strassendorf, Welsh valley | Orcish war camps, ribbon villages |
+| 5 | **Terraced** | Welsh/English row houses, Victorian | Industrial mid-ring wards |
+| 6 | **Perimeter** | Barcelona Eixample, Vienna Ringstraße | Vampire strongholds, noble districts |
+| 7 | **Cluster** | Islamic hosh, Venetian campo, N.African kasbah | Slime, Fae, Vulperia |
+
+---
+
+## EXPANSION PLAN — Multi-Layer Generator (Overworld Studio v0.3+)
+
+> Full implementation tracking in `TODO.md` → "Overworld Studio Expansion" section.
+> Architecture reference in `docs/OVERWORLD_PLAN.md`.
+
+The Overworld Studio must grow from a city/settlement generator into a full suite matching Watabou's card menu (Realm, City, Village, Cave/Glade, Dungeon, Dwelling). The tower is always at the world centre.
+
+### Watabou Reference Suite
+- **Realm** (Perilous Shores): macro map — coastlines, mountains, forests, river networks, roads, settlement dots
+- **City/Village** ✅ — what we have
+- **Cave/Glade**: organic cave systems + forest clearings
+- **Dungeon** (One Page Dungeon): BSP floor plans, room types, corridors
+- **Dwelling**: single building floor plan
+
+### OW-A — Realm Layer (macro world map) ← BIGGEST MISSING PIECE
+
+**Research needed:**
+- [ ] Check if Perilous Shores is open source: https://github.com/watabou/ — study coastline + contour algorithm
+- [ ] Borrow Bloom's `biome.ts` Whittaker temp/moisture classification (9 biomes, seamless Gaussian blending)
+- [ ] RedBlobGames "Polygonal Map Generation" — Voronoi + relaxation for region shapes
+- [ ] River downhill flow algorithm (gradient descent from heightmap peaks)
+- [ ] Canvas 2D rendering: contour lines, hatch-fill forests, mountain symbols (standard topo conventions)
+
+**Implementation:**
+- Multi-octave elevation + moisture noise → Whittaker biome grid (Desert/Savanna/Grassland/Forest/Taiga/Tundra/Snow/Ocean/Beach)
+- Downhill drainage → river paths → Chaikin smoothing
+- Poisson-disk settlement placement on valid land biomes
+- Tower always at centre of realm map
+- Canvas renderer: topographic + symbolic style (ink-map aesthetic)
+
+### OW-B — Dungeon Layer (2D floor plan view)
+
+**No new research needed** — `DungeonGenerator.ts` already exists.
+
+**Implementation:**
+- 2D canvas renderer reading existing dungeon room/corridor data
+- Rooms: rectangles + circles + irregular (BSP output)
+- Special symbols: ☩ boss room, ✦ treasure, ⬡ ritual, ⊕ entrance/exit
+- Doors as notches in walls, corridors as connecting passages
+- Faction-themed: undead dungeon = dark stone + bone; dwarven = carved stone etc.
+
+### OW-C — Cave / Glade Layer
+
+**Research needed:**
+- [ ] Watabou cave-generator source (open source?): https://github.com/watabou/cave-generator
+- [ ] Cellular automata cave gen (Roguebasin wiki) — 5-step CA + polygon trace
+- [ ] Organic polygon shapes (Watabou uses polygon offsetting)
+
+**Implementation:**
+- CA grid → smooth polygon boundary tracing
+- Glade variant: Voronoi forest patch + Poisson tree scatter + clearing cutout
+- Both use canvas 2D (same render pipeline as settlement)
+
+### OW-D — Dwelling Layer (building floor plan)
+
+**No new research needed** — `InteriorGenerator.ts` already exists.
+
+**Implementation:**
+- 2D floor plan renderer reading `InteriorScene` room data
+- Rooms as labeled rectangles, walls as thick lines, doors as gaps
+- Furniture symbols (table, bed, shelf), stair icons
+- Matches faction palette
+
+### OW-E — Layer Navigation + WorldGen Integration
+
+**Implementation:**
+- Tab strip in studio UI: `🌍 Realm` · `🏙 City` · `⚔ Dungeon` · `🌿 Cave` · `🏠 Dwelling`
+- Clicking a settlement dot on Realm → zooms to City view with that seed
+- Clicking a dungeon entrance in City → opens Dungeon view with that seed
+- Realm layer seeds SettlementModel via `buildFromSeeds()` (already works)
+- Full WorldGen integration: `OverworldScene.ts` reads SettlementModel JSON → places 3D buildings at ward centres using `BuildingDNA`
+
+### Key principle (never changes)
+**Code-first, always.** No external FBX/GLB assets for world generation. All buildings, terrain, trees, caves are procedural Three.js geometry. Asset packs are optional overlay (Settings toggle), never the default.

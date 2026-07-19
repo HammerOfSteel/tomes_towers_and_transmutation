@@ -1,4 +1,6 @@
 # Demo Release Plan — Tomes, Towers & Transmutation
+> **Sub-tracker** — detailed phase tracking for the demo release.
+> **Master TODO:** `TODO.md` is the single source of truth. Add new tasks there, not here.
 > Branch: `DEMO_RELEASE`
 > Goal: A **complete, polished alpha build** ready for public playtesting, a Kickstarter campaign, and an itch.io/Steam early-access launch.
 > Last updated: 2026-07-18 (princess creator integrated from feature/princess-creator)

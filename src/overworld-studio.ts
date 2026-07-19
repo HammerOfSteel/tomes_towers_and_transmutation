@@ -67,6 +67,7 @@ export type LayoutType =
   | 'radial'     // Streets radiate from central hub (Baroque, Paris)
   | 'terraced'   // Parallel rows of row-houses (Welsh/English industrial)
   | 'perimeter'  // Buildings around block edge with hollow courtyard (Barcelona)
+  | 'cluster'    // Small groups around shared courtyards (Islamic medina, hosh, campo)
   ;
 
 interface GeneratorParams {
@@ -187,8 +188,9 @@ const FACTION_LAYOUT_PREF: Partial<Record<SettlementFaction, LayoutType>> = {
   elven:    'radial',
   orcish:   'linear',
   vampire:  'perimeter',
-  slime:    'radial',
-  fae:      'radial',
+  slime:    'cluster',
+  fae:      'cluster',
+  vulperia: 'cluster',
 };
 
 /**
@@ -1056,6 +1058,67 @@ function fillWardRadial(
   }
 }
 
+/**
+ * Cluster layout: Islamic medina / hosh / Venetian campo style.
+ * Poisson-disk cluster centres are scattered inside the ward. Around each
+ * centre, 3–5 buildings are arranged facing inward toward a tiny shared
+ * courtyard. The gap between clusters IS the circulation path.
+ */
+function fillWardClustered(
+  ctx: CanvasRenderingContext2D,
+  poly: Vec2[], wardType: WardType, seed: number, occ: OccupancyGrid,
+): void {
+  if (poly.length < 3) return;
+  const rand = mulberry32(seed);
+  const col  = wardType === 'church' ? CARTO.bldg_dk : CARTO.bldg;
+  const cent = centroid(poly);
+
+  const COURT_R  = 7;   // courtyard radius (buildings orbit this distance from cluster centre)
+  const ALONG    = 12;  // building length along the court arc
+  const DEPTH    = 10;  // building depth (radially outward)
+  const STREET   = 5;   // setback from ward boundary
+  const CLUSTER_MIN_DIST = 28; // Poisson-disk minimum distance between cluster centres
+
+  // Place cluster centres using a simple rejection-based Poisson-disk
+  const clusterCentres: Vec2[] = [];
+  const warmupIter = 80;
+  for (let attempt = 0; attempt < warmupIter; attempt++) {
+    // Sample a point inside the polygon's bounding box
+    const bbox = poly.reduce(
+      (b, p) => ({ minX: Math.min(b.minX, p.x), maxX: Math.max(b.maxX, p.x),
+                   minY: Math.min(b.minY, p.y), maxY: Math.max(b.maxY, p.y) }),
+      { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+    );
+    const cx = bbox.minX + rand() * (bbox.maxX - bbox.minX);
+    const cy = bbox.minY + rand() * (bbox.maxY - bbox.minY);
+    const candidate: Vec2 = { x: cx, y: cy };
+    if (!pointInPolygon(candidate, poly)) continue;
+    if (minDistToEdge(candidate, poly) < STREET + DEPTH) continue;
+    if (_activeRoads.length > 0 && minDistToRoads(candidate, _activeRoads) < ROAD_CLEARANCE + DEPTH) continue;
+    if (clusterCentres.some(c => Math.hypot(c.x - cx, c.y - cy) < CLUSTER_MIN_DIST)) continue;
+    clusterCentres.push(candidate);
+  }
+
+  // For each cluster centre, place 3–5 buildings radially around it
+  for (const cc of clusterCentres) {
+    const nBldg = 3 + Math.floor(rand() * 3);  // 3–5 buildings per cluster
+    for (let b = 0; b < nBldg; b++) {
+      const a = (2 * Math.PI * b) / nBldg + rand() * 0.3;
+      const bx = cc.x + Math.cos(a) * COURT_R;
+      const by = cc.y + Math.sin(a) * COURT_R;
+      if (!pointInPolygon({ x: bx, y: by }, poly)) continue;
+      if (minDistToEdge({ x: bx, y: by }, poly) < STREET - 1) continue;
+      if (_activeRoads.length > 0 && minDistToRoads({ x: bx, y: by }, _activeRoads) < ROAD_CLEARANCE) continue;
+      const aw = ALONG * (0.8 + rand() * 0.3);
+      const dh = DEPTH * (0.8 + rand() * 0.3);
+      const fa = a + (rand() - 0.5) * 0.2;  // tangent to court + small jitter
+      if (occ.blocked(bx, by, aw, dh, fa)) continue;
+      occ.mark(bx, by, aw, dh, fa);
+      drawBldg(ctx, bx, by, aw, dh, fa, col);
+    }
+  }
+}
+
 /** Dispatch to the correct fill strategy using ward's assigned layout. */
 function fillWard(
   ctx: CanvasRenderingContext2D,
@@ -1069,6 +1132,7 @@ function fillWard(
     case 'terraced':  return fillWardTerraced (ctx, ward.polygon, ward.type, wardSeed, occ);
     case 'perimeter': return fillWardPerimeter(ctx, ward.polygon, ward.type, wardSeed, occ);
     case 'radial':    return fillWardRadial   (ctx, ward.polygon, ward.type, wardSeed, occ);
+    case 'cluster':   return fillWardClustered(ctx, ward.polygon, ward.type, wardSeed, occ);
     default:          return fillWardOrganically(ctx, ward.polygon, ward.type, wardSeed, occ);
   }
 }

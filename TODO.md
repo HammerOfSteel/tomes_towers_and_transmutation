@@ -1,5 +1,19 @@
 # TODO — Tomes, Towers & Transmutation
-> Last updated: 2026-07-16
+> **This is the single master source of truth for all implementation tasks.**
+> Last updated: 2026-07-19
+>
+> Sub-trackers (reference only, do not add new tasks there):
+> - `DEMO_RELEASE_TODO.md` — demo release phase detail (PC, B, C, D phases)
+> - `ASSETS_TODO.md` — asset inventory + GLB manifest work
+> - `ASSET_LEVEL_EDITOR_TODO.md` — level editor feature detail
+> - `CREATIVE_MODE_TODO.md` — creative/DevLab mode detail
+> - `FEATURE_BOT_V1_TODO.md` — automated bot testing
+>
+> Design docs (architecture + research, not todos):
+> - `docs/research_village_generation.md` — settlement + overworld gen research
+> - `docs/OVERWORLD_PLAN.md` — overworld architecture reference
+> - `GDD.md` — game design doc
+> - `docs/WORLD_DESIGN.md` — world + lore design
 
 ---
 
@@ -328,9 +342,59 @@ Before shipping this phase, all of the following must be green.
 
 ---
 
-## Completed ✅
+## Overworld Studio Expansion
 
-### HUD Overhaul (Phases A–F)
+> **Branch:** `feature/overworld-studio`
+> **Design + Research:** `docs/research_village_generation.md` → "EXPANSION PLAN" section
+> **Architecture:** `docs/OVERWORLD_PLAN.md`
+> **Principle:** Code-first always — no FBX/GLB for world gen. Asset packs are opt-in overlay only.
+
+### Shipped (v0.2, 2026-07-19) ✅
+- [x] 7 layout types: organic, grid, linear, radial, terraced, perimeter, **cluster** (Islamic medina / hosh)
+- [x] 9 factions — ward label remapping (Graveyard, Bone Shrine, Pit Arena…), unique palettes, layout prefs, extra ward assigns
+- [x] Road clearance — buildings never placed on roads
+- [x] Faction + layout pill rows in UI
+
+### OW-A — Realm Layer (macro world map)
+- [ ] **OW-A1** Research: check Perilous Shores open-source (`github.com/watabou`); study coastline + contour rendering
+- [ ] **OW-A2** Research: port Bloom `biome.ts` Whittaker temp/moisture classifier → 9 biomes, seamless Gaussian blending
+- [ ] **OW-A3** Multi-octave elevation + moisture noise → biome grid
+- [ ] **OW-A4** Downhill drainage → river paths (gradient descent) → Chaikin smooth
+- [ ] **OW-A5** Poisson-disk settlement placement; tower always at centre
+- [ ] **OW-A6** Canvas renderer: topographic contour lines, hatch forests, mountain symbols, river curves, settlement dots
+- [ ] **OW-A7** Realm tab in Overworld Studio UI
+
+### OW-B — Dungeon Layer (2D floor plan view)
+> `DungeonGenerator.ts` already exists — renderer only
+
+- [ ] **OW-B1** Canvas renderer for `DungeonGenerator` output: rooms, corridors, door notches
+- [ ] **OW-B2** Special symbols: ☩ boss, ✦ treasure, ⬡ ritual, ⊕ entrance, ↑↓ stairs
+- [ ] **OW-B3** Faction-themed dungeon palette (undead: dark bone; dwarven: carved stone)
+- [ ] **OW-B4** Dungeon tab in Overworld Studio UI
+
+### OW-C — Cave / Glade Layer
+- [ ] **OW-C1** Research: Watabou cave-generator + cellular automata cave gen (Roguebasin)
+- [ ] **OW-C2** CA grid (5-step fill) → polygon boundary trace
+- [ ] **OW-C3** Glade variant: Voronoi patch + Poisson tree scatter + clearing cutout
+- [ ] **OW-C4** Cave tab in UI; cave vs glade toggle
+
+### OW-D — Dwelling Layer (single building floor plan)
+> `InteriorGenerator.ts` already exists — renderer only
+
+- [ ] **OW-D1** 2D floor plan renderer: walls, doors, furniture symbols, stair positions
+- [ ] **OW-D2** Multi-floor navigation (floor selector)
+- [ ] **OW-D3** Dwelling tab in Overworld Studio UI
+
+### OW-E — Layer Navigation + WorldGen Integration
+- [ ] **OW-E1** Tab strip: `🌍 Realm · 🏙 City · ⚔ Dungeon · 🌿 Cave · 🏠 Dwelling`
+- [ ] **OW-E2** Realm → City drill-down (click settlement dot → load City view with that seed)
+- [ ] **OW-E3** City → Dungeon drill-down (click dungeon entrance → Dungeon view)
+- [ ] **OW-E4** `OverworldScene.ts` reads `SettlementModel` JSON → places 3D buildings at ward centres via `BuildingDNA` + `BuildingBuilder`
+- [ ] **OW-E5** Faction drives 3D building style in `OverworldScene` (uses `FACTION_PRESETS` from `BuildingDNA.ts`)
+
+---
+
+## Completed ✅
 - [x] `hudTheme.ts` CSS variable design system
 - [x] HUD spell glyphs, potion slots, buff bar, party strip
 - [x] StatPanel, SpellBook, CraftingUI, MerchantUI
