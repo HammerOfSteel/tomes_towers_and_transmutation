@@ -138,12 +138,11 @@ function classifyBiome(elev: number, moist: number, temp: number): BiomeName {
 export interface HexPlanetSettings {
   seed:         number;
   subdivisions: number;
-  roughness:    number;   // 0-1
-  shape:        'island' | 'continents' | 'archipelago' | 'pangaea';
-  climate:      'tropical' | 'temperate' | 'arctic';
+  roughness:    number;   // 0-1 — controls vertical exaggeration ONLY (not shape/frequency)
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
+  cells: Array<Array<{ elevation: number; biome: string }>>;   // from RealmData.cells
   W: number; H: number;
 }
 
@@ -268,58 +267,18 @@ export class HexPlanetRenderer {
       }>;
     };
 
-    // ── Noise generators ─────────────────────────────────────────────────
-    const rand  = mulberry32(s.seed);
-    const rand2 = mulberry32(s.seed ^ 0xDEADBEEF);
-    const rand3 = mulberry32(s.seed ^ 0xC0FFEE);
-    const G0 = makeGrid(5, 3, rand);   const G1 = makeGrid(9, 5, rand);
-    const G2 = makeGrid(17,9, rand);   const G3 = makeGrid(33,17,rand);
-    const M0 = makeGrid(5, 3, rand2);  const M1 = makeGrid(9, 5, rand2);
-    const T0 = makeGrid(5, 3, rand3);
+        // ── Sample realm cells directly (no re-generation) ──────────────────
+    // Each tile projects its 3D centre to lat/lon → UV → realm grid cell.
+    // This ensures hex view is a different RESOLUTION of the same underlying data.
+    // roughness now ONLY controls vertical exaggeration, not shape/frequency.
 
-    // ── Continent mask + climate bias ─────────────────────────────────────
-    // Use a dedicated seed so continent placement is consistent across sizes
-    const maskRand     = mulberry32(s.seed ^ 0x5A9E55);
-    const maskFn: MaskFn = buildContinentMask(s.shape, maskRand);
-    const climateBias  = s.climate === 'tropical' ? 0.28 : s.climate === 'arctic' ? -0.28 : 0;
-
-    function fbm3(x: number, y: number, z: number): number {
-      const lon = (Math.atan2(z, x) / (Math.PI * 2) + 0.5);
-      const lat = (Math.asin(Math.max(-1, Math.min(1, y / Math.sqrt(x*x+y*y+z*z)))) / Math.PI + 0.5);
-      const scale = 1.0 + s.roughness * 1.5;
-      let v = valueNoise2D(lon*3*scale, lat*1.5*scale, G0,5,3)*0.46
-            + valueNoise2D(lon*6*scale, lat*3*scale,   G1,9,5)*0.28
-            + valueNoise2D(lon*12*scale,lat*6*scale,   G2,17,9)*0.14
-            + valueNoise2D(lon*24*scale,lat*12*scale,  G3,33,17)*0.12;
-      if (s.roughness > 0.5) {
-        v = v * 0.9 + valueNoise2D(lon*48*scale,lat*24*scale, makeGrid(65,33,mulberry32(s.seed^0xABCD)),65,33) * 0.1;
-      }
-      return v;
-    }
-
-    function moistureAt(x: number, y: number, z: number): number {
-      const lon = (Math.atan2(z, x) / (Math.PI * 2) + 0.5);
-      const lat = (Math.asin(Math.max(-1,Math.min(1,y/Math.sqrt(x*x+y*y+z*z)))) / Math.PI + 0.5);
-      return valueNoise2D(lon*3+5, lat*1.5+5, M0,5,3)*0.6
-           + valueNoise2D(lon*6+5, lat*3+5,   M1,9,5)*0.4;
-    }
-
-    function tempAt(y: number, elevation: number): number {
-      const lat  = Math.abs(y / BASE_R);
-      const latT = 1 - lat * 1.4;
-      const elvT = 1 - Math.max(0, elevation - 0.5) * 1.6;
-      return Math.max(0, Math.min(1,
-        latT * 0.7 + elvT * 0.3
-        + (valueNoise2D(y*3, elevation*5, T0,5,3) - 0.5) * 0.12
-        + climateBias,  // climate shifts temperature globally
-      ));
-    }
-
-    /** Map 3D tile centre to equirectangular UV for mask lookup. */
-    function tileUV(cx: number, cy: number, cz: number, len: number): [number, number] {
-      const nx = (Math.atan2(cz, cx) / (Math.PI * 2) + 0.5);
-      const ny = (Math.asin(Math.max(-1, Math.min(1, cy / len))) / Math.PI + 0.5);
-      return [nx, ny];
+    /** Map tile 3D centre to realm grid (gx, gy). */
+    function sampleCell(cx: number, cy: number, cz: number, len: number) {
+      const u  = (Math.atan2(cz, cx) / (Math.PI * 2) + 0.5);
+      const v  = (Math.asin(Math.max(-1, Math.min(1, cy / len))) / Math.PI + 0.5);
+      const gx = Math.max(0, Math.min(s.W - 1, Math.floor(u * s.W)));
+      const gy = Math.max(0, Math.min(s.H - 1, Math.floor(v * s.H)));
+      return s.cells[gy]![gx]!;
     }
 
     // ── Build geometry ───────────────────────────────────────────────────
@@ -354,32 +313,28 @@ export class HexPlanetRenderer {
     for (const tile of hs.tiles) {
       const cp = tile.centerPoint;
       const len = Math.sqrt(cp.x*cp.x+cp.y*cp.y+cp.z*cp.z);
-      const rawElev = fbm3(cp.x, cp.y, cp.z);
-      const moist   = moistureAt(cp.x, cp.y, cp.z);
 
-      // Apply world shape mask: tiles outside continent zones become ocean
-      const [nx, ny] = tileUV(cp.x, cp.y, cp.z, len);
-      const mVal    = Math.min(1, maskFn(nx, ny));
-      // Blend: mask=0 → tile forced to low elevation (ocean); mask=1 → full fBm
-      const elev    = Math.min(1, mVal * rawElev + Math.max(0, 0.28 - mVal * 0.28));
+      // ── Sample directly from realm cells ───────────────────────────────
+      const cell  = sampleCell(cp.x, cp.y, cp.z, len);
+      const elev  = cell.elevation;     // 0-1 from realm generator
+      const biome = cell.biome as BiomeName;
+      const [r,g,b] = BIOME_COLOR[biome] ?? BIOME_COLOR.deep_ocean;
 
-      const temp    = tempAt(cp.y, elev);
-      const biome   = classifyBiome(elev, moist, temp);
-      const [r,g,b] = BIOME_COLOR[biome];
-
-      const hBase  = 0.10 + s.roughness * 0.18;
-      const hOcean = 0.08 + s.roughness * 0.10;
+      // ── Height tiers — roughness only controls amplitude, not frequency ─
+      // Use cell elevation for fine variation within each biome tier
+      const amp    = 0.06 + s.roughness * 0.22;   // vertical exaggeration
+      const oceanD = 0.06 + s.roughness * 0.10;   // ocean depth
       let tileElev: number;
-      if      (biome === 'deep_ocean') tileElev = BASE_R * (1.0 - hOcean * 1.6);
-      else if (biome === 'ocean')      tileElev = BASE_R * (1.0 - hOcean * 0.8);
-      else if (biome === 'beach')      tileElev = BASE_R * (1.0 - hOcean * 0.1);
-      else if (biome === 'desert')     tileElev = BASE_R * (1.0 + hBase * 0.2);
-      else if (biome === 'savanna')    tileElev = BASE_R * (1.0 + hBase * 0.3);
-      else if (biome === 'grassland')  tileElev = BASE_R * (1.0 + hBase * 0.4);
-      else if (biome === 'forest')     tileElev = BASE_R * (1.0 + hBase * 0.5);
-      else if (biome === 'taiga')      tileElev = BASE_R * (1.0 + hBase * 0.7);
-      else if (biome === 'tundra')     tileElev = BASE_R * (1.0 + hBase * 0.8 + elev * hBase * 0.3);
-      else /* snow */                  tileElev = BASE_R * (1.0 + hBase * 1.0 + elev * hBase * 0.5);
+      if      (biome === 'deep_ocean') tileElev = BASE_R * (1.0 - oceanD * 1.6);
+      else if (biome === 'ocean')      tileElev = BASE_R * (1.0 - oceanD * 0.8);
+      else if (biome === 'beach')      tileElev = BASE_R * (1.0 - oceanD * 0.05);
+      else if (biome === 'desert')     tileElev = BASE_R * (1.0 + amp * 0.20 + elev * amp * 0.10);
+      else if (biome === 'savanna')    tileElev = BASE_R * (1.0 + amp * 0.30 + elev * amp * 0.15);
+      else if (biome === 'grassland')  tileElev = BASE_R * (1.0 + amp * 0.40 + elev * amp * 0.20);
+      else if (biome === 'forest')     tileElev = BASE_R * (1.0 + amp * 0.55 + elev * amp * 0.25);
+      else if (biome === 'taiga')      tileElev = BASE_R * (1.0 + amp * 0.72 + elev * amp * 0.30);
+      else if (biome === 'tundra')     tileElev = BASE_R * (1.0 + amp * 0.85 + elev * amp * 0.35);
+      else /* snow */                  tileElev = BASE_R * (1.0 + amp * 1.00 + elev * amp * 0.60);
 
       const scale = tileElev / len;
       const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;

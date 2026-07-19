@@ -3822,11 +3822,10 @@ function redrawRealm(): void {
       seed: d.seed,
       subdivisions,
       roughness,
-      shape,
-      climate,
       sunDirection: sunDir,
       atmosphereColor: new THREE.Color(0xd0e8ff),
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
+      cells: d.cells,   // shape + climate already baked in by realm generator
       W: d.W, H: d.H,
     });
     // Apply layer toggles
