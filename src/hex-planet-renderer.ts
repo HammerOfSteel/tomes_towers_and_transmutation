@@ -17,6 +17,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 // @ts-ignore — hexasphere ships CJS, no @types
 import { Hexasphere } from 'hexasphere';
+import { type PlanetType, type PlanetDNA, PLANET_BIOME_COLORS, getGasGiantBandColor } from './planet-dna';
 
 // ── Atmosphere shaders (same as planet-renderer.ts) ──────────────────────────
 
@@ -138,12 +139,14 @@ function classifyBiome(elev: number, moist: number, temp: number): BiomeName {
 export interface HexPlanetSettings {
   seed:         number;
   subdivisions: number;
-  roughness:    number;   // 0-1 — controls vertical exaggeration ONLY (not shape/frequency)
+  roughness:    number;
   sunDirection: THREE.Vector3;
   atmosphereColor: THREE.Color;
   settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
-  cells: Array<Array<{ elevation: number; biome: string }>>;   // from RealmData.cells
+  cells: Array<Array<{ elevation: number; biome: string }>>;
   W: number; H: number;
+  planetType?: PlanetType;
+  dna?:        PlanetDNA;
 }
 
 // ── Continent mask (same algorithm as generateRealmData) ──────────────────────
@@ -207,6 +210,8 @@ export class HexPlanetRenderer {
   private tileMesh:   THREE.Mesh | null   = null;
   private edgeMesh:   THREE.LineSegments | null = null;
   private atmosMesh:  THREE.Mesh | null   = null;
+  private ringMesh:   THREE.Mesh | null   = null;
+  private moonGroups: Array<{ group: THREE.Group; speed: number }> = [];
   private starPoints: THREE.Points | null = null;
   private labelObjs:  CSS2DObject[]       = [];
 
@@ -247,6 +252,9 @@ export class HexPlanetRenderer {
     if (this.tileMesh)  { this.scene.remove(this.tileMesh);  this.tileMesh.geometry.dispose();  }
     if (this.edgeMesh)  { this.scene.remove(this.edgeMesh);  this.edgeMesh.geometry.dispose();  }
     if (this.atmosMesh) { this.scene.remove(this.atmosMesh); this.atmosMesh.geometry.dispose(); }
+    if (this.ringMesh)  { this.scene.remove(this.ringMesh);  this.ringMesh.geometry.dispose();  this.ringMesh = null; }
+    for (const { group } of this.moonGroups) this.scene.remove(group);
+    this.moonGroups = [];
     for (const obj of this.labelObjs) { (obj.parent ?? this.scene).remove(obj); obj.element.remove(); }
     this.labelObjs = [];
     this.scene.children.filter(c => c instanceof THREE.Light).forEach(l => this.scene.remove(l));
@@ -282,12 +290,10 @@ export class HexPlanetRenderer {
     }
 
     // ── Sub-hex tile geometry ─────────────────────────────────────────────
-    // Two-level Goldberg: sub=24 for TERRITORY borders, sub=48 for fine tiles
-    // Each sub=48 tile (~23k) is a flat coloured hex polygon — discrete biome cells.
-    // Visible gaps between tiles (tilePct=0.88) show the mosaic structure.
-    // Sub=24 territory lines sit on top as bright overlay.
+    const pType = s.planetType ?? 'terran';
+    const colorTable = PLANET_BIOME_COLORS[pType] ?? PLANET_BIOME_COLORS.terran;
+    const isGasGiant = pType === 'gas_giant';
 
-    // ── Fine tiles: sub=48 flat hex mosaic ──
     const HS_FINE_SUB = 48;
     const HexasphereFine = (Hexasphere as any);
     const hs_fine = new HexasphereFine(BASE_R, HS_FINE_SUB, 0.96);
@@ -297,34 +303,62 @@ export class HexPlanetRenderer {
       desert: 1.000, savanna: 1.004, grassland: 1.008,
       forest: 1.013, taiga: 1.018, tundra: 1.023, snow: 1.030,
     };
-    const microAmp2 = s.roughness * 0.016;
+    // Dead / gas giant / toxic = very flat (no terrain variance)
+    const flatTypes = new Set(['gas_giant', 'dead', 'toxic', 'ocean']);
+    const microAmp2 = flatTypes.has(pType) ? 0.002 : s.roughness * 0.016;
 
     const pos2: number[] = [];
     const col2: number[] = [];
 
     for (const tile of hs_fine.tiles) {
-      const cp = tile.centerPoint as { x: number; y: number; z: number };
+      const cp  = tile.centerPoint as { x: number; y: number; z: number };
       const cLen = Math.sqrt(cp.x*cp.x + cp.y*cp.y + cp.z*cp.z);
-      const cell2 = sampleCell(cp.x, cp.y, cp.z, cLen);
-      const biome2 = cell2.biome as BiomeName;
-      const [tr, tg, tb] = BIOME_COLOR[biome2] ?? BIOME_COLOR.deep_ocean;
+
+      let tr: number, tg: number, tb: number;
+      let tierH = 1.0;
+
+      if (isGasGiant) {
+        // Gas giant: colour purely by latitude band, no terrain
+        const latNorm = cp.y / cLen; // -1..1
+        ;[tr, tg, tb] = getGasGiantBandColor(latNorm, s.seed);
+        tierH = 1.0; // perfectly smooth
+      } else {
+        const cell2  = sampleCell(cp.x, cp.y, cp.z, cLen);
+        const biome2 = cell2.biome;
+        const rgb = colorTable[biome2] ?? colorTable.deep_ocean ?? [20,60,130];
+        ;[tr, tg, tb] = rgb;
+        tierH = TIER2[biome2] ?? 1.0;
+        const dispH = BASE_R * (tierH + (cell2.elevation - 0.5) * microAmp2);
+        const cScale = dispH / cLen;
+        const cx = cp.x*cScale, cy2 = cp.y*cScale, cz = cp.z*cScale;
+        const rn = tr/255, gn = tg/255, bn = tb/255;
+        const bnd = tile.boundary as { x: number; y: number; z: number }[];
+        const N = bnd.length;
+        for (let ti2 = 0; ti2 < N; ti2++) {
+          const b0 = bnd[ti2]!;
+          const b1 = bnd[(ti2+1)%N]!;
+          const s0 = dispH / Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
+          const s1 = dispH / Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
+          pos2.push(cx, cy2, cz,
+                    b0.x*s0, b0.y*s0, b0.z*s0,
+                    b1.x*s1, b1.y*s1, b1.z*s1);
+          col2.push(rn,gn,bn, rn,gn,bn, rn,gn,bn);
+        }
+        continue; // skip the gas giant path below
+      }
+
+      // Gas giant path — flat tiles
       const rn = tr/255, gn = tg/255, bn = tb/255;
-
-      const tierH = TIER2[biome2] ?? 1.0;
-      const dispH = BASE_R * (tierH + (cell2.elevation - 0.5) * microAmp2);
-
-      // Scale center + each boundary vertex uniformly by dispH/len
-      const cScale = dispH / cLen;
-      const cx = cp.x*cScale, cy = cp.y*cScale, cz = cp.z*cScale;
-
+      const cScale = BASE_R / cLen;
+      const cx = cp.x*cScale, cy2 = cp.y*cScale, cz = cp.z*cScale;
       const bnd = tile.boundary as { x: number; y: number; z: number }[];
       const N = bnd.length;
       for (let ti2 = 0; ti2 < N; ti2++) {
         const b0 = bnd[ti2]!;
         const b1 = bnd[(ti2+1)%N]!;
-        const s0 = dispH / Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
-        const s1 = dispH / Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
-        pos2.push(cx, cy, cz,
+        const s0 = BASE_R / Math.sqrt(b0.x*b0.x+b0.y*b0.y+b0.z*b0.z);
+        const s1 = BASE_R / Math.sqrt(b1.x*b1.x+b1.y*b1.y+b1.z*b1.z);
+        pos2.push(cx, cy2, cz,
                   b0.x*s0, b0.y*s0, b0.z*s0,
                   b1.x*s1, b1.y*s1, b1.z*s1);
         col2.push(rn,gn,bn, rn,gn,bn, rn,gn,bn);
@@ -335,17 +369,16 @@ export class HexPlanetRenderer {
     tileGeo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos2), 3));
     tileGeo2.setAttribute('color',    new THREE.BufferAttribute(new Float32Array(col2), 3));
     tileGeo2.computeVertexNormals();
-
     const tileMat2 = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.tileMesh  = new THREE.Mesh(tileGeo2, tileMat2);
     this.scene.add(this.tileMesh);
 
-    // ── Territory borders: sub=24 hex edge lines (bright overlay) ──
+    // ── Territory borders ──────────────────────────────────────────────────
     const edgePts2: number[] = [];
     for (const tile of hs.tiles) {
       const bnd2 = tile.boundary as { x: number; y: number; z: number }[];
       const NT = bnd2.length;
-      const ef = BASE_R * 1.012; // float above tile surface
+      const ef = BASE_R * 1.012;
       for (let i = 0; i < NT; i++) {
         const b0 = bnd2[i]!;
         const b1 = bnd2[(i+1)%NT]!;
@@ -370,6 +403,37 @@ export class HexPlanetRenderer {
     });
     this.atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
     this.scene.add(this.atmosMesh);
+
+    // ── Rings ─────────────────────────────────────────────────────────────
+    const dna = s.dna;
+    if (dna?.ringSystem) {
+      const rGeo = new THREE.RingGeometry(BASE_R * dna.ringInner, BASE_R * dna.ringOuter, 128, 3);
+      const [rr,rg,rb] = dna.ringColor;
+      const rMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(rr/255, rg/255, rb/255),
+        transparent: true, opacity: dna.ringOpacity,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      this.ringMesh = new THREE.Mesh(rGeo, rMat);
+      this.ringMesh.rotation.x = Math.PI / 2 + 0.35; // slight tilt
+      this.scene.add(this.ringMesh);
+    }
+
+    // ── Moons ─────────────────────────────────────────────────────────────
+    if (dna?.moons.length) {
+      for (const moon of dna.moons) {
+        const mGeo = new THREE.SphereGeometry(BASE_R * moon.size, 10, 10);
+        const mMat = new THREE.MeshLambertMaterial({ color: moon.color });
+        const mMesh = new THREE.Mesh(mGeo, mMat);
+        mMesh.position.set(moon.orbitRadius, 0, 0);
+        const orbit = new THREE.Group();
+        orbit.rotation.y = (dna.moons.indexOf(moon) / dna.moons.length) * Math.PI * 2;
+        orbit.rotation.z = moon.tiltY;
+        orbit.add(mMesh);
+        this.scene.add(orbit);
+        this.moonGroups.push({ group: orbit, speed: moon.orbitSpeed });
+      }
+    }
 
     // ── Settlement markers on hex surface ────────────────────────────────
     const DOT_COLORS = { city: '#f0a828', town: '#e8d070', village: '#d0c890' };

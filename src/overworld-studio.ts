@@ -29,6 +29,7 @@ import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import { HexPlanetRenderer } from './hex-planet-renderer';
+import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -3747,12 +3748,16 @@ function getHexPlanetRenderer(): HexPlanetRenderer {
   return hexPlanetRenderer;
 }
 
+let currentPlanetType: PlanetType = 'terran';
+
 function showPlanetCanvas(show: boolean): void {
   planet3dCanvas.style.display = show ? '' : 'none';
   canvas.style.display         = show ? 'none' : '';
   overlay.style.display        = show ? 'none' : '';
-  const layerCtrl = document.getElementById('planet-layer-controls');
-  if (layerCtrl) layerCtrl.style.display = show ? '' : 'none';
+  const layerCtrl  = document.getElementById('planet-layer-controls');
+  const typeSection = document.getElementById('planet-type-section');
+  if (layerCtrl)   layerCtrl.style.display   = show ? '' : 'none';
+  if (typeSection) typeSection.style.display  = show ? '' : 'none';
 }
 
 function redrawRealm(): void {
@@ -3821,15 +3826,19 @@ function redrawRealm(): void {
     const tileCount = 10 * 24 * 24 + 2;
     const hexSubVal = document.getElementById('hex-sub-val');
     if (hexSubVal) hexSubVal.textContent = `${tileCount} tiles (sub 24)`;
+    const dna = generatePlanetDNA(d.seed, currentPlanetType);
+    const [ar2,ag2,ab2] = dna.atmosphereColor;
     hr.loadPlanet({
       seed: d.seed,
       subdivisions,
       roughness,
       sunDirection: sunDir,
-      atmosphereColor: new THREE.Color(0xd0e8ff),
+      atmosphereColor: new THREE.Color(ar2/255, ag2/255, ab2/255),
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
-      cells: d.cells,   // shape + climate already baked in by realm generator
+      cells: d.cells,
       W: d.W, H: d.H,
+      planetType: currentPlanetType,
+      dna,
     });
     // Apply layer toggles
     const showAtmos = (document.getElementById('planet-show-atmos') as HTMLInputElement)?.checked ?? true;
@@ -4013,6 +4022,15 @@ const HEX_TILE_COUNTS: Record<number, number> = {6:362,8:642,12:1442,16:2562,20:
 void HEX_TILE_COUNTS;
 
 // ── Realm controls event wiring ───────────────────────────────────────────────
+
+document.getElementById('planet-type-pills')?.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill || !pill.dataset.ptype) return;
+  document.querySelectorAll('#planet-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentPlanetType = pill.dataset.ptype as PlanetType;
+  redrawRealm();
+});
 
 document.getElementById('realm-view-pills')?.addEventListener('click', e => {
   const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
