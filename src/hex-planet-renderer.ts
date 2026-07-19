@@ -265,7 +265,7 @@ export class HexPlanetRenderer {
     const normals    = new Float32Array(totalEdges * 27);
     const edgePositions = new Float32Array(totalEdges * 6);  // top edges only
 
-    const INNER_R = BASE_R * 0.86;
+    const INNER_R = BASE_R * 0.80;  // deep inner shell → tall side walls for dramatic terrain
     let vi = 0, ei = 0;
 
     const pushTri = (
@@ -294,12 +294,21 @@ export class HexPlanetRenderer {
       const biome   = classifyBiome(rawElev, moist, temp);
       const [r,g,b] = BIOME_COLOR[biome];
 
-      const elevRange = 0.04 + s.roughness * 0.18;
+      // ── Discrete height tiers (Civ 6 style) ────────────────────────────
+      // roughness = 0 → flat, gentle steps; roughness = 1 → very dramatic terrain
+      const hBase  = 0.10 + s.roughness * 0.18;   // amplitude of land range
+      const hOcean = 0.08 + s.roughness * 0.10;   // ocean depth below surface
       let elev: number;
-      if      (biome==='deep_ocean') elev = BASE_R*(0.92 - s.roughness*0.02);
-      else if (biome==='ocean')      elev = BASE_R*(0.95 - s.roughness*0.01);
-      else if (biome==='snow')       elev = BASE_R*(1.02 + rawElev*elevRange*2.0);
-      else                           elev = BASE_R*(0.97 + rawElev*elevRange);
+      if      (biome === 'deep_ocean') elev = BASE_R * (1.0 - hOcean * 1.6);
+      else if (biome === 'ocean')      elev = BASE_R * (1.0 - hOcean * 0.8);
+      else if (biome === 'beach')      elev = BASE_R * (1.0 - hOcean * 0.1);
+      else if (biome === 'desert')     elev = BASE_R * (1.0 + hBase * 0.2);
+      else if (biome === 'savanna')    elev = BASE_R * (1.0 + hBase * 0.3);
+      else if (biome === 'grassland')  elev = BASE_R * (1.0 + hBase * 0.4);
+      else if (biome === 'forest')     elev = BASE_R * (1.0 + hBase * 0.5);
+      else if (biome === 'taiga')      elev = BASE_R * (1.0 + hBase * 0.7);
+      else if (biome === 'tundra')     elev = BASE_R * (1.0 + hBase * 0.8 + rawElev * hBase * 0.3);
+      else /* snow */                  elev = BASE_R * (1.0 + hBase * 1.0 + rawElev * hBase * 0.5);
 
       const scale = elev / len;
       const ecx = cp.x*scale, ecy = cp.y*scale, ecz = cp.z*scale;
@@ -469,6 +478,18 @@ export class HexPlanetRenderer {
 
   setVisible(layer: 'atmosphere', show: boolean): void {
     if (layer === 'atmosphere' && this.atmosMesh) this.atmosMesh.visible = show;
+  }
+
+  setDayOnly(enabled: boolean): void {
+    // In day-only mode, boost ambient to full and remove directional shadow
+    this.scene.traverse(obj => {
+      if (obj instanceof THREE.AmbientLight) {
+        obj.intensity = enabled ? 1.8 : 0.55;
+      }
+      if (obj instanceof THREE.DirectionalLight) {
+        obj.intensity = enabled ? 0.0 : 2.0;
+      }
+    });
   }
 
   setEdgeLines(show: boolean): void {

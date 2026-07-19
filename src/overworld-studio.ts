@@ -3787,11 +3787,13 @@ function redrawRealm(): void {
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
       W: d.W, H: d.H,
     });
-    // Apply current toggle states
+    // Apply current layer toggle states
     const showClouds = (document.getElementById('planet-show-clouds') as HTMLInputElement)?.checked ?? true;
     const showAtmos  = (document.getElementById('planet-show-atmos')  as HTMLInputElement)?.checked ?? true;
+    const dayOnly    = (document.getElementById('planet-day-only')     as HTMLInputElement)?.checked ?? false;
     pr.setVisible('clouds',     showClouds);
     pr.setVisible('atmosphere', showAtmos);
+    pr.setDayOnly(dayOnly);
     pr.start();
   } else if (realmViewMode === 'hex') {
     showPlanetCanvas(true);
@@ -3827,6 +3829,7 @@ function redrawRealm(): void {
     const showAtmos = (document.getElementById('planet-show-atmos') as HTMLInputElement)?.checked ?? true;
     hr.setVisible('atmosphere', showAtmos);
     hr.setAutoRotate((document.getElementById('planet-auto-rotate') as HTMLInputElement)?.checked ?? true);
+    hr.setDayOnly((document.getElementById('planet-day-only') as HTMLInputElement)?.checked ?? false);
     hr.start();
   } else {
     showPlanetCanvas(false);
@@ -3989,6 +3992,11 @@ document.getElementById('planet-auto-rotate')?.addEventListener('change', e => {
   const v = (e.target as HTMLInputElement).checked;
   planetRenderer?.setAutoRotate(v);
   hexPlanetRenderer?.setAutoRotate(v);
+});
+document.getElementById('planet-day-only')?.addEventListener('change', e => {
+  const v = (e.target as HTMLInputElement).checked;
+  planetRenderer?.setDayOnly(v);
+  hexPlanetRenderer?.setDayOnly(v);
 });
 document.getElementById('hex-show-edges')?.addEventListener('change', e => {
   hexPlanetRenderer?.setEdgeLines((e.target as HTMLInputElement).checked);

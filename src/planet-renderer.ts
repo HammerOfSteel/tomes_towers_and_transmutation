@@ -37,6 +37,7 @@ const PLANET_FRAG = /* glsl */`
   uniform sampler2D uSpecularClouds;   // R=ocean specular, G=clouds
   uniform vec3  uSunDirection;
   uniform vec3  uAtmosphereColor;
+  uniform float uDayOnly;   // 1.0 = always full day, 0.0 = normal day/night
 
   varying vec2  vUv;
   varying vec3  vNormal;
@@ -47,7 +48,8 @@ const PLANET_FRAG = /* glsl */`
     float sunDot  = dot(vNormal, uSunDirection);
 
     // Soft terminator — tighter so more of the front hemisphere is lit
-    float dayMix = smoothstep(-0.12, 0.30, sunDot);
+    float rawDayMix = smoothstep(-0.12, 0.30, sunDot);
+    float dayMix = mix(rawDayMix, 1.0, uDayOnly);
 
     // Texture samples
     vec3  day       = texture2D(uDayTexture,      vUv).rgb;
@@ -280,6 +282,7 @@ export class PlanetRenderer {
         uSpecularClouds:{ value: tex.specular },
         uSunDirection:  { value: tex.sunDirection },
         uAtmosphereColor:{ value: tex.atmosphereColor },
+        uDayOnly:       { value: 0 },
       },
     });
     this.planetMesh = new THREE.Mesh(sphere, planetMat);
@@ -471,6 +474,20 @@ export class PlanetRenderer {
   setVisible(layer: 'clouds' | 'atmosphere', show: boolean): void {
     if (layer === 'clouds'     && this.cloudMesh)  this.cloudMesh.visible  = show;
     if (layer === 'atmosphere' && this.atmosMesh)  this.atmosMesh.visible  = show;
+  }
+
+  setDayOnly(enabled: boolean): void {
+    if (this.planetMesh) {
+      const mat = this.planetMesh.material as THREE.ShaderMaterial;
+      mat.uniforms.uDayOnly.value = enabled ? 1.0 : 0.0;
+    }
+    // Clouds should stay fully visible in day-only mode
+    if (this.cloudMesh) {
+      const mat = this.cloudMesh.material as THREE.ShaderMaterial;
+      if (mat.uniforms.uSunDirection) {
+        // pass — cloud shader uses uSunDirection which we don't change
+      }
+    }
   }
 
   setAutoRotate(enabled: boolean): void {
