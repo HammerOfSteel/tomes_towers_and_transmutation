@@ -158,3 +158,12 @@ Last pass. **Nothing here starts until 07 is green.**
 | G (Polish) | `08-polish-release/` |
 | H (Docs + Fundraising) | `08-polish-release/` |
 | Phase 5 (Environment Art) | `03-procedural-pipeline/environment-art-system.md` |
+| Creative Mode (C1-C10) | `03-procedural-pipeline/PROC-D-creative-mode.md` |
+| Bot Testing (B1-B6) | `07-testing/bot-testing.md` |
+| Level Editor (L0-L6) | **DONE** ✅ — see `archive/ASSET_LEVEL_EDITOR_TODO.md` |
+
+---
+
+## Source Files
+- `TODO.md` (root) — master source of truth, guiding principles, art system decisions
+- `TODO/archive/` — superseded files kept for reference only
