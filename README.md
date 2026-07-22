@@ -159,7 +159,7 @@ public/
 | 7 | The OP power fantasy | ⬜ Not started |
 | 8 | Asset replacement & final boss | ⬜ Not started |
 
-Full details in [TODO.md](TODO.md).
+Full details in [TODO.md](TODO.md) · [Structured task tracker](TODO/TODO_OVERVIEW.md) · [**GitHub Project Board →**](https://github.com/users/HammerOfSteel/projects/2)
 
 ---
 
@@ -170,6 +170,8 @@ Full details in [TODO.md](TODO.md).
 | [docs/GDD.md](docs/GDD.md) | Core game design — concept, loop, narrative |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical rules and dual-design system |
 | [TODO.md](TODO.md) | Phased roadmap with per-phase playtests |
+| [TODO/TODO_OVERVIEW.md](TODO/TODO_OVERVIEW.md) | Structured task tracker (44 files, 8 sections) |
+| [GitHub Project Board](https://github.com/users/HammerOfSteel/projects/2) | Kanban board — 28 issues across M1–M4 milestones |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Code style, branch strategy, test requirements |
 | [docs/MAGIC_SYSTEM.md](docs/MAGIC_SYSTEM.md) | Spell catalogue, progression, shader design |
 | [docs/WORLD_DESIGN.md](docs/WORLD_DESIGN.md) | Tower, overworld, and environment design |
