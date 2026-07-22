@@ -111,7 +111,7 @@ After clearing the tower, the player can direct minions to gather resources and 
 | Level data | JSON blueprints | Human-readable, version-controlled, editor-exportable |
 | UI / Dialogue | HTML/CSS canvas overlay | No UI framework overhead |
 
-For architectural constraints, branch rules, and the No-Asset rule, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For architectural constraints, branch rules, and the No-Asset rule, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ---
 

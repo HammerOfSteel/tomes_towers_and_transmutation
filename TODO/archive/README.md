@@ -10,3 +10,4 @@
 | `FEATURE_BOT_V1_TODO.md` | `TODO/07-testing/bot-testing.md` |
 | `ASSET_LEVEL_EDITOR_TODO.md` | ✅ All phases done (L0-L6 committed) — kept for reference |
 | `ASSETS_TODO.md` | `TODO/03-procedural-pipeline/environment-art-system.md` + `TODO/01-overworld-studio/game-inventory.md` |
+| `asset_models_todo.md` | Superseded by `TODO.md` (Playable Character Roster section) |

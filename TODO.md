@@ -18,7 +18,7 @@
 ---
 
 ## Floor Visual Design Pass ✅ COMPLETE
-> Full per-floor plan → **[FLOOR_DESIGN_PLAN.md](FLOOR_DESIGN_PLAN.md)**
+> Full per-floor plan → **[docs/FLOOR_DESIGN_PLAN.md](docs/FLOOR_DESIGN_PLAN.md)**
 
 ### Global systems
 - [x] UV tiling fix + `makeFloorPlanksTexture` (wood floors 1, 3, 6)

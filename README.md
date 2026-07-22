@@ -135,8 +135,8 @@ public/
 │   └── shaders/       # GLSL vertex/fragment shaders
 ├── levels/            # Exported JSON blueprint files
 ├── tests/             # Unit tests (Vitest)
-├── docs/              # Extended design documentation
-├── GDD.md             # Game Design Document
+├── docs/              # All design docs, system specs, research
+├── TODO/              # Structured task tracking (entry: TODO_OVERVIEW.md)
 ├── ARCHITECTURE.md    # Technical architecture & rules
 ├── TODO.md            # Phased implementation roadmap
 ├── CONTRIBUTING.md    # Dev workflow & conventions
@@ -167,7 +167,7 @@ Full details in [TODO.md](TODO.md).
 
 | Doc | Purpose |
 |---|---|
-| [GDD.md](GDD.md) | Core game design — concept, loop, narrative |
+| [docs/GDD.md](docs/GDD.md) | Core game design — concept, loop, narrative |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical rules and dual-design system |
 | [TODO.md](TODO.md) | Phased roadmap with per-phase playtests |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Code style, branch strategy, test requirements |
@@ -175,7 +175,7 @@ Full details in [TODO.md](TODO.md).
 | [docs/WORLD_DESIGN.md](docs/WORLD_DESIGN.md) | Tower, overworld, and environment design |
 | [docs/ENEMY_DESIGN.md](docs/ENEMY_DESIGN.md) | Enemy types, AI states, recruitment |
 | [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) | Procedural art style guide and shader conventions |
-| [TESTING_AND_TOOLS.md](TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
+| [docs/TESTING_AND_TOOLS.md](docs/TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
 | [docs/BLUEPRINT_SCHEMA.md](docs/BLUEPRINT_SCHEMA.md) | JSON level format specification |
 
 ---

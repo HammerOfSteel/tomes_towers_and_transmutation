@@ -108,6 +108,7 @@ Lock everything in with tests. **Start after each section above is feature-compl
 | [Unit Tests](./07-testing/unit-tests.md) | Phase F1: vitest coverage targets | 🚧 |
 | [E2E Playwright](./07-testing/e2e-playwright.md) | Phase F3: full flow automation | 🚧 |
 | [Performance](./07-testing/performance.md) | Phase G1 + F4: 60fps targets, budgets | 🔲 |
+| [Bot Testing](./07-testing/bot-testing.md) | GameBot B1-B6 done, NS8 + CI remaining | ✅/🔲 |
 
 ---
 
@@ -138,6 +139,8 @@ Last pass. **Nothing here starts until 07 is green.**
 | G7 | **OW-D/E detail** — Dwelling layer and layer navigation have almost no task breakdown | Medium | `01-overworld-studio/OW-D/E` files |
 | G8 | **Day/Night integration** — DayNightSystem exists but NPC schedules, weather, world events not planned | Low | `06-game-systems/` |
 | G9 | **Performance budgets** — G1 says "60fps" but no per-system budget (triangles, draw calls, memory) | Medium | `07-testing/performance.md` |
+| G10 | **Creature Creator expansion** — CC-1 to CC-6 phases (sub-races, clothing, body morphing) | Medium | `04-characters/creature-creator.md` |
+| G11 | **Follower System** — quest rewards grant followers but no `FollowerSystem.ts` planned | High | `05-content/quests.md` |
 
 ---
 
@@ -161,6 +164,8 @@ Last pass. **Nothing here starts until 07 is green.**
 | Creative Mode (C1-C10) | `03-procedural-pipeline/PROC-D-creative-mode.md` |
 | Bot Testing (B1-B6) | `07-testing/bot-testing.md` |
 | Level Editor (L0-L6) | **DONE** ✅ — see `archive/ASSET_LEVEL_EDITOR_TODO.md` |
+| Creature Creator (CC-1 to CC-6) | `04-characters/creature-creator.md` |
+| Docs organization | `docs/overview.md` (master docs index) |
 
 ---
 
