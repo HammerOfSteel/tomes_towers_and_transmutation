@@ -80,9 +80,31 @@
 
 ## 📦 Asset Kits
 
-| Doc | Location | What it covers |
-|---|---|---|
-| Asset Catalogue | [ASSET_KITS/ASSET_CATALOGUE.md](../ASSET_KITS/ASSET_CATALOGUE.md) | All licensed asset packs, formats, extraction status |
+| Location | What it covers |
+|---|---|
+| [ASSET_KITS/ASSET_CATALOGUE.md](../ASSET_KITS/ASSET_CATALOGUE.md) | All licensed asset packs, formats, extraction status |
+| `ASSET_KITS/KayKit_Kits/` | KayKit adventure / skeleton / dungeon packs (GLB, LFS) |
+| `ASSET_KITS/Kenney_Kits/` | Kenney environment / cave / town packs (GLB, LFS) |
+
+---
+
+## 🎨 Concept Art & Reference
+
+| Location | Contents |
+|---|---|
+| `concept_art/` | AI-generated lifestyle concept art (cozy_study, dungeon_exploration, etc.) |
+| `concept_art/reference/` | Cover art, tile reference images, princess character references |
+| `concept_art/gameplay/` | In-game screenshots (dungeon views, gameplay moments) |
+| `concept_art/video/` | AI-generated concept videos (.mp4) |
+
+---
+
+## 🔧 Developer Tools
+
+| Location | Contents |
+|---|---|
+| `tools/` | Tripo3D Blender bridge, other dev tools |
+| `POC/` | Proof-of-concept HTML experiments (quadruped IK, Gemini UI) |
 
 ---
 

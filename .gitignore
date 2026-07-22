@@ -6,6 +6,9 @@ tests/e2e/test-results/
 tests/e2e/report/
 tests/e2e/screenshots/
 
+# Screenshots captured during development
+screenshots/
+
 # macOS backup files created by some editors
 **/*~
 assets/

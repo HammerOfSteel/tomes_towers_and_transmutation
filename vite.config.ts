@@ -97,6 +97,7 @@ export default defineConfig(({ mode }) => ({
         modelReview:    path.resolve(__dirname, 'model-review.html'),
         princessCreator:  path.resolve(__dirname, 'princess-creator.html'),
         showroom:         path.resolve(__dirname, 'showroom.html'),
+        creatureLab:      path.resolve(__dirname, 'creature-lab.html'),
         overworldStudio:  path.resolve(__dirname, 'overworld-studio.html'),
       },
     },
