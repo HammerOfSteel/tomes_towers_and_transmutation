@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { type PlanetDNA } from './planet-dna';
 
 // ── GLSL shaders ──────────────────────────────────────────────────────────────
 
@@ -212,8 +213,9 @@ export interface PlanetTextures {
   atmosphereColor: THREE.Color;
   seed: number;
   settlements: Array<{ x: number; y: number; name: string; size: 'village'|'town'|'city'; }>;
-  W: number;   // realm grid width (for lon/lat conversion)
+  W: number;
   H: number;
+  dna?: PlanetDNA;
 }
 
 export class PlanetRenderer {
@@ -227,6 +229,8 @@ export class PlanetRenderer {
   private planetMesh: THREE.Mesh | null  = null;
   private cloudMesh:  THREE.Mesh | null  = null;
   private atmosMesh:  THREE.Mesh | null  = null;
+  private ringMesh:   THREE.Mesh | null  = null;
+  private moonGroups: Array<{ group: THREE.Group; speed: number }> = [];
   private starPoints: THREE.Points | null = null;
   private labelObjects: CSS2DObject[] = [];
 
@@ -269,6 +273,9 @@ export class PlanetRenderer {
     if (this.planetMesh) { this.scene.remove(this.planetMesh); this.planetMesh.geometry.dispose(); }
     if (this.cloudMesh)  { this.scene.remove(this.cloudMesh);  this.cloudMesh.geometry.dispose(); }
     if (this.atmosMesh)  { this.scene.remove(this.atmosMesh);  this.atmosMesh.geometry.dispose(); }
+    if (this.ringMesh)   { this.scene.remove(this.ringMesh);   this.ringMesh.geometry.dispose();   this.ringMesh = null; }
+    for (const { group } of this.moonGroups) this.scene.remove(group);
+    this.moonGroups = [];
 
     const sphere = new THREE.SphereGeometry(2, 64, 64);
 
@@ -329,6 +336,36 @@ export class PlanetRenderer {
 
     const ambient = new THREE.AmbientLight(0x203050, 0.5);
     this.scene.add(ambient);
+
+    // ── Rings + Moons from PlanetDNA ─────────────────────────────────────
+    const dna = tex.dna;
+    if (dna?.ringSystem) {
+      const rGeo = new THREE.RingGeometry(2 * dna.ringInner, 2 * dna.ringOuter, 128, 3);
+      const [rr,rg,rb] = dna.ringColor;
+      const rMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(rr/255, rg/255, rb/255),
+        transparent: true, opacity: dna.ringOpacity,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      this.ringMesh = new THREE.Mesh(rGeo, rMat);
+      this.ringMesh.rotation.x = Math.PI / 2 + 0.35;
+      this.scene.add(this.ringMesh);
+    }
+    if (dna?.moons.length) {
+      for (let mi = 0; mi < dna.moons.length; mi++) {
+        const moon = dna.moons[mi]!;
+        const mGeo = new THREE.SphereGeometry(2 * moon.size, 10, 10);
+        const mMat = new THREE.MeshLambertMaterial({ color: moon.color });
+        const mMesh = new THREE.Mesh(mGeo, mMat);
+        mMesh.position.set(moon.orbitRadius, 0, 0);
+        const orbit = new THREE.Group();
+        orbit.rotation.y = (mi / dna.moons.length) * Math.PI * 2;
+        orbit.rotation.z = moon.tiltY;
+        orbit.add(mMesh);
+        this.scene.add(orbit);
+        this.moonGroups.push({ group: orbit, speed: moon.orbitSpeed });
+      }
+    }
 
     // ── Settlement labels (CSS2D, projected onto sphere) ─────────────────
     // Remove old labels first (from planetMesh if it exists, else scene)
@@ -437,6 +474,7 @@ export class PlanetRenderer {
         (this.cloudMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
       }
       if (this.planetMesh) this.planetMesh.rotation.y = t * 0.03;
+      for (const { group, speed } of this.moonGroups) group.rotation.y += speed * 0.016;
 
       // Back-face cull settlement labels (hide when behind planet)
       if (this.labelObjects.length > 0) {

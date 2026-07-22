@@ -21,7 +21,7 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import { Delaunay } from 'd3-delaunay';
-// @ts-expect-error no declaration file — import works fine at runtime
+// @ts-ignore
 import { createNoise2D } from '@/core/SimplexNoise';
 import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
@@ -30,6 +30,7 @@ import type { Blueprint } from '@/levels/blueprint';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
+import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -2413,7 +2414,7 @@ export function drawDungeonFloorPlan(
 
 // ── Studio mode state ─────────────────────────────────────────────────────────
 
-type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm';
+type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar';
 let studioMode: StudioMode = 'settlement';
 let currentDungeonPlan: DungeonPlan | null = null;
 
@@ -3750,6 +3751,56 @@ function getHexPlanetRenderer(): HexPlanetRenderer {
 
 let currentPlanetType: PlanetType = 'terran';
 
+// ── Solar System state ────────────────────────────────────────────────────────
+let solarRenderer: SolarSystemRenderer | null = null;
+let currentSolarData: SolarSystemData | null = null;
+
+function getSolarRenderer(): SolarSystemRenderer {
+  if (!solarRenderer) {
+    solarRenderer = new SolarSystemRenderer(canvas);
+    solarRenderer.onPlanetHover(p => {
+      const el = document.getElementById('solar-hover-info');
+      if (el) el.textContent = p ? `${PLANET_META_SS[p.type]} ${p.name}` : '—';
+    });
+    solarRenderer.onPlanetClick(p => {
+      // Switch to realm tab with that planet type
+      currentPlanetType = p.type === 'gas_giant' ? 'gas_giant' : p.isTowerPlanet ? 'terran' : p.type;
+      const pTypePill = document.querySelector(`#planet-type-pills [data-ptype="${currentPlanetType}"]`) as HTMLElement | null;
+      if (pTypePill) {
+        document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
+        pTypePill.classList.add('active');
+      }
+      // Switch to realm > hex tab
+      const realmTab = document.querySelector('.studio-tab[data-mode="realm"]') as HTMLElement | null;
+      realmTab?.click();
+    });
+  }
+  solarRenderer.resize(canvas.offsetWidth || 800, canvas.offsetHeight || 600);
+  return solarRenderer;
+}
+
+// Tiny planet meta for solar hover label
+const PLANET_META_SS: Record<string, string> = {
+  terran:'🌍', ocean:'🌊', gas_giant:'🪐', ice:'❄', volcanic:'🌋',
+  toxic:'☣', desert:'🏜', verdant:'🌿', dead:'☾', ringed:'💫',
+};
+
+function generateSolarView(): void {
+  const seed = parseInt(seedInput.value) || Date.now();
+  currentSolarData = generateSolarSystem(seed);
+  const sr = getSolarRenderer();
+  sr.setData(currentSolarData);
+  sr.start();
+  // Populate star info
+  const starEl = document.getElementById('solar-star-info');
+  if (starEl) starEl.textContent = `${currentSolarData.star.spectral}-type · ${currentSolarData.planets.length} planets`;
+  // Populate planet list
+  const listEl = document.getElementById('solar-planet-list');
+  if (listEl) listEl.innerHTML = currentSolarData.planets.map(p =>
+    `<div>${PLANET_META_SS[p.type] ?? ''} ${p.name}${p.isTowerPlanet ? ' ⬡' : ''}</div>`
+  ).join('');
+}
+
 function showPlanetCanvas(show: boolean): void {
   planet3dCanvas.style.display = show ? '' : 'none';
   canvas.style.display         = show ? 'none' : '';
@@ -3783,14 +3834,16 @@ function redrawRealm(): void {
       Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,  // bias toward +Z (camera dir)
     ).normalize();
 
-    // Atmosphere colour from climate / dominant biome
-    const atmColor = new THREE.Color(0xd0e8ff);   // soft haze, not vivid blue
+    // Atmosphere colour from planet type
+    const prDna = generatePlanetDNA(d.seed, currentPlanetType);
+    const [par,pag,pab] = prDna.atmosphereColor;
+    const atmColor = new THREE.Color(par/255, pag/255, pab/255);
 
     pr.loadPlanet({
       day: dayTex, night: nightTex, specular: specTex, cloud: cloudTex,
       sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed,
       settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
-      W: d.W, H: d.H,
+      W: d.W, H: d.H, dna: prDna,
     });
     // Apply current layer toggle states
     const showClouds = (document.getElementById('planet-show-clouds') as HTMLInputElement)?.checked ?? true;
@@ -3885,6 +3938,7 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
   document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
   document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
+  document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
   // Stop 3D planet loop when leaving realm tab
   if (mode !== 'realm' && planetRenderer) {
@@ -3893,6 +3947,9 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   }
   if (mode !== 'realm' && hexPlanetRenderer) {
     hexPlanetRenderer.stop();
+  }
+  if (mode !== 'solar' && solarRenderer) {
+    solarRenderer.stop();
   }
   if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
@@ -3909,6 +3966,11 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
     hoverEl.textContent = '';
     if (!currentRealmData) generateRealmView();
     else redrawRealm();
+  } else if (mode === 'solar') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    showPlanetCanvas(false);
+    generateSolarView();
   } else {
     redraw();
   }
@@ -4088,6 +4150,14 @@ document.getElementById('realm-roughness')?.addEventListener('input', () => {
 document.getElementById('btn-realm-png')?.addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = `realm-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+document.getElementById('btn-solar-generate')?.addEventListener('click', generateSolarView);
+document.getElementById('btn-solar-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `solar-${seedInput.value}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 });

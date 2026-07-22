@@ -214,6 +214,7 @@
         <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
         <button class="studio-tab"        data-mode="cave">🌿 Cave</button>
         <button class="studio-tab"        data-mode="realm">🌍 Realm</button>
+        <button class="studio-tab"        data-mode="solar">☀ Solar System</button>
       </div>
 
       <!-- ── Settlement controls ──────────────────────────────────── -->
@@ -493,6 +494,27 @@
         </div>
 
       </div><!-- /realm-controls -->
+
+      <!-- ── Solar System controls ────────────────────────────────── -->
+      <div id="solar-controls" style="display:none">
+        <div class="section">
+          <div class="section-title">Star System</div>
+          <div id="solar-star-info" style="font-size:11px;color:var(--muted);margin-bottom:8px">—</div>
+          <button class="btn" id="btn-solar-generate" style="width:100%">✦ Generate</button>
+        </div>
+        <div class="section">
+          <div class="section-title">Planets</div>
+          <div id="solar-planet-list" style="font-size:10px;color:var(--muted);line-height:1.8">—</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Hover</div>
+          <div id="solar-hover-info" style="font-size:10px;color:var(--muted);min-height:28px">—</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-solar-png" style="width:100%">📷 PNG</button>
+        </div>
+      </div><!-- /solar-controls -->
 
     </aside>
   </div>

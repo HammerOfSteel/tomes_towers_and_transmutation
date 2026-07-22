@@ -513,6 +513,9 @@ export class HexPlanetRenderer {
       this.controls.update();
       if (this.starPoints) (this.starPoints.material as THREE.ShaderMaterial).uniforms.uTime.value = t;
 
+      // Animate moons
+      for (const { group, speed } of this.moonGroups) group.rotation.y += speed * 0.016;
+
       // Back-face cull labels
       if (this.labelObjs.length > 0) {
         const camDir = this.camera.position.clone().normalize();
