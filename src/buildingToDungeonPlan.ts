@@ -13,7 +13,7 @@
  *   - Furniture placed by room purpose → InteractableEntry
  */
 
-import type { Blueprint, TileEntry, DoorEntry, StaircaseEntry, InteractableEntry, FloorType } from '@/levels/blueprint';
+import type { Blueprint, TileEntry, DoorEntry, InteractableEntry, FloorType } from '@/levels/blueprint';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { factionBuildingDna, FLOOR_HEIGHT, type BuildingKind, type Faction, type BuildingSize } from './world/buildings/BuildingDNA';
 import { generatePlan, deriveBlueprints, type RoomPurpose } from './world/buildings/InteriorGenerator';
@@ -71,9 +71,10 @@ const TILE_DOOR = 2;
 // ── Main converter ────────────────────────────────────────────────────────────
 
 /**
- * Convert BuildingDNA to a DungeonPlan where each floor is a single Blueprint.
- * The plan can be rendered by drawDungeonFloorPlan() or renderBlueprint()
- * without any modification to those renderers.
+ * Convert BuildingDNA to a DungeonPlan where each floor is a Blueprint,
+ * connected via door entries so drawDungeonFloorPlan()'s BFS layout traverses
+ * all floors and shows them as one connected multi-level layout — exactly like
+ * the dungeon tab shows connected rooms.
  */
 export function buildingToDungeonPlan(
   kind:    BuildingKind,
@@ -103,8 +104,15 @@ export function buildingToDungeonPlan(
       }
     }
 
-    // ── Doors: TILE_DOOR cells, facing determined by boundary position ───────
+    // ── Doors: TILE_DOOR cells + inter-floor connections via door entries ────
+    // Inter-floor connections use DoorEntry (not StaircaseEntry) so that
+    // drawDungeonFloorPlan()'s BFS traverses between floors and shows them
+    // all connected in one layout — exactly like connected dungeon rooms.
     const doors: DoorEntry[] = [];
+    const stairX = plan.w - 2;   // staircase column (near right wall)
+    const stairZ = 2;             // staircase row (near front)
+
+    // Exterior door(s)
     for (let z = 0; z < plan.d; z++) {
       for (let x = 0; x < plan.w; x++) {
         if (plan.grid[x + plan.w * z] !== TILE_DOOR) continue;
@@ -117,15 +125,16 @@ export function buildingToDungeonPlan(
       }
     }
 
-    // ── Staircases: connect adjacent floors ─────────────────────────────────
-    const staircases: StaircaseEntry[] = [];
-    const stairX = plan.w - 2;
-    const stairZ = 2;
-    if (fi > 0) {
-      staircases.push({ x: stairX, z: stairZ, facing: 'north', direction: 'down', targetId: floorIds[fi - 1]! });
-    }
+    // Inter-floor connections: door on THIS floor's stair position
+    // pointing to the adjacent floor. The BFS layout places the next-floor
+    // Blueprint relative to this door (north = stacked above).
     if (fi < floors - 1) {
-      staircases.push({ x: stairX, z: stairZ + 2, facing: 'north', direction: 'up', targetId: `${kind}_f${fi + 1}` });
+      // Stair-up: door facing north at stair position → floor fi+1
+      doors.push({ x: stairX, z: stairZ, facing: 'north', targetId: `${kind}_f${fi + 1}` });
+    }
+    if (fi > 0) {
+      // Stair-down: door facing south at stair position → floor fi-1
+      doors.push({ x: stairX, z: plan.d - 1 - stairZ, facing: 'south', targetId: `${kind}_f${fi - 1}` });
     }
 
     // ── Interactables: scatter per room purpose ──────────────────────────────
@@ -152,8 +161,11 @@ export function buildingToDungeonPlan(
       depth:      plan.d,
       cellSize:   1.0,
       wallHeight: FLOOR_HEIGHT,
-      tiles, doors, staircases, interactables,
-      spawns: [],
+      tiles:        tiles,
+      doors:        doors,
+      staircases:   [],
+      interactables: interactables,
+      spawns:       [],
       floor:  fi,
       floorType: resolveFloorType(dna.style, kind),
     };

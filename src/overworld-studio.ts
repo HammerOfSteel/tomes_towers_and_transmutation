@@ -1885,8 +1885,6 @@ canvas.addEventListener('dblclick', e => {
 let _bModal: HTMLDivElement | null = null;
 let _bModalCanvas: HTMLCanvasElement | null = null;
 let _bModalPlan: DungeonPlan | null = null;
-let _bModalFloor = 0;
-let _bModalFloors = 1;
 let _bModalZoom = 1.0;
 let _bModalPanX = 0;
 let _bModalPanY = 0;
@@ -1898,21 +1896,20 @@ function _bModalSetup(): void {
   if (_bModal) return;
   const wrap = canvas.parentElement!;
 
-  // Modal container
   _bModal = document.createElement('div');
-  _bModal.style.cssText = [
-    'display:none;position:absolute;z-index:30',
-    'left:50%;top:50%;transform:translate(-50%,-50%)',
-    'width:min(640px,90%);height:min(520px,85%)',
-    'background:#0e0c0a;border:1px solid #4a3820',
-    'border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.9)',
-    'display:flex;flex-direction:column;overflow:hidden',
-  ].join(';');
+  _bModal.style.cssText =
+    'position:absolute;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);' +
+    'width:min(660px,92%);height:min(540px,88%);' +
+    'background:#0e0c0a;border:1px solid #4a3820;' +
+    'border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.9);' +
+    'display:none;flex-direction:column;overflow:hidden;';
   wrap.appendChild(_bModal);
 
   // Header
   const hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:#160e08;border-bottom:1px solid #3a2810;flex-shrink:0;gap:8px;';
+  hdr.style.cssText =
+    'display:flex;align-items:center;justify-content:space-between;' +
+    'padding:7px 12px;background:#160e08;border-bottom:1px solid #3a2810;flex-shrink:0;gap:8px;';
   _bModal.appendChild(hdr);
 
   const titleEl = document.createElement('span');
@@ -1920,54 +1917,34 @@ function _bModalSetup(): void {
   titleEl.style.cssText = 'font:bold 11px Georgia,serif;color:#d4b87a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
   hdr.appendChild(titleEl);
 
-  // Floor nav
-  const floorNav = document.createElement('div');
-  floorNav.style.cssText = 'display:flex;align-items:center;gap:5px;flex-shrink:0;';
-  const floorDn = document.createElement('button');
-  floorDn.id = '_bm_floor_dn';
-  floorDn.textContent = '▼';
-  floorDn.style.cssText = 'padding:2px 6px;background:#1e1408;color:#a08060;border:1px solid #3a2810;border-radius:3px;font-size:10px;cursor:pointer;';
-  const floorLbl = document.createElement('span');
-  floorLbl.id = '_bm_floor_lbl';
-  floorLbl.style.cssText = 'font-size:10px;color:#908070;min-width:70px;text-align:center;';
-  const floorUp = document.createElement('button');
-  floorUp.id = '_bm_floor_up';
-  floorUp.textContent = '▲';
-  floorUp.style.cssText = floorDn.style.cssText;
-  floorNav.appendChild(floorDn); floorNav.appendChild(floorLbl); floorNav.appendChild(floorUp);
-  hdr.appendChild(floorNav);
-
-  floorDn.addEventListener('click', () => { if (_bModalFloor > 0) { _bModalFloor--; _bModalRedraw(); } });
-  floorUp.addEventListener('click', () => { if (_bModalFloor < _bModalFloors - 1) { _bModalFloor++; _bModalRedraw(); } });
-
-  // Close button
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '✕';
-  closeBtn.style.cssText = 'padding:2px 7px;background:#2a1008;color:#d08060;border:1px solid #6a2808;border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
+  closeBtn.style.cssText =
+    'padding:2px 7px;background:#2a1008;color:#d08060;border:1px solid #6a2808;' +
+    'border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
   closeBtn.addEventListener('click', hideBuildingModal);
   hdr.appendChild(closeBtn);
 
-  // Canvas
   _bModalCanvas = document.createElement('canvas');
   _bModalCanvas.style.cssText = 'flex:1;display:block;cursor:grab;min-height:0;';
   _bModal.appendChild(_bModalCanvas);
 
-  // Hint bar
   const hint = document.createElement('div');
-  hint.style.cssText = 'padding:4px 10px;background:#0a0806;font-size:9px;color:#4a4030;flex-shrink:0;text-align:center;';
-  hint.textContent = 'Scroll to zoom · drag to pan · double-click to reset';
+  hint.style.cssText =
+    'padding:4px 10px;background:#0a0806;font-size:9px;color:#504030;flex-shrink:0;text-align:center;';
+  hint.textContent = 'All floors connected · scroll to zoom · drag to pan · double-click to fit';
   _bModal.appendChild(hint);
 
-  // ── Zoom/pan event handlers ──────────────────────────────────────────────
+  // ── Zoom/pan ─────────────────────────────────────────────────────────────
   _bModalCanvas.addEventListener('wheel', e => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const rect2  = _bModalCanvas!.getBoundingClientRect();
-    const cx2    = (e.clientX - rect2.left) * (_bModalCanvas!.width / rect2.width);
-    const cy2    = (e.clientY - rect2.top)  * (_bModalCanvas!.height / rect2.height);
-    _bModalPanX  = cx2 + (_bModalPanX - cx2) * factor;
-    _bModalPanY  = cy2 + (_bModalPanY - cy2) * factor;
-    _bModalZoom  = Math.max(0.5, Math.min(8, _bModalZoom * factor));
+    const rect2 = _bModalCanvas!.getBoundingClientRect();
+    const cx2   = (e.clientX - rect2.left) * (_bModalCanvas!.width / rect2.width);
+    const cy2   = (e.clientY - rect2.top)  * (_bModalCanvas!.height / rect2.height);
+    _bModalPanX = cx2 + (_bModalPanX - cx2) * factor;
+    _bModalPanY = cy2 + (_bModalPanY - cy2) * factor;
+    _bModalZoom = Math.max(0.4, Math.min(10, _bModalZoom * factor));
     _bModalRedraw();
   }, { passive: false });
 
@@ -1997,22 +1974,17 @@ function _bModalResetView(): void {
 
 function _bModalRedraw(): void {
   if (!_bModalPlan || !_bModalCanvas) return;
-
-  // Sync canvas size to its layout size
-  const w = _bModalCanvas.offsetWidth  || 600;
-  const h = _bModalCanvas.offsetHeight || 400;
+  const w = _bModalCanvas.offsetWidth  || 620;
+  const h = _bModalCanvas.offsetHeight || 460;
   if (_bModalCanvas.width !== w || _bModalCanvas.height !== h) {
     _bModalCanvas.width  = w;
     _bModalCanvas.height = h;
-    if (_bModalZoom === 1.0) _bModalPanX = _bModalPanY = 0;
   }
-
-  // Render to offscreen at natural size
+  // Render all connected floors to an offscreen canvas
   const off = document.createElement('canvas');
   off.width = w; off.height = h;
-  drawDungeonFloorPlan(_bModalPlan, off, _bModalFloor);
+  drawDungeonFloorPlan(_bModalPlan, off);  // no floorFilter → all floors connected via BFS
 
-  // Blit with zoom+pan transform
   const ctx = _bModalCanvas.getContext('2d')!;
   ctx.fillStyle = '#0a0908';
   ctx.fillRect(0, 0, w, h);
@@ -2021,33 +1993,20 @@ function _bModalRedraw(): void {
   ctx.scale(_bModalZoom, _bModalZoom);
   ctx.drawImage(off, 0, 0);
   ctx.restore();
-
-  // Floor label
-  const floorLbl = document.getElementById('_bm_floor_lbl');
-  if (floorLbl) {
-    floorLbl.textContent = _bModalFloor === 0 ? `Floor 1/${_bModalFloors}` : `Floor ${_bModalFloor + 1}/${_bModalFloors}`;
-  }
-  const floorDn = document.getElementById('_bm_floor_dn') as HTMLButtonElement | null;
-  const floorUp = document.getElementById('_bm_floor_up') as HTMLButtonElement | null;
-  if (floorDn) floorDn.disabled = _bModalFloor <= 0;
-  if (floorUp) floorUp.disabled = _bModalFloor >= _bModalFloors - 1;
 }
 
-function showBuildingModal(plan: DungeonPlan, title: string, floors: number): void {
+function showBuildingModal(plan: DungeonPlan, title: string, _floors: number): void {
   _bModalSetup();
   if (!_bModal || !_bModalCanvas) return;
-  _bModalPlan   = plan;
-  _bModalFloor  = 0;
-  _bModalFloors = floors;
-  _bModalZoom   = 1.0;
-  _bModalPanX   = 0;
-  _bModalPanY   = 0;
+  _bModalPlan  = plan;
+  _bModalZoom  = 1.0;
+  _bModalPanX  = 0;
+  _bModalPanY  = 0;
 
   const titleEl = document.getElementById('_bm_title');
   if (titleEl) titleEl.textContent = `🏠 ${title}`;
 
   _bModal.style.display = 'flex';
-  // Wait one frame for layout then size the canvas
   requestAnimationFrame(() => { _bModalRedraw(); });
   hoverEl.textContent = `${title} — Esc to close · scroll to zoom · drag to pan`;
 }
