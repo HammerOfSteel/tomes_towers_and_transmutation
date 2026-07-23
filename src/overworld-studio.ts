@@ -32,7 +32,8 @@ import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
 import { factionBuildingDna, type BuildingKind, type Faction, type BuildingSize } from './world/buildings/BuildingDNA';
-import { generatePlan, deriveBlueprints, type HousePlan, type RoomBlueprint, type RoomPurpose } from './world/buildings/InteriorGenerator';
+import { generatePlan, deriveBlueprints, generateInterior, type HousePlan, type RoomBlueprint, type RoomPurpose } from './world/buildings/InteriorGenerator';
+import { DwellingRenderer3D } from './dwelling-renderer-3d';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1498,6 +1499,9 @@ window.addEventListener('resize', () => {
     const wrap = planet3dCanvas.parentElement!;
     hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
   }
+  if (dwelling3dRenderer) {
+    dwelling3dRenderer.resize(dwelling3dCanvas.offsetWidth, dwelling3dCanvas.offsetHeight);
+  }
   generate();
 });
 
@@ -2428,6 +2432,9 @@ let currentDwellingPlan: HousePlan | null = null;
 let currentDwellingBlueprints: RoomBlueprint[] = [];
 let currentDwellingFloor = 0;
 let currentDwellingFloors = 2;
+let dwellingViewMode: '2d' | '3d' = '2d';
+let dwelling3dRenderer: DwellingRenderer3D | null = null;
+const dwelling3dCanvas = document.getElementById('dwelling-3d-canvas') as HTMLCanvasElement;
 
 function generateDungeonView() {
   const seed       = parseInt(seedInput.value) || Date.now();
@@ -3818,14 +3825,14 @@ const DWELLING_SIZE_LABELS: BuildingSize[] = ['tiny', 'small', 'medium', 'large'
 const DWELLING_SIZE_NAMES  = ['Tiny', 'Small', 'Medium', 'Large'];
 
 const ROOM_PURPOSE_COLORS: Record<RoomPurpose, string> = {
-  living:      '#2a2218',
-  kitchen:     '#1e1a10',
-  bedroom:     '#1a1e28',
-  hall:        '#201810',
-  bar:         '#1a100a',
-  storage:     '#181818',
-  workshop:    '#1a1010',
-  chapel_nave: '#0e1820',
+  living:      '#3a3020',   // warm amber
+  kitchen:     '#2a2410',   // dark amber
+  bedroom:     '#1e2840',   // cool blue-grey
+  hall:        '#302820',   // neutral brown
+  bar:         '#2a1a0a',   // dark warm
+  storage:     '#202020',   // dark neutral
+  workshop:    '#2a1810',   // dark rust
+  chapel_nave: '#141e30',   // cool dark blue
 };
 
 function drawBuildingFloorPlan(
@@ -3841,49 +3848,97 @@ function drawBuildingFloorPlan(
   ctx.fillRect(0, 0, W, H);
 
   const PAD  = 32;
-  const CELL = Math.min(Math.floor((W - PAD * 2) / plan.w), Math.floor((H - PAD * 2) / plan.d), 36);
+  const CELL = Math.min(Math.floor((W - PAD * 2) / plan.w), Math.floor((H - PAD * 2) / plan.d), 40);
   const offX = Math.floor((W - plan.w * CELL) / 2);
   const offY = Math.floor((H - plan.d * CELL) / 2);
 
-  // Room fills
+  // Room fills with subtle floor tile grid
   for (const room of blueprints) {
-    ctx.fillStyle = ROOM_PURPOSE_COLORS[room.purpose] ?? '#181818';
+    const col = ROOM_PURPOSE_COLORS[room.purpose] ?? '#202020';
+    ctx.fillStyle = col;
     ctx.fillRect(offX + room.x * CELL, offY + room.z * CELL, room.w * CELL, room.d * CELL);
-  }
 
-  // Tile-by-tile overlay: walls and doors
-  for (let z = 0; z < plan.d; z++) {
-    for (let x = 0; x < plan.w; x++) {
-      const tile = plan.grid[x + plan.w * z]!;
-      if (tile === 1) {        // TILE_WALL
-        ctx.fillStyle = '#c8b080';
-        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
-      } else if (tile === 2) { // TILE_DOOR
-        ctx.fillStyle = '#0a0908';
-        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
-        ctx.fillStyle = '#f0c040';
-        const dw = Math.max(3, CELL - 6), dh = Math.max(3, CELL - 6);
-        ctx.fillRect(offX + x * CELL + (CELL - dw) / 2, offY + z * CELL + (CELL - dh) / 2, dw, dh);
+    // Subtle tile grid within room
+    if (CELL >= 12) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 0.5;
+      for (let x = room.x; x <= room.x + room.w; x++) {
+        ctx.beginPath();
+        ctx.moveTo(offX + x * CELL, offY + room.z * CELL);
+        ctx.lineTo(offX + x * CELL, offY + (room.z + room.d) * CELL);
+        ctx.stroke();
+      }
+      for (let z = room.z; z <= room.z + room.d; z++) {
+        ctx.beginPath();
+        ctx.moveTo(offX + room.x * CELL, offY + z * CELL);
+        ctx.lineTo(offX + (room.x + room.w) * CELL, offY + z * CELL);
+        ctx.stroke();
       }
     }
   }
 
-  // Room labels
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  for (const room of blueprints) {
-    const lbl = room.purpose.replace('_', ' ');
-    ctx.font = `${Math.max(7, Math.min(CELL * 0.6, 11))}px Georgia, serif`;
-    ctx.fillStyle = 'rgba(200,180,130,0.55)';
-    ctx.fillText(lbl, offX + room.centerX * CELL + CELL / 2, offY + room.centerZ * CELL + CELL / 2);
+  // Tile overlay: walls and doors
+  for (let z = 0; z < plan.d; z++) {
+    for (let x = 0; x < plan.w; x++) {
+      const tile = plan.grid[x + plan.w * z]!;
+      if (tile === 1) {        // TILE_WALL — stone texture effect
+        ctx.fillStyle = '#8a7850';
+        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; // mortar shadow
+        ctx.fillRect(offX + x * CELL + CELL - 2, offY + z * CELL, 2, CELL);
+        ctx.fillRect(offX + x * CELL, offY + z * CELL + CELL - 2, CELL, 2);
+      } else if (tile === 2) { // TILE_DOOR — gold gap
+        ctx.fillStyle = '#0a0908';
+        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
+        ctx.fillStyle = '#e8b030';
+        const dpad = Math.max(2, Math.floor(CELL * 0.15));
+        ctx.fillRect(offX + x * CELL + dpad, offY + z * CELL + dpad, CELL - dpad * 2, CELL - dpad * 2);
+      }
+    }
   }
 
-  // Title
-  ctx.fillStyle    = 'rgba(200,180,120,0.75)';
+  // Room labels and purpose icons
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  const PURPOSE_ICONS: Record<RoomPurpose, string> = {
+    living: '🛋', kitchen: '🍳', bedroom: '🛏', hall: '🚪',
+    bar: '🍺', storage: '📦', workshop: '⚒', chapel_nave: '✝',
+  };
+  for (const room of blueprints) {
+    const px = offX + (room.x + room.w / 2) * CELL;
+    const pz = offY + (room.z + room.d / 2) * CELL;
+    const icon = PURPOSE_ICONS[room.purpose] ?? '';
+    // Icon
+    if (CELL >= 14 && room.w * CELL > 20 && room.d * CELL > 20) {
+      ctx.font = `${Math.min(CELL * 0.7, 18)}px serif`;
+      ctx.fillText(icon, px, pz - (CELL * 0.25));
+    }
+    // Label
+    const lbl = room.purpose.replace('_', ' ');
+    ctx.font = `${Math.max(7, Math.min(CELL * 0.45, 11))}px Georgia, serif`;
+    ctx.fillStyle = 'rgba(220,200,160,0.7)';
+    ctx.fillText(lbl, px, pz + (CELL >= 14 ? CELL * 0.3 : 0));
+  }
+
+  // Title bar
+  ctx.fillStyle    = 'rgba(200,180,120,0.8)';
   ctx.font         = '10px Georgia, serif';
   ctx.textAlign    = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(label, 8, 8);
+}
+
+function getDwelling3dRenderer(): DwellingRenderer3D {
+  if (!dwelling3dRenderer) {
+    dwelling3dRenderer = new DwellingRenderer3D(dwelling3dCanvas);
+    dwelling3dRenderer.resize(dwelling3dCanvas.offsetWidth || 600, dwelling3dCanvas.offsetHeight || 600);
+  }
+  return dwelling3dRenderer;
+}
+
+function showDwelling3dCanvas(show: boolean): void {
+  dwelling3dCanvas.style.display = show ? '' : 'none';
+  canvas.style.display           = show ? 'none' : '';
 }
 
 function generateDwellingView(): void {
@@ -3897,10 +3952,19 @@ function generateDwellingView(): void {
   currentDwellingFloors = floors;
   currentDwellingFloor  = 0;
 
-  // Generate using the real game building system
   const dna = factionBuildingDna(kind, faction, seed, size, floors);
   currentDwellingPlan        = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
   currentDwellingBlueprints  = deriveBlueprints(currentDwellingPlan);
+
+  if (dwellingViewMode === '3d') {
+    showDwelling3dCanvas(true);
+    const r = getDwelling3dRenderer();
+    r.loadInterior(dna, currentDwellingFloor);
+    r.start();
+  } else {
+    showDwelling3dCanvas(false);
+    if (dwelling3dRenderer) dwelling3dRenderer.stop();
+  }
 
   redrawDwelling();
   const rooms = currentDwellingBlueprints.length;
@@ -3908,21 +3972,21 @@ function generateDwellingView(): void {
 }
 
 function redrawDwelling(): void {
-  if (!currentDwellingPlan) return;
-  const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch ?? 'house';
-  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction ?? 'human_rural';
-  const floors  = currentDwellingFloors;
-  const label   = `${kind} · ${faction.replace('_', ' ')} · floor ${currentDwellingFloor + 1}/${floors}`;
-  drawBuildingFloorPlan(currentDwellingPlan, currentDwellingBlueprints, canvas, label);
-
-  // Floor nav label
+  // Floor nav label + enable/disable
   const floorLabel = document.getElementById('dwelling-floor-label');
   if (floorLabel) {
     floorLabel.textContent = currentDwellingFloor === 0 ? 'Ground Floor' : `Upper Floor ${currentDwellingFloor}`;
   }
-  // Floor nav enable/disable
   (document.getElementById('btn-dwelling-floor-down') as HTMLButtonElement).disabled = currentDwellingFloor <= 0;
-  (document.getElementById('btn-dwelling-floor-up')   as HTMLButtonElement).disabled = currentDwellingFloor >= floors - 1;
+  (document.getElementById('btn-dwelling-floor-up')   as HTMLButtonElement).disabled = currentDwellingFloor >= currentDwellingFloors - 1;
+
+  if (dwellingViewMode === '3d') return; // 3D renderer runs its own loop
+
+  if (!currentDwellingPlan) return;
+  const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch ?? 'house';
+  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction ?? 'human_rural';
+  const label   = `${kind} · ${faction.replace('_', ' ')} · floor ${currentDwellingFloor + 1}/${currentDwellingFloors}`;
+  drawBuildingFloorPlan(currentDwellingPlan, currentDwellingBlueprints, canvas, label);
 }
 
 function showPlanetCanvas(show: boolean): void {
@@ -4075,6 +4139,10 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   }
   if (mode !== 'solar' && solarRenderer) {
     solarRenderer.stop();
+  }
+  if (mode !== 'dwelling' && dwelling3dRenderer) {
+    dwelling3dRenderer.stop();
+    showDwelling3dCanvas(false);
   }
   if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
@@ -4289,6 +4357,17 @@ document.getElementById('btn-solar-generate')?.addEventListener('click', generat
 
 // ── Dwelling controls event wiring ────────────────────────────────────────────
 
+document.getElementById('dwelling-view-pills')?.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill || !pill.dataset.dview) return;
+  document.querySelectorAll('#dwelling-view-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  dwellingViewMode = pill.dataset.dview as '2d' | '3d';
+  generateDwellingView();
+});
+
+// ── Dwelling controls event wiring ────────────────────────────────────────────
+
 document.getElementById('dwelling-archetype-pills')?.addEventListener('click', e => {
   const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
   if (!pill) return;
@@ -4323,15 +4402,7 @@ document.getElementById('btn-dwelling-floor-up')?.addEventListener('click', () =
   if (!currentDwellingPlan) return;
   if (currentDwellingFloor < currentDwellingFloors - 1) {
     currentDwellingFloor++;
-    const seed    = parseInt(seedInput.value) || Date.now();
-    const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as BuildingKind ?? 'house';
-    const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as Faction ?? 'human_rural';
-    const sizeIdx = parseInt((document.getElementById('dwelling-size') as HTMLInputElement)?.value ?? '1');
-    const size    = DWELLING_SIZE_LABELS[sizeIdx] ?? 'medium';
-    const dna     = factionBuildingDna(kind, faction, seed, size, currentDwellingFloors as 1|2|3|4);
-    currentDwellingPlan       = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
-    currentDwellingBlueprints = deriveBlueprints(currentDwellingPlan);
-    redrawDwelling();
+    _reloadDwellingFloor();
   }
 });
 
@@ -4339,17 +4410,24 @@ document.getElementById('btn-dwelling-floor-down')?.addEventListener('click', ()
   if (!currentDwellingPlan) return;
   if (currentDwellingFloor > 0) {
     currentDwellingFloor--;
-    const seed    = parseInt(seedInput.value) || Date.now();
-    const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as BuildingKind ?? 'house';
-    const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as Faction ?? 'human_rural';
-    const sizeIdx = parseInt((document.getElementById('dwelling-size') as HTMLInputElement)?.value ?? '1');
-    const size    = DWELLING_SIZE_LABELS[sizeIdx] ?? 'medium';
-    const dna     = factionBuildingDna(kind, faction, seed, size, currentDwellingFloors as 1|2|3|4);
-    currentDwellingPlan       = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
-    currentDwellingBlueprints = deriveBlueprints(currentDwellingPlan);
-    redrawDwelling();
+    _reloadDwellingFloor();
   }
 });
+
+function _reloadDwellingFloor() {
+  const seed    = parseInt(seedInput.value) || Date.now();
+  const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as BuildingKind ?? 'house';
+  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as Faction ?? 'human_rural';
+  const sizeIdx = parseInt((document.getElementById('dwelling-size') as HTMLInputElement)?.value ?? '1');
+  const size    = DWELLING_SIZE_LABELS[sizeIdx] ?? 'medium';
+  const dna     = factionBuildingDna(kind, faction, seed, size, currentDwellingFloors as 1|2|3|4);
+  currentDwellingPlan       = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
+  currentDwellingBlueprints = deriveBlueprints(currentDwellingPlan);
+  if (dwellingViewMode === '3d') {
+    getDwelling3dRenderer().loadInterior(dna, currentDwellingFloor);
+  }
+  redrawDwelling();
+}
 
 document.getElementById('btn-dwelling-png')?.addEventListener('click', () => {
   const link = document.createElement('a');
