@@ -171,11 +171,36 @@ export const WARD_TO_KIND: Partial<Record<string, BuildingKind>> = {
   church:     'chapel',
   inn:        'inn',
   smithy:     'blacksmith',
-  craftsmen:  'shop',
-  merchant:   'shop',
+  craftsmen:  'shop',       // narrow workshop storefront
+  merchant:   'villa',      // merchant house — grander than a craftsman shop
   patriciate: 'villa',
-  slum:       'house',
+  slum:       'terraced',   // narrow row-house
   gateward:   'house',
-  farm:       'house',   // barn not in BuildingKind yet; use house
-  park:       null as unknown as BuildingKind,  // no interior
+  farm:       'house',
+  park:       null as unknown as BuildingKind,
+};
+
+/** Recommended building size per ward type. */
+export const WARD_TO_SIZE: Partial<Record<string, BuildingSize>> = {
+  market:     'small',
+  church:     'medium',
+  inn:        'large',
+  smithy:     'medium',
+  craftsmen:  'small',
+  merchant:   'medium',
+  patriciate: 'large',
+  slum:       'tiny',
+  gateward:   'small',
+  farm:       'small',
+};
+
+/** How many floors each ward type typically has. */
+export const WARD_TO_FLOORS: Partial<Record<string, 1|2|3|4>> = {
+  inn:        2,
+  patriciate: 3,
+  merchant:   2,
+  church:     1,
+  smithy:     1,
+  farm:       1,
+  slum:       2,
 };

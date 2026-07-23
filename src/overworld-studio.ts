@@ -25,7 +25,7 @@ import { Delaunay } from 'd3-delaunay';
 import { createNoise2D } from '@/core/SimplexNoise';
 import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
-import { buildingToDungeonPlan, WARD_TO_KIND } from './buildingToDungeonPlan';
+import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from './buildingToDungeonPlan';
 import type { Faction } from './world/buildings/BuildingDNA';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
@@ -1847,10 +1847,7 @@ canvas.addEventListener('mouseleave', () => {
   overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
 });
 
-// ── Settlement: double-click ward → building interior overlay ───────────────
-// Double-click a ward to see that building type's floor plan in a small
-// overlay WITHIN the settlement tab. Uses the same dungeon floor plan renderer.
-// Press Escape or click the × to dismiss.
+// ── Settlement: double-click ward → building interior modal ──────────────────
 
 canvas.addEventListener('dblclick', e => {
   if (studioMode !== 'settlement' || !currentModel) return;
@@ -1875,66 +1872,194 @@ canvas.addEventListener('dblclick', e => {
     vulperia: 'human_town', slime: 'human_rural', fae: 'fae',
   };
   const faction: Faction = FACTION_MAP[factionStr] ?? 'human_town';
-  const buildingSeed = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
-  const bldgPlan = buildingToDungeonPlan(kind, faction, buildingSeed, 'medium', 2);
-
-  // Draw the building floor plan in an overlay canvas (stays in settlement tab)
-  showBuildingOverlay(bldgPlan, `${WARD_LABELS[hit.type]} · ${kind}`);
+  const buildingSeed    = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
+  const size            = WARD_TO_SIZE[hit.type]   ?? 'medium';
+  const floors          = WARD_TO_FLOORS[hit.type] ?? 2;
+  const bldgPlan        = buildingToDungeonPlan(kind, faction, buildingSeed, size, floors as 1|2|3|4);
+  const title           = `${WARD_LABELS[hit.type]} — ${kind} (${factionStr})`;
+  showBuildingModal(bldgPlan, title, floors as number);
 });
 
-let _buildingOverlayCanvas: HTMLCanvasElement | null = null;
-let _buildingOverlayClose: HTMLButtonElement | null = null;
+// ── Building interior modal ───────────────────────────────────────────────────
 
-function showBuildingOverlay(plan: DungeonPlan, title: string): void {
-  // Create or reuse overlay canvas inside the map wrapper
+let _bModal: HTMLDivElement | null = null;
+let _bModalCanvas: HTMLCanvasElement | null = null;
+let _bModalPlan: DungeonPlan | null = null;
+let _bModalFloor = 0;
+let _bModalFloors = 1;
+let _bModalZoom = 1.0;
+let _bModalPanX = 0;
+let _bModalPanY = 0;
+let _bModalDragging = false;
+let _bModalDragX = 0;
+let _bModalDragY = 0;
+
+function _bModalSetup(): void {
+  if (_bModal) return;
   const wrap = canvas.parentElement!;
-  if (!_buildingOverlayCanvas) {
-    _buildingOverlayCanvas = document.createElement('canvas');
-    _buildingOverlayCanvas.style.cssText =
-      'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:default;';
-    wrap.appendChild(_buildingOverlayCanvas);
 
-    _buildingOverlayClose = document.createElement('button');
-    _buildingOverlayClose.textContent = '✕ Close';
-    _buildingOverlayClose.style.cssText =
-      'position:absolute;top:8px;right:8px;z-index:11;padding:4px 10px;' +
-      'background:rgba(20,16,12,0.9);color:#d4b87a;border:1px solid #5a4828;' +
-      'border-radius:3px;font-size:11px;cursor:pointer;';
-    wrap.appendChild(_buildingOverlayClose);
-    _buildingOverlayClose.addEventListener('click', hideBuildingOverlay);
-  }
+  // Modal container
+  _bModal = document.createElement('div');
+  _bModal.style.cssText = [
+    'display:none;position:absolute;z-index:30',
+    'left:50%;top:50%;transform:translate(-50%,-50%)',
+    'width:min(640px,90%);height:min(520px,85%)',
+    'background:#0e0c0a;border:1px solid #4a3820',
+    'border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.9)',
+    'display:flex;flex-direction:column;overflow:hidden',
+  ].join(';');
+  wrap.appendChild(_bModal);
 
-  _buildingOverlayCanvas.width  = wrap.clientWidth  || canvas.width;
-  _buildingOverlayCanvas.height = wrap.clientHeight || canvas.height;
-  _buildingOverlayCanvas.style.display = '';
-  _buildingOverlayClose!.style.display = '';
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:#160e08;border-bottom:1px solid #3a2810;flex-shrink:0;gap:8px;';
+  _bModal.appendChild(hdr);
 
-  drawDungeonFloorPlan(plan, _buildingOverlayCanvas);
+  const titleEl = document.createElement('span');
+  titleEl.id = '_bm_title';
+  titleEl.style.cssText = 'font:bold 11px Georgia,serif;color:#d4b87a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+  hdr.appendChild(titleEl);
 
-  // Draw title bar
-  const ctx = _buildingOverlayCanvas.getContext('2d')!;
-  ctx.fillStyle = 'rgba(14,10,6,0.75)';
-  ctx.fillRect(0, 0, _buildingOverlayCanvas.width, 26);
-  ctx.fillStyle = '#d4b87a';
-  ctx.font = 'bold 11px Georgia, serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`🏠 ${title}`, 10, 13);
+  // Floor nav
+  const floorNav = document.createElement('div');
+  floorNav.style.cssText = 'display:flex;align-items:center;gap:5px;flex-shrink:0;';
+  const floorDn = document.createElement('button');
+  floorDn.id = '_bm_floor_dn';
+  floorDn.textContent = '▼';
+  floorDn.style.cssText = 'padding:2px 6px;background:#1e1408;color:#a08060;border:1px solid #3a2810;border-radius:3px;font-size:10px;cursor:pointer;';
+  const floorLbl = document.createElement('span');
+  floorLbl.id = '_bm_floor_lbl';
+  floorLbl.style.cssText = 'font-size:10px;color:#908070;min-width:70px;text-align:center;';
+  const floorUp = document.createElement('button');
+  floorUp.id = '_bm_floor_up';
+  floorUp.textContent = '▲';
+  floorUp.style.cssText = floorDn.style.cssText;
+  floorNav.appendChild(floorDn); floorNav.appendChild(floorLbl); floorNav.appendChild(floorUp);
+  hdr.appendChild(floorNav);
 
-  hoverEl.textContent = `${title} — press Escape to close`;
+  floorDn.addEventListener('click', () => { if (_bModalFloor > 0) { _bModalFloor--; _bModalRedraw(); } });
+  floorUp.addEventListener('click', () => { if (_bModalFloor < _bModalFloors - 1) { _bModalFloor++; _bModalRedraw(); } });
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'padding:2px 7px;background:#2a1008;color:#d08060;border:1px solid #6a2808;border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
+  closeBtn.addEventListener('click', hideBuildingModal);
+  hdr.appendChild(closeBtn);
+
+  // Canvas
+  _bModalCanvas = document.createElement('canvas');
+  _bModalCanvas.style.cssText = 'flex:1;display:block;cursor:grab;min-height:0;';
+  _bModal.appendChild(_bModalCanvas);
+
+  // Hint bar
+  const hint = document.createElement('div');
+  hint.style.cssText = 'padding:4px 10px;background:#0a0806;font-size:9px;color:#4a4030;flex-shrink:0;text-align:center;';
+  hint.textContent = 'Scroll to zoom · drag to pan · double-click to reset';
+  _bModal.appendChild(hint);
+
+  // ── Zoom/pan event handlers ──────────────────────────────────────────────
+  _bModalCanvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const rect2  = _bModalCanvas!.getBoundingClientRect();
+    const cx2    = (e.clientX - rect2.left) * (_bModalCanvas!.width / rect2.width);
+    const cy2    = (e.clientY - rect2.top)  * (_bModalCanvas!.height / rect2.height);
+    _bModalPanX  = cx2 + (_bModalPanX - cx2) * factor;
+    _bModalPanY  = cy2 + (_bModalPanY - cy2) * factor;
+    _bModalZoom  = Math.max(0.5, Math.min(8, _bModalZoom * factor));
+    _bModalRedraw();
+  }, { passive: false });
+
+  _bModalCanvas.addEventListener('mousedown', e => {
+    _bModalDragging = true;
+    _bModalDragX    = e.clientX - _bModalPanX;
+    _bModalDragY    = e.clientY - _bModalPanY;
+    _bModalCanvas!.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_bModalDragging) return;
+    _bModalPanX = e.clientX - _bModalDragX;
+    _bModalPanY = e.clientY - _bModalDragY;
+    _bModalRedraw();
+  });
+  window.addEventListener('mouseup', () => {
+    _bModalDragging = false;
+    if (_bModalCanvas) _bModalCanvas.style.cursor = 'grab';
+  });
+  _bModalCanvas.addEventListener('dblclick', _bModalResetView);
 }
 
-function hideBuildingOverlay(): void {
-  if (_buildingOverlayCanvas) _buildingOverlayCanvas.style.display = 'none';
-  if (_buildingOverlayClose)  _buildingOverlayClose.style.display  = 'none';
+function _bModalResetView(): void {
+  _bModalZoom = 1.0; _bModalPanX = 0; _bModalPanY = 0;
+  _bModalRedraw();
+}
+
+function _bModalRedraw(): void {
+  if (!_bModalPlan || !_bModalCanvas) return;
+
+  // Sync canvas size to its layout size
+  const w = _bModalCanvas.offsetWidth  || 600;
+  const h = _bModalCanvas.offsetHeight || 400;
+  if (_bModalCanvas.width !== w || _bModalCanvas.height !== h) {
+    _bModalCanvas.width  = w;
+    _bModalCanvas.height = h;
+    if (_bModalZoom === 1.0) _bModalPanX = _bModalPanY = 0;
+  }
+
+  // Render to offscreen at natural size
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  drawDungeonFloorPlan(_bModalPlan, off, _bModalFloor);
+
+  // Blit with zoom+pan transform
+  const ctx = _bModalCanvas.getContext('2d')!;
+  ctx.fillStyle = '#0a0908';
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(_bModalPanX + w * (1 - _bModalZoom) / 2, _bModalPanY + h * (1 - _bModalZoom) / 2);
+  ctx.scale(_bModalZoom, _bModalZoom);
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+
+  // Floor label
+  const floorLbl = document.getElementById('_bm_floor_lbl');
+  if (floorLbl) {
+    floorLbl.textContent = _bModalFloor === 0 ? `Floor 1/${_bModalFloors}` : `Floor ${_bModalFloor + 1}/${_bModalFloors}`;
+  }
+  const floorDn = document.getElementById('_bm_floor_dn') as HTMLButtonElement | null;
+  const floorUp = document.getElementById('_bm_floor_up') as HTMLButtonElement | null;
+  if (floorDn) floorDn.disabled = _bModalFloor <= 0;
+  if (floorUp) floorUp.disabled = _bModalFloor >= _bModalFloors - 1;
+}
+
+function showBuildingModal(plan: DungeonPlan, title: string, floors: number): void {
+  _bModalSetup();
+  if (!_bModal || !_bModalCanvas) return;
+  _bModalPlan   = plan;
+  _bModalFloor  = 0;
+  _bModalFloors = floors;
+  _bModalZoom   = 1.0;
+  _bModalPanX   = 0;
+  _bModalPanY   = 0;
+
+  const titleEl = document.getElementById('_bm_title');
+  if (titleEl) titleEl.textContent = `🏠 ${title}`;
+
+  _bModal.style.display = 'flex';
+  // Wait one frame for layout then size the canvas
+  requestAnimationFrame(() => { _bModalRedraw(); });
+  hoverEl.textContent = `${title} — Esc to close · scroll to zoom · drag to pan`;
+}
+
+function hideBuildingModal(): void {
+  if (_bModal) _bModal.style.display = 'none';
   hoverEl.textContent = 'hover a ward · double-click to enter building';
 }
 
-// Escape key closes building overlay
+// Escape key closes modal
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && _buildingOverlayCanvas?.style.display !== 'none') {
-    hideBuildingOverlay();
-  }
+  if (e.key === 'Escape' && _bModal?.style.display !== 'none') hideBuildingModal();
 });
 
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
@@ -1947,6 +2072,7 @@ function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
 }
 
 // ── Ward legend ───────────────────────────────────────────────────────────────
+
 
 const legendEl = document.getElementById('ward-legend')!;
 for (const [type, col] of Object.entries(WARD_COLORS)) {
@@ -4068,8 +4194,8 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
   // Stop 3D planet loop when leaving realm tab
-  // Close building overlay when leaving settlement
-  if (mode !== 'settlement') hideBuildingOverlay();
+  // Close building modal when leaving settlement
+  if (mode !== 'settlement') hideBuildingModal();
   if (mode !== 'realm' && planetRenderer) {
     planetRenderer.stop();
     showPlanetCanvas(false);
