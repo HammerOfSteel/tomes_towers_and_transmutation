@@ -31,6 +31,7 @@ import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTextur
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
+import { generateDwelling, drawDwellingFloorPlan, type DwellingPlan, type DwellingArchetype, type DwellingFaction } from './overworld/DwellingGenerator';
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1530,6 +1531,7 @@ function redraw() {
   if (studioMode === 'dungeon') { redrawDungeon(); return; }
   if (studioMode === 'cave')    { redrawCave();    return; }
   if (studioMode === 'realm')   { redrawRealm();   return; }
+  if (studioMode === 'dwelling'){ redrawDwelling(); return; }
   if (!currentModel) return;
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
@@ -1620,18 +1622,22 @@ document.getElementById('btn-roll')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
+  currentDwellingPlan = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'dwelling') generateDwellingView();
   else generate();
 });
 document.getElementById('btn-gen')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
+  currentDwellingPlan = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'dwelling') generateDwellingView();
   else generate(false);
 });
 
@@ -2414,9 +2420,11 @@ export function drawDungeonFloorPlan(
 
 // ── Studio mode state ─────────────────────────────────────────────────────────
 
-type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar';
+type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar' | 'dwelling';
 let studioMode: StudioMode = 'settlement';
 let currentDungeonPlan: DungeonPlan | null = null;
+let currentDwellingPlan: DwellingPlan | null = null;
+let currentDwellingFloor = 0;
 
 function generateDungeonView() {
   const seed       = parseInt(seedInput.value) || Date.now();
@@ -3801,6 +3809,35 @@ function generateSolarView(): void {
   ).join('');
 }
 
+// ── OW-D: Dwelling tab ────────────────────────────────────────────────────────
+
+function generateDwellingView(): void {
+  const seed    = parseInt(seedInput.value) || Date.now();
+  const arch    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as DwellingArchetype ?? 'house_small';
+  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as DwellingFaction ?? 'human';
+  currentDwellingPlan  = generateDwelling(seed, arch, faction);
+  currentDwellingFloor = 0;
+  redrawDwelling();
+  genTimeEl.textContent = `${currentDwellingPlan.name}  ·  ${currentDwellingPlan.rooms.length} rooms  ·  ${currentDwellingPlan.floors} floor${currentDwellingPlan.floors !== 1 ? 's' : ''}`;
+}
+
+function redrawDwelling(): void {
+  if (!currentDwellingPlan) return;
+  drawDwellingFloorPlan(currentDwellingPlan, canvas, currentDwellingFloor);
+  // Update floor nav label
+  const floorLabel = document.getElementById('dwelling-floor-label');
+  if (floorLabel) {
+    floorLabel.textContent = currentDwellingFloor === 0  ? 'Ground Floor'
+                           : currentDwellingFloor < 0   ? `Cellar (B${Math.abs(currentDwellingFloor)})`
+                           : `Upper Floor ${currentDwellingFloor}`;
+  }
+  // Enable/disable floor nav buttons
+  const allFloors = [...new Set(currentDwellingPlan.rooms.map(r => r.floor))].sort((a, b) => a - b);
+  const minFloor = allFloors[0] ?? 0, maxFloor = allFloors[allFloors.length - 1] ?? 0;
+  (document.getElementById('btn-dwelling-floor-down') as HTMLButtonElement).disabled = currentDwellingFloor <= minFloor;
+  (document.getElementById('btn-dwelling-floor-up')   as HTMLButtonElement).disabled = currentDwellingFloor >= maxFloor;
+}
+
 function showPlanetCanvas(show: boolean): void {
   planet3dCanvas.style.display = show ? '' : 'none';
   canvas.style.display         = show ? 'none' : '';
@@ -3937,6 +3974,7 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
   document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
   document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
+  document.getElementById('dwelling-controls')!.style.display   = mode === 'dwelling'   ? '' : 'none';
   document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
   document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
@@ -3971,6 +4009,12 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
     hoverEl.textContent = '';
     showPlanetCanvas(false);
     generateSolarView();
+  } else if (mode === 'dwelling') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    showPlanetCanvas(false);
+    if (!currentDwellingPlan) generateDwellingView();
+    else redrawDwelling();
   } else {
     redraw();
   }
@@ -4155,6 +4199,43 @@ document.getElementById('btn-realm-png')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-solar-generate')?.addEventListener('click', generateSolarView);
+
+// ── Dwelling controls event wiring ────────────────────────────────────────────
+
+document.getElementById('dwelling-archetype-pills')?.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dwelling-archetype-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generateDwellingView();
+});
+
+document.getElementById('dwelling-faction-pills')?.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dwelling-faction-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generateDwellingView();
+});
+
+document.getElementById('btn-dwelling-floor-up')?.addEventListener('click', () => {
+  if (!currentDwellingPlan) return;
+  const maxFloor = Math.max(...currentDwellingPlan.rooms.map(r => r.floor));
+  if (currentDwellingFloor < maxFloor) { currentDwellingFloor++; redrawDwelling(); }
+});
+
+document.getElementById('btn-dwelling-floor-down')?.addEventListener('click', () => {
+  if (!currentDwellingPlan) return;
+  const minFloor = Math.min(...currentDwellingPlan.rooms.map(r => r.floor));
+  if (currentDwellingFloor > minFloor) { currentDwellingFloor--; redrawDwelling(); }
+});
+
+document.getElementById('btn-dwelling-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `dwelling-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
 document.getElementById('btn-solar-png')?.addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = `solar-${seedInput.value}.png`;

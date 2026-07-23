@@ -213,6 +213,7 @@
         <button class="studio-tab active" data-mode="settlement">🏙 Settlement</button>
         <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
         <button class="studio-tab"        data-mode="cave">🌿 Cave</button>
+        <button class="studio-tab"        data-mode="dwelling">🏠 Dwelling</button>
         <button class="studio-tab"        data-mode="realm">🌍 Realm</button>
         <button class="studio-tab"        data-mode="solar">☀ Solar System</button>
       </div>
@@ -350,6 +351,59 @@
         </div>
 
       </div><!-- /dungeon-controls -->
+
+      <!-- ── Dwelling controls (OW-D) ─────────────────────────────── -->
+      <div id="dwelling-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">Archetype</div>
+          <div class="pill-row pill-row--wrap" id="dwelling-archetype-pills">
+            <button class="pill active" data-arch="house_small"  title="Small 2-3 room home">🏠 House</button>
+            <button class="pill"        data-arch="house_large"  title="4-5 room family home">🏡 Large House</button>
+            <button class="pill"        data-arch="inn"          title="Common room + guest rooms + kitchen">🍺 Inn</button>
+            <button class="pill"        data-arch="shop"         title="Storefront + storeroom + quarters">🛍 Shop</button>
+            <button class="pill"        data-arch="forge"        title="Smithy + quench room + materials">⚒ Forge</button>
+            <button class="pill"        data-arch="alchemist"    title="Lab + ingredients + sleeping loft">⚗ Alchemist</button>
+            <button class="pill"        data-arch="guard_post"   title="Watch room + barracks + armory">🛡 Guard Post</button>
+            <button class="pill"        data-arch="manor"        title="Great hall + solar + cellar">🏰 Manor</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Faction</div>
+          <div class="pill-row pill-row--wrap" id="dwelling-faction-pills">
+            <button class="pill active" data-faction="human">🧍 Human</button>
+            <button class="pill"        data-faction="elven">🌿 Elven</button>
+            <button class="pill"        data-faction="dwarven">⛏ Dwarven</button>
+            <button class="pill"        data-faction="orcish">⚔ Orcish</button>
+            <button class="pill"        data-faction="fae">✨ Fae</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Floor</div>
+          <div id="dwelling-floor-nav" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <button class="btn" id="btn-dwelling-floor-down" style="width:32px;padding:4px">▼</button>
+            <span id="dwelling-floor-label" style="font-size:11px;color:var(--muted);flex:1;text-align:center">Ground Floor</span>
+            <button class="btn" id="btn-dwelling-floor-up"   style="width:32px;padding:4px">▲</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Legend</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c8b080;font-size:12px">─</span> Wall</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#f0c040;font-size:12px">▬</span> Exterior door</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#a08060;font-size:12px">▬</span> Interior door</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-dwelling-png" style="width:100%">📷 PNG</button>
+        </div>
+
+      </div><!-- /dwelling-controls -->
 
       <!-- ── Cave / Glade controls ─────────────────────────────────── -->
       <div id="cave-controls" style="display:none">
