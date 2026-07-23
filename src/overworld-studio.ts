@@ -1847,10 +1847,10 @@ canvas.addEventListener('mouseleave', () => {
   overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
 });
 
-// ── Settlement: double-click ward → enter building interior ──────────────────
-// Double-click a ward in the settlement view to generate that building's
-// floor plan using the unified Blueprint/DungeonPlan system and show it
-// in the Dungeon tab — the same renderer as dungeon floors.
+// ── Settlement: double-click ward → building interior overlay ───────────────
+// Double-click a ward to see that building type's floor plan in a small
+// overlay WITHIN the settlement tab. Uses the same dungeon floor plan renderer.
+// Press Escape or click the × to dismiss.
 
 canvas.addEventListener('dblclick', e => {
   if (studioMode !== 'settlement' || !currentModel) return;
@@ -1858,7 +1858,6 @@ canvas.addEventListener('dblclick', e => {
   const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
   const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
 
-  // Find clicked ward
   let hit: typeof currentModel.wards[0] | null = null;
   for (const ward of currentModel.wards) {
     if (!ward.withinCity || !ward.polygon.length) continue;
@@ -1867,27 +1866,75 @@ canvas.addEventListener('dblclick', e => {
   if (!hit) return;
 
   const kind = WARD_TO_KIND[hit.type];
-  if (!kind) return;  // park etc. — no interior
+  if (!kind) return;
 
-  // Derive faction from current settlement faction pill
   const factionStr = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction ?? 'human';
-  // Map settlement faction → building faction
   const FACTION_MAP: Record<string, Faction> = {
     human: 'human_town', elven: 'elven', dwarven: 'dwarven',
     orcish: 'orcish', vampire: 'vampire', undead: 'undead_common',
     vulperia: 'human_town', slime: 'human_rural', fae: 'fae',
   };
   const faction: Faction = FACTION_MAP[factionStr] ?? 'human_town';
-
-  // Generate building as DungeonPlan — uses the same Blueprint system
   const buildingSeed = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
-  const plan = buildingToDungeonPlan(kind, faction, buildingSeed, 'medium', 2);
+  const bldgPlan = buildingToDungeonPlan(kind, faction, buildingSeed, 'medium', 2);
 
-  // Switch to Dungeon tab and inject this plan
-  currentDungeonPlan = plan;
-  const dunTab = document.querySelector('.studio-tab[data-mode="dungeon"]') as HTMLElement | null;
-  dunTab?.click();
-  hoverEl.textContent = `${WARD_LABELS[hit.type]} — ${kind} interior`;
+  // Draw the building floor plan in an overlay canvas (stays in settlement tab)
+  showBuildingOverlay(bldgPlan, `${WARD_LABELS[hit.type]} · ${kind}`);
+});
+
+let _buildingOverlayCanvas: HTMLCanvasElement | null = null;
+let _buildingOverlayClose: HTMLButtonElement | null = null;
+
+function showBuildingOverlay(plan: DungeonPlan, title: string): void {
+  // Create or reuse overlay canvas inside the map wrapper
+  const wrap = canvas.parentElement!;
+  if (!_buildingOverlayCanvas) {
+    _buildingOverlayCanvas = document.createElement('canvas');
+    _buildingOverlayCanvas.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:default;';
+    wrap.appendChild(_buildingOverlayCanvas);
+
+    _buildingOverlayClose = document.createElement('button');
+    _buildingOverlayClose.textContent = '✕ Close';
+    _buildingOverlayClose.style.cssText =
+      'position:absolute;top:8px;right:8px;z-index:11;padding:4px 10px;' +
+      'background:rgba(20,16,12,0.9);color:#d4b87a;border:1px solid #5a4828;' +
+      'border-radius:3px;font-size:11px;cursor:pointer;';
+    wrap.appendChild(_buildingOverlayClose);
+    _buildingOverlayClose.addEventListener('click', hideBuildingOverlay);
+  }
+
+  _buildingOverlayCanvas.width  = wrap.clientWidth  || canvas.width;
+  _buildingOverlayCanvas.height = wrap.clientHeight || canvas.height;
+  _buildingOverlayCanvas.style.display = '';
+  _buildingOverlayClose!.style.display = '';
+
+  drawDungeonFloorPlan(plan, _buildingOverlayCanvas);
+
+  // Draw title bar
+  const ctx = _buildingOverlayCanvas.getContext('2d')!;
+  ctx.fillStyle = 'rgba(14,10,6,0.75)';
+  ctx.fillRect(0, 0, _buildingOverlayCanvas.width, 26);
+  ctx.fillStyle = '#d4b87a';
+  ctx.font = 'bold 11px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`🏠 ${title}`, 10, 13);
+
+  hoverEl.textContent = `${title} — press Escape to close`;
+}
+
+function hideBuildingOverlay(): void {
+  if (_buildingOverlayCanvas) _buildingOverlayCanvas.style.display = 'none';
+  if (_buildingOverlayClose)  _buildingOverlayClose.style.display  = 'none';
+  hoverEl.textContent = 'hover a ward · double-click to enter building';
+}
+
+// Escape key closes building overlay
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _buildingOverlayCanvas?.style.display !== 'none') {
+    hideBuildingOverlay();
+  }
 });
 
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
@@ -2493,6 +2540,39 @@ function redrawDungeon() {
   }
   drawDungeonFloorPlan(currentDungeonPlan, canvas, floorFilter);
 }
+
+// ── Dungeon controls event wiring ─────────────────────────────────────────────
+
+document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  const isTower = pill.dataset.dtype === 'tower';
+  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
+  currentDungeonPlan = null;
+  generateDungeonView();
+});
+
+document.getElementById('dfloors')!.addEventListener('input', () => {
+  (document.getElementById('dfloors-val') as HTMLElement).textContent =
+    (document.getElementById('dfloors') as HTMLInputElement).value;
+  currentDungeonPlan = null;
+  generateDungeonView();
+});
+
+document.getElementById('dfloor')?.addEventListener('input', () => {
+  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
+  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
+  redrawDungeon();
+});
+
+document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `dungeon-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
 
 // ── Cave / Glade Generator & Renderer (OW-C) ──────────────────────────────────
 
@@ -3988,6 +4068,8 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
   // Stop 3D planet loop when leaving realm tab
+  // Close building overlay when leaving settlement
+  if (mode !== 'settlement') hideBuildingOverlay();
   if (mode !== 'realm' && planetRenderer) {
     planetRenderer.stop();
     showPlanetCanvas(false);
