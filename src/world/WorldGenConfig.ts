@@ -28,18 +28,6 @@ export interface WorldGenConfig {
   /** Number of enemy camps to place. */
   enemyCampCount: number;
   /**
-   * Visual rendering mode.
-   * 'code'   — default: procedural Three.js geometry (fast, always consistent).
-   * 'kenney' — replaces procedural geometry with Kenney GLB tile assets.
-   *            Only packs listed in `assetPacks` are activated.
-   */
-  assetMode:  'code' | 'kenney';
-  /**
-   * Which Kenney asset packs to activate when assetMode is 'kenney'.
-   * Valid values: 'buildings' | 'castle' | 'dungeon' | 'nature' | 'town'
-   */
-  assetPacks: string[];
-  /**
    * Character rendering mode.
    * 'code'  — procedural DNA builder (default).
    * 'asset' — load GLB/FBX models from the enabled character packs.
@@ -52,24 +40,8 @@ export interface WorldGenConfig {
   charPacks: string[];
 }
 
-// ── Kenney pack catalogue (used by Settings UI + Sandbox) ────────────────────
-
-export interface KenneyPackDef {
-  id:          string;
-  name:        string;
-  icon:        string;
-  desc:        string;
-  recommended: boolean;
-}
-
-/** Ordered list of Kenney Retro Fantasy asset packs available in the project. */
-export const KENNEY_PACKS: readonly KenneyPackDef[] = [
-  { id: 'buildings', name: 'Buildings', icon: '🏠', desc: 'Walls, roofs, floors, towers, stairs',  recommended: true  },
-  { id: 'castle',    name: 'Castle',    icon: '🏰', desc: 'Tower sections, walls, gates, battlements', recommended: false },
-  { id: 'dungeon',   name: 'Dungeon',   icon: '🗝️', desc: 'Corridors, rooms, dungeon props',       recommended: false },
-  { id: 'nature',    name: 'Nature',    icon: '🌿', desc: 'Trees, rocks, rivers, ground tiles',    recommended: true  },
-  { id: 'town',      name: 'Town',      icon: '🏘️', desc: 'Roads, props, lanterns, fountains',    recommended: true  },
-] as const;
+/** Ordered list of available character packs (procedural + own assets). */
+export const KENNEY_PACKS: readonly { id: string; name: string; icon: string; desc: string; recommended: boolean }[] = [];
 
 export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   seed:           0,
@@ -81,10 +53,8 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   townCount:      1,
   hasCity:        true,
   enemyCampCount: 8,
-  assetMode:      'code',
-  assetPacks:     ['buildings', 'nature', 'town'],
   charMode:       'code',
-  charPacks:      ['kaykit_adventurers', 'kaykit_skeletons', 'fox', 'slime', 'goblin_pack', 'villager_npc'],
+  charPacks:      ['fox', 'slime', 'goblin_pack', 'villager_npc'],
 };
 
 const LS_KEY = 'ttt_world_gen_config';

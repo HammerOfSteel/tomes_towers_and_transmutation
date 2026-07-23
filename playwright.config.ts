@@ -21,10 +21,10 @@ export default defineConfig({
   timeout: 90_000,
 
   use: {
-    baseURL:        'http://localhost:5173',
+    baseURL:        'http://localhost:5174',
     browserName:    'chromium',
-    headless:       false,
-    slowMo:         300,   // ms between actions — makes it watchable
+    headless:       true,   // headless avoids ProcessSingleton profile-lock issues in CI/sandbox
+    slowMo:         0,
     viewport:       { width: 1280, height: 720 },
     // Always capture screenshots — key for visual debugging
     screenshot:     'on',
@@ -33,16 +33,20 @@ export default defineConfig({
     // Give WebGL + WASM time to initialise
     actionTimeout:  15_000,
     navigationTimeout: 20_000,
+    // Needed for running in sandboxed/CI environments
+    launchOptions: {
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    },
   },
 
   // Stop after the first failing test file — enable only during CI to speed up feedback
   // maxFailures: 1,
 
   // Auto-start the Vite dev server if not already running.
-  // Playwright will reuse an already-running server on port 5173.
+  // Playwright will reuse an already-running server on port 5174.
   webServer: {
     command: 'npm run dev',
-    url:     'http://localhost:5173',
+    url:     'http://localhost:5174',
     reuseExistingServer: true,
     timeout: 30_000,
   },

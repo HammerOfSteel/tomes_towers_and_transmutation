@@ -62,18 +62,18 @@ export interface ConversationResult {
 /** Maps CharacterId → the charManifest model ID string. */
 export const CHAR_MANIFEST_MAP: Record<CharacterId, string> = {
   // ── Core adventurers ─────────────────────────────────────────────────────
-  rogue:             'kaykit_adventurers/Rogue',
-  rogue_hooded:      'kaykit_adventurers/Rogue_Hooded',
-  mage:              'kaykit_adventurers/Mage',
+  rogue:             'fox/fox',
+  rogue_hooded:      'fox/fox',
+  mage:              'wizards/toad',
   // ── Human class variants ─────────────────────────────────────────────────
   human_warrior:     'fantasy_heroes/Knight',              // armoured fighter
   human_paladin:     'fantasy_heroes/Paladin',             // dedicated paladin
   human_bard:        'adventure/Adventurer',               // adventurer / performer
   // ── Skeleton / undead ────────────────────────────────────────────────────
-  skeleton_mage:     'kaykit_skeletons/Skeleton_Mage',
-  skeleton_rogue:    'kaykit_skeletons/Skeleton_Rogue',
+  skeleton_mage:     'wizards/toad',
+  skeleton_rogue:    'fox/fox',
   zombie:            'skeletons_free/Skeleton',            // shambling undead
-  ghost:             'kaykit_skeletons/Skeleton_Mage',     // ethereal caster
+  ghost:             'wizards/toad',     // ethereal caster
   mystery_undead:    'fantasy_heroes/Necromancer',         // dark caster silhouette
   // ── Fox folk ─────────────────────────────────────────────────────────────
   fox_rogue:         'fox/fox',
@@ -86,14 +86,14 @@ export const CHAR_MANIFEST_MAP: Record<CharacterId, string> = {
   slime_philosopher: 'slime/Slime',
   slime_young:       'slime/Slime',
   // NS3: New Tier-1 species — use closest available models as stand-ins
-  elf_scholar:     'kaykit_adventurers/Mage',
+  elf_scholar:     'wizards/toad',
   elf_wanderer:    'adventure/Adventurer',
   celestial_dawn:  'fantasy_heroes/Paladin',
   celestial_dusk:  'fantasy_heroes/Necromancer',
   draconic_fire:   'fantasy_heroes/Knight',
   draconic_scale:  'fantasy_heroes/Knight',
   // Custom princess (gallery pick overrides model at runtime)
-  princess:        'kaykit_adventurers/Mage',
+  princess:        'wizards/toad',
 };
 
 /** Default lore display name per character. */

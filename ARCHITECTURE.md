@@ -14,7 +14,7 @@ This document captures the binding technical decisions for *Tomes, Towers & Tran
 | Domain | Code-first | Asset mode (`kenney`) |
 |---|---|---|
 | Characters | DNA creature rigs | `charManifest.ts` GLBs (117 models, 28 enemies) |
-| Environment | Procedural THREE.js geometry | KayKit / Kenney GLB packs (4,517 models, 48 kits) |
+| Environment | Procedural THREE.js geometry | Procedurally generated THREE.js geometry |
 | Audio | Web Audio API synthesis | `public/music/` MP3 tracks |
 | Textures | GLSL procedural shaders | Still code-first in all modes |
 

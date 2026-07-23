@@ -163,4 +163,9 @@ export class PhysicsWorld {
     );
     return hit !== null ? hit.timeOfImpact : null;
   }
+
+  /** Remove a rigid body (and its colliders) from the world. */
+  removeBody(body: RAPIER.RigidBody): void {
+    this.world.removeRigidBody(body);
+  }
 }

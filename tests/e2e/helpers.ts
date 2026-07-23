@@ -110,6 +110,46 @@ export async function screenshotAndAssertClean(
   }
 }
 
+/**
+ * Attach ALL console messages (every type) + pageerrors to a log array.
+ * Also tracks errors separately for easy assertion.
+ *
+ * Returns `{ all, errors }`:
+ *   - `all`    — every console line as "[type] text"
+ *   - `errors` — only lines where type === 'error' or pageerror
+ *
+ * Usage:
+ *   const { all, errors } = attachFullConsoleCapture(page);
+ *   // ... test actions ...
+ *   // On failure, print `all.join('\n')` for a full trace.
+ *   expect(errors, `Console errors:\n${all.join('\n')}`).toHaveLength(0);
+ */
+export function attachFullConsoleCapture(page: import('@playwright/test').Page): {
+  all:    string[];
+  errors: string[];
+  has:    (substring: string) => boolean;
+} {
+  const all:    string[] = [];
+  const errors: string[] = [];
+
+  page.on('pageerror', (e) => {
+    const msg = `[pageerror] ${e.message}`;
+    all.push(msg);
+    errors.push(msg);
+  });
+  page.on('console', (m) => {
+    const msg = `[${m.type()}] ${m.text()}`;
+    all.push(msg);
+    if (m.type() === 'error' || m.type() === 'assert') errors.push(msg);
+  });
+
+  return {
+    all,
+    errors,
+    has: (sub: string) => all.some(line => line.includes(sub)),
+  };
+}
+
 // ── Physics settle helper ─────────────────────────────────────────────────
 
 /**

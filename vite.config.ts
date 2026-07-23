@@ -99,6 +99,7 @@ export default defineConfig(({ mode }) => ({
         showroom:         path.resolve(__dirname, 'showroom.html'),
         creatureLab:      path.resolve(__dirname, 'creature-lab.html'),
         overworldStudio:  path.resolve(__dirname, 'overworld-studio.html'),
+        buildingViewer:   path.resolve(__dirname, 'building-viewer.html'),
       },
     },
   },

@@ -15,7 +15,6 @@ import {
   loadWorldGenConfig,
   saveWorldGenConfig,
   randomiseSeed,
-  KENNEY_PACKS,
 } from '@/world/WorldGenConfig';
 import { CHAR_PACKS } from '@/characters/charManifest';
 import type { SpeciesId } from '@/world/StoryQuestLine';
@@ -801,51 +800,6 @@ export class MainMenu {
       </div>
       <div class="mm-setting-divider"></div>
       <div class="mm-setting-row mm-setting-row--section-hdr">
-        <span class="mm-setting-section-title">🎨 Visual Style</span>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">
-          Environment Art: Procedural / KayKit Assets
-          <span class="mm-setting-dev-hint">Off = procedural code-first geometry (default). On = Kenney 3D GLB tile packs.</span>
-        </label>
-        <label class="mm-toggle">
-          <input type="checkbox" id="mm-asset-mode" ${wg.assetMode === 'kenney' ? 'checked' : ''}>
-          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
-        </label>
-      </div>
-      <div id="mm-asset-packs-row" class="mm-setting-row" style="flex-direction:column;gap:8px;${wg.assetMode !== 'kenney' ? 'display:none' : ''}">
-        <label class="mm-setting-label">Active packs — same-provider rule: Kenney only</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
-          ${KENNEY_PACKS.map(p => `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:#c8b89a" title="${p.desc}"><input type="checkbox" class="mm-pack-cb" value="${p.id}" ${wg.assetPacks.includes(p.id) ? 'checked' : ''}> ${p.icon} ${p.name}${p.recommended ? ' ★' : ''}</label>`).join('')}
-        </div>
-      </div>
-      <div class="mm-setting-divider"></div>
-      <div class="mm-setting-row mm-setting-row--section-hdr">
-        <span class="mm-setting-section-title">🎨 Visual Style</span>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">
-          Environment Art: Procedural / KayKit Assets
-          <span class="mm-setting-dev-hint">Default: procedural code-first geometry. Enable to swap in Kenney 3D GLB tiles per-pack.</span>
-        </label>
-        <label class="mm-toggle">
-          <input type="checkbox" id="mm-asset-mode" ${wg.assetMode === 'kenney' ? 'checked' : ''}>
-          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
-        </label>
-      </div>
-      <div id="mm-asset-packs-row" class="mm-setting-row mm-asset-packs-row" style="${wg.assetMode !== 'kenney' ? 'display:none' : ''}">
-        <label class="mm-setting-label">Active packs</label>
-        <div class="mm-setting-ctl mm-pack-grid">
-          ${KENNEY_PACKS.map(p => `
-            <label class="mm-pack-label${p.recommended ? ' mm-pack-label--rec' : ''}" title="${p.desc}">
-              <input type="checkbox" class="mm-pack-cb" value="${p.id}" ${wg.assetPacks.includes(p.id) ? 'checked' : ''}>
-              <span>${p.icon} ${p.name}${p.recommended ? ' ★' : ''}</span>
-            </label>`,
-          ).join('')}
-        </div>
-      </div>
-      <div class="mm-setting-divider"></div>
-      <div class="mm-setting-row mm-setting-row--section-hdr">
         <span class="mm-setting-section-title">🎭 Characters</span>
       </div>
       <div class="mm-setting-row">
@@ -971,24 +925,6 @@ export class MainMenu {
 
     const cityToggle = card.querySelector<HTMLInputElement>('#mm-wg-city')!;
     cityToggle.addEventListener('change', () => { wg.hasCity = cityToggle.checked; saveWg(); });
-
-    // ── Asset mode + pack selection ───────────────────────────────────────────────────────
-    const assetModeCb   = card.querySelector<HTMLInputElement>('#mm-asset-mode')!;
-    const assetPacksRow = card.querySelector<HTMLElement>('#mm-asset-packs-row')!;
-
-    assetModeCb.addEventListener('change', () => {
-      wg.assetMode = assetModeCb.checked ? 'kenney' : 'code';
-      assetPacksRow.style.display = assetModeCb.checked ? '' : 'none';
-      saveWg();
-    });
-
-    card.querySelectorAll<HTMLInputElement>('.mm-pack-cb').forEach(cb => {
-      cb.addEventListener('change', () => {
-        wg.assetPacks = [...card.querySelectorAll<HTMLInputElement>('.mm-pack-cb')]
-          .filter(c => c.checked).map(c => c.value);
-        saveWg();
-      });
-    });
 
     // ── Character mode + pack selection ──────────────────────────────────────
     const charModeCb   = card.querySelector<HTMLInputElement>('#mm-char-mode')!;

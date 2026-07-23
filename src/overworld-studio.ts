@@ -1942,7 +1942,7 @@ function _bModalSetup(): void {
     };
     localStorage.setItem('ttt_building_preview', JSON.stringify(planData));
     // Open game in new tab — it will auto-start, load building, enter creative
-    window.open('/index.html', '_blank');
+    window.open('/building-viewer.html', '_blank');
   });
   hdr.insertBefore(play3dBtn, closeBtn);
 

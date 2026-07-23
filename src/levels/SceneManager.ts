@@ -38,10 +38,15 @@ export class SceneManager {
 
   private currentBpId: string | null = null;
   private currentRoom: RenderedRoom | null = null;
+  /** THREE.Object3D roots placed by decorateRoom — cleared on every room swap. */
+  private readonly _decoratedPropRoots: THREE.Object3D[] = [];
   private activeEnemies: SlimeEnemy[] = [];
   private _currentFloor = 0;
   private _startRoomId: string | null = null;
   /** Callback invoked when the player walks through a null-target door (world exit). */
+  /** Set to false to suppress the floor-name title card (e.g. building-viewer). */
+  showFloorTitle = true;
+
   onExitTrigger: (() => void) | null = null;
   /**
    * Called before any staircase or door transition begins.
@@ -195,6 +200,11 @@ export class SceneManager {
     return this.blueprints.get(this.currentBpId) ?? null;
   }
 
+  /** The THREE.Group of the currently rendered room, for occlusion raycasting. */
+  get currentRoomGroup(): THREE.Group | null {
+    return this.currentRoom?.group ?? null;
+  }
+
   /** Instance ID of the dungeon's starting room, or `null` if no dungeon has
    *  been loaded yet.  Used by death-screen restart to return to the beginning. */
   get startRoomId(): string | null {
@@ -336,8 +346,8 @@ export class SceneManager {
         this.executeRoomSwap(this.pendingBpId!, this.pendingFromId);
         this.transitionState = 'fading_in';
         this.fadeTimer = FADE_DURATION;
-        // Show floor title card at peak-black
-        this._showTitleCard();
+        // Show floor title card at peak-black (skip if disabled, e.g. building-viewer)
+        if (this.showFloorTitle) this._showTitleCard();
       }
       return; // skip trigger checks and enemy updates while transitioning
     }
@@ -736,6 +746,7 @@ export class SceneManager {
 
         // G1: Acquire from pool or create new (capped at POOL_MAX live enemies).
         const enemy = this._acquireEnemy(spawnPos, (dmg) => {
+          console.log('[SpellDebug] onPlayerHit from enemy | dmg:', dmg);
           this.player.health.takeDamage(dmg);
           if (dmg > 0) this.onPlayerHit?.(dmg);
         });
@@ -797,6 +808,12 @@ export class SceneManager {
       this.scene.remove(this.currentRoom.group);
       this.currentRoom.dispose();
       this.currentRoom = null;
+
+      // Remove any props placed by decorateRoom for the previous room
+      for (const root of this._decoratedPropRoots) {
+        this.scene.remove(root);
+      }
+      this._decoratedPropRoots.length = 0;
     }
 
     // ── Load new room ─────────────────────────────────────────────────────
@@ -810,21 +827,28 @@ export class SceneManager {
     this.scene.add(this.currentRoom.group);
 
     // ── PROC-B3: Decorate room with procedural props ───────────────────────
-    import('@/levels/PropPlacer').then(({ decorateRoom }) => {
-      const placed = decorateRoom({
-        floorIndex: bp.floor,
-        halfWidth:  ((bp.width  - 1) * bp.cellSize) / 2 - 0.8,
-        halfDepth:  ((bp.depth  - 1) * bp.cellSize) / 2 - 0.8,
-        seed:       (bp.floor * 0x9E37_79B9 ^ bp.width * 0x1234_ABCD) >>> 0,
-        maxProps:   Math.min(8, bp.width + bp.depth),
-      });
-      for (const { built, x, z, rotation } of placed) {
-        built.root.position.set(x, 0, z);
-        built.root.rotation.y = rotation;
-        this.scene.add(built.root);
-        console.log(`[PropPlacer] placed ${built.dna.propKind} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
-      }
-    }).catch(e => console.warn('[PropPlacer] decoration failed:', e));
+    // Skip for building rooms (IDs like "inn_f0_r1") — they already have
+    // purpose-specific interactables from the Blueprint and don't need
+    // the random tower/dungeon props on top.
+    const isBuildingRoom = /^[a-z]+_f\d+_r\d+$/.test(newId);
+    if (!isBuildingRoom) {
+      import('@/levels/PropPlacer').then(({ decorateRoom }) => {
+        const placed = decorateRoom({
+          floorIndex: bp.floor,
+          halfWidth:  ((bp.width  - 1) * bp.cellSize) / 2 - 0.8,
+          halfDepth:  ((bp.depth  - 1) * bp.cellSize) / 2 - 0.8,
+          seed:       (bp.floor * 0x9E37_79B9 ^ bp.width * 0x1234_ABCD) >>> 0,
+          maxProps:   Math.min(8, bp.width + bp.depth),
+        });
+        for (const { built, x, z, rotation } of placed) {
+          built.root.position.set(x, 0, z);
+          built.root.rotation.y = rotation;
+          this.scene.add(built.root);
+          this._decoratedPropRoots.push(built.root);  // tracked for cleanup
+          console.log(`[PropPlacer] placed ${built.dna.propKind} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+        }
+      }).catch(e => console.warn('[PropPlacer] decoration failed:', e));
+    }
 
     // ── Spawn enemies (skip if room was previously cleared) ──────────────
     const skipEnemies = this.clearedRooms.has(newId);
@@ -852,6 +876,7 @@ export class SceneManager {
             (spawn.z + 0.5) * bp.cellSize - (bp.depth * bp.cellSize) / 2,
           );
           const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) => {
+            console.log('[SpellDebug] onPlayerHit from SlimeEnemy | dmg:', dmg);
             this.player.health.takeDamage(dmg);
             if (dmg > 0) this.onPlayerHit?.(dmg);
           });

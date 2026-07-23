@@ -71,8 +71,10 @@ export const CreativeMode = {
     _ctx = ctx;
   },
 
-  /** Activate creative mode — god mode + fly + HUD + backroom portals. */
-  enter(): void {
+  /** Activate creative mode — god mode + fly + HUD + backroom portals.
+   *  Pass `{ skipPortals: true }` when entering from a building preview so the
+   *  tower-basement portal objects are not spawned inside the building room. */
+  enter(opts?: { skipPortals?: boolean }): void {
     if (!_ctx) { console.warn('[CreativeMode] Not initialised — call CreativeMode.init() first.'); return; }
     if (isCreativeActive()) return;
 
@@ -136,8 +138,10 @@ export const CreativeMode = {
       },
     });
 
-    // Spawn basement backroom portals
-    if (_ctx && _backroomMgr === null) {
+    // Spawn basement backroom portals — skipped in building-preview mode because
+    // portal positions are tower-specific and would appear floating outside the
+    // building room walls.
+    if (_ctx && _backroomMgr === null && !opts?.skipPortals) {
       _backroomMgr = new BackroomManager({
         teleportPlayer: (pos) => _ctx!.player.teleport(new THREE.Vector3(pos.x, pos.y, pos.z)),
         loadScene: async (roomId) => {

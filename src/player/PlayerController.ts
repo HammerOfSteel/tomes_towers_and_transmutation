@@ -198,6 +198,9 @@ export class PlayerController {
   private _princessInstance: import('@/princess-creator/factory').PrincessInstance | null = null;
   /** Tracks last-set animation state so we only call setState on change. */
   private _princessAnimState: string = 'idle';
+  /** Counts down while a princess one-shot (attack/cast) is playing. Prevents
+   *  base-state updates from clearing the one-shot before it finishes. */
+  private _princessOneShotTimer = 0;
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
@@ -211,17 +214,23 @@ export class PlayerController {
 
   /** Play the melee attack one-shot animation. */
   triggerAttack(): void {
-    if (!this._charController) return;
-    const returnTo = this._resolveLoopState(0);
-    this._charController.playOnce('attack', returnTo);
+    if (this._charController) {
+      const returnTo = this._resolveLoopState(0);
+      this._charController.playOnce('attack', returnTo);
+    }
+    this._princessInstance?.play('attack_1');
+    this._princessOneShotTimer = 0.55;
   }
 
   /** Play the spell-cast one-shot animation (Throw / Use_Item). */
   triggerCast(): void {
-    if (!this._charController) return;
-    const returnTo = this._resolveLoopState(0);
-    this._charController.playOnce('cast', returnTo, () => { this._castAnimActive = false; });
-    this._castAnimActive = true;
+    if (this._charController) {
+      const returnTo = this._resolveLoopState(0);
+      this._charController.playOnce('cast', returnTo, () => { this._castAnimActive = false; });
+      this._castAnimActive = true;
+    }
+    this._princessInstance?.play('cast_spell_1');
+    this._princessOneShotTimer = 0.9;
   }
 
   /** Play the blink/teleport arrival animation (Spawn_Air). */
@@ -374,19 +383,24 @@ export class PlayerController {
   updatePrincess(elapsedSeconds: number, dt: number): void {
     if (!this._princessInstance) return;
 
-    // Bridge player movement state to princess animation states.
-    // Only call setState when state changes — calling every frame resets the clip.
-    const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-    const nextState = !this.isGrounded
-      ? 'jump_idle'
-      : hSpeed > RUN_SPEED * 0.5 ? 'run'
-      : hSpeed > 0.3             ? 'walk'
-      :                            'idle';
+    // Count down the one-shot guard; while positive, skip base-state changes
+    // so attack/cast animations aren't interrupted by movement state updates.
+    if (this._princessOneShotTimer > 0) {
+      this._princessOneShotTimer = Math.max(0, this._princessOneShotTimer - dt);
+    } else {
+      // Bridge player movement state to princess animation states.
+      // Only call setState when state changes — calling every frame resets the clip.
+      const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
+      const nextState = !this.isGrounded
+        ? 'jump_idle'
+        : hSpeed > RUN_SPEED * 0.5 ? 'run'
+        : hSpeed > 0.3             ? 'walk'
+        :                            'idle';
 
-    if (nextState !== this._princessAnimState) {
-      this._princessAnimState = nextState;
-      console.log(`[princess-anim] setState: ${nextState} (hSpeed=${hSpeed.toFixed(2)} grounded=${this.isGrounded})`);
-      this._princessInstance.setState(nextState as import('@/princess-creator/anim/clips').AnimId);
+      if (nextState !== this._princessAnimState) {
+        this._princessAnimState = nextState;
+        this._princessInstance.setState(nextState as import('@/princess-creator/anim/clips').AnimId);
+      }
     }
 
     this._princessInstance.update(elapsedSeconds, dt);

@@ -1487,7 +1487,7 @@ async function init() {
   /** Sync palette collapse state + button highlights from saved config. */
   function applyAssetModeToUI() {
     const cfg = loadWorldGenConfig();
-    const isKenney = cfg.assetMode === 'kenney';
+    const isKenney = false;
     codeModeBtn.classList.toggle('active',  !isKenney);
     assetModeBtn.classList.toggle('active',  isKenney);
 
@@ -1546,7 +1546,7 @@ async function init() {
 
   assetModeBtn.addEventListener('click', () => {
     const cfg = loadWorldGenConfig();
-    cfg.assetMode = 'kenney';
+    // cfg.assetMode removed
     saveWorldGenConfig(cfg);
     applyAssetModeToUI();
   });
