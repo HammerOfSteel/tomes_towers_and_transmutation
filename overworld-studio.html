@@ -214,7 +214,6 @@
         <button class="studio-tab active" data-mode="settlement">🏙 Settlement</button>
         <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
         <button class="studio-tab"        data-mode="cave">🌿 Cave</button>
-        <button class="studio-tab"        data-mode="dwelling">🏠 Dwelling</button>
         <button class="studio-tab"        data-mode="realm">🌍 Realm</button>
         <button class="studio-tab"        data-mode="solar">☀ Solar System</button>
       </div>
@@ -352,78 +351,6 @@
         </div>
 
       </div><!-- /dungeon-controls -->
-
-      <!-- ── Dwelling controls (OW-D) ─────────────────────────────── -->
-      <div id="dwelling-controls" style="display:none">
-
-        <div class="section">
-          <div class="section-title">View</div>
-          <div class="pill-row" id="dwelling-view-pills">
-            <button class="pill active" data-dview="2d">📋 Floor Plan</button>
-            <button class="pill"        data-dview="3d">🏠 3D Interior</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Building Type</div>
-          <div class="pill-row pill-row--wrap" id="dwelling-archetype-pills">
-            <button class="pill active" data-arch="house"       title="Standard house">🏠 House</button>
-            <button class="pill"        data-arch="cottage"     title="Wide low thatched cottage">🏡 Cottage</button>
-            <button class="pill"        data-arch="inn"         title="Inn with common room + guest rooms">🍺 Inn</button>
-            <button class="pill"        data-arch="tavern"      title="Large inn with stable">🍻 Tavern</button>
-            <button class="pill"        data-arch="shop"        title="Narrow shop with storeroom">🛍 Shop</button>
-            <button class="pill"        data-arch="apothecary"  title="Tall narrow apothecary">⚗ Apothecary</button>
-            <button class="pill"        data-arch="guild"       title="Civic guild hall">🏛 Guild</button>
-            <button class="pill"        data-arch="chapel"      title="Long nave chapel">⛪ Chapel</button>
-            <button class="pill"        data-arch="blacksmith"  title="Open forge smithy">⚒ Blacksmith</button>
-            <button class="pill"        data-arch="villa"       title="Grand symmetrical manor">🏰 Villa</button>
-            <button class="pill"        data-arch="terraced"    title="Narrow row house">🏘 Terraced</button>
-            <button class="pill"        data-arch="ruin"        title="Crumbling ruin">🏚 Ruin</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Faction / Style</div>
-          <div class="pill-row pill-row--wrap" id="dwelling-faction-pills">
-            <button class="pill active" data-faction="human_rural"  title="Thatched rural human">🌾 Rural</button>
-            <button class="pill"        data-faction="human_town"   title="Timber-frame town human">🧍 Town</button>
-            <button class="pill"        data-faction="human_noble"  title="Tudor noble human">🎩 Noble</button>
-            <button class="pill"        data-faction="elven"        title="Elven pale wood">🌿 Elven</button>
-            <button class="pill"        data-faction="dwarven"      title="Dwarven stone">⛏ Dwarven</button>
-            <button class="pill"        data-faction="vampire"      title="Vampiric dark stone">🧛 Vampire</button>
-            <button class="pill"        data-faction="fae"          title="Fae pastel">✨ Fae</button>
-            <button class="pill"        data-faction="orcish"       title="Orcish rough timber">⚔ Orcish</button>
-            <button class="pill"        data-faction="celestial"    title="Celestial pale arcane">⭐ Celestial</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Parameters</div>
-          <div class="slider-row">
-            <div class="slider-label"><span>Size</span><span id="dwelling-size-val">Medium</span></div>
-            <input type="range" id="dwelling-size" min="0" max="3" value="1" />
-          </div>
-          <div class="slider-row">
-            <div class="slider-label"><span>Floors</span><span id="dwelling-floors-val">2</span></div>
-            <input type="range" id="dwelling-floors" min="1" max="4" value="2" />
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Floor</div>
-          <div id="dwelling-floor-nav" style="display:flex;align-items:center;gap:8px;margin-top:4px">
-            <button class="btn" id="btn-dwelling-floor-down" style="width:32px;padding:4px">▼</button>
-            <span id="dwelling-floor-label" style="font-size:11px;color:var(--muted);flex:1;text-align:center">Ground Floor</span>
-            <button class="btn" id="btn-dwelling-floor-up"   style="width:32px;padding:4px">▲</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Export</div>
-          <button class="btn" id="btn-dwelling-png" style="width:100%">📷 PNG</button>
-        </div>
-
-      </div><!-- /dwelling-controls -->
 
       <!-- ── Cave / Glade controls ─────────────────────────────────── -->
       <div id="cave-controls" style="display:none">
@@ -598,7 +525,7 @@
     <span><span class="status-key">Enter</span> regenerate</span>
     <span><span class="status-key">+/−</span> patches</span>
     <span><span class="status-key">S</span> select &nbsp;<span class="status-key">D</span> warp &nbsp;<span class="status-key">R</span> reset</span>
-    <span id="hover-info">hover a ward to inspect</span>
+    <span id="hover-info">hover a ward · double-click to enter building</span>
   </footer>
 
   <script type="module" src="/src/overworld-studio.ts"></script>

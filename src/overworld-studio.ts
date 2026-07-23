@@ -25,15 +25,15 @@ import { Delaunay } from 'd3-delaunay';
 import { createNoise2D } from '@/core/SimplexNoise';
 import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
+import { buildingToDungeonPlan, WARD_TO_KIND } from './buildingToDungeonPlan';
+import type { Faction } from './world/buildings/BuildingDNA';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
-import { factionBuildingDna, type BuildingKind, type Faction, type BuildingSize } from './world/buildings/BuildingDNA';
-import { generatePlan, deriveBlueprints, generateInterior, type HousePlan, type RoomBlueprint, type RoomPurpose } from './world/buildings/InteriorGenerator';
-import { DwellingRenderer3D } from './dwelling-renderer-3d';
+
 import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1499,9 +1499,6 @@ window.addEventListener('resize', () => {
     const wrap = planet3dCanvas.parentElement!;
     hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
   }
-  if (dwelling3dRenderer) {
-    dwelling3dRenderer.resize(dwelling3dCanvas.offsetWidth, dwelling3dCanvas.offsetHeight);
-  }
   generate();
 });
 
@@ -1536,7 +1533,6 @@ function redraw() {
   if (studioMode === 'dungeon') { redrawDungeon(); return; }
   if (studioMode === 'cave')    { redrawCave();    return; }
   if (studioMode === 'realm')   { redrawRealm();   return; }
-  if (studioMode === 'dwelling'){ redrawDwelling(); return; }
   if (!currentModel) return;
   const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
   const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
@@ -1627,22 +1623,18 @@ document.getElementById('btn-roll')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
-  currentDwellingPlan = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
-  else if (studioMode === 'dwelling') generateDwellingView();
   else generate();
 });
 document.getElementById('btn-gen')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
-  currentDwellingPlan = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
-  else if (studioMode === 'dwelling') generateDwellingView();
   else generate(false);
 });
 
@@ -1853,6 +1845,49 @@ canvas.addEventListener('mouseleave', () => {
   if (studioMode !== 'settlement') return;
   hoverEl.textContent = 'hover a ward to inspect';
   overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+
+// ── Settlement: double-click ward → enter building interior ──────────────────
+// Double-click a ward in the settlement view to generate that building's
+// floor plan using the unified Blueprint/DungeonPlan system and show it
+// in the Dungeon tab — the same renderer as dungeon floors.
+
+canvas.addEventListener('dblclick', e => {
+  if (studioMode !== 'settlement' || !currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  // Find clicked ward
+  let hit: typeof currentModel.wards[0] | null = null;
+  for (const ward of currentModel.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    if (pointInPolygon({ x: mx, y: my }, ward.polygon)) { hit = ward; break; }
+  }
+  if (!hit) return;
+
+  const kind = WARD_TO_KIND[hit.type];
+  if (!kind) return;  // park etc. — no interior
+
+  // Derive faction from current settlement faction pill
+  const factionStr = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction ?? 'human';
+  // Map settlement faction → building faction
+  const FACTION_MAP: Record<string, Faction> = {
+    human: 'human_town', elven: 'elven', dwarven: 'dwarven',
+    orcish: 'orcish', vampire: 'vampire', undead: 'undead_common',
+    vulperia: 'human_town', slime: 'human_rural', fae: 'fae',
+  };
+  const faction: Faction = FACTION_MAP[factionStr] ?? 'human_town';
+
+  // Generate building as DungeonPlan — uses the same Blueprint system
+  const buildingSeed = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
+  const plan = buildingToDungeonPlan(kind, faction, buildingSeed, 'medium', 2);
+
+  // Switch to Dungeon tab and inject this plan
+  currentDungeonPlan = plan;
+  const dunTab = document.querySelector('.studio-tab[data-mode="dungeon"]') as HTMLElement | null;
+  dunTab?.click();
+  hoverEl.textContent = `${WARD_LABELS[hit.type]} — ${kind} interior`;
 });
 
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
@@ -2425,16 +2460,9 @@ export function drawDungeonFloorPlan(
 
 // ── Studio mode state ─────────────────────────────────────────────────────────
 
-type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar' | 'dwelling';
+type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar';
 let studioMode: StudioMode = 'settlement';
 let currentDungeonPlan: DungeonPlan | null = null;
-let currentDwellingPlan: HousePlan | null = null;
-let currentDwellingBlueprints: RoomBlueprint[] = [];
-let currentDwellingFloor = 0;
-let currentDwellingFloors = 2;
-let dwellingViewMode: '2d' | '3d' = '2d';
-let dwelling3dRenderer: DwellingRenderer3D | null = null;
-const dwelling3dCanvas = document.getElementById('dwelling-3d-canvas') as HTMLCanvasElement;
 
 function generateDungeonView() {
   const seed       = parseInt(seedInput.value) || Date.now();
@@ -3819,175 +3847,6 @@ function generateSolarView(): void {
   ).join('');
 }
 
-// ── OW-D: Dwelling tab — uses game BuildingDNA + InteriorGenerator ────────────
-
-const DWELLING_SIZE_LABELS: BuildingSize[] = ['tiny', 'small', 'medium', 'large'];
-const DWELLING_SIZE_NAMES  = ['Tiny', 'Small', 'Medium', 'Large'];
-
-const ROOM_PURPOSE_COLORS: Record<RoomPurpose, string> = {
-  living:      '#3a3020',   // warm amber
-  kitchen:     '#2a2410',   // dark amber
-  bedroom:     '#1e2840',   // cool blue-grey
-  hall:        '#302820',   // neutral brown
-  bar:         '#2a1a0a',   // dark warm
-  storage:     '#202020',   // dark neutral
-  workshop:    '#2a1810',   // dark rust
-  chapel_nave: '#141e30',   // cool dark blue
-};
-
-function drawBuildingFloorPlan(
-  plan:       HousePlan,
-  blueprints: RoomBlueprint[],
-  c:          HTMLCanvasElement,
-  label:      string,
-): void {
-  const ctx = c.getContext('2d')!;
-  const W = c.width, H = c.height;
-
-  ctx.fillStyle = '#0a0908';
-  ctx.fillRect(0, 0, W, H);
-
-  const PAD  = 32;
-  const CELL = Math.min(Math.floor((W - PAD * 2) / plan.w), Math.floor((H - PAD * 2) / plan.d), 40);
-  const offX = Math.floor((W - plan.w * CELL) / 2);
-  const offY = Math.floor((H - plan.d * CELL) / 2);
-
-  // Room fills with subtle floor tile grid
-  for (const room of blueprints) {
-    const col = ROOM_PURPOSE_COLORS[room.purpose] ?? '#202020';
-    ctx.fillStyle = col;
-    ctx.fillRect(offX + room.x * CELL, offY + room.z * CELL, room.w * CELL, room.d * CELL);
-
-    // Subtle tile grid within room
-    if (CELL >= 12) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 0.5;
-      for (let x = room.x; x <= room.x + room.w; x++) {
-        ctx.beginPath();
-        ctx.moveTo(offX + x * CELL, offY + room.z * CELL);
-        ctx.lineTo(offX + x * CELL, offY + (room.z + room.d) * CELL);
-        ctx.stroke();
-      }
-      for (let z = room.z; z <= room.z + room.d; z++) {
-        ctx.beginPath();
-        ctx.moveTo(offX + room.x * CELL, offY + z * CELL);
-        ctx.lineTo(offX + (room.x + room.w) * CELL, offY + z * CELL);
-        ctx.stroke();
-      }
-    }
-  }
-
-  // Tile overlay: walls and doors
-  for (let z = 0; z < plan.d; z++) {
-    for (let x = 0; x < plan.w; x++) {
-      const tile = plan.grid[x + plan.w * z]!;
-      if (tile === 1) {        // TILE_WALL — stone texture effect
-        ctx.fillStyle = '#8a7850';
-        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)'; // mortar shadow
-        ctx.fillRect(offX + x * CELL + CELL - 2, offY + z * CELL, 2, CELL);
-        ctx.fillRect(offX + x * CELL, offY + z * CELL + CELL - 2, CELL, 2);
-      } else if (tile === 2) { // TILE_DOOR — gold gap
-        ctx.fillStyle = '#0a0908';
-        ctx.fillRect(offX + x * CELL, offY + z * CELL, CELL, CELL);
-        ctx.fillStyle = '#e8b030';
-        const dpad = Math.max(2, Math.floor(CELL * 0.15));
-        ctx.fillRect(offX + x * CELL + dpad, offY + z * CELL + dpad, CELL - dpad * 2, CELL - dpad * 2);
-      }
-    }
-  }
-
-  // Room labels and purpose icons
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-  const PURPOSE_ICONS: Record<RoomPurpose, string> = {
-    living: '🛋', kitchen: '🍳', bedroom: '🛏', hall: '🚪',
-    bar: '🍺', storage: '📦', workshop: '⚒', chapel_nave: '✝',
-  };
-  for (const room of blueprints) {
-    const px = offX + (room.x + room.w / 2) * CELL;
-    const pz = offY + (room.z + room.d / 2) * CELL;
-    const icon = PURPOSE_ICONS[room.purpose] ?? '';
-    // Icon
-    if (CELL >= 14 && room.w * CELL > 20 && room.d * CELL > 20) {
-      ctx.font = `${Math.min(CELL * 0.7, 18)}px serif`;
-      ctx.fillText(icon, px, pz - (CELL * 0.25));
-    }
-    // Label
-    const lbl = room.purpose.replace('_', ' ');
-    ctx.font = `${Math.max(7, Math.min(CELL * 0.45, 11))}px Georgia, serif`;
-    ctx.fillStyle = 'rgba(220,200,160,0.7)';
-    ctx.fillText(lbl, px, pz + (CELL >= 14 ? CELL * 0.3 : 0));
-  }
-
-  // Title bar
-  ctx.fillStyle    = 'rgba(200,180,120,0.8)';
-  ctx.font         = '10px Georgia, serif';
-  ctx.textAlign    = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(label, 8, 8);
-}
-
-function getDwelling3dRenderer(): DwellingRenderer3D {
-  if (!dwelling3dRenderer) {
-    dwelling3dRenderer = new DwellingRenderer3D(dwelling3dCanvas);
-    dwelling3dRenderer.resize(dwelling3dCanvas.offsetWidth || 600, dwelling3dCanvas.offsetHeight || 600);
-  }
-  return dwelling3dRenderer;
-}
-
-function showDwelling3dCanvas(show: boolean): void {
-  dwelling3dCanvas.style.display = show ? '' : 'none';
-  canvas.style.display           = show ? 'none' : '';
-}
-
-function generateDwellingView(): void {
-  const seed     = parseInt(seedInput.value) || Date.now();
-  const kind     = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as BuildingKind ?? 'house';
-  const faction  = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as Faction ?? 'human_rural';
-  const sizeIdx  = parseInt((document.getElementById('dwelling-size')   as HTMLInputElement)?.value ?? '1');
-  const floors   = parseInt((document.getElementById('dwelling-floors') as HTMLInputElement)?.value ?? '2') as 1|2|3|4;
-  const size     = DWELLING_SIZE_LABELS[sizeIdx] ?? 'medium';
-
-  currentDwellingFloors = floors;
-  currentDwellingFloor  = 0;
-
-  const dna = factionBuildingDna(kind, faction, seed, size, floors);
-  currentDwellingPlan        = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
-  currentDwellingBlueprints  = deriveBlueprints(currentDwellingPlan);
-
-  if (dwellingViewMode === '3d') {
-    showDwelling3dCanvas(true);
-    const r = getDwelling3dRenderer();
-    r.loadInterior(dna, currentDwellingFloor);
-    r.start();
-  } else {
-    showDwelling3dCanvas(false);
-    if (dwelling3dRenderer) dwelling3dRenderer.stop();
-  }
-
-  redrawDwelling();
-  const rooms = currentDwellingBlueprints.length;
-  genTimeEl.textContent = `${dna.name}  ·  ${rooms} room${rooms !== 1 ? 's' : ''}  ·  ${floors} floor${floors !== 1 ? 's' : ''}  ·  ${size}`;
-}
-
-function redrawDwelling(): void {
-  // Floor nav label + enable/disable
-  const floorLabel = document.getElementById('dwelling-floor-label');
-  if (floorLabel) {
-    floorLabel.textContent = currentDwellingFloor === 0 ? 'Ground Floor' : `Upper Floor ${currentDwellingFloor}`;
-  }
-  (document.getElementById('btn-dwelling-floor-down') as HTMLButtonElement).disabled = currentDwellingFloor <= 0;
-  (document.getElementById('btn-dwelling-floor-up')   as HTMLButtonElement).disabled = currentDwellingFloor >= currentDwellingFloors - 1;
-
-  if (dwellingViewMode === '3d') return; // 3D renderer runs its own loop
-
-  if (!currentDwellingPlan) return;
-  const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch ?? 'house';
-  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction ?? 'human_rural';
-  const label   = `${kind} · ${faction.replace('_', ' ')} · floor ${currentDwellingFloor + 1}/${currentDwellingFloors}`;
-  drawBuildingFloorPlan(currentDwellingPlan, currentDwellingBlueprints, canvas, label);
-}
 
 function showPlanetCanvas(show: boolean): void {
   planet3dCanvas.style.display = show ? '' : 'none';
@@ -4125,7 +3984,6 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
   document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
   document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
-  document.getElementById('dwelling-controls')!.style.display   = mode === 'dwelling'   ? '' : 'none';
   document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
   document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
   (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
@@ -4139,12 +3997,7 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   }
   if (mode !== 'solar' && solarRenderer) {
     solarRenderer.stop();
-  }
-  if (mode !== 'dwelling' && dwelling3dRenderer) {
-    dwelling3dRenderer.stop();
-    showDwelling3dCanvas(false);
-  }
-  if (mode === 'dungeon') {
+  }  if (mode === 'dungeon') {
     overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
     hoverEl.textContent = '';
     if (!currentDungeonPlan) generateDungeonView();
@@ -4164,277 +4017,11 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
     hoverEl.textContent = '';
     showPlanetCanvas(false);
     generateSolarView();
-  } else if (mode === 'dwelling') {
-    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
-    hoverEl.textContent = '';
-    showPlanetCanvas(false);
-    if (!currentDwellingPlan) generateDwellingView();
-    else redrawDwelling();
   } else {
     redraw();
   }
 });
 
-// ── Dungeon controls event wiring ─────────────────────────────────────────────
-
-document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  const isTower = pill.dataset.dtype === 'tower';
-  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
-  generateDungeonView();
-});
-
-document.getElementById('dfloors')!.addEventListener('input', () => {
-  (document.getElementById('dfloors-val') as HTMLElement).textContent =
-    (document.getElementById('dfloors') as HTMLInputElement).value;
-  generateDungeonView();
-});
-
-document.getElementById('dfloor')?.addEventListener('input', () => {
-  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
-  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
-  redrawDungeon();
-});
-
-document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `dungeon-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
-
-// ── Cave controls event wiring ────────────────────────────────────────────────
-
-document.getElementById('cave-type-pills')!.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  const isCave = pill.dataset.ctype === 'cave';
-  document.getElementById('cave-biome-section')!.style.display  = isCave ? '' : 'none';
-  document.getElementById('glade-biome-section')!.style.display = isCave ? 'none' : '';
-  document.getElementById('cave-density-row')!.style.display    = isCave ? '' : 'none';
-  currentCaveData = null;
-  generateCaveView();
-});
-
-for (const id of ['cave-biome-pills', 'glade-biome-pills'] as const) {
-  document.getElementById(id)!.addEventListener('click', e => {
-    const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-    if (!pill) return;
-    document.querySelectorAll(`#${id} .pill`).forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    currentCaveData = null;
-    generateCaveView();
-  });
-}
-
-const CAVE_SIZES = ['', 'S', 'M', 'L'];
-document.getElementById('cave-size')!.addEventListener('input', () => {
-  const v = parseInt((document.getElementById('cave-size') as HTMLInputElement).value);
-  (document.getElementById('cave-size-val') as HTMLElement).textContent = CAVE_SIZES[v] ?? 'M';
-  currentCaveData = null;
-  generateCaveView();
-});
-
-document.getElementById('cave-density')!.addEventListener('input', () => {
-  const v = (document.getElementById('cave-density') as HTMLInputElement).value;
-  (document.getElementById('cave-density-val') as HTMLElement).textContent = (parseInt(v) / 100).toFixed(2);
-  currentCaveData = null;
-  generateCaveView();
-});
-
-document.getElementById('btn-cave-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `cave-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
-
-// ── Planet layer toggles ──────────────────────────────────────────────────────
-
-document.getElementById('planet-show-clouds')?.addEventListener('change', e => {
-  planetRenderer?.setVisible('clouds', (e.target as HTMLInputElement).checked);
-});
-document.getElementById('planet-show-atmos')?.addEventListener('change', e => {
-  const v = (e.target as HTMLInputElement).checked;
-  planetRenderer?.setVisible('atmosphere', v);
-  hexPlanetRenderer?.setVisible('atmosphere', v);
-});
-document.getElementById('planet-auto-rotate')?.addEventListener('change', e => {
-  const v = (e.target as HTMLInputElement).checked;
-  planetRenderer?.setAutoRotate(v);
-  hexPlanetRenderer?.setAutoRotate(v);
-});
-document.getElementById('planet-day-only')?.addEventListener('change', e => {
-  const v = (e.target as HTMLInputElement).checked;
-  planetRenderer?.setDayOnly(v);
-  hexPlanetRenderer?.setDayOnly(v);
-});
-document.getElementById('hex-show-edges')?.addEventListener('change', e => {
-  hexPlanetRenderer?.setEdgeLines((e.target as HTMLInputElement).checked);
-});
-
-// HEX_TILE_COUNTS kept for reference; actual count derived from realm Size slider
-const HEX_TILE_COUNTS: Record<number, number> = {6:362,8:642,12:1442,16:2562,20:4002};
-void HEX_TILE_COUNTS;
-
-// ── Realm controls event wiring ───────────────────────────────────────────────
-
-document.getElementById('planet-type-pills')?.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill || !pill.dataset.ptype) return;
-  document.querySelectorAll('#planet-type-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  currentPlanetType = pill.dataset.ptype as PlanetType;
-  redrawRealm();
-});
-
-document.getElementById('realm-view-pills')?.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  realmViewMode = pill.dataset.view as RealmViewMode ?? 'map';
-  // Show hex-specific controls
-  const isHex = realmViewMode === 'hex';
-  const hexSubRow = document.getElementById('hex-subdivision-row');
-  const edgeRow   = document.getElementById('edge-toggle-row');
-  const cloudRow  = document.getElementById('cloud-toggle-row');
-  if (hexSubRow)  hexSubRow.style.display  = isHex ? '' : 'none';
-  if (edgeRow)    edgeRow.style.display    = isHex ? '' : 'none';
-  if (cloudRow)   cloudRow.style.display   = isHex ? 'none' : '';  // no cloud in hex mode
-  // Don't null currentRealmData — hex renderer uses seed+settlements from it
-  redrawRealm();
-});
-
-for (const id of ['realm-shape-pills', 'realm-climate-pills'] as const) {
-  document.getElementById(id)?.addEventListener('click', e => {
-    const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-    if (!pill) return;
-    document.querySelectorAll(`#${id} .pill`).forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    currentRealmData = null; generateRealmView();
-  });
-}
-
-const REALM_SIZE_LABELS = ['','S','M','L','XL','Planet'];
-document.getElementById('realm-size')?.addEventListener('input', () => {
-  const v = parseInt((document.getElementById('realm-size') as HTMLInputElement).value);
-  (document.getElementById('realm-size-val') as HTMLElement).textContent = REALM_SIZE_LABELS[v] ?? 'M';
-  currentRealmData = null;
-  // Update hex tile display immediately
-  const SUB = 24;  // always 5762 tiles; display remains static
-  const hexSubVal2 = document.getElementById('hex-sub-val');
-  if (hexSubVal2) hexSubVal2.textContent = `${10*SUB*SUB+2} tiles (sub ${SUB})`;
-  generateRealmView();
-});
-
-document.getElementById('realm-settlements')?.addEventListener('input', () => {
-  const v = (document.getElementById('realm-settlements') as HTMLInputElement).value;
-  (document.getElementById('realm-settlements-val') as HTMLElement).textContent = v;
-  currentRealmData = null; generateRealmView();
-});
-
-document.getElementById('realm-roughness')?.addEventListener('input', () => {
-  const v = Math.round(parseFloat((document.getElementById('realm-roughness') as HTMLInputElement).value));
-  (document.getElementById('realm-roughness-val') as HTMLElement).textContent = ['Flat','Gentle','Moderate','Rugged','Wild'][Math.round(v/25)] ?? 'Moderate';
-  currentRealmData = null;
-  generateRealmView();  // regenerates both realm map + hex planet
-});
-
-document.getElementById('btn-realm-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `realm-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
-
-document.getElementById('btn-solar-generate')?.addEventListener('click', generateSolarView);
-
-// ── Dwelling controls event wiring ────────────────────────────────────────────
-
-document.getElementById('dwelling-view-pills')?.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill || !pill.dataset.dview) return;
-  document.querySelectorAll('#dwelling-view-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  dwellingViewMode = pill.dataset.dview as '2d' | '3d';
-  generateDwellingView();
-});
-
-// ── Dwelling controls event wiring ────────────────────────────────────────────
-
-document.getElementById('dwelling-archetype-pills')?.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#dwelling-archetype-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  generateDwellingView();
-});
-
-document.getElementById('dwelling-faction-pills')?.addEventListener('click', e => {
-  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
-  if (!pill) return;
-  document.querySelectorAll('#dwelling-faction-pills .pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  generateDwellingView();
-});
-
-document.getElementById('dwelling-size')?.addEventListener('input', () => {
-  const idx = parseInt((document.getElementById('dwelling-size') as HTMLInputElement).value);
-  const el  = document.getElementById('dwelling-size-val');
-  if (el) el.textContent = ['Tiny','Small','Medium','Large'][idx] ?? 'Medium';
-  generateDwellingView();
-});
-
-document.getElementById('dwelling-floors')?.addEventListener('input', () => {
-  const v = (document.getElementById('dwelling-floors') as HTMLInputElement).value;
-  const el = document.getElementById('dwelling-floors-val');
-  if (el) el.textContent = v;
-  generateDwellingView();
-});
-
-document.getElementById('btn-dwelling-floor-up')?.addEventListener('click', () => {
-  if (!currentDwellingPlan) return;
-  if (currentDwellingFloor < currentDwellingFloors - 1) {
-    currentDwellingFloor++;
-    _reloadDwellingFloor();
-  }
-});
-
-document.getElementById('btn-dwelling-floor-down')?.addEventListener('click', () => {
-  if (!currentDwellingPlan) return;
-  if (currentDwellingFloor > 0) {
-    currentDwellingFloor--;
-    _reloadDwellingFloor();
-  }
-});
-
-function _reloadDwellingFloor() {
-  const seed    = parseInt(seedInput.value) || Date.now();
-  const kind    = (document.querySelector('#dwelling-archetype-pills .pill.active') as HTMLElement)?.dataset.arch as BuildingKind ?? 'house';
-  const faction = (document.querySelector('#dwelling-faction-pills .pill.active')  as HTMLElement)?.dataset.faction as Faction ?? 'human_rural';
-  const sizeIdx = parseInt((document.getElementById('dwelling-size') as HTMLInputElement)?.value ?? '1');
-  const size    = DWELLING_SIZE_LABELS[sizeIdx] ?? 'medium';
-  const dna     = factionBuildingDna(kind, faction, seed, size, currentDwellingFloors as 1|2|3|4);
-  currentDwellingPlan       = generatePlan({ ...dna, seed: seed ^ (currentDwellingFloor * 0x6B8B4567) });
-  currentDwellingBlueprints = deriveBlueprints(currentDwellingPlan);
-  if (dwellingViewMode === '3d') {
-    getDwelling3dRenderer().loadInterior(dna, currentDwellingFloor);
-  }
-  redrawDwelling();
-}
-
-document.getElementById('btn-dwelling-png')?.addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = `dwelling-${seedInput.value}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-});
 document.getElementById('btn-solar-png')?.addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = `solar-${seedInput.value}.png`;

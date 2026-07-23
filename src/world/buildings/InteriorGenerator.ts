@@ -139,46 +139,67 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
 
   switch (dna.buildingKind) {
     case 'house': case 'cottage': case 'terraced': {
-      // living room (front), kitchen (back-left), bedroom(s) (back-right)
-      const lw = kw, ld = Math.ceil(kd * 0.55);
-      fillRoom(1, 1, lw, ld, 'living');
+      // living room (front), kitchen (back-left), bedroom (back-right)
+      const ld = Math.ceil(kd * 0.55);
+      fillRoom(1, 1, kw, ld, 'living');
       const bw = Math.floor(kw / 2);
-      fillRoom(1, 1 + ld + 1, bw, kd - ld - 1, 'kitchen');
-      fillRoom(1 + bw + 1, 1 + ld + 1, kw - bw - 1, kd - ld - 1, 'bedroom');
-      // Doorway between living and kitchen
-      setFloor(1 + Math.floor(bw / 2), 1 + ld);
+      const backD = kd - ld - 1;
+      if (backD > 1) {
+        fillRoom(1,        1 + ld + 1, bw,       backD, 'kitchen');
+        fillRoom(1 + bw + 1, 1 + ld + 1, kw - bw - 1, backD, 'bedroom');
+        // 2-tile wide passage: living → kitchen + bedroom
+        const px = 1 + Math.floor(kw / 2) - 1;
+        setFloor(px,     1 + ld);
+        setFloor(px + 1, 1 + ld);
+        // Connect kitchen ↔ bedroom through shared wall
+        const connZ = 1 + ld + 1 + Math.floor(backD / 2);
+        setFloor(1 + bw, connZ);
+      }
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
     case 'villa': {
       const hw = Math.floor(kw / 2);
-      fillRoom(1,      1, hw,       Math.floor(kd * 0.5), 'living');
-      fillRoom(2 + hw, 1, kw - hw,  Math.floor(kd * 0.5), 'living');
-      fillRoom(1,      1 + Math.floor(kd * 0.5) + 1, hw,      kd - Math.floor(kd * 0.5) - 1, 'bedroom');
-      fillRoom(2 + hw, 1 + Math.floor(kd * 0.5) + 1, kw - hw, kd - Math.floor(kd * 0.5) - 1, 'kitchen');
-      setFloor(1 + hw, 1 + Math.floor(kd * 0.5));
+      const hd = Math.floor(kd * 0.5);
+      fillRoom(1,      1,      hw,       hd, 'living');
+      fillRoom(2 + hw, 1,      kw - hw,  hd, 'living');
+      fillRoom(1,      2 + hd, hw,       kd - hd - 1, 'bedroom');
+      fillRoom(2 + hw, 2 + hd, kw - hw,  kd - hd - 1, 'kitchen');
+      // Passages: top 2 rooms linked, both rows connected
+      setFloor(1 + hw, 1 + Math.floor(hd / 2));
+      setFloor(1 + hw, 1 + hd);
+      setFloor(1 + hw, 2 + hd + Math.floor((kd - hd - 1) / 2));
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
     case 'inn': case 'tavern': {
-      // Common room (front large), bar alcove (side), sleeping rooms (back)
       const barW = Math.min(3, Math.floor(kw * 0.35));
-      fillRoom(1,        1, kw - barW - 1, Math.floor(kd * 0.6), 'living');
-      fillRoom(kw - barW + 1, 1, barW, Math.floor(kd * 0.6), 'bar');
-      const sleepD = kd - Math.floor(kd * 0.6) - 1;
+      const frontD = Math.floor(kd * 0.6);
+      fillRoom(1,            1, kw - barW - 1, frontD, 'living');
+      fillRoom(kw - barW + 1, 1, barW,          frontD, 'bar');
+      // Connect bar ↔ common room
+      setFloor(kw - barW, 1 + Math.floor(frontD / 2));
+      const sleepD = kd - frontD - 1;
       if (sleepD > 2) {
         const hw2 = Math.floor(kw / 2);
-        fillRoom(1, 1 + Math.floor(kd * 0.6) + 1, hw2, sleepD, 'bedroom');
-        fillRoom(2 + hw2, 1 + Math.floor(kd * 0.6) + 1, kw - hw2 - 1, sleepD, 'bedroom');
+        fillRoom(1,      2 + frontD, hw2,        sleepD, 'bedroom');
+        fillRoom(2 + hw2, 2 + frontD, kw - hw2 - 1, sleepD, 'bedroom');
+        // 2-tile passage: common → bedrooms
+        const px2 = 1 + Math.floor(kw / 2) - 1;
+        setFloor(px2,     1 + frontD);
+        setFloor(px2 + 1, 1 + frontD);
+        // Bedroom ↔ bedroom passage
+        setFloor(1 + hw2, 2 + frontD + Math.floor(sleepD / 2));
       }
-      setFloor(Math.floor(kw / 2), 1 + Math.floor(kd * 0.6));
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
     case 'shop': {
-      fillRoom(1, 1, kw, Math.floor(kd * 0.6), 'living');  // display
-      fillRoom(1, 1 + Math.floor(kd * 0.6) + 1, kw, kd - Math.floor(kd * 0.6) - 1, 'storage');
-      setFloor(Math.floor(w / 2), 1 + Math.floor(kd * 0.6));
+      const shopD = Math.floor(kd * 0.6);
+      fillRoom(1, 1, kw, shopD, 'living');
+      fillRoom(1, 2 + shopD, kw, kd - shopD - 1, 'storage');
+      setFloor(Math.floor(w / 2) - 1, 1 + shopD);
+      setFloor(Math.floor(w / 2),     1 + shopD);
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
@@ -188,21 +209,35 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
       break;
     }
     case 'apothecary': {
-      fillRoom(1, 1, kw, Math.floor(kd * 0.55), 'living');
-      fillRoom(1, 1 + Math.floor(kd * 0.55) + 1, kw, kd - Math.floor(kd * 0.55) - 1, 'storage');
-      setFloor(Math.floor(w / 2), 1 + Math.floor(kd * 0.55));
+      const apoD = Math.floor(kd * 0.55);
+      fillRoom(1, 1, kw, apoD, 'living');
+      fillRoom(1, 2 + apoD, kw, kd - apoD - 1, 'storage');
+      setFloor(Math.floor(w / 2) - 1, 1 + apoD);
+      setFloor(Math.floor(w / 2),     1 + apoD);
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
     case 'chapel': {
       fillRoom(1, 1, kw, kd, 'chapel_nave');
+      setDoor(Math.floor(w / 2) - 1, d - 1);
+      setDoor(Math.floor(w / 2),     d - 1);
+      break;
+    }
+    case 'guild': {
+      const hallD = Math.floor(kd * 0.6);
+      fillRoom(1, 1, kw, hallD, 'hall');
+      fillRoom(1, 2 + hallD, Math.floor(kw / 2), kd - hallD - 1, 'storage');
+      fillRoom(2 + Math.floor(kw / 2), 2 + hallD, kw - Math.floor(kw / 2) - 1, kd - hallD - 1, 'bedroom');
+      setFloor(Math.floor(kw / 2) - 1, 1 + hallD);
+      setFloor(Math.floor(kw / 2),     1 + hallD);
+      setFloor(1 + Math.floor(kw / 2), 2 + hallD + Math.floor((kd - hallD - 1) / 2));
       setDoor(Math.floor(w / 2), d - 1);
       break;
     }
     default: {
-      // Generic: single open space
       fillRoom(1, 1, kw, kd, 'hall');
-      setDoor(Math.floor(w / 2), d - 1);
+      setDoor(Math.floor(w / 2) - 1, d - 1);
+      setDoor(Math.floor(w / 2),     d - 1);
       break;
     }
   }
@@ -337,9 +372,12 @@ function scatter(
 ): void {
   const r = mulberry32(seed ^ 0x5C470001);
   let placed = 0;
-  for (let attempt = 0; attempt < count * 8 && placed < count; attempt++) {
-    const tx = room.x + Math.floor(r() * room.w);
-    const tz = room.z + Math.floor(r() * room.d);
+  // Scatter within the safe interior of the room (1 tile inset from room edges)
+  const sx = room.x + 1, sz = room.z + 1;
+  const sw = Math.max(1, room.w - 2), sd = Math.max(1, room.d - 2);
+  for (let attempt = 0; attempt < count * 12 && placed < count; attempt++) {
+    const tx = sx + Math.floor(r() * sw);
+    const tz = sz + Math.floor(r() * sd);
     const k  = kinds[Math.floor(r() * kinds.length)]!;
     if (placeAt(g, occ, tx, tz, k, mat, theme, seed ^ attempt, r() * Math.PI * 2)) placed++;
   }
@@ -376,38 +414,122 @@ function buildWallSurfaces(g: THREE.Group, plan: HousePlan, style: StyleProfile,
     roughness: 0.92,
     map: stoneTexture(Math.max(1, plan.w / 2.5), Math.max(1, h / 2.5)),
   });
+  const trimMat  = new THREE.MeshLambertMaterial({ color: new THREE.Color(style.woodDark) });
+  const glassMat = new THREE.MeshLambertMaterial({ color: 0x90b8d0, transparent: true, opacity: 0.45 });
+
   const isWall = (x: number, z: number): boolean =>
     x < 0 || z < 0 || x >= plan.w || z >= plan.d || plan.grid[x + plan.w * z] === TILE_WALL;
   const isPassable = (x: number, z: number): boolean =>
     x >= 0 && z >= 0 && x < plan.w && z < plan.d && plan.grid[x + plan.w * z] !== TILE_WALL;
+  const isDoor = (x: number, z: number): boolean =>
+    x >= 0 && z >= 0 && x < plan.w && z < plan.d && plan.grid[x + plan.w * z] === TILE_DOOR;
+  // Is a tile on the building exterior (neighbours the boundary wall)?
+  const isExterior = (x: number, z: number): boolean => x <= 1 || z <= 1 || x >= plan.w - 2 || z >= plan.d - 2;
+
+  // Track which wall faces get windows to avoid duplicate placement
+  const windowSet = new Set<string>();
 
   for (let z = 0; z < plan.d; z++) {
     for (let x = 0; x < plan.w; x++) {
       if (!isPassable(x, z)) continue;
-      // Check 4 neighbours — where a floor tile meets a wall, place a wall face
-      if (isWall(x, z - 1)) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(1, h, 0.15), wallMat.clone());
-        m.position.set(x + 0.5, h / 2, z + 0.075); m.castShadow = m.receiveShadow = true;
+
+      const faces = [
+        { cond: isWall(x, z - 1), geo: new THREE.BoxGeometry(1, h, 0.15), pos: new THREE.Vector3(x + 0.5, h / 2, z + 0.075), isN: true, isDoorFace: isDoor(x, z - 1) },
+        { cond: isWall(x, z + 1), geo: new THREE.BoxGeometry(1, h, 0.15), pos: new THREE.Vector3(x + 0.5, h / 2, z + 1 - 0.075), isN: false, isDoorFace: isDoor(x, z + 1) },
+        { cond: isWall(x - 1, z), geo: new THREE.BoxGeometry(0.15, h, 1), pos: new THREE.Vector3(x + 0.075, h / 2, z + 0.5),     isN: false, isDoorFace: isDoor(x - 1, z) },
+        { cond: isWall(x + 1, z), geo: new THREE.BoxGeometry(0.15, h, 1), pos: new THREE.Vector3(x + 1 - 0.075, h / 2, z + 0.5), isN: false, isDoorFace: isDoor(x + 1, z) },
+      ] as const;
+
+      for (const face of faces) {
+        if (!face.cond) continue;
+        const m = new THREE.Mesh(face.geo, wallMat.clone());
+        m.position.copy(face.pos); m.castShadow = m.receiveShadow = true;
         m.userData.isOccluder = true; m.userData._origOpacity = 1;
         g.add(m);
       }
-      if (isWall(x, z + 1)) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(1, h, 0.15), wallMat.clone());
-        m.position.set(x + 0.5, h / 2, z + 1 - 0.075); m.castShadow = m.receiveShadow = true;
-        m.userData.isOccluder = true; m.userData._origOpacity = 1;
-        g.add(m);
+
+      // ── Door arches at TILE_DOOR adjacencies ──────────────────────────────
+      // Detect door to the north (z-1) or south (z+1) of this floor tile
+      for (const [dx, dz, isNS] of [[0,-1,true],[0,1,true],[1,0,false],[-1,0,false]] as [number,number,boolean][]) {
+        const nx = x + dx, nz = z + dz;
+        if (!isDoor(nx, nz)) continue;
+        const archKey = `${nx},${nz}`;
+        if (windowSet.has('arch:' + archKey)) continue;
+        windowSet.add('arch:' + archKey);
+
+        // Trim posts either side of door gap
+        const postH = h * 0.82, postW = 0.12;
+        if (isNS) {
+          // Door runs along X axis — posts at left and right ends of the tile gap
+          const pz = nz + 0.5;
+          for (const px2 of [nx, nx + 1]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), trimMat);
+            post.position.set(px2, postH / 2, pz); g.add(post);
+          }
+          // Lintel above
+          const lintel = new THREE.Mesh(new THREE.BoxGeometry(1 + postW, postW, postW * 1.5), trimMat);
+          lintel.position.set(nx + 0.5, postH, pz); g.add(lintel);
+        } else {
+          // Door runs along Z axis
+          const px2 = nx + 0.5;
+          for (const pz2 of [nz, nz + 1]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), trimMat);
+            post.position.set(px2, postH / 2, pz2); g.add(post);
+          }
+          const lintel = new THREE.Mesh(new THREE.BoxGeometry(postW * 1.5, postW, 1 + postW), trimMat);
+          lintel.position.set(px2, postH, nz + 0.5); g.add(lintel);
+        }
       }
-      if (isWall(x - 1, z)) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(0.15, h, 1), wallMat.clone());
-        m.position.set(x + 0.075, h / 2, z + 0.5); m.castShadow = m.receiveShadow = true;
-        m.userData.isOccluder = true; m.userData._origOpacity = 1;
-        g.add(m);
-      }
-      if (isWall(x + 1, z)) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(0.15, h, 1), wallMat.clone());
-        m.position.set(x + 1 - 0.075, h / 2, z + 0.5); m.castShadow = m.receiveShadow = true;
-        m.userData.isOccluder = true; m.userData._origOpacity = 1;
-        g.add(m);
+
+      // ── Windows on exterior walls ──────────────────────────────────────────
+      if (!isExterior(x, z)) continue;
+      for (const [dx, dz, isNS] of [[0,-1,true],[0,1,true],[1,0,false],[-1,0,false]] as [number,number,boolean][]) {
+        const nx = x + dx, nz = z + dz;
+        // Exterior wall: neighbor is out-of-bounds OR is on the perimeter wall
+        if (!isWall(nx, nz)) continue;
+        if (isDoor(nx, nz)) continue;
+        // Place window once per wall tile face, every 3+ tiles
+        const wKey = `win:${isNS ? `${x}_${z}_ns` : `${x}_${z}_ew`}`;
+        if (windowSet.has(wKey)) continue;
+        // Check the neighboring floor tiles to avoid windows in 1-tile rooms
+        const neighborFloor = isNS
+          ? isPassable(x - 1, z) && isPassable(x + 1, z)
+          : isPassable(x, z - 1) && isPassable(x, z + 1);
+        if (!neighborFloor) continue;
+        windowSet.add(wKey);
+
+        const wH = h * 0.38, wBot = h * 0.32;
+        const wOff = 0.07;
+
+        if (isNS) {
+          const wz = dz < 0 ? z + wOff : z + 1 - wOff;
+          // Glass
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(0.55, wH, 0.04), glassMat);
+          glass.position.set(x + 0.5, wBot + wH / 2, wz); g.add(glass);
+          // Frame
+          for (const [fw, fh, fx2, fz2] of [
+            [0.59, 0.05, x + 0.5, wz],       // top rail
+            [0.59, 0.05, x + 0.5, wz],       // bot rail (same pos, offset y below)
+            [0.05, wH + 0.05, x + 0.22, wz], // left post
+            [0.05, wH + 0.05, x + 0.78, wz], // right post
+          ] as [number,number,number,number][]) {
+            const fr = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, 0.06), trimMat);
+            fr.position.set(fx2, fh === 0.05 ? (fz2 === wz ? wBot + wH + 0.02 : wBot - 0.02) : wBot + wH / 2, fz2);
+            g.add(fr);
+          }
+        } else {
+          const wx = dx < 0 ? x + wOff : x + 1 - wOff;
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(0.04, wH, 0.55), glassMat);
+          glass.position.set(wx, wBot + wH / 2, z + 0.5); g.add(glass);
+          for (const [fw, fh, fx2, fz2] of [
+            [0.06, 0.05, wx, z + 0.5],
+            [0.06, wH + 0.05, wx, z + 0.22],
+            [0.06, wH + 0.05, wx, z + 0.78],
+          ] as [number,number,number,number][]) {
+            const fr = new THREE.Mesh(new THREE.BoxGeometry(0.06, fh, fw), trimMat);
+            fr.position.set(fx2, fh === 0.05 ? wBot + wH + 0.02 : wBot + wH / 2, fz2); g.add(fr);
+          }
+        }
       }
     }
   }
