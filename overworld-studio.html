@@ -356,27 +356,47 @@
       <div id="dwelling-controls" style="display:none">
 
         <div class="section">
-          <div class="section-title">Archetype</div>
+          <div class="section-title">Building Type</div>
           <div class="pill-row pill-row--wrap" id="dwelling-archetype-pills">
-            <button class="pill active" data-arch="house_small"  title="Small 2-3 room home">🏠 House</button>
-            <button class="pill"        data-arch="house_large"  title="4-5 room family home">🏡 Large House</button>
-            <button class="pill"        data-arch="inn"          title="Common room + guest rooms + kitchen">🍺 Inn</button>
-            <button class="pill"        data-arch="shop"         title="Storefront + storeroom + quarters">🛍 Shop</button>
-            <button class="pill"        data-arch="forge"        title="Smithy + quench room + materials">⚒ Forge</button>
-            <button class="pill"        data-arch="alchemist"    title="Lab + ingredients + sleeping loft">⚗ Alchemist</button>
-            <button class="pill"        data-arch="guard_post"   title="Watch room + barracks + armory">🛡 Guard Post</button>
-            <button class="pill"        data-arch="manor"        title="Great hall + solar + cellar">🏰 Manor</button>
+            <button class="pill active" data-arch="house"       title="Standard house">🏠 House</button>
+            <button class="pill"        data-arch="cottage"     title="Wide low thatched cottage">🏡 Cottage</button>
+            <button class="pill"        data-arch="inn"         title="Inn with common room + guest rooms">🍺 Inn</button>
+            <button class="pill"        data-arch="tavern"      title="Large inn with stable">🍻 Tavern</button>
+            <button class="pill"        data-arch="shop"        title="Narrow shop with storeroom">🛍 Shop</button>
+            <button class="pill"        data-arch="apothecary"  title="Tall narrow apothecary">⚗ Apothecary</button>
+            <button class="pill"        data-arch="guild"       title="Civic guild hall">🏛 Guild</button>
+            <button class="pill"        data-arch="chapel"      title="Long nave chapel">⛪ Chapel</button>
+            <button class="pill"        data-arch="blacksmith"  title="Open forge smithy">⚒ Blacksmith</button>
+            <button class="pill"        data-arch="villa"       title="Grand symmetrical manor">🏰 Villa</button>
+            <button class="pill"        data-arch="terraced"    title="Narrow row house">🏘 Terraced</button>
+            <button class="pill"        data-arch="ruin"        title="Crumbling ruin">🏚 Ruin</button>
           </div>
         </div>
 
         <div class="section">
-          <div class="section-title">Faction</div>
+          <div class="section-title">Faction / Style</div>
           <div class="pill-row pill-row--wrap" id="dwelling-faction-pills">
-            <button class="pill active" data-faction="human">🧍 Human</button>
-            <button class="pill"        data-faction="elven">🌿 Elven</button>
-            <button class="pill"        data-faction="dwarven">⛏ Dwarven</button>
-            <button class="pill"        data-faction="orcish">⚔ Orcish</button>
-            <button class="pill"        data-faction="fae">✨ Fae</button>
+            <button class="pill active" data-faction="human_rural"  title="Thatched rural human">🌾 Rural</button>
+            <button class="pill"        data-faction="human_town"   title="Timber-frame town human">🧍 Town</button>
+            <button class="pill"        data-faction="human_noble"  title="Tudor noble human">🎩 Noble</button>
+            <button class="pill"        data-faction="elven"        title="Elven pale wood">🌿 Elven</button>
+            <button class="pill"        data-faction="dwarven"      title="Dwarven stone">⛏ Dwarven</button>
+            <button class="pill"        data-faction="vampire"      title="Vampiric dark stone">🧛 Vampire</button>
+            <button class="pill"        data-faction="fae"          title="Fae pastel">✨ Fae</button>
+            <button class="pill"        data-faction="orcish"       title="Orcish rough timber">⚔ Orcish</button>
+            <button class="pill"        data-faction="celestial"    title="Celestial pale arcane">⭐ Celestial</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Size</span><span id="dwelling-size-val">Medium</span></div>
+            <input type="range" id="dwelling-size" min="0" max="3" value="1" />
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Floors</span><span id="dwelling-floors-val">2</span></div>
+            <input type="range" id="dwelling-floors" min="1" max="4" value="2" />
           </div>
         </div>
 
@@ -386,15 +406,6 @@
             <button class="btn" id="btn-dwelling-floor-down" style="width:32px;padding:4px">▼</button>
             <span id="dwelling-floor-label" style="font-size:11px;color:var(--muted);flex:1;text-align:center">Ground Floor</span>
             <button class="btn" id="btn-dwelling-floor-up"   style="width:32px;padding:4px">▲</button>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Legend</div>
-          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c8b080;font-size:12px">─</span> Wall</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#f0c040;font-size:12px">▬</span> Exterior door</div>
-            <div style="display:flex;align-items:center;gap:6px"><span style="color:#a08060;font-size:12px">▬</span> Interior door</div>
           </div>
         </div>
 
