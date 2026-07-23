@@ -1925,6 +1925,27 @@ function _bModalSetup(): void {
   closeBtn.addEventListener('click', hideBuildingModal);
   hdr.appendChild(closeBtn);
 
+  // 🎮 Play in 3D — opens the game, auto-loads building, enters creative mode
+  const play3dBtn = document.createElement('button');
+  play3dBtn.textContent = '🎮 Play in 3D';
+  play3dBtn.title = 'Open the game and walk through this building in 3D (creative mode)';
+  play3dBtn.style.cssText =
+    'padding:2px 9px;background:#0a2810;color:#80d060;border:1px solid #2a6020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  play3dBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    // Serialize DungeonPlan (Map → Object) and store for game to pick up
+    const planData = {
+      rooms:       Object.fromEntries(_bModalPlan.rooms),
+      startRoomId: _bModalPlan.startRoomId,
+      seed:        _bModalPlan.seed,
+    };
+    localStorage.setItem('ttt_building_preview', JSON.stringify(planData));
+    // Open game in new tab — it will auto-start, load building, enter creative
+    window.open('/index.html', '_blank');
+  });
+  hdr.insertBefore(play3dBtn, closeBtn);
+
   _bModalCanvas = document.createElement('canvas');
   _bModalCanvas.style.cssText = 'flex:1;display:block;cursor:grab;min-height:0;';
   _bModal.appendChild(_bModalCanvas);

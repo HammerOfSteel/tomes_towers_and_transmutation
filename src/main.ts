@@ -1098,6 +1098,16 @@ async function main() {
     gameLoop.start();
     (window as any).__gameStarted = true;   // test hook — one-way flag
     console.log('[startGame] gameLoop started ✓');
+
+    // ── Building preview auto-load (from Overworld Studio "Play in 3D" button) ──
+    const _bpJson = localStorage.getItem('ttt_building_preview');
+    if (_bpJson) {
+      localStorage.removeItem('ttt_building_preview');
+      // Small delay so the first frame renders before the room swap
+      setTimeout(() => {
+        (window as any).__game?.previewBuilding(_bpJson);
+      }, 400);
+    }
   }
   let prevKillCount = 0;
   /** E1/E2: Named elite enemy IDs killed this session (for defeat_elite beats). */
@@ -1740,6 +1750,29 @@ async function main() {
     },
   });
 
+  // ── Building preview quick-start (from Overworld Studio "Play in 3D") ──────
+  // Overworld Studio stores the plan JSON + sets this key before opening the
+  // game tab. We auto-start with a default fox character and enter creative mode.
+  {
+    const bpJson = localStorage.getItem('ttt_building_preview');
+    if (bpJson) {
+      // Don't remove yet — startGame() will consume and remove it at loop start
+      mainMenu.hide();
+      import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+        startGame(undefined, {
+          name:        'Fox',
+          boon:        'tome',
+          slotId:      0,
+          dna:         { ...DEFAULT_PLAYER_DNA },
+          characterId: 'rogue',
+          statBonuses: [],
+        });
+      });
+    } else {
+      mainMenu.show();
+    }
+  }
+
   // ── Princess Atelier quick-play handoff ───────────────────────────────────
   // "▶ Play as Her" in the Atelier sets this key → we skip the campfire
   // entirely and drop the player straight into the game with their princess.
@@ -2057,6 +2090,38 @@ async function main() {
           if (!resolved) { console.error('[__game.buildPrincess] invalid DNA'); return; }
           player.applyPrincess(resolved).catch(console.error);
         });
+      },
+
+      /**
+       * Preview a building plan in 3D — same as dungeon/tower rooms.
+       * Call after startGame() is running. Loads the DungeonPlan produced by
+       * buildingToDungeonPlan() into the SceneManager and enters creative mode.
+       * @param planJson  JSON.stringify of { rooms: Record<string,Blueprint>, startRoomId, seed }
+       */
+      previewBuilding: (planJson: string) => {
+        try {
+          const data = JSON.parse(planJson) as {
+            rooms: Record<string, import('@/levels/blueprint').Blueprint>;
+            startRoomId: string;
+            seed: number;
+          };
+          const plan: import('@/levels/DungeonGenerator').DungeonPlan = {
+            rooms:       new Map(Object.entries(data.rooms)),
+            startRoomId: data.startRoomId,
+            seed:        data.seed,
+          };
+          // Same pattern as sandbox arena load
+          if (gameMode === 'exterior') { overworld?.exit(); gameMode = 'interior'; }
+          sceneManager.loadDungeon(plan);
+          sceneManager.loadRoomImmediate(plan.startRoomId);
+          player.teleport(new THREE.Vector3(0, 1.5, 2));
+          scene.fog = new THREE.Fog(0x0a0808, 18, 40);
+          // Enter creative mode so the player can walk around freely
+          if (import.meta.env.DEV) CreativeMode.enter();
+          console.log('[previewBuilding] loaded', plan.rooms.size, 'room(s), start:', plan.startRoomId);
+        } catch (e) {
+          console.error('[previewBuilding] failed:', e);
+        }
       },
     };
   }
