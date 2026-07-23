@@ -33,6 +33,7 @@ import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTextur
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
+import { assetLibrary, type AssetType, type LibraryEntry } from './overworld-studio/AssetLibrary';
 
 import * as THREE from 'three';
 
@@ -1623,19 +1624,29 @@ document.getElementById('btn-roll')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
+  currentSolarData   = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
   else generate();
 });
 document.getElementById('btn-gen')!.addEventListener('click', () => {
   currentDungeonPlan = null;
   currentCaveData    = null;
   currentRealmData   = null;
+  currentSolarData   = null;
   if (studioMode === 'cave')         generateCaveView();
   else if (studioMode === 'dungeon') generateDungeonView();
   else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
   else generate(false);
+});
+
+// Solar generate button
+document.getElementById('btn-solar-generate')?.addEventListener('click', () => {
+  currentSolarData = null;
+  generateSolarView();
 });
 
 // Export PNG
@@ -1718,6 +1729,142 @@ function canvasXY(e: PointerEvent): [number, number] {
     (e.clientY - rect.top)  * (canvas.height / rect.height),
   ];
 }
+
+// ── OW-E1: Breadcrumb navigation ─────────────────────────────────────────────
+
+interface BreadcrumbEntry {
+  mode:  StudioMode;
+  label: string;
+  /** Seed to restore when navigating back to this level. */
+  seed?: number;
+}
+
+let _navStack: BreadcrumbEntry[] = [];
+
+function _updateBreadcrumb(): void {
+  const bar   = document.getElementById('studio-breadcrumb')!;
+  const items = document.getElementById('breadcrumb-items')!;
+  if (_navStack.length === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  items.innerHTML = _navStack.map((entry, i) => {
+    const isLast = i === _navStack.length - 1;
+    if (isLast) {
+      return `<span style="color:#e8d0a0">${entry.label}</span>`;
+    }
+    return `<a href="#" data-nav-idx="${i}" style="color:#c8a96e;text-decoration:none;cursor:pointer"
+      >${entry.label}</a><span style="opacity:0.5;margin:0 4px">›</span>`;
+  }).join('');
+
+  // Wire back-link clicks
+  items.querySelectorAll<HTMLAnchorElement>('[data-nav-idx]').forEach(a => {
+    a.addEventListener('click', ev => {
+      ev.preventDefault();
+      const idx = parseInt(a.dataset.navIdx!);
+      const target = _navStack[idx]!;
+      _navStack = _navStack.slice(0, idx);
+      _switchMode(target.mode, target.seed);
+    });
+  });
+}
+
+/**
+ * Programmatically switch studio mode, optionally loading a specific seed.
+ * Pushes to the breadcrumb stack if `breadcrumbLabel` is provided.
+ */
+function _switchMode(
+  mode:            StudioMode,
+  seedOverride?:   number,
+  breadcrumbLabel?: string,
+): void {
+  // Push the CURRENT mode to the stack before switching (if labelled)
+  if (breadcrumbLabel) {
+    const currentLabel: Record<StudioMode, string> = {
+      settlement: '🏙 Settlement', dungeon: '⚔ Dungeon',
+      cave: '🌿 Cave', realm: '🌍 Realm', solar: '☀ Solar',
+    };
+    _navStack.push({
+      mode:  studioMode,
+      label: currentLabel[studioMode],
+      seed:  parseInt(seedInput.value) || undefined,
+    });
+    _navStack.push({ mode, label: breadcrumbLabel });
+  }
+
+  // Apply seed override before triggering tab
+  if (seedOverride !== undefined) {
+    seedInput.value = String(seedOverride);
+  }
+
+  // Simulate tab click
+  const tab = document.querySelector<HTMLElement>(`.studio-tab[data-mode="${mode}"]`);
+  tab?.click();
+  _updateBreadcrumb();
+}
+
+// ── OW-E2: Realm map → Settlement drill-down ─────────────────────────────────
+
+/**
+ * Test if canvas point (px, py) is within a settlement dot OR a dungeon marker.
+ * Returns `{ kind: 'settlement', data: RealmSettlement }` or `{ kind: 'dungeon', data: {x,y} }` or null.
+ */
+function _realmHitTest(px: number, py: number): { kind: 'settlement'; data: RealmSettlement } | { kind: 'dungeon'; data: { x: number; y: number } } | null {
+  if (!currentRealmData) return null;
+  const { W, H, settlements, dungeons } = currentRealmData;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H),
+  ));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+
+  const settleDotR = Math.max(2, CELL * 0.75) + 6;
+  for (const s of settlements) {
+    const sx = offX + (s.x + 0.5) * CELL;
+    const sy = offY + (s.y + 0.5) * CELL;
+    if (Math.hypot(px - sx, py - sy) <= settleDotR) return { kind: 'settlement', data: s };
+  }
+
+  const dungeonDotR = Math.max(2, CELL * 0.55) + 6;
+  for (const d of dungeons) {
+    const dx = offX + (d.x + 0.5) * CELL;
+    const dy = offY + (d.y + 0.5) * CELL;
+    if (Math.hypot(px - dx, py - dy) <= dungeonDotR) return { kind: 'dungeon', data: d };
+  }
+  return null;
+}
+
+canvas.addEventListener('click', e => {
+  if (studioMode !== 'realm') return;
+  if (realmViewMode !== 'map') return;
+
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  const hit = _realmHitTest(px, py);
+  if (!hit) return;
+
+  if (hit.kind === 'settlement') {
+    const s = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const settleSeed = ((realmSeed ^ (s.x * 73856093 + s.y * 19349663)) >>> 0);
+    console.log(`[OW-E2] drill-down: ${s.name} (${s.size}, ${s.faction}) seed=${settleSeed}`);
+    const factionBtn = document.querySelector<HTMLElement>(
+      `#faction-pills [data-faction="${s.faction}"]`,
+    );
+    factionBtn?.click();
+    _switchMode('settlement', settleSeed, `🏙 ${s.name}`);
+  } else {
+    const d = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const dungeonSeed = ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0);
+    console.log(`[OW-E4] drill-down: dungeon at (${d.x},${d.y}) seed=${dungeonSeed}`);
+    _switchMode('dungeon', dungeonSeed, `⚔ Dungeon (${d.x},${d.y})`);
+  }
+});
 
 canvas.addEventListener('pointerdown', e => {
   if (activeTool !== 'warp' || e.button !== 0) return;
@@ -1809,6 +1956,14 @@ canvas.addEventListener('pointermove', e => {
 // ── Ward hover inspection ─────────────────────────────────────────────────────
 
 canvas.addEventListener('mousemove', e => {
+  if (studioMode === 'realm' && realmViewMode === 'map') {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+    const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    canvas.style.cursor = _realmHitTest(px, py) !== null ? 'pointer' : '';
+  } else if (studioMode !== 'settlement' || activeTool === 'select') {
+    canvas.style.cursor = '';
+  }
   if (studioMode !== 'settlement') return;
   if (!currentModel) return;
   const rect = canvas.getBoundingClientRect();
@@ -3230,6 +3385,8 @@ export interface RealmData {
   W: number; H: number;
   rivers: RealmRiver[];
   settlements: RealmSettlement[];
+  /** Dungeon entrance positions — clickable markers on the realm map. */
+  dungeons: { x: number; y: number }[];
   towerX: number; towerY: number;
   seed: number;
 }
@@ -3443,12 +3600,39 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
     }
   }
 
-  return { cells, W, H, rivers, settlements, towerX, towerY, seed };
+  // ── Dungeons ─────────────────────────────────────────────────────────────────
+  const DUNGEON_BIOMES = new Set<RealmBiome>(['grassland','forest','taiga','desert','savanna','tundra','snow']);
+  const nDungeons = 3 + Math.floor(rand() * 4);
+  const dungeons: { x: number; y: number }[] = [];
+  const dungeonCands = [...validCells].filter(c =>
+    DUNGEON_BIOMES.has(cells[c.y]![c.x]!.biome) &&
+    Math.hypot(c.x - towerX, c.y - towerY) > MIN_DIST,
+  ).sort(() => rand3() - 0.5);
+  for (const cell of dungeonCands) {
+    if (dungeons.length >= nDungeons) break;
+    const farFromSettlements = settlements.every(s => Math.hypot(s.x - cell.x, s.y - cell.y) > MIN_DIST * 0.6);
+    const farFromOtherDungeons = dungeons.every(d => Math.hypot(d.x - cell.x, d.y - cell.y) > MIN_DIST * 0.5);
+    if (farFromSettlements && farFromOtherDungeons) dungeons.push({ x: cell.x, y: cell.y });
+  }
+
+  return { cells, W, H, rivers, settlements, dungeons, towerX, towerY, seed };
+}
+
+// ── Shared helper: compute CELL size + offsets for realm rendering ─────────────
+function realmLayout(data: RealmData, canvas: HTMLCanvasElement) {
+  const { W, H } = data;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H),
+  ));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+  return { CELL, offX, offY };
 }
 
 export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d')!;
-  const { cells, W, H, rivers, settlements, towerX, towerY, seed } = data;
+  const { cells, W, H, rivers, settlements, dungeons, towerX, towerY, seed } = data;
   const CELL = Math.max(2, Math.min(
     Math.floor((canvas.width  - 4) / W),
     Math.floor((canvas.height - 4) / H)
@@ -3601,6 +3785,16 @@ export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
   ctx.beginPath(); for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)):ctx.lineTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)); } ctx.closePath(); ctx.stroke();
   ctx.fillStyle='#f0d020'; ctx.font=`${Math.max(6,CELL)}px sans-serif`;
   ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('⬡',tx,ty2);
+
+  // ── Dungeons ─────────────────────────────────────────────────────────────
+  const dR = Math.max(2, CELL * 0.55);
+  ctx.font = `${Math.max(6, Math.min(9, CELL+1))}px Georgia, serif`; ctx.textBaseline = 'top';
+  for (const d of data.dungeons) {
+    const dx = offX + (d.x + 0.5) * CELL, dy = offY + (d.y + 0.5) * CELL;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(dx, dy, dR+1.5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6a3060';          ctx.beginPath(); ctx.arc(dx, dy, dR,    0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(200,160,220,0.9)'; ctx.textAlign = 'center'; ctx.fillText('⚔', dx, dy + dR + 1);
+  }
 
   // ── Settlements ───────────────────────────────────────────────────────────
   const dotR = Math.max(2, CELL*0.75);
@@ -3995,16 +4189,56 @@ function getSolarRenderer(): SolarSystemRenderer {
       if (el) el.textContent = p ? `${PLANET_META_SS[p.type]} ${p.name}` : '—';
     });
     solarRenderer.onPlanetClick(p => {
-      // Switch to realm tab with that planet type
-      currentPlanetType = p.type === 'gas_giant' ? 'gas_giant' : p.isTowerPlanet ? 'terran' : p.type;
+      // Gas giants have no surface — skip drill-down
+      if (p.type === 'gas_giant') return;
+
+      // 1. Set planet type for the 3D renderer
+      currentPlanetType = p.isTowerPlanet ? 'terran' : p.type;
+      document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
       const pTypePill = document.querySelector(`#planet-type-pills [data-ptype="${currentPlanetType}"]`) as HTMLElement | null;
-      if (pTypePill) {
-        document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
-        pTypePill.classList.add('active');
-      }
-      // Switch to realm > hex tab
-      const realmTab = document.querySelector('.studio-tab[data-mode="realm"]') as HTMLElement | null;
-      realmTab?.click();
+      pTypePill?.classList.add('active');
+
+      // 2. Derive deterministic realm seed from solar system seed + planet id
+      const solarSeed = (currentSolarData?.seed ?? parseInt(seedInput.value)) || 0;
+      const planetRealmSeed = ((solarSeed ^ (p.id * 0x9E3779B9)) >>> 0);
+      seedInput.value = String(planetRealmSeed);
+
+      // 3. Set realm generation params to match planet type
+      type PlanetRealmConfig = { shape: RealmShape; climate: RealmClimate; roughness: number; settlements: number };
+      const PLANET_REALM: Partial<Record<PlanetType, PlanetRealmConfig>> = {
+        terran:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 6  },
+        ocean:     { shape: 'archipelago', climate: 'temperate', roughness: 30, settlements: 3  },
+        ice:       { shape: 'island',      climate: 'arctic',    roughness: 70, settlements: 2  },
+        volcanic:  { shape: 'island',      climate: 'temperate', roughness: 90, settlements: 2  },
+        toxic:     { shape: 'continents',  climate: 'tropical',  roughness: 70, settlements: 3  },
+        desert:    { shape: 'pangaea',     climate: 'temperate', roughness: 30, settlements: 4  },
+        verdant:   { shape: 'island',      climate: 'tropical',  roughness: 50, settlements: 5  },
+        dead:      { shape: 'island',      climate: 'arctic',    roughness: 40, settlements: 1  },
+        ringed:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 4  },
+      };
+      const cfg = PLANET_REALM[currentPlanetType] ?? { shape: 'island' as RealmShape, climate: 'temperate' as RealmClimate, roughness: 50, settlements: 6 };
+
+      // Apply shape pill
+      document.querySelectorAll('#realm-shape-pills .pill').forEach(x => x.classList.remove('active'));
+      (document.querySelector(`#realm-shape-pills [data-shape="${cfg.shape}"]`) as HTMLElement | null)?.classList.add('active');
+      // Apply climate pill
+      document.querySelectorAll('#realm-climate-pills .pill').forEach(x => x.classList.remove('active'));
+      (document.querySelector(`#realm-climate-pills [data-climate="${cfg.climate}"]`) as HTMLElement | null)?.classList.add('active');
+      // Apply roughness slider
+      const roughnessEl = document.getElementById('realm-roughness') as HTMLInputElement | null;
+      if (roughnessEl) { roughnessEl.value = String(cfg.roughness); const lbl = document.getElementById('realm-roughness-val'); if (lbl) lbl.textContent = cfg.roughness < 25 ? 'Flat' : cfg.roughness < 50 ? 'Rolling' : cfg.roughness < 75 ? 'Moderate' : 'Rugged'; }
+      // Apply settlements slider
+      const settleEl = document.getElementById('realm-settlements') as HTMLInputElement | null;
+      if (settleEl) { settleEl.value = String(cfg.settlements); const lbl = document.getElementById('realm-settlements-val'); if (lbl) lbl.textContent = String(cfg.settlements); }
+
+      // 4. Force realm regeneration and switch to Realm → Hex view
+      currentRealmData = null;
+      realmViewMode = 'hex';
+      document.querySelectorAll('#realm-view-pills .pill').forEach(x => x.classList.remove('active'));
+      (document.querySelector('#realm-view-pills [data-view="hex"]') as HTMLElement | null)?.classList.add('active');
+
+      // 5. Navigate with breadcrumb
+      _switchMode('realm', planetRealmSeed, `🌍 ${p.name}`);
     });
   }
   solarRenderer.resize(canvas.offsetWidth || 800, canvas.offsetHeight || 600);
@@ -4165,6 +4399,9 @@ document.getElementById('studio-tabs')!.addEventListener('click', e => {
   const mode = tab.dataset.mode as StudioMode;
   if (mode === studioMode) return;
   studioMode = mode;
+  // Clear breadcrumb on manual tab switch (user is navigating explicitly)
+  _navStack = [];
+  _updateBreadcrumb();
   document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
   document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
@@ -4215,6 +4452,277 @@ document.getElementById('btn-solar-png')?.addEventListener('click', () => {
   link.download = `solar-${seedInput.value}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
+});
+
+// ── OW-E5: Realm view pills (Map / Planet / Hex) — wire to realmViewMode ─────
+document.getElementById('realm-view-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.view) return;
+  realmViewMode = pill.dataset.view as RealmViewMode;
+  document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (currentRealmData) redrawRealm();
+});
+
+// ── Realm shape pills ─────────────────────────────────────────────────────────
+document.getElementById('realm-shape-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.shape) return;
+  document.querySelectorAll('#realm-shape-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm climate pills ───────────────────────────────────────────────────────
+document.getElementById('realm-climate-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.climate) return;
+  document.querySelectorAll('#realm-climate-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm planet-type pills ───────────────────────────────────────────────────
+document.getElementById('planet-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.ptype) return;
+  currentPlanetType = pill.dataset.ptype as PlanetType;
+  document.querySelectorAll('#planet-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') redrawRealm();
+});
+
+// ── Realm sliders ─────────────────────────────────────────────────────────────
+const SIZE_LABELS: Record<string, string> = { '1':'XS','2':'S','3':'M','4':'L','5':'XL' };
+const ROUGHNESS_LABELS = (v: number) => v < 25 ? 'Flat' : v < 50 ? 'Rolling' : v < 75 ? 'Moderate' : v < 90 ? 'Rugged' : 'Extreme';
+
+(document.getElementById('realm-size') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-size-val');
+  if (lbl) lbl.textContent = SIZE_LABELS[this.value] ?? this.value;
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+(document.getElementById('realm-roughness') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-roughness-val');
+  if (lbl) lbl.textContent = ROUGHNESS_LABELS(parseInt(this.value));
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+(document.getElementById('realm-settlements') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-settlements-val');
+  if (lbl) lbl.textContent = this.value;
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm PNG export ──────────────────────────────────────────────────────────
+document.getElementById('btn-realm-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `realm-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Asset Library ─────────────────────────────────────────────────────────────
+
+// ── Library state ────────────────────────────────────────────────────────────
+let _libraryOpen = false;
+let _libraryTypeFilter: AssetType | 'all' = 'all';
+let _librarySelectedId: string | null = null;
+
+// ── Thumbnail helpers ─────────────────────────────────────────────────────────
+function _renderThumbnail(_type: AssetType): string | null {
+  const thumbCanvas = document.getElementById('library-thumb-canvas') as HTMLCanvasElement | null;
+  if (!thumbCanvas) return null;
+  const ctx = thumbCanvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, 80, 80);
+  // Draw a small version of the current canvas as the thumbnail
+  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 80, 80);
+  return thumbCanvas.toDataURL('image/png');
+}
+
+// ── Grid rendering ────────────────────────────────────────────────────────────
+function _renderLibraryGrid() {
+  const grid  = document.getElementById('library-grid');
+  const empty = document.getElementById('library-empty');
+  const count = document.getElementById('library-count');
+  if (!grid) return;
+
+  const entries = _libraryTypeFilter === 'all'
+    ? assetLibrary.getAll()
+    : assetLibrary.getByType(_libraryTypeFilter);
+
+  const search = (document.getElementById('library-search') as HTMLInputElement)?.value ?? '';
+  const filtered = search.trim()
+    ? entries.filter(e => e.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : entries;
+
+  if (count) count.textContent = `(${assetLibrary.size})`;
+  if (filtered.length === 0) {
+    grid.style.display = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  grid.style.display = 'grid';
+  if (empty) empty.style.display = 'none';
+
+  grid.innerHTML = '';
+  for (const entry of filtered) {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#1a1610;border:1px solid '
+      + (_librarySelectedId === entry.id ? '#c8a96e' : '#3a3028')
+      + ';border-radius:3px;cursor:pointer;padding:4px;overflow:hidden;position:relative';
+    card.title = entry.name;
+    if (entry.thumbnail) {
+      const img = document.createElement('img');
+      img.src    = entry.thumbnail;
+      img.width  = 80;
+      img.height = 80;
+      img.style.cssText = 'display:block;width:100%;border-radius:2px;margin-bottom:2px';
+      card.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
+      const icon = { building: '🏠', dungeon: '⚔', settlement: '🏙', cave: '🌿' }[entry.type];
+      ph.textContent = icon;
+      card.appendChild(ph);
+    }
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:9px;color:#c8a96e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    lbl.textContent = entry.name;
+    card.appendChild(lbl);
+    card.addEventListener('click', () => _selectLibraryEntry(entry.id));
+    grid.appendChild(card);
+  }
+}
+
+function _selectLibraryEntry(id: string) {
+  _librarySelectedId = id;
+  const entry = assetLibrary.getAll().find(e => e.id === id) ?? null;
+  const section = document.getElementById('library-preview-section');
+  const nameLbl = document.getElementById('library-preview-name');
+  if (section) section.style.display = entry ? '' : 'none';
+  if (nameLbl && entry) nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
+  _renderLibraryGrid();
+}
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+function _setLibraryOpen(open: boolean) {
+  _libraryOpen = open;
+  const panel = document.getElementById('library-panel');
+  if (panel) panel.style.display = open ? '' : 'none';
+  if (open) _renderLibraryGrid();
+  // Also hide other control panels when library is open
+  const controlPanels = ['settlement-controls','dungeon-controls','cave-controls','realm-controls','solar-controls'];
+  for (const pid of controlPanels) {
+    const p = document.getElementById(pid);
+    if (p) p.style.display = open ? 'none' : (pid === `${studioMode}-controls` ? '' : 'none');
+  }
+}
+
+// ── Library toggle button (inject into sidebar header) ──────────────────────
+(function _injectLibraryToggle() {
+  const aside = document.querySelector('aside');
+  if (!aside) return;
+  const btn = document.createElement('button');
+  btn.id        = 'btn-library-toggle';
+  btn.className = 'btn';
+  btn.textContent = '📚 Library';
+  btn.style.cssText = 'width:100%;margin-bottom:6px';
+  aside.insertBefore(btn, aside.firstChild);
+  btn.addEventListener('click', () => _setLibraryOpen(!_libraryOpen));
+})();
+
+// ── Type pills ────────────────────────────────────────────────────────────────
+document.getElementById('library-type-pills')?.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('[data-ltype]') as HTMLElement | null;
+  if (!btn) return;
+  _libraryTypeFilter = btn.dataset.ltype as AssetType | 'all';
+  document.querySelectorAll('[data-ltype]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _renderLibraryGrid();
+});
+
+// ── Search input ──────────────────────────────────────────────────────────────
+document.getElementById('library-search')?.addEventListener('input', () => _renderLibraryGrid());
+
+// ── Export ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-export')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const entry = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  if (!entry) return;
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${entry.name.replace(/\s+/g, '_')}_${entry.seed}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-delete')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  assetLibrary.remove(_librarySelectedId);
+  _librarySelectedId = null;
+  const section = document.getElementById('library-preview-section');
+  if (section) section.style.display = 'none';
+  _renderLibraryGrid();
+});
+
+// ── Save helpers ─────────────────────────────────────────────────────────────
+let _toastTimer = 0;
+function _showToast(msg: string) {
+  let toast = document.getElementById('library-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'library-toast';
+    toast.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);'
+      + 'background:#2a4a2a;color:#90d090;border:1px solid #4a8a4a;border-radius:4px;'
+      + 'padding:6px 14px;font-size:12px;pointer-events:none;z-index:9999;transition:opacity 0.3s';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(_toastTimer);
+  _toastTimer = window.setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 1800);
+}
+
+function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown) {
+  const thumb = _renderThumbnail(type);
+  const entry: LibraryEntry = {
+    id:        `${type}_${seed}_${Date.now()}`,
+    type,
+    name,
+    seed,
+    createdAt: Date.now(),
+    tags:      [],
+    isCustom:  false,
+    data,
+    thumbnail: thumb,
+  };
+  assetLibrary.add(entry);
+  _showToast(`✓ Saved "${name}" to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
+}
+
+// ── Save: Settlement ──────────────────────────────────────────────────────────
+document.getElementById('btn-save-settlement')?.addEventListener('click', () => {
+  if (!currentModel) { alert('Generate a settlement first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  _saveToLibrary('settlement', `Settlement #${seed}`, seed, currentModel);
+});
+
+// ── Save: Dungeon ─────────────────────────────────────────────────────────────
+document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
+  if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan);
+});
+
+// ── Save: Cave ────────────────────────────────────────────────────────────────
+document.getElementById('btn-save-cave')?.addEventListener('click', () => {
+  if (!currentCaveData) { alert('Generate a cave first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  _saveToLibrary('cave', `Cave #${seed}`, seed, currentCaveData);
 });
 
 // ── Initial generation ────────────────────────────────────────────────────────

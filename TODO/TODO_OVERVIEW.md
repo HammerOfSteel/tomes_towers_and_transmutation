@@ -26,15 +26,15 @@ Design tools (Overworld Studio web app) that produce world data consumed by the 
 
 | File | Topic | Status |
 |---|---|---|
-| [OW-D Dwelling Layer](./01-overworld-studio/OW-D-dwelling-layer.md) | Floor plan renderer for houses | 🔲 |
-| [OW-E Layer Navigation](./01-overworld-studio/OW-E-layer-navigation.md) | Click-through realm→city→dungeon | 🔲 |
-| [OW-F4 Drill-Down Chain](./01-overworld-studio/OW-F4-drill-down-chain.md) | Solar→Planet→Realm→City full chain | 🔲 |
-| [Asset Library](./01-overworld-studio/asset-library.md) | Browse & manage all generated assets | ⚠️ GAP |
+| [OW-D Dwelling Layer](./01-overworld-studio/OW-D-dwelling-layer.md) | Floor plan renderer for houses | ✅ |
+| [OW-E Layer Navigation](./01-overworld-studio/OW-E-layer-navigation.md) | Click-through realm→city→dungeon | ✅ |
+| [OW-F4 Drill-Down Chain](./01-overworld-studio/OW-F4-drill-down-chain.md) | Solar→Planet→Realm→City full chain | ✅ |
+| [Asset Library](./01-overworld-studio/asset-library.md) | Browse & manage all generated assets | ⚠️ GAP ← **NEXT** |
 | [Game Inventory](./01-overworld-studio/game-inventory.md) | Inventory of all procedural asset types needed | ⚠️ GAP |
 | [Procedural Asset Designer](./01-overworld-studio/procedural-designer/asset-designer.md) | Visual designer for DNA-based entities | 🔲 |
 | [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md) | Tile variant tool for biome/dungeon tiles | ⚠️ GAP |
 
-**Shipped (OW-A thru OW-F3):** Realm Map, Dungeon tab, Cave tab, 3D Planet, Hex Planet, Planet DNA, Solar System ✅
+**Shipped (OW-A thru OW-F4):** Realm Map, Dungeon tab, Cave tab, 3D Planet, Hex Planet, Planet DNA, Solar System, Dwelling Layer (building-viewer), Layer Navigation (breadcrumbs + drill-downs), Full Solar→Planet→Realm→City chain ✅
 
 ---
 

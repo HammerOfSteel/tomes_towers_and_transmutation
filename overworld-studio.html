@@ -195,6 +195,10 @@
 
   <div class="workspace">
     <div class="canvas-wrap">
+      <!-- OW-E1: Breadcrumb navigation bar -->
+      <div id="studio-breadcrumb" style="display:none;align-items:center;gap:6px;padding:4px 10px;background:rgba(10,8,8,0.7);border-bottom:1px solid #3a3028;font-family:'IM Fell English',Georgia,serif;font-size:0.78rem;color:#c8a96e;flex-shrink:0;">
+        <span id="breadcrumb-items"></span>
+      </div>
       <div class="map-toolbar">
         <button class="tool-btn active" id="tool-select" title="Select [S] — hover to inspect wards">⬡</button>
         <button class="tool-btn"        id="tool-warp"   title="Warp [D] — drag to push/pull settlement">⊹</button>
@@ -304,6 +308,7 @@
         <div class="section-title">Export</div>
         <div style="display:flex;flex-direction:column;gap:5px">
           <button class="btn" id="btn-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-settlement" style="width:100%">💾 Save to Library</button>
           <button class="btn" id="btn-json" style="width:100%">📋 JSON</button>
         </div>
       </div>
@@ -348,6 +353,7 @@
         <div class="section">
           <div class="section-title">Export</div>
           <button class="btn" id="btn-dungeon-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-dungeon" style="width:100%">💾 Save to Library</button>
         </div>
 
       </div><!-- /dungeon-controls -->
@@ -401,6 +407,7 @@
         <div class="section">
           <div class="section-title">Export</div>
           <button class="btn" id="btn-cave-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-cave" style="width:100%">💾 Save to Library</button>
         </div>
 
       </div><!-- /cave-controls -->
@@ -519,8 +526,44 @@
         </div>
       </div><!-- /solar-controls -->
 
+      <!-- ── Asset Library ─────────────────────────────────── -->
+      <div id="library-panel" style="display:none">
+        <div class="section">
+          <div class="section-title">📚 Saved Assets <span id="library-count" style="opacity:0.5;font-weight:normal"></span></div>
+          <div class="pill-row pill-row--wrap" id="library-type-pills">
+            <button class="pill active" data-ltype="all">All</button>
+            <button class="pill" data-ltype="building">🏠</button>
+            <button class="pill" data-ltype="dungeon">⚔</button>
+            <button class="pill" data-ltype="settlement">🏙</button>
+            <button class="pill" data-ltype="cave">🌿</button>
+          </div>
+          <input type="text" id="library-search" placeholder="Search by name…"
+            style="width:100%;margin:4px 0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;box-sizing:border-box"/>
+          <div id="library-grid"
+            style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:300px;overflow-y:auto;margin-top:4px"></div>
+          <div id="library-empty"
+            style="color:var(--muted);font-size:11px;text-align:center;padding:16px 0;display:none">
+            No saved assets yet.<br>Use 💾 on any generated view.
+          </div>
+        </div>
+        <div class="section" id="library-preview-section" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
+            <span id="library-preview-name" style="font-size:11px;color:#e8d0a0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+              <button class="btn" id="btn-library-export" title="Export JSON" style="padding:2px 6px">⬇</button>
+              <button class="btn" id="btn-library-delete" title="Delete" style="padding:2px 6px;color:#c05050">✕</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /library-panel -->
+
+      <!-- Hidden canvas for thumbnail rendering -->
+      <canvas id="library-thumb-canvas" width="80" height="80" style="display:none"></canvas>
+
     </aside>
   </div>
+
+  <!-- Library toggle button injected into header by JS -->
 
   <footer>
     <span><span class="status-key">Space</span> new seed</span>
