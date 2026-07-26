@@ -23,6 +23,28 @@
 - [ ] `generateDungeonPlan(dungeonSeed, faction, floors)` → `DungeonPlan`
 - [ ] Uses `RoomEncounterDef.ts` already built ✅
 - [ ] Adds: chest loot tables, key item placement, boss room prep
+- [ ] Add site-family metadata to dungeon plans:
+  - `tower_floor`
+  - `library_ruin`
+  - `alchemy_vault`
+  - `tomb_barrow`
+  - `beast_lair`
+  - `mine_works`
+  - `observatory_ruin`
+  - `surface_threat`
+- [ ] Add reward-bias tags to dungeon plans:
+  - `knowledge_rich`
+  - `volatile_materials`
+  - `beast_capture_opportunity`
+  - `defense_intel`
+  - `candidate_archive`
+  - school bias tags where relevant
+- [ ] Add weighted placement support for:
+  - guaranteed core books
+  - school-deepening texts
+  - reagent/material family drops
+  - elite recruit opportunities
+  - defense-intel nodes / archive clues
 
 ### WG-3 — Overworld Ambient Plan
 - [ ] `generateOverworldAmbient(realmData)` → per-biome ambient spawn lists
@@ -31,8 +53,32 @@
 - [ ] Mountain: eagles/goats
 - [ ] All ambient creatures from `buildCreature(dna)` via PROC-B5
 
-### WG-4 — World Package Export
+### WG-4 — Reward Ecology, Recruit Sources & Pressure Hooks
+- [ ] Add worldgen support for material family distribution by site/biome:
+  - botanical reagents
+  - mineral / structural matter
+  - monster-derived components
+  - arcane residues
+  - knowledge artifacts
+- [ ] Add recruit ecology hooks so site families can bias:
+  - tower defenders
+  - beasts
+  - constructs
+  - spectral/undead units
+  - elite/signature companion opportunities
+- [ ] Add regional pressure contribution tags so generated sites can later feed:
+  - tower-domain threat buildup
+  - defense forecasts
+  - faction hostility / anomaly spread
+- [ ] Ensure worldgen output can answer:
+  - what this site is good for
+  - what book/material families it likely contains
+  - whether it can produce defense intel
+  - whether it can produce a meaningful recruit
+
+### WG-5 — World Package Export
 - [ ] `exportWorldPackage(seed)` → JSON bundle containing all plans
+- [ ] Include site-family, reward-bias, recruit-ecology, and pressure metadata
 - [ ] Can be imported by game runtime directly (no re-generation needed at runtime)
 - [ ] Used by OW-F4 "Export World Package" button
 

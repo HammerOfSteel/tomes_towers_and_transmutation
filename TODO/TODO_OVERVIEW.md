@@ -12,7 +12,7 @@
 03 Procedural Pipeline     → builders & creator ecosystem  ← FEEDS 02 + UI tools
 04 Characters              → species, enemies, NPCs  ← DEPENDS ON 03
 05 Content                 → quests, story, lore  ← DEPENDS ON 04
-06 Game Systems            → abilities, talents, audio, saves  ← DEPENDS ON 04+05
+06 Game Systems            → abilities, talents, tomes, alchemy, companions, defense, audio, saves  ← DEPENDS ON 04+05
 07 Testing                 → lock down everything above
 08 Polish & Release        → performance, UX, fundraising  ← LAST
 ```
@@ -90,11 +90,15 @@ Quests, story arcs, lore. **Depends on 04 (characters must exist first).**
 ---
 
 ### [06 — Game Systems](./06-game-systems/README.md)
-Abilities, talents, audio, saves. **Depends on 04 (characters must be defined).**
+Abilities, talents, tomes/research, alchemy/transmutation, companions, tower defense, audio, saves. **Depends on 04 + 05** for full gameplay integration.
 
 | File | Topic | Status |
 |---|---|---|
 | [Abilities & Talents](./06-game-systems/abilities-talents.md) | Phase D: full ability sets + talent trees | 🚧 |
+| [Tomes, Research & Spellcraft](./06-game-systems/tomes-research-spellcraft.md) | Book taxonomy, personal library, school mastery, research bridge, spell mutation | ⚠️ GAP |
+| [Alchemy, Transmutation & Crafting](./06-game-systems/alchemy-transmutation-crafting.md) | Reagents, refinement tiers, formulas, facility-gated crafting, instability | ⚠️ GAP |
+| [Follower & Companion System](./06-game-systems/follower-companion-system.md) | Familiars, followers, recruited monsters, field/tower roles, recovery | ⚠️ GAP |
+| [Tower Defense & Domain Events](./06-game-systems/tower-defense-domain-events.md) | Forecast, preparation, assault, consequences, doctrine, floor stakes | ⚠️ GAP |
 | [Audio System](./06-game-systems/audio.md) | Full SFX + music pipeline | ⚠️ GAP |
 | [Save System](./06-game-systems/save-system.md) | Slots, cloud, versioned saves | ⚠️ GAP |
 
@@ -140,7 +144,10 @@ Last pass. **Nothing here starts until 07 is green.**
 | G8 | **Day/Night integration** — DayNightSystem exists but NPC schedules, weather, world events not planned | Low | `06-game-systems/` |
 | G9 | **Performance budgets** — G1 says "60fps" but no per-system budget (triangles, draw calls, memory) | Medium | `07-testing/performance.md` |
 | G10 | **Creature Creator expansion** — CC-1 to CC-6 phases (sub-races, clothing, body morphing) | Medium | `04-characters/creature-creator.md` |
-| G11 | **Follower System** — quest rewards grant followers but no `FollowerSystem.ts` planned | High | `05-content/quests.md` |
+| G11 | **Tomes / Research / Spellcraft** — book progression, library state, research bridge, spell mutation lacked a dedicated plan | High | `06-game-systems/tomes-research-spellcraft.md` |
+| G12 | **Alchemy / Transmutation / Crafting** — core material-conversion pillar lacked a phased production plan | High | `06-game-systems/alchemy-transmutation-crafting.md` |
+| G13 | **Follower & Companion System** — quest rewards and recruits lacked a dedicated runtime/roster/assignment plan | High | `06-game-systems/follower-companion-system.md` |
+| G14 | **Tower Defense / Domain Events** — companion-centered defense and tower pressure loop lacked a dedicated plan | High | `06-game-systems/tower-defense-domain-events.md` |
 
 ---
 
@@ -155,6 +162,10 @@ Last pass. **Nothing here starts until 07 is green.**
 | B (Enemy) | `04-characters/enemy-system.md` |
 | C (Quests) | `05-content/quests.md` |
 | D (Abilities) | `06-game-systems/abilities-talents.md` |
+| D+ (Tomes / Research / Spellcraft) | `06-game-systems/tomes-research-spellcraft.md` |
+| D+ (Alchemy / Transmutation / Crafting) | `06-game-systems/alchemy-transmutation-crafting.md` |
+| D+ (Followers / Companions) | `06-game-systems/follower-companion-system.md` |
+| D+ (Tower Defense / Domain Events) | `06-game-systems/tower-defense-domain-events.md` |
 | E (Story + Solmor) | `05-content/story-arcs.md` + `solmor-encounters.md` |
 | NS (New Species) | `04-characters/new-species-expansion.md` |
 | F (Testing) | `07-testing/` |
