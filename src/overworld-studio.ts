@@ -1777,6 +1777,46 @@ function _updateBreadcrumb(): void {
  * Programmatically switch studio mode, optionally loading a specific seed.
  * Pushes to the breadcrumb stack if `breadcrumbLabel` is provided.
  */
+function _flashStudioTransition(label = '', durationMs = 180): void {
+  let flash = document.getElementById('studio-transition-flash') as HTMLDivElement | null;
+  if (!flash) {
+    flash = document.createElement('div');
+    flash.id = 'studio-transition-flash';
+    flash.style.cssText =
+      'position:fixed;inset:0;pointer-events:none;z-index:9998;display:none;opacity:0;' +
+      'background:radial-gradient(circle at center, rgba(255,245,220,0.85) 0%, rgba(200,170,110,0.35) 30%, rgba(20,18,14,0.92) 100%);' +
+      'transition:opacity 140ms ease-out;';
+    const text = document.createElement('div');
+    text.id = 'studio-transition-flash-label';
+    text.style.cssText =
+      'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
+      'font:700 18px Georgia,serif;letter-spacing:1px;color:#f0d8a8;text-shadow:0 2px 12px rgba(0,0,0,0.8);';
+    flash.appendChild(text);
+    document.body.appendChild(flash);
+  }
+
+  const labelEl = document.getElementById('studio-transition-flash-label');
+  if (labelEl) labelEl.textContent = label;
+
+  clearTimeout((flash as any)._hideTimer);
+  flash.style.display = 'block';
+  flash.style.opacity = '0';
+
+  (window as any).__owStudioTransitionCount = ((window as any).__owStudioTransitionCount ?? 0) + 1;
+  (window as any).__owStudioLastTransitionLabel = label;
+  (window as any).__owStudioLastTransitionAt = Date.now();
+
+  requestAnimationFrame(() => {
+    if (flash) flash.style.opacity = '1';
+    window.setTimeout(() => {
+      if (flash) flash.style.opacity = '0';
+      (flash as any)._hideTimer = window.setTimeout(() => {
+        if (flash) flash.style.display = 'none';
+      }, 170);
+    }, durationMs);
+  });
+}
+
 function _switchMode(
   mode:            StudioMode,
   seedOverride?:   number,
@@ -1800,6 +1840,8 @@ function _switchMode(
   if (seedOverride !== undefined) {
     seedInput.value = String(seedOverride);
   }
+
+  _flashStudioTransition(breadcrumbLabel || `${mode[0]!.toUpperCase()}${mode.slice(1)}`);
 
   // Simulate tab click
   const tab = document.querySelector<HTMLElement>(`.studio-tab[data-mode="${mode}"]`);
@@ -4287,8 +4329,24 @@ function showPlanetCanvas(show: boolean): void {
   if (typeSection) typeSection.style.display  = show ? '' : 'none';
 }
 
+function _publishRealmDebugState(): void {
+  (window as any).__owStudioCurrentRealmData = currentRealmData
+    ? {
+        W: currentRealmData.W,
+        H: currentRealmData.H,
+        settlements: currentRealmData.settlements.map(s => ({
+          x: s.x, y: s.y, name: s.name, size: s.size, faction: s.faction,
+        })),
+        dungeons: currentRealmData.dungeons.map(d => ({ x: d.x, y: d.y })),
+        seed: currentRealmData.seed,
+        view: realmViewMode,
+      }
+    : null;
+}
+
 function redrawRealm(): void {
   if (!currentRealmData) return;
+  _publishRealmDebugState();
   if (realmViewMode === 'planet') {
     showPlanetCanvas(true);
     if (hexPlanetRenderer) hexPlanetRenderer.stop();
@@ -4394,6 +4452,7 @@ function generateRealmView(): void {
   const [W, H] = REALM_SIZES[size] ?? REALM_SIZES[2]!;
   const t0 = performance.now();
   currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);
+  _publishRealmDebugState();
   redrawRealm();
   const ms = (performance.now()-t0).toFixed(1);
   genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
@@ -4467,7 +4526,10 @@ document.getElementById('btn-solar-png')?.addEventListener('click', () => {
 document.getElementById('realm-view-pills')!.addEventListener('click', e => {
   const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
   if (!pill?.dataset.view) return;
-  realmViewMode = pill.dataset.view as RealmViewMode;
+  const nextView = pill.dataset.view as RealmViewMode;
+  if (nextView === realmViewMode) return;
+  realmViewMode = nextView;
+  _flashStudioTransition(nextView === 'map' ? 'Surface Map' : nextView === 'planet' ? 'Planet View' : 'Hex Sphere');
   document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
   if (currentRealmData) redrawRealm();

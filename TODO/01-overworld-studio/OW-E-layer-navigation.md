@@ -26,7 +26,7 @@
 
 ### OW-E5 — 3D Planet → Realm Surface
 - [x] View pills (🗺 Map / 🌍 Planet / 🌐 Hex) wired to `realmViewMode` — switching to Map shows 2D realm
-- [ ] Smooth transition flash effect — deferred
+- [x] Smooth transition flash effect between realm view switches / drill-down transitions
 
 ### OW-E6 — OverworldScene Integration (future)
 - [ ] `OverworldScene.ts` reads `SettlementModel` JSON → places 3D buildings at ward centres via `BuildingDNA`
@@ -56,8 +56,8 @@
 - [ ] Dungeon seed derived from realm position
 
 ### OW-E5 — 3D Planet → Realm Surface
-- [ ] "View Surface Map" button on Planet/Hex view → switch to 🗺 Map view for same realm data
-- [ ] Smooth transition: flash effect, not instant
+- [x] "View Surface Map" equivalent achieved via view pills (🗺 Map / 🌍 Planet / 🌐 Hex)
+- [x] Smooth transition: flash effect, not instant
 
 ### OW-E6 — OverworldScene Integration (future)
 - [ ] `OverworldScene.ts` reads `SettlementModel` JSON → places 3D buildings at ward centres via `BuildingDNA`
