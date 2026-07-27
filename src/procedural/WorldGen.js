@@ -33,7 +33,10 @@ function settlementName(seed) {
 // ── Building generation ───────────────────────────────────────────────────────
 const BUILDING_KINDS = ['house', 'house', 'house', 'inn', 'shop', 'guild', 'well', 'ruin'];
 const BUILDING_STYLES = ['thatched', 'stone', 'timber', 'arcane'];
-function generateSettlementBuildings(settlementSeed, centerX, centerZ, count) {
+function generateSettlementBuildings(settlementId, settlementSeed, centerX, centerZ, count) {
+    const overrides = readCustomSettlementBuildingOverrides(settlementId, settlementSeed);
+    if (overrides && overrides.length > 0)
+        return overrides;
     const r = mulberry32(settlementSeed ^ 0xBEEF_1234);
     const buildings = [];
     for (let i = 0; i < count; i++) {
@@ -58,6 +61,83 @@ function generateSettlementBuildings(settlementSeed, centerX, centerZ, count) {
 // ── NPC generation ────────────────────────────────────────────────────────────
 const NPC_ROLES = ['merchant', 'guard', 'innkeeper', 'quest_giver', 'scholar', 'elder'];
 const NPC_SPECIES = ['human', 'undead', 'vulperia', 'slime', 'elf', 'celestial', 'draconic'];
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+function isBuildingKind(value) {
+    return value === 'house'
+        || value === 'inn'
+        || value === 'shop'
+        || value === 'guild'
+        || value === 'ruin'
+        || value === 'well'
+        || value === 'barn';
+}
+function isBuildingStyle(value) {
+    return value === 'thatched'
+        || value === 'stone'
+        || value === 'timber'
+        || value === 'arcane';
+}
+function isBuildingFloors(value) {
+    return value === 1 || value === 2 || value === 3;
+}
+function readCustomSettlementBuildingOverrides(settlementId, settlementSeed) {
+    if (typeof localStorage === 'undefined')
+        return null;
+    try {
+        const raw = localStorage.getItem('ttt_asset_library');
+        if (!raw)
+            return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.entries))
+            return null;
+        const matches = [];
+        for (const entry of parsed.entries) {
+            if (!isPlainObject(entry))
+                continue;
+            if (entry.type !== 'building' || entry.isCustom !== true)
+                continue;
+            const data = entry.data;
+            if (!isPlainObject(data))
+                continue;
+            const dataSettlementId = typeof data.settlementId === 'string' ? data.settlementId : null;
+            const entrySeed = typeof entry.seed === 'number' ? entry.seed : null;
+            const taggedToSettlement = Array.isArray(entry.tags)
+                && entry.tags.some(tag => typeof tag === 'string' && tag === `settlement:${settlementId}`);
+            if (dataSettlementId !== settlementId && !taggedToSettlement && entrySeed !== settlementSeed)
+                continue;
+            if (!isBuildingKind(data.kind) || !isBuildingStyle(data.style) || !isBuildingFloors(data.floors) || !isPlainObject(data.pos))
+                continue;
+            const px = typeof data.pos.x === 'number' ? data.pos.x : null;
+            const py = typeof data.pos.y === 'number' ? data.pos.y : 0;
+            const pz = typeof data.pos.z === 'number' ? data.pos.z : null;
+            if (px === null || pz === null)
+                continue;
+            matches.push({
+                id: typeof data.buildingId === 'string'
+                    ? data.buildingId
+                    : (typeof entry.id === 'string' ? entry.id : `bld-${settlementSeed}-custom-${matches.length}`),
+                kind: data.kind,
+                style: data.style,
+                floors: data.floors,
+                pos: { x: px, y: py, z: pz },
+                rotation: typeof data.rotation === 'number' ? data.rotation : 0,
+                seed: typeof data.seed === 'number'
+                    ? data.seed
+                    : (typeof entry.seed === 'number' ? entry.seed : ((settlementSeed ^ (matches.length * 0x9E3779B9)) >>> 0)),
+                hasInterior: typeof data.hasInterior === 'boolean' ? data.hasInterior : data.kind !== 'well',
+            });
+        }
+        if (matches.length === 0)
+            return null;
+        matches.sort((a, b) => a.seed - b.seed || a.id.localeCompare(b.id));
+        return matches;
+    }
+    catch {
+        return null;
+    }
+}
 export function generateSettlementNpcs(settlementId, settlementSeed, centerX, centerZ, count) {
     const r = mulberry32(settlementSeed ^ 0xCAFE_BABE);
     const npcs = [];
@@ -124,7 +204,7 @@ export function generateWorldPlan(seed, opts = {}) {
             type,
             pos: { x: centerX, y: 0, z: centerZ },
             seed: settlementSeed,
-            buildings: generateSettlementBuildings(settlementSeed, centerX, centerZ, buildingCount),
+            buildings: generateSettlementBuildings(id, settlementSeed, centerX, centerZ, buildingCount),
             npcs: generateSettlementNpcs(id, settlementSeed, centerX, centerZ, npcCount),
         });
     }

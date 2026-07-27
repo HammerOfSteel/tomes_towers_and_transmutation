@@ -118,4 +118,141 @@ describe('WorldGen structure', () => {
             expect(e.patrolRadius).toBeGreaterThan(0);
         }
     });
+    it('uses custom settlement NPC overrides from the asset library when present', () => {
+        localStorage.removeItem('ttt_asset_library');
+        const baseline = generateWorldPlan(SEED_A, { settlementCount: 1 });
+        const settlement = baseline.settlements[0];
+        const customNpc = {
+            npcId: 'npc-custom-1',
+            displayName: 'Archivist Sel',
+            species: 'elf',
+            role: 'scholar',
+            settlementId: settlement.id,
+            settlementName: settlement.name,
+            pos: { x: 12, y: 0, z: -7 },
+            npcSeed: 123456,
+        };
+        localStorage.setItem('ttt_asset_library', JSON.stringify({
+            version: 1,
+            entries: [
+                {
+                    id: 'library_npc_custom_1',
+                    type: 'npc',
+                    name: 'Archivist Sel (scholar)',
+                    seed: settlement.seed,
+                    createdAt: 1,
+                    tags: [`settlement:${settlement.id}`, 'role:scholar', 'species:elf'],
+                    isCustom: true,
+                    thumbnail: null,
+                    data: customNpc,
+                },
+            ],
+        }));
+        const overridden = generateWorldPlan(SEED_A, { settlementCount: 1 });
+        const npcs = overridden.settlements[0].npcs;
+        expect(npcs).toHaveLength(1);
+        expect(npcs[0].id).toBe('npc-custom-1');
+        expect(npcs[0].species).toBe('elf');
+        expect(npcs[0].role).toBe('scholar');
+        expect(npcs[0].settlementId).toBe(settlement.id);
+        expect(npcs[0].pos).toEqual({ x: 12, y: 0, z: -7 });
+        localStorage.removeItem('ttt_asset_library');
+    });
+    it('uses custom settlement building overrides from the asset library when present', () => {
+        localStorage.removeItem('ttt_asset_library');
+        const baseline = generateWorldPlan(SEED_A, { settlementCount: 1 });
+        const settlement = baseline.settlements[0];
+        const customBuilding = {
+            buildingId: 'bld-custom-1',
+            settlementId: settlement.id,
+            kind: 'inn',
+            style: 'arcane',
+            floors: 3,
+            rotation: 1.25,
+            seed: 424242,
+            hasInterior: true,
+            pos: { x: 21, y: 0, z: -13 },
+        };
+        localStorage.setItem('ttt_asset_library', JSON.stringify({
+            version: 1,
+            entries: [
+                {
+                    id: 'library_building_custom_1',
+                    type: 'building',
+                    name: 'Custom Arcane Inn',
+                    seed: settlement.seed,
+                    createdAt: 1,
+                    tags: [`settlement:${settlement.id}`, 'building:bld-custom-1', 'dtype:building'],
+                    isCustom: true,
+                    thumbnail: null,
+                    data: customBuilding,
+                },
+            ],
+        }));
+        const overridden = generateWorldPlan(SEED_A, { settlementCount: 1 });
+        const buildings = overridden.settlements[0].buildings;
+        expect(buildings).toHaveLength(1);
+        expect(buildings[0].id).toBe('bld-custom-1');
+        expect(buildings[0].kind).toBe('inn');
+        expect(buildings[0].style).toBe('arcane');
+        expect(buildings[0].floors).toBe(3);
+        expect(buildings[0].rotation).toBe(1.25);
+        expect(buildings[0].seed).toBe(424242);
+        expect(buildings[0].hasInterior).toBe(true);
+        expect(buildings[0].pos).toEqual({ x: 21, y: 0, z: -13 });
+        localStorage.removeItem('ttt_asset_library');
+    });
+    it('falls back to procedural building generation when no matching building overrides exist', () => {
+        localStorage.setItem('ttt_asset_library', JSON.stringify({
+            version: 1,
+            entries: [
+                {
+                    id: 'library_building_other_settlement',
+                    type: 'building',
+                    name: 'Other Settlement Building',
+                    seed: 999999,
+                    createdAt: 1,
+                    tags: ['settlement:not-the-right-one', 'dtype:building'],
+                    isCustom: true,
+                    thumbnail: null,
+                    data: {
+                        buildingId: 'bld-other-1',
+                        settlementId: 'not-the-right-one',
+                        kind: 'shop',
+                        style: 'stone',
+                        floors: 2,
+                        pos: { x: 5, y: 0, z: 5 },
+                    },
+                },
+            ],
+        }));
+        const plan = generateWorldPlan(SEED_A, { settlementCount: 1 });
+        expect(plan.settlements[0].buildings.length).toBeGreaterThan(1);
+        localStorage.removeItem('ttt_asset_library');
+    });
+    it('ignores malformed custom building overrides', () => {
+        localStorage.setItem('ttt_asset_library', JSON.stringify({
+            version: 1,
+            entries: [
+                {
+                    id: 'library_building_bad_1',
+                    type: 'building',
+                    name: 'Broken Building',
+                    seed: SEED_A,
+                    createdAt: 1,
+                    tags: ['dtype:building'],
+                    isCustom: true,
+                    thumbnail: null,
+                    data: {
+                        settlementId: 'broken',
+                        kind: 'not-a-kind',
+                        floors: 'bad',
+                        pos: { x: 'bad', z: null },
+                    },
+                },
+            ],
+        }));
+        expect(() => generateWorldPlan(SEED_A, { settlementCount: 1 })).not.toThrow();
+        localStorage.removeItem('ttt_asset_library');
+    });
 });
