@@ -24,6 +24,33 @@ async function clearAssetLibrary(page: Page) {
   await page.waitForTimeout(800);
 }
 
+async function openBuildingModal(page: Page) {
+  const points = await page.evaluate(() => {
+    const canvas = document.getElementById('map-canvas') as HTMLCanvasElement | null;
+    if (!canvas) return [];
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.left + rect.width * 0.5;
+    const cy = rect.top + rect.height * 0.5;
+    return [
+      { x: cx, y: cy },
+      { x: cx - rect.width * 0.08, y: cy },
+      { x: cx + rect.width * 0.08, y: cy },
+      { x: cx, y: cy - rect.height * 0.08 },
+      { x: cx, y: cy + rect.height * 0.08 },
+      { x: cx - rect.width * 0.06, y: cy - rect.height * 0.06 },
+      { x: cx + rect.width * 0.06, y: cy + rect.height * 0.06 },
+    ];
+  });
+
+  for (const point of points) {
+    await page.mouse.dblclick(point.x, point.y);
+    await page.waitForTimeout(180);
+    if (await page.locator('#btn-save-building').isVisible()) return;
+  }
+
+  throw new Error('Failed to open building modal from settlement canvas');
+}
+
 test('Asset Library saves settlement, dungeon, and cave entries and persists across reload', async ({ page }) => {
   const console_ = attachFullConsoleCapture(page);
   await clearAssetLibrary(page);
@@ -249,6 +276,38 @@ test('Asset Library saves settlement NPCs as reusable npc sub-assets', async ({ 
 
   const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
   expect(preview?.type).toBe('npc');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});
+
+test('Asset Library saves building blueprints from the settlement building modal', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await openBuildingModal(page);
+  await expect(page.locator('#btn-save-building')).toBeVisible();
+
+  await page.click('#btn-save-building');
+  await page.waitForFunction(() => (window as any).__assetLibraryLastSaved?.type === 'building');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
+
+  const saved = await page.evaluate(() => (window as any).__assetLibraryLastSaved);
+  expect(saved?.type).toBe('building');
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="building"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(1);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'building');
+  await expect(page.locator('#library-preview-name')).toContainText('(building, seed');
+  await SS(page, '07-preview-building-blueprint');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('building');
 
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);

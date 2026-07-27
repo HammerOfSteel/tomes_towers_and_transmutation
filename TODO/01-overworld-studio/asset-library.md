@@ -31,6 +31,7 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 
 ### AL-3 — Studio Generator → Library Integration
 - [x] Settlement, Dungeon, and Cave generators offer "Save to Library"
+- [x] Building modal now offers "💾 Save to Library" for building blueprints as `AssetLibrary` type=`building`
 - [x] Persisted entries survive reload and can be previewed back into the studio
 - [x] Settlement generator: "Save all NPCs from this settlement"
 - [x] Dungeon generator: "Save room layouts from this dungeon" as separate reusable sub-assets

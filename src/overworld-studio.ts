@@ -2089,6 +2089,8 @@ canvas.addEventListener('dblclick', e => {
 let _bModal: HTMLDivElement | null = null;
 let _bModalCanvas: HTMLCanvasElement | null = null;
 let _bModalPlan: DungeonPlan | null = null;
+let _bModalTitle = 'Building';
+let _bModalTags: string[] = [];
 let _bModalZoom = 1.0;
 let _bModalPanX = 0;
 let _bModalPanY = 0;
@@ -2128,6 +2130,19 @@ function _bModalSetup(): void {
     'border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
   closeBtn.addEventListener('click', hideBuildingModal);
   hdr.appendChild(closeBtn);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.id = 'btn-save-building';
+  saveBtn.textContent = '💾 Save to Library';
+  saveBtn.title = 'Save this building blueprint to the Asset Library';
+  saveBtn.style.cssText =
+    'padding:2px 9px;background:#1e1808;color:#d8b86a;border:1px solid #5a4020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  saveBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    _saveToLibrary('building', _bModalTitle, _bModalPlan.seed, _bModalPlan, _bModalTags);
+  });
+  hdr.insertBefore(saveBtn, closeBtn);
 
   // 🎮 Play in 3D — opens the game, auto-loads building, enters creative mode
   const play3dBtn = document.createElement('button');
@@ -2220,10 +2235,16 @@ function _bModalRedraw(): void {
   ctx.restore();
 }
 
-function showBuildingModal(plan: DungeonPlan, title: string, _floors: number): void {
+function showBuildingModal(plan: DungeonPlan, title: string, floors: number): void {
   _bModalSetup();
   if (!_bModal || !_bModalCanvas) return;
   _bModalPlan  = plan;
+  _bModalTitle = title;
+  _bModalTags  = [
+    'dtype:building',
+    `floors:${floors}`,
+    `startRoom:${plan.startRoomId}`,
+  ];
   _bModalZoom  = 1.0;
   _bModalPanX  = 0;
   _bModalPanY  = 0;
