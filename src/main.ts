@@ -1698,6 +1698,7 @@ async function main() {
   // Building preview now uses building-viewer.html — remove any stale key
   // so it doesn't interfere if index.html is opened directly.
   localStorage.removeItem('ttt_building_preview');
+  const _pendingOverworldPreview = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
   mainMenu.show();
 
   // ── Princess Atelier quick-play handoff ───────────────────────────────────
@@ -1727,29 +1728,8 @@ async function main() {
   }
 
   // ── Overworld Studio settlement preview handoff ───────────────────────────
-  // The Studio writes a lightweight settlement payload to localStorage, then
-  // opens index.html. We auto-start and jump straight to the exterior so
-  // OverworldScene can render the preview settlement as a 3D overlay.
-  {
-    const previewRaw = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
-    if (previewRaw) {
-      try {
-        (window as any).__tttOverworldPreviewStage = 'detected';
-        mainMenu.hide();
-        (window as any).__tttOverworldPreviewStage = 'starting-game';
-        startGame();
-        (window as any).__tttOverworldPreviewStage = 'switching-exterior';
-        switchToExterior();
-        (window as any).__tttOverworldPreviewStage = 'booted';
-        (window as any).__tttOverworldPreviewBooted = true;
-        localStorage.removeItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
-      } catch (e) {
-        (window as any).__tttOverworldPreviewStage = 'error';
-        (window as any).__tttOverworldPreviewError = String(e);
-        console.error('[overworld-preview] boot failed:', e);
-      }
-    }
-  }
+  // Deferred until the end of main() so late-initialized systems (HUD, spells,
+  // ability bar, etc.) already exist before startGame() runs.
 
   // ── Test / debug hook (dev builds only) ──────────────────────────────────
   // Exposed on window so Playwright e2e tests can drive the game without
@@ -3197,6 +3177,25 @@ async function main() {
     if (import.meta.env.DEV) CreativeMode.update(dt);
   });
   // Game loop is started by MainMenu.onPlay — not here.
+
+  // ── Deferred Overworld Studio settlement preview handoff ─────────────────
+  if (_pendingOverworldPreview) {
+    try {
+      (window as any).__tttOverworldPreviewStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttOverworldPreviewStage = 'starting-game';
+      startGame();
+      (window as any).__tttOverworldPreviewStage = 'switching-exterior';
+      switchToExterior();
+      (window as any).__tttOverworldPreviewStage = 'booted';
+      (window as any).__tttOverworldPreviewBooted = true;
+      localStorage.removeItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+    } catch (e) {
+      (window as any).__tttOverworldPreviewStage = 'error';
+      (window as any).__tttOverworldPreviewError = String(e);
+      console.error('[overworld-preview] boot failed:', e);
+    }
+  }
 }
 
 // Export the startup promise so unit tests can await full initialisation.
