@@ -34,7 +34,7 @@ Design tools (Overworld Studio web app) that produce world data consumed by the 
 | [Asset Library](./01-overworld-studio/asset-library.md)                                  | Browse & manage all generated assets                                      | 🚧     |
 | [Game Inventory](./01-overworld-studio/game-inventory.md)                                | Master contract for procedural asset outputs needed from Overworld Studio | 🚧     |
 | [Procedural Asset Designer](./01-overworld-studio/procedural-designer/asset-designer.md) | Visual designer for DNA-based entities                                    | 🔲     |
-| [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md)   | Tile variant tool for biome/dungeon tiles                                 | ⚠️ GAP |
+| [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md)   | Tile variant tool for biome/dungeon tiles                                 | 🔲     |
 
 **Shipped (OW-A thru OW-F4):** Realm Map, Dungeon tab, Cave tab, 3D Planet, Hex Planet, Planet DNA, Solar System, Dwelling Layer (building-viewer), Layer Navigation (breadcrumbs + drill-downs), Full Solar→Planet→Realm→City chain ✅
 
@@ -146,7 +146,7 @@ Last pass. **Nothing here starts until 07 is green.**
 | G1  | **Game World Integration** — no plan for how realm map → 3D playable world                                                                                          | Blocking demo | `02-game-world-integration/`                               |
 | G2  | **Asset Library UI** — partial; save/preview/export/import/rename/duplicate/delete exist for Studio asset types, but full creator/runtime coverage is still missing | Medium        | `01-overworld-studio/asset-library.md`                     |
 | G3  | **Game Inventory** — stabilize the master contract of procedural asset outputs so phase-01 tools have a clear source of truth                                       | Medium        | `01-overworld-studio/game-inventory.md`                    |
-| G4  | **Procedural Tile Designer** — tiles (floor, wall, terrain) have no dedicated design/variant tool                                                                   | Medium        | `01-overworld-studio/procedural-designer/tile-designer.md` |
+| G4  | **Procedural Tile Designer** — tracked plan exists, but tiles (floor, wall, terrain) still have no dedicated design/variant tool implementation                      | Medium        | `01-overworld-studio/procedural-designer/tile-designer.md` |
 | G5  | **Audio System** — referenced everywhere but has no phased plan                                                                                                     | High          | `06-game-systems/audio.md`                                 |
 | G6  | **Save System** — basic save exists, no slots/versioning/cloud plan                                                                                                 | Medium        | `06-game-systems/save-system.md`                           |
 | G7  | **OW-D/E detail** — Dwelling layer and layer navigation have almost no task breakdown                                                                               | Medium        | `01-overworld-studio/OW-D/E` files                         |

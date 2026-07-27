@@ -1,7 +1,7 @@
 # Procedural Tile Designer
-> ⚠️ GAP — No dedicated tool or plan for procedural terrain/dungeon tile variants.
+> Planned tile-variant design surface for procedural terrain, dungeon, cave, and settlement tiles.
 
-## Status: ⚠️ Not tracked anywhere
+## Status: 🔲 Planned — tracked contract exists, but no dedicated tool or runtime tile DNA system has shipped yet
 
 ## What Tiles Are
 Tiles are the repeatable ground/wall/feature units that compose:
@@ -10,7 +10,7 @@ Tiles are the repeatable ground/wall/feature units that compose:
 - Cave biome terrain (crystal, lava, ice, etc.)
 - Settlement ground (cobble, dirt, wood planks, etc.)
 
-Currently these are one-off functions in `src/rendering/` with no systematic management.
+Currently these are scattered rendering/building helpers with no systematic tile DNA, registry, or designer workflow.
 
 ## Proposed: Tile Variant System
 
