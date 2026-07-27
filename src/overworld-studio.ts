@@ -1599,6 +1599,7 @@ document.getElementById('faction-pills')!.addEventListener('click', e => {
   if (!pill) return;
   document.querySelectorAll('#faction-pills .pill').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
+  updateLegend((pill.dataset.faction as SettlementFaction) ?? 'human');
   generate(false);  // regen — faction changes ward assignments
 });
 
@@ -2210,12 +2211,18 @@ function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
 
 
 const legendEl = document.getElementById('ward-legend')!;
-for (const [type, col] of Object.entries(WARD_COLORS)) {
-  const row = document.createElement('div');
-  row.className = 'legend-row';
-  row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${WARD_LABELS[type as WardType]}</span>`;
-  legendEl.appendChild(row);
+
+function updateLegend(faction: SettlementFaction = 'human'): void {
+  legendEl.innerHTML = '';
+  for (const [type, col] of Object.entries(WARD_COLORS)) {
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${factionWardLabel(faction, type as WardType)}</span>`;
+    legendEl.appendChild(row);
+  }
 }
+
+updateLegend('human');
 
 // ── Dungeon Floor Plan Renderer (OW-B) ───────────────────────────────────────
 
