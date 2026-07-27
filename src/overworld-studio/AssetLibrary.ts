@@ -239,6 +239,24 @@ export class AssetLibrary {
     return entry;
   }
 
+  /** Rename an existing entry. Empty names are rejected. */
+  rename(id: string, nextName: string): LibraryEntry | null {
+    const trimmed = nextName.trim();
+    if (!trimmed) return null;
+    const idx = this._entries.findIndex(e => e.id === id);
+    if (idx < 0) return null;
+    const updated: LibraryEntry = {
+      ...this._entries[idx]!,
+      name: trimmed,
+      isCustom: true,
+    };
+    this._entries[idx] = updated;
+    this._save();
+    console.log(`[AssetLibrary] renamed ${id} -> "${trimmed}"`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return updated;
+  }
+
   // ── Serialisation ─────────────────────────────────────────────────────────
 
   toJSON(): StoredSnapshot {

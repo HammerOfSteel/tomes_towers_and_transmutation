@@ -4730,8 +4730,10 @@ function _selectLibraryEntry(id: string) {
   const entry = assetLibrary.getAll().find(e => e.id === id) ?? null;
   const section = document.getElementById('library-preview-section');
   const nameLbl = document.getElementById('library-preview-name');
+  const renameInput = document.getElementById('library-rename-input') as HTMLInputElement | null;
   if (section) section.style.display = entry ? '' : 'none';
   if (nameLbl && entry) nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
+  if (renameInput) renameInput.value = entry?.name ?? '';
   _previewLibraryEntry(entry);
   _renderLibraryGrid();
 }
@@ -4806,6 +4808,27 @@ document.getElementById('library-import-file')?.addEventListener('change', async
   } finally {
     if (input) input.value = '';
   }
+});
+
+// ── Rename ────────────────────────────────────────────────────────────────────
+function _renameSelectedLibraryEntry() {
+  if (!_librarySelectedId) return;
+  const input = document.getElementById('library-rename-input') as HTMLInputElement | null;
+  const current = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  if (!input || !current) return;
+  const updated = assetLibrary.rename(_librarySelectedId, input.value);
+  if (!updated) {
+    input.value = current.name;
+    _showToast('✕ Name cannot be empty');
+    return;
+  }
+  _renderLibraryGrid();
+  _selectLibraryEntry(updated.id);
+  _showToast(`✓ Renamed to "${updated.name}"`);
+}
+document.getElementById('btn-library-rename')?.addEventListener('click', _renameSelectedLibraryEntry);
+document.getElementById('library-rename-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') _renameSelectedLibraryEntry();
 });
 
 // ── Duplicate ─────────────────────────────────────────────────────────────────

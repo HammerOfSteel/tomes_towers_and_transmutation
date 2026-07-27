@@ -61,7 +61,7 @@ test('Asset Library saves settlement, dungeon, and cave entries and persists acr
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
 
-test('Asset Library previews persisted entries and supports export/import/duplicate/delete', async ({ page }) => {
+test('Asset Library previews persisted entries and supports export/import/rename/duplicate/delete', async ({ page }) => {
   const console_ = attachFullConsoleCapture(page);
   await clearAssetLibrary(page);
 
@@ -163,6 +163,12 @@ test('Asset Library previews persisted entries and supports export/import/duplic
   await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'cave');
   await expect(page.locator('#library-preview-name')).toContainText('Cave');
   await SS(page, '04-preview-cave');
+
+  // Rename selected cave and verify preview/grid update
+  await page.fill('#library-rename-input', 'My Renamed Cave');
+  await page.click('#btn-library-rename');
+  await expect(page.locator('#library-preview-name')).toContainText('My Renamed Cave');
+  await expect(page.locator('#library-grid > div').first()).toContainText('My Renamed Cave');
 
   // Duplicate selected cave and verify library grows
   await page.click('#btn-library-duplicate');

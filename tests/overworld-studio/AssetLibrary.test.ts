@@ -99,6 +99,37 @@ describe('AssetLibrary importEntry()', () => {
   });
 });
 
+describe('AssetLibrary rename()', () => {
+  it('renames an existing entry and marks it custom', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', name: 'Old Name', isCustom: false }));
+
+    const updated = lib.rename('e1', 'New Name');
+
+    expect(updated).not.toBeNull();
+    expect(updated?.name).toBe('New Name');
+    expect(updated?.isCustom).toBe(true);
+    expect(lib.getAll()[0]?.name).toBe('New Name');
+  });
+
+  it('rejects empty rename values', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', name: 'Original' }));
+
+    expect(lib.rename('e1', '   ')).toBeNull();
+    expect(lib.getAll()[0]?.name).toBe('Original');
+  });
+
+  it('returns null when renaming a missing entry', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    expect(lib.rename('missing', 'Whatever')).toBeNull();
+  });
+});
+
 describe('AssetLibrary duplicate()', () => {
   it('duplicates an entry with a fresh id, later createdAt, and copied data', () => {
     const lib = new AssetLibrary('ttt_asset_library_test');
