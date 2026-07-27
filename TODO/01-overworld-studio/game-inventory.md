@@ -10,6 +10,28 @@ Each section maps to a generator in the Overworld Studio sidebar.
 The **Generator Coverage** column tells you which Studio tool produces that asset type.  
 When a row is fully ✅ it means the generator can produce it *and* it appears in the game world.
 
+## Phase 01 Contract
+
+This file is the **content contract** for the remaining `01-overworld-studio` work.
+
+For each asset family, classify it as one of:
+- **Studio Now** — already generated or managed by an existing Overworld Studio tool
+- **Studio Next** — must gain a Studio creator/generator surface in phase 01
+- **Runtime Later** — important game content, but not part of the current phase-01 implementation slice
+
+Phase 01 is complete when the required **Studio Now** and **Studio Next** contracts are explicit and can drive:
+- Asset Library expansion
+- Procedural Asset Designer work
+- Procedural Tile Designer work
+
+## Studio Output Contract
+
+Every phase-01 generator entry should make these outputs explicit:
+- **Generator surface** — which Studio page/tab owns the flow
+- **Primary output** — the model/DNA/blueprint the tool generates
+- **Library path** — whether the output saves to `AssetLibrary`
+- **Runtime dependency** — whether downstream phases consume it later
+
 ---
 
 ## 1 · WORLD STRUCTURE (top-down scope)
