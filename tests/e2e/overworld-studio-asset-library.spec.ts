@@ -8,22 +8,25 @@ const BASE = process.env.BASE_URL ?? 'http://localhost:5174';
 const SS = (page: Page, name: string) =>
   page.screenshot({ path: `tests/e2e/screenshots/ow-lib-${name}.png` });
 
-async function clearAssetLibrary(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.removeItem('ttt_asset_library');
-  });
-}
-
 async function openStudio(page: Page) {
   await page.goto(`${BASE}/overworld-studio.html`);
   await page.locator('#map-canvas').waitFor({ state: 'visible', timeout: 20_000 });
   await page.waitForTimeout(800); // initial generation settles
 }
 
+async function clearAssetLibrary(page: Page) {
+  await openStudio(page);
+  await page.evaluate(() => {
+    localStorage.removeItem('ttt_asset_library');
+  });
+  await page.reload();
+  await page.locator('#map-canvas').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.waitForTimeout(800);
+}
+
 test('Asset Library saves settlement, dungeon, and cave entries and persists across reload', async ({ page }) => {
   const console_ = attachFullConsoleCapture(page);
   await clearAssetLibrary(page);
-  await openStudio(page);
 
   await page.click('#btn-save-settlement');
   await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
@@ -61,7 +64,6 @@ test('Asset Library saves settlement, dungeon, and cave entries and persists acr
 test('Asset Library previews persisted entries in the main canvas and supports export/delete', async ({ page }) => {
   const console_ = attachFullConsoleCapture(page);
   await clearAssetLibrary(page);
-  await openStudio(page);
 
   await page.click('#btn-save-settlement');
   await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
