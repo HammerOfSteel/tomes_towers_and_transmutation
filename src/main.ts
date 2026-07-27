@@ -80,8 +80,6 @@ import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { WallOcclusionManager } from '@/rendering/WallOcclusionManager';
-import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
-import type { BuildingKind, Faction, BuildingSize } from '@/world/buildings/BuildingDNA';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
 
 async function main() {
@@ -192,10 +190,6 @@ async function main() {
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
 
-    // Building room IDs (e.g. "inn_f0_r1") must not trigger tower-specific
-    // story events or floor toasts — declare once here for all guards below.
-    const isBuildingRoom = /^[a-z]+_f\d+_r\d+$/.test(bp.id);
-
     // Apply ambiance preset, then optionally override intensity for fade.
     const preset = (bp as any).lightPreset ?? 'dungeon';
     lighting.applyPreset(preset);
@@ -216,7 +210,7 @@ async function main() {
     );
     // Floor name location card — shown only when the floor index actually changes
     // (side-room doors share the same floor index and don’t retrigger).
-    if (!isBuildingRoom && bp.floor !== _prevFloorIdx) {
+    if (bp.floor !== _prevFloorIdx) {
       _prevFloorIdx = bp.floor;
       _currentFloor = bp.floor;   // track for auto-save
       autoSave();                  // save on every floor transition
@@ -229,7 +223,7 @@ async function main() {
       }
 
       // Per-species staircase flavour toast — only during the prologue, only on first visit.
-      if (!isBuildingRoom && !_towerPrologueDone && isFirstVisit && _characterSpecies) {
+      if (!_towerPrologueDone && isFirstVisit && _characterSpecies) {
         const STAIR_FLAVOUR: Partial<Record<SpeciesId, Partial<Record<number, string>>>> = {
           human: {
             [-1]: "The air smells of sulphur and old reagents.\nWhatever was being made down here was not for guests.",
@@ -1695,9 +1689,6 @@ async function main() {
     },
   });
 
-  // Building preview now uses building-viewer.html — remove any stale key
-  // so it doesn't interfere if index.html is opened directly.
-  localStorage.removeItem('ttt_building_preview');
   const _pendingOverworldPreview = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
   mainMenu.show();
 
@@ -2021,87 +2012,6 @@ async function main() {
           const resolved = typeof dna === 'string' ? shareCodeToDna(dna) : sanitizeDna(dna as any);
           if (!resolved) { console.error('[__game.buildPrincess] invalid DNA'); return; }
           player.applyPrincess(resolved).catch(console.error);
-        });
-      },
-
-      /**
-       * Preview a building plan in 3D — same as dungeon/tower rooms.
-       * Call after startGame() is running. Loads the DungeonPlan produced by
-       * buildingToDungeonPlan() into the SceneManager and enters creative mode.
-       * @param planJson  JSON.stringify of { rooms: Record<string,Blueprint>, startRoomId, seed }
-       */
-      previewBuilding: (planJson: string) => {
-        // Clear any previous preview state
-        delete (window as any).__buildingPreviewComplete;
-        delete (window as any).__buildingPreviewError;
-        delete (window as any).__buildingPreviewRoomId;
-        try {
-          console.log('[previewBuilding] parsing plan JSON (' + planJson.length + ' chars)');
-          const data = JSON.parse(planJson) as {
-            rooms: Record<string, import('@/levels/blueprint').Blueprint>;
-            startRoomId: string;
-            seed: number;
-          };
-          const roomCount = Object.keys(data.rooms).length;
-          console.log('[previewBuilding] rooms:', roomCount, '| startRoomId:', data.startRoomId);
-          if (roomCount === 0) throw new Error('plan has 0 rooms');
-          if (!data.startRoomId) throw new Error('plan has no startRoomId');
-          if (!data.rooms[data.startRoomId]) throw new Error(`startRoomId "${data.startRoomId}" not in rooms`);
-
-          const plan: import('@/levels/DungeonGenerator').DungeonPlan = {
-            rooms:       new Map(Object.entries(data.rooms)),
-            startRoomId: data.startRoomId,
-            seed:        data.seed,
-          };
-          // Ensure we're in interior mode
-          if (gameMode === 'exterior') { overworld?.exit(); gameMode = 'interior'; }
-          console.log('[previewBuilding] calling loadDungeon...');
-          sceneManager.loadDungeon(plan);   // registers rooms + calls loadRoomImmediate internally
-          console.log('[previewBuilding] loadDungeon done, currentRoom:', sceneManager.currentBlueprint?.id);
-          // Enter creative mode (god mode + fly + HUD).
-          // skipPortals: tower basement portals would appear floating in the
-          // building room since they're placed at hardcoded tower positions.
-          // NOTE: CreativeMode.enter() navigates to the Observatory by design —
-          // we call loadRoomImmediate AFTER to override that and go back to the building.
-          CreativeMode.enter({ skipPortals: true });
-          sceneManager.loadRoomImmediate(plan.startRoomId);  // override observatory navigation
-          player.teleport(new THREE.Vector3(0, 1.5, 2));
-          console.log('[previewBuilding] final room:', sceneManager.currentBlueprint?.id);
-          // Signal success to tests + devtools
-          (window as any).__buildingPreviewComplete = true;
-          (window as any).__buildingPreviewRoomId   = plan.startRoomId;
-          console.log('[previewBuilding] ✓ complete — loaded', plan.rooms.size,
-            'room(s), start:', plan.startRoomId,
-            '| actual room:', sceneManager.currentBlueprint?.id);
-        } catch (e) {
-          (window as any).__buildingPreviewError = String(e);
-          console.error('[previewBuilding] FAILED:', e);
-        }
-      },
-
-      /** Returns the current room’s blueprint ID, or null if no room is loaded. */
-      getCurrentRoomId: (): string | null => sceneManager.currentBlueprint?.id ?? null,
-
-      /**
-       * Generate a building preview plan JSON string (same format as the Overworld Studio).
-       * Useful in tests to produce a valid plan without going through the full Studio UI.
-       */
-      /**
-       * Generate a building preview plan JSON string (same format as the Overworld Studio).
-       * Useful in tests to produce a valid plan without going through the full Studio UI.
-       */
-      generateBuildingPreviewJson: (
-        kind:    BuildingKind,
-        faction: Faction,
-        seed:    number,
-        size:    BuildingSize = 'medium',
-        floors:  1|2|3|4 = 2,
-      ): string => {
-        const plan = buildingToDungeonPlan(kind, faction, seed, size, floors);
-        return JSON.stringify({
-          rooms:       Object.fromEntries(plan.rooms),
-          startRoomId: plan.startRoomId,
-          seed:        plan.seed,
         });
       },
     };
