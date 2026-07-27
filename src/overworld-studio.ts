@@ -4594,6 +4594,130 @@ function _renderLibraryGrid() {
   }
 }
 
+function _getLibraryTag(entry: LibraryEntry, key: string): string | null {
+  const tag = entry.tags.find(t => t.startsWith(`${key}:`));
+  return tag ? tag.slice(key.length + 1) : null;
+}
+
+function _setActivePillByDataset(containerId: string, datasetKey: string, value: string | null | undefined) {
+  if (!value) return;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const pills = Array.from(container.querySelectorAll('.pill')) as HTMLElement[];
+  const match = pills.find(p => (p.dataset as any)[datasetKey] === value);
+  if (!match) return;
+  pills.forEach(p => p.classList.remove('active'));
+  match.classList.add('active');
+}
+
+function _syncCaveTypeSections(type: CaveType) {
+  const isCave = type === 'cave';
+  const denseLabel = document.getElementById('cave-density-row') as HTMLElement | null;
+  if (denseLabel) denseLabel.style.display = isCave ? '' : 'none';
+  const caveSection  = document.getElementById('cave-biome-section') as HTMLElement | null;
+  const gladeSection = document.getElementById('glade-biome-section') as HTMLElement | null;
+  if (caveSection)  caveSection.style.display  = isCave ? '' : 'none';
+  if (gladeSection) gladeSection.style.display = isCave ? 'none' : '';
+}
+
+function _setStudioModeForLibraryPreview(mode: StudioMode) {
+  studioMode = mode;
+  _navStack = [];
+  _updateBreadcrumb();
+
+  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.studio-tab[data-mode="${mode}"]`)?.classList.add('active');
+
+  const mapToolbar = document.querySelector('.map-toolbar') as HTMLElement | null;
+  if (mapToolbar) mapToolbar.style.visibility = mode === 'settlement' ? '' : 'hidden';
+
+  if (mode !== 'settlement') hideBuildingModal();
+  if (mode !== 'realm' && planetRenderer) {
+    planetRenderer.stop();
+    showPlanetCanvas(false);
+  }
+  if (mode !== 'realm' && hexPlanetRenderer) {
+    hexPlanetRenderer.stop();
+  }
+  if (mode !== 'solar' && solarRenderer) {
+    solarRenderer.stop();
+  }
+
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+  hoverEl.textContent = '';
+}
+
+function _previewLibraryEntry(entry: LibraryEntry | null) {
+  (window as any).__owStudioLastLibraryPreview = entry
+    ? { id: entry.id, type: entry.type, name: entry.name, seed: entry.seed }
+    : null;
+
+  if (!entry) return;
+
+  if (entry.type === 'settlement') {
+    _setStudioModeForLibraryPreview('settlement');
+    _setActivePillByDataset('type-pills', 'type', _getLibraryTag(entry, 'type'));
+    _setActivePillByDataset('layout-pills', 'layout', _getLibraryTag(entry, 'layout'));
+    const faction = _getLibraryTag(entry, 'faction') as SettlementFaction | null;
+    _setActivePillByDataset('faction-pills', 'faction', faction);
+    if (faction) updateLegend(faction);
+
+    currentModel = entry.data as SettlementModel;
+    persistentSeeds = null;
+    lastParams = null;
+    redraw();
+    if (currentModel) {
+      genTimeEl.textContent = `${entry.name}  ·  ${currentModel.wards.filter(w => w.withinCity).length} wards  ·  ${currentModel.roads.length} roads  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'dungeon' || entry.type === 'building') {
+    _setStudioModeForLibraryPreview('dungeon');
+    const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : null);
+    _setActivePillByDataset('dungeon-type-pills', 'dtype', dtype);
+    const isTower = dtype === 'tower';
+    const towerFloorRow = document.getElementById('tower-floor-row') as HTMLElement | null;
+    if (towerFloorRow) towerFloorRow.style.display = isTower ? '' : 'none';
+
+    currentDungeonPlan = entry.data as DungeonPlan;
+    const floorInput = document.getElementById('dfloor') as HTMLInputElement | null;
+    const floorVal = document.getElementById('dfloor-val') as HTMLElement | null;
+    if (currentDungeonPlan && floorInput && isTower) {
+      const floors = [...currentDungeonPlan.rooms.values()].map(room => room.floor ?? 0);
+      const minFloor = floors.length ? Math.min(...floors) : 0;
+      const maxFloor = floors.length ? Math.max(...floors) : 0;
+      floorInput.min = String(minFloor);
+      floorInput.max = String(maxFloor);
+      if (parseInt(floorInput.value, 10) < minFloor || parseInt(floorInput.value, 10) > maxFloor) {
+        floorInput.value = String(minFloor);
+      }
+      if (floorVal) floorVal.textContent = `F${floorInput.value}`;
+    }
+    redrawDungeon();
+    if (currentDungeonPlan) {
+      genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'cave') {
+    _setStudioModeForLibraryPreview('cave');
+    const ctype = (_getLibraryTag(entry, 'ctype') as CaveType | null) ?? 'cave';
+    _setActivePillByDataset('cave-type-pills', 'ctype', ctype);
+    _syncCaveTypeSections(ctype);
+    if (ctype === 'cave') _setActivePillByDataset('cave-biome-pills', 'biome', _getLibraryTag(entry, 'biome'));
+    else                  _setActivePillByDataset('glade-biome-pills', 'gbiome', _getLibraryTag(entry, 'biome'));
+
+    currentCaveData = entry.data as CaveData;
+    redrawCave();
+    if (currentCaveData) {
+      const openCells = currentCaveData.grid.flat().filter(Boolean).length;
+      genTimeEl.textContent = `${entry.name}  ·  ${openCells} open cells  ·  seed ${entry.seed}`;
+    }
+  }
+}
+
 function _selectLibraryEntry(id: string) {
   _librarySelectedId = id;
   const entry = assetLibrary.getAll().find(e => e.id === id) ?? null;
@@ -4601,19 +4725,23 @@ function _selectLibraryEntry(id: string) {
   const nameLbl = document.getElementById('library-preview-name');
   if (section) section.style.display = entry ? '' : 'none';
   if (nameLbl && entry) nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
+  _previewLibraryEntry(entry);
   _renderLibraryGrid();
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
 function _setLibraryOpen(open: boolean) {
   _libraryOpen = open;
-  const panel = document.getElementById('library-panel');
-  if (panel) panel.style.display = open ? '' : 'none';
+  (window as any).__owStudioLibraryOpen = open;
+  const panel = document.getElementById('library-panel') as HTMLElement | null;
+  if (panel) {
+    panel.style.display = open ? 'block' : 'none';
+  }
   if (open) _renderLibraryGrid();
   // Also hide other control panels when library is open
   const controlPanels = ['settlement-controls','dungeon-controls','cave-controls','realm-controls','solar-controls'];
   for (const pid of controlPanels) {
-    const p = document.getElementById(pid);
+    const p = document.getElementById(pid) as HTMLElement | null;
     if (p) p.style.display = open ? 'none' : (pid === `${studioMode}-controls` ? '' : 'none');
   }
 }
@@ -4647,7 +4775,7 @@ document.getElementById('library-search')?.addEventListener('input', () => _rend
 // ── Export ────────────────────────────────────────────────────────────────────
 document.getElementById('btn-library-export')?.addEventListener('click', () => {
   if (!_librarySelectedId) return;
-  const entry = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  const entry = assetLibrary.exportEntry(_librarySelectedId);
   if (!entry) return;
   const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -4686,7 +4814,7 @@ function _showToast(msg: string) {
   _toastTimer = window.setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 1800);
 }
 
-function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown) {
+function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []) {
   const thumb = _renderThumbnail(type);
   const entry: LibraryEntry = {
     id:        `${type}_${seed}_${Date.now()}`,
@@ -4694,12 +4822,13 @@ function _saveToLibrary(type: AssetType, name: string, seed: number, data: unkno
     name,
     seed,
     createdAt: Date.now(),
-    tags:      [],
+    tags,
     isCustom:  false,
     data,
     thumbnail: thumb,
   };
   assetLibrary.add(entry);
+  (window as any).__assetLibraryLastSaved = { id: entry.id, type, name, seed, tags };
   _showToast(`✓ Saved "${name}" to Library (${assetLibrary.size} total)`);
   if (_libraryOpen) _renderLibraryGrid();
 }
@@ -4708,21 +4837,33 @@ function _saveToLibrary(type: AssetType, name: string, seed: number, data: unkno
 document.getElementById('btn-save-settlement')?.addEventListener('click', () => {
   if (!currentModel) { alert('Generate a settlement first.'); return; }
   const seed = parseInt(seedInput.value) || 0;
-  _saveToLibrary('settlement', `Settlement #${seed}`, seed, currentModel);
+  const params = getParams();
+  _saveToLibrary('settlement', `Settlement #${seed}`, seed, currentModel, [
+    `type:${params.type}`,
+    `layout:${params.layout}`,
+    `faction:${params.faction}`,
+  ]);
 });
 
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────
 document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
   if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }
   const seed = parseInt(seedInput.value) || 0;
-  _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan);
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan, [
+    `dtype:${dtype}`,
+  ]);
 });
 
 // ── Save: Cave ────────────────────────────────────────────────────────────────
 document.getElementById('btn-save-cave')?.addEventListener('click', () => {
   if (!currentCaveData) { alert('Generate a cave first.'); return; }
   const seed = parseInt(seedInput.value) || 0;
-  _saveToLibrary('cave', `Cave #${seed}`, seed, currentCaveData);
+  const { type, biome } = getCaveParams();
+  _saveToLibrary('cave', `Cave #${seed}`, seed, currentCaveData, [
+    `ctype:${type}`,
+    `biome:${biome}`,
+  ]);
 });
 
 // ── Initial generation ────────────────────────────────────────────────────────

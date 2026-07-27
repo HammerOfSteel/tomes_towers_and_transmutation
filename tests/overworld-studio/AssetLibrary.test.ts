@@ -152,6 +152,49 @@ describe('AssetLibrary', () => {
     expect(lib2.getAll()[0]?.id).toBe('e2');
   });
 
+  it('round-trips Map-based dungeon data through localStorage persistence', () => {
+    const dungeonData = {
+      startRoomId: 'r0',
+      seed: 42,
+      rooms: new Map([
+        ['r0', { id: 'r0', floor: 0, width: 8, depth: 8 }],
+        ['r1', { id: 'r1', floor: 1, width: 6, depth: 6 }],
+      ]),
+    };
+
+    lib.add(makeEntry({
+      id: 'd1',
+      type: 'dungeon',
+      name: 'Mapped Dungeon',
+      data: dungeonData,
+    }));
+
+    const lib2 = new AssetLibrary('test_library');
+    const restored = lib2.getAll()[0]?.data as any;
+
+    expect(restored.rooms).toBeInstanceOf(Map);
+    expect(restored.rooms.get('r0')?.id).toBe('r0');
+    expect(restored.rooms.get('r1')?.floor).toBe(1);
+  });
+
+  it('exportEntry() returns a JSON-safe snapshot for Map-based data', () => {
+    lib.add(makeEntry({
+      id: 'd1',
+      type: 'dungeon',
+      data: {
+        rooms: new Map([['r0', { id: 'r0' }]]),
+        startRoomId: 'r0',
+        seed: 7,
+      },
+    }));
+
+    const exported = lib.exportEntry('d1') as any;
+    expect(exported).toBeTruthy();
+    expect(exported.data.rooms.__tttType).toBe('Map');
+    expect(exported.data.rooms.entries[0][0]).toBe('r0');
+    expect(() => JSON.stringify(exported)).not.toThrow();
+  });
+
   it('getAll() returns entries sorted by createdAt descending (newest first)', () => {
     lib.add(makeEntry({ id: 'old', createdAt: 100 }));
     lib.add(makeEntry({ id: 'new', createdAt: 500 }));

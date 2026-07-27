@@ -2,8 +2,14 @@
  * AssetLibrary.ts
  *
  * Persistent, browsable gallery of all generated entity types produced by
- * Overworld Studio generators.  Stores buildings, dungeons, settlements, and
- * caves as JSON-serialisable entries in localStorage.
+ * Overworld Studio generators. Stores buildings, dungeons, settlements, and
+ * caves as library entries in localStorage.
+ *
+ * Important detail:
+ *   Some generator outputs are not plain JSON objects (for example DungeonPlan
+ *   uses a Map for rooms). The library therefore stores runtime entries in
+ *   memory, but encodes/decodes non-JSON structures when persisting or
+ *   exporting.
  *
  * Usage:
  *   import { assetLibrary } from '@/overworld-studio/AssetLibrary';
@@ -26,15 +32,66 @@ export interface LibraryEntry {
   tags:      string[];
   /** true = user has edited / overrides the procedural default for this location */
   isCustom:  boolean;
-  /** JSON-serialisable snapshot of the generator output */
+  /** Runtime generator output (may contain Maps, arrays, nested objects, etc.) */
   data:      unknown;
   /** data:image/png;base64,… thumbnail or null */
   thumbnail: string | null;
 }
 
+interface StoredLibraryEntry extends Omit<LibraryEntry, 'data'> {
+  data: unknown;
+}
+
 interface StoredSnapshot {
   version: 1;
-  entries: LibraryEntry[];
+  entries: StoredLibraryEntry[];
+}
+
+type EncodedMap = {
+  __tttType: 'Map';
+  entries: [string, unknown][];
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function encodeValue(value: unknown): unknown {
+  if (value instanceof Map) {
+    return {
+      __tttType: 'Map',
+      entries: Array.from(value.entries()).map(([k, v]) => [String(k), encodeValue(v)]),
+    } satisfies EncodedMap;
+  }
+  if (Array.isArray(value)) {
+    return value.map(encodeValue);
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = encodeValue(v);
+    return out;
+  }
+  return value;
+}
+
+function decodeValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(decodeValue);
+  }
+  if (isPlainObject(value)) {
+    if (value.__tttType === 'Map' && Array.isArray(value.entries)) {
+      return new Map(
+        value.entries.map((pair) => {
+          const [k, v] = pair as [string, unknown];
+          return [k, decodeValue(v)];
+        }),
+      );
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = decodeValue(v);
+    return out;
+  }
+  return value;
 }
 
 export class AssetLibrary {
@@ -106,17 +163,36 @@ export class AssetLibrary {
     (window as any).__assetLibrarySize = 0;
   }
 
+  /** Return a portable JSON-safe snapshot of a single entry for export/download. */
+  exportEntry(id: string): StoredLibraryEntry | null {
+    const entry = this._entries.find(e => e.id === id);
+    if (!entry) return null;
+    return {
+      ...entry,
+      data: encodeValue(entry.data),
+    };
+  }
+
   // ── Serialisation ─────────────────────────────────────────────────────────
 
   toJSON(): StoredSnapshot {
-    return { version: 1, entries: this._entries };
+    return {
+      version: 1,
+      entries: this._entries.map((entry) => ({
+        ...entry,
+        data: encodeValue(entry.data),
+      })),
+    };
   }
 
   fromJSON(json: unknown): void {
     try {
       const snap = json as StoredSnapshot;
       if (snap?.version === 1 && Array.isArray(snap.entries)) {
-        this._entries = snap.entries;
+        this._entries = snap.entries.map((entry) => ({
+          ...entry,
+          data: decodeValue(entry.data),
+        }));
         console.log(`[AssetLibrary] loaded ${this._entries.length} entries from snapshot`);
         (window as any).__assetLibrarySize = this._entries.length;
       }
