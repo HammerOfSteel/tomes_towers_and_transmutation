@@ -34,6 +34,71 @@ vi.stubGlobal('localStorage', {
   removeItem: (k: string) => { delete _store[k]; },
 });
 
+describe('AssetLibrary importEntry()', () => {
+  it('imports a JSON-safe snapshot as a custom entry with a fresh id', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    const imported = lib.importEntry({
+      id: 'external_settlement',
+      type: 'settlement',
+      name: 'Imported Settlement',
+      seed: 321,
+      createdAt: 1,
+      tags: ['type:town'],
+      isCustom: false,
+      thumbnail: null,
+      data: { wards: [{ id: 'w1' }] },
+    });
+
+    expect(imported).not.toBeNull();
+    expect(imported?.id).not.toBe('external_settlement');
+    expect(imported?.type).toBe('settlement');
+    expect(imported?.name).toBe('Imported Settlement');
+    expect(imported?.seed).toBe(321);
+    expect(imported?.isCustom).toBe(true);
+    expect(lib.size).toBe(1);
+  });
+
+  it('decodes Map-based payloads when importing exported snapshots', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    const imported = lib.importEntry({
+      id: 'external_dungeon',
+      type: 'dungeon',
+      name: 'Imported Dungeon',
+      seed: 99,
+      createdAt: 1,
+      tags: ['dtype:generic'],
+      isCustom: true,
+      thumbnail: null,
+      data: {
+        rooms: {
+          __tttType: 'Map',
+          entries: [['room_0', { id: 'room_0', width: 7 }]],
+        },
+        startRoomId: 'room_0',
+        seed: 99,
+      },
+    });
+
+    expect(imported).not.toBeNull();
+    const rooms = (imported?.data as { rooms: Map<string, unknown> }).rooms;
+    expect(rooms).toBeInstanceOf(Map);
+    expect(rooms.get('room_0')).toEqual({ id: 'room_0', width: 7 });
+  });
+
+  it('rejects invalid snapshots', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    expect(lib.importEntry({ foo: 'bar' })).toBeNull();
+    expect(lib.importEntry(null)).toBeNull();
+    expect(lib.size).toBe(0);
+  });
+});
+
 describe('AssetLibrary duplicate()', () => {
   it('duplicates an entry with a fresh id, later createdAt, and copied data', () => {
     const lib = new AssetLibrary('ttt_asset_library_test');

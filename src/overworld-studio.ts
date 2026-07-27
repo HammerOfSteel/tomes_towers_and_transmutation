@@ -4779,6 +4779,35 @@ document.getElementById('library-type-pills')?.addEventListener('click', (e) => 
 // ── Search input ──────────────────────────────────────────────────────────────
 document.getElementById('library-search')?.addEventListener('input', () => _renderLibraryGrid());
 
+// ── Import ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-import')?.addEventListener('click', () => {
+  (document.getElementById('library-import-file') as HTMLInputElement | null)?.click();
+});
+
+document.getElementById('library-import-file')?.addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const imported = assetLibrary.importEntry(parsed);
+    if (!imported) {
+      _showToast('✕ Import failed');
+      return;
+    }
+    _librarySelectedId = imported.id;
+    _renderLibraryGrid();
+    _selectLibraryEntry(imported.id);
+    _showToast(`✓ Imported "${imported.name}"`);
+  } catch (err) {
+    console.error('[AssetLibrary] import failed:', err);
+    _showToast('✕ Invalid JSON import');
+  } finally {
+    if (input) input.value = '';
+  }
+});
+
 // ── Duplicate ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-library-duplicate')?.addEventListener('click', () => {
   if (!_librarySelectedId) return;

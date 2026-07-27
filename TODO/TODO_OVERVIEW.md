@@ -135,7 +135,7 @@ Last pass. **Nothing here starts until 07 is green.**
 | # | Gap | Impact | Where to fix |
 |---|---|---|---|
 | G1 | **Game World Integration** — no plan for how realm map → 3D playable world | Blocking demo | `02-game-world-integration/` |
-| G2 | **Asset Library UI** — partial; Studio asset types are covered, but full creator/runtime coverage is still missing | Medium | `01-overworld-studio/asset-library.md` |
+| G2 | **Asset Library UI** — partial; save/preview/export/import/duplicate/delete exist for Studio asset types, but full creator/runtime coverage is still missing | Medium | `01-overworld-studio/asset-library.md` |
 | G3 | **Game Inventory** — no master list of what procedural assets actually need to exist for a complete game world | Medium | `01-overworld-studio/game-inventory.md` |
 | G4 | **Procedural Tile Designer** — tiles (floor, wall, terrain) have no dedicated design/variant tool | Medium | `01-overworld-studio/procedural-designer/tile-designer.md` |
 | G5 | **Audio System** — referenced everywhere but has no phased plan | High | `06-game-systems/audio.md` |

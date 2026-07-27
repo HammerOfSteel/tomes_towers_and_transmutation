@@ -56,6 +56,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function makeEntryId(type: AssetType, seed: number): string {
+  return `${type}_${seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isAssetType(value: unknown): value is AssetType {
+  return value === 'building' || value === 'dungeon' || value === 'settlement' || value === 'cave';
+}
+
 function encodeValue(value: unknown): unknown {
   if (value instanceof Map) {
     return {
@@ -182,7 +190,7 @@ export class AssetLibrary {
     if (!entry) return null;
     const copy: LibraryEntry = {
       ...entry,
-      id: `${entry.type}_${entry.seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: makeEntryId(entry.type, entry.seed),
       name: nameOverride?.trim() || `${entry.name} Copy`,
       createdAt: Date.now(),
       isCustom: true,
@@ -193,6 +201,42 @@ export class AssetLibrary {
     console.log(`[AssetLibrary] duplicated "${entry.name}" -> "${copy.name}" — total: ${this._entries.length}`);
     (window as any).__assetLibrarySize = this._entries.length;
     return copy;
+  }
+
+  /**
+   * Import a single exported library entry snapshot.
+   * Imported assets are treated as custom local assets and receive a fresh id.
+   */
+  importEntry(snapshot: unknown): LibraryEntry | null {
+    if (!isPlainObject(snapshot)) return null;
+    if (!isAssetType(snapshot.type)) return null;
+
+    const seed = typeof snapshot.seed === 'number' ? snapshot.seed : 0;
+    const name = typeof snapshot.name === 'string' && snapshot.name.trim()
+      ? snapshot.name.trim()
+      : `Imported ${snapshot.type}`;
+    const tags = Array.isArray(snapshot.tags)
+      ? snapshot.tags.filter((t): t is string => typeof t === 'string')
+      : [];
+    const thumbnail = typeof snapshot.thumbnail === 'string' ? snapshot.thumbnail : null;
+
+    const entry: LibraryEntry = {
+      id: makeEntryId(snapshot.type, seed),
+      type: snapshot.type,
+      name,
+      seed,
+      createdAt: Date.now(),
+      tags,
+      isCustom: true,
+      data: decodeValue(snapshot.data),
+      thumbnail,
+    };
+
+    this._entries.push(entry);
+    this._save();
+    console.log(`[AssetLibrary] imported "${entry.name}" (${entry.type}) — total: ${this._entries.length}`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return entry;
   }
 
   // ── Serialisation ─────────────────────────────────────────────────────────

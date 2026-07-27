@@ -1,7 +1,7 @@
 # Asset Library
 > ⚠️ GAP — Not tracked anywhere. A browsable, searchable gallery of all generated entity types.
 
-## Status: 🚧 In Progress — core persistence, preview, export, delete, and duplicate flow shipped for current Overworld Studio asset types
+## Status: 🚧 In Progress — core persistence, preview, export, import, delete, and duplicate flow shipped for current Overworld Studio asset types
 
 ## Problem
 The game generates NPCs, buildings, enemies, props, and creatures procedurally. Right now:
@@ -17,7 +17,8 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 - [x] Each entry stores `{ id, type, name, seed, createdAt, tags, isCustom, data, thumbnail }`
 - [x] Persists to localStorage in studio
 - [x] Export supports JSON-safe serialization for non-plain runtime data (notably `Map`)
-- [x] `isCustom = true` is now used for duplicated entries as an override/editing starting point
+- [x] Import supports restoring JSON-safe serialized runtime data back into live entries
+- [x] `isCustom = true` is now used for duplicated/imported entries as an override/editing starting point
 
 ### AL-2 — Library UI Panel (in Overworld Studio)
 - [x] New "📚 Library" panel is available in the Overworld Studio sidebar
