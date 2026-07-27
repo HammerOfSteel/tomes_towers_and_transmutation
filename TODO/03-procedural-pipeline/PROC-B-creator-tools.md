@@ -1,19 +1,21 @@
 # PROC-B — Creator Tool Ecosystem
 > Each entity type gets: a `build*(dna)` function + a standalone atelier tool + game runtime wiring.
 
-## Status: 🚧 In progress (NPC + Building partially started)
+## Status: 🚧 In progress (NPC runtime groundwork shipped; standalone atelier pages still partial/missing)
 
 ## B1 — NPC Creator (`npc-creator.html`)
 ### Atelier
 - [ ] `npc-creator.html` page with species/role/appearance controls
 - [ ] Live Three.js preview (reuse renderer pattern from princess-creator)
-- [ ] Save blueprint to gallery (localStorage + export JSON)
+- [ ] Save blueprint to gallery UI/export JSON
+- [x] NPC DNA contract, defaults, and gallery/share-code persistence groundwork already exist in `src/npc-creator/`
 ### Game Runtime
-- [ ] `buildNpc(dna): THREE.Group` — procedural NPC rig
-- [ ] Species variants: human/elf/dwarf/orc/vulperia/undead/slime/celestial/draconic
-- [ ] Role variants: guard (armour), merchant (bag/stall), quest-giver (scroll), wanderer (cloak)
+- [x] `buildNpc(dna): NpcInstance` — procedural NPC rig built on the existing princess/commoner builder pipeline
+- [x] Current supported species contract is implemented in source: human / undead / vulperia / slime / elf / celestial / draconic
+- [x] `src/world/NPCSpawner.ts` resolves named overrides/default DNA and places generated NPCs around settlement centers
+- [x] Named NPC override storage exists via `src/npc-creator/gallery.ts`
+- [ ] Deeper role-specific visual variants: guard (armour), merchant (bag/stall), quest-giver (scroll), wanderer (cloak)
 - [ ] `NpcController.ts` — idle wander + interaction detection
-- [ ] `src/world/NpcSpawner.ts` — places NPCs at settlement ward positions
 
 ## B2 — Enemy Creator (extends `creature-lab.html`)
 ### Atelier

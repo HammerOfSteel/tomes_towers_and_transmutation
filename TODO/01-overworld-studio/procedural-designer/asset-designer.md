@@ -3,7 +3,7 @@
 > Same concept as `princess-creator.html` — but for all entity types.
 > References PROC-B for implementation details.
 
-## Status: 🔲 Referenced in PROC-B, not yet built
+## Status: 🚧 Referenced in PROC-B; NPC creator groundwork exists, but standalone designer surfaces are still missing
 
 ## Principle
 One designer pattern, multiple entity types:
@@ -13,14 +13,13 @@ One designer pattern, multiple entity types:
 
 ## Per-Entity Designer
 
-### NPC Designer (`npc-creator.html`) 🔲
-- Species picker (7 game species)
-- Role picker (merchant/guard/quest-giver/wanderer/alchemist)
-- Appearance sliders: height, build, colours
-- Personality tag chips: friendly/gruff/mysterious/cheerful
-- Name field (or generate)
-- Live Three.js preview (same canvas as princess creator)
-- Save → AssetLibrary
+### NPC Designer (`npc-creator.html`) 🚧
+- [ ] Standalone `npc-creator.html` surface still needs to be built
+- [ ] Species picker for current supported game species: human / undead / vulperia / slime / elf / celestial / draconic
+- [ ] Role picker should match current `NpcRole` source contract: merchant / elder / quest_giver / scholar / guard / innkeeper / mysterious
+- [ ] Appearance controls should layer on top of the existing `NpcDNA` contract (`bodyPreset`, `colors`, accessories, personality, name)
+- [ ] Live Three.js preview should reuse the existing `buildNpc(dna)` pipeline
+- [ ] Save UI should target the existing NPC gallery/share-code persistence groundwork before broader Asset Library integration
 
 ### Building Designer (`building-creator.html`) 🔲
 - Archetype: house/inn/shop/forge/temple/guard_post
