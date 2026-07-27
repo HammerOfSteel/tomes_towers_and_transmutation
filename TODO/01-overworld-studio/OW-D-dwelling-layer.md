@@ -16,31 +16,31 @@
 - OW-D3 dedicated controls (archetype/faction/size pills) — currently driven by ward type in settlement
 - OW-D4 multi-floor navigation UI in floor plan modal (floor selector buttons)
 
-## Tasks
+## Task Breakdown
 
 ### OW-D1 — Floor Plan Generator
-- [ ] `src/overworld/DwellingGenerator.ts` — procedural floor plan from `DwellingDNA` (size, archetype, faction)
-- [ ] Archetypes: `house_small`, `house_large`, `inn`, `shop`, `forge`, `alchemist`, `guard_post`, `manor`
-- [ ] Room placement: BSP subdivision within building footprint
-- [ ] Furniture scatter: per-archetype furniture pools (reuse existing `buildProp()` calls)
-- [ ] Doors: connect rooms + exterior door facing street
+- [x] Building blueprint generation shipped via `src/buildingToDungeonPlan.ts` + `src/world/buildings/InteriorGenerator.ts`
+- [x] Major archetypes are covered through the current building/ward blueprint pipeline
+- [x] Room placement and passage connectivity ship in the current procedural interior generator
+- [x] Furniture scatter ships in the current interior generator
+- [x] Exterior/inter-room door connectivity ships in the current blueprint output
+- [ ] Follow-up: consolidate this into a cleaner explicit `DwellingDNA`/generator contract if OW-D is revisited
 
-### OW-D2 — Renderer (`DwellingRenderer.ts`)
-- [ ] Canvas 2D renderer (same approach as dungeon tab)
-- [ ] Wall lines, door arcs, furniture symbols
-- [ ] Floor texture fill per room type
-- [ ] Scale: 1 cell = 1 WU (walkable in game)
-- [ ] CSS2D labels for room names on hover
+### OW-D2 — Renderer / Viewer Surface
+- [x] 2D floor plan rendering ships in the settlement building modal
+- [x] Room/wall/door/furniture visualization ships in the current modal renderer
+- [x] `building-viewer.html` + `src/building-viewer.ts` provide the isolated 3D exploration surface
+- [ ] Follow-up: formalize a dedicated `DwellingRenderer.ts` contract if the renderer is split out from current building-viewer/modal code
 
-### OW-D3 — Overworld Studio Tab
-- [ ] Add "🏠 Dwelling" as sub-view inside Settlement tab (or separate tab)
-- [ ] Controls: archetype pills, faction pills, Size slider
-- [ ] Preview canvas
-- [ ] Export: PNG + JSON blueprint
+### OW-D3 — Overworld Studio Controls
+- [x] Building preview flow ships as a settlement-driven modal drill-down
+- [x] “🎮 Play in 3D” handoff ships for the selected building blueprint
+- [ ] Dedicated archetype/faction/size controls are still missing
+- [ ] Explicit PNG/JSON export controls for the dwelling surface are still missing as a first-class UI
 
 ### OW-D4 — Multi-Floor Navigation
-- [ ] Buildings > 1 floor: floor selector buttons (up/down arrows)
-- [ ] Staircase placement connects floors
+- [x] Multi-floor building connectivity ships through stair-door linking / BFS traversal
+- [ ] Dedicated floor selector buttons remain deferred
 
 ## Dependencies
 - Requires: settlement data (OW-A ✅)
