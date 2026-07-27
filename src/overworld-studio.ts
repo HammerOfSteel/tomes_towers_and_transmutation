@@ -4588,7 +4588,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', settlement: '🏙', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', settlement: '🏙', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }
@@ -4679,15 +4679,25 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
     return;
   }
 
-  if (entry.type === 'dungeon' || entry.type === 'building') {
+  if (entry.type === 'dungeon' || entry.type === 'building' || entry.type === 'room') {
     _setStudioModeForLibraryPreview('dungeon');
-    const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : null);
+    const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : 'generic');
     _setActivePillByDataset('dungeon-type-pills', 'dtype', dtype);
     const isTower = dtype === 'tower';
     const towerFloorRow = document.getElementById('tower-floor-row') as HTMLElement | null;
     if (towerFloorRow) towerFloorRow.style.display = isTower ? '' : 'none';
 
-    currentDungeonPlan = entry.data as DungeonPlan;
+    if (entry.type === 'room') {
+      const room = entry.data as Blueprint;
+      currentDungeonPlan = {
+        rooms: new Map([[room.id, room]]),
+        startRoomId: room.id,
+        seed: entry.seed,
+      };
+    } else {
+      currentDungeonPlan = entry.data as DungeonPlan;
+    }
+
     const floorInput = document.getElementById('dfloor') as HTMLInputElement | null;
     const floorVal = document.getElementById('dfloor-val') as HTMLElement | null;
     if (currentDungeonPlan && floorInput && isTower) {
@@ -4703,7 +4713,12 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
     }
     redrawDungeon();
     if (currentDungeonPlan) {
-      genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+      if (entry.type === 'room') {
+        const onlyRoom = [...currentDungeonPlan.rooms.values()][0];
+        genTimeEl.textContent = `${entry.name}  ·  room ${onlyRoom?.id ?? '?'}  ·  ${onlyRoom?.width ?? 0}×${onlyRoom?.depth ?? 0}  ·  seed ${entry.seed}`;
+      } else {
+        genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+      }
     }
     return;
   }
@@ -4886,10 +4901,9 @@ function _showToast(msg: string) {
   _toastTimer = window.setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 1800);
 }
 
-function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []) {
-  const thumb = _renderThumbnail(type);
-  const entry: LibraryEntry = {
-    id:        `${type}_${seed}_${Date.now()}`,
+function _makeLibraryEntry(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []): LibraryEntry {
+  return {
+    id:        `${type}_${seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     type,
     name,
     seed,
@@ -4897,10 +4911,15 @@ function _saveToLibrary(type: AssetType, name: string, seed: number, data: unkno
     tags,
     isCustom:  false,
     data,
-    thumbnail: thumb,
+    thumbnail: _renderThumbnail(type),
   };
+}
+
+function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []) {
+  const entry = _makeLibraryEntry(type, name, seed, data, tags);
   assetLibrary.add(entry);
   (window as any).__assetLibraryLastSaved = { id: entry.id, type, name, seed, tags };
+  (window as any).__assetLibraryLastSavedBatch = null;
   _showToast(`✓ Saved "${name}" to Library (${assetLibrary.size} total)`);
   if (_libraryOpen) _renderLibraryGrid();
 }
@@ -4925,6 +4944,37 @@ document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
   _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan, [
     `dtype:${dtype}`,
   ]);
+});
+
+document.getElementById('btn-save-dungeon-rooms')?.addEventListener('click', () => {
+  if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+
+  const roomEntries = [...currentDungeonPlan.rooms.values()].map((room, index) => {
+    const roomCopy = typeof structuredClone === 'function'
+      ? structuredClone(room)
+      : JSON.parse(JSON.stringify(room)) as Blueprint;
+
+    return _makeLibraryEntry('room', `Room Layout ${index + 1} (${room.id})`, seed, roomCopy, [
+      `dtype:${dtype}`,
+      `room:${room.id}`,
+      `floor:${room.floor ?? 0}`,
+      `source:dungeon`,
+      ...(room.floorType ? [`floorType:${room.floorType}`] : []),
+    ]);
+  });
+
+  for (const entry of roomEntries) assetLibrary.add(entry);
+
+  (window as any).__assetLibraryLastSavedBatch = {
+    type: 'room',
+    count: roomEntries.length,
+    ids: roomEntries.map(entry => entry.id),
+  };
+
+  _showToast(`✓ Saved ${roomEntries.length} room layout${roomEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
 });
 
 // ── Save: Cave ────────────────────────────────────────────────────────────────

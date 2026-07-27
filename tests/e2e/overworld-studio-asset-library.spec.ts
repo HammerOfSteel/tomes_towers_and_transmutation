@@ -185,3 +185,38 @@ test('Asset Library previews persisted entries and supports export/import/rename
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
+
+test('Asset Library saves dungeon room layouts as reusable room sub-assets', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await page.click('.studio-tab[data-mode="dungeon"]');
+  await page.waitForTimeout(700);
+  await page.click('#btn-save-dungeon-rooms');
+
+  await page.waitForFunction(() => {
+    const batch = (window as any).__assetLibraryLastSavedBatch;
+    return batch?.type === 'room' && typeof batch.count === 'number' && batch.count > 0;
+  });
+
+  const batch = await page.evaluate(() => (window as any).__assetLibraryLastSavedBatch);
+  expect(batch?.type).toBe('room');
+  expect(batch?.count).toBeGreaterThan(0);
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="room"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(batch.count);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'room');
+  await expect(page.locator('#library-preview-name')).toContainText('(room, seed');
+  await SS(page, '05-preview-room-layout');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('room');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});

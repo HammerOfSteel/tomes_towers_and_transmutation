@@ -354,6 +354,7 @@
           <div class="section-title">Export</div>
           <button class="btn" id="btn-dungeon-png" style="width:100%">📷 PNG</button>
           <button class="btn" id="btn-save-dungeon" style="width:100%">💾 Save to Library</button>
+          <button class="btn" id="btn-save-dungeon-rooms" style="width:100%">🚪 Save Room Layouts</button>
         </div>
 
       </div><!-- /dungeon-controls -->
@@ -535,10 +536,11 @@
           </div>
           <div class="pill-row pill-row--wrap" id="library-type-pills">
             <button class="pill active" data-ltype="all">All</button>
-            <button class="pill" data-ltype="building">🏠</button>
-            <button class="pill" data-ltype="dungeon">⚔</button>
-            <button class="pill" data-ltype="settlement">🏙</button>
-            <button class="pill" data-ltype="cave">🌿</button>
+            <button class="pill" data-ltype="building" title="Buildings">🏠</button>
+            <button class="pill" data-ltype="dungeon" title="Dungeons">⚔</button>
+            <button class="pill" data-ltype="room" title="Room layouts">🚪</button>
+            <button class="pill" data-ltype="settlement" title="Settlements">🏙</button>
+            <button class="pill" data-ltype="cave" title="Caves">🌿</button>
           </div>
           <input type="text" id="library-search" placeholder="Search by name…"
             style="width:100%;margin:4px 0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;box-sizing:border-box"/>
