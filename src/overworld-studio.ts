@@ -4595,6 +4595,78 @@ document.getElementById('btn-realm-png')?.addEventListener('click', () => {
   link.click();
 });
 
+// ── World Package JSON export (smallest OW-F4-6 slice) ──────────────────────
+// First slice: export the currently generated realm plus deterministic
+// settlement/dungeon descriptors. This is intentionally JSON-only for now;
+// ZIP bundling can come later once/import path is defined.
+document.getElementById('btn-export-world-package')?.addEventListener('click', () => {
+  if (!currentRealmData) generateRealmView();
+  if (!currentRealmData) return;
+
+  const realmSeed   = currentRealmData.seed;
+  const shape       = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate     = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  const roughnessUi = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement | null)?.value ?? '50');
+  const sizeUi      = parseInt((document.getElementById('realm-size') as HTMLInputElement | null)?.value ?? '2');
+  const settlementsUi = parseInt((document.getElementById('realm-settlements') as HTMLInputElement | null)?.value ?? String(currentRealmData.settlements.length));
+
+  const worldPackage = {
+    version: 1,
+    kind: 'ttt_world_package',
+    exportedAt: new Date().toISOString(),
+    source: 'overworld-studio',
+    seed: realmSeed,
+    planetType: currentPlanetType,
+    realmViewMode,
+    config: {
+      shape,
+      climate,
+      roughness: roughnessUi,
+      size: sizeUi,
+      settlementCount: settlementsUi,
+    },
+    realm: {
+      seed: currentRealmData.seed,
+      W: currentRealmData.W,
+      H: currentRealmData.H,
+      tower: { x: currentRealmData.towerX, y: currentRealmData.towerY },
+      cells: currentRealmData.cells,
+      rivers: currentRealmData.rivers,
+      settlements: currentRealmData.settlements,
+      dungeons: currentRealmData.dungeons,
+    },
+    settlements: currentRealmData.settlements.map((s) => ({
+      x: s.x,
+      y: s.y,
+      name: s.name,
+      size: s.size,
+      faction: s.faction,
+      seed: ((realmSeed ^ (s.x * 73856093 + s.y * 19349663)) >>> 0),
+    })),
+    dungeons: currentRealmData.dungeons.map((d) => ({
+      x: d.x,
+      y: d.y,
+      seed: ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0),
+    })),
+  } as const;
+
+  const blob = new Blob([JSON.stringify(worldPackage, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.download = `world-package-${realmSeed}.json`;
+  a.href     = url;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  if ((window as any).__owStudioCurrentRealmData) {
+    (window as any).__owStudioLastWorldPackage = {
+      seed: realmSeed,
+      settlements: worldPackage.settlements.length,
+      dungeons: worldPackage.dungeons.length,
+    };
+  }
+});
+
 // ── Asset Library ─────────────────────────────────────────────────────────────
 
 // ── Library state ────────────────────────────────────────────────────────────

@@ -1,14 +1,14 @@
 # OW-F4 — Full Drill-Down Chain
 > Complete the chain: ☀ Solar System → 🌍 Planet → 🗺 Realm → 🏙 City → ⚔ Dungeon
 
-## Status: ✅ Shipped (F4-1 to F4-5 done; F4-6 deferred)
+## Status: ✅ Shipped (F4-1 to F4-5 complete; F4-6 JSON slice shipped, ZIP/import deferred)
 ## Depends on: OW-E (layer navigation), OW-F2/F3 (planet DNA + solar system)
 
 ## Chain Map
 ```
 ☀ Solar System
   └── click planet → 🌍 Planet view (load that planet's DNA) ✅
-       └── 🗺 Map pill → Realm Map ✅
+       └── 🗺 Map pill / planet drill-down → Realm Map / Realm Surface ✅
             ├── click settlement → 🏙 Settlement view ✅
             │    └── double-click building → 🏠 Dwelling (OW-D) ✅
             ├── click dungeon icon → ⚔ Dungeon view ✅
@@ -41,44 +41,19 @@
 - [x] Click → switch to Dungeon tab, load seeded from realm position
 
 ### F4-6 — Export Chain
-- [ ] "Export World Package" button: ZIP of realm JSON + all settlement JSONs + dungeon blueprints
-- [ ] Can be imported into the game's world generator directly
+- [x] `📦 World Package JSON` button added to Realm export controls
+- [x] Exported package contains realm metadata + current `RealmData`
+- [x] Exported package contains deterministic settlement descriptors with derived seeds
+- [x] Exported package contains deterministic dungeon descriptors with derived seeds
+- [ ] ZIP packaging of realm JSON + per-settlement JSONs + dungeon blueprints
+- [ ] Direct import into the game's world generator pipeline
 
-## Chain Map
-```
-☀ Solar System
-  └── click planet → 🌍 Planet view (load that planet's DNA)
-       └── "View Surface" button → 🗺 Realm Map
-            ├── click settlement → 🏙 Settlement view
-            │    └── click building → 🏠 Dwelling (OW-D)
-            ├── click dungeon icon → ⚔ Dungeon view
-            └── click cave icon → 🌿 Cave view
-```
+## Validation
+- [x] `tests/e2e/overworld-studio-world-package-export.spec.ts`
 
-## Tasks
-
-### F4-1 — Breadcrumb State Machine
-- [ ] `DrillDownStack` class: push/pop views with metadata (seed, label, type)
-- [ ] Breadcrumb UI component rendered below studio tabs
-- [ ] Each breadcrumb clickable → restores that view
-
-### F4-2 — Solar System → Planet
-- [ ] Click planet in solar view → store `selectedPlanetDNA` + `selectedPlanetType`
-- [ ] Switch to Realm tab, set planet type pill, generate matching realm
-- [ ] Tower planet always generates habitable realm (terran/verdant/ocean type)
-
-### F4-3 — Planet → Realm Surface
-- [ ] "🗺 View Surface" button on planet/hex view
-- [ ] Switches to map view for current realm data (already generated)
-
-### F4-4 — Realm → Settlement
-- [ ] Settlement dots on 2D realm map are clickable (currently visual only)
-- [ ] Click → switch to Settlement tab, load that settlement
-
-### F4-5 — Realm → Dungeon/Cave
-- [ ] Dungeon entrance icons on realm map are clickable
-- [ ] Click → switch to Dungeon or Cave tab, load seeded from map position
-
-### F4-6 — Export Chain
-- [ ] "Export World Package" button: ZIP of realm JSON + all settlement JSONs + dungeon blueprints
-- [ ] Can be imported into the game's world generator directly
+## Notes
+- The current F4-6 implementation is intentionally a first integration slice:
+  - single downloadable JSON package
+  - truthful deterministic seed handoff for downstream settlement/dungeon generation
+  - no ZIP bundling yet
+  - no runtime world-package importer yet
