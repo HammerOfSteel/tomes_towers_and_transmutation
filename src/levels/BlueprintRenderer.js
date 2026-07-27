@@ -208,6 +208,7 @@ export function renderBlueprint(bp, physics, opts = {}) {
             mesh.rotation.y = THREE.MathUtils.degToRad(tile.rotation ?? 0);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
+            mesh.userData.isWall = true; // used by WallOcclusionManager
             group.add(mesh);
             bodies.push(physics.createStaticBox(new THREE.Vector3(wx, tH / 2, wz), new THREE.Vector3(cellSize / 2, tH / 2, cellSize / 2)));
         }
@@ -218,6 +219,7 @@ export function renderBlueprint(bp, physics, opts = {}) {
             const mesh = new THREE.Mesh(geo, wallMat);
             mesh.position.set(wx, tH / 2, wz);
             mesh.castShadow = true;
+            mesh.userData.isWall = true; // used by WallOcclusionManager
             group.add(mesh);
             bodies.push(physics.createStaticBox(new THREE.Vector3(wx, tH / 2, wz), new THREE.Vector3(0.3, tH / 2, 0.3)));
         }

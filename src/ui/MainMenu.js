@@ -9,7 +9,7 @@
 //
 // NOTE: Concept art images are served from /concept_art/ (project root).
 //       For production builds, move that folder into /public/concept_art/.
-import { loadWorldGenConfig, saveWorldGenConfig, randomiseSeed, KENNEY_PACKS, } from '@/world/WorldGenConfig';
+import { loadWorldGenConfig, saveWorldGenConfig, randomiseSeed, } from '@/world/WorldGenConfig';
 import { CHAR_PACKS } from '@/characters/charManifest';
 const LS_CHARACTER_SPECIES = 'ttt_character_species';
 // ── Image pool ────────────────────────────────────────────────────────────
@@ -317,6 +317,69 @@ const SPECIES_LORE = {
         <p>I am going to leave this journal here on the desk when I go. I think it was meant for the wizard to write in eventually, and he can have it back. I have left it open to this page so it is easy to find.</p>
         <p>I am going to take the book with the gold lettering. Just to borrow. I will bring it back when I have finished it, which will be when I understand it, which might take a while, but I am patient.</p>
         <p>Outside is waiting. That is fine. I have been patient about other things. I can be patient about this too.</p>`,
+        },
+    ],
+    // NS3: New Tier-1 species lore pages (full entries will be written as part of Phase NS1)
+    elf: [
+        {
+            chapterLabel: 'Annotated, Three Centuries Ago',
+            title: 'A Note on Methodology (Found in the Archive)',
+            byline: 'In a handwriting she will later recognise as her own',
+            body: `
+        <p>The ward on floor four is standard second-era suppression architecture. Competent. Not elegant, but thorough. The builder knew what they were doing, which is more than can be said for whoever taught the current occupant.</p>
+        <p>The library is the most interesting element. Someone has been collecting for a very long time, and the collection has the specific character of a person arguing with themselves across centuries. I find this relatable.</p>
+        <p>The key is in the basement. As always.</p>`,
+        },
+        {
+            chapterLabel: 'This Visit',
+            title: 'The Second Time Through a Door',
+            byline: 'Z.',
+            body: `
+        <p>I recognise the stair that makes the sound. I did not expect to recognise it. It is on the fourth floor from the bottom. I have checked.</p>
+        <p>The annotated book on the third shelf has notes in my handwriting that I do not remember writing. The notes are about ward theory. They are good notes. I was, apparently, more patient three hundred years ago.</p>
+        <p>The wizard left a note on the telescope: 'Do not go to the basement.' I recognise this note. A different ink, a different paper, the same handwriting as the rest of the tower. The third wizard in three towers to write it.</p>
+        <p>I am going to the basement.</p>`,
+        },
+    ],
+    celestial: [
+        {
+            chapterLabel: 'Day One (Ground Time)',
+            title: 'Orientation Notes',
+            byline: 'Z. — filed against day the complaint is processed',
+            body: `
+        <p>The tower is cold. This is a relative observation; celestials run warm and most things feel cold by comparison. The ceiling has three visible cracks. She has counted them. This is how she orients herself in unfamiliar spaces: she finds the imperfections and catalogues them until the space feels legible.</p>
+        <p>The library is interesting. Not intellectually interesting — she has read most of what it contains, in various forms, over the course of several centuries — but interesting in the way a careful record of a person's obsessions is interesting. The wizard has been studying ascension for forty years. His methodology is largely sound. His conclusions are approximately correct. He is missing something important, and she can see exactly where he has been looking past it.</p>
+        <p>She has filed a formal complaint with the relevant cosmic authority. She expects to receive a response in somewhere between one and four centuries. In the meantime: there is a key in the basement.</p>`,
+        },
+        {
+            chapterLabel: 'Day Four',
+            title: 'The Ward Stone',
+            byline: 'Z.',
+            body: `
+        <p>There is a suppression ward somewhere in the tower region. She found the paper about it — 'Celestial Binding Efficacy at Ground Level: Interim Report' — in the archive on the second day. Results: INCONCLUSIVE, in large letters. The fact that he tried and called it inconclusive means he was close enough to know it was worth trying, which is both more and less reassuring than if he had simply been wrong.</p>
+        <p>The suppression is partial. She can feel the signal beneath it: attenuated but present, like a conversation heard through thick walls. When she clears the ward, she will hear clearly again. Until then, she will proceed carefully, which she was always going to do regardless.</p>
+        <p>The basement has a key. She will collect it on the way down to start investigating.</p>`,
+        },
+    ],
+    draconic: [
+        {
+            chapterLabel: 'Day One',
+            title: 'Initial Assessment (Environmental)',
+            byline: 'Z. — supplementary thermal observations',
+            body: `
+        <p>The tower maintains a temperature that is technically habitable for draconic physiology, with the qualification that 'technically habitable' and 'comfortable' are different things, and this is squarely in the former category. The scales are adapting. Adaptation takes time. She is patient.</p>
+        <p>The library contains what appears to be the most comprehensive collection of ward theory outside a major arcane institution. She has reviewed the first three volumes. The theoretical framework is mostly correct. The author disagrees with pre-Conclave methodology, which she also disagrees with, and has written marginal notes to that effect throughout, which she finds collegial.</p>
+        <p>The ambient spellwork in the tower has been absorbed into her scales as of approximately thirty-six hours in. This is a known draconic trait and not her fault. If it disrupts any ongoing experiments, she would be willing to discuss compensation, though she notes that kidnapping is generally not a strong negotiating position.</p>`,
+        },
+        {
+            chapterLabel: 'Day Three',
+            title: 'The Territorial Question',
+            byline: 'Z.',
+            body: `
+        <p>The star chart on the observatory wall contains a notation she did not expect to find: three constellations marked as 'formerly under draconic territorial claim,' in a careful archival hand, with a date she can calculate as approximately four hundred years past.</p>
+        <p>The current notation beneath reads: 'current occupant: human wizard, ongoing.'</p>
+        <p>She is not certain how to feel about this. She notes that four hundred years is not, historically speaking, a long time. She notes that the wizard appears to have been aware of the historical context and chosen to proceed regardless. She notes that she is currently being held in a tower built on land with a draconic claim that predates several of the treaties the current legal framework is based on.</p>
+        <p>She is choosing to view this as an opportunity for a productive conversation. She is also noting the location of the key in the basement, as this seems like the first practical step.</p>`,
         },
     ],
 };
@@ -627,50 +690,6 @@ export class MainMenu {
       </div>
       <div class="mm-setting-divider"></div>
       <div class="mm-setting-row mm-setting-row--section-hdr">
-        <span class="mm-setting-section-title">🎨 Visual Style</span>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">
-          Environment Art: Procedural / KayKit Assets
-          <span class="mm-setting-dev-hint">Off = procedural code-first geometry (default). On = Kenney 3D GLB tile packs.</span>
-        </label>
-        <label class="mm-toggle">
-          <input type="checkbox" id="mm-asset-mode" ${wg.assetMode === 'kenney' ? 'checked' : ''}>
-          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
-        </label>
-      </div>
-      <div id="mm-asset-packs-row" class="mm-setting-row" style="flex-direction:column;gap:8px;${wg.assetMode !== 'kenney' ? 'display:none' : ''}">
-        <label class="mm-setting-label">Active packs — same-provider rule: Kenney only</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
-          ${KENNEY_PACKS.map(p => `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:#c8b89a" title="${p.desc}"><input type="checkbox" class="mm-pack-cb" value="${p.id}" ${wg.assetPacks.includes(p.id) ? 'checked' : ''}> ${p.icon} ${p.name}${p.recommended ? ' ★' : ''}</label>`).join('')}
-        </div>
-      </div>
-      <div class="mm-setting-divider"></div>
-      <div class="mm-setting-row mm-setting-row--section-hdr">
-        <span class="mm-setting-section-title">🎨 Visual Style</span>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">
-          Environment Art: Procedural / KayKit Assets
-          <span class="mm-setting-dev-hint">Default: procedural code-first geometry. Enable to swap in Kenney 3D GLB tiles per-pack.</span>
-        </label>
-        <label class="mm-toggle">
-          <input type="checkbox" id="mm-asset-mode" ${wg.assetMode === 'kenney' ? 'checked' : ''}>
-          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
-        </label>
-      </div>
-      <div id="mm-asset-packs-row" class="mm-setting-row mm-asset-packs-row" style="${wg.assetMode !== 'kenney' ? 'display:none' : ''}">
-        <label class="mm-setting-label">Active packs</label>
-        <div class="mm-setting-ctl mm-pack-grid">
-          ${KENNEY_PACKS.map(p => `
-            <label class="mm-pack-label${p.recommended ? ' mm-pack-label--rec' : ''}" title="${p.desc}">
-              <input type="checkbox" class="mm-pack-cb" value="${p.id}" ${wg.assetPacks.includes(p.id) ? 'checked' : ''}>
-              <span>${p.icon} ${p.name}${p.recommended ? ' ★' : ''}</span>
-            </label>`).join('')}
-        </div>
-      </div>
-      <div class="mm-setting-divider"></div>
-      <div class="mm-setting-row mm-setting-row--section-hdr">
         <span class="mm-setting-section-title">🎭 Characters</span>
       </div>
       <div class="mm-setting-row">
@@ -787,21 +806,6 @@ export class MainMenu {
         mkSlider('#mm-wg-towns', '#mm-wg-towns-val', 'townCount');
         const cityToggle = card.querySelector('#mm-wg-city');
         cityToggle.addEventListener('change', () => { wg.hasCity = cityToggle.checked; saveWg(); });
-        // ── Asset mode + pack selection ───────────────────────────────────────────────────────
-        const assetModeCb = card.querySelector('#mm-asset-mode');
-        const assetPacksRow = card.querySelector('#mm-asset-packs-row');
-        assetModeCb.addEventListener('change', () => {
-            wg.assetMode = assetModeCb.checked ? 'kenney' : 'code';
-            assetPacksRow.style.display = assetModeCb.checked ? '' : 'none';
-            saveWg();
-        });
-        card.querySelectorAll('.mm-pack-cb').forEach(cb => {
-            cb.addEventListener('change', () => {
-                wg.assetPacks = [...card.querySelectorAll('.mm-pack-cb')]
-                    .filter(c => c.checked).map(c => c.value);
-                saveWg();
-            });
-        });
         // ── Character mode + pack selection ──────────────────────────────────────
         const charModeCb = card.querySelector('#mm-char-mode');
         const charPacksRow = card.querySelector('#mm-char-packs-row');

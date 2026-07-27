@@ -11,6 +11,10 @@ const BASE_MODS = {
     extraPartySlots: 0, herbYieldMult: 1, buildCostMult: 1, potionPotencyMult: 1,
     hasCurseTouch: false, hasSoulDrain: false,
     hasVoidWeave: false, hasDeathPact: false, hasSpellBlade: false,
+    ironWill: false, undyingHunger: false, predatorsEye: false, amorphous: false,
+    longMemory: false, starTouched: false, scaleArmour: false,
+    hasNightTouched: false, silverTongue: false, firstHitImmune: false,
+    spellCooldownMult: 1, startingManaBonus: 0,
 };
 // ── Main class ────────────────────────────────────────────────────────────
 /** Tracks spells, XP, level, stats, and talent modifier state. */

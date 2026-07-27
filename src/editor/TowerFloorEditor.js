@@ -43,6 +43,15 @@ export class TowerFloorEditor {
         this._switchToFloor(0);
     }
     // ── Public API ──────────────────────────────────────────────────────────────
+    /** The floorIndex of the currently active floor. */
+    get activeFloorIndex() {
+        return this._floors[this._activeIdx]?.floorIndex ?? 0;
+    }
+    /**
+     * Callback invoked whenever the active floor changes.
+     * Use this to refresh the BlueprintLayer.
+     */
+    onFloorChange;
     /** Load from a TowerFloorDoc array (multi-floor export). */
     async loadDocs(docs) {
         this._floors = [];
@@ -67,7 +76,6 @@ export class TowerFloorEditor {
         if (this._floors.length > 0)
             await this._switchToFloor(0);
     }
-    /** Export all floors as TowerFloorDoc JSON string. */
     exportAll() {
         // Save current floor state first
         this._saveCurrentFloor();
@@ -166,6 +174,8 @@ export class TowerFloorEditor {
         // Update props panel
         this._syncPropsToUI(f);
         this._renderFloorList();
+        // Notify blueprint layer of floor change
+        this.onFloorChange?.(f.floorIndex);
     }
     _syncPropsFromFloor(f) {
         f.name = document.getElementById('tfe-floor-name')?.value ?? f.name;

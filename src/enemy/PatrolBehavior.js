@@ -243,3 +243,152 @@ export class StationaryShootBehavior {
         return { state: this._state, shouldShoot, animState, justDetected: detected };
     }
 }
+const BRUTE_DEFAULTS = {
+    alertRange: 10,
+    attackRange: 1.8,
+    dropRange: 18,
+    chaseSpeed: 2.8,
+    retreatSpeed: 2.0,
+    attackCooldown: 1.8,
+    specialCooldown: 25,
+    specialDuration: 1.2,
+    retreatHpFrac: 0.2,
+    healRate: 2, // 2 HP/s during retreat
+};
+export class TacticalBrute {
+    o;
+    _state = 'idle';
+    _attackTimer = 0;
+    _specialTimer = 0;
+    _specialCd = 0;
+    _retreatTimer = 0;
+    constructor(opts = {}) {
+        this.o = { ...BRUTE_DEFAULTS, ...opts };
+    }
+    get state() { return this._state; }
+    kill() { this._state = 'dead'; }
+    /**
+     * Tick the FSM.
+     * @param self       Enemy world position
+     * @param player     Player world position
+     * @param currentHp  Current HP (used for retreat threshold)
+     * @param maxHp      Max HP (used for retreat threshold)
+     * @param dt         Frame delta
+     * @returns          Movement + action output for this frame
+     */
+    tick(self, player, currentHp, maxHp, dt) {
+        if (this._state === 'dead') {
+            return this._out('dead', 'death', 0, 0, 0, false, false, false);
+        }
+        const o = this.o;
+        const dx = player.x - self.x;
+        const dz = player.z - self.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const hpFrac = maxHp > 0 ? currentHp / maxHp : 1;
+        // Tick cooldowns
+        if (this._attackTimer > 0)
+            this._attackTimer -= dt;
+        if (this._specialCd > 0)
+            this._specialCd -= dt;
+        if (this._specialTimer > 0)
+            this._specialTimer -= dt;
+        if (this._retreatTimer > 0)
+            this._retreatTimer -= dt;
+        let shouldAttack = false;
+        let specialActive = false;
+        let detected = false;
+        switch (this._state) {
+            case 'idle':
+                if (dist < o.alertRange) {
+                    this._state = 'chase';
+                    detected = true;
+                }
+                break;
+            case 'chase':
+                if (dist > o.dropRange) {
+                    this._state = 'idle';
+                }
+                else if (hpFrac <= o.retreatHpFrac) {
+                    this._state = 'retreat';
+                    this._retreatTimer = 3.0;
+                }
+                else if (dist < o.attackRange) {
+                    this._state = 'attack';
+                }
+                break;
+            case 'attack':
+                if (dist > o.attackRange * 1.4) {
+                    this._state = 'chase';
+                    break;
+                }
+                if (hpFrac <= o.retreatHpFrac) {
+                    this._state = 'retreat';
+                    this._retreatTimer = 3.0;
+                    break;
+                }
+                // Fire special if off cooldown
+                if (this._specialCd <= 0) {
+                    this._state = 'special';
+                    this._specialTimer = o.specialDuration;
+                    this._specialCd = o.specialCooldown;
+                    break;
+                }
+                // Normal attack
+                if (this._attackTimer <= 0) {
+                    shouldAttack = true;
+                    this._attackTimer = o.attackCooldown;
+                }
+                break;
+            case 'special':
+                specialActive = true;
+                shouldAttack = true; // special counts as an attack this frame
+                if (this._specialTimer <= 0) {
+                    this._state = dist < o.attackRange ? 'attack' : 'chase';
+                }
+                break;
+            case 'retreat':
+                // Heal during retreat
+                if (this._retreatTimer <= 0 || hpFrac > o.retreatHpFrac + 0.05) {
+                    this._state = 'chase';
+                }
+                break;
+        }
+        // ── Movement ──────────────────────────────────────────────────────────────
+        let vx = 0, vz = 0, yaw = 0;
+        if (dist > 0.05) {
+            const ndx = dx / dist;
+            const ndz = dz / dist;
+            yaw = Math.atan2(ndx, ndz);
+            if (this._state === 'chase' || this._state === 'attack') {
+                vx = ndx * o.chaseSpeed;
+                vz = ndz * o.chaseSpeed;
+                if (this._state === 'attack') {
+                    vx = 0;
+                    vz = 0;
+                } // hold position while attacking
+            }
+            else if (this._state === 'retreat') {
+                // Move away from player
+                vx = -ndx * o.retreatSpeed;
+                vz = -ndz * o.retreatSpeed;
+                yaw = Math.atan2(-ndx, -ndz);
+            }
+        }
+        const anim = this._resolveAnim(specialActive);
+        return this._out(this._state, anim, vx, vz, yaw, shouldAttack, specialActive, detected);
+    }
+    _resolveAnim(specialActive) {
+        switch (this._state) {
+            case 'chase': return 'run';
+            case 'attack': return specialActive ? 'attack' : 'attack';
+            case 'special': return 'attack';
+            case 'retreat': return 'walk';
+            case 'dead': return 'death';
+            default: return 'idle';
+        }
+    }
+    _out(state, anim, vx, vz, yaw, shouldAttack, specialActive, justDetected) {
+        return { state, animState: anim, velocity: { x: vx, z: vz }, facingYaw: yaw,
+            shouldAttack, specialActive, justDetected };
+    }
+}

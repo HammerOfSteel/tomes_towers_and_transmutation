@@ -51,7 +51,8 @@ export class GameLoop {
         if (this._freezeFrames > 0) {
             this._freezeFrames--;
             effectiveDt = 0;
-        } else {
+        }
+        else {
             effectiveDt *= Math.max(0.01, Math.min(2, this.timeScale));
         }
         for (const cb of this.callbacks)

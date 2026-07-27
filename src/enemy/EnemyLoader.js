@@ -2,13 +2,13 @@
  * EnemyLoader — loads character GLB models as positioned, animated enemy
  * stand-ins that can be driven by the FSM system in enemy AI.
  *
- * Phase B1 — bridges the CharacterLoader pipeline (which handles KayKit rig
+ * Phase B1 — bridges the CharacterLoader pipeline (which handles skinned
  * retargeting, Meshy AI anims.glb, etc.) to the enemy spawning used by
  * SceneManager and RoomEncounterDef.
  *
  * Architecture:
  *   1. Each enemy type is identified by its CharModelDef.id
- *      (e.g. "kaykit_skeletons/Skeleton_Warrior", "meshy_dark_fay/mesh").
+ *      (e.g. "meshy_dark_fay/mesh").
  *   2. `loadEnemyModel(def)` resolves the model via CharacterLoader,
  *      normalises it to a 2-WU height, and returns an `EnemyRig` containing:
  *        – a `THREE.Group` ready to be added to the scene
@@ -98,15 +98,42 @@ export async function loadEnemyModel(def, spawnPos) {
  * Look up a CharModelDef by its id string and load it as an enemy rig.
  * Throws if the id is not found in charManifest.
  *
- * @param modelId  e.g. "kaykit_skeletons/Skeleton_Warrior"
+ * @param modelId  e.g. "goblin_pack/Basic_Goblin"
  * @param spawnPos World position for the group.
  */
 export async function loadEnemyById(modelId, spawnPos) {
     const def = CHAR_MODELS.find(m => m.id === modelId);
     if (!def) {
-        throw new Error(`EnemyLoader: model id "${modelId}" not found in charManifest`);
+        // PROC-B2g: unknown model IDs get a procedural enemy-creator rig
+        console.log(`[EnemyLoader] "${modelId}" not in charManifest — using procedural enemy builder`);
+        return buildProceduralEnemyRig(modelId, spawnPos);
     }
     return loadEnemyModel(def, spawnPos);
+}
+/**
+ * PROC-B2g: Build a procedural enemy rig via the enemy-creator system.
+ * Seeds appearance from modelId for deterministic results.
+ */
+async function buildProceduralEnemyRig(modelId, spawnPos) {
+    // Derive a seed from the modelId string
+    let seed = 0;
+    for (let i = 0; i < modelId.length; i++)
+        seed = (seed * 31 + modelId.charCodeAt(i)) >>> 0;
+    const { getDefaultEnemyDna, tierForFloor } = await import('@/enemy-creator/defaults/EnemyDefaults');
+    const { buildEnemy } = await import('@/enemy-creator/builder');
+    // Infer species/role from known id patterns; fall back to sensible defaults
+    const species = modelId.includes('fox') ? 'vulperia'
+        : modelId.includes('skeleton') || modelId.includes('zombie') ? 'undead'
+            : modelId.includes('slime') ? 'slime'
+                : 'human';
+    const role = modelId.includes('mage') ? 'caster'
+        : modelId.includes('rogue') ? 'ranged'
+            : 'melee';
+    const tier = tierForFloor(0); // default tier 1; caller can override
+    const dna = getDefaultEnemyDna(species, role, tier, seed);
+    const result = await buildEnemy(dna);
+    result.rig.group.position.copy(spawnPos);
+    return result.rig;
 }
 // ── Disposal ──────────────────────────────────────────────────────────────────
 /**
@@ -125,30 +152,30 @@ export function disposeEnemyRig(rig) {
  * Add entries here as new enemy packs are integrated.
  */
 export const ENEMY_MANIFEST = [
-    // ── Tier 1 — Skeleton (KayKit) ──────────────────────────────────────────
+    // ── Tier 1 — Skeletons (procedural + own packs) ─────────────────────────
     {
-        id: 'kaykit_skeletons/Skeleton_Warrior',
+        id: 'skeletons_free/Skeleton_Warrior',
         enemyId: 'skeleton_warrior',
         displayName: 'Skeleton Warrior',
         tier: 1,
         species: 'undead',
     },
     {
-        id: 'kaykit_skeletons/Skeleton_Mage',
+        id: 'skeletons_free/Skeleton_Mage',
         enemyId: 'skeleton_mage',
         displayName: 'Skeleton Mage',
         tier: 1,
         species: 'undead',
     },
     {
-        id: 'kaykit_skeletons/Skeleton_Rogue',
+        id: 'skeletons_free/Skeleton_Rogue',
         enemyId: 'skeleton_rogue',
         displayName: 'Skeleton Rogue',
         tier: 1,
         species: 'undead',
     },
     {
-        id: 'kaykit_skeletons/Skeleton_Minion',
+        id: 'skeletons_free/Skeleton_Minion',
         enemyId: 'skeleton_minion',
         displayName: 'Skeleton Minion',
         tier: 1,

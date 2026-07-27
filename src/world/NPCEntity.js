@@ -39,6 +39,10 @@ const ROLE_BADGE_LABEL = {
     scholar: 'Scholar',
     innkeeper: 'Innkeeper',
     blacksmith: 'Blacksmith',
+    // C1: Quest-giver archetypes
+    quest_giver: 'Wandering Merchant',
+    settlement_elder: 'Village Elder',
+    mysterious: '???',
 };
 function _showDialogue(npcName, lines, role) {
     injectHudTheme();

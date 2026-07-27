@@ -62,6 +62,17 @@ export class PauseMenu {
         ${localStorage.getItem('ttt_dev_mode') === 'true' ? `
         <button class="pm-btn" data-action="devpanel" style="${BTN_STYLE.replace('#44405a', '#5a3a22').replace('#44405a', '#5a3a22')}">
           <span style="color:#cc8844;">⚙</span>&nbsp; Dev Panel
+        </button>
+        <div style="${DIVIDER_STYLE}margin:10px 0 6px;"></div>
+        <div style="font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.2);text-align:center;margin-bottom:6px">DEV LABS</div>
+        <button class="pm-btn" data-action="creative" style="${BTN_STYLE.replace('#44405a', '#2a1040')}">
+          <span style="color:#cc88ff;">🎨</span>&nbsp; Creative Mode
+        </button>
+        <button class="pm-btn" data-action="backrooms" style="${BTN_STYLE.replace('#44405a', '#0a1a2a')}">
+          <span style="color:#4488ff;">🧪</span>&nbsp; Dev Backrooms
+        </button>
+        <button class="pm-btn" data-action="princess-atelier" style="${BTN_STYLE.replace('#44405a', '#1a0a30')}">
+          <span style="color:#d88bff;">👸</span>&nbsp; Princess Atelier
         </button>` : ''}
 
         <div style="${DIVIDER_STYLE}margin-top:18px;"></div>
@@ -101,6 +112,17 @@ export class PauseMenu {
                 else if (action === 'devpanel') {
                     this.close();
                     this.actions.onOpenDevPanel?.();
+                }
+                else if (action === 'creative') {
+                    this.close();
+                    this.actions.onEnterCreative?.();
+                }
+                else if (action === 'backrooms') {
+                    this.close();
+                    this.actions.onOpenBackrooms?.();
+                }
+                else if (action === 'princess-atelier') {
+                    this.actions.onOpenPrincessAtelier?.();
                 }
             });
         }

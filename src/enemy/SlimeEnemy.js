@@ -828,6 +828,26 @@ export class SlimeEnemy {
             this.group.visible = false;
         }
     }
+    /** G1: Revive this enemy at a new position (pool reuse).
+     *  Resets HP, FSM state, model opacity, and physics body position. */
+    revive(newPos) {
+        this._pos.copy(newPos);
+        this.group.position.copy(newPos);
+        this.health.reset();
+        this.state = 'idle';
+        this._modelFadeTimer = -1;
+        // Reset visual opacity on body mesh and any child meshes
+        this.group.traverse(child => {
+            const m = child;
+            if (m.material) {
+                const mat = m.material;
+                if (typeof mat.opacity === 'number')
+                    mat.opacity = 1;
+                mat.transparent = false;
+            }
+        });
+        this.group.visible = true;
+    }
     /** Remove this enemy's physics bodies from the world.
      *  Call when unloading the room — also remove `this.group` from the scene. */
     dispose(physics) {

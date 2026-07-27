@@ -5,14 +5,8 @@
  * sessions.  A seed of 0 means "randomise at game start"; the actual seed used
  * is written back after generation so the same world can be recreated.
  */
-/** Ordered list of Kenney Retro Fantasy asset packs available in the project. */
-export const KENNEY_PACKS = [
-    { id: 'buildings', name: 'Buildings', icon: '🏠', desc: 'Walls, roofs, floors, towers, stairs', recommended: true },
-    { id: 'castle', name: 'Castle', icon: '🏰', desc: 'Tower sections, walls, gates, battlements', recommended: false },
-    { id: 'dungeon', name: 'Dungeon', icon: '🗝️', desc: 'Corridors, rooms, dungeon props', recommended: false },
-    { id: 'nature', name: 'Nature', icon: '🌿', desc: 'Trees, rocks, rivers, ground tiles', recommended: true },
-    { id: 'town', name: 'Town', icon: '🏘️', desc: 'Roads, props, lanterns, fountains', recommended: true },
-];
+/** Ordered list of available character packs (procedural + own assets). */
+export const KENNEY_PACKS = [];
 export const DEFAULT_WORLD_GEN_CONFIG = {
     seed: 0,
     worldSize: 128,
@@ -23,10 +17,8 @@ export const DEFAULT_WORLD_GEN_CONFIG = {
     townCount: 1,
     hasCity: true,
     enemyCampCount: 8,
-    assetMode: 'code',
-    assetPacks: ['buildings', 'nature', 'town'],
     charMode: 'code',
-    charPacks: ['kaykit_adventurers', 'kaykit_skeletons', 'fox', 'slime', 'goblin_pack', 'villager_npc'],
+    charPacks: ['fox', 'slime', 'goblin_pack', 'villager_npc'],
 };
 const LS_KEY = 'ttt_world_gen_config';
 /** Load config from localStorage, filling missing keys with defaults. */

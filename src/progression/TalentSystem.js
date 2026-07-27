@@ -174,6 +174,193 @@ export const TALENT_NODES = [
         description: 'Harvest herbs without a crafting station. Ingredients have +1 potency.',
         applyEffect: () => { },
     },
+    // ── D6: Species-gated signature nodes ─────────────────────────────────────
+    {
+        id: 'sp_human_iron_will', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['bd_1'],
+        allowedSpecies: ['human'],
+        name: 'Iron Will',
+        description: '[Human only] HP below 25%: all damage reduced by 20%. Passive — always active.',
+        applyEffect: p => { p.mods.ironWill = true; },
+    },
+    {
+        id: 'sp_undead_undying', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['wl_1'],
+        allowedSpecies: ['undead'],
+        name: 'Undying Hunger',
+        description: '[Undead only] On kill, restore 5% max HP. Passive — always active.',
+        applyEffect: p => { p.mods.undyingHunger = true; },
+    },
+    {
+        id: 'sp_vulperia_predator', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['bd_2'],
+        allowedSpecies: ['vulperia'],
+        name: "Predator's Eye",
+        description: '[Vulperia only] First hit on each new enemy always crits. Passive — resets per enemy.',
+        applyEffect: p => { p.mods.predatorsEye = true; },
+    },
+    {
+        id: 'sp_slime_amorphous', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['na_1'],
+        allowedSpecies: ['slime'],
+        name: 'Amorphous',
+        description: '[Slime only] Immune to knockback; take 15% reduced fall damage. Passive — always active.',
+        applyEffect: p => { p.mods.amorphous = true; },
+    },
+    // NS2: New Tier-1 species signature nodes
+    {
+        id: 'sp_elf_long_memory', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['ar_1'],
+        allowedSpecies: ['elf'],
+        name: 'Long Memory',
+        description: '[Elf only] +10% XP from all sources. First encounter with each enemy type deals +20% damage. Passive — resets per run.',
+        applyEffect: p => { p.mods.longMemory = true; },
+    },
+    {
+        id: 'sp_celestial_star_touched', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['ar_2'],
+        allowedSpecies: ['celestial'],
+        name: 'Star-Touched',
+        description: '[Celestial only] 3u light aura (enemies -10% hit rate). At night: spells +15% damage, -10% mana cost. Passive.',
+        applyEffect: p => { p.mods.starTouched = true; },
+    },
+    {
+        id: 'sp_draconic_scale_armour', path: 'cross', tier: 3, cost: 2,
+        prerequisites: ['bd_1', 'wl_1'],
+        allowedSpecies: ['draconic'],
+        name: 'Scale Armour',
+        description: '[Draconic only] −15% physical damage taken. +20% damage when above 75% HP. Fire spells cost 20% less mana. Passive.',
+        applyEffect: p => { p.mods.scaleArmour = true; },
+    },
+    // ── Elf talent paths: Memory / Grace / Sage ──────────────────────────────
+    {
+        id: 'elf_mem_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['elf'],
+        name: 'Studied Recall',
+        description: '[Elf] +15% XP from books and lore interactions. The library still gives her things.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.08; },
+    },
+    {
+        id: 'elf_mem_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['elf_mem_1'],
+        allowedSpecies: ['elf'],
+        name: 'Pattern Recognition',
+        description: '[Elf] After defeating 3 enemies of the same type, +25% damage vs that type permanently (this run).',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.12; },
+    },
+    {
+        id: 'elf_grace_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['elf'],
+        name: 'Centuries of Practice',
+        description: '[Elf] +20% melee damage when above 75% HP. She has done this before.',
+        applyEffect: p => { p.mods.meleeDamageMult *= 1.12; },
+    },
+    {
+        id: 'elf_grace_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['elf_grace_1'],
+        allowedSpecies: ['elf'],
+        name: 'Graceful Step',
+        description: '[Elf] Dodge roll leaves a 1.5s root trap at the point of departure.',
+        applyEffect: () => { },
+    },
+    {
+        id: 'elf_sage_1', path: 'apothecary', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['elf'],
+        name: 'Herbalist Lineage',
+        description: '[Elf] Herb yield +30%. Minor Heal potions heal +20% HP.',
+        applyEffect: p => { p.mods.herbYieldMult *= 1.30; p.mods.potionPotencyMult *= 1.20; },
+    },
+    {
+        id: 'elf_sage_2', path: 'apothecary', tier: 2, cost: 1, prerequisites: ['elf_sage_1'],
+        allowedSpecies: ['elf'],
+        name: "Elder's Patience",
+        description: '[Elf] Charge a 3× damage shot over 2s (fully stationary). Old but effective.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.15; },
+    },
+    // ── Celestial talent paths: Dawn / Dusk / Void ──────────────────────────
+    {
+        id: 'cel_dawn_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['celestial'],
+        name: 'Radiant Aura',
+        description: '[Celestial] Light aura radius +1u. Enemies within aura take +8% spell damage.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.08; p.mods.aoeRadiusMult *= 1.10; },
+    },
+    {
+        id: 'cel_dawn_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['cel_dawn_1'],
+        allowedSpecies: ['celestial'],
+        name: 'Solar Flare',
+        description: '[Celestial] Once per 30s, emit a brief blind burst (2s, all enemies within 4u). Passive.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.12; },
+    },
+    {
+        id: 'cel_dusk_1', path: 'warlock', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['celestial'],
+        name: 'Eclipse',
+        description: '[Celestial] Reduce all enemy damage dealt by 15% for 6s after taking a hit. Passive.',
+        applyEffect: () => { },
+    },
+    {
+        id: 'cel_dusk_2', path: 'warlock', tier: 2, cost: 1, prerequisites: ['cel_dusk_1'],
+        allowedSpecies: ['celestial'],
+        name: 'Gravity Well',
+        description: '[Celestial] Once per 20s, pull all enemies within 5u inward 2 WU. Passive.',
+        applyEffect: p => { p.mods.hasVoidWeave = true; },
+    },
+    {
+        id: 'cel_void_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['celestial'],
+        name: 'Stellar Jump',
+        description: '[Celestial] Blink cooldown −25%. Blinking through an enemy deals 6 damage.',
+        applyEffect: p => { p.mods.meleeDamageMult *= 1.06; },
+    },
+    {
+        id: 'cel_void_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['cel_void_1'],
+        allowedSpecies: ['celestial'],
+        name: 'Void Touch',
+        description: '[Celestial] Next melee hit after a blink phases through armour (+50% damage, ignores defence).',
+        applyEffect: p => { p.mods.meleeDamageMult *= 1.20; },
+    },
+    // ── Draconic talent paths: Fire / Scale / Void ──────────────────────────
+    {
+        id: 'dra_fire_1', path: 'arcanist', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['draconic'],
+        name: 'Ignition',
+        description: '[Draconic] Fire-type spells apply a 3s burn DoT (2 dmg/s). Passive.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.10; },
+    },
+    {
+        id: 'dra_fire_2', path: 'arcanist', tier: 2, cost: 1, prerequisites: ['dra_fire_1'],
+        allowedSpecies: ['draconic'],
+        name: 'Dragon Rage',
+        description: '[Draconic] When below 50% HP: all damage +25%. The scales heat up. Passive.',
+        applyEffect: p => { p.mods.spellDamageMult *= 1.15; p.mods.meleeDamageMult *= 1.10; },
+    },
+    {
+        id: 'dra_scale_1', path: 'blade_dancer', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['draconic'],
+        name: 'Hardened Hide',
+        description: '[Draconic] +20 max HP. Harden (ability) grants 1 additional block charge.',
+        applyEffect: p => { p.mods.ironWill = true; /* max HP bonus applied via vitality boost in startGame */ },
+    },
+    {
+        id: 'dra_scale_2', path: 'blade_dancer', tier: 2, cost: 1, prerequisites: ['dra_scale_1'],
+        allowedSpecies: ['draconic'],
+        name: 'Tail Sweep',
+        description: '[Draconic] Every 8th melee hit automatically deals AoE knockback in a 2u ring. Passive.',
+        applyEffect: p => { p.mods.meleeDamageMult *= 1.12; },
+    },
+    {
+        id: 'dra_void_1', path: 'warlock', tier: 1, cost: 1, prerequisites: [],
+        allowedSpecies: ['draconic'],
+        name: 'Acid Scale',
+        description: '[Draconic] Shed scales on hit — any enemy that walks over them takes 3 damage. Passive.',
+        applyEffect: () => { },
+    },
+    {
+        id: 'dra_void_2', path: 'warlock', tier: 2, cost: 1, prerequisites: ['dra_void_1'],
+        allowedSpecies: ['draconic'],
+        name: 'Corrode',
+        description: '[Draconic] Attacks reduce enemy defence by 30% for 4s. Stacks twice. Passive.',
+        applyEffect: p => { p.mods.hasDeathPact = true; /* repurposed flag for corrode */ },
+    },
 ];
 // Fast lookup by id
 const NODE_MAP = new Map(TALENT_NODES.map(n => [n.id, n]));
@@ -183,11 +370,13 @@ export function getTalentNode(id) {
 // ── TalentSystem ──────────────────────────────────────────────────────────────
 export class TalentSystem {
     _bought = new Set();
+    /** Active species — set after character creation so species-gated nodes gate correctly. */
+    activeSpecies = null;
     /** Called when a node is successfully purchased. Use for particle/sound FX. */
     onNodeBought = null;
     get boughtNodes() { return this._bought; }
     hasNode(id) { return this._bought.has(id); }
-    /** True if all prerequisites are met and the node hasn't been bought. */
+    /** True if all prerequisites are met, species matches, and the node hasn't been bought. */
     canBuy(id, progression) {
         const node = NODE_MAP.get(id);
         if (!node)
@@ -195,6 +384,10 @@ export class TalentSystem {
         if (this._bought.has(id))
             return false;
         if (progression.talentPoints < node.cost)
+            return false;
+        // D6: species gate
+        if (node.allowedSpecies && this.activeSpecies &&
+            !node.allowedSpecies.includes(this.activeSpecies))
             return false;
         return node.prerequisites.every(p => this._bought.has(p));
     }

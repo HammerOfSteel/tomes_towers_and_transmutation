@@ -189,6 +189,20 @@ export const TOWER_FLOOR_DEFS = [
                 content: 'A barrel of fermented grain mash. It smells like ambition and regret.' },
             { type: 'barrel', x: 13, z: 12,
                 content: 'A sealed barrel marked \'BATCH 89 — DO NOT DISTURB UNTIL THE NEXT CONVERGENCE\'. The date is illegible.' },
+            // NS6: Elf arc lore book — a recipe in her own handwriting, three centuries old
+            {
+                type: 'lectern', x: 5, z: 13,
+                content: 'A slim handwritten recipe book, spine cracked with age.\n\n' +
+                    'The title page reads: \'Fermentation Practices for the Extended Stay \u2014 A Practical Reference\'.\n\n' +
+                    'The handwriting is yours.\n\n' +
+                    'The date on the flyleaf is three hundred and nine years ago. The ink has aged to a deep amber. ' +
+                    'You made this book. You left it here. You do not remember doing either of these things.\n\n' +
+                    'You turn to the last written page. The final note reads: \n\n' +
+                    '\'Batch 89 should be undisturbed until the next Convergence. I have already noted this on the barrel. ' +
+                    'If this note finds the reader before the barrel does \u2014 refer to the barrel.\n\n\'\n\n' +
+                    'The barrel is in the room. Batch 89 is in the barrel. The Convergence is, by your reckoning, ' +
+                    'approximately six hundred years away.',
+            },
         ],
         encounterPool: ENCOUNTER_POOL_F2,
     },
@@ -232,6 +246,19 @@ export const TOWER_FLOOR_DEFS = [
             { type: 'writing_desk', x: 4, z: 12, rotation: 90 },
             // Star-map rug at centre
             { type: 'rug', x: 8, z: 8 },
+            // E1: Act I lore book — Human arc (Raiders on the Rise)
+            // A military ledger hinting that the raider warlords have inside information.
+            {
+                type: 'lectern', x: 13, z: 12,
+                content: 'A slim intelligence ledger, stamped with a kingdom crest.\n\n' +
+                    '"SUMMARY — Northern Incursion Assessment\n\n' +
+                    'The raids are not opportunistic. Movement patterns suggest advance knowledge ' +
+                    'of patrol schedules and supply routes. The information is recent and precise.\n\n' +
+                    'Source of the leak is unknown. Access to this level of detail requires either ' +
+                    'a spy within the garrison, or someone with access to the tower\'s observation records.\n\n' +
+                    'Recommend immediate investigation of the eastern warlord camp.\n\n' +
+                    '— Filed: Office of the Kingdom\'s Keeper"',
+            },
         ],
     },
     // ── Floor 4 — The Runic Forge ────────────────────────────────────────────────
@@ -259,6 +286,39 @@ export const TOWER_FLOOR_DEFS = [
             { type: 'cooling_trough', x: 11, z: 5, rotation: 90 },
             { type: 'barrel', x: 3, z: 8,
                 content: 'A barrel of coal dust mixed with arcane reagent. The label says "GRADE A SCORCHITE". It is very illegal.' },
+            // E1: Act I lore book — Vulperia arc (Someone Wants You Dead)
+            // A contract notice referencing an unnamed "fox-eared candidate".
+            {
+                type: 'lectern', x: 13, z: 4,
+                content: 'A folded notice, stamped with the Baron\'s Keep seal.\n\n' +
+                    '"TO: All Registered Bounty Contractors\n\n' +
+                    'SUBJECT: Active Acquisition Contract\n\n' +
+                    'One (1) target: fox-eared, female-presenting, last seen in the vicinity of ' +
+                    'the Arcanist\'s Tower. Contract placed anonymously. Fee: substantial.\n\n' +
+                    'Acquisition only. Target is to be delivered intact.\n\n' +
+                    'Enquiries should be directed to the Keep\'s eastern gate quartermaster.\n\n' +
+                    'This notice is NOT to be distributed to independent contractors ' +
+                    'without guild clearance.\n\n' +
+                    '[Unsigned]"',
+            },
+            // NS6: Draconic arc lore book — territorial treatise on draco-compatible binding
+            {
+                type: 'lectern', x: 4, z: 4,
+                content: 'A monograph, precisely bound.\n\n' +
+                    '\'A Preliminary Investigation into Draco-Compatible Binding Compounds\n' +
+                    'and Their Application to Ward Construction in Formerly Territorial Zones.\'\n' +
+                    'Author: Arcanist Solmor.\n\n' +
+                    'The abstract reads:\n\n' +
+                    '\'Where traditional binding compounds exhibit degradation in proximity to high-intensity ' +
+                    'draconic residue, a modified compound — hereafter designated D-C Compound Alpha — ' +
+                    'demonstrates significantly improved durability. ' +
+                    'This is relevant to the construction of facilities on sites that retain draconic territorial marking ' +
+                    '(see Appendix C: Known Territorial Markers Within A Fifty-League Radius).\n\n' +
+                    'The author acknowledges that proceeding with construction despite identified territorial markers ' +
+                    'was a calculated decision. The calculation is presented in Appendix D.\n\n' +
+                    'The author further notes that Appendix D has been sealed.\'\n\n' +
+                    'Appendix D is sealed.\n\nYou take careful note of this.',
+            },
         ],
         encounterPool: ENCOUNTER_POOL_F4,
     },
@@ -286,6 +346,23 @@ export const TOWER_FLOOR_DEFS = [
             { type: 'bunk', x: 4, z: 12 },
             { type: 'bunk', x: 12, z: 12 },
             { type: 'mess_table', x: 8, z: 10 },
+            // E1: Act I lore book — Undead arc (Why Am I Moving?)
+            // Solmor's maintenance notes on the undead-preservation mechanism.
+            {
+                type: 'lectern', x: 13, z: 8,
+                content: 'A ring-bound technical manual, heavily annotated.\n\n' +
+                    '"UNDEAD PRESERVATION SYSTEM — MAINTENANCE LOG\n\n' +
+                    'Primary animating coil: stable. Secondary resonance matrix: stable. ' +
+                    'Tertiary suppression ward: DEGRADED — replaced 12 cycles ago, degrading again.\n\n' +
+                    'THEORY: The suppression ward\'s degradation is not equipment failure. ' +
+                    'The subject is actively resisting it at a sub-conscious level. ' +
+                    'This has not happened before.\n\n' +
+                    'CRITICAL NOTE: The maintenance point for the tertiary suppression ward ' +
+                    'is located at the bog shrine, grid ref 7-N. If the ward fails completely, ' +
+                    'the animating mechanism may become \'aware\'.\n\n' +
+                    'This may not be a problem. This may be a significant problem.\n\n' +
+                    '— Ongoing"',
+            },
         ],
         encounterPool: ENCOUNTER_POOL_F5,
     },
@@ -343,6 +420,24 @@ export const TOWER_FLOOR_DEFS = [
             { type: 'plant_pot', x: 10, z: 13 },
             { type: 'plant_pot', x: 3, z: 8 },
             { type: 'plant_pot', x: 13, z: 8 },
+            // E1: Act I lore book — Slime arc (What Is This?)
+            // Solmor's notes on a previous slime candidate who absorbed something unusual.
+            {
+                type: 'lectern', x: 4, z: 11,
+                content: 'A research journal, water-damaged.\n\n' +
+                    '"INCIDENT REPORT — CANDIDATE #7 (Slime, Classification IV)\n\n' +
+                    'The subject absorbed a personality fragment from a decommissioned construct ' +
+                    'in the lower laboratory. Fragment contained partial linguistic matrix and ' +
+                    'approximately 40 years of accumulated grievances.\n\n' +
+                    'The subject now has opinions.\n\n' +
+                    'Previously the subject did not have opinions. This is a significant change.\n\n' +
+                    'The personality fragment appears to retain access to certain structural ' +
+                    'knowledge of the tower, including an exit route I was not aware of.\n\n' +
+                    'RECOMMENDATION: Do not allow future candidates near the construct remains ' +
+                    'in the lab\'s NW quadrant.\n\n' +
+                    'I have not followed this recommendation myself. I am curious.\n\n' +
+                    '— S."',
+            },
         ],
         encounterPool: ENCOUNTER_POOL_F7,
     },
@@ -383,6 +478,27 @@ export const TOWER_FLOOR_DEFS = [
                 content: 'A shelf of sealed, black-bound volumes. Each spine bears only a number. You do not open them.' },
             { type: 'bookshelf', x: 13, z: 12, rotation: 180,
                 content: 'Scrolls sealed with seven different wax stamps. One of the stamps is a thumbprint. A very large thumbprint.' },
+            // NS6: Celestial arc lore book — paper on celestial binding wards
+            {
+                type: 'lectern', x: 3, z: 12,
+                content: 'A research paper, neatly printed on formal vellum.\n\n' +
+                    '\'Interim Report: Celestial Binding Efficacy at Ground Level (Preliminary Findings)\' ' +
+                    'by Arcanist Solmor.\n\n' +
+                    '\'Abstract: This paper presents initial results from a controlled field experiment ' +
+                    'regarding the suppression of celestial abilities at ground-level altitude. A synthetic ' +
+                    'resonance dampener — hereafter the Ward Stone — was placed at altitude zero within a ' +
+                    'test facility. Ability suppression was measured at twelve-hour intervals over a period of ' +
+                    'six months.\n\n' +
+                    'Results: INCONCLUSIVE. The ward demonstrates significant suppression of passive abilities ' +
+                    '(light emission, atmospheric resonance, signal transmission) but has no measurable effect ' +
+                    'on active spellcasting. The theoretical model requires revision.\n\n' +
+                    'Recommendation: Continue monitoring. The test subject is not currently aware of the ward.\n\n' +
+                    'Note (addendum, ink different from main text): The test subject has read this paper.\n\n' +
+                    'Note (second addendum, same ink as addendum one): The test subject would like it known that ' +
+                    '"she has been aware of the ward for approximately three months."\n\n' +
+                    'The paper is signed. The signature is followed by a small star drawn in gold ink, ' +
+                    'which was clearly not added by Solmor.',
+            },
         ],
         encounterPool: ENCOUNTER_POOL_F8,
     },

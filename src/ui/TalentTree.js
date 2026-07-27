@@ -18,6 +18,7 @@
 //    Tier 1 r=130, Tier 2 r=230, Tier 3 r=330
 //    Cross-path (between adj paths): r=180, angle = midpoint of adj angles
 import { TALENT_NODES, getTalentNode } from '@/progression/TalentSystem';
+import { spawnTalentUnlockVFX } from '@/ui/TalentUnlockVFX';
 // ── Layout constants ──────────────────────────────────────────────────────────
 const CX = 350, CY = 270;
 const R1 = 130, R2 = 230, R3 = 330, RCROSS = 180;
@@ -323,6 +324,12 @@ export class TalentTree {
         if (!this._prog || !this._talents)
             return;
         if (this._talents.buyNode(nodeId, this._prog)) {
+            // G3: particle burst + chime at node screen position
+            const nodeEl = this._nodeEls.get(nodeId);
+            if (nodeEl) {
+                const r = nodeEl.getBoundingClientRect();
+                spawnTalentUnlockVFX(r.left + r.width / 2, r.top + r.height / 2);
+            }
             this._refresh();
         }
     }
@@ -336,6 +343,10 @@ export class TalentTree {
                 return;
             const bought = this._talents.hasNode(id);
             const canBuy = this._talents.canBuy(id, this._prog);
+            // D6/NS2: species gate — dim nodes not available to active species
+            const speciesLocked = !!(node.allowedSpecies &&
+                this._talents.activeSpecies &&
+                !node.allowedSpecies.includes(this._talents.activeSpecies));
             const locked = !bought && !canBuy &&
                 !node.prerequisites.every(p => this._talents.hasNode(p));
             const color = PATH_COLOR[node.path] ?? '#888';
@@ -343,8 +354,16 @@ export class TalentTree {
             div.style.border = `2px solid ${bought ? color : canBuy ? color : '#1a1030'}`;
             div.style.background = bought ? `rgba(${rgb},0.35)` : canBuy ? 'rgba(10,4,26,0.8)' : 'rgba(4,2,10,0.6)';
             div.style.boxShadow = bought ? `0 0 14px rgba(${rgb},0.55)` : canBuy ? `0 0 8px rgba(${rgb},0.25)` : 'none';
-            div.style.opacity = locked ? '0.25' : '1';
+            div.style.opacity = speciesLocked ? '0.12' : locked ? '0.25' : '1';
             div.style.cursor = canBuy ? 'pointer' : 'default';
+            // Species-locked tooltip marker
+            if (speciesLocked) {
+                div.title = `${node.name}\n[${node.allowedSpecies.join('/')} only]`;
+                div.style.filter = 'grayscale(0.8)';
+            }
+            else {
+                div.style.filter = '';
+            }
             // Update inner dot
             const dot = div.querySelector('div');
             if (dot && !dot.textContent?.includes('✦')) {

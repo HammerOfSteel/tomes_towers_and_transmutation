@@ -83,6 +83,21 @@ export class EditorSerializer {
         const varName = doc.id.replace(/[^a-zA-Z0-9_]/g, '_');
         return `export const ${varName} = ${JSON.stringify(doc, null, 2)} as const;\n`;
     }
+    /**
+     * Fetch the last-saved level doc from `public/editor-output/<type>/<id>.ttt-level.json`.
+     * Returns null if the file doesn't exist or the fetch fails.
+     */
+    async loadFromGame(type, id) {
+        try {
+            const res = await fetch(`/editor-output/${type}/${id}.ttt-level.json`);
+            if (!res.ok)
+                return null;
+            return await res.json();
+        }
+        catch {
+            return null;
+        }
+    }
     /** Apply a loaded doc to the editor core. */
     async applyToCore(doc) {
         this.core.clearAll();

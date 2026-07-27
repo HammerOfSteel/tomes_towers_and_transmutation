@@ -238,8 +238,16 @@ export function generateCharacterName(characterId) {
         case 'slime_arcane': return _pick(SLIME_STANDALONE.slime_arcane);
         case 'slime_philosopher': return _pick(SLIME_STANDALONE.slime_philosopher);
         case 'slime_young': return _pick(SLIME_STANDALONE.slime_young);
+        // NS3: New Tier-1 species — use fitting name pools
+        case 'elf_scholar':
+        case 'elf_wanderer': return generateNameForSpecies('elf');
+        case 'celestial_dawn':
+        case 'celestial_dusk': return generateNameForSpecies('celestial');
+        case 'draconic_fire':
+        case 'draconic_scale': return generateNameForSpecies('draconic');
         default: {
             // Exhaustive fallback — should never be reached with a well-typed caller
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const _exhaustive = characterId;
             return 'Mysterious Stranger';
         }
@@ -293,6 +301,16 @@ export function generateNameForSpecies(species, tries = 6) {
             break;
         case 'undead':
             pool = UNDEAD_IDS;
+            break;
+        // NS3: new species — fall back to human pool (matching lore tone)
+        case 'elf':
+            pool = HUMAN_IDS;
+            break;
+        case 'celestial':
+            pool = HUMAN_IDS;
+            break;
+        case 'draconic':
+            pool = HUMAN_IDS;
             break;
         case 'any': {
             const ALL = [...HUMAN_IDS, ...FOX_IDS, ...SLIME_IDS, ...UNDEAD_IDS];

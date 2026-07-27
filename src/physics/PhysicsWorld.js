@@ -7,14 +7,45 @@ import * as THREE from 'three';
  */
 export class PhysicsWorld {
     world;
+    /**
+     * G1: Physics culling — when set, static bodies farther than this many WU from
+     * the `cullingOrigin` have their collision disabled each step to skip solver work.
+     * Set to 0 to disable culling (default).  Typical value: 30.
+     */
+    cullingRadius = 0;
+    /** World-space origin used for distance culling (usually player position). */
+    cullingOrigin = { x: 0, y: 0, z: 0 };
     async init() {
         await RAPIER.init();
         this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     }
     /** Step the simulation by dt seconds. */
     step(dt) {
+        // G1: disable static bodies beyond culling radius before stepping,
+        // re-enable them after — this skips broad-phase work on far geometry.
+        const doCull = this.cullingRadius > 0;
+        const culled = [];
+        if (doCull) {
+            const r2 = this.cullingRadius * this.cullingRadius;
+            const { x: ox, y: oy, z: oz } = this.cullingOrigin;
+            this.world.forEachRigidBody(body => {
+                if (body.bodyType() !== RAPIER.RigidBodyType.Fixed)
+                    return;
+                const t = body.translation();
+                const dx = t.x - ox;
+                const dy = t.y - oy;
+                const dz = t.z - oz;
+                if (dx * dx + dy * dy + dz * dz > r2) {
+                    body.setEnabled(false);
+                    culled.push(body);
+                }
+            });
+        }
         this.world.timestep = dt;
         this.world.step();
+        // Re-enable culled bodies
+        for (const body of culled)
+            body.setEnabled(true);
     }
     // ── Factory helpers ────────────────────────────────────────────────────────
     /** Create a fixed (immovable) box collider centred at `position`.
@@ -83,5 +114,9 @@ export class PhysicsWorld {
             return body !== null && body.bodyType() === RAPIER.RigidBodyType.Fixed;
         });
         return hit !== null ? hit.timeOfImpact : null;
+    }
+    /** Remove a rigid body (and its colliders) from the world. */
+    removeBody(body) {
+        this.world.removeRigidBody(body);
     }
 }

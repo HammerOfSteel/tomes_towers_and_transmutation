@@ -31,6 +31,15 @@ export class NewGameFlow {
      * (typically document.body).
      */
     async play(container, slotId) {
+        // ── Test hook: expose __campfire IMMEDIATELY so Playwright can detect launch ──
+        // The overlay reference is filled in once it's created below.
+        let _overlayRef = null;
+        const campfireHook = {
+            speaking: false,
+            choiceCount: 0,
+            choose: (idx) => _overlayRef?.forceChoice(idx),
+        };
+        window.__campfire = campfireHook;
         // ── 1. Build fullscreen host ──────────────────────────────────────────────
         const host = document.createElement('div');
         host.style.cssText = `
@@ -50,7 +59,8 @@ export class NewGameFlow {
         });
         const tree = new CharacterDecisionTree();
         this._scene = scene;
-        this._overlay = overlay;
+        this._overlay = overlay; // Wire the test hook now that overlay exists
+        _overlayRef = overlay;
         // Register floating-dialogue tick so it runs inside the scene’s RAF loop
         scene.setDialogueTick((t) => overlay.tick(t));
         scene.mount(host);
@@ -75,11 +85,16 @@ export class NewGameFlow {
         // Gesture on every wizard speech line; nod camera when player makes a choice
         const origSpeak = overlay.speak.bind(overlay);
         overlay.speak = async (text) => {
+            campfireHook.speaking = true;
+            campfireHook.choiceCount = 0;
             scene.triggerGesture();
-            return origSpeak(text);
+            const r = await origSpeak(text);
+            campfireHook.speaking = false;
+            return r;
         };
         const origChoose = overlay.choose.bind(overlay);
         overlay.choose = async (choices) => {
+            campfireHook.choiceCount = choices.length;
             const idx = await origChoose(choices);
             scene.triggerNod();
             return idx;
@@ -88,6 +103,7 @@ export class NewGameFlow {
         // Restore unpatched methods
         overlay.speak = origSpeak;
         overlay.choose = origChoose;
+        delete window.__campfire;
         // ── 8. Brief beat after farewell ─────────────────────────────────────────
         await _pause(400);
         overlay.hideSpeech();
@@ -97,7 +113,11 @@ export class NewGameFlow {
         // ── 10. Fade to black (music out concurrently) ───────────────────────
         this._fadeOutMusic(2000);
         await overlay.fadeOut(1800);
-        // ── 11. Build CharacterConfig ─────────────────────────────────────────────
+        // ── 11. Princess gallery short-circuit ───────────────────────────────────
+        if (result.characterId === 'princess') {
+            return this._runPrincessPick(host, slotId, result.statBonuses);
+        }
+        // ── 12. Build CharacterConfig ─────────────────────────────────────────────
         const manifestId = CHAR_MANIFEST_MAP[result.characterId];
         const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
         const cfg = {
@@ -120,6 +140,67 @@ export class NewGameFlow {
         this._scene = null;
         this._overlay = null;
         this._container = null;
+    }
+    // ── princess gallery picker (runs after campfire fade-out) ─────────────────
+    _runPrincessPick(host, slotId, statBonuses) {
+        return new Promise((resolve) => {
+            // Lazy-load the panel so the main bundle stays lean
+            import('@/ui/PrincessLibraryPanel').then(({ PrincessLibraryPanel }) => {
+                let settled = false;
+                const panel = new PrincessLibraryPanel(host, {
+                    onSelect: (dna, gameSpecies) => {
+                        console.log('[NewGameFlow] gallery onSelect — dna:', dna ? `name=${dna.name} species=${dna.species}` : 'NULL', '| gameSpecies:', gameSpecies);
+                        if (settled)
+                            return;
+                        settled = true;
+                        panel.hide();
+                        // Map gameSpecies to nearest CharacterId for model + story routing
+                        const speciesCharMap = {
+                            elf: 'elf_scholar',
+                            celestial: 'celestial_dawn',
+                            draconic: 'draconic_fire',
+                            human: 'rogue',
+                            undead: 'skeleton_mage',
+                            vulperia: 'fox_rogue',
+                            slime: 'slime',
+                        };
+                        const characterId = speciesCharMap[gameSpecies] ?? 'rogue';
+                        const manifestId = CHAR_MANIFEST_MAP[characterId];
+                        const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
+                        console.log('[NewGameFlow] resolving CharacterConfig — princessDna:', !!dna, 'characterId:', characterId);
+                        resolve({
+                            name: dna.name || generateQualityName(characterId),
+                            boon: _deriveBoon(statBonuses),
+                            slotId,
+                            dna: { ...DEFAULT_PLAYER_DNA },
+                            assetModel: assetModel ?? undefined,
+                            statBonuses,
+                            characterId,
+                            princessDna: dna,
+                            princessSpecies: gameSpecies,
+                        });
+                    },
+                    onClose: () => {
+                        // User dismissed without picking — fall through as a rogue
+                        if (!settled) {
+                            settled = true;
+                            const manifestId = CHAR_MANIFEST_MAP['rogue'];
+                            const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
+                            resolve({
+                                name: generateQualityName('rogue'),
+                                boon: _deriveBoon(statBonuses),
+                                slotId,
+                                dna: { ...DEFAULT_PLAYER_DNA },
+                                assetModel: assetModel ?? undefined,
+                                statBonuses,
+                                characterId: 'rogue',
+                            });
+                        }
+                    },
+                });
+                panel.show();
+            });
+        });
     }
     // ── music helpers ───────────────────────────────────────────────────────────
     _fadeInMusic(targetVol = 0.45, durationMs = 5000) {

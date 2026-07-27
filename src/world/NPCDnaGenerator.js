@@ -14,6 +14,10 @@ const ROLE_PROFILES = {
     scholar: { outfit: { top: 'robe_top', legs: 'robe_skirt', over: 'robe_full' }, faceTypes: ['gaunt', 'ancient', 'cute'], props: ['aura'], globalMul: 0.70 },
     innkeeper: { outfit: { top: 'tunic', legs: 'skirt', over: 'none' }, faceTypes: ['cute', 'cherubic', 'angry'], props: ['hair_long'], globalMul: 0.72 },
     blacksmith: { outfit: { top: 'armor_chest', legs: 'trousers', over: 'none' }, faceTypes: ['angry', 'gaunt', 'cherubic'], props: ['mane'], globalMul: 0.76 },
+    // C1: Quest-giver archetypes
+    quest_giver: { outfit: { top: 'tunic', legs: 'trousers', over: 'cloak' }, faceTypes: ['gaunt', 'ancient', 'cherubic'], props: ['crown', 'aura'], globalMul: 0.73 },
+    settlement_elder: { outfit: { top: 'robe_top', legs: 'robe_skirt', over: 'robe_full' }, faceTypes: ['ancient', 'gaunt', 'cute'], props: ['aura'], globalMul: 0.68 },
+    mysterious: { outfit: { top: 'robe_top', legs: 'robe_skirt', over: 'cloak' }, faceTypes: ['skull', 'ancient', 'gaunt'], props: ['aura'], globalMul: 0.71 },
 };
 const SUBRACES = [
     'human', 'human', 'human', 'elf', 'goblin', 'orc', 'gnome', 'fae',
