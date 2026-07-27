@@ -29,6 +29,150 @@ vi.stubGlobal('localStorage', {
     setItem: (k, v) => { _store[k] = v; },
     removeItem: (k) => { delete _store[k]; },
 });
+describe('AssetLibrary importEntry()', () => {
+    it('imports a JSON-safe snapshot as a custom entry with a fresh id', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        const imported = lib.importEntry({
+            id: 'external_settlement',
+            type: 'settlement',
+            name: 'Imported Settlement',
+            seed: 321,
+            createdAt: 1,
+            tags: ['type:town'],
+            isCustom: false,
+            thumbnail: null,
+            data: { wards: [{ id: 'w1' }] },
+        });
+        expect(imported).not.toBeNull();
+        expect(imported?.id).not.toBe('external_settlement');
+        expect(imported?.type).toBe('settlement');
+        expect(imported?.name).toBe('Imported Settlement');
+        expect(imported?.seed).toBe(321);
+        expect(imported?.isCustom).toBe(true);
+        expect(lib.size).toBe(1);
+    });
+    it('decodes Map-based payloads when importing exported snapshots', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        const imported = lib.importEntry({
+            id: 'external_dungeon',
+            type: 'dungeon',
+            name: 'Imported Dungeon',
+            seed: 99,
+            createdAt: 1,
+            tags: ['dtype:generic'],
+            isCustom: true,
+            thumbnail: null,
+            data: {
+                rooms: {
+                    __tttType: 'Map',
+                    entries: [['room_0', { id: 'room_0', width: 7 }]],
+                },
+                startRoomId: 'room_0',
+                seed: 99,
+            },
+        });
+        expect(imported).not.toBeNull();
+        const rooms = (imported?.data).rooms;
+        expect(rooms).toBeInstanceOf(Map);
+        expect(rooms.get('room_0')).toEqual({ id: 'room_0', width: 7 });
+    });
+    it('rejects invalid snapshots', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        expect(lib.importEntry({ foo: 'bar' })).toBeNull();
+        expect(lib.importEntry(null)).toBeNull();
+        expect(lib.size).toBe(0);
+    });
+});
+describe('AssetLibrary rename()', () => {
+    it('renames an existing entry and marks it custom', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        lib.add(makeEntry({ id: 'e1', name: 'Old Name', isCustom: false }));
+        const updated = lib.rename('e1', 'New Name');
+        expect(updated).not.toBeNull();
+        expect(updated?.name).toBe('New Name');
+        expect(updated?.isCustom).toBe(true);
+        expect(lib.getAll()[0]?.name).toBe('New Name');
+    });
+    it('rejects empty rename values', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        lib.add(makeEntry({ id: 'e1', name: 'Original' }));
+        expect(lib.rename('e1', '   ')).toBeNull();
+        expect(lib.getAll()[0]?.name).toBe('Original');
+    });
+    it('returns null when renaming a missing entry', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        expect(lib.rename('missing', 'Whatever')).toBeNull();
+    });
+});
+describe('AssetLibrary duplicate()', () => {
+    it('duplicates an entry with a fresh id, later createdAt, and copied data', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        const original = {
+            id: 'settlement_1',
+            type: 'settlement',
+            name: 'Settlement #1',
+            seed: 123,
+            createdAt: 1000,
+            tags: ['type:village', 'faction:human'],
+            isCustom: false,
+            data: { wards: [{ id: 'a' }], meta: { size: 12 } },
+            thumbnail: 'data:image/png;base64,abc',
+        };
+        lib.add(original);
+        const copy = lib.duplicate(original.id);
+        expect(copy).not.toBeNull();
+        expect(copy?.id).not.toBe(original.id);
+        expect(copy?.name).toBe('Settlement #1 Copy');
+        expect(copy?.createdAt).toBeGreaterThanOrEqual(original.createdAt);
+        expect(copy?.seed).toBe(original.seed);
+        expect(copy?.type).toBe(original.type);
+        expect(copy?.isCustom).toBe(true);
+        expect(lib.size).toBe(2);
+        const all = lib.getAll();
+        expect(all.some(e => e.id === original.id)).toBe(true);
+        expect(all.some(e => e.id === copy?.id)).toBe(true);
+        const copiedData = copy?.data;
+        expect(copiedData.meta.size).toBe(12);
+        expect(copiedData.wards[0]?.id).toBe('a');
+    });
+    it('deep-copies encoded data structures like Map when duplicating', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        const rooms = new Map([
+            ['room_0', { id: 'room_0', width: 7 }],
+        ]);
+        lib.add({
+            id: 'dungeon_1',
+            type: 'dungeon',
+            name: 'Dungeon #1',
+            seed: 77,
+            createdAt: 1000,
+            tags: ['dtype:generic'],
+            isCustom: false,
+            data: { rooms, startRoomId: 'room_0' },
+            thumbnail: null,
+        });
+        const copy = lib.duplicate('dungeon_1');
+        expect(copy).not.toBeNull();
+        const copiedRooms = (copy?.data).rooms;
+        expect(copiedRooms).toBeInstanceOf(Map);
+        expect(copiedRooms).not.toBe(rooms);
+        expect(copiedRooms.get('room_0')).toEqual({ id: 'room_0', width: 7 });
+    });
+    it('returns null when duplicating a missing entry', () => {
+        const lib = new AssetLibrary('ttt_asset_library_test');
+        lib.clear();
+        expect(lib.duplicate('missing')).toBeNull();
+        expect(lib.size).toBe(0);
+    });
+});
 // ── Tests ─────────────────────────────────────────────────────────────────────
 describe('AssetLibrary', () => {
     let lib;
@@ -70,9 +214,13 @@ describe('AssetLibrary', () => {
         lib.add(makeEntry({ id: 'd1', type: 'dungeon' }));
         lib.add(makeEntry({ id: 'b2', type: 'building' }));
         lib.add(makeEntry({ id: 's1', type: 'settlement' }));
+        lib.add(makeEntry({ id: 'r1', type: 'room', name: 'Room Layout 1' }));
+        lib.add(makeEntry({ id: 'n1', type: 'npc', name: 'Aldric (merchant)' }));
         expect(lib.getByType('building')).toHaveLength(2);
         expect(lib.getByType('dungeon')).toHaveLength(1);
         expect(lib.getByType('settlement')).toHaveLength(1);
+        expect(lib.getByType('room')).toHaveLength(1);
+        expect(lib.getByType('npc')).toHaveLength(1);
         expect(lib.getByType('cave')).toHaveLength(0);
     });
     it('search() finds by name substring (case-insensitive)', () => {
