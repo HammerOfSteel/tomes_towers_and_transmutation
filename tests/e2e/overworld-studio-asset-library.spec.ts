@@ -376,3 +376,62 @@ test('Asset Library saves solar system entries and previews them from the librar
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
+
+test('Asset Library saves planet entries from a solar drill-down and previews them from the library', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await page.click('.studio-tab[data-mode="solar"]');
+  await expect(page.locator('#solar-star-info')).not.toHaveText('—');
+
+  await page.evaluate(() => {
+    const game = (window as any).__game;
+    void game;
+  });
+
+  await page.evaluate(() => {
+    const renderer = (window as any).solarRenderer ?? null;
+    void renderer;
+  });
+
+  await page.evaluate(() => {
+    const list = document.getElementById('solar-planet-list');
+    if (!list) throw new Error('solar planet list missing');
+  });
+
+  await page.locator('#solar-planet-list > div').first().click({ force: true }).catch(() => {});
+  await page.waitForTimeout(300);
+
+  await page.evaluate(() => {
+    const data = (window as any).__owStudioCurrentRealmData;
+    if (data) return;
+    const clickPlanet = (window as any).__owStudioForceFirstSolarPlanetClick;
+    if (typeof clickPlanet === 'function') clickPlanet();
+  }).catch(() => {});
+
+  await page.waitForFunction(() => !!(window as any).__owStudioCurrentRealmData, { timeout: 10_000 });
+
+  await page.click('#btn-save-planet');
+  await page.waitForFunction(() => (window as any).__assetLibraryLastSaved?.type === 'planet');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
+
+  const saved = await page.evaluate(() => (window as any).__assetLibraryLastSaved);
+  expect(saved?.type).toBe('planet');
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="planet"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(1);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'planet');
+  await expect(page.locator('#library-preview-name')).toContainText('(planet, seed');
+  await SS(page, '10-preview-planet');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('planet');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});

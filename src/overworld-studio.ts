@@ -4257,6 +4257,59 @@ let currentPlanetType: PlanetType = 'terran';
 let solarRenderer: SolarSystemRenderer | null = null;
 let currentSolarData: SolarSystemData | null = null;
 
+function _drillIntoSolarPlanet(p: SolarSystemData['planets'][number]): void {
+  // Gas giants have no surface — skip drill-down
+  if (p.type === 'gas_giant') return;
+
+  // 1. Set planet type for the 3D renderer
+  currentPlanetType = p.isTowerPlanet ? 'terran' : p.type;
+  document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
+  const pTypePill = document.querySelector(`#planet-type-pills [data-ptype="${currentPlanetType}"]`) as HTMLElement | null;
+  pTypePill?.classList.add('active');
+
+  // 2. Derive deterministic realm seed from solar system seed + planet id
+  const solarSeed = (currentSolarData?.seed ?? parseInt(seedInput.value)) || 0;
+  const planetRealmSeed = ((solarSeed ^ (p.id * 0x9E3779B9)) >>> 0);
+  seedInput.value = String(planetRealmSeed);
+
+  // 3. Set realm generation params to match planet type
+  type PlanetRealmConfig = { shape: RealmShape; climate: RealmClimate; roughness: number; settlements: number };
+  const PLANET_REALM: Partial<Record<PlanetType, PlanetRealmConfig>> = {
+    terran:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 6  },
+    ocean:     { shape: 'archipelago', climate: 'temperate', roughness: 30, settlements: 3  },
+    ice:       { shape: 'island',      climate: 'arctic',    roughness: 70, settlements: 2  },
+    volcanic:  { shape: 'island',      climate: 'temperate', roughness: 90, settlements: 2  },
+    toxic:     { shape: 'continents',  climate: 'tropical',  roughness: 70, settlements: 3  },
+    desert:    { shape: 'pangaea',     climate: 'temperate', roughness: 30, settlements: 4  },
+    verdant:   { shape: 'island',      climate: 'tropical',  roughness: 50, settlements: 5  },
+    dead:      { shape: 'island',      climate: 'arctic',    roughness: 40, settlements: 1  },
+    ringed:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 4  },
+  };
+  const cfg = PLANET_REALM[currentPlanetType] ?? { shape: 'island' as RealmShape, climate: 'temperate' as RealmClimate, roughness: 50, settlements: 6 };
+
+  // Apply shape pill
+  document.querySelectorAll('#realm-shape-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector(`#realm-shape-pills [data-shape="${cfg.shape}"]`) as HTMLElement | null)?.classList.add('active');
+  // Apply climate pill
+  document.querySelectorAll('#realm-climate-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector(`#realm-climate-pills [data-climate="${cfg.climate}"]`) as HTMLElement | null)?.classList.add('active');
+  // Apply roughness slider
+  const roughnessEl = document.getElementById('realm-roughness') as HTMLInputElement | null;
+  if (roughnessEl) { roughnessEl.value = String(cfg.roughness); const lbl = document.getElementById('realm-roughness-val'); if (lbl) lbl.textContent = cfg.roughness < 25 ? 'Flat' : cfg.roughness < 50 ? 'Rolling' : cfg.roughness < 75 ? 'Moderate' : 'Rugged'; }
+  // Apply settlements slider
+  const settleEl = document.getElementById('realm-settlements') as HTMLInputElement | null;
+  if (settleEl) { settleEl.value = String(cfg.settlements); const lbl = document.getElementById('realm-settlements-val'); if (lbl) lbl.textContent = String(cfg.settlements); }
+
+  // 4. Force realm regeneration and switch to Realm → Hex view
+  currentRealmData = null;
+  realmViewMode = 'hex';
+  document.querySelectorAll('#realm-view-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector('#realm-view-pills [data-view="hex"]') as HTMLElement | null)?.classList.add('active');
+
+  // 5. Navigate with breadcrumb
+  _switchMode('realm', planetRealmSeed, `🌍 ${p.name}`);
+}
+
 function getSolarRenderer(): SolarSystemRenderer {
   if (!solarRenderer) {
     solarRenderer = new SolarSystemRenderer(canvas);
@@ -4265,56 +4318,7 @@ function getSolarRenderer(): SolarSystemRenderer {
       if (el) el.textContent = p ? `${PLANET_META_SS[p.type]} ${p.name}` : '—';
     });
     solarRenderer.onPlanetClick(p => {
-      // Gas giants have no surface — skip drill-down
-      if (p.type === 'gas_giant') return;
-
-      // 1. Set planet type for the 3D renderer
-      currentPlanetType = p.isTowerPlanet ? 'terran' : p.type;
-      document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
-      const pTypePill = document.querySelector(`#planet-type-pills [data-ptype="${currentPlanetType}"]`) as HTMLElement | null;
-      pTypePill?.classList.add('active');
-
-      // 2. Derive deterministic realm seed from solar system seed + planet id
-      const solarSeed = (currentSolarData?.seed ?? parseInt(seedInput.value)) || 0;
-      const planetRealmSeed = ((solarSeed ^ (p.id * 0x9E3779B9)) >>> 0);
-      seedInput.value = String(planetRealmSeed);
-
-      // 3. Set realm generation params to match planet type
-      type PlanetRealmConfig = { shape: RealmShape; climate: RealmClimate; roughness: number; settlements: number };
-      const PLANET_REALM: Partial<Record<PlanetType, PlanetRealmConfig>> = {
-        terran:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 6  },
-        ocean:     { shape: 'archipelago', climate: 'temperate', roughness: 30, settlements: 3  },
-        ice:       { shape: 'island',      climate: 'arctic',    roughness: 70, settlements: 2  },
-        volcanic:  { shape: 'island',      climate: 'temperate', roughness: 90, settlements: 2  },
-        toxic:     { shape: 'continents',  climate: 'tropical',  roughness: 70, settlements: 3  },
-        desert:    { shape: 'pangaea',     climate: 'temperate', roughness: 30, settlements: 4  },
-        verdant:   { shape: 'island',      climate: 'tropical',  roughness: 50, settlements: 5  },
-        dead:      { shape: 'island',      climate: 'arctic',    roughness: 40, settlements: 1  },
-        ringed:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 4  },
-      };
-      const cfg = PLANET_REALM[currentPlanetType] ?? { shape: 'island' as RealmShape, climate: 'temperate' as RealmClimate, roughness: 50, settlements: 6 };
-
-      // Apply shape pill
-      document.querySelectorAll('#realm-shape-pills .pill').forEach(x => x.classList.remove('active'));
-      (document.querySelector(`#realm-shape-pills [data-shape="${cfg.shape}"]`) as HTMLElement | null)?.classList.add('active');
-      // Apply climate pill
-      document.querySelectorAll('#realm-climate-pills .pill').forEach(x => x.classList.remove('active'));
-      (document.querySelector(`#realm-climate-pills [data-climate="${cfg.climate}"]`) as HTMLElement | null)?.classList.add('active');
-      // Apply roughness slider
-      const roughnessEl = document.getElementById('realm-roughness') as HTMLInputElement | null;
-      if (roughnessEl) { roughnessEl.value = String(cfg.roughness); const lbl = document.getElementById('realm-roughness-val'); if (lbl) lbl.textContent = cfg.roughness < 25 ? 'Flat' : cfg.roughness < 50 ? 'Rolling' : cfg.roughness < 75 ? 'Moderate' : 'Rugged'; }
-      // Apply settlements slider
-      const settleEl = document.getElementById('realm-settlements') as HTMLInputElement | null;
-      if (settleEl) { settleEl.value = String(cfg.settlements); const lbl = document.getElementById('realm-settlements-val'); if (lbl) lbl.textContent = String(cfg.settlements); }
-
-      // 4. Force realm regeneration and switch to Realm → Hex view
-      currentRealmData = null;
-      realmViewMode = 'hex';
-      document.querySelectorAll('#realm-view-pills .pill').forEach(x => x.classList.remove('active'));
-      (document.querySelector('#realm-view-pills [data-view="hex"]') as HTMLElement | null)?.classList.add('active');
-
-      // 5. Navigate with breadcrumb
-      _switchMode('realm', planetRealmSeed, `🌍 ${p.name}`);
+      _drillIntoSolarPlanet(p);
     });
   }
   solarRenderer.resize(canvas.offsetWidth || 800, canvas.offsetHeight || 600);
@@ -4341,6 +4345,13 @@ function generateSolarView(): void {
   if (listEl) listEl.innerHTML = currentSolarData.planets.map(p =>
     `<div>${PLANET_META_SS[p.type] ?? ''} ${p.name}${p.isTowerPlanet ? ' ⬡' : ''}</div>`
   ).join('');
+
+  (window as any).__owStudioForceFirstSolarPlanetClick = () => {
+    const candidate = currentSolarData?.planets.find(p => p.type !== 'gas_giant') ?? null;
+    if (!candidate) return false;
+    _drillIntoSolarPlanet(candidate);
+    return true;
+  };
 }
 
 
@@ -4749,7 +4760,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', realm: '🌍', solar: '☀', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', realm: '🌍', planet: '🪐', solar: '☀', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }
@@ -4925,6 +4936,35 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
     if (currentRealmData) {
       genTimeEl.textContent =
         `${entry.name}  ·  ${currentRealmData.W}×${currentRealmData.H}  ·  ${currentRealmData.settlements.length} settlements  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'planet') {
+    _setStudioModeForLibraryPreview('realm');
+
+    const planetData = entry.data as {
+      realmData?: RealmData;
+      planetType?: PlanetType;
+      view?: RealmViewMode;
+    };
+
+    const shape = _getLibraryTag(entry, 'shape');
+    const climate = _getLibraryTag(entry, 'climate');
+    _setActivePillByDataset('realm-shape-pills', 'shape', shape);
+    _setActivePillByDataset('realm-climate-pills', 'climate', climate);
+
+    currentPlanetType = planetData.planetType ?? (_getLibraryTag(entry, 'planetType') as PlanetType | null) ?? 'terran';
+    _setActivePillByDataset('planet-type-pills', 'ptype', currentPlanetType);
+
+    realmViewMode = planetData.view ?? (_getLibraryTag(entry, 'view') as RealmViewMode | null) ?? 'planet';
+    _setActivePillByDataset('realm-view-pills', 'view', realmViewMode);
+
+    currentRealmData = planetData.realmData ?? null;
+    if (currentRealmData) {
+      redrawRealm();
+      genTimeEl.textContent =
+        `${entry.name}  ·  ${currentPlanetType}  ·  ${realmViewMode} view  ·  seed ${entry.seed}`;
     }
     return;
   }
@@ -5341,6 +5381,24 @@ document.getElementById('btn-save-realm')?.addEventListener('click', () => {
     `climate:${climate}`,
     `planetType:${currentPlanetType}`,
     `view:${realmViewMode}`,
+  ]);
+});
+
+document.getElementById('btn-save-planet')?.addEventListener('click', () => {
+  if (!currentRealmData) { alert('Generate a planet/realm first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const shape = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  _saveToLibrary('planet', `Planet ${currentPlanetType} #${seed}`, seed, {
+    realmData: currentRealmData,
+    planetType: currentPlanetType,
+    view: realmViewMode,
+  }, [
+    `planetType:${currentPlanetType}`,
+    `view:${realmViewMode}`,
+    `shape:${shape}`,
+    `climate:${climate}`,
+    'source:realm',
   ]);
 });
 
