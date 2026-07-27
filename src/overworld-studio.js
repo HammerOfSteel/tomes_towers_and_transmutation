@@ -24,11 +24,14 @@ import { Delaunay } from 'd3-delaunay';
 import { createNoise2D } from '@/core/SimplexNoise';
 import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from './buildingToDungeonPlan';
 import { generateTower } from '@/levels/TowerGenerator';
+import { generateSettlementNpcs } from '@/procedural/WorldGen';
+import { npcDna, npcName } from '@/world/NPCDnaGenerator';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem } from './solar-system-renderer';
 import { assetLibrary } from './overworld-studio/AssetLibrary';
+import { OVERWORLD_SETTLEMENT_PREVIEW_KEY, } from './overworld-studio/SettlementPreviewPayload';
 import * as THREE from 'three';
 // ── Ward colour palette ───────────────────────────────────────────────────────
 export const WARD_COLORS = {
@@ -1442,6 +1445,7 @@ document.getElementById('faction-pills').addEventListener('click', e => {
         return;
     document.querySelectorAll('#faction-pills .pill').forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
+    updateLegend(pill.dataset.faction ?? 'human');
     generate(false); // regen — faction changes ward assignments
 });
 // Sliders — live update with value display
@@ -1619,6 +1623,45 @@ function _updateBreadcrumb() {
  * Programmatically switch studio mode, optionally loading a specific seed.
  * Pushes to the breadcrumb stack if `breadcrumbLabel` is provided.
  */
+function _flashStudioTransition(label = '', durationMs = 180) {
+    let flash = document.getElementById('studio-transition-flash');
+    if (!flash) {
+        flash = document.createElement('div');
+        flash.id = 'studio-transition-flash';
+        flash.style.cssText =
+            'position:fixed;inset:0;pointer-events:none;z-index:9998;display:none;opacity:0;' +
+                'background:radial-gradient(circle at center, rgba(255,245,220,0.85) 0%, rgba(200,170,110,0.35) 30%, rgba(20,18,14,0.92) 100%);' +
+                'transition:opacity 140ms ease-out;';
+        const text = document.createElement('div');
+        text.id = 'studio-transition-flash-label';
+        text.style.cssText =
+            'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
+                'font:700 18px Georgia,serif;letter-spacing:1px;color:#f0d8a8;text-shadow:0 2px 12px rgba(0,0,0,0.8);';
+        flash.appendChild(text);
+        document.body.appendChild(flash);
+    }
+    const labelEl = document.getElementById('studio-transition-flash-label');
+    if (labelEl)
+        labelEl.textContent = label;
+    clearTimeout(flash._hideTimer);
+    flash.style.display = 'block';
+    flash.style.opacity = '0';
+    window.__owStudioTransitionCount = (window.__owStudioTransitionCount ?? 0) + 1;
+    window.__owStudioLastTransitionLabel = label;
+    window.__owStudioLastTransitionAt = Date.now();
+    requestAnimationFrame(() => {
+        if (flash)
+            flash.style.opacity = '1';
+        window.setTimeout(() => {
+            if (flash)
+                flash.style.opacity = '0';
+            flash._hideTimer = window.setTimeout(() => {
+                if (flash)
+                    flash.style.display = 'none';
+            }, 170);
+        }, durationMs);
+    });
+}
 function _switchMode(mode, seedOverride, breadcrumbLabel) {
     // Push the CURRENT mode to the stack before switching (if labelled)
     if (breadcrumbLabel) {
@@ -1637,6 +1680,7 @@ function _switchMode(mode, seedOverride, breadcrumbLabel) {
     if (seedOverride !== undefined) {
         seedInput.value = String(seedOverride);
     }
+    _flashStudioTransition(breadcrumbLabel || `${mode[0].toUpperCase()}${mode.slice(1)}`);
     // Simulate tab click
     const tab = document.querySelector(`.studio-tab[data-mode="${mode}"]`);
     tab?.click();
@@ -2038,12 +2082,16 @@ function pointInPolygon(p, poly) {
 }
 // ── Ward legend ───────────────────────────────────────────────────────────────
 const legendEl = document.getElementById('ward-legend');
-for (const [type, col] of Object.entries(WARD_COLORS)) {
-    const row = document.createElement('div');
-    row.className = 'legend-row';
-    row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${WARD_LABELS[type]}</span>`;
-    legendEl.appendChild(row);
+function updateLegend(faction = 'human') {
+    legendEl.innerHTML = '';
+    for (const [type, col] of Object.entries(WARD_COLORS)) {
+        const row = document.createElement('div');
+        row.className = 'legend-row';
+        row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${factionWardLabel(faction, type)}</span>`;
+        legendEl.appendChild(row);
+    }
 }
+updateLegend('human');
 const ROOM_SIZES = {
     entry: [[7, 7], [7, 9]],
     library: [[9, 9], [9, 7], [11, 9]],
@@ -4049,9 +4097,24 @@ function showPlanetCanvas(show) {
     if (typeSection)
         typeSection.style.display = show ? '' : 'none';
 }
+function _publishRealmDebugState() {
+    window.__owStudioCurrentRealmData = currentRealmData
+        ? {
+            W: currentRealmData.W,
+            H: currentRealmData.H,
+            settlements: currentRealmData.settlements.map(s => ({
+                x: s.x, y: s.y, name: s.name, size: s.size, faction: s.faction,
+            })),
+            dungeons: currentRealmData.dungeons.map(d => ({ x: d.x, y: d.y })),
+            seed: currentRealmData.seed,
+            view: realmViewMode,
+        }
+        : null;
+}
 function redrawRealm() {
     if (!currentRealmData)
         return;
+    _publishRealmDebugState();
     if (realmViewMode === 'planet') {
         showPlanetCanvas(true);
         if (hexPlanetRenderer)
@@ -4153,6 +4216,7 @@ function generateRealmView() {
     const [W, H] = REALM_SIZES[size] ?? REALM_SIZES[2];
     const t0 = performance.now();
     currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);
+    _publishRealmDebugState();
     redrawRealm();
     const ms = (performance.now() - t0).toFixed(1);
     genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
@@ -4236,7 +4300,11 @@ document.getElementById('realm-view-pills').addEventListener('click', e => {
     const pill = e.target.closest('.pill');
     if (!pill?.dataset.view)
         return;
-    realmViewMode = pill.dataset.view;
+    const nextView = pill.dataset.view;
+    if (nextView === realmViewMode)
+        return;
+    realmViewMode = nextView;
+    _flashStudioTransition(nextView === 'map' ? 'Surface Map' : nextView === 'planet' ? 'Planet View' : 'Hex Sphere');
     document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
     pill.classList.add('active');
     if (currentRealmData)
@@ -4375,7 +4443,7 @@ function _renderLibraryGrid() {
         else {
             const ph = document.createElement('div');
             ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-            const icon = { building: '🏠', dungeon: '⚔', settlement: '🏙', cave: '🌿' }[entry.type];
+            const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', cave: '🌿' }[entry.type];
             ph.textContent = icon;
             card.appendChild(ph);
         }
@@ -4463,15 +4531,25 @@ function _previewLibraryEntry(entry) {
         }
         return;
     }
-    if (entry.type === 'dungeon' || entry.type === 'building') {
+    if (entry.type === 'dungeon' || entry.type === 'building' || entry.type === 'room') {
         _setStudioModeForLibraryPreview('dungeon');
-        const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : null);
+        const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : 'generic');
         _setActivePillByDataset('dungeon-type-pills', 'dtype', dtype);
         const isTower = dtype === 'tower';
         const towerFloorRow = document.getElementById('tower-floor-row');
         if (towerFloorRow)
             towerFloorRow.style.display = isTower ? '' : 'none';
-        currentDungeonPlan = entry.data;
+        if (entry.type === 'room') {
+            const room = entry.data;
+            currentDungeonPlan = {
+                rooms: new Map([[room.id, room]]),
+                startRoomId: room.id,
+                seed: entry.seed,
+            };
+        }
+        else {
+            currentDungeonPlan = entry.data;
+        }
         const floorInput = document.getElementById('dfloor');
         const floorVal = document.getElementById('dfloor-val');
         if (currentDungeonPlan && floorInput && isTower) {
@@ -4488,7 +4566,13 @@ function _previewLibraryEntry(entry) {
         }
         redrawDungeon();
         if (currentDungeonPlan) {
-            genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+            if (entry.type === 'room') {
+                const onlyRoom = [...currentDungeonPlan.rooms.values()][0];
+                genTimeEl.textContent = `${entry.name}  ·  room ${onlyRoom?.id ?? '?'}  ·  ${onlyRoom?.width ?? 0}×${onlyRoom?.depth ?? 0}  ·  seed ${entry.seed}`;
+            }
+            else {
+                genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+            }
         }
         return;
     }
@@ -4507,6 +4591,13 @@ function _previewLibraryEntry(entry) {
             const openCells = currentCaveData.grid.flat().filter(Boolean).length;
             genTimeEl.textContent = `${entry.name}  ·  ${openCells} open cells  ·  seed ${entry.seed}`;
         }
+        return;
+    }
+    if (entry.type === 'npc') {
+        _setStudioModeForLibraryPreview('settlement');
+        const npcData = entry.data;
+        genTimeEl.textContent =
+            `${npcData.displayName ?? entry.name}  ·  ${npcData.species ?? 'unknown'} ${npcData.role ?? 'npc'}  ·  ${npcData.settlementName ?? 'Settlement'}  ·  seed ${entry.seed}`;
     }
 }
 function _selectLibraryEntry(id) {
@@ -4514,10 +4605,13 @@ function _selectLibraryEntry(id) {
     const entry = assetLibrary.getAll().find(e => e.id === id) ?? null;
     const section = document.getElementById('library-preview-section');
     const nameLbl = document.getElementById('library-preview-name');
+    const renameInput = document.getElementById('library-rename-input');
     if (section)
         section.style.display = entry ? '' : 'none';
     if (nameLbl && entry)
         nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
+    if (renameInput)
+        renameInput.value = entry?.name ?? '';
     _previewLibraryEntry(entry);
     _renderLibraryGrid();
 }
@@ -4564,6 +4658,75 @@ document.getElementById('library-type-pills')?.addEventListener('click', (e) => 
 });
 // ── Search input ──────────────────────────────────────────────────────────────
 document.getElementById('library-search')?.addEventListener('input', () => _renderLibraryGrid());
+// ── Import ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-import')?.addEventListener('click', () => {
+    document.getElementById('library-import-file')?.click();
+});
+document.getElementById('library-import-file')?.addEventListener('change', async (e) => {
+    const input = e.target;
+    const file = input?.files?.[0];
+    if (!file)
+        return;
+    try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const imported = assetLibrary.importEntry(parsed);
+        if (!imported) {
+            _showToast('✕ Import failed');
+            return;
+        }
+        _librarySelectedId = imported.id;
+        _renderLibraryGrid();
+        _selectLibraryEntry(imported.id);
+        _showToast(`✓ Imported "${imported.name}"`);
+    }
+    catch (err) {
+        console.error('[AssetLibrary] import failed:', err);
+        _showToast('✕ Invalid JSON import');
+    }
+    finally {
+        if (input)
+            input.value = '';
+    }
+});
+// ── Rename ────────────────────────────────────────────────────────────────────
+function _renameSelectedLibraryEntry() {
+    if (!_librarySelectedId)
+        return;
+    const input = document.getElementById('library-rename-input');
+    const current = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+    if (!input || !current)
+        return;
+    const updated = assetLibrary.rename(_librarySelectedId, input.value);
+    if (!updated) {
+        input.value = current.name;
+        _showToast('✕ Name cannot be empty');
+        return;
+    }
+    _renderLibraryGrid();
+    _selectLibraryEntry(updated.id);
+    _showToast(`✓ Renamed to "${updated.name}"`);
+}
+document.getElementById('btn-library-rename')?.addEventListener('click', _renameSelectedLibraryEntry);
+document.getElementById('library-rename-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')
+        _renameSelectedLibraryEntry();
+});
+// ── Duplicate ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-duplicate')?.addEventListener('click', () => {
+    if (!_librarySelectedId)
+        return;
+    const source = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+    if (!source)
+        return;
+    const copy = assetLibrary.duplicate(_librarySelectedId, `${source.name} Copy`);
+    if (!copy)
+        return;
+    _librarySelectedId = copy.id;
+    _renderLibraryGrid();
+    _selectLibraryEntry(copy.id);
+    _showToast(`✓ Duplicated "${source.name}"`);
+});
 // ── Export ────────────────────────────────────────────────────────────────────
 document.getElementById('btn-library-export')?.addEventListener('click', () => {
     if (!_librarySelectedId)
@@ -4608,10 +4771,9 @@ function _showToast(msg) {
     _toastTimer = window.setTimeout(() => { if (toast)
         toast.style.opacity = '0'; }, 1800);
 }
-function _saveToLibrary(type, name, seed, data, tags = []) {
-    const thumb = _renderThumbnail(type);
-    const entry = {
-        id: `${type}_${seed}_${Date.now()}`,
+function _makeLibraryEntry(type, name, seed, data, tags = []) {
+    return {
+        id: `${type}_${seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         type,
         name,
         seed,
@@ -4619,11 +4781,110 @@ function _saveToLibrary(type, name, seed, data, tags = []) {
         tags,
         isCustom: false,
         data,
-        thumbnail: thumb,
+        thumbnail: _renderThumbnail(type),
     };
+}
+function _buildOverworldSettlementPreviewPayload() {
+    if (!currentModel)
+        return null;
+    const seed = parseInt(seedInput.value) || 0;
+    const params = getParams();
+    return {
+        version: 1,
+        seed,
+        name: `Settlement #${seed}`,
+        settlementType: params.type,
+        faction: params.faction,
+        model: {
+            centre: {
+                x: currentModel.centre.x,
+                y: currentModel.centre.y,
+            },
+            radius: currentModel.radius,
+            wards: currentModel.wards.map(ward => ({
+                type: ward.type,
+                center: {
+                    x: ward.center.x,
+                    y: ward.center.y,
+                },
+                withinCity: ward.withinCity,
+            })),
+        },
+    };
+}
+function _saveToLibrary(type, name, seed, data, tags = []) {
+    const entry = _makeLibraryEntry(type, name, seed, data, tags);
     assetLibrary.add(entry);
     window.__assetLibraryLastSaved = { id: entry.id, type, name, seed, tags };
+    window.__assetLibraryLastSavedBatch = null;
     _showToast(`✓ Saved "${name}" to Library (${assetLibrary.size} total)`);
+    if (_libraryOpen)
+        _renderLibraryGrid();
+}
+function _mapPlacedNpcRole(role) {
+    switch (role) {
+        case 'elder': return 'settlement_elder';
+        case 'merchant':
+        case 'guard':
+        case 'innkeeper':
+        case 'quest_giver':
+        case 'scholar':
+        case 'mysterious':
+            return role;
+    }
+}
+function _saveSettlementNpcsToLibrary() {
+    if (!currentModel) {
+        alert('Generate a settlement first.');
+        return;
+    }
+    const seed = parseInt(seedInput.value) || 0;
+    const params = getParams();
+    const settlementId = `studio-settlement-${seed}`;
+    const settlementName = `Settlement #${seed}`;
+    const centerX = Math.round(currentModel.centre.x);
+    const centerZ = Math.round(currentModel.centre.y);
+    const npcCountByType = {
+        village: 4,
+        town: 6,
+        city: 8,
+    };
+    const npcCount = npcCountByType[params.type] ?? 4;
+    const placedNpcs = generateSettlementNpcs(settlementId, seed, centerX, centerZ, npcCount);
+    const npcEntries = placedNpcs.map((npc, index) => {
+        const role = _mapPlacedNpcRole(npc.role);
+        const dna = npcDna(Math.round(npc.pos.x), Math.round(npc.pos.z), seed, role);
+        const displayName = npcName(npc.seed);
+        return _makeLibraryEntry('npc', `${displayName} (${npc.role})`, seed, {
+            npcId: npc.id,
+            displayName,
+            species: npc.species,
+            role: npc.role,
+            settlementId,
+            settlementName,
+            settlementType: params.type,
+            settlementFaction: params.faction,
+            pos: npc.pos,
+            npcSeed: npc.seed,
+            dna,
+        }, [
+            `source:settlement`,
+            `settlement:${settlementId}`,
+            `stype:${params.type}`,
+            `faction:${params.faction}`,
+            `species:${npc.species}`,
+            `role:${npc.role}`,
+            `index:${index}`,
+        ]);
+    });
+    for (const entry of npcEntries)
+        assetLibrary.add(entry);
+    window.__assetLibraryLastSavedBatch = {
+        type: 'npc',
+        count: npcEntries.length,
+        ids: npcEntries.map(entry => entry.id),
+    };
+    _showToast(`✓ Saved ${npcEntries.length} settlement NPC${npcEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
     if (_libraryOpen)
         _renderLibraryGrid();
 }
@@ -4641,6 +4902,23 @@ document.getElementById('btn-save-settlement')?.addEventListener('click', () => 
         `faction:${params.faction}`,
     ]);
 });
+document.getElementById('btn-save-settlement-npcs')?.addEventListener('click', _saveSettlementNpcsToLibrary);
+document.getElementById('btn-preview-overworld')?.addEventListener('click', () => {
+    const payload = _buildOverworldSettlementPreviewPayload();
+    if (!payload) {
+        alert('Generate a settlement first.');
+        return;
+    }
+    localStorage.setItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY, JSON.stringify(payload));
+    window.__owStudioLastOverworldPreview = {
+        name: payload.name,
+        seed: payload.seed,
+        faction: payload.faction,
+        wardCount: payload.model.wards.length,
+    };
+    _showToast(`✓ Opening overworld preview for "${payload.name}"`);
+    window.open('/index.html', '_blank');
+});
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────
 document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
     if (!currentDungeonPlan) {
@@ -4652,6 +4930,36 @@ document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
     _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan, [
         `dtype:${dtype}`,
     ]);
+});
+document.getElementById('btn-save-dungeon-rooms')?.addEventListener('click', () => {
+    if (!currentDungeonPlan) {
+        alert('Generate a dungeon first.');
+        return;
+    }
+    const seed = parseInt(seedInput.value) || 0;
+    const dtype = document.querySelector('#dungeon-type-pills .pill.active')?.dataset.dtype ?? 'generic';
+    const roomEntries = [...currentDungeonPlan.rooms.values()].map((room, index) => {
+        const roomCopy = typeof structuredClone === 'function'
+            ? structuredClone(room)
+            : JSON.parse(JSON.stringify(room));
+        return _makeLibraryEntry('room', `Room Layout ${index + 1} (${room.id})`, seed, roomCopy, [
+            `dtype:${dtype}`,
+            `room:${room.id}`,
+            `floor:${room.floor ?? 0}`,
+            `source:dungeon`,
+            ...(room.floorType ? [`floorType:${room.floorType}`] : []),
+        ]);
+    });
+    for (const entry of roomEntries)
+        assetLibrary.add(entry);
+    window.__assetLibraryLastSavedBatch = {
+        type: 'room',
+        count: roomEntries.length,
+        ids: roomEntries.map(entry => entry.id),
+    };
+    _showToast(`✓ Saved ${roomEntries.length} room layout${roomEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
+    if (_libraryOpen)
+        _renderLibraryGrid();
 });
 // ── Save: Cave ────────────────────────────────────────────────────────────────
 document.getElementById('btn-save-cave')?.addEventListener('click', () => {

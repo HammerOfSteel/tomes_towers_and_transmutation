@@ -82,6 +82,7 @@ import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { WallOcclusionManager } from '@/rendering/WallOcclusionManager';
 import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
 import type { BuildingKind, Faction, BuildingSize } from '@/world/buildings/BuildingDNA';
+import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
 
 async function main() {
   injectHudTheme();
@@ -1722,6 +1723,31 @@ async function main() {
           });
         });
       });
+    }
+  }
+
+  // ── Overworld Studio settlement preview handoff ───────────────────────────
+  // The Studio writes a lightweight settlement payload to localStorage, then
+  // opens index.html. We auto-start and jump straight to the exterior so
+  // OverworldScene can render the preview settlement as a 3D overlay.
+  {
+    const previewRaw = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+    if (previewRaw) {
+      try {
+        (window as any).__tttOverworldPreviewStage = 'detected';
+        mainMenu.hide();
+        (window as any).__tttOverworldPreviewStage = 'starting-game';
+        startGame();
+        (window as any).__tttOverworldPreviewStage = 'switching-exterior';
+        switchToExterior();
+        (window as any).__tttOverworldPreviewStage = 'booted';
+        (window as any).__tttOverworldPreviewBooted = true;
+        localStorage.removeItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+      } catch (e) {
+        (window as any).__tttOverworldPreviewStage = 'error';
+        (window as any).__tttOverworldPreviewError = String(e);
+        console.error('[overworld-preview] boot failed:', e);
+      }
     }
   }
 

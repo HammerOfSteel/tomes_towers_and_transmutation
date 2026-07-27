@@ -78,6 +78,7 @@ import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { WallOcclusionManager } from '@/rendering/WallOcclusionManager';
 import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
+import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
 async function main() {
     injectHudTheme();
     // Apply persisted accessibility settings on boot
@@ -1692,6 +1693,20 @@ async function main() {
                     });
                 });
             });
+        }
+    }
+    // ── Overworld Studio settlement preview handoff ───────────────────────────
+    // The Studio writes a lightweight settlement payload to localStorage, then
+    // opens index.html. We auto-start and jump straight to the exterior so
+    // OverworldScene can render the preview settlement as a 3D overlay.
+    {
+        const previewRaw = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+        if (previewRaw) {
+            mainMenu.hide();
+            startGame();
+            switchToExterior();
+            window.__tttOverworldPreviewBooted = true;
+            localStorage.removeItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
         }
     }
     // ── Test / debug hook (dev builds only) ──────────────────────────────────

@@ -40,8 +40,17 @@ import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
 import { createSettlementBuildingDna } from '@/world/buildings/BuildingTypeMap';
-import type { BuildingDNA }            from '@/world/buildings/BuildingDNA';
+import {
+  factionBuildingDna,
+  type BuildingDNA,
+  type Faction,
+} from '@/world/buildings/BuildingDNA';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
+import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
+import {
+  OVERWORLD_SETTLEMENT_PREVIEW_KEY,
+  type OverworldSettlementPreviewPayload,
+} from '@/overworld-studio/SettlementPreviewPayload';
 import { OWMinimap }                   from '@/ui/OWMinimap';
 import { ProceduralSkybox }            from '@/rendering/ProceduralSkybox';
 import { NPCEntity }                   from '@/world/NPCEntity';
@@ -1572,9 +1581,114 @@ export class OverworldScene {
 
   // ── Settlements ────────────────────────────────────────────────────────────
 
+  private _readStudioSettlementPreview(): OverworldSettlementPreviewPayload | null {
+    try {
+      const raw = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<OverworldSettlementPreviewPayload> | null;
+      if (!parsed || parsed.version !== 1 || !parsed.model?.wards?.length) return null;
+      return parsed as OverworldSettlementPreviewPayload;
+    } catch (e) {
+      console.warn('[OverworldScene] failed to parse studio settlement preview:', e);
+      return null;
+    }
+  }
+
+  private _mapStudioFactionToRuntimeFaction(faction: string): Faction {
+    const map: Record<string, Faction> = {
+      human: 'human_town',
+      elven: 'elven',
+      dwarven: 'dwarven',
+      orcish: 'orcish',
+      vampire: 'vampire',
+      undead: 'undead_common',
+      vulperia: 'vulperia',
+      slime: 'slime',
+      fae: 'fae',
+    };
+    return map[faction] ?? 'human_town';
+  }
+
+  private _buildStudioSettlementPreview(): void {
+    const payload = this._readStudioSettlementPreview();
+    if (!payload) return;
+
+    const cityWards = payload.model.wards.filter(w => w.withinCity);
+    if (cityWards.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH, _GW: GW, _GH: GH } = this;
+    const anchorCol = Math.max(6, Math.min(GW - 7, Math.round(GHW + this._FR + 7)));
+    const anchorRow = Math.max(6, Math.min(GH - 7, Math.round(GHH + this._FR + 7)));
+    const anchorWx = (anchorCol - GHW) * T;
+    const anchorWz = (anchorRow - GHH) * T;
+    const previewRadiusWU = 14;
+    const runtimeFaction = this._mapStudioFactionToRuntimeFaction(payload.faction);
+    const usedTiles = new Set<string>();
+    let buildingCount = 0;
+
+    for (const ward of cityWards) {
+      const kind = WARD_TO_KIND[ward.type];
+      if (!kind) continue;
+
+      const dx = (ward.center.x - payload.model.centre.x) / Math.max(1, payload.model.radius);
+      const dz = (ward.center.y - payload.model.centre.y) / Math.max(1, payload.model.radius);
+
+      let wx = anchorWx + dx * previewRadiusWU;
+      let wz = anchorWz + dz * previewRadiusWU;
+
+      let { col, row } = this._wg.worldToGrid(wx, wz);
+      col = Math.max(3, Math.min(GW - 4, Math.round(col)));
+      row = Math.max(3, Math.min(GH - 4, Math.round(row)));
+
+      const tileKey = `${col},${row}`;
+      if (usedTiles.has(tileKey)) continue;
+      usedTiles.add(tileKey);
+
+      wx = (col - GHW) * T;
+      wz = (row - GHH) * T;
+      const wy = this._wg.get(col, row).elevation * SH;
+
+      const seed = ((payload.seed ^ (Math.round(ward.center.x) * 73856093 + Math.round(ward.center.y) * 19349663)) >>> 0);
+      const size = WARD_TO_SIZE[ward.type] ?? 'medium';
+      const floors = WARD_TO_FLOORS[ward.type] ?? (payload.settlementType === 'city' ? 2 : 1);
+      const dna = factionBuildingDna(kind, runtimeFaction, seed, size, floors as 1 | 2 | 3 | 4);
+      const inst = buildBuilding(dna);
+      const grp = inst.exteriorGroup;
+
+      grp.position.set(wx, wy, wz);
+      grp.rotation.y = (seed % 4) * (Math.PI / 2);
+      grp.userData['studioPreview'] = true;
+      grp.userData['studioWardType'] = ward.type;
+
+      this._buildingGroups.push(grp);
+      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz) });
+      buildingCount++;
+    }
+
+    const centreElev = this._wg.get(anchorCol, anchorRow).elevation * SH + 2.0;
+    this._settlementPositions.push({
+      name: `${payload.name} (Preview)`,
+      worldPos: new THREE.Vector3(anchorWx, centreElev, anchorWz),
+    });
+
+    if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+      (window as any).__tttOverworldPreviewLoaded = {
+        name: payload.name,
+        seed: payload.seed,
+        faction: payload.faction,
+        buildingCount,
+      };
+    }
+
+    console.log(`[OverworldScene] studio preview "${payload.name}" loaded (${buildingCount} buildings)`);
+  }
+
   private _buildSettlements(worldData: WorldData): void {
     const { settlements } = worldData;
-    if (!settlements || settlements.length === 0) return;
+    if (!settlements || settlements.length === 0) {
+      this._buildStudioSettlementPreview();
+      return;
+    }
 
     const { _GHW: GHW, _GHH: GHH } = this;
 
@@ -1643,6 +1757,8 @@ export class OverworldScene {
       this._roadMeshes.push(im);
     }
     sqGeo.dispose();
+
+    this._buildStudioSettlementPreview();
 
     // ── Inter-settlement roads — axis-aligned flat dirt tile planes ──────
     const interRoads = worldData.interRoads ?? [];

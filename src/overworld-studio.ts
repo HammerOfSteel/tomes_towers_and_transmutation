@@ -36,6 +36,10 @@ import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
 import { assetLibrary, type AssetType, type LibraryEntry } from './overworld-studio/AssetLibrary';
+import {
+  OVERWORLD_SETTLEMENT_PREVIEW_KEY,
+  type OverworldSettlementPreviewPayload,
+} from './overworld-studio/SettlementPreviewPayload';
 
 import * as THREE from 'three';
 
@@ -4994,6 +4998,34 @@ function _makeLibraryEntry(type: AssetType, name: string, seed: number, data: un
   };
 }
 
+function _buildOverworldSettlementPreviewPayload(): OverworldSettlementPreviewPayload | null {
+  if (!currentModel) return null;
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  return {
+    version: 1,
+    seed,
+    name: `Settlement #${seed}`,
+    settlementType: params.type,
+    faction: params.faction,
+    model: {
+      centre: {
+        x: currentModel.centre.x,
+        y: currentModel.centre.y,
+      },
+      radius: currentModel.radius,
+      wards: currentModel.wards.map(ward => ({
+        type: ward.type,
+        center: {
+          x: ward.center.x,
+          y: ward.center.y,
+        },
+        withinCity: ward.withinCity,
+      })),
+    },
+  };
+}
+
 function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []) {
   const entry = _makeLibraryEntry(type, name, seed, data, tags);
   assetLibrary.add(entry);
@@ -5086,6 +5118,20 @@ document.getElementById('btn-save-settlement')?.addEventListener('click', () => 
 });
 
 document.getElementById('btn-save-settlement-npcs')?.addEventListener('click', _saveSettlementNpcsToLibrary);
+
+document.getElementById('btn-preview-overworld')?.addEventListener('click', () => {
+  const payload = _buildOverworldSettlementPreviewPayload();
+  if (!payload) { alert('Generate a settlement first.'); return; }
+  localStorage.setItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY, JSON.stringify(payload));
+  (window as any).__owStudioLastOverworldPreview = {
+    name: payload.name,
+    seed: payload.seed,
+    faction: payload.faction,
+    wardCount: payload.model.wards.length,
+  };
+  _showToast(`✓ Opening overworld preview for "${payload.name}"`);
+  window.open('/index.html', '_blank');
+});
 
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────
 document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
