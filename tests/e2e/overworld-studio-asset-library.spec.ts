@@ -61,7 +61,7 @@ test('Asset Library saves settlement, dungeon, and cave entries and persists acr
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
 
-test('Asset Library previews persisted entries in the main canvas and supports export/delete', async ({ page }) => {
+test('Asset Library previews persisted entries in the main canvas and supports export/duplicate/delete', async ({ page }) => {
   const console_ = attachFullConsoleCapture(page);
   await clearAssetLibrary(page);
 
@@ -117,11 +117,17 @@ test('Asset Library previews persisted entries in the main canvas and supports e
   await expect(page.locator('#library-preview-name')).toContainText('Cave');
   await SS(page, '04-preview-cave');
 
-  // Delete selected cave and verify library shrinks
-  await page.click('#btn-library-delete');
-  await page.waitForFunction(() => (window as any).__assetLibrarySize === 2);
+  // Duplicate selected cave and verify library grows
+  await page.click('#btn-library-duplicate');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 4);
+  await expect(page.locator('#library-preview-name')).toContainText('Copy');
   await page.click('[data-ltype="all"]');
-  await expect(page.locator('#library-grid > div')).toHaveCount(2);
+  await expect(page.locator('#library-grid > div')).toHaveCount(4);
+
+  // Delete selected duplicated cave and verify library shrinks
+  await page.click('#btn-library-delete');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 3);
+  await expect(page.locator('#library-grid > div')).toHaveCount(3);
 
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);

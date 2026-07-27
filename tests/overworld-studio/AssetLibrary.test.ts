@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { AssetLibrary, type LibraryEntry, type AssetType } from '@/overworld-studio/AssetLibrary';
+import { AssetLibrary, type LibraryEntry } from '@/overworld-studio/AssetLibrary';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,82 @@ vi.stubGlobal('localStorage', {
   getItem:    (k: string) => _store[k] ?? null,
   setItem:    (k: string, v: string) => { _store[k] = v; },
   removeItem: (k: string) => { delete _store[k]; },
+});
+
+describe('AssetLibrary duplicate()', () => {
+  it('duplicates an entry with a fresh id, later createdAt, and copied data', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    const original: LibraryEntry = {
+      id: 'settlement_1',
+      type: 'settlement',
+      name: 'Settlement #1',
+      seed: 123,
+      createdAt: 1000,
+      tags: ['type:village', 'faction:human'],
+      isCustom: false,
+      data: { wards: [{ id: 'a' }], meta: { size: 12 } },
+      thumbnail: 'data:image/png;base64,abc',
+    };
+
+    lib.add(original);
+    const copy = lib.duplicate(original.id);
+
+    expect(copy).not.toBeNull();
+    expect(copy?.id).not.toBe(original.id);
+    expect(copy?.name).toBe('Settlement #1 Copy');
+    expect(copy?.createdAt).toBeGreaterThanOrEqual(original.createdAt);
+    expect(copy?.seed).toBe(original.seed);
+    expect(copy?.type).toBe(original.type);
+    expect(copy?.isCustom).toBe(true);
+    expect(lib.size).toBe(2);
+
+    const all = lib.getAll();
+    expect(all.some(e => e.id === original.id)).toBe(true);
+    expect(all.some(e => e.id === copy?.id)).toBe(true);
+
+    const copiedData = copy?.data as { wards: Array<{ id: string }>; meta: { size: number } };
+    expect(copiedData.meta.size).toBe(12);
+    expect(copiedData.wards[0]?.id).toBe('a');
+  });
+
+  it('deep-copies encoded data structures like Map when duplicating', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    const rooms = new Map<string, unknown>([
+      ['room_0', { id: 'room_0', width: 7 }],
+    ]);
+
+    lib.add({
+      id: 'dungeon_1',
+      type: 'dungeon',
+      name: 'Dungeon #1',
+      seed: 77,
+      createdAt: 1000,
+      tags: ['dtype:generic'],
+      isCustom: false,
+      data: { rooms, startRoomId: 'room_0' },
+      thumbnail: null,
+    });
+
+    const copy = lib.duplicate('dungeon_1');
+    expect(copy).not.toBeNull();
+
+    const copiedRooms = (copy?.data as { rooms: Map<string, unknown> }).rooms;
+    expect(copiedRooms).toBeInstanceOf(Map);
+    expect(copiedRooms).not.toBe(rooms);
+    expect(copiedRooms.get('room_0')).toEqual({ id: 'room_0', width: 7 });
+  });
+
+  it('returns null when duplicating a missing entry', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+
+    expect(lib.duplicate('missing')).toBeNull();
+    expect(lib.size).toBe(0);
+  });
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

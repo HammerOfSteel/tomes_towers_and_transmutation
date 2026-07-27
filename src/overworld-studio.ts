@@ -4779,6 +4779,19 @@ document.getElementById('library-type-pills')?.addEventListener('click', (e) => 
 // ── Search input ──────────────────────────────────────────────────────────────
 document.getElementById('library-search')?.addEventListener('input', () => _renderLibraryGrid());
 
+// ── Duplicate ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-duplicate')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const source = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  if (!source) return;
+  const copy = assetLibrary.duplicate(_librarySelectedId, `${source.name} Copy`);
+  if (!copy) return;
+  _librarySelectedId = copy.id;
+  _renderLibraryGrid();
+  _selectLibraryEntry(copy.id);
+  _showToast(`✓ Duplicated "${source.name}"`);
+});
+
 // ── Export ────────────────────────────────────────────────────────────────────
 document.getElementById('btn-library-export')?.addEventListener('click', () => {
   if (!_librarySelectedId) return;

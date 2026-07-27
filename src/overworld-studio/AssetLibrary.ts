@@ -173,6 +173,28 @@ export class AssetLibrary {
     };
   }
 
+  /**
+   * Duplicate an entry with a fresh id/timestamp and optional name override.
+   * Returns the newly-created runtime entry or null if source id was not found.
+   */
+  duplicate(id: string, nameOverride?: string): LibraryEntry | null {
+    const entry = this._entries.find(e => e.id === id);
+    if (!entry) return null;
+    const copy: LibraryEntry = {
+      ...entry,
+      id: `${entry.type}_${entry.seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: nameOverride?.trim() || `${entry.name} Copy`,
+      createdAt: Date.now(),
+      isCustom: true,
+      data: decodeValue(encodeValue(entry.data)),
+    };
+    this._entries.push(copy);
+    this._save();
+    console.log(`[AssetLibrary] duplicated "${entry.name}" -> "${copy.name}" — total: ${this._entries.length}`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return copy;
+  }
+
   // ── Serialisation ─────────────────────────────────────────────────────────
 
   toJSON(): StoredSnapshot {

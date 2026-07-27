@@ -29,7 +29,7 @@ Design tools (Overworld Studio web app) that produce world data consumed by the 
 | [OW-D Dwelling Layer](./01-overworld-studio/OW-D-dwelling-layer.md) | Floor plan renderer for houses | ✅ |
 | [OW-E Layer Navigation](./01-overworld-studio/OW-E-layer-navigation.md) | Click-through realm→city→dungeon | ✅ |
 | [OW-F4 Drill-Down Chain](./01-overworld-studio/OW-F4-drill-down-chain.md) | Solar→Planet→Realm→City full chain | ✅ |
-| [Asset Library](./01-overworld-studio/asset-library.md) | Browse & manage all generated assets | ⚠️ GAP ← **NEXT** |
+| [Asset Library](./01-overworld-studio/asset-library.md) | Browse & manage all generated assets | 🚧 |
 | [Game Inventory](./01-overworld-studio/game-inventory.md) | Inventory of all procedural asset types needed | ⚠️ GAP |
 | [Procedural Asset Designer](./01-overworld-studio/procedural-designer/asset-designer.md) | Visual designer for DNA-based entities | 🔲 |
 | [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md) | Tile variant tool for biome/dungeon tiles | ⚠️ GAP |
@@ -135,7 +135,7 @@ Last pass. **Nothing here starts until 07 is green.**
 | # | Gap | Impact | Where to fix |
 |---|---|---|---|
 | G1 | **Game World Integration** — no plan for how realm map → 3D playable world | Blocking demo | `02-game-world-integration/` |
-| G2 | **Asset Library UI** — no browsable gallery for all generated entity types | Medium | `01-overworld-studio/asset-library.md` |
+| G2 | **Asset Library UI** — partial; Studio asset types are covered, but full creator/runtime coverage is still missing | Medium | `01-overworld-studio/asset-library.md` |
 | G3 | **Game Inventory** — no master list of what procedural assets actually need to exist for a complete game world | Medium | `01-overworld-studio/game-inventory.md` |
 | G4 | **Procedural Tile Designer** — tiles (floor, wall, terrain) have no dedicated design/variant tool | Medium | `01-overworld-studio/procedural-designer/tile-designer.md` |
 | G5 | **Audio System** — referenced everywhere but has no phased plan | High | `06-game-systems/audio.md` |
