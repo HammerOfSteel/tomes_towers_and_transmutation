@@ -38,16 +38,16 @@ Every phase-01 generator entry should make these outputs explicit:
 
 The game world nests: **Solar System → Planet → Realm → City/Settlement → Building → Room**
 
-| Level | Generator | Notes |
-|---|---|---|
-| Solar System | `solar-controls` | 1–4 planets, star type, asteroid belts |
-| Planet | `solar-controls` + planet click | Type: terrestrial / ocean / desert / ice / lava / gas giant |
-| Realm (continent slice) | `realm-controls` | Climate, shape, roughness, settlement count |
-| Settlement (city/village/hamlet) | `settlement-controls` | Ward layout, faction, size |
-| Building (inn/forge/temple…) | Building modal → `building-viewer` | Per ward, per floor |
-| Room (dungeon room) | `dungeon-controls` | Room type, connections, props |
-| Cave / Glade | `cave-controls` | Biome, density, size |
-| Dungeon entrance | embedded in realm | Marked on realm map, leads to `dungeon-controls` output |
+| Level | Generator surface | Primary output | Phase 01 status | Library path | Notes |
+|---|---|---|---|---|---|
+| Solar System | `solar-controls` | solar system data | Studio Now | Not yet saved | 1–4 planets, star type, asteroid belts |
+| Planet | `solar-controls` + planet click | planet DNA / selected planet state | Studio Now | Not yet saved | Type: terrestrial / ocean / desert / ice / lava / gas giant |
+| Realm (continent slice) | `realm-controls` | realm geography model | Studio Now | Not yet saved | Climate, shape, roughness, settlement count |
+| Settlement (city/village/hamlet) | `settlement-controls` | `SettlementModel` | Studio Now | `AssetLibrary` type=`settlement` | Ward layout, faction, size |
+| Building (ward/building blueprint) | building modal + `building-viewer` | building blueprint / floor plan | Studio Next | `AssetLibrary` type=`building` | Per ward, per floor |
+| Room (dungeon room graph) | `dungeon-controls` | `DungeonPlan` / room graph | Studio Now | `AssetLibrary` type=`dungeon` | Room type, connections, props |
+| Cave / Glade | `cave-controls` | cave biome layout | Studio Now | `AssetLibrary` type=`cave` | Biome, density, size |
+| Dungeon entrance | embedded in realm | deterministic realm marker | Studio Now | Not saved directly | Leads to `dungeon-controls` output |
 
 > **Nine towers** exist in the lore. All nine should be generatable with the same dungeon pipeline, differentiated by seed + faction.
 
@@ -451,18 +451,18 @@ Each spell needs: projectile/effect mesh, shader, impact burst particles, cooldo
 
 This maps each Overworld Studio generator to the asset types it must produce. **This is the specification for building each generator.**
 
-| Generator | Produces | Inputs | Output saved as |
-|---|---|---|---|
-| `settlement-controls` | Settlement ward layout (2D map), building footprints | faction, size, seed | `LibraryEntry` type=`settlement` |
-| `building-viewer` pipeline | Full 3D building interior, room-by-room | buildingType, faction, floors, seed | `LibraryEntry` type=`building` |
-| `dungeon-controls` | Dungeon floor plan (all floors), room connections | dungeonType, complexity, seed | `LibraryEntry` type=`dungeon` |
-| `cave-controls` | Cave map (2D noise), biome, prop placements | biome, size, density, seed | `LibraryEntry` type=`cave` |
-| `realm-controls` | Realm geography, settlement positions, dungeon markers | climate, shape, roughness, seed | (not yet saved to library) |
-| `solar-controls` | Solar system with planet types, star | starType, planetCount, seed | (not yet saved to library) |
-| **MISSING** | Enemy / creature DNA → 3D mesh preview | DNA params | `LibraryEntry` type=`creature` 🔲 |
-| **MISSING** | NPC profile → portrait + stat block | role, faction, seed | `LibraryEntry` type=`npc` 🔲 |
-| **MISSING** | Spell VFX preview | spellId, tier, colour | (preview only, no save needed) 🔲 |
-| **MISSING** | Biome tile set preview | biome, climate | `LibraryEntry` type=`terrain` 🔲 |
+| Generator surface | Produces | Phase 01 status | Saves to library | Library type | Downstream consumer |
+|---|---|---|---|---|---|
+| `settlement-controls` | settlement ward layout + building footprints | Studio Now | Yes | `settlement` | `02-game-world-integration` |
+| `building-viewer` / future `building-creator.html` | building blueprint + floor plan | Studio Next | Yes | `building` | OW-D + settlement integration |
+| `dungeon-controls` | dungeon floor plan + room graph | Studio Now | Yes | `dungeon` | dungeon integration |
+| `cave-controls` | cave/glade map + biome placement data | Studio Now | Yes | `cave` | cave/glade integration |
+| `realm-controls` | realm geography + markers | Studio Now | Not yet | none yet | realm integration |
+| `solar-controls` | solar system + planet selection state | Studio Now | Not yet | none yet | realm/planet drill-down |
+| future `npc-creator.html` | NPC DNA/profile + preview | Studio Next | Yes | `npc` | settlement/NPC runtime |
+| future enemy mode in `creature-lab.html` | enemy DNA/profile + preview | Studio Next | Yes | `creature` or `enemy` (decide in Asset Library slice) | enemy runtime |
+| future tile designer | tile DNA + preview variants | Studio Next | Yes | `terrain` or `tile` (decide in Asset Library slice) | realm/dungeon/cave rendering |
+| spell VFX sandbox | spell preview only | Runtime Later | No | none | ability/VFX runtime |
 
 ### New generators to build (priority order)
 
