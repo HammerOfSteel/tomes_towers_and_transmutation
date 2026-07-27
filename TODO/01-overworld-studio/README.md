@@ -20,5 +20,5 @@
 
 - [Asset Library](./asset-library.md) 🚧
 - [Game Inventory](./game-inventory.md) 🚧
-- [Procedural Asset Designer](./procedural-designer/asset-designer.md) 🔲
+- [Procedural Asset Designer](./procedural-designer/asset-designer.md) 🚧
 - [Procedural Tile Designer](./procedural-designer/tile-designer.md) 🔲
