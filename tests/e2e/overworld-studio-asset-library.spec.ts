@@ -220,3 +220,36 @@ test('Asset Library saves dungeon room layouts as reusable room sub-assets', asy
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
+
+test('Asset Library saves settlement NPCs as reusable npc sub-assets', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await page.click('#btn-save-settlement-npcs');
+
+  await page.waitForFunction(() => {
+    const batch = (window as any).__assetLibraryLastSavedBatch;
+    return batch?.type === 'npc' && typeof batch.count === 'number' && batch.count > 0;
+  });
+
+  const batch = await page.evaluate(() => (window as any).__assetLibraryLastSavedBatch);
+  expect(batch?.type).toBe('npc');
+  expect(batch?.count).toBeGreaterThan(0);
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="npc"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(batch.count);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'npc');
+  await expect(page.locator('#library-preview-name')).toContainText('(npc, seed');
+  await SS(page, '06-preview-settlement-npc');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('npc');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});

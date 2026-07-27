@@ -29,6 +29,8 @@ import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } fro
 import type { Faction } from './world/buildings/BuildingDNA';
 import { generateTower } from '@/levels/TowerGenerator';
 import type { Blueprint } from '@/levels/blueprint';
+import { generateSettlementNpcs, type PlacedNpc } from '@/procedural/WorldGen';
+import { npcDna, npcName, type NPCRole } from '@/world/NPCDnaGenerator';
 import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
 import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
@@ -4588,7 +4590,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', settlement: '🏙', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }
@@ -4737,6 +4739,21 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
       const openCells = currentCaveData.grid.flat().filter(Boolean).length;
       genTimeEl.textContent = `${entry.name}  ·  ${openCells} open cells  ·  seed ${entry.seed}`;
     }
+    return;
+  }
+
+  if (entry.type === 'npc') {
+    _setStudioModeForLibraryPreview('settlement');
+    const npcData = entry.data as {
+      displayName?: string;
+      species?: string;
+      role?: string;
+      settlementName?: string;
+      settlementType?: string;
+      settlementFaction?: string;
+    };
+    genTimeEl.textContent =
+      `${npcData.displayName ?? entry.name}  ·  ${npcData.species ?? 'unknown'} ${npcData.role ?? 'npc'}  ·  ${npcData.settlementName ?? 'Settlement'}  ·  seed ${entry.seed}`;
   }
 }
 
@@ -4924,6 +4941,76 @@ function _saveToLibrary(type: AssetType, name: string, seed: number, data: unkno
   if (_libraryOpen) _renderLibraryGrid();
 }
 
+function _mapPlacedNpcRole(role: PlacedNpc['role']): NPCRole {
+  switch (role) {
+    case 'elder': return 'settlement_elder';
+    case 'merchant':
+    case 'guard':
+    case 'innkeeper':
+    case 'quest_giver':
+    case 'scholar':
+    case 'mysterious':
+      return role;
+  }
+}
+
+function _saveSettlementNpcsToLibrary(): void {
+  if (!currentModel) { alert('Generate a settlement first.'); return; }
+
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  const settlementId = `studio-settlement-${seed}`;
+  const settlementName = `Settlement #${seed}`;
+  const centerX = Math.round(currentModel.centre.x);
+  const centerZ = Math.round(currentModel.centre.y);
+  const npcCountByType: Record<SettlementType, number> = {
+    village: 4,
+    town: 6,
+    city: 8,
+  };
+  const npcCount = npcCountByType[params.type] ?? 4;
+  const placedNpcs = generateSettlementNpcs(settlementId, seed, centerX, centerZ, npcCount);
+
+  const npcEntries = placedNpcs.map((npc, index) => {
+    const role = _mapPlacedNpcRole(npc.role);
+    const dna = npcDna(Math.round(npc.pos.x), Math.round(npc.pos.z), seed, role);
+    const displayName = npcName(npc.seed);
+
+    return _makeLibraryEntry('npc', `${displayName} (${npc.role})`, seed, {
+      npcId: npc.id,
+      displayName,
+      species: npc.species,
+      role: npc.role,
+      settlementId,
+      settlementName,
+      settlementType: params.type,
+      settlementFaction: params.faction,
+      pos: npc.pos,
+      npcSeed: npc.seed,
+      dna,
+    }, [
+      `source:settlement`,
+      `settlement:${settlementId}`,
+      `stype:${params.type}`,
+      `faction:${params.faction}`,
+      `species:${npc.species}`,
+      `role:${npc.role}`,
+      `index:${index}`,
+    ]);
+  });
+
+  for (const entry of npcEntries) assetLibrary.add(entry);
+
+  (window as any).__assetLibraryLastSavedBatch = {
+    type: 'npc',
+    count: npcEntries.length,
+    ids: npcEntries.map(entry => entry.id),
+  };
+
+  _showToast(`✓ Saved ${npcEntries.length} settlement NPC${npcEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
+}
+
 // ── Save: Settlement ──────────────────────────────────────────────────────────
 document.getElementById('btn-save-settlement')?.addEventListener('click', () => {
   if (!currentModel) { alert('Generate a settlement first.'); return; }
@@ -4935,6 +5022,8 @@ document.getElementById('btn-save-settlement')?.addEventListener('click', () => 
     `faction:${params.faction}`,
   ]);
 });
+
+document.getElementById('btn-save-settlement-npcs')?.addEventListener('click', _saveSettlementNpcsToLibrary);
 
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────
 document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {

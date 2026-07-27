@@ -257,11 +257,13 @@ describe('AssetLibrary', () => {
     lib.add(makeEntry({ id: 'b2', type: 'building' }));
     lib.add(makeEntry({ id: 's1', type: 'settlement' }));
     lib.add(makeEntry({ id: 'r1', type: 'room', name: 'Room Layout 1' }));
+    lib.add(makeEntry({ id: 'n1', type: 'npc', name: 'Aldric (merchant)' }));
 
     expect(lib.getByType('building')).toHaveLength(2);
     expect(lib.getByType('dungeon')).toHaveLength(1);
     expect(lib.getByType('settlement')).toHaveLength(1);
     expect(lib.getByType('room')).toHaveLength(1);
+    expect(lib.getByType('npc')).toHaveLength(1);
     expect(lib.getByType('cave')).toHaveLength(0);
   });
 

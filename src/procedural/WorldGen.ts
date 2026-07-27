@@ -152,7 +152,7 @@ function generateSettlementBuildings(
 const NPC_ROLES: PlacedNpc['role'][] = ['merchant', 'guard', 'innkeeper', 'quest_giver', 'scholar', 'elder'];
 const NPC_SPECIES: GameSpecies[] = ['human', 'undead', 'vulperia', 'slime', 'elf', 'celestial', 'draconic'];
 
-function generateSettlementNpcs(
+export function generateSettlementNpcs(
   settlementId: string,
   settlementSeed: number,
   centerX: number,
