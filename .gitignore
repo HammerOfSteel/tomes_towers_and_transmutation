@@ -12,3 +12,6 @@ screenshots/
 # macOS backup files created by some editors
 **/*~
 assets/
+.agents
+.claude/*
+skills/
