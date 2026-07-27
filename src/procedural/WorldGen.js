@@ -58,7 +58,7 @@ function generateSettlementBuildings(settlementSeed, centerX, centerZ, count) {
 // ── NPC generation ────────────────────────────────────────────────────────────
 const NPC_ROLES = ['merchant', 'guard', 'innkeeper', 'quest_giver', 'scholar', 'elder'];
 const NPC_SPECIES = ['human', 'undead', 'vulperia', 'slime', 'elf', 'celestial', 'draconic'];
-function generateSettlementNpcs(settlementId, settlementSeed, centerX, centerZ, count) {
+export function generateSettlementNpcs(settlementId, settlementSeed, centerX, centerZ, count) {
     const r = mulberry32(settlementSeed ^ 0xCAFE_BABE);
     const npcs = [];
     for (let i = 0; i < count; i++) {

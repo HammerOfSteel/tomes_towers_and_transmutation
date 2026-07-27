@@ -152,6 +152,85 @@ function generateSettlementBuildings(
 const NPC_ROLES: PlacedNpc['role'][] = ['merchant', 'guard', 'innkeeper', 'quest_giver', 'scholar', 'elder'];
 const NPC_SPECIES: GameSpecies[] = ['human', 'undead', 'vulperia', 'slime', 'elf', 'celestial', 'draconic'];
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNpcRole(value: unknown): value is PlacedNpc['role'] {
+  return value === 'merchant'
+    || value === 'elder'
+    || value === 'quest_giver'
+    || value === 'scholar'
+    || value === 'guard'
+    || value === 'innkeeper'
+    || value === 'mysterious';
+}
+
+function isGameSpecies(value: unknown): value is GameSpecies {
+  return value === 'human'
+    || value === 'undead'
+    || value === 'vulperia'
+    || value === 'slime'
+    || value === 'elf'
+    || value === 'celestial'
+    || value === 'draconic';
+}
+
+function readCustomSettlementNpcOverrides(
+  settlementId: string,
+  settlementSeed: number,
+): PlacedNpc[] | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('ttt_asset_library');
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { entries?: unknown[] } | null;
+    if (!parsed || !Array.isArray(parsed.entries)) return null;
+
+    const matches: PlacedNpc[] = [];
+
+    for (const entry of parsed.entries) {
+      if (!isPlainObject(entry)) continue;
+      if (entry.type !== 'npc' || entry.isCustom !== true) continue;
+      const data = entry.data;
+      if (!isPlainObject(data)) continue;
+
+      const dataSettlementId = typeof data.settlementId === 'string' ? data.settlementId : null;
+      const entrySeed = typeof entry.seed === 'number' ? entry.seed : null;
+      const taggedToSettlement = Array.isArray(entry.tags)
+        && entry.tags.some(tag => typeof tag === 'string' && tag === `settlement:${settlementId}`);
+
+      if (dataSettlementId !== settlementId && !taggedToSettlement && entrySeed !== settlementSeed) continue;
+      if (!isGameSpecies(data.species) || !isNpcRole(data.role) || !isPlainObject(data.pos)) continue;
+
+      const px = typeof data.pos.x === 'number' ? data.pos.x : null;
+      const py = typeof data.pos.y === 'number' ? data.pos.y : 0;
+      const pz = typeof data.pos.z === 'number' ? data.pos.z : null;
+      if (px === null || pz === null) continue;
+
+      matches.push({
+        id: typeof data.npcId === 'string'
+          ? data.npcId
+          : (typeof entry.id === 'string' ? entry.id : `npc-${settlementSeed}-custom-${matches.length}`),
+        species: data.species,
+        role: data.role,
+        pos: { x: px, y: py, z: pz },
+        seed: typeof data.seed === 'number'
+          ? data.seed
+          : (typeof entry.seed === 'number' ? entry.seed : ((settlementSeed ^ (matches.length * 0xDEAD_BEEF)) >>> 0)),
+        settlementId,
+      });
+    }
+
+    if (matches.length === 0) return null;
+    matches.sort((a, b) => a.seed - b.seed || a.id.localeCompare(b.id));
+    return matches;
+  } catch {
+    return null;
+  }
+}
+
 export function generateSettlementNpcs(
   settlementId: string,
   settlementSeed: number,
@@ -159,6 +238,9 @@ export function generateSettlementNpcs(
   centerZ: number,
   count: number,
 ): PlacedNpc[] {
+  const overrides = readCustomSettlementNpcOverrides(settlementId, settlementSeed);
+  if (overrides && overrides.length > 0) return overrides;
+
   const r = mulberry32(settlementSeed ^ 0xCAFE_BABE);
   const npcs: PlacedNpc[] = [];
 

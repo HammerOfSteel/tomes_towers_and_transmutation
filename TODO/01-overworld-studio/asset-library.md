@@ -36,9 +36,10 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 - [x] Dungeon generator: "Save room layouts from this dungeon" as separate reusable sub-assets
 
 ### AL-4 — Library → Game Runtime
-- [ ] `WorldGen.ts` checks library before generating: if a named location has a custom blueprint, use it
+- [x] `WorldGen.ts` now checks library for custom settlement NPC entries and uses them instead of procedural settlement NPC generation when a matching custom override exists
+- [ ] Extend runtime override lookup beyond settlement NPCs (buildings / rooms / broader named locations)
 - [ ] Custom blueprints exported in the World Package ZIP (see OW-F4)
-- [ ] Runtime override path for duplicated/custom library entries
+- [ ] Runtime override path for additional duplicated/custom library entry classes
 
 ## Dependencies
 - Requires: PROC-B creator tools (to have something to save)

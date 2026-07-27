@@ -136,4 +136,50 @@ describe('WorldGen structure', () => {
       expect(e.patrolRadius).toBeGreaterThan(0);
     }
   });
+
+  it('uses custom settlement NPC overrides from the asset library when present', () => {
+    localStorage.removeItem('ttt_asset_library');
+
+    const baseline = generateWorldPlan(SEED_A, { settlementCount: 1 });
+    const settlement = baseline.settlements[0]!;
+    const customNpc = {
+      npcId: 'npc-custom-1',
+      displayName: 'Archivist Sel',
+      species: 'elf',
+      role: 'scholar',
+      settlementId: settlement.id,
+      settlementName: settlement.name,
+      pos: { x: 12, y: 0, z: -7 },
+      npcSeed: 123456,
+    };
+
+    localStorage.setItem('ttt_asset_library', JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: 'library_npc_custom_1',
+          type: 'npc',
+          name: 'Archivist Sel (scholar)',
+          seed: settlement.seed,
+          createdAt: 1,
+          tags: [`settlement:${settlement.id}`, 'role:scholar', 'species:elf'],
+          isCustom: true,
+          thumbnail: null,
+          data: customNpc,
+        },
+      ],
+    }));
+
+    const overridden = generateWorldPlan(SEED_A, { settlementCount: 1 });
+    const npcs = overridden.settlements[0]!.npcs;
+
+    expect(npcs).toHaveLength(1);
+    expect(npcs[0]!.id).toBe('npc-custom-1');
+    expect(npcs[0]!.species).toBe('elf');
+    expect(npcs[0]!.role).toBe('scholar');
+    expect(npcs[0]!.settlementId).toBe(settlement.id);
+    expect(npcs[0]!.pos).toEqual({ x: 12, y: 0, z: -7 });
+
+    localStorage.removeItem('ttt_asset_library');
+  });
 });
