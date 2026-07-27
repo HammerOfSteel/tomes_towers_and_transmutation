@@ -4749,7 +4749,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', realm: '🌍', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }
@@ -4897,6 +4897,34 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
     if (currentCaveData) {
       const openCells = currentCaveData.grid.flat().filter(Boolean).length;
       genTimeEl.textContent = `${entry.name}  ·  ${openCells} open cells  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'realm') {
+    _setStudioModeForLibraryPreview('realm');
+
+    const shape = _getLibraryTag(entry, 'shape');
+    const climate = _getLibraryTag(entry, 'climate');
+    const ptype = _getLibraryTag(entry, 'planetType');
+    const view = _getLibraryTag(entry, 'view') as RealmViewMode | null;
+
+    _setActivePillByDataset('realm-shape-pills', 'shape', shape);
+    _setActivePillByDataset('realm-climate-pills', 'climate', climate);
+    if (ptype) {
+      currentPlanetType = ptype as PlanetType;
+      _setActivePillByDataset('planet-type-pills', 'ptype', ptype);
+    }
+    if (view) {
+      realmViewMode = view;
+      _setActivePillByDataset('realm-view-pills', 'view', view);
+    }
+
+    currentRealmData = entry.data as RealmData;
+    redrawRealm();
+    if (currentRealmData) {
+      genTimeEl.textContent =
+        `${entry.name}  ·  ${currentRealmData.W}×${currentRealmData.H}  ·  ${currentRealmData.settlements.length} settlements  ·  seed ${entry.seed}`;
     }
     return;
   }
@@ -5275,6 +5303,19 @@ document.getElementById('btn-save-cave')?.addEventListener('click', () => {
   _saveToLibrary('cave', `Cave #${seed}`, seed, currentCaveData, [
     `ctype:${type}`,
     `biome:${biome}`,
+  ]);
+});
+
+document.getElementById('btn-save-realm')?.addEventListener('click', () => {
+  if (!currentRealmData) { alert('Generate a realm first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const shape = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  _saveToLibrary('realm', `Realm #${seed}`, seed, currentRealmData, [
+    `shape:${shape}`,
+    `climate:${climate}`,
+    `planetType:${currentPlanetType}`,
+    `view:${realmViewMode}`,
   ]);
 });
 

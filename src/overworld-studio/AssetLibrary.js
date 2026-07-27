@@ -23,6 +23,17 @@
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
+function makeEntryId(type, seed) {
+    return `${type}_${seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+function isAssetType(value) {
+    return value === 'building'
+        || value === 'dungeon'
+        || value === 'settlement'
+        || value === 'cave'
+        || value === 'room'
+        || value === 'npc';
+}
 function encodeValue(value) {
     if (value instanceof Map) {
         return {
@@ -128,6 +139,81 @@ export class AssetLibrary {
             ...entry,
             data: encodeValue(entry.data),
         };
+    }
+    /**
+     * Duplicate an entry with a fresh id/timestamp and optional name override.
+     * Returns the newly-created runtime entry or null if source id was not found.
+     */
+    duplicate(id, nameOverride) {
+        const entry = this._entries.find(e => e.id === id);
+        if (!entry)
+            return null;
+        const copy = {
+            ...entry,
+            id: makeEntryId(entry.type, entry.seed),
+            name: nameOverride?.trim() || `${entry.name} Copy`,
+            createdAt: Date.now(),
+            isCustom: true,
+            data: decodeValue(encodeValue(entry.data)),
+        };
+        this._entries.push(copy);
+        this._save();
+        console.log(`[AssetLibrary] duplicated "${entry.name}" -> "${copy.name}" — total: ${this._entries.length}`);
+        window.__assetLibrarySize = this._entries.length;
+        return copy;
+    }
+    /**
+     * Import a single exported library entry snapshot.
+     * Imported assets are treated as custom local assets and receive a fresh id.
+     */
+    importEntry(snapshot) {
+        if (!isPlainObject(snapshot))
+            return null;
+        if (!isAssetType(snapshot.type))
+            return null;
+        const seed = typeof snapshot.seed === 'number' ? snapshot.seed : 0;
+        const name = typeof snapshot.name === 'string' && snapshot.name.trim()
+            ? snapshot.name.trim()
+            : `Imported ${snapshot.type}`;
+        const tags = Array.isArray(snapshot.tags)
+            ? snapshot.tags.filter((t) => typeof t === 'string')
+            : [];
+        const thumbnail = typeof snapshot.thumbnail === 'string' ? snapshot.thumbnail : null;
+        const entry = {
+            id: makeEntryId(snapshot.type, seed),
+            type: snapshot.type,
+            name,
+            seed,
+            createdAt: Date.now(),
+            tags,
+            isCustom: true,
+            data: decodeValue(snapshot.data),
+            thumbnail,
+        };
+        this._entries.push(entry);
+        this._save();
+        console.log(`[AssetLibrary] imported "${entry.name}" (${entry.type}) — total: ${this._entries.length}`);
+        window.__assetLibrarySize = this._entries.length;
+        return entry;
+    }
+    /** Rename an existing entry. Empty names are rejected. */
+    rename(id, nextName) {
+        const trimmed = nextName.trim();
+        if (!trimmed)
+            return null;
+        const idx = this._entries.findIndex(e => e.id === id);
+        if (idx < 0)
+            return null;
+        const updated = {
+            ...this._entries[idx],
+            name: trimmed,
+            isCustom: true,
+        };
+        this._entries[idx] = updated;
+        this._save();
+        console.log(`[AssetLibrary] renamed ${id} -> "${trimmed}"`);
+        window.__assetLibrarySize = this._entries.length;
+        return updated;
     }
     // ── Serialisation ─────────────────────────────────────────────────────────
     toJSON() {

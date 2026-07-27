@@ -312,3 +312,35 @@ test('Asset Library saves building blueprints from the settlement building modal
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
+
+test('Asset Library saves realm entries and previews them from the library', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await page.click('.studio-tab[data-mode="realm"]');
+  await page.waitForFunction(() => !!(window as any).__owStudioCurrentRealmData);
+
+  await page.click('#btn-save-realm');
+  await page.waitForFunction(() => (window as any).__assetLibraryLastSaved?.type === 'realm');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
+
+  const saved = await page.evaluate(() => (window as any).__assetLibraryLastSaved);
+  expect(saved?.type).toBe('realm');
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="realm"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(1);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'realm');
+  await expect(page.locator('#library-preview-name')).toContainText('(realm, seed');
+  await SS(page, '08-preview-realm');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('realm');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});
