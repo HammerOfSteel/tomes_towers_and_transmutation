@@ -471,6 +471,56 @@ This maps each Overworld Studio generator to the asset types it must produce. **
 3. **Terrain tile preview** — biome + climate → tile swatch grid  
 4. **Spell VFX sandbox** — select spell, see full shader preview with impact test  
 
+## 12b · Minimum Phase-01 Creator Targets
+
+These are the minimum creator slices required to finish `01-overworld-studio` without pulling full runtime implementation into this phase.
+
+### Building Creator first slice
+Required output:
+- building archetype selector
+- faction style selector
+- size selector
+- live preview
+- save to `AssetLibrary`
+
+Deferred from first slice:
+- full runtime collider work
+- complete archetype roster
+- full faction-decoration parity
+
+### NPC Creator first slice
+Required output:
+- species selector
+- role selector
+- appearance controls
+- preview card or simple 3D preview
+- save to `AssetLibrary`
+
+Deferred from first slice:
+- full `NpcController.ts`
+- full settlement runtime spawning
+
+### Enemy Creator first slice
+Required output:
+- enemy mode inside `creature-lab.html`
+- tier / role / weapon controls
+- preview metadata
+- save to `AssetLibrary`
+
+Deferred from first slice:
+- complete enemy roster content completion
+
+### Tile Designer first slice
+Required output:
+- `TileDNA` contract
+- category / biome / variant controls
+- preview surface
+- save/export path
+
+Deferred from first slice:
+- full runtime tile-placement integration
+- exhaustive biome tile-set completion
+
 ---
 
 ## 13 · CONTENT COMPLETION GATE (per game phase)
