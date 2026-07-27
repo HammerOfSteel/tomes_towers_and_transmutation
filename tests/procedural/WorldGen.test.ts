@@ -207,7 +207,7 @@ describe('WorldGen structure', () => {
           id: 'library_building_custom_1',
           type: 'building',
           name: 'Custom Arcane Inn',
-          seed: settlement.seed,
+          seed: 987654321,
           createdAt: 1,
           tags: [`settlement:${settlement.id}`, 'building:bld-custom-1', 'dtype:building'],
           isCustom: true,

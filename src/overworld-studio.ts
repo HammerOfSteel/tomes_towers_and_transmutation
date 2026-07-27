@@ -2081,7 +2081,7 @@ canvas.addEventListener('dblclick', e => {
   const floors          = WARD_TO_FLOORS[hit.type] ?? 2;
   const bldgPlan        = buildingToDungeonPlan(kind, faction, buildingSeed, size, floors as 1|2|3|4);
   const title           = `${WARD_LABELS[hit.type]} — ${kind} (${factionStr})`;
-  const settlementId    = `studio-settlement-${currentModel.seed}`;
+  const settlementId    = `settlement-${currentModel.seed}`;
   showBuildingModal(bldgPlan, title, floors as number, {
     settlementId,
     wardType: hit.type,
