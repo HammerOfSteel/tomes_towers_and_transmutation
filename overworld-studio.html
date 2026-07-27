@@ -529,7 +529,10 @@
         </div>
         <div class="section">
           <div class="section-title">Export</div>
-          <button class="btn" id="btn-solar-png" style="width:100%">📷 PNG</button>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <button class="btn" id="btn-solar-png" style="width:100%">📷 PNG</button>
+            <button class="btn" id="btn-save-solar" style="width:100%">💾 Save to Library</button>
+          </div>
         </div>
       </div><!-- /solar-controls -->
 
@@ -548,6 +551,7 @@
             <button class="pill" data-ltype="npc" title="NPCs">🧑</button>
             <button class="pill" data-ltype="settlement" title="Settlements">🏙</button>
             <button class="pill" data-ltype="realm" title="Realms">🌍</button>
+            <button class="pill" data-ltype="solar" title="Solar systems">☀</button>
             <button class="pill" data-ltype="cave" title="Caves">🌿</button>
           </div>
           <input type="text" id="library-search" placeholder="Search by name…"

@@ -344,3 +344,35 @@ test('Asset Library saves realm entries and previews them from the library', asy
   const codeErrors = console_.errors.filter(e => !e.includes('404'));
   expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
 });
+
+test('Asset Library saves solar system entries and previews them from the library', async ({ page }) => {
+  const console_ = attachFullConsoleCapture(page);
+  await clearAssetLibrary(page);
+
+  await page.click('.studio-tab[data-mode="solar"]');
+  await expect(page.locator('#solar-star-info')).not.toHaveText('—');
+
+  await page.click('#btn-save-solar');
+  await page.waitForFunction(() => (window as any).__assetLibraryLastSaved?.type === 'solar');
+  await page.waitForFunction(() => (window as any).__assetLibrarySize === 1);
+
+  const saved = await page.evaluate(() => (window as any).__assetLibraryLastSaved);
+  expect(saved?.type).toBe('solar');
+
+  await page.click('#btn-library-toggle');
+  await expect(page.locator('#library-panel')).toBeVisible();
+
+  await page.click('[data-ltype="solar"]');
+  await expect(page.locator('#library-grid > div')).toHaveCount(1);
+
+  await page.locator('#library-grid > div').first().click();
+  await page.waitForFunction(() => (window as any).__owStudioLastLibraryPreview?.type === 'solar');
+  await expect(page.locator('#library-preview-name')).toContainText('(solar, seed');
+  await SS(page, '09-preview-solar');
+
+  const preview = await page.evaluate(() => (window as any).__owStudioLastLibraryPreview);
+  expect(preview?.type).toBe('solar');
+
+  const codeErrors = console_.errors.filter(e => !e.includes('404'));
+  expect(codeErrors, `Unexpected console/page errors:\n${console_.all.join('\n')}`).toHaveLength(0);
+});

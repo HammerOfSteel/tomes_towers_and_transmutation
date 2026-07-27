@@ -4749,7 +4749,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', realm: '🌍', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', settlement: '🏙', realm: '🌍', solar: '☀', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }
@@ -4926,6 +4926,31 @@ function _previewLibraryEntry(entry: LibraryEntry | null) {
       genTimeEl.textContent =
         `${entry.name}  ·  ${currentRealmData.W}×${currentRealmData.H}  ·  ${currentRealmData.settlements.length} settlements  ·  seed ${entry.seed}`;
     }
+    return;
+  }
+
+  if (entry.type === 'solar') {
+    _setStudioModeForLibraryPreview('solar');
+    currentSolarData = entry.data as SolarSystemData;
+    const sr = getSolarRenderer();
+    sr.setData(currentSolarData);
+    sr.start();
+
+    const starEl = document.getElementById('solar-star-info');
+    if (starEl) starEl.textContent = `${currentSolarData.star.spectral}-type · ${currentSolarData.planets.length} planets`;
+
+    const listEl = document.getElementById('solar-planet-list');
+    if (listEl) {
+      listEl.innerHTML = currentSolarData.planets.map(p =>
+        `<div>${PLANET_META_SS[p.type] ?? ''} ${p.name}${p.isTowerPlanet ? ' ⬡' : ''}</div>`
+      ).join('');
+    }
+
+    const hoverInfo = document.getElementById('solar-hover-info');
+    if (hoverInfo) hoverInfo.textContent = '—';
+
+    genTimeEl.textContent =
+      `${entry.name}  ·  ${currentSolarData.star.spectral}-type  ·  ${currentSolarData.planets.length} planets  ·  seed ${entry.seed}`;
     return;
   }
 
@@ -5316,6 +5341,16 @@ document.getElementById('btn-save-realm')?.addEventListener('click', () => {
     `climate:${climate}`,
     `planetType:${currentPlanetType}`,
     `view:${realmViewMode}`,
+  ]);
+});
+
+document.getElementById('btn-save-solar')?.addEventListener('click', () => {
+  if (!currentSolarData) { alert('Generate a solar system first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  _saveToLibrary('solar', `Solar System #${seed}`, seed, currentSolarData, [
+    `spectral:${currentSolarData.star.spectral}`,
+    `planets:${currentSolarData.planets.length}`,
+    `towerPlanet:${currentSolarData.towerPlanetId}`,
   ]);
 });
 

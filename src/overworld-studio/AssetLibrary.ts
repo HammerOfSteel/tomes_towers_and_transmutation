@@ -21,7 +21,7 @@
  *   console.log('[AssetLibrary] ...')
  */
 
-export type AssetType = 'building' | 'dungeon' | 'settlement' | 'cave' | 'room' | 'npc' | 'realm';
+export type AssetType = 'building' | 'dungeon' | 'settlement' | 'cave' | 'room' | 'npc' | 'realm' | 'solar';
 
 export interface LibraryEntry {
   id:        string;
@@ -67,7 +67,8 @@ function isAssetType(value: unknown): value is AssetType {
     || value === 'cave'
     || value === 'room'
     || value === 'npc'
-    || value === 'realm';
+    || value === 'realm'
+    || value === 'solar';
 }
 
 function encodeValue(value: unknown): unknown {
