@@ -1915,12 +1915,21 @@ canvas.addEventListener('dblclick', e => {
     const floors = WARD_TO_FLOORS[hit.type] ?? 2;
     const bldgPlan = buildingToDungeonPlan(kind, faction, buildingSeed, size, floors);
     const title = `${WARD_LABELS[hit.type]} — ${kind} (${factionStr})`;
-    showBuildingModal(bldgPlan, title, floors);
+    const settlementId = `studio-settlement-${currentModel.seed}`;
+    showBuildingModal(bldgPlan, title, floors, {
+        settlementId,
+        wardType: hit.type,
+    });
 });
 // ── Building interior modal ───────────────────────────────────────────────────
 let _bModal = null;
 let _bModalCanvas = null;
 let _bModalPlan = null;
+let _bModalTitle = 'Building';
+let _bModalTags = [];
+let _bModalSettlementId = null;
+let _bModalBuildingId = null;
+let _bModalWardType = null;
 let _bModalZoom = 1.0;
 let _bModalPanX = 0;
 let _bModalPanY = 0;
@@ -1956,6 +1965,32 @@ function _bModalSetup() {
             'border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
     closeBtn.addEventListener('click', hideBuildingModal);
     hdr.appendChild(closeBtn);
+    const saveBtn = document.createElement('button');
+    saveBtn.id = 'btn-save-building';
+    saveBtn.textContent = '💾 Save to Library';
+    saveBtn.title = 'Save this building blueprint to the Asset Library';
+    saveBtn.style.cssText =
+        'padding:2px 9px;background:#1e1808;color:#d8b86a;border:1px solid #5a4020;' +
+            'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+    saveBtn.addEventListener('click', () => {
+        if (!_bModalPlan)
+            return;
+        const data = {
+            ..._bModalPlan,
+            settlementId: _bModalSettlementId,
+            buildingId: _bModalBuildingId,
+            wardType: _bModalWardType,
+        };
+        const tags = [..._bModalTags];
+        if (_bModalSettlementId && !tags.includes(`settlement:${_bModalSettlementId}`))
+            tags.push(`settlement:${_bModalSettlementId}`);
+        if (_bModalBuildingId && !tags.includes(`building:${_bModalBuildingId}`))
+            tags.push(`building:${_bModalBuildingId}`);
+        if (_bModalWardType && !tags.includes(`ward:${_bModalWardType}`))
+            tags.push(`ward:${_bModalWardType}`);
+        _saveToLibrary('building', _bModalTitle, _bModalPlan.seed, data, tags);
+    });
+    hdr.insertBefore(saveBtn, closeBtn);
     // 🎮 Play in 3D — opens the game, auto-loads building, enters creative mode
     const play3dBtn = document.createElement('button');
     play3dBtn.textContent = '🎮 Play in 3D';
@@ -2046,11 +2081,26 @@ function _bModalRedraw() {
     ctx.drawImage(off, 0, 0);
     ctx.restore();
 }
-function showBuildingModal(plan, title, _floors) {
+function showBuildingModal(plan, title, floors, opts = {}) {
     _bModalSetup();
     if (!_bModal || !_bModalCanvas)
         return;
     _bModalPlan = plan;
+    _bModalTitle = title;
+    _bModalSettlementId = opts.settlementId ?? null;
+    _bModalBuildingId = opts.buildingId ?? null;
+    _bModalWardType = opts.wardType ?? null;
+    _bModalTags = [
+        'dtype:building',
+        `floors:${floors}`,
+        `startRoom:${plan.startRoomId}`,
+    ];
+    if (_bModalSettlementId)
+        _bModalTags.push(`settlement:${_bModalSettlementId}`);
+    if (_bModalBuildingId)
+        _bModalTags.push(`building:${_bModalBuildingId}`);
+    if (_bModalWardType)
+        _bModalTags.push(`ward:${_bModalWardType}`);
     _bModalZoom = 1.0;
     _bModalPanX = 0;
     _bModalPanY = 0;
