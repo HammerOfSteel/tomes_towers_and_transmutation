@@ -217,27 +217,47 @@ function _planVillage(
   // ── Focal feature at centre ─────────────────────────────────────────────────
   const focalType: BuildingType = rand() < 0.6 ? 'well' : 'market_cross';
   if (_valid(grid, cc, cr)) {
-    buildings.push({ type: focalType, col: cc, row: cr, rotation: 0, seed: (seed ^ 0x11) >>> 0 });
+    const [fw, fd] = BUILDING_SPECS[focalType].footprint;
+    const hw = Math.ceil(fw / 2);
+    const hd = Math.ceil(fd / 2);
+    let hitsRoad = false;
+    for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+      for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+        if (roadSet.has(`${cc + dc},${cr + dr}`)) hitsRoad = true;
+      }
+    }
+    if (!hitsRoad) {
+      buildings.push({ type: focalType, col: cc, row: cr, rotation: 0, seed: (seed ^ 0x11) >>> 0 });
+    }
   }
 
-  // ── Building placement: 8 corner/arm plots, all guaranteed clear of roads ───
-  //   Positions chosen so no plot overlaps the ±4-tile cross paths or T-stubs.
+  // ── Building placement: 8 corner/arm plots, offsets sized to the largest
+  //   building in the mix so no plot can overlap the ±4-tile cross paths
+  //   regardless of how big the real BuildingDNA footprint turns out to be.
   //   Each entry: [col_offset, row_offset, rotation_y]
   const MIX: BuildingType[] = [
     'smithy', 'cottage', 'cottage', 'market_stall',
     'cottage', 'cottage', 'cottage', 'cottage',
   ];
+  let maxHalf = 0;
+  for (const t of MIX) {
+    const [fw, fd] = BUILDING_SPECS[t].footprint;
+    maxHalf = Math.max(maxHalf, Math.ceil(fw / 2), Math.ceil(fd / 2));
+  }
+  const CLEARANCE = 2;                          // gap between road edge and building edge
+  const cornerOff = VL + CLEARANCE + maxHalf;
+  const midOff    = VL + CLEARANCE + maxHalf + 2; // midpoints sit slightly further out than corners
   // [dc, dr, rot]  rot=0 → door +Z(S)  rot=π → door −Z(N)
   //                rot=π/2 → door +X(E)  rot=−π/2 → door −X(W)
   const PLOTS: [number, number, number][] = [
-    [-4, -4,  0],               // NW corner  — faces south
-    [ 4, -4,  0],               // NE corner  — faces south
-    [-4,  4,  Math.PI],         // SW corner  — faces north
-    [ 4,  4,  Math.PI],         // SE corner  — faces north
-    [-6,  0,  Math.PI / 2],     // W midpoint — faces east
-    [ 6,  0, -Math.PI / 2],     // E midpoint — faces west
-    [ 0, -6,  0],               // N midpoint — faces south (door toward centre)
-    [ 0,  6,  Math.PI],         // S midpoint — faces north (door toward centre)
+    [-cornerOff, -cornerOff,  0],               // NW corner  — faces south
+    [ cornerOff, -cornerOff,  0],               // NE corner  — faces south
+    [-cornerOff,  cornerOff,  Math.PI],         // SW corner  — faces north
+    [ cornerOff,  cornerOff,  Math.PI],         // SE corner  — faces north
+    [-midOff,  0,  Math.PI / 2],                // W midpoint — faces east
+    [ midOff,  0, -Math.PI / 2],                // E midpoint — faces west
+    [ 0, -midOff,  0],                          // N midpoint — faces south (door toward centre)
+    [ 0,  midOff,  Math.PI],                    // S midpoint — faces north (door toward centre)
   ];
   let mi = 0;
   for (let pi = 0; pi < PLOTS.length && mi < MIX.length; pi++) {
