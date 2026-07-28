@@ -516,10 +516,6 @@ export class OverworldScene {
   }
 
   /**
-   * Returns the nearest building whose door is within `maxDist` world units of `pos`,
-   * or null if none is close enough.  Used by main.ts to show the "Press E to enter" prompt.
-   */
-  /**
    * Returns the nearest building whose exterior surface is within `maxDist`
    * world units of `pos`, or null if none is close enough. Distance is
    * measured to the building's rotated footprint rectangle (its nearest
