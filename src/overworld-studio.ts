@@ -2940,6 +2940,59 @@ document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
   link.click();
 });
 
+// ── Cave / Glade controls event wiring ────────────────────────────────────────
+
+document.getElementById('cave-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.ctype) return;
+  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  _syncCaveTypeSections(pill.dataset.ctype as CaveType);
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-biome-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.biome) return;
+  document.querySelectorAll('#cave-biome-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('glade-biome-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.gbiome) return;
+  document.querySelectorAll('#glade-biome-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-size')?.addEventListener('input', function() {
+  const input = this as HTMLInputElement;
+  const lbl = document.getElementById('cave-size-val');
+  if (lbl) lbl.textContent = ({ '1': 'S', '2': 'M', '3': 'L' } as Record<string, string>)[input.value] ?? input.value;
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-density')?.addEventListener('input', function() {
+  const input = this as HTMLInputElement;
+  const lbl = document.getElementById('cave-density-val');
+  if (lbl) lbl.textContent = (parseInt(input.value) / 100).toFixed(2);
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('btn-cave-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `cave-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
 // ── Cave / Glade Generator & Renderer (OW-C) ──────────────────────────────────
 
 type CaveType = 'cave' | 'glade';

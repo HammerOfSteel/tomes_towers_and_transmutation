@@ -1068,70 +1068,11 @@ async function main() {
   };
 
   // ── Sandbox mode helpers ──────────────────────────────────────────────────
-
-  function startSandbox(): void {
-    // Show a launcher modal offering the dev tools
-    _showDevLauncher();
-  }
-
-  function _showDevLauncher(): void {
-    const existing = document.getElementById('dev-launcher-modal');
-    if (existing) { existing.remove(); }
-
-    const overlay = document.createElement('div');
-    overlay.id = 'dev-launcher-modal';
-    overlay.style.cssText = [
-      'position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;',
-      'align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)',
-    ].join('');
-
-    const panel = document.createElement('div');
-    panel.style.cssText = [
-      'background:#161a20;border:1px solid #2a2f38;border-radius:10px;',
-      'padding:28px 32px;min-width:360px;color:#d0d8e8;font:13px/1.5 "Segoe UI",sans-serif',
-    ].join('');
-
-    panel.innerHTML = `
-      <h2 style="font-size:16px;font-weight:700;margin-bottom:6px;color:#d8a96a;letter-spacing:.04em">Backrooms</h2>
-      <p style="color:#7a8a9a;margin-bottom:20px;font-size:12px">Development tools — the place things get weird.</p>
-      <div style="display:flex;flex-direction:column;gap:8px" id="dev-launcher-btns"></div>
-      <button id="dev-launcher-close" style="
-        margin-top:18px;width:100%;padding:8px;background:none;border:1px solid #2a2f38;
-        border-radius:6px;color:#7a8a9a;font:inherit;font-size:12px;cursor:pointer
-      ">Cancel</button>
-    `;
-
-    const btns = [
-      { label: '✦ World Editor', desc: 'Asset Studio · Models · Tile Painter · Tower Rooms · Buildings · Library',
-        action: () => { overlay.remove(); window.open('world-editor.html', '_blank'); } },
-      { label: '⚡ Dev Panel (in-game)', desc: 'Spell Lab · Enemy Lab · Creature Creator · Cheats',
-        action: () => { overlay.remove(); _startDevPanelInGame(); } },
-    ];
-
-    const btnContainer = panel.querySelector('#dev-launcher-btns')!;
-    for (const b of btns) {
-      const el = document.createElement('button');
-      el.style.cssText = [
-        'background:#1a1e28;border:1px solid #2a2f38;border-radius:7px;',
-        'padding:10px 14px;text-align:left;cursor:pointer;color:#d0d8e8;font:inherit;',
-        'transition:background .12s,border-color .12s',
-      ].join('');
-      el.innerHTML = `
-        <div style="font-size:13px;font-weight:600;margin-bottom:2px">${b.label}</div>
-        <div style="font-size:11px;color:#7a8a9a">${b.desc}</div>
-      `;
-      el.addEventListener('mouseover', () => { el.style.background = '#1e2535'; el.style.borderColor = '#6a9fd8'; });
-      el.addEventListener('mouseout',  () => { el.style.background = '#1a1e28'; el.style.borderColor = '#2a2f38'; });
-      el.addEventListener('click', b.action);
-      btnContainer.appendChild(el);
-    }
-
-    panel.querySelector('#dev-launcher-close')!.addEventListener('click', () => { overlay.remove(); mainMenu.show(); });
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); mainMenu.show(); } });
-
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-  }
+  // NOTE: the main-menu "Dev Lab" button now links directly to Overworld
+  // Studio (see onDevLab above). The in-game Dev Panel (Spell Lab / Enemy
+  // Lab / Creature Creator / Cheats) previously reached via a launcher modal
+  // here is preserved and now opened with the Insert key while in dev mode
+  // (see the keydown handler below), so no functionality is lost.
 
   function _startDevPanelInGame(): void {
     mainMenu.hide();
@@ -1681,7 +1622,7 @@ async function main() {
         }
       }
     },
-    onDevLab: () => startSandbox(),
+    onDevLab: () => window.open('overworld-studio.html', '_blank'),
     rebindControls: {
       getBindings: () => input.bindings as import('@/core/InputManager').Bindings,
       rebind:       (action, code) => input.rebind(action, code),
@@ -2072,6 +2013,11 @@ async function main() {
       if (!gameMenu.isOpen && !editMode.isActive) _toggleConstructionMode();
     } else if (e.key === '\\' && gameMode === 'exterior') {
       if (!gameMenu.isOpen && devModeEnabled()) owEditor?.toggle();
+    } else if (e.key === 'Insert') {
+      // In-game Dev Panel (Spell Lab / Enemy Lab / Creature Creator / Cheats) —
+      // formerly reached via the main-menu Dev Lab launcher; Dev Lab now links
+      // directly to Overworld Studio, so this shortcut keeps the panel reachable.
+      if (!gameMenu.isOpen && devModeEnabled()) _startDevPanelInGame();
     }
   });
 
