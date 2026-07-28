@@ -47,7 +47,7 @@ Turn Overworld Studio output into the actual 3D playable world. **Depends on 01.
 | File                                                                            | Topic                                     | Status |
 | ------------------------------------------------------------------------------- | ----------------------------------------- | ------ |
 | [Realm Integration](./02-game-world-integration/realm-integration.md)           | Generate 3D terrain from realm map biomes | 🚧     |
-| [Settlement Integration](./02-game-world-integration/settlement-integration.md) | Place generated settlements in 3D world   | ⚠️ GAP |
+| [Settlement Integration](./02-game-world-integration/settlement-integration.md) | Place generated settlements in 3D world   | 🚧     |
 | [Dungeon Integration](./02-game-world-integration/dungeon-integration.md)       | Dungeon entrances/exits on realm map      | ⚠️ GAP |
 | [Cave Integration](./02-game-world-integration/cave-glade-integration.md)       | Cave & glade entrances on realm map       | ⚠️ GAP |
 
@@ -143,7 +143,7 @@ Last pass. **Nothing here starts until 07 is green.**
 
 | #   | Gap                                                                                                                                                                 | Impact        | Where to fix                                               |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------- |
-| G1  | **Game World Integration** — realm terrain/river/chunking data-transform slices shipped (RI-1 to RI-4); settlement/dungeon/cave wiring and actual `OverworldScene.ts` renderer integration still needed                                             | Blocking demo | `02-game-world-integration/`                               |
+| G1  | **Game World Integration** — realm terrain/river/chunking (RI-1 to RI-4) and settlement spawning (SI-1) data-transform slices shipped as pure/tested modules; SI-2 to SI-5 (streets, NPC population, boundaries, LOD), dungeon/cave wiring, and actual `OverworldScene.ts` renderer integration still needed                                             | Blocking demo | `02-game-world-integration/`                               |
 | G2  | **Asset Library UI** — partial; save/preview/export/import/rename/duplicate/delete exist for Studio asset types, but full creator/runtime coverage is still missing | Medium        | `01-overworld-studio/asset-library.md`                     |
 | G3  | **Game Inventory** — stabilize the master contract of procedural asset outputs so phase-01 tools have a clear source of truth                                       | Medium        | `01-overworld-studio/game-inventory.md`                    |
 | G5  | **Audio System** — referenced everywhere but has no phased plan                                                                                                     | High          | `06-game-systems/audio.md`                                 |

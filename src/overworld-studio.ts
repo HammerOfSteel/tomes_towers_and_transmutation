@@ -3478,7 +3478,7 @@ type RealmClimate = 'tropical' | 'temperate' | 'arctic';
 export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
 export interface RealmRiver { points: Vec2[]; }
 
-interface RealmSettlement {
+export interface RealmSettlement {
   x: number; y: number;
   name: string;
   size: 'village' | 'town' | 'city';
