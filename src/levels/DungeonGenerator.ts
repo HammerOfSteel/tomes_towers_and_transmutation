@@ -17,6 +17,7 @@
 import type { Blueprint, DoorFacing, DoorEntry } from './blueprint';
 import { validateBlueprint } from './blueprint';
 import { mulberry32, randInt } from '@/core/prng';
+import { applyCustomRoomOverrides } from './customRoomOverrides';
 
 // Raw blueprint JSON imports ── same as SceneManager; JSON has no side effects
 import cellStartRaw    from './blueprints/cell_start.json';
@@ -150,6 +151,9 @@ export function generateDungeon(
   const branch = allocRoom('corridor_ew');
   connect(hub, 'east', branch);       // hub.east → branch.west
   // branch.east remains null (dead-end exterior exit)
+
+  // AL-4: allow Asset Library custom room layouts to replace generated rooms.
+  applyCustomRoomOverrides(rooms);
 
   return { rooms, startRoomId: startRoom.id, seed };
 }
