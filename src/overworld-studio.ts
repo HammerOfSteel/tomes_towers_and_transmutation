@@ -52,7 +52,7 @@ export type WardType =
 
 export type SettlementType = 'village' | 'town' | 'city';
 
-interface Vec2 { x: number; y: number; }
+export interface Vec2 { x: number; y: number; }
 
 interface Ward {
   type:      WardType;
@@ -3476,7 +3476,7 @@ type RealmShape   = 'island' | 'continents' | 'archipelago' | 'pangaea';
 type RealmClimate = 'tropical' | 'temperate' | 'arctic';
 
 export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
-interface RealmRiver { points: Vec2[]; }
+export interface RealmRiver { points: Vec2[]; }
 
 interface RealmSettlement {
   x: number; y: number;

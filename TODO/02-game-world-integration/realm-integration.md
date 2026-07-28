@@ -1,7 +1,7 @@
 # Realm Integration
 > Generate the 3D playable overworld terrain directly from the OW-A realm map.
 
-## Status: 🚧 In Progress — RI-1 (realm → terrain placement + height smoothing) and RI-2 (biome → tile mapping) shipped as a pure data-transform module; river mesh (RI-3), chunk streaming (RI-4), and renderer wiring remain
+## Status: 🚧 In Progress — RI-1, RI-2, RI-3 (river mesh), and RI-4 (chunk streaming core) shipped as pure, unit-tested modules; only the actual `OverworldScene.ts` renderer wiring (LOD, textures, river colliders, chunk↔terrain integration) remains
 
 ## Goal
 When the player enters the overworld, the terrain they walk on matches the realm map exactly:
@@ -25,25 +25,28 @@ When the player enters the overworld, the terrain they walk on matches the realm
 - [ ] Water tiles: animated shader (shallow/deep variants) — deferred to renderer work
 
 ### RI-3 — River Mesh
-- [ ] Rivers from `RealmData.rivers[]` → spline path → `THREE.TubeGeometry` at water level
-- [ ] River width scales with length (headwaters narrow → mouth wide)
-- [ ] Collider: passable by swimming (future) / impassable on foot except at fords
+- [x] Rivers from `RealmData.rivers[]` → spline path → width-varying ribbon mesh at water level (`src/world/RealmRiverMesh.ts`'s `buildRiverMesh()`) — a flat quad-strip surface rather than a literal `THREE.TubeGeometry`, since a river is a horizontal water plane following the path, not a cylinder through the ground; `makeHeightSampler()` bridges it to RI-1's `TerrainTilePlacement[]` so the ribbon sits at the (smoothed) terrain height + a small offset
+- [x] River width scales with length — linear from `RIVER_MIN_WIDTH` (headwaters, `points[0]`) to `RIVER_MAX_WIDTH` (mouth, last point)
+- [ ] Collider: passable by swimming (future) / impassable on foot except at fords — deferred; needs the physics/collision system, not just the mesh
 
 ### RI-4 — Region Chunking
-- [ ] World divided into 16×16 tile chunks
-- [ ] Only load chunks within 3-chunk radius of player
-- [ ] Unload chunks beyond 5-chunk radius (dispose geometry + textures)
-- [ ] `ChunkManager.ts`: tracks loaded chunks, listens to player position
+- [x] World divided into 16×16 tile chunks (`CHUNK_SIZE` in `src/world/ChunkManager.ts`)
+- [x] Only load chunks within 3-chunk radius of player (`LOAD_RADIUS_CHUNKS`, Chebyshev/square distance)
+- [x] Unload chunks beyond 5-chunk radius, dispose via injected `unload(coord, data)` handler (`UNLOAD_RADIUS_CHUNKS`)
+- [x] `ChunkManager.ts`: generic `ChunkManager<T>` class — tracks loaded chunks in a `Map`, `update(playerX, playerZ)` loads/unloads based on player position, `dispose()` tears down everything. Generic over payload type `T` and takes `load`/`unload` as injected callbacks (zero THREE.js/DOM coupling), so it can drive terrain chunks, prop/decoration chunks, or anything else spatially streamed — not committed to a single content type at the core-logic layer.
+- [ ] Actual wiring into `OverworldScene.ts` — call `chunkManager.update(player.x, player.z)` from the scene tick, with `load(coord)` building a `THREE.Group` of `buildTile()` instances from `realmToTerrain()`'s placements restricted to that chunk's cell range, `unload(coord, group)` doing `scene.remove(group)` + disposing each tile — deferred until there's an active terrain renderer to hook this into
 
 ### RI-5 — Tests
 - [x] `tests/world/RealmToTerrain.test.ts`: same realm seed → identical terrain layout (determinism test), `BIOME_TILE_MAP` completeness, height-smoothing math, transition-flag correctness, full-placement `TileDNA` validity — 12 tests, all passing
-- [ ] Performance: 16×16 chunk (256 tiles) generates in < 4ms — deferred until RI-4's chunking exists to benchmark against realistically
+- [x] `tests/world/RealmRiverMesh.test.ts`: ribbon vertex/index counts, width scaling from headwaters to mouth, custom width overrides, height-sampler placement, degenerate (0/1-point) river handling — 9 tests, all passing
+- [x] `tests/world/ChunkManager.test.ts`: chunk-coordinate math, Chebyshev radius membership, load/unload lifecycle (idempotent re-update, partial in/out-of-range transitions, `dispose()`), constructor validation — 13 tests, all passing
+- [ ] Performance: 16×16 chunk (256 tiles) generates in < 4ms — deferred until the `OverworldScene.ts` wiring exists to benchmark realistically (the pure `realmToTerrain()` transform itself is already O(cells) and trivially fast per the existing test run times, but a meaningful perf test needs the full load-chunk pipeline: cell slice → N × `buildTile()` → THREE group assembly)
 
 ## Architecture note
-`RealmData`/`RealmBiome` live in `src/overworld-studio.ts` (the Studio page), which wires up DOM elements at module scope — unsafe to import at runtime from game code. `RealmToTerrain.ts` only takes `import type { RealmBiome, RealmData }` from it (erased at compile time, zero runtime coupling) and otherwise operates on a minimal structural `RealmTerrainInput` shape, so it's safe to import from `OverworldScene.ts` or anywhere else in the game runtime.
+`RealmData`/`RealmBiome`/`RealmRiver`/`Vec2` live in `src/overworld-studio.ts` (the Studio page), which wires up DOM elements at module scope — unsafe to import at runtime from game code. `RealmToTerrain.ts` and `RealmRiverMesh.ts` only take `import type {...}` from it (erased at compile time, zero runtime coupling) and otherwise operate on minimal structural shapes, so both stay safe to import from `OverworldScene.ts` or anywhere else in the game runtime. `ChunkManager.ts` has no dependency on either file at all.
 
 ## Dependencies
 - Requires: OW-A realm generator ✅
 - Requires: Tile variant system (`tile-designer.md`) ✅
-- Requires: `ChunkManager` (new) — still needed for RI-4
+- Requires: `ChunkManager` (new) ✅ — core logic shipped; scene wiring still pending
 

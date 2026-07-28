@@ -51,7 +51,7 @@ Turn Overworld Studio output into the actual 3D playable world. **Depends on 01.
 | [Dungeon Integration](./02-game-world-integration/dungeon-integration.md)       | Dungeon entrances/exits on realm map      | ⚠️ GAP |
 | [Cave Integration](./02-game-world-integration/cave-glade-integration.md)       | Cave & glade entrances on realm map       | ⚠️ GAP |
 
-> 🚧 **Realm Integration's first slice (RI-1/RI-2 data transform) has shipped** — `src/world/RealmToTerrain.ts` maps realm cells to `TileDNA` placements with height smoothing and biome-transition flags. River mesh, chunk streaming, and settlement/dungeon/cave integration are still planning gaps with no task list for wiring studio output into the 3D overworld.
+> 🚧 **Realm Integration's core data-transform slices (RI-1 through RI-4) have shipped** — `src/world/RealmToTerrain.ts` maps realm cells to `TileDNA` placements with height smoothing and biome-transition flags, `src/world/RealmRiverMesh.ts` builds width-varying river ribbons, and `src/world/ChunkManager.ts` provides generic chunk load/unload streaming logic. All pure and unit-tested (34 new tests); wiring these into an actual `OverworldScene.ts` terrain renderer, plus settlement/dungeon/cave integration, are still open.
 
 ---
 
@@ -143,7 +143,7 @@ Last pass. **Nothing here starts until 07 is green.**
 
 | #   | Gap                                                                                                                                                                 | Impact        | Where to fix                                               |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------- |
-| G1  | **Game World Integration** — first data-transform slice shipped (realm → terrain placements); settlement/dungeon/cave wiring and actual renderer/chunking still needed                                             | Blocking demo | `02-game-world-integration/`                               |
+| G1  | **Game World Integration** — realm terrain/river/chunking data-transform slices shipped (RI-1 to RI-4); settlement/dungeon/cave wiring and actual `OverworldScene.ts` renderer integration still needed                                             | Blocking demo | `02-game-world-integration/`                               |
 | G2  | **Asset Library UI** — partial; save/preview/export/import/rename/duplicate/delete exist for Studio asset types, but full creator/runtime coverage is still missing | Medium        | `01-overworld-studio/asset-library.md`                     |
 | G3  | **Game Inventory** — stabilize the master contract of procedural asset outputs so phase-01 tools have a clear source of truth                                       | Medium        | `01-overworld-studio/game-inventory.md`                    |
 | G5  | **Audio System** — referenced everywhere but has no phased plan                                                                                                     | High          | `06-game-systems/audio.md`                                 |
