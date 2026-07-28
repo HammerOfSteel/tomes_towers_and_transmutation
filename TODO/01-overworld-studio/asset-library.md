@@ -25,8 +25,8 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 - [x] Current type filters support shipped Studio asset classes: All | Buildings | Dungeons | Room Layouts | NPCs | Settlements | Realms | Planets | Solar Systems | Caves
 - [x] Grid view shows thumbnail + name
 - [x] Click entry → preview in main canvas area
-- [x] Actions shipped: Import JSON, Rename, Duplicate, Delete, Export JSON
-- [ ] Actions remaining: Edit DNA, Pin to map location
+- [x] Actions shipped: Import JSON, Rename, Duplicate, Delete, Export JSON, Pin to location (`assetLibrary.pinToLocation()`/`unpinFromLocation()` — adds/removes a `<type>:<locationId>` tag matching the existing runtime override tag convention; click-to-unpin chips render in the preview panel)
+- [ ] Actions remaining: Edit DNA
 - [ ] Future expansion: Enemy / Prop / Creature categories once those generators feed the library
 
 ### AL-3 — Studio Generator → Library Integration

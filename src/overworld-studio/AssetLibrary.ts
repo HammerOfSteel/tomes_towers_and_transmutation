@@ -278,6 +278,59 @@ export class AssetLibrary {
     return updated;
   }
 
+  /**
+   * Pin an entry to a specific named world location by adding a location tag.
+   * The tag convention matches what the runtime override readers already
+   * expect (see `src/levels/customRoomOverrides.ts`,
+   * `src/world/customLocationOverrides.ts`, and `src/procedural/WorldGen.ts`):
+   *   room       -> `room:<locationId>`
+   *   dungeon    -> `dungeon:<locationId>`
+   *   cave       -> `cave:<locationId>`
+   *   settlement -> `settlement:<locationId>`
+   *   building   -> `building:<locationId>`
+   *   npc        -> `npc:<locationId>`
+   * Marks the entry `isCustom` (a pinned entry is, by definition, an
+   * intentional designer override). Idempotent — re-pinning to the same
+   * location does not duplicate the tag.
+   * Returns the updated entry, or null if the id was not found.
+   */
+  pinToLocation(id: string, locationId: string): LibraryEntry | null {
+    const trimmedLoc = locationId.trim();
+    if (!trimmedLoc) return null;
+    const idx = this._entries.findIndex(e => e.id === id);
+    if (idx < 0) return null;
+
+    const entry = this._entries[idx]!;
+    const tag = `${entry.type}:${trimmedLoc}`;
+    const tags = entry.tags.includes(tag) ? entry.tags : [...entry.tags, tag];
+
+    const updated: LibraryEntry = { ...entry, tags, isCustom: true };
+    this._entries[idx] = updated;
+    this._save();
+    console.log(`[AssetLibrary] pinned ${id} -> "${tag}"`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return updated;
+  }
+
+  /** Remove a previously-pinned location tag from an entry, if present. */
+  unpinFromLocation(id: string, locationId: string): LibraryEntry | null {
+    const trimmedLoc = locationId.trim();
+    if (!trimmedLoc) return null;
+    const idx = this._entries.findIndex(e => e.id === id);
+    if (idx < 0) return null;
+
+    const entry = this._entries[idx]!;
+    const tag = `${entry.type}:${trimmedLoc}`;
+    if (!entry.tags.includes(tag)) return entry;
+
+    const updated: LibraryEntry = { ...entry, tags: entry.tags.filter(t => t !== tag) };
+    this._entries[idx] = updated;
+    this._save();
+    console.log(`[AssetLibrary] unpinned ${id} <- "${tag}"`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return updated;
+  }
+
   // ── Serialisation ─────────────────────────────────────────────────────────
 
   toJSON(): StoredSnapshot {

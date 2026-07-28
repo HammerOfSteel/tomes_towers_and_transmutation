@@ -130,6 +130,75 @@ describe('AssetLibrary rename()', () => {
   });
 });
 
+describe('AssetLibrary pinToLocation() / unpinFromLocation()', () => {
+  it('adds a type-prefixed location tag and marks the entry custom', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', type: 'room', tags: [], isCustom: false }));
+
+    const updated = lib.pinToLocation('e1', 'dungeon-42/room-3');
+
+    expect(updated).not.toBeNull();
+    expect(updated?.tags).toContain('room:dungeon-42/room-3');
+    expect(updated?.isCustom).toBe(true);
+    expect(lib.getAll()[0]?.tags).toContain('room:dungeon-42/room-3');
+  });
+
+  it('is idempotent — pinning the same location twice does not duplicate the tag', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', type: 'dungeon', tags: [] }));
+
+    lib.pinToLocation('e1', 'loc-1');
+    const updated = lib.pinToLocation('e1', 'loc-1');
+
+    expect(updated?.tags.filter(t => t === 'dungeon:loc-1')).toHaveLength(1);
+  });
+
+  it('trims whitespace and rejects empty location ids', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', tags: [] }));
+
+    expect(lib.pinToLocation('e1', '   ')).toBeNull();
+    expect(lib.getAll()[0]?.tags).toEqual([]);
+  });
+
+  it('returns null when pinning a missing entry', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    expect(lib.pinToLocation('missing', 'loc-1')).toBeNull();
+  });
+
+  it('unpinFromLocation removes only the matching tag', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', type: 'cave', tags: ['biome:stone'] }));
+    lib.pinToLocation('e1', 'cave-7');
+
+    const updated = lib.unpinFromLocation('e1', 'cave-7');
+
+    expect(updated?.tags).not.toContain('cave:cave-7');
+    expect(updated?.tags).toContain('biome:stone');
+  });
+
+  it('unpinFromLocation is a no-op when the tag is not present', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', tags: ['inn', 'human'] }));
+
+    const updated = lib.unpinFromLocation('e1', 'not-pinned');
+
+    expect(updated?.tags).toEqual(['inn', 'human']);
+  });
+
+  it('unpinFromLocation returns null for a missing entry', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    expect(lib.unpinFromLocation('missing', 'loc-1')).toBeNull();
+  });
+});
+
 describe('AssetLibrary duplicate()', () => {
   it('duplicates an entry with a fresh id, later createdAt, and copied data', () => {
     const lib = new AssetLibrary('ttt_asset_library_test');

@@ -5079,9 +5079,57 @@ function _selectLibraryEntry(id: string) {
   if (section) section.style.display = entry ? '' : 'none';
   if (nameLbl && entry) nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
   if (renameInput) renameInput.value = entry?.name ?? '';
+  _renderPinTags(entry);
   _previewLibraryEntry(entry);
   _renderLibraryGrid();
 }
+
+// ── Pin to location ───────────────────────────────────────────────────────────
+function _renderPinTags(entry: ReturnType<typeof assetLibrary.getAll>[number] | null) {
+  const el = document.getElementById('library-pin-tags');
+  if (!el) return;
+  if (!entry || entry.tags.length === 0) {
+    el.textContent = '';
+    return;
+  }
+  el.innerHTML = entry.tags
+    .map(tag => `<span style="display:inline-block;background:#2a2116;border:1px solid #3a3028;border-radius:10px;padding:1px 7px;margin:2px 3px 0 0;cursor:pointer" data-pin-tag="${tag}" title="Click to unpin">${tag} ✕</span>`)
+    .join('');
+}
+document.getElementById('library-pin-tags')?.addEventListener('click', (e) => {
+  const target = (e.target as HTMLElement | null)?.closest('[data-pin-tag]') as HTMLElement | null;
+  if (!target || !_librarySelectedId) return;
+  const tag = target.getAttribute('data-pin-tag');
+  if (!tag) return;
+  const locationId = tag.includes(':') ? tag.slice(tag.indexOf(':') + 1) : tag;
+  const updated = assetLibrary.unpinFromLocation(_librarySelectedId, locationId);
+  if (updated) {
+    _renderPinTags(updated);
+    _showToast(`✓ Unpinned from "${locationId}"`);
+  }
+});
+document.getElementById('btn-library-pin')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const input = document.getElementById('library-pin-input') as HTMLInputElement | null;
+  if (!input) return;
+  const locationId = input.value.trim();
+  if (!locationId) {
+    _showToast('✕ Enter a location id to pin to');
+    return;
+  }
+  const updated = assetLibrary.pinToLocation(_librarySelectedId, locationId);
+  if (!updated) {
+    _showToast('✕ Pin failed');
+    return;
+  }
+  input.value = '';
+  _renderPinTags(updated);
+  _renderLibraryGrid();
+  _showToast(`✓ Pinned to "${locationId}"`);
+});
+document.getElementById('library-pin-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') (document.getElementById('btn-library-pin') as HTMLElement | null)?.click();
+});
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
 function _setLibraryOpen(open: boolean) {
