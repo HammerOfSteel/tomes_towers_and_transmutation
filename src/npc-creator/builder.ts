@@ -11,6 +11,7 @@
  * NPCs are commoners — same procedural rig, but role-appropriate appearance.
  */
 
+import { Group } from 'three';
 import type { NpcDNA, NpcRole } from './types';
 import type { PrincessDNA } from '@/princess-creator/types';
 import type { BuiltEntity } from '@/procedural/builder/BaseBuilder';
@@ -218,7 +219,7 @@ export async function buildNpc(dna: NpcDNA): Promise<NpcInstance> {
 export function buildNpcSync(dna: NpcDNA): NpcInstance {
   // Build a placeholder immediately; replace async once factory loads
   const placeholder: NpcInstance = {
-    root:         (() => { const { Group } = require('three') as typeof import('three'); return new Group(); })(),
+    root:         new Group(),
     dna,
     update:       () => {},
     dispose:      () => {},
