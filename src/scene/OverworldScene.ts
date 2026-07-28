@@ -39,7 +39,7 @@ import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/Wor
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
-import { createSettlementBuildingDna } from '@/world/buildings/BuildingTypeMap';
+import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
 import {
   factionBuildingDna,
   type BuildingDNA,
@@ -128,8 +128,9 @@ export class OverworldScene {
   private readonly _caveEntranceBuilts:  BuiltCaveEntrance[]  = [];
   private readonly _gladeEntranceBuilts: BuiltGladeEntrance[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
-  /** DNA + world-space position per placed building — used for building-entry proximity. */
-  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3 }> = [];
+  /** DNA + world-space position + faction per placed building — used for building-entry proximity
+   *  and to derive a matching interior style via buildingToDungeonPlan(). */
+  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3; faction: Faction }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
@@ -528,8 +529,8 @@ export class OverworldScene {
    * Returns the nearest building whose door is within `maxDist` world units of `pos`,
    * or null if none is close enough.  Used by main.ts to show the "Press E to enter" prompt.
    */
-  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3 } | null {
-    let best: { dna: BuildingDNA; pos: THREE.Vector3 } | null = null;
+  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction } | null {
+    let best: { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction } | null = null;
     let bestD2 = maxDist * maxDist;
     for (const bd of this._buildingData) {
       const dx = bd.pos.x - pos.x;
@@ -1772,7 +1773,7 @@ export class OverworldScene {
       grp.userData['studioWardType'] = ward.type;
 
       this._buildingGroups.push(grp);
-      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz) });
+      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction });
       buildingCount++;
     }
 
@@ -1851,7 +1852,7 @@ export class OverworldScene {
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
-        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz) });
+        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: settlementTypeToFaction(plan.type) });
       }
 
       // Collect settlement road tiles — all at centre elevation for a flat pavement

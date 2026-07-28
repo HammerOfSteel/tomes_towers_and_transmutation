@@ -15,6 +15,7 @@ import {
   STYLE_COLORS,
   type BuildingDNA,
   type BuildingStyle,
+  type Faction,
 } from './BuildingDNA';
 import { mulberry32 } from '@/core/prng';
 
@@ -27,6 +28,20 @@ const TIER_STYLES: Record<SettlementType, StyleTier> = {
   town:    ['timber',   'stone'],
   city:    ['stone',    'tudor'],
 };
+
+/**
+ * Maps a settlement tier to the Faction used to derive its buildings' style
+ * preset (via factionBuildingDna()) when routing building interiors through
+ * buildingToDungeonPlan(). Mirrors TIER_STYLES' existing style intent
+ * (village=thatched/rural, town=timber, city=stone/noble).
+ */
+export function settlementTypeToFaction(type: SettlementType): Faction {
+  switch (type) {
+    case 'village': return 'human_rural';
+    case 'town':    return 'human_town';
+    case 'city':    return 'human_noble';
+  }
+}
 
 /** Certain kinds always use a specific style regardless of settlement tier. */
 const STYLE_OVERRIDES: Partial<Record<BuildingType, BuildingStyle>> = {
