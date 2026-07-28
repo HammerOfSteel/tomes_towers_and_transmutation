@@ -46,4 +46,11 @@ describe('NPCEntity', () => {
     const npc = new NPCEntity(3, 3, 0, 0, 'guard', settlement);
     expect(() => npc.dispose()).not.toThrow();
   });
+
+  it('drives walk/idle animation via setAnimState without throwing during update()', () => {
+    const settlement = makeSettlement();
+    const npc = new NPCEntity(4, 4, 0, 0, 'citizen', settlement);
+    const playerPos = new THREE.Vector3(0, 0, 20); // far enough to avoid interact range, close enough to update
+    expect(() => npc.update(0.016, playerPos, false)).not.toThrow();
+  });
 });

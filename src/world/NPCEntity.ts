@@ -13,7 +13,6 @@ import * as THREE            from 'three';
 import { TimeSystem }        from '@/world/TimeSystem';
 import { buildNpcSync }      from '@/npc-creator/builder';
 import type { NpcInstance }  from '@/npc-creator/builder';
-import { animateCreature }   from '@/creatures/CreatureAnimator';
 import { mulberry32 }        from '@/core/prng';
 import type { NPCRole }      from './NPCDnaGenerator';
 import { npcName }           from './NPCDnaGenerator';
@@ -417,14 +416,9 @@ export class NPCEntity {
       this._rig.root.rotation.y = Math.atan2(tdx, tdz);
     }
 
-    // ── Serpent trail locomotion + creature animation ─────────────────────
-    const t = performance.now() * 0.001;
+    // ── Walk/idle animation ────────────────────────────────────────────────
     const isMoving = this._state === 'wander' && this._target !== null;
-    if (this._rig.snakeLoco) {
-      // Run follow-en-trail BEFORE animateCreature so sway (+=) layers on top.
-      this._rig.snakeLoco.update(this._rig.root, this._rig.bones.segments ?? []);
-    }
-    animateCreature(this._rig, { state: isMoving ? 'walk' : 'idle', time: t });
+    this._rig.setAnimState(isMoving ? 'walk' : 'idle');
   }
 
   // ── Label ─────────────────────────────────────────────────────────────────
