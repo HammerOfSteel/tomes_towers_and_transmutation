@@ -31,6 +31,7 @@ import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel, devModeEnabled } from '@/ui/DevPanel';
 import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
+import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
@@ -285,40 +286,12 @@ async function main() {
   let overworld: OverworldScene | null = null;
   let minimap:   OWMinimap | null = null;
 
-  // ── Building interior overlay (while gameMode stays 'exterior') ────
-  let _inBuildingInterior = false;
-  let _buildingReturnPos  = new THREE.Vector3();
-  let _activeBuildingDna: import('@/world/buildings/BuildingDNA').BuildingDNA | null = null;
-  let _currentBuildingFloor = 0;
-  let _activeInterior: {
-    scene:     import('@/world/buildings/InteriorGenerator').InteriorScene;
-    floorBody: import('@dimforge/rapier3d-compat').RigidBody;
-  } | null = null;
   // Always-on occlusion manager — switches between scene-wide and mesh-list modes
   import('@/rendering/OcclusionManager').then(({ OcclusionManager }) => {
     _occlusionMgr = new OcclusionManager();
   });
   let _occlusionMgr: import('@/rendering/OcclusionManager').OcclusionManager | null = null;
-  /** Y offset above terrain where building interiors are shown. */
-  const INTERIOR_Y = 200;
 
-  // ── Screen fade overlay ────────────────────────────────────────────
-  const _fadeEl = (() => {
-    const el = document.createElement('div');
-    el.id = 'screen-fade';
-    el.style.cssText = [
-      'position:fixed;inset:0;background:#000;',
-      'pointer-events:none;z-index:9999;',
-      'opacity:0;transition:opacity 0.35s ease;',
-    ].join('');
-    document.body.appendChild(el);
-    return el;
-  })();
-  /** Fade to black, call cb at peak opacity, then fade back. */
-  function _doFade(cb: () => void): void {
-    _fadeEl.style.opacity = '1';
-    setTimeout(() => { cb(); setTimeout(() => { _fadeEl.style.opacity = '0'; }, 80); }, 380);
-  }
   // E2: Solmor 3D presence near tower entrance (shown after prologue complete)
   const solmorPresence = new SolmorPresence(scene);
   solmorPresence.load().catch(() => {});  // fire-and-forget
@@ -353,93 +326,6 @@ async function main() {
     // Heal player HP — integrate with ProgressionSystem when available
     (player as unknown as { heal?: (n: number) => void }).heal?.(amount);
   };
-
-  /** Shared interior mount: loads a generated floor, positions it at INTERIOR_Y. */
-  async function _mountInterior(
-    dna: import('@/world/buildings/BuildingDNA').BuildingDNA,
-    floorIndex: number,
-  ): Promise<import('@/world/buildings/InteriorGenerator').InteriorScene> {
-    const { generateInterior } = await import('@/world/buildings/InteriorGenerator');
-    const interior = generateInterior(dna, floorIndex);
-
-    interior.group.position.set(0, INTERIOR_Y, 0);
-    scene.add(interior.group);
-    for (const l of interior.lights) {
-      l.position.y += INTERIOR_Y;
-      scene.add(l);
-    }
-
-    const floorBody = physics.createStaticBox(
-      new THREE.Vector3(0, INTERIOR_Y - 0.5, 0),
-      new THREE.Vector3(40, 0.5, 40),
-    );
-
-    _activeInterior = { scene: interior, floorBody };
-
-    // Set up wall/ceiling occlusion for the new floor (explicit mesh list — fast)
-    const { OcclusionManager } = await import('@/rendering/OcclusionManager');
-    if (!_occlusionMgr) _occlusionMgr = new OcclusionManager();
-    _occlusionMgr.setMeshes(interior.occluderMeshes);
-
-    return interior;
-  }
-
-  /** Dismount and free the currently active interior. */
-  function _unmountInterior(): void {
-    if (!_activeInterior) return;
-    scene.remove(_activeInterior.scene.group);
-    for (const l of _activeInterior.scene.lights) scene.remove(l);
-    physics.rapierWorld.removeRigidBody(_activeInterior.floorBody);
-    _activeInterior = null;
-    _occlusionMgr?.setScene(scene);  // restore scene-wide occlusion after leaving building
-  }
-
-  /** Enter a building's generated interior. Player teleported to INTERIOR_Y. */
-  async function enterBuildingInterior(dna: import('@/world/buildings/BuildingDNA').BuildingDNA): Promise<void> {
-    if (_inBuildingInterior) return;
-    _doFade(async () => {
-      const interior = await _mountInterior(dna, 0);
-      _buildingReturnPos.copy(player.group.position);
-      _activeBuildingDna    = dna;
-      _currentBuildingFloor = 0;
-      _inBuildingInterior   = true;
-      // Spawn near the exit door (front of building) or default centre
-      const spawnZ = interior.exitPos ? interior.exitPos.z + INTERIOR_Y + 1.5 : INTERIOR_Y + 1.2;
-      player.teleport(new THREE.Vector3(0, INTERIOR_Y + 1.2, spawnZ));
-      console.log('[buildingInterior] entered', dna.buildingKind, 'floor 0 /total', interior.totalFloors);
-    });
-  }
-
-  /** Switch floors inside a building (stair trigger). */
-  async function _switchBuildingFloor(newFloor: number): Promise<void> {
-    if (!_activeBuildingDna || !_activeInterior) return;
-    const oldFloor = _currentBuildingFloor;
-    _doFade(async () => {
-      _unmountInterior();
-      const interior = await _mountInterior(_activeBuildingDna!, newFloor);
-      _currentBuildingFloor = newFloor;
-      // Spawn near the relevant stair on the new floor
-      const goingUp  = newFloor > oldFloor;
-      const spawnRef = goingUp
-        ? (interior.stairDownPos ?? interior.stairUpPos ?? new THREE.Vector3(0, 0, 0))
-        : (interior.stairUpPos   ?? interior.stairDownPos ?? new THREE.Vector3(0, 0, 0));
-      player.teleport(new THREE.Vector3(spawnRef.x, INTERIOR_Y + 1.2, spawnRef.z + 1));
-      console.log('[buildingInterior] floor', newFloor, '/', interior.totalFloors);
-    });
-  }
-
-  /** Leave the current building interior and return to exterior. */
-  function leaveBuildingInterior(): void {
-    if (!_inBuildingInterior || !_activeInterior) return;
-    _doFade(() => {
-      _unmountInterior();
-      _inBuildingInterior   = false;
-      _activeBuildingDna    = null;
-      _currentBuildingFloor = 0;
-      player.teleport(_buildingReturnPos);
-      console.log('[buildingInterior] exited');
-    });
-  }
 
   function _makeOverworld(seed: number): OverworldScene {
     console.log('[_makeOverworld] START seed=' + seed);
@@ -1783,20 +1669,18 @@ async function main() {
           });
         });
       },
-      /** Building interior state — used by E2E tests. */
-      isInBuildingInterior: () => _inBuildingInterior,
-      getBuildingFloor:     () => _currentBuildingFloor,
-      getBuildingTotalFloors: () => _activeInterior?.scene.totalFloors ?? 0,
+      /** Building interior state — used by E2E tests. Buildings now route through the
+       *  same sceneManager.loadDungeon() system as real dungeons/the greenhouse. */
+      isInBuildingInterior:   () => gameMode === 'interior',
+      getBuildingFloor:       () => sceneManager.currentFloor,
+      getBuildingTotalFloors: () => sceneManager.loadedFloorCount,
       getBuildingStairUpPos: () => {
-        const p = _activeInterior?.scene.stairUpPos;
-        if (!p) return null;
-        // root-local XZ + INTERIOR_Y for world Y
-        return { x: p.x, y: INTERIOR_Y + p.y + 1.2, z: p.z };
+        const t = sceneManager.getStaircaseTrigger('up');
+        return t ? { x: t.x, y: t.y, z: t.z } : null;
       },
       getBuildingStairDownPos: () => {
-        const p = _activeInterior?.scene.stairDownPos;
-        if (!p) return null;
-        return { x: p.x, y: INTERIOR_Y + p.y + 1.2, z: p.z };
+        const t = sceneManager.getStaircaseTrigger('down');
+        return t ? { x: t.x, y: t.y, z: t.z } : null;
       },
       /** Spawn a test building directly in front of the player (returns world pos). */
       spawnBuildingNearPlayer: (kind = 'inn', style = 'tudor', floors = 2) => {
@@ -1816,7 +1700,9 @@ async function main() {
               inst.exteriorGroup.position.set(bx, 0, bz);
               scene.add(inst.exteriorGroup);
               // Register in overworld building data so getNearestBuilding finds it
-              (overworld as any)?._buildingData?.push({ dna, pos: new THREE.Vector3(bx, 0, bz) });
+              (overworld as any)?._buildingData?.push({
+                dna, pos: new THREE.Vector3(bx, 0, bz), faction: 'human_town',
+              });
               console.log(`[spawnBuildingNearPlayer] ${kind}/${style} floors=${floors} at (${bx},${bz})`);
               resolve({ x: bx, z: bz });
             });
@@ -2457,65 +2343,6 @@ async function main() {
           );
         }
 
-        // ── Building interior entry / exit ────────────────────────────────
-        if (_inBuildingInterior) {
-          const _int = _activeInterior?.scene;
-          const _pp  = player.group.position;
-
-          // Occlusion: fade walls/ceiling that block camera→player
-          // (handled globally before render)
-
-          // Stair proximity check (1.8u radius); stairPos is root-local, group is at INTERIOR_Y
-          if (_int?.stairUpPos) {
-            const su = _int.stairUpPos;
-            const dx = _pp.x - su.x, dz = _pp.z - su.z;
-            if (dx*dx + dz*dz < 3.24) {
-              _setExteriorPrompt('Go up');
-              if (input.state.interact && !_npcBlocking)
-                _switchBuildingFloor(_currentBuildingFloor + 1);
-            } else if (_int.stairDownPos) {
-              const sd = _int.stairDownPos;
-              const dx2 = _pp.x - sd.x, dz2 = _pp.z - sd.z;
-              if (dx2*dx2 + dz2*dz2 < 3.24) {
-                _setExteriorPrompt('Go down');
-                if (input.state.interact && !_npcBlocking)
-                  _switchBuildingFloor(_currentBuildingFloor - 1);
-              } else {
-                _setExteriorPrompt('Leave building');
-                if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
-              }
-            } else {
-              _setExteriorPrompt('Leave building');
-              if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
-            }
-          } else if (_int?.stairDownPos) {
-            const sd = _int.stairDownPos;
-            const dx = _pp.x - sd.x, dz = _pp.z - sd.z;
-            if (dx*dx + dz*dz < 3.24) {
-              _setExteriorPrompt('Go down');
-              if (input.state.interact && !_npcBlocking)
-                _switchBuildingFloor(_currentBuildingFloor - 1);
-            } else {
-              _setExteriorPrompt('Leave building');
-              if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
-            }
-          } else {
-            // Single-floor building — always show leave prompt
-            _setExteriorPrompt('Leave building');
-            if (input.state.interact && !_npcBlocking) leaveBuildingInterior();
-          }
-        } else {
-          // Check if player is near a building entrance
-          const _nearBuilding = overworld.getNearestBuilding(player.group.position, 4);
-          if (_nearBuilding) {
-            _setExteriorPrompt(`Enter ${_nearBuilding.dna.buildingKind}`);
-            if (input.state.interact && !_npcBlocking) {
-              enterBuildingInterior(_nearBuilding.dna);
-            }
-          } else {
-            // (prompt cleared below in the existing exterior-prompt block)
-          }
-        }
         solmorPresence.update(dt);   // E2: bob + anim tick
         party.pruneDead();
         tamingGame.update(dt);
@@ -2588,19 +2415,24 @@ async function main() {
               if (_bld) {
                 _setExteriorPrompt(_bld.label);
               } else {
-                // NPC talk check
-                const _nearNPC = overworld.nearestNPC(_pos);
-                if (_nearNPC) {
-                  _setExteriorPrompt(`Talk to ${_nearNPC}`);
+                const _genBld = overworld.getNearestBuilding(_pos, 4);
+                if (_genBld) {
+                  _setExteriorPrompt(`Enter ${_genBld.dna.buildingKind}`);
                 } else {
-                  // Watch Perch guard assignment
-                  const _wp = baseScene.nearWatchPerch(_pos);
-                  if (_wp && party.members.some(m => !m.isGuarding)) {
-                    _setExteriorPrompt('🗼 Assign guard');
+                  // NPC talk check
+                  const _nearNPC = overworld.nearestNPC(_pos);
+                  if (_nearNPC) {
+                    _setExteriorPrompt(`Talk to ${_nearNPC}`);
                   } else {
-                    const _res = overworld.nearResourceNode(_pos);
-                    const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
-                    _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                    // Watch Perch guard assignment
+                    const _wp = baseScene.nearWatchPerch(_pos);
+                    if (_wp && party.members.some(m => !m.isGuarding)) {
+                      _setExteriorPrompt('🗼 Assign guard');
+                    } else {
+                      const _res = overworld.nearResourceNode(_pos);
+                      const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
+                      _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                    }
                   }
                 }
               }
@@ -2771,23 +2603,27 @@ async function main() {
                 _available.assignGuard(new THREE.Vector3(_perch.wx, 0.9, _perch.wz));
               } else {
                 const bld = overworld.nearBuilding(player.group.position);
-                if (bld) {
-                  if (bld.type === 'greenhouse') {
-                    // Load the greenhouse interior dungeon
-                    const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
-                    overworld.exit();
-                    gameMode = 'interior';
-                    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                    sceneManager.loadDungeon(ghPlan);
-                    player.teleport(new THREE.Vector3(0, 1.5, 8));
-                  } else {
-                    // Generic building — load a random dungeon floor
-                    const bldSeed = currentSeed ^ 0xCAFE_BABE;
-                    const bldPlan = generateDungeon(bldSeed, 1);
+                if (bld && bld.type === 'greenhouse') {
+                  // Load the greenhouse interior dungeon
+                  const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  sceneManager.loadDungeon(ghPlan);
+                  player.teleport(new THREE.Vector3(0, 1.5, 8));
+                } else {
+                  const genBld = overworld.getNearestBuilding(player.group.position, 4);
+                  if (genBld) {
+                    const bldPlan = buildingToDungeonPlan(
+                      genBld.dna.buildingKind, genBld.faction, genBld.dna.seed,
+                      genBld.dna.size, genBld.dna.floors,
+                    );
+                    _activeDungeonEntrancePos = player.group.position.clone();
                     overworld.exit();
                     gameMode = 'interior';
                     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
                     sceneManager.loadDungeon(bldPlan);
+                    player.teleport(new THREE.Vector3(0, 1.5, 8));
                   }
                 }
               }
