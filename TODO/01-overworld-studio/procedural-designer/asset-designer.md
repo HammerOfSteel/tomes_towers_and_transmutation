@@ -20,7 +20,7 @@ One designer pattern, multiple entity types:
 - [x] Appearance setters (`setBodyPreset`, `setColor`, `setHat`, `setTool`, `setBadge`, `setPersonality`, `setName`) layer on top of the existing `NpcDNA` contract; `setSpecies`/`setRole` rebuild role/species-driven defaults while preserving name/personality
 - [x] `rerollDialogue` — re-seeds `dialogue_seed` only, keeping appearance fixed (dialogue variety without a new look)
 - [x] Save UI target wired to the existing NPC gallery/share-code persistence (`saveToGallery`/`loadFromShareCode`, reusing `gallery.ts`'s `addToNpcGallery`/`npcDnaToShareCode`/`shareCodeToNpcDna`)
-- [ ] Standalone `npc-creator.html` DOM page itself (sliders/pickers wired to the state module above) + live Three.js preview via `buildNpc(dna)` still needs to be built
+- [x] Standalone `npc-creator.html` DOM page shipped (`src/npc-creator/main.ts`) — species/role/personality/body-preset chip pickers, 5-slot color pickers, live Three.js preview via `buildNpc(dna)` (OrbitControls + rebuild-on-change with stale-rebuild guarding), gallery list with delete, registered as a Vite build entry (`npcCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 - [ ] Broader Asset Library integration (saving straight to `AssetLibrary` type=`npc` instead of/alongside the NPC gallery) — deferred
 
 ### Building Designer (`building-creator.html`) 🔲

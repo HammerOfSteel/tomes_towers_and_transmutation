@@ -100,6 +100,7 @@ export default defineConfig(({ mode }) => ({
         creatureLab:      path.resolve(__dirname, 'creature-lab.html'),
         overworldStudio:  path.resolve(__dirname, 'overworld-studio.html'),
         buildingViewer:   path.resolve(__dirname, 'building-viewer.html'),
+        npcCreator:       path.resolve(__dirname, 'npc-creator.html'),
       },
     },
   },

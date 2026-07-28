@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NPC Creator — Tomes, Towers &amp; Transmutation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #161126; --panel: rgba(32, 25, 52, 0.82); --panel-border: rgba(232, 182, 76, 0.16);
+      --ink: #efe9ff; --ink-dim: #a99cc9; --gold: #e8b64c; --gold-soft: rgba(232, 182, 76, 0.35);
+      --plum: #2a2144; --plum-light: #3a2f5e;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); }
+    body { font-family: 'Quicksand', system-ui, sans-serif; color: var(--ink); }
+    #nc-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    .panel {
+      background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    #top-bar {
+      position: fixed; top: 12px; left: 16px; right: 16px; z-index: 10;
+      display: flex; align-items: center; gap: 14px; padding: 8px 16px;
+    }
+    #title .main { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 22px; color: var(--gold); }
+    #title .sub { font-size: 9.5px; color: var(--ink-dim); letter-spacing: 2.2px; text-transform: uppercase; }
+    #name-input {
+      background: var(--plum); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 12px; font: 600 14px 'Quicksand', sans-serif;
+      width: 190px; outline: none; text-align: center; margin-left: auto;
+    }
+    .icon-btn {
+      background: var(--plum); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 11px; font-size: 13px; cursor: pointer;
+    }
+    .icon-btn:hover { border-color: var(--gold-soft); }
+
+    #panel-left {
+      position: fixed; left: 16px; top: 68px; bottom: 16px; width: 300px; z-index: 9;
+      display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto;
+    }
+    .section { margin-bottom: 12px; }
+    .section-title {
+      font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--gold);
+      opacity: 0.85; margin-bottom: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 4px;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip {
+      background: var(--plum); color: var(--ink-dim); border: 1px solid transparent;
+      border-radius: 999px; padding: 4px 11px; font: 600 11px 'Quicksand', sans-serif; cursor: pointer;
+    }
+    .chip.active { background: var(--plum-light); color: var(--gold); border-color: var(--gold-soft); }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .row label { font-size: 12px; color: var(--ink-dim); width: 70px; flex-shrink: 0; }
+    .swatch { flex: 0 0 40px; height: 24px; border: 1px solid var(--panel-border); border-radius: 6px; padding: 2px; }
+    #hint {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; color: var(--ink-dim); z-index: 9;
+    }
+    #status {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--ink-dim); font-size: 13px; text-align: center; display: none; z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="nc-canvas"></canvas>
+  <div id="status">Loading…</div>
+
+  <div id="top-bar" class="panel">
+    <div id="title"><div class="main">NPC Creator</div><div class="sub">Procedural Asset Designer</div></div>
+    <input id="name-input" type="text" placeholder="NPC name…" />
+    <button id="btn-reroll-dialogue" class="icon-btn" title="Reroll dialogue only">🎲</button>
+    <button id="btn-save" class="icon-btn" title="Save to gallery">💾 Save</button>
+  </div>
+
+  <div id="panel-left" class="panel">
+    <div class="section">
+      <div class="section-title">Species</div>
+      <div class="chips" id="species-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Role</div>
+      <div class="chips" id="role-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Personality</div>
+      <div class="chips" id="personality-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Body Preset</div>
+      <div class="chips" id="body-chips">
+        <button class="chip" data-preset="0">Petite</button>
+        <button class="chip" data-preset="1">Average</button>
+        <button class="chip" data-preset="2">Imposing</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Colors</div>
+      <div class="row"><label>Primary</label><input type="color" class="swatch" id="color-primary" /></div>
+      <div class="row"><label>Secondary</label><input type="color" class="swatch" id="color-secondary" /></div>
+      <div class="row"><label>Skin</label><input type="color" class="swatch" id="color-skin" /></div>
+      <div class="row"><label>Hair</label><input type="color" class="swatch" id="color-hair" /></div>
+      <div class="row"><label>Eyes</label><input type="color" class="swatch" id="color-eyes" /></div>
+    </div>
+    <div class="section" style="flex:1">
+      <div class="section-title">Gallery</div>
+      <div id="gallery-list" style="font-size:11px;color:var(--ink-dim)"></div>
+    </div>
+  </div>
+
+  <div id="hint">species / role change appearance · scroll = zoom · drag = orbit</div>
+
+  <script type="module" src="/src/npc-creator/main.ts"></script>
+</body>
+</html>
