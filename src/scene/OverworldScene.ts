@@ -40,6 +40,7 @@ import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
 import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
+import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
 import {
   factionBuildingDna,
   getFootprint,
@@ -518,14 +519,25 @@ export class OverworldScene {
    * Returns the nearest building whose door is within `maxDist` world units of `pos`,
    * or null if none is close enough.  Used by main.ts to show the "Press E to enter" prompt.
    */
-  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction } | null {
-    let best: { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction } | null = null;
-    let bestD2 = maxDist * maxDist;
+  /**
+   * Returns the nearest building whose exterior surface is within `maxDist`
+   * world units of `pos`, or null if none is close enough. Distance is
+   * measured to the building's rotated footprint rectangle (its nearest
+   * wall), not its center — see BuildingCollision.ts. Used by main.ts to
+   * show the "Press E to enter" prompt.
+   */
+  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number } | null {
+    let best: { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number } | null = null;
+    let bestD = maxDist;
     for (const bd of this._buildingData) {
-      const dx = bd.pos.x - pos.x;
-      const dz = bd.pos.z - pos.z;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < bestD2) { bestD2 = d2; best = bd; }
+      const fp = getFootprint(bd.dna.buildingKind, bd.dna.size);
+      const d = closestDistanceToBuildingFootprint(
+        { x: pos.x, z: pos.z },
+        { x: bd.pos.x, z: bd.pos.z },
+        fp,
+        bd.rotationY,
+      );
+      if (d < bestD) { bestD = d; best = bd; }
     }
     return best;
   }
