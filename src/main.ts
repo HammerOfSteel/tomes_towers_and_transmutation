@@ -1609,6 +1609,23 @@ async function main() {
         if (!inst) return null;
         return { name: inst.dna?.name ?? '?', species: inst.dna?.species ?? '?' };
       },
+      /** First settlement NPC's visual/gameplay info (null if none spawned). For tests. */
+      getNpcSample: () => {
+        const npc = (overworld as any)?._npcs?.[0];
+        if (!npc) return null;
+        const root = npc.group as THREE.Group;
+        // buildNpcSync wraps the real geometry as a child once the async
+        // princess build resolves — a populated child means the new visual
+        // system successfully built (not just showing the empty placeholder).
+        const hasNewVisual = root.children.length > 0;
+        const pos = root.position;
+        return {
+          role: npc.role as string,
+          name: npc.name as string,
+          position: { x: +pos.x.toFixed(3), y: +pos.y.toFixed(3), z: +pos.z.toFixed(3) },
+          hasNewVisual,
+        };
+      },
       /** PROC dev: spawn a test NPC in the current scene. */
       spawnTestNpc: (species = 'human', role = 'merchant') => {
         import('@/npc-creator/defaults/NpcDefaults').then(({ getDefaultNpcDna }) => {
