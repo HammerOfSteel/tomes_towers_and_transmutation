@@ -80,14 +80,14 @@ test.describe('single-floor building (cottage)', () => {
 
     // Wait until near enough for prompt, then press E
     await page.waitForFunction(
-      () => {
+      ({ bx, bz }) => {
         const g = (window as any).__game;
         const pos = g.getPlayerPos?.();
-        const bpos = { x: 6, z: 0 }; // approximate spawn offset
         if (!pos) return false;
-        const dx = pos.x - bpos.x, dz = pos.z - bpos.z;
+        const dx = pos.x - bx, dz = pos.z - bz;
         return dx * dx + dz * dz < 16;
       },
+      { bx: buildingPos.x, bz: buildingPos.z },
       { timeout: 15_000 },
     );
 
@@ -119,8 +119,10 @@ test.describe('single-floor building (cottage)', () => {
     await page.waitForTimeout(400);
     await page.keyboard.up('ArrowLeft');
 
-    // Press E to exit
-    await page.keyboard.press('e');
+    // Exit the building — the exterior door is a proximity trigger (same as
+    // the tower/dungeons), not a key-bound action, so use the debug hook
+    // that fires it directly rather than walking to its exact position.
+    await page.evaluate(() => (window as any).__game.triggerExit?.());
     await page.waitForFunction(
       () => (window as any).__game.isInBuildingInterior?.() === false,
       { timeout: 10_000 },
@@ -147,12 +149,13 @@ test.describe('multi-floor building (inn, 2 floors)', () => {
 
     // Wait until proximity is close enough for entry prompt
     await page.waitForFunction(
-      () => {
+      ({ bx, bz }) => {
         const pos = (window as any).__game.getPlayerPos?.();
         if (!pos) return false;
-        const dx = pos.x - 6, dz = pos.z - 0;
+        const dx = pos.x - bx, dz = pos.z - bz;
         return dx * dx + dz * dz < 16;
       },
+      { bx: buildingPos.x, bz: buildingPos.z },
       { timeout: 15_000 },
     );
 
@@ -172,15 +175,32 @@ test.describe('multi-floor building (inn, 2 floors)', () => {
 
     await SS(page, 'inn-floor-0');
 
-    // The stair-up trigger exists on floor 0
-    const stairUp = await page.evaluate(() => (window as any).__game.getBuildingStairUpPos?.());
+    // Medium-size inns have more than one room per floor (entrance room + a
+    // back room that holds the staircase) — walk around the entrance room
+    // until the room graph swaps us into whichever room has the stair-up
+    // trigger. Each door crossing is itself a room swap (dungeon-style), so
+    // try a few cardinal directions, checking after each move, over a couple
+    // of passes in case the door isn't reached on the first attempt.
+    let stairUp: { x: number; y: number; z: number } | null = null;
+    for (let pass = 0; pass < 2 && !stairUp; pass++) {
+      for (const dir of ['ArrowRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft'] as const) {
+        await page.keyboard.down(dir);
+        await page.waitForTimeout(700);
+        await page.keyboard.up(dir);
+        await page.waitForTimeout(300);
+        stairUp = await page.evaluate(() => (window as any).__game.getBuildingStairUpPos?.());
+        if (stairUp) break;
+      }
+    }
+    // buildings are now real-height rooms, not offset to INTERIOR_Y=200 any
+    // more — just confirm the trigger has sane coordinates.
     expect(stairUp).not.toBeNull();
-    expect(stairUp.y).toBeGreaterThan(100); // at INTERIOR_Y
+    expect(typeof stairUp!.y).toBe('number');
 
     // Teleport player directly to the stair trigger (position from game API)
     await page.evaluate(({ x, y, z }: { x: number; y: number; z: number }) => {
       (window as any).__game.teleportPlayer?.(x, y + 1.2, z);
-    }, stairUp);
+    }, stairUp!);
     await page.waitForTimeout(300);
 
     // Press E at the stair
@@ -220,8 +240,8 @@ test.describe('multi-floor building (inn, 2 floors)', () => {
     expect(await page.evaluate(() => (window as any).__game.getBuildingFloor?.())).toBe(0);
     await SS(page, 'inn-back-floor-0');
 
-    // Exit the building
-    await page.keyboard.press('e');
+    // Exit the building — proximity trigger, use the debug hook (see cottage test).
+    await page.evaluate(() => (window as any).__game.triggerExit?.());
     await page.waitForFunction(
       () => (window as any).__game.isInBuildingInterior?.() === false,
       { timeout: 10_000 },
@@ -270,8 +290,8 @@ test.describe('building variety', () => {
 
       await SS(page, `${kind}-${style}-f${floors}`);
 
-      // Exit
-      await page.keyboard.press('e');
+      // Exit — proximity trigger, use the debug hook (see cottage test).
+      await page.evaluate(() => (window as any).__game.triggerExit?.());
       await page.waitForFunction(
         () => (window as any).__game.isInBuildingInterior?.() === false,
         { timeout: 10_000 },

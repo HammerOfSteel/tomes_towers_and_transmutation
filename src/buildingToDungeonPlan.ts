@@ -265,17 +265,20 @@ export function buildingToDungeonPlan(
     const nextIds = floorRoomIds[fi + 1]!;
     if (!thisIds.length || !nextIds.length) continue;
 
-    // Back room of this floor → first room of next floor (staircase)
+    // Back room of this floor → first room of next floor (staircase).
+    // Must be registered as a staircase (not a plain door) so the renderer
+    // builds actual stair-step geometry and getStaircaseTrigger()/
+    // getStaircaseHint() (which filter on `direction`) can find it.
     const stairBp = rooms.get(thisIds[thisIds.length - 1]!)!;
     const landBp  = rooms.get(nextIds[0]!)!;
 
     const sDoorX = Math.floor(stairBp.width / 2);
     openWall(stairBp, sDoorX, 0);
-    stairBp.doors.push({ x: sDoorX, z: 0, facing: 'north', targetId: landBp.id });
+    stairBp.staircases.push({ x: sDoorX, z: 0, facing: 'north', direction: 'up', targetId: landBp.id });
 
     const lDoorX = Math.floor(landBp.width / 2);
     openWall(landBp, lDoorX, landBp.depth - 1);
-    landBp.doors.push({ x: lDoorX, z: landBp.depth - 1, facing: 'south', targetId: stairBp.id });
+    landBp.staircases.push({ x: lDoorX, z: landBp.depth - 1, facing: 'south', direction: 'down', targetId: stairBp.id });
   }
 
   return { rooms, startRoomId, seed };

@@ -2571,8 +2571,10 @@ async function main() {
               overworld.exit();
               gameMode = 'interior';
               scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+              // loadDungeon() → executeRoomSwap(id, null) already teleports the
+              // player to the entrance room's centre (0, 1.5, 0) — a hardcoded
+              // re-teleport here can land outside a small room's floor bounds.
               sceneManager.loadDungeon(dngPlan);
-              player.teleport(new THREE.Vector3(0, 1.5, 8));
             } else {
               const caveHandle = overworld.nearCaveEntrance(player.group.position);
               const gladeHandle = !caveHandle ? overworld.nearGladeEntrance(player.group.position) : null;
@@ -2609,8 +2611,9 @@ async function main() {
                   overworld.exit();
                   gameMode = 'interior';
                   scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  // loadDungeon() already teleports the player to the entrance
+                  // room's centre (0, 1.5, 0); no extra teleport needed.
                   sceneManager.loadDungeon(ghPlan);
-                  player.teleport(new THREE.Vector3(0, 1.5, 8));
                 } else {
                   const genBld = overworld.getNearestBuilding(player.group.position, 4);
                   if (genBld) {
@@ -2622,8 +2625,11 @@ async function main() {
                     overworld.exit();
                     gameMode = 'interior';
                     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                    // loadDungeon() already teleports the player to the entrance
+                    // room's centre (0, 1.5, 0); a hardcoded re-teleport to z=8
+                    // landed outside small building rooms' floor bounds, causing
+                    // the player to fall through the world on entry.
                     sceneManager.loadDungeon(bldPlan);
-                    player.teleport(new THREE.Vector3(0, 1.5, 8));
                   }
                 }
               }

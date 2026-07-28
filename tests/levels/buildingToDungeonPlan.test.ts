@@ -29,7 +29,9 @@ import type { BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** BFS from startRoomId; returns set of reachable room IDs. */
+/** BFS from startRoomId; returns set of reachable room IDs. Follows both
+ *  doors and staircases — floor transitions are wired as staircases (see
+ *  buildingToDungeonPlan.ts Step 4), not plain doors. */
 function reachable(plan: DungeonPlan): Set<string> {
   const visited = new Set<string>();
   const queue   = [plan.startRoomId];
@@ -41,6 +43,9 @@ function reachable(plan: DungeonPlan): Set<string> {
     if (!room) continue;
     for (const door of room.doors) {
       if (door.targetId && !visited.has(door.targetId)) queue.push(door.targetId);
+    }
+    for (const stair of room.staircases) {
+      if (stair.targetId && !visited.has(stair.targetId)) queue.push(stair.targetId);
     }
   }
   return visited;
@@ -232,17 +237,17 @@ describe('buildingToDungeonPlan — floor connectivity', () => {
     }
   });
 
-  it('inter-floor doors use targetId matching adjacent floor blueprint', () => {
+  it('inter-floor staircases use targetId matching adjacent floor blueprint', () => {
     const plan = buildingToDungeonPlan('inn', 'human_town', 99, 'medium', 2);
     // With per-room blueprints, floor 0's last room connects to floor 1's first room
-    // Find any room on floor 0 that has a door targeting a floor-1 room
+    // via a staircase entry (not a plain door) — see buildingToDungeonPlan.ts Step 4.
     const f0Rooms = [...plan.rooms.values()].filter(bp => bp.floor === 0);
     const f1Rooms = [...plan.rooms.values()].filter(bp => bp.floor === 1);
     expect(f0Rooms.length, 'floor 0 should have rooms').toBeGreaterThan(0);
     expect(f1Rooms.length, 'floor 1 should have rooms').toBeGreaterThan(0);
     const f1Ids = new Set(f1Rooms.map(bp => bp.id));
-    const stairRoom = f0Rooms.find(bp => bp.doors.some(d => d.targetId && f1Ids.has(d.targetId)));
-    expect(stairRoom, 'a floor-0 room must have a door targeting a floor-1 room').toBeDefined();
+    const stairRoom = f0Rooms.find(bp => bp.staircases.some(s => s.direction === 'up' && s.targetId && f1Ids.has(s.targetId)));
+    expect(stairRoom, 'a floor-0 room must have an up-staircase targeting a floor-1 room').toBeDefined();
   });
 
 });
