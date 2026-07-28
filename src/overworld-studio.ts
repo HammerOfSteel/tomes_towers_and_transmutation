@@ -36,6 +36,7 @@ import { HexPlanetRenderer } from './hex-planet-renderer';
 import { type PlanetType, generatePlanetDNA } from './planet-dna';
 import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
 import { assetLibrary, type AssetType, type LibraryEntry } from './overworld-studio/AssetLibrary';
+import { importWorldPackage } from './overworld-studio/WorldPackage';
 import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
   type OverworldSettlementPreviewPayload,
@@ -4728,6 +4729,34 @@ document.getElementById('btn-export-world-package')?.addEventListener('click', (
       dungeons: worldPackage.dungeons.length,
       customAssets: worldPackage.customAssets.length,
     };
+  }
+});
+
+// ── World Package JSON import (AL-4) ────────────────────────────────────────
+// Restores the `customAssets` bundled in an exported package back into this
+// browser's Asset Library, so runtime override lookups work after transfer.
+document.getElementById('btn-import-world-package')?.addEventListener('click', () => {
+  (document.getElementById('world-package-import-file') as HTMLInputElement | null)?.click();
+});
+
+document.getElementById('world-package-import-file')?.addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    const result = importWorldPackage(await file.text(), assetLibrary);
+    if (!result.ok) {
+      _showToast(`✕ ${result.error ?? 'Import failed'}`);
+      return;
+    }
+    if (_libraryOpen) _renderLibraryGrid();
+    const n = result.imported.length;
+    _showToast(`✓ Imported world package (seed ${result.summary?.seed}) — ${n} custom asset${n === 1 ? '' : 's'}`);
+  } catch (err) {
+    console.error('[WorldPackage] import failed:', err);
+    _showToast('✕ Invalid world package file');
+  } finally {
+    if (input) input.value = '';
   }
 });
 

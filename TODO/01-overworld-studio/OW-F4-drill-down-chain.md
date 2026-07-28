@@ -45,7 +45,10 @@
 - [x] Exported package contains realm metadata + current `RealmData`
 - [x] Exported package contains deterministic settlement descriptors with derived seeds
 - [x] Exported package contains deterministic dungeon descriptors with derived seeds
+- [x] Exported package bundles custom Asset Library entries under `customAssets` (`assetLibrary.exportCustomEntries()`)
+- [x] `📥 Import World Package` restores `customAssets` into the local Asset Library (`src/overworld-studio/WorldPackage.ts`)
 - [ ] ZIP packaging of realm JSON + per-settlement JSONs + dungeon blueprints
+- [ ] Import should also restore realm config + regenerate the realm view
 - [ ] Direct import into the game's world generator pipeline
 
 ## Validation
@@ -56,4 +59,4 @@
   - single downloadable JSON package
   - truthful deterministic seed handoff for downstream settlement/dungeon generation
   - no ZIP bundling yet
-  - no runtime world-package importer yet
+  - importer currently restores custom Asset Library entries only (not realm regeneration)
