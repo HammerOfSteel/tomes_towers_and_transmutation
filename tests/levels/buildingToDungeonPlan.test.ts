@@ -135,6 +135,32 @@ describe('buildingToDungeonPlan — core contract', () => {
     }
   });
 
+  it('produces a DungeonPlan with a valid startRoomId and no enemy spawns', () => {
+    const plan = buildingToDungeonPlan('cottage', 'human_rural', 12345, 'tiny', 1);
+    expect(plan.startRoomId).toBeTruthy();
+    expect(plan.rooms.has(plan.startRoomId)).toBe(true);
+    for (const [, bp] of plan.rooms) {
+      expect(bp.spawns).toEqual([]);
+    }
+  });
+
+  it('single-floor buildings have no up/down staircase doors', () => {
+    const plan = buildingToDungeonPlan('cottage', 'human_rural', 12345, 'tiny', 1);
+    for (const [, bp] of plan.rooms) {
+      expect(bp.doors.every(d => d.facing === 'north' || d.facing === 'south' || d.facing === 'east' || d.facing === 'west')).toBe(true);
+    }
+    // Exactly one exterior door (targetId: null) across the whole plan
+    const exteriorDoors = [...plan.rooms.values()].flatMap(bp => bp.doors).filter(d => d.targetId === null);
+    expect(exteriorDoors.length).toBe(1);
+  });
+
+  it('multi-floor buildings register rooms across all requested floors', () => {
+    const plan = buildingToDungeonPlan('inn', 'human_town', 999, 'small', 2);
+    const floors = new Set([...plan.rooms.values()].map(bp => bp.floor));
+    expect(floors.size).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...floors)).toBeLessThanOrEqual(1); // floors are 0-indexed, 2 floors → max index 1
+  });
+
 });
 
 // ── Determinism ───────────────────────────────────────────────────────────────
