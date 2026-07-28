@@ -8,7 +8,7 @@ import { NPC_DEFAULTS, getDefaultNpcDna } from '@/npc-creator/defaults/NpcDefaul
 import type { NpcRole } from '@/npc-creator/types';
 import { npcDnaToShareCode, shareCodeToNpcDna } from '@/npc-creator/gallery';
 
-const ALL_ROLES: NpcRole[] = ['merchant', 'elder', 'quest_giver', 'scholar', 'guard', 'innkeeper', 'mysterious'];
+const ALL_ROLES: NpcRole[] = ['merchant', 'elder', 'quest_giver', 'scholar', 'guard', 'innkeeper', 'mysterious', 'citizen'];
 const ALL_SPECIES = ['human', 'undead', 'vulperia', 'slime', 'elf', 'celestial', 'draconic'] as const;
 
 describe('NPC_DEFAULTS', () => {
@@ -73,6 +73,14 @@ describe('getDefaultNpcDna', () => {
     for (const role of ALL_ROLES) {
       expect(() => getDefaultNpcDna('human', role, 99)).not.toThrow();
     }
+  });
+
+  it('citizen role produces a plain, prop-free commoner look', () => {
+    const dna = getDefaultNpcDna('human', 'citizen', 7);
+    expect(dna.role).toBe('citizen');
+    expect(dna.hat).toBe('none');
+    expect(dna.tool).toBe('none');
+    expect(dna.badge).toBe('none');
   });
 });
 

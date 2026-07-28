@@ -76,6 +76,7 @@ const ROLE_PERSONALITY: Record<NpcRole, NpcPersonality[]> = {
   guard:       ['formal', 'wary', 'formal'],
   innkeeper:   ['cheerful', 'friendly', 'eccentric'],
   mysterious:  ['wary', 'eccentric', 'wary'],
+  citizen:     ['friendly', 'cheerful', 'wary'],
 };
 
 // ── Main factory ──────────────────────────────────────────────────────────────

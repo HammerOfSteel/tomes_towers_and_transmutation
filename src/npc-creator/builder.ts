@@ -94,6 +94,7 @@ const ROLE_HAND_R: Record<NpcRole, import('@/princess-creator/types').HandItemId
   guard:       'none',
   innkeeper:   'none',
   mysterious:  'staff',
+  citizen:     'none',
 };
 
 // ── Main builder ──────────────────────────────────────────────────────────────

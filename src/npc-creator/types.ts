@@ -18,7 +18,8 @@ export type NpcRole =
   | 'scholar'
   | 'guard'
   | 'innkeeper'
-  | 'mysterious';
+  | 'mysterious'
+  | 'citizen';
 
 export type NpcPersonality =
   | 'friendly'
@@ -99,6 +100,7 @@ export const ROLE_HAT: Record<NpcRole, NpcHatId> = {
   guard:       'soldier_helm',
   innkeeper:   'none',
   mysterious:  'blindfold',
+  citizen:     'none',
 };
 
 export const ROLE_TOOL: Record<NpcRole, NpcToolId> = {
@@ -109,6 +111,7 @@ export const ROLE_TOOL: Record<NpcRole, NpcToolId> = {
   guard:       'sword',
   innkeeper:   'lantern',
   mysterious:  'staff',
+  citizen:     'none',
 };
 
 export const ROLE_BADGE: Record<NpcRole, NpcBadgeId> = {
@@ -119,4 +122,5 @@ export const ROLE_BADGE: Record<NpcRole, NpcBadgeId> = {
   guard:       'town_guard',
   innkeeper:   'none',
   mysterious:  'none',
+  citizen:     'none',
 };
