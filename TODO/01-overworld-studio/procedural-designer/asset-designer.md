@@ -30,7 +30,7 @@ One designer pattern, multiple entity types:
 - [x] Size selector (`BUILDING_CREATOR_SIZES`: tiny/small/medium/large) via `setSize`
 - [x] Additional controls beyond the minimum slice: `setFloors`, `setTerrace`, `setRotation`, `toggleFeature` (bay_window/jetty/battlements/buttress/awning/balcony), `setColor` (per-slot wall/roof/trim/door), `setName`
 - [x] `toLibraryPayload` — maps state → `AssetLibrary` type=`building` shaped payload (name/seed/tags/data), ready for `assetLibrary.add()`
-- [ ] Standalone `building-creator.html` DOM page + live Three.js preview via the existing synchronous `buildBuilding(dna)` pipeline (`src/world/buildings/BuildingBuilder.ts`) — still needs to be built (same pattern as `npc-creator.html`)
+- [x] Standalone `building-creator.html` DOM page shipped (`src/world/buildings/main.ts`) — archetype/faction/size/floors chip pickers, feature toggles, rotation slider, 4-slot color pickers, live Three.js preview via the existing synchronous `buildBuilding(dna)` pipeline (OrbitControls), Save wired directly to `AssetLibrary` type=`building` (via `toLibraryPayload`), gallery list with delete, registered as a Vite build entry (`buildingCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 - [ ] Floor plan 2D canvas preview — deferred
 
 ### Enemy Designer (inside `creature-lab.html`) 🔲
