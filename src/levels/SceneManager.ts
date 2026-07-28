@@ -38,6 +38,10 @@ export class SceneManager {
 
   private currentBpId: string | null = null;
   private currentRoom: RenderedRoom | null = null;
+  /** Room IDs registered by the most recent loadDungeon() call — used by
+   *  loadedFloorCount to report only the active plan's floor count, not
+   *  every blueprint ever registered (including the base tower rooms). */
+  private _lastLoadedRoomIds: Set<string> = new Set();
   /** THREE.Object3D roots placed by decorateRoom — cleared on every room swap. */
   private readonly _decoratedPropRoots: THREE.Object3D[] = [];
   private activeEnemies: SlimeEnemy[] = [];
@@ -187,6 +191,7 @@ export class SceneManager {
    * immediately teleport the player to the starting room.
    */
   loadDungeon(plan: import('./DungeonGenerator').DungeonPlan): void {
+    this._lastLoadedRoomIds = new Set(plan.rooms.keys());
     for (const [, bp] of plan.rooms) {
       this.registerBlueprint(bp);
     }
@@ -260,6 +265,35 @@ export class SceneManager {
       return t.direction === 'up' ? `↑ Climb to ${destLabel}` : `↓ Descend to ${destLabel}`;
     }
     return null;
+  }
+
+  /**
+   * Returns the world-space (x, y, z) position of the current room's
+   * staircase trigger in the given direction, or null if this room has none.
+   * Unlike getStaircaseHint(), there is no proximity range limit — used by
+   * debug tooling/e2e tests to teleport the player directly to a known
+   * staircase rather than needing to walk into range first.
+   */
+  getStaircaseTrigger(direction: 'up' | 'down'): { x: number; y: number; z: number } | null {
+    if (!this.currentRoom) return null;
+    for (const t of this.currentRoom.doorTriggers) {
+      if (t.direction === direction) return { x: t.cx, y: 1.5, z: t.cz };
+    }
+    return null;
+  }
+
+  /**
+   * Number of distinct floors registered by the most recently loaded
+   * loadDungeon() plan. Used by debug tooling/e2e tests to verify a
+   * generated dungeon/building's total floor count.
+   */
+  get loadedFloorCount(): number {
+    const floors = new Set<number>();
+    for (const id of this._lastLoadedRoomIds) {
+      const bp = this.blueprints.get(id);
+      if (bp) floors.add(bp.floor);
+    }
+    return floors.size;
   }
 
   /** Enemies the player can target with attacks this frame. */
