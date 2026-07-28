@@ -470,8 +470,8 @@ This maps each Overworld Studio generator to the asset types it must produce. **
 | `cave-controls`                                    | cave/glade map + biome placement data        | Studio Now      | Yes              | `cave`                                                | cave/glade integration        |
 | `realm-controls`                                   | realm geography + markers                    | Studio Now      | Not yet          | none yet                                              | realm integration             |
 | `solar-controls`                                   | solar system + planet selection state        | Studio Now      | Not yet          | none yet                                              | realm/planet drill-down       |
-| future `npc-creator.html`                          | NPC DNA/profile + preview                    | Studio Next     | Yes              | `npc`                                                 | settlement/NPC runtime        |
-| future enemy mode in `creature-lab.html`           | enemy DNA/profile + preview                  | Studio Next     | Yes              | `creature` or `enemy` (decide in Asset Library slice) | enemy runtime                 |
+| ~~future~~ `npc-creator.html` (shipped)             | NPC DNA/profile + preview                    | ✅ Shipped      | Yes              | `npc`                                                 | settlement/NPC runtime        |
+| ~~future enemy mode in `creature-lab.html`~~ → `enemy-creator.html` (shipped standalone) | enemy DNA/profile + preview | ✅ Shipped | Yes | `enemy` (decided — extended `AssetLibrary.AssetType`) | enemy runtime                 |
 | future tile designer                               | tile DNA + preview variants                  | Studio Next     | Yes              | `terrain` or `tile` (decide in Asset Library slice)   | realm/dungeon/cave rendering  |
 | spell VFX sandbox                                  | spell preview only                           | Runtime Later   | No               | none                                                  | ability/VFX runtime           |
 
@@ -517,11 +517,11 @@ Deferred from first slice:
 - full `NpcController.ts`
 - full settlement runtime spawning
 
-### Enemy Creator first slice
+### Enemy Creator first slice ✅ Shipped
 
 Required output:
 
-- enemy mode inside `creature-lab.html`
+- ~~enemy mode inside `creature-lab.html`~~ → shipped as standalone `enemy-creator.html` instead (see asset-designer.md note on why `creature-lab.html` was not extended)
 - tier / role / weapon controls
 - preview metadata
 - save to `AssetLibrary`

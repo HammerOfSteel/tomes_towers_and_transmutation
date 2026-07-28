@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enemy Creator — Tomes, Towers &amp; Transmutation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #170d10; --panel: rgba(38, 18, 22, 0.85); --panel-border: rgba(217, 76, 76, 0.2);
+      --ink: #f0d8d8; --ink-dim: #b38484; --gold: #d94c4c; --gold-soft: rgba(217, 76, 76, 0.35);
+      --wood: #2e1618; --wood-light: #452325;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); }
+    body { font-family: 'Quicksand', system-ui, sans-serif; color: var(--ink); }
+    #ec-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    .panel {
+      background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px;
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    #top-bar {
+      position: fixed; top: 12px; left: 16px; right: 16px; z-index: 10;
+      display: flex; align-items: center; gap: 14px; padding: 8px 16px;
+    }
+    #title .main { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 22px; color: var(--gold); }
+    #title .sub { font-size: 9.5px; color: var(--ink-dim); letter-spacing: 2.2px; text-transform: uppercase; }
+    #name-input {
+      background: var(--wood); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 12px; font: 600 14px 'Quicksand', sans-serif;
+      width: 210px; outline: none; text-align: center; margin-left: auto;
+    }
+    .icon-btn {
+      background: var(--wood); color: var(--ink); border: 1px solid var(--panel-border);
+      border-radius: 10px; padding: 7px 11px; font-size: 13px; cursor: pointer;
+    }
+    .icon-btn:hover { border-color: var(--gold-soft); }
+
+    #panel-left {
+      position: fixed; left: 16px; top: 68px; bottom: 16px; width: 300px; z-index: 9;
+      display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto;
+    }
+    .section { margin-bottom: 12px; }
+    .section-title {
+      font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--gold);
+      opacity: 0.85; margin-bottom: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 4px;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip {
+      background: var(--wood); color: var(--ink-dim); border: 1px solid transparent;
+      border-radius: 999px; padding: 4px 11px; font: 600 11px 'Quicksand', sans-serif; cursor: pointer;
+    }
+    .chip.active { background: var(--wood-light); color: var(--gold); border-color: var(--gold-soft); }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .row label { font-size: 12px; color: var(--ink-dim); width: 90px; flex-shrink: 0; }
+    .swatch { flex: 0 0 40px; height: 24px; border: 1px solid var(--panel-border); border-radius: 6px; padding: 2px; }
+    input[type=range] { flex: 1; }
+    input[type=checkbox] { width: 16px; height: 16px; }
+    #hint {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      font-size: 11px; color: var(--ink-dim); z-index: 9;
+    }
+    #status {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: var(--ink-dim); font-size: 13px; text-align: center; display: none; z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="ec-canvas"></canvas>
+  <div id="status">Loading…</div>
+
+  <div id="top-bar" class="panel">
+    <div id="title"><div class="main">Enemy Creator</div><div class="sub">Procedural Asset Designer</div></div>
+    <input id="name-input" type="text" placeholder="Enemy name…" />
+    <button id="btn-save" class="icon-btn" title="Save to library">💾 Save</button>
+  </div>
+
+  <div id="panel-left" class="panel">
+    <div class="section">
+      <div class="section-title">Species</div>
+      <div class="chips" id="species-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Combat Role</div>
+      <div class="chips" id="role-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Tier</div>
+      <div class="chips" id="tier-chips"></div>
+      <div class="row"><label>Boss variant</label><input type="checkbox" id="boss-toggle" /></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Movement</div>
+      <div class="chips" id="movement-chips"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Stats</div>
+      <div class="row"><label>Base HP</label><input type="range" id="hp-slider" min="1" max="400" step="1" /></div>
+      <div class="row"><label>Base Damage</label><input type="range" id="dmg-slider" min="1" max="80" step="1" /></div>
+      <div class="row"><label>Attack Range</label><input type="range" id="attack-range-slider" min="1" max="20" step="0.5" /></div>
+      <div class="row"><label>Aggro Range</label><input type="range" id="aggro-range-slider" min="1" max="24" step="0.5" /></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Colors</div>
+      <div class="row"><label>Body</label><input type="color" class="swatch" id="color-body" /></div>
+      <div class="row"><label>Accent</label><input type="color" class="swatch" id="color-accent" /></div>
+      <div class="row"><label>Outline</label><input type="color" class="swatch" id="color-outline" /></div>
+    </div>
+    <div class="section" style="flex:1">
+      <div class="section-title">Gallery</div>
+      <div id="gallery-list" style="font-size:11px;color:var(--ink-dim)"></div>
+    </div>
+  </div>
+
+  <div id="hint">species / role / tier change stats &amp; palette · scroll = zoom · drag = orbit</div>
+
+  <script type="module" src="/src/enemy-creator/main.ts"></script>
+</body>
+</html>

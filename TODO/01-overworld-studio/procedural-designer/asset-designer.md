@@ -3,7 +3,17 @@
 > Same concept as `princess-creator.html` — but for all entity types.
 > References PROC-B for implementation details.
 
-## Status: 🚧 Referenced in PROC-B; NPC creator groundwork exists, but standalone designer surfaces are still missing
+## Status: 🚧 NPC/Building/Enemy designers shipped as standalone pages; Prop Designer still missing
+
+## Note on Enemy Designer surface
+The original plan called for extending `creature-lab.html` (a Three.js geometry
+debug viewer wired into e2e visual-regression tests, see `window.__lab` API
+consumed by `tests/e2e/creature-visual.test.ts` etc.) with an enemy mode.
+Mutating that shared test harness risked breaking existing coverage, so the
+Enemy Designer instead shipped as its own standalone `enemy-creator.html` page
+— consistent with the NPC/Building designers' established pattern (own HTML
+page + own `main.ts` DOM-wiring entry + Vite build entry).
+
 
 ## Principle
 One designer pattern, multiple entity types:
@@ -33,14 +43,14 @@ One designer pattern, multiple entity types:
 - [x] Standalone `building-creator.html` DOM page shipped (`src/world/buildings/main.ts`) — archetype/faction/size/floors chip pickers, feature toggles, rotation slider, 4-slot color pickers, live Three.js preview via the existing synchronous `buildBuilding(dna)` pipeline (OrbitControls), Save wired directly to `AssetLibrary` type=`building` (via `toLibraryPayload`), gallery list with delete, registered as a Vite build entry (`buildingCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 - [ ] Floor plan 2D canvas preview — deferred
 
-### Enemy Designer (inside `creature-lab.html`) 🚧
+### Enemy Designer (`enemy-creator.html`) ✅
 - [x] `EnemyDNA`/`buildEnemy(dna)`/`getDefaultEnemyDna` groundwork already existed (`src/enemy-creator/`, PROC-B2) — discovered during this pass, previously untracked in this doc
 - [x] Pure state-management layer shipped (`src/enemy-creator/creatorState.ts`), mirroring the NPC/Building creator state pattern — zero DOM/Three.js deps, fully unit-tested
 - [x] Species picker (`ENEMY_CREATOR_SPECIES`, same 7 species as NPC Designer), combat role picker (`ENEMY_CREATOR_ROLES`: melee/ranged/caster/support/tank/swarm), tier picker (`ENEMY_CREATOR_TIERS`: 1–4, 4=boss), movement/"weapon-feel" picker (`ENEMY_CREATOR_MOVEMENTS`: patrol/charge/circle/ambush/swarm)
 - [x] `setSpecies`/`setCombatRole`/`setTier` each rebuild the appropriate default sub-tree (stats/movement/palette) from `getDefaultEnemyDna` while preserving the other axes + name; `setIsBoss`, `setColor`, `setAttackRange`, `setAggroRange`, `setBaseHp`, `setBaseDmg` for direct stat tuning
-- [x] `toLibraryPayload` — maps state → library-ready payload (name/seed/tags incl. `role:`/`tier:`/`species:`/`boss`, data); **note:** `AssetLibrary`'s `AssetType` union doesn't include `'enemy'` yet — extending it is the explicit "decide in Asset Library slice" deferred item from game-inventory.md §12
-- [ ] Extend existing `creature-lab.html` with an enemy mode UI wired to this state module + `buildEnemy(dna)` live preview — still needs to be built
-- [ ] `AssetLibrary.AssetType` extension to accept `'enemy'` — deferred per game-inventory.md
+- [x] `toLibraryPayload` — maps state → library-ready payload (name/seed/tags incl. `role:`/`tier:`/`species:`/`boss`, data)
+- [x] `AssetLibrary.AssetType` extended to accept `'enemy'` (`src/overworld-studio/AssetLibrary.ts`); Overworld Studio Library panel type-pills + placeholder icon updated to match (`overworld-studio.html`, `src/overworld-studio.ts`)
+- [x] Standalone `enemy-creator.html` DOM page shipped (`src/enemy-creator/main.ts`) — species/role/tier/movement chip pickers, boss toggle, HP/damage/attack-range/aggro-range sliders, 3-slot color pickers, live Three.js preview via the existing async `buildEnemy(dna)` pipeline (OrbitControls + rebuild-on-change with stale-rebuild guarding, mirroring `npc-creator/main.ts`'s token pattern since `buildEnemy` is async), Save wired directly to `AssetLibrary` type=`enemy` (via `toLibraryPayload`), gallery list with delete, registered as a Vite build entry (`enemyCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 
 ### Prop Designer 🔲
 - Category: furniture/decoration/container/interactive

@@ -102,6 +102,7 @@ export default defineConfig(({ mode }) => ({
         buildingViewer:   path.resolve(__dirname, 'building-viewer.html'),
         npcCreator:       path.resolve(__dirname, 'npc-creator.html'),
         buildingCreator:  path.resolve(__dirname, 'building-creator.html'),
+        enemyCreator:     path.resolve(__dirname, 'enemy-creator.html'),
       },
     },
   },
