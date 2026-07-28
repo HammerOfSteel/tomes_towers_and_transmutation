@@ -1670,7 +1670,9 @@ async function main() {
         });
       },
       /** Building interior state — used by E2E tests. Buildings now route through the
-       *  same sceneManager.loadDungeon() system as real dungeons/the greenhouse. */
+       *  same sceneManager.loadDungeon() system as real dungeons/the greenhouse, so
+       *  this is true for ANY interior (tower/dungeon/greenhouse/building), not just
+       *  buildings specifically — name kept for e2e-test API stability. */
       isInBuildingInterior:   () => gameMode === 'interior',
       getBuildingFloor:       () => sceneManager.currentFloor,
       getBuildingTotalFloors: () => sceneManager.loadedFloorCount,
