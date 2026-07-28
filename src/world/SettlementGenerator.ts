@@ -423,8 +423,26 @@ function _planCity(
   const buildings: PlacedBuilding[] = [];
   const roadSet = new Set<string>();
 
+  const QUADRANT_MIX: BuildingType[] = [
+    'inn', 'tavern', 'smithy', 'market_stall', 'guard_tower',
+    'market_stall', 'inn', 'well', 'cottage', 'cottage', 'cottage',
+    'inn', 'smithy', 'market_stall', 'cottage', 'guard_tower',
+    'cottage', 'cottage', 'market_stall', 'well', 'cottage',
+  ];
+  // Uniform grid step/clearance sized to the largest building in the mix —
+  // simple and always overlap-free, if a little more generous than a tight
+  // per-building pack.
+  let maxHalf = 0;
+  for (const t of QUADRANT_MIX) {
+    const [fw, fd] = BUILDING_SPECS[t].footprint;
+    maxHalf = Math.max(maxHalf, Math.ceil(fw / 2), Math.ceil(fd / 2));
+  }
+  const GAP        = 1;
+  const gridStep   = maxHalf * 2 + GAP;
+  const baseOffset = Math.max(6, maxHalf + 3);
+  const SL         = baseOffset + 2 * gridStep + 4; // road extent scales with the quadrant grid
+
   // Grand boulevard grid — 3-tile-wide avenues creating distinct city blocks.
-  const SL = 12;
   // E-W main boulevard (3 tiles wide) + parallel avenues at ±4
   for (let i = -SL; i <= SL; i++) {
     for (const dr of [-1, 0, 1]) {
@@ -450,29 +468,56 @@ function _planCity(
 
   // Central city_hall
   if (_valid(grid, cc, cr)) {
-    buildings.push({ type: 'city_hall', col: cc, row: cr, rotation: 0, seed: (seed ^ 0x01) >>> 0 });
+    const [fw, fd] = BUILDING_SPECS['city_hall'].footprint;
+    const hw = Math.ceil(fw / 2);
+    const hd = Math.ceil(fd / 2);
+    let hitsRoad = false;
+    for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+      for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+        if (roadSet.has(`${cc + dc},${cr + dr}`)) hitsRoad = true;
+      }
+    }
+    if (!hitsRoad) {
+      buildings.push({ type: 'city_hall', col: cc, row: cr, rotation: 0, seed: (seed ^ 0x01) >>> 0 });
+    }
   }
   // Temple north of city hall with proper separation
-  if (_valid(grid, cc, cr - 8)) {
-    buildings.push({ type: 'temple', col: cc, row: cr - 8, rotation: 0, seed: (seed ^ 0x02) >>> 0 });
+  const templeOff = baseOffset + gridStep;
+  if (_valid(grid, cc, cr - templeOff)) {
+    const [fw, fd] = BUILDING_SPECS['temple'].footprint;
+    const hw = Math.ceil(fw / 2);
+    const hd = Math.ceil(fd / 2);
+    let hitsRoad = false;
+    for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+      for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+        if (roadSet.has(`${cc + dc},${cr - templeOff + dr}`)) hitsRoad = true;
+      }
+    }
+    if (!hitsRoad) {
+      buildings.push({ type: 'temple', col: cc, row: cr - templeOff, rotation: 0, seed: (seed ^ 0x02) >>> 0 });
+    }
   }
 
-  const QUADRANT_MIX: BuildingType[] = [
-    'inn', 'tavern', 'smithy', 'market_stall', 'guard_tower',
-    'market_stall', 'inn', 'well', 'cottage', 'cottage', 'cottage',
-    'inn', 'smithy', 'market_stall', 'cottage', 'guard_tower',
-    'cottage', 'cottage', 'market_stall', 'well', 'cottage',
-  ];
   let mi = 0;
 
-  // 4 quadrants: generous spacing — 6+ tiles from center, 4-tile step between buildings
+  // 4 quadrants: uniform grid spaced `gridStep` tiles apart, starting `baseOffset` tiles from centre
   for (const [qsc, qsr] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
     for (let bi = 0; bi < 5; bi++) {
       if (mi >= QUADRANT_MIX.length) break;
-      const col = cc + qsc * (6 + (bi % 3) * 4);
-      const row = cr + qsr * (6 + Math.floor(bi / 3) * 4);
+      const col = cc + qsc * (baseOffset + (bi % 3) * gridStep);
+      const row = cr + qsr * (baseOffset + Math.floor(bi / 3) * gridStep);
       const btype = QUADRANT_MIX[mi]!;
-      if (roadSet.has(`${col},${row}`))                                          { mi++; continue; }  // skip road tiles
+      // Check full AABB footprint for road overlap
+      const [fw, fd] = BUILDING_SPECS[btype].footprint;
+      const hw = Math.ceil(fw / 2);
+      const hd = Math.ceil(fd / 2);
+      let hitsRoad = false;
+      for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+        for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+          if (roadSet.has(`${col + dc},${row + dr}`)) hitsRoad = true;
+        }
+      }
+      if (hitsRoad)                                                    { mi++; continue; }  // skip if overlaps road
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype)) { mi++; continue; }
       buildings.push({
         type:     QUADRANT_MIX[mi++],
