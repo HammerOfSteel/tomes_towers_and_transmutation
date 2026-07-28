@@ -20,6 +20,7 @@ import type { WorldGrid }       from './WorldGrid';
 import type { DungeonEntry }    from './WorldData';
 import { pickDungeonType, DUNGEON_TYPE_CONFIGS } from './DungeonType';
 import { generateDungeonName }  from './DungeonNameGenerator';
+import { applyCustomLocationOverrides } from './customLocationOverrides';
 
 const T             = 2;     // world-units per tile (matches OverworldScene)
 const SPACING_WU    = 30;    // minimum world-unit distance between entrances
@@ -84,6 +85,9 @@ export function placeDungeons(
     // Mark the grid cell
     grid.set(col, row, { content: 'dungeon_entrance', dungeonId: id });
   }
+
+  // AL-4: let Asset Library custom dungeon/cave entries override placed entrances.
+  applyCustomLocationOverrides(dungeons);
 
   return dungeons;
 }
