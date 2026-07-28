@@ -23,6 +23,9 @@ import type { HistoryEvent }                    from './WorldHistory';
 import type { SettlementEntry, DungeonEntry }   from './WorldData';
 import { generateQuest }                        from './QuestDef';
 import type { QuestDef, QuestContext }          from './QuestDef';
+import type { NpcRole, NpcDNA }                 from '@/npc-creator/types';
+import type { GameSpecies }                     from '@/procedural/ProceduralDNA';
+import { getDefaultNpcDna }                     from '@/npc-creator/defaults/NpcDefaults';
 
 // ── FSM state ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +63,75 @@ const ROLE_BADGE_LABEL: Record<string, string> = {
   settlement_elder:  'Village Elder',
   mysterious:        '???',
 };
+
+// ── Old → new visual-system bridge ────────────────────────────────────────────
+//
+// NPCEntity's public/external role type stays the old 9-value NPCRole (used
+// by OverworldScene.ts's VILLAGE_ROLES/TOWN_ROLES/CITY_ROLES tables and all 4
+// call sites) — this table maps it onto the new npc-creator NpcRole for the
+// visual layer only.
+
+const OLD_ROLE_TO_NEW_ROLE: Record<NPCRole, NpcRole> = {
+  merchant:         'merchant',
+  guard:            'guard',
+  citizen:          'citizen',
+  scholar:          'scholar',
+  innkeeper:        'innkeeper',
+  blacksmith:       'merchant',   // rare role — close-enough shopkeeper analog
+  quest_giver:      'quest_giver',
+  settlement_elder: 'elder',
+  mysterious:       'mysterious',
+};
+
+// Flavor-preserving replacement for the old SUBRACES pool (human/elf/goblin/
+// orc/gnome/fae) — same structure/weighting, mapped onto the new GameSpecies
+// set: goblin→vulperia, orc→draconic, gnome→slime, fae→celestial.
+const NPC_SPECIES_POOL: GameSpecies[] = [
+  'human', 'human', 'human', 'elf', 'vulperia', 'draconic', 'slime', 'celestial',
+];
+
+/**
+ * Build a new-system NpcDNA from the same seeded inputs the old npcDna()
+ * used, so each NPC still looks consistent across sessions.
+ */
+export function toNpcDna(
+  col:            number,
+  row:            number,
+  settlementSeed: number,
+  role:           NPCRole,
+): NpcDNA {
+  const seed = (col * 73856093) ^ (row * 19349663) ^ settlementSeed;
+  const rand = mulberry32(seed);
+
+  const newRole = OLD_ROLE_TO_NEW_ROLE[role] ?? 'citizen';
+  const species = NPC_SPECIES_POOL[Math.floor(rand() * NPC_SPECIES_POOL.length)] ?? 'human';
+
+  const dna = getDefaultNpcDna(species, newRole, seed);
+
+  // Per-NPC seeded color variety within a settlement (mirrors the old
+  // hue/sat/lit variety logic, overlaid on the species' base palette).
+  const hue = Math.floor(rand() * 360);
+  const sat = 40 + Math.floor(rand() * 40);
+  const lit = 50 + Math.floor(rand() * 20);
+  const primary   = hslToHex(hue, sat, lit);
+  const secondary = hslToHex((hue + 40) % 360, sat - 10, lit + 10);
+
+  return {
+    ...dna,
+    colors: { ...dna.colors, primary, secondary },
+  };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
 
 function _showDialogue(npcName: string, lines: string, role?: string): void {
   injectHudTheme();
