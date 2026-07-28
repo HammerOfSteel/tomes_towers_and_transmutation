@@ -1,8 +1,9 @@
 /**
  * NPCEntity — a living NPC in the overworld.
  *
- * Wander/idle/interact FSM.  Uses buildCreature() from the creature creator
- * pipeline so NPCs share the same visual DNA system as the player character.
+ * Wander/idle/interact FSM. NPCs build their visual rig via buildNpcSync()
+ * from the npc-creator module, which generates procedurally-varied characters
+ * using the Princess Creator rig system and seeded DNA for consistency.
  *
  * Interaction [E] at 2.5u opens an HTML dialogue panel (parchment style,
  * reuses BookReader aesthetics) with 2–3 generated dialogue lines.
