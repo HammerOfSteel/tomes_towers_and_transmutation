@@ -10,12 +10,12 @@
 
 import * as THREE            from 'three';
 import { TimeSystem }        from '@/world/TimeSystem';
-import { buildCreature }     from '@/creatures/CreatureBuilder';
-import type { CreatureRig }  from '@/creatures/CreatureBuilder';
+import { buildNpcSync }      from '@/npc-creator/builder';
+import type { NpcInstance }  from '@/npc-creator/builder';
 import { animateCreature }   from '@/creatures/CreatureAnimator';
 import { mulberry32 }        from '@/core/prng';
 import type { NPCRole }      from './NPCDnaGenerator';
-import { npcDna, npcName }   from './NPCDnaGenerator';
+import { npcName }           from './NPCDnaGenerator';
 import { generateGreeting, generateQuestHint } from './NPCDialogue';
 import { injectHudTheme } from '@/ui/hudTheme';
 import type { DialogueContext }                 from './NPCDialogue';
@@ -231,7 +231,7 @@ export class NPCEntity {
   readonly name: string;
   readonly role: NPCRole;
 
-  private readonly _rig:      CreatureRig;
+  private readonly _rig:      NpcInstance;
   private readonly _homeWx:   number;
   private readonly _homeWz:   number;
   private readonly _seed:     number;
@@ -278,9 +278,9 @@ export class NPCEntity {
 
     const rand = mulberry32(this._seed | 1);
 
-    // Build creature rig from seeded DNA
-    const dna  = npcDna(col, row, settlement.seed, role);
-    this._rig  = buildCreature(dna);
+    // Build NPC rig from seeded DNA (new princess-rig-based visual system)
+    const dna  = toNpcDna(col, row, settlement.seed, role);
+    this._rig  = buildNpcSync(dna);
 
     // Slight idle rotation offset so NPCs don't all face the same direction
     this._rig.root.rotation.y = rand() * Math.PI * 2;
