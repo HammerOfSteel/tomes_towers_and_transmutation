@@ -42,6 +42,8 @@ import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
 import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
 import {
   factionBuildingDna,
+  getFootprint,
+  FLOOR_HEIGHT,
   type BuildingDNA,
   type Faction,
 } from '@/world/buildings/BuildingDNA';
@@ -117,7 +119,7 @@ export class OverworldScene {
   private readonly _buildingGroups: THREE.Group[] = [];
   /** DNA + world-space position + faction per placed building — used for building-entry proximity
    *  and to derive a matching interior style via buildingToDungeonPlan(). */
-  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3; faction: Faction }> = [];
+  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
@@ -526,6 +528,28 @@ export class OverworldScene {
       if (d2 < bestD2) { bestD2 = d2; best = bd; }
     }
     return best;
+  }
+
+  /**
+   * Create and register a static box collider matching a building's
+   * footprint, position, rotation, and floor count. Call this for every
+   * building placed in the overworld (settlements, studio previews, and
+   * dev test-spawn hooks) so every building blocks player movement.
+   * `pos` is the building's placement position (its local origin — see
+   * `BuildingCollision.ts` docs: buildings are authored centered at local
+   * origin with the door facing local +Z).
+   */
+  registerBuildingCollider(dna: BuildingDNA, pos: THREE.Vector3, rotationY: number): void {
+    const fp = getFootprint(dna.buildingKind, dna.size);
+    const halfH = (dna.floors * FLOOR_HEIGHT) / 2;
+    const rotQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationY);
+    this._staticBodies.push(
+      this.physics.createStaticRotatedBox(
+        new THREE.Vector3(pos.x, pos.y + halfH, pos.z),
+        rotQuat,
+        new THREE.Vector3(fp.w / 2, halfH, fp.d / 2),
+      ),
+    );
   }
 
   /** Convert a world-space (x, z) position to the nearest grid (col, row). */
@@ -1629,13 +1653,15 @@ export class OverworldScene {
       const inst = buildBuilding(dna);
       const grp = inst.exteriorGroup;
 
+      const buildingRotationY = (seed % 4) * (Math.PI / 2);
       grp.position.set(wx, wy, wz);
-      grp.rotation.y = (seed % 4) * (Math.PI / 2);
+      grp.rotation.y = buildingRotationY;
       grp.userData['studioPreview'] = true;
       grp.userData['studioWardType'] = ward.type;
 
       this._buildingGroups.push(grp);
-      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction });
+      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: buildingRotationY });
+      this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), buildingRotationY);
       buildingCount++;
     }
 
@@ -1714,7 +1740,8 @@ export class OverworldScene {
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
-        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: settlementTypeToFaction(plan.type) });
+        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: settlementTypeToFaction(plan.type), rotationY: b.rotation });
+        this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), b.rotation);
       }
 
       // Collect settlement road tiles — all at centre elevation for a flat pavement

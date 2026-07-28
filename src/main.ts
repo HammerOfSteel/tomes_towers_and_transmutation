@@ -1720,8 +1720,9 @@ async function main() {
               scene.add(inst.exteriorGroup);
               // Register in overworld building data so getNearestBuilding finds it
               (overworld as any)?._buildingData?.push({
-                dna, pos: new THREE.Vector3(bx, 0, bz), faction: 'human_town',
+                dna, pos: new THREE.Vector3(bx, 0, bz), faction: 'human_town', rotationY: 0,
               });
+              overworld?.registerBuildingCollider(dna, new THREE.Vector3(bx, 0, bz), 0);
               console.log(`[spawnBuildingNearPlayer] ${kind}/${style} floors=${floors} at (${bx},${bz})`);
               resolve({ x: bx, z: bz });
             });
