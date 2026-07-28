@@ -14,6 +14,8 @@ import { generateSettlementName } from '@/world/SettlementNameGenerator';
 import { planSettlement, applySettlementToGrid } from '@/world/SettlementGenerator';
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
+import { BUILDING_SPECS } from '@/world/buildings/BuildingTypes';
+import type { PlacedBuilding } from '@/world/SettlementGenerator';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -141,5 +143,51 @@ describe('placeSettlements', () => {
     const cfg = { ...BASE_CONFIG, hasCity: false, townCount: 0, villageCount: 0 };
     const entries = placeSettlements(g, cfg, 7);
     expect(entries).toHaveLength(0);
+  });
+});
+
+// ── Building overlap regression (TV-3 side-track: footprint-aware layout) ────
+
+describe('planSettlement building overlap', () => {
+  function overlaps(a: PlacedBuilding, b: PlacedBuilding): boolean {
+    const [aw, ad] = BUILDING_SPECS[a.type].footprint;
+    const [bw, bd] = BUILDING_SPECS[b.type].footprint;
+    const ahw = Math.ceil(aw / 2), ahd = Math.ceil(ad / 2);
+    const bhw = Math.ceil(bw / 2), bhd = Math.ceil(bd / 2);
+    return Math.abs(a.col - b.col) < ahw + bhw && Math.abs(a.row - b.row) < ahd + bhd;
+  }
+
+  it('no two buildings overlap, and no building overlaps a road tile, for several seeds per settlement type', () => {
+    const g = flatGrid(128);
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (const seed of [1, 2, 3, 42, 999]) {
+        const plan = planSettlement(type, 64, 64, seed, g);
+        const roadKeys = new Set(plan.roads.map(r => `${r.col},${r.row}`));
+        for (let i = 0; i < plan.buildings.length; i++) {
+          for (let j = i + 1; j < plan.buildings.length; j++) {
+            const a = plan.buildings[i]!, b = plan.buildings[j]!;
+            expect(
+              overlaps(a, b),
+              `${type} seed=${seed}: ${a.type}@(${a.col},${a.row}) overlaps ${b.type}@(${b.col},${b.row})`,
+            ).toBe(false);
+          }
+        }
+        // Building AABB must not cover any road tile either.
+        for (const b of plan.buildings) {
+          const [fw, fd] = BUILDING_SPECS[b.type].footprint;
+          const hw = Math.ceil(fw / 2), hd = Math.ceil(fd / 2);
+          let hitsRoad = false;
+          for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+            for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+              if (roadKeys.has(`${b.col + dc},${b.row + dr}`)) hitsRoad = true;
+            }
+          }
+          expect(
+            hitsRoad,
+            `${type} seed=${seed}: ${b.type}@(${b.col},${b.row}) overlaps a road tile`,
+          ).toBe(false);
+        }
+      }
+    }
   });
 });
