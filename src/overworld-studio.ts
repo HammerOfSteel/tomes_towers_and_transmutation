@@ -4821,7 +4821,7 @@ function _renderLibraryGrid() {
     } else {
       const ph = document.createElement('div');
       ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
-      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', enemy: '👹', settlement: '🏙', realm: '🌍', planet: '🪐', solar: '☀', cave: '🌿' }[entry.type];
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', enemy: '👹', prop: '🪑', settlement: '🏙', realm: '🌍', planet: '🪐', solar: '☀', cave: '🌿' }[entry.type];
       ph.textContent = icon;
       card.appendChild(ph);
     }

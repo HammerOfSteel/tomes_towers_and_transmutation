@@ -103,6 +103,7 @@ export default defineConfig(({ mode }) => ({
         npcCreator:       path.resolve(__dirname, 'npc-creator.html'),
         buildingCreator:  path.resolve(__dirname, 'building-creator.html'),
         enemyCreator:     path.resolve(__dirname, 'enemy-creator.html'),
+        propCreator:      path.resolve(__dirname, 'prop-creator.html'),
       },
     },
   },

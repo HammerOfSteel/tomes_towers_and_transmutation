@@ -3,7 +3,7 @@
 > Same concept as `princess-creator.html` — but for all entity types.
 > References PROC-B for implementation details.
 
-## Status: 🚧 NPC/Building/Enemy designers shipped as standalone pages; Prop Designer still missing
+## Status: ✅ All four Per-Entity Designers shipped (NPC, Building, Enemy, Prop) as standalone pages with pure state modules + AssetLibrary save wiring
 
 ## Note on Enemy Designer surface
 The original plan called for extending `creature-lab.html` (a Three.js geometry
@@ -52,12 +52,17 @@ One designer pattern, multiple entity types:
 - [x] `AssetLibrary.AssetType` extended to accept `'enemy'` (`src/overworld-studio/AssetLibrary.ts`); Overworld Studio Library panel type-pills + placeholder icon updated to match (`overworld-studio.html`, `src/overworld-studio.ts`)
 - [x] Standalone `enemy-creator.html` DOM page shipped (`src/enemy-creator/main.ts`) — species/role/tier/movement chip pickers, boss toggle, HP/damage/attack-range/aggro-range sliders, 3-slot color pickers, live Three.js preview via the existing async `buildEnemy(dna)` pipeline (OrbitControls + rebuild-on-change with stale-rebuild guarding, mirroring `npc-creator/main.ts`'s token pattern since `buildEnemy` is async), Save wired directly to `AssetLibrary` type=`enemy` (via `toLibraryPayload`), gallery list with delete, registered as a Vite build entry (`enemyCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 
-### Prop Designer 🔲
-- Category: furniture/decoration/container/interactive
-- Material/colour
-- Scale
-- Interaction type (none/lootable/readable/usable)
-- Save → AssetLibrary
+### Prop Designer (`prop-creator.html`) ✅
+- [x] `PropDNA`/`buildProp(dna)` groundwork already existed (`src/prop-creator/`, PROC-B3) — synchronous pure-geometry builder, 12 archetypes
+- [x] Pure state-management layer shipped (`src/prop-creator/creatorState.ts`), mirroring the NPC/Building/Enemy creator state pattern — zero DOM/Three.js deps, fully unit-tested
+- [x] Category picker (`PROP_CREATOR_KINDS`, all 12 `PropKind`s: chest/bookshelf/table/chair/cauldron/lantern/pillar/rug/door/statue/barrel/crate) — covers "furniture/decoration/container/interactive" from the original spec across the existing archetype roster
+- [x] Material/colour picker (`PROP_CREATOR_MATERIALS`: stone/wood/bone/crystal/iron/clay); `setPropKind` rebuilds the kind-appropriate default material + palette, `setMaterial` rebuilds just the palette
+- [x] Scale (`setSize`, 0.5–1.5 uniform multiplier, matches `PropDNA.size`)
+- [x] Interaction type (`PropInteractionType`: none/lootable/readable/usable) via `setInteractionType` — folds into `PropDNA.interactive` (boolean) and is preserved as a `interaction:<type>` library tag since the DNA contract itself only models the boolean
+- [x] Theme + condition pickers (`setTheme`, `setCondition`) and glow controls (`setGlow`, `setGlowIntensity`) exposed beyond the minimum slice, matching the existing `PropDNA` contract surface
+- [x] `toLibraryPayload` — maps state → `AssetLibrary` type=`prop` shaped payload (name/seed/tags incl. `kind:`/`material:`/`theme:`/`interaction:`, data)
+- [x] `AssetLibrary.AssetType` extended to accept `'prop'`; Overworld Studio Library panel type-pills + placeholder icon updated to match
+- [x] Standalone `prop-creator.html` DOM page shipped (`src/prop-creator/main.ts`) — kind/material/theme/condition/interaction chip pickers, scale slider, glow toggle + intensity slider, 3-slot color pickers, live Three.js preview via the existing synchronous `buildProp(dna)` pipeline (OrbitControls), Save wired directly to `AssetLibrary` type=`prop` (via `toLibraryPayload`), gallery list with delete, registered as a Vite build entry (`propCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 
 ## Dependencies
 - Requires: PROC-A entity registry ✅

@@ -22,13 +22,14 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 
 ### AL-2 — Library UI Panel (in Overworld Studio)
 - [x] New "📚 Library" panel is available in the Overworld Studio sidebar
-- [x] Current type filters support shipped Studio asset classes: All | Buildings | Dungeons | Room Layouts | NPCs | Enemies | Settlements | Realms | Planets | Solar Systems | Caves
+- [x] Current type filters support shipped Studio asset classes: All | Buildings | Dungeons | Room Layouts | NPCs | Enemies | Props | Settlements | Realms | Planets | Solar Systems | Caves
 - [x] Grid view shows thumbnail + name
 - [x] Click entry → preview in main canvas area
 - [x] Actions shipped: Import JSON, Rename, Duplicate, Delete, Export JSON, Pin to location (`assetLibrary.pinToLocation()`/`unpinFromLocation()` — adds/removes a `<type>:<locationId>` tag matching the existing runtime override tag convention; click-to-unpin chips render in the preview panel)
 - [ ] Actions remaining: Edit DNA
 - [x] Enemy category — `enemy` type-pill + placeholder icon added; `enemy-creator.html` saves directly into this category
-- [ ] Future expansion: Prop / Creature categories once those generators feed the library
+- [x] Prop category — `prop` type-pill + placeholder icon added; `prop-creator.html` saves directly into this category
+- [ ] Future expansion: Creature categories once those generators feed the library
 
 ### AL-3 — Studio Generator → Library Integration
 - [x] Settlement, Dungeon, Cave, Realm, Solar System, and drilled-into Planet views offer "Save to Library"
