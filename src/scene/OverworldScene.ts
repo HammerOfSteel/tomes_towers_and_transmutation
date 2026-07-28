@@ -668,27 +668,18 @@ export class OverworldScene {
    *   x = −(GW−1)*T/2 + gridCol*T = (gridCol − GHW)*T  ✓
    *   z = −(GH−1)*T/2 + gridRow*T = (gridRow − GHH)*T  ✓
    */
+  /**
+   * Build a Rapier trimesh collider from the exact same vertex/index buffers
+   * used to render the terrain (`buildTerrainGeometryData`) — physics and
+   * visuals can never mismatch, including at elevation-edge cliff faces.
+   */
   private _createTerrainCollider(): RAPIER.RigidBody {
-    const { _GW: GW, _GH: GH } = this;
-    const heights = new Float32Array(GW * GH);
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        heights[row * GW + col] = this._wg.get(col, row).elevation * SH;
-      }
-    }
-
-    const body = this.physics.rapierWorld.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed(),
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    const { positions, indices } = buildTerrainGeometryData(this._wg, GW, GH, GHW, GHH, T, SH);
+    return this.physics.createStaticTrimesh(
+      new Float32Array(positions),
+      new Uint32Array(indices),
     );
-    this.physics.rapierWorld.createCollider(
-      RAPIER.ColliderDesc.heightfield(
-        GW - 1, GH - 1, heights,
-        new RAPIER.Vector3((GW - 1) * T, 1.0, (GH - 1) * T),
-      ),
-      body,
-    );
-    return body;
   }
 
   /** Create a fixed static rigid body with the given collider at (x, y, z). */

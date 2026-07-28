@@ -91,6 +91,17 @@ export class PhysicsWorld {
     return body;
   }
 
+  /** Create a fixed static trimesh collider from raw vertex/index buffers.
+   *  Used for terrain — guarantees the physics surface exactly matches
+   *  whatever geometry produced `vertices`/`indices` (see
+   *  TerrainGeometryBuilder.buildTerrainGeometryData). */
+  createStaticTrimesh(vertices: Float32Array, indices: Uint32Array): RAPIER.RigidBody {
+    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    this.world.createCollider(colliderDesc, body);
+    return body;
+  }
+
   /** Create a kinematic-position-based capsule body for the player.
    *  `halfHeight` = half the height of the cylindrical portion.
    *  `radius`     = hemisphere radius.
