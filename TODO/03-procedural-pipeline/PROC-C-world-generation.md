@@ -1,7 +1,7 @@
 # PROC-C — World Generation System
 > Seeded deterministic placement plan for all entities in a region. **Depends on PROC-B builders.**
 
-## Status: 🔲 Not started (WorldGen.ts stub exists from PROC-A)
+## Status: 🚧 In Progress — WG-1 population plan shipped; WorldGen.ts stub exists from PROC-A for the remaining phases
 
 ## Goal
 `generateWorld(seed, realmData)` → deterministic placement plan:
@@ -14,10 +14,12 @@
 ## Tasks
 
 ### WG-1 — Settlement Population Plan
-- [ ] `generateSettlementPlan(settlementRecord, seed)` → `SettlementPlan`
-- [ ] Ward → building type assignment (market ward gets market+stalls, etc.)
-- [ ] Population count by size: village 5-8 NPCs, town 12-20, city 25-40
-- [ ] Named NPCs: each settlement gets 1 innkeeper, 1 blacksmith, 1 merchant with fixed seed names
+- [x] `generateSettlementPopulationPlan(settlementId, size, seed)` → `SettlementPopulationPlan` (`src/world/SettlementPopulationPlan.ts`)
+- [x] Population count by size: village 5-8 NPCs, town 12-20, city 25-40 (`POPULATION_RANGE`)
+- [x] Named NPCs: each settlement gets 1 innkeeper, 1 blacksmith, 1 merchant with fixed-per-seed names (capped to available population for tiny settlements)
+- [x] Deterministic seeded RNG (mulberry32) threaded through every choice, per the procedural-gen skill discipline — no global Math.random() in the planner itself
+- [ ] Ward → building type assignment (market ward gets market+stalls, etc.) — still owned by `SettlementGenerator.ts`/`NPCSpawner.ts`, not yet merged into this plan
+- [ ] Wire `SettlementPopulationPlan` into `NPCSpawner.spawnForSettlement()` so named roster + filler roles replace the ad-hoc `DEFAULT_ROLES` cycling
 
 ### WG-2 — Dungeon Population Plan
 - [ ] `generateDungeonPlan(dungeonSeed, faction, floors)` → `DungeonPlan`
