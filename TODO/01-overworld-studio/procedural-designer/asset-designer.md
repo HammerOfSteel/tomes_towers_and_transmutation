@@ -14,12 +14,14 @@ One designer pattern, multiple entity types:
 ## Per-Entity Designer
 
 ### NPC Designer (`npc-creator.html`) 🚧
-- [ ] Standalone `npc-creator.html` surface still needs to be built
-- [ ] Species picker for current supported game species: human / undead / vulperia / slime / elf / celestial / draconic
-- [ ] Role picker should match current `NpcRole` source contract: merchant / elder / quest_giver / scholar / guard / innkeeper / mysterious
-- [ ] Appearance controls should layer on top of the existing `NpcDNA` contract (`bodyPreset`, `colors`, accessories, personality, name)
-- [ ] Live Three.js preview should reuse the existing `buildNpc(dna)` pipeline
-- [ ] Save UI should target the existing NPC gallery/share-code persistence groundwork before broader Asset Library integration
+- [x] Pure state-management layer shipped (`src/npc-creator/creatorState.ts`) — `npc-creator.html` itself is DOM wiring only from here; all logic is unit-tested independent of the page
+- [x] Species picker list (`NPC_CREATOR_SPECIES`) for current supported game species: human / undead / vulperia / slime / elf / celestial / draconic
+- [x] Role picker list (`NPC_CREATOR_ROLES`) matches current `NpcRole` source contract: merchant / elder / quest_giver / scholar / guard / innkeeper / mysterious
+- [x] Appearance setters (`setBodyPreset`, `setColor`, `setHat`, `setTool`, `setBadge`, `setPersonality`, `setName`) layer on top of the existing `NpcDNA` contract; `setSpecies`/`setRole` rebuild role/species-driven defaults while preserving name/personality
+- [x] `rerollDialogue` — re-seeds `dialogue_seed` only, keeping appearance fixed (dialogue variety without a new look)
+- [x] Save UI target wired to the existing NPC gallery/share-code persistence (`saveToGallery`/`loadFromShareCode`, reusing `gallery.ts`'s `addToNpcGallery`/`npcDnaToShareCode`/`shareCodeToNpcDna`)
+- [ ] Standalone `npc-creator.html` DOM page itself (sliders/pickers wired to the state module above) + live Three.js preview via `buildNpc(dna)` still needs to be built
+- [ ] Broader Asset Library integration (saving straight to `AssetLibrary` type=`npc` instead of/alongside the NPC gallery) — deferred
 
 ### Building Designer (`building-creator.html`) 🔲
 - Archetype: house/inn/shop/forge/temple/guard_post
