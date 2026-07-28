@@ -34,7 +34,7 @@ export const CAVE_ELEVATION_THRESHOLD = 0.75;
 /** CG-1 entrance-prop biome variants. */
 export type CaveEntranceBiome = 'crystal' | 'lava' | 'ice' | 'fungal' | 'ancient';
 
-const CAVE_ENTRANCE_BIOMES: readonly CaveEntranceBiome[] = ['crystal', 'lava', 'ice', 'fungal', 'ancient'];
+export const CAVE_ENTRANCE_BIOMES: readonly CaveEntranceBiome[] = ['crystal', 'lava', 'ice', 'fungal', 'ancient'];
 
 export interface CaveMarker {
   x: number;

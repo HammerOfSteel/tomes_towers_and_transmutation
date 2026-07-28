@@ -2550,23 +2550,31 @@ async function main() {
           if (_dng) {
             _setExteriorPrompt(_dng.entry.name);
           } else {
-            const _bld = overworld.nearBuilding(_pos);
-            if (_bld) {
-              _setExteriorPrompt(_bld.label);
+            const _cave = overworld.nearCaveEntrance(_pos);
+            const _glade = !_cave ? overworld.nearGladeEntrance(_pos) : null;
+            if (_cave) {
+              _setExteriorPrompt('🕳 Cave Entrance');
+            } else if (_glade) {
+              _setExteriorPrompt('🌿 Glade');
             } else {
-              // NPC talk check
-              const _nearNPC = overworld.nearestNPC(_pos);
-              if (_nearNPC) {
-                _setExteriorPrompt(`Talk to ${_nearNPC}`);
+              const _bld = overworld.nearBuilding(_pos);
+              if (_bld) {
+                _setExteriorPrompt(_bld.label);
               } else {
-                // Watch Perch guard assignment
-                const _wp = baseScene.nearWatchPerch(_pos);
-                if (_wp && party.members.some(m => !m.isGuarding)) {
-                  _setExteriorPrompt('🗼 Assign guard');
+                // NPC talk check
+                const _nearNPC = overworld.nearestNPC(_pos);
+                if (_nearNPC) {
+                  _setExteriorPrompt(`Talk to ${_nearNPC}`);
                 } else {
-                  const _res = overworld.nearResourceNode(_pos);
-                  const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
-                  _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                  // Watch Perch guard assignment
+                  const _wp = baseScene.nearWatchPerch(_pos);
+                  if (_wp && party.members.some(m => !m.isGuarding)) {
+                    _setExteriorPrompt('🗼 Assign guard');
+                  } else {
+                    const _res = overworld.nearResourceNode(_pos);
+                    const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
+                    _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                  }
                 }
               }
             }
@@ -2701,6 +2709,27 @@ async function main() {
               sceneManager.loadDungeon(dngPlan);
               player.teleport(new THREE.Vector3(0, 1.5, 8));
             } else {
+              const caveHandle = overworld.nearCaveEntrance(player.group.position);
+              const gladeHandle = !caveHandle ? overworld.nearGladeEntrance(player.group.position) : null;
+              if (caveHandle) {
+                // CG-3/CG-4: entrance discovered — full cave-floor scene transition
+                // (CaveScene generation from the entrance's biome/seed) is not yet
+                // implemented; for now mark it found so it can show up in the
+                // journal/minimap once those hooks land.
+                if (!caveHandle.entry.discovered) {
+                  caveHandle.entry.discovered = true;
+                  _storyToast(`🕳 Discovered a ${caveHandle.entry.biome} cave`, 'beat');
+                } else {
+                  _storyToast('The cave entrance looks unstable — no way in yet.', 'beat');
+                }
+              } else if (gladeHandle) {
+                if (!gladeHandle.entry.discovered) {
+                  gladeHandle.entry.discovered = true;
+                  _storyToast('🌿 Discovered a hidden glade', 'beat');
+                } else {
+                  _storyToast('A peaceful glade. Nothing more to do here yet.', 'beat');
+                }
+              } else {
               // Watch Perch guard assignment — priority over buildings
               const _perch = baseScene.nearWatchPerch(player.group.position);
               const _available = party.members.find(m => !m.isGuarding && !m.isDead);
@@ -2727,6 +2756,7 @@ async function main() {
                     sceneManager.loadDungeon(bldPlan);
                   }
                 }
+              }
               }
             }
           }

@@ -13,6 +13,7 @@ import type { DungeonType }    from './DungeonType';
 import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
 import type { WorldHistoryResult }          from './WorldHistory';
 import type { ResourceNodeRecord }          from './ResourceNodePlacer';
+import type { CaveEntranceBiome }           from './CaveGladePlacer';
 
 
 // ── Entity record types ────────────────────────────────────────────────────────
@@ -41,6 +42,25 @@ export interface SettlementEntry {
   plan: SettlementPlan;
 }
 
+export interface CaveEntry {
+  /** 1-based sequential ID (own id space, independent of DungeonEntry ids). */
+  id:      number;
+  seed:    number;
+  biome:   CaveEntranceBiome;
+  col:     number;
+  row:     number;
+  /** Becomes true when the player first approaches (mirrors DungeonEntry.discovered). */
+  discovered: boolean;
+}
+
+export interface GladeEntry {
+  id:      number;
+  seed:    number;
+  col:     number;
+  row:     number;
+  discovered: boolean;
+}
+
 export interface WorldData {
   config:      WorldGenConfig;
   grid:        WorldGrid;
@@ -48,6 +68,10 @@ export interface WorldData {
   dungeons:    DungeonEntry[];
   /** Placed settlements (villages, towns, city).  Populated by SettlementPlacer. */
   settlements: SettlementEntry[];
+  /** Placed cave entrances on bog/highland/rocky terrain (CG-3). Populated by CaveGladeWorldPlacer. */
+  caves:       CaveEntry[];
+  /** Placed glade entrances on forest terrain (CG-3). Populated by CaveGladeWorldPlacer. */
+  glades:      GladeEntry[];
   /** Road tiles connecting settlements across the overworld (A* routed). */
   interRoads:      RoadSegment[];
   /** World history simulation result (50-turn). Populated by WorldGenerator. */

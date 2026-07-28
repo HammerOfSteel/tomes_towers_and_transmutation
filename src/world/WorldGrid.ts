@@ -24,7 +24,9 @@ export type TileContent =
   | 'rock'
   | 'ruin'
   | 'building'
-  | 'dungeon_entrance';
+  | 'dungeon_entrance'
+  | 'cave_entrance'
+  | 'glade_entrance';
 
 export interface WorldCell {
   /** 0–4 integer elevation level (matches existing SH-scaled rendering). */

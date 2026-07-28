@@ -35,7 +35,7 @@ import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { WorldGrid }              from '@/world/WorldGrid';
-import type { WorldData, DungeonEntry } from '@/world/WorldData';
+import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
@@ -58,6 +58,8 @@ import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
 import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
 import { SpatialHash }                 from '@/core/SpatialHash';
+import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
+import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -94,6 +96,18 @@ export interface DungeonEntranceHandle {
   position: THREE.Vector3;
 }
 
+/** Lightweight handle returned by nearCaveEntrance() (CG-1/CG-3 renderer wiring). */
+export interface CaveEntranceHandle {
+  entry:    CaveEntry;
+  position: THREE.Vector3;
+}
+
+/** Lightweight handle returned by nearGladeEntrance() (CG-2/CG-3 renderer wiring). */
+export interface GladeEntranceHandle {
+  entry:    GladeEntry;
+  position: THREE.Vector3;
+}
+
 // Internal storage entries (not exported)
 interface TreeEntry { group: THREE.Group; px: number; pz: number; biome: string; }
 interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: number; }
@@ -110,6 +124,9 @@ export class OverworldScene {
   private readonly _ruins:          THREE.Group[] = [];
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
+  /** CG-1/CG-2 — built entrance props (Three.js group + dispose + optional particle update). */
+  private readonly _caveEntranceBuilts:  BuiltCaveEntrance[]  = [];
+  private readonly _gladeEntranceBuilts: BuiltGladeEntrance[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
   /** DNA + world-space position per placed building — used for building-entry proximity. */
   private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3 }> = [];
@@ -146,6 +163,9 @@ export class OverworldScene {
 
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
+  /** CG-3 renderer wiring — placed cave/glade entrances the player can approach. */
+  readonly caveEntrances:  CaveEntranceHandle[]  = [];
+  readonly gladeEntrances: GladeEntranceHandle[] = [];
 
   // ── Physics handles (created in enter(), cleared in exit())
   private _groundBody:   RAPIER.RigidBody | null = null;
@@ -207,6 +227,8 @@ export class OverworldScene {
     this._addRuins(rand);
     console.log('[OverworldScene] _placeDungeonEntrances...');
     this._placeDungeonEntrances(worldData.dungeons, rand);
+    console.log('[OverworldScene] _placeCaveGladeEntrances...');
+    this._placeCaveGladeEntrances(worldData.caves ?? [], worldData.glades ?? []);
     console.log('[OverworldScene] _buildSettlements...');
     this._buildSettlements(worldData);
     console.log('[OverworldScene] _spawnSettlementNPCs...');
@@ -256,6 +278,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
     for (const dg of this._dungeonGroups) this.scene.add(dg);
+    for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
+    for (const gb of this._gladeEntranceBuilts) this.scene.add(gb.root);
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
     for (const cl of this._clutter)       this.scene.add(cl);
@@ -297,6 +321,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
+    for (const cb of this._caveEntranceBuilts)  this.scene.remove(cb.root);
+    for (const gb of this._gladeEntranceBuilts) this.scene.remove(gb.root);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
     for (const cl of this._clutter)        this.scene.remove(cl);
@@ -333,6 +359,9 @@ export class OverworldScene {
       }
     }
     for (const npc of this._npcs) npc.update(dt, pos, inputE);
+
+    // CG-2 — drift the glade entrance ambient particles.
+    for (const gb of this._gladeEntranceBuilts) gb.update(dt);
 
     // A5: update tower window lights + portcullis gate
     const hour = (this as any)._timeHour ?? 12;   // set by DayNightSystem if wired
@@ -377,6 +406,8 @@ export class OverworldScene {
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
+    for (const cb of this._caveEntranceBuilts)  cb.dispose();
+    for (const gb of this._gladeEntranceBuilts) gb.dispose();
     for (const bg of this._buildingGroups) this._freeGroup(bg);
     for (const rm of this._roadMeshes) {
       rm.geometry.dispose();
@@ -430,6 +461,22 @@ export class OverworldScene {
       const dx = pos.x - d.position.x;
       const dz = pos.z - d.position.z;
       if (dx * dx + dz * dz < TRIGGER_R2) return d;
+    }
+    return null;
+  }
+
+  /** Returns the nearest cave entrance if the player is within trigger range (CG-1/CG-3). */
+  nearCaveEntrance(pos: THREE.Vector3): CaveEntranceHandle | null {
+    for (const c of this.caveEntrances) {
+      if (isNearCaveEntrance({ x: pos.x, z: pos.z }, { x: c.position.x, z: c.position.z })) return c;
+    }
+    return null;
+  }
+
+  /** Returns the nearest glade entrance if the player is within trigger range (CG-2/CG-3). */
+  nearGladeEntrance(pos: THREE.Vector3): GladeEntranceHandle | null {
+    for (const g of this.gladeEntrances) {
+      if (isNearGladeEntrance({ x: pos.x, z: pos.z }, { x: g.position.x, z: g.position.z })) return g;
     }
     return null;
   }
@@ -1334,6 +1381,37 @@ export class OverworldScene {
       });
     }
   }
+
+  // ── Cave / Glade entrances (CG-1, CG-2, CG-3 renderer wiring) ─────────────
+
+  private _placeCaveGladeEntrances(caves: CaveEntry[], glades: GladeEntry[]): void {
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    for (const entry of caves) {
+      const wx = (entry.col - GHW) * T;
+      const wz = (entry.row - GHH) * T;
+      const lv = this._wg.get(entry.col, entry.row).elevation;
+      const wy = lv * SH;
+
+      const built = buildCaveEntrance(entry.biome);
+      built.root.position.set(wx, wy, wz);
+      this._caveEntranceBuilts.push(built);
+      this.caveEntrances.push({ entry, position: new THREE.Vector3(wx, wy, wz) });
+    }
+
+    for (const entry of glades) {
+      const wx = (entry.col - GHW) * T;
+      const wz = (entry.row - GHH) * T;
+      const lv = this._wg.get(entry.col, entry.row).elevation;
+      const wy = lv * SH;
+
+      const built = buildGladeEntrance();
+      built.root.position.set(wx, wy, wz);
+      this._gladeEntranceBuilts.push(built);
+      this.gladeEntrances.push({ entry, position: new THREE.Vector3(wx, wy, wz) });
+    }
+  }
+
 
   private _buildEntranceMesh(
     key:  EntranceMeshKey,

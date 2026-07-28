@@ -19,6 +19,10 @@ export interface WorldGenConfig {
   lakeCount:      number;
   /** Dungeon/cave entrances to scatter (OW-3). */
   dungeonCount:   number;
+  /** Cave entrances to scatter across bog/highland/rocky terrain (CG-3). */
+  caveCount:      number;
+  /** Glade entrances to scatter across forest terrain (CG-3). */
+  gladeCount:     number;
   /** Small villages to generate (OW-5). */
   villageCount:   number;
   /** Mid-size towns to generate (OW-5). */
@@ -49,6 +53,8 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   riverCount:     4,
   lakeCount:      2,
   dungeonCount:   6,
+  caveCount:      3,
+  gladeCount:     2,
   villageCount:   3,
   townCount:      1,
   hasCity:        true,

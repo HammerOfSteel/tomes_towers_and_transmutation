@@ -16,6 +16,7 @@ import { createNoise2D, fbm }  from '@/core/SimplexNoise';
 import { generateHydrology }   from './HydrologyGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
+import { placeCavesAndGlades } from './CaveGladeWorldPlacer';
 import { buildInterSettlementRoads } from './RoadGenerator';
 import { simulateWorldHistory }      from './WorldHistory';
 import { placeResourceNodes }         from './ResourceNodePlacer';
@@ -88,6 +89,9 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   // we build inter-settlement roads the grid already has settlement road tiles
   // marked — A* will cheaply reuse them.
   const settlements = placeSettlements(grid, cfg, seed);
+  // CG-3 — cave/glade entrances scattered after dungeons/settlements so they
+  // steer clear of tiles those passes already claimed.
+  const { caves, glades } = placeCavesAndGlades(grid, cfg, seed);
 
   // Build terrain-aware inter-settlement roads (MST + A* + DP simplification).
   const { tiles: interRoads } = buildInterSettlementRoads(settlements, grid);
@@ -100,9 +104,9 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
     }
   }
 
-  const partial = { config: cfg, grid, dungeons, settlements, interRoads,
+  const partial = { config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
                     resourceNodes: [] as import('./ResourceNodePlacer').ResourceNodeRecord[],
-                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, interRoads,
+                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
                       resourceNodes: [] }, seed) };
   partial.resourceNodes = placeResourceNodes(partial);
   return partial;
