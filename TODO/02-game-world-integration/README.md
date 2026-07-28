@@ -39,7 +39,7 @@ CavePlan (from OW-C)
 | [Realm Integration](./realm-integration.md) | 3D terrain from biome cells | 🚧 In Progress |
 | [Settlement Integration](./settlement-integration.md) | 3D settlements from plans | 🚧 In Progress |
 | [Dungeon Integration](./dungeon-integration.md) | Dungeon entrances + loading | 🚧 In Progress |
-| [Cave Integration](./cave-glade-integration.md) | Cave + glade entrances | ⚠️ GAP |
+| [Cave Integration](./cave-glade-integration.md) | Cave + glade entrances | 🚧 In Progress |
 
 ## Dependencies
 - Requires: `01-overworld-studio` generators ✅
