@@ -14,6 +14,7 @@ import type { SettlementPlan, RoadSegment } from './SettlementGenerator';
 import type { WorldHistoryResult }          from './WorldHistory';
 import type { ResourceNodeRecord }          from './ResourceNodePlacer';
 import type { CaveEntranceBiome }           from './CaveGladePlacer';
+import type { DungeonSiteFamily, DungeonRewardBiasTag } from './DungeonSiteMetadata';
 
 
 // ── Entity record types ────────────────────────────────────────────────────────
@@ -31,7 +32,16 @@ export interface DungeonEntry {
   floorCount: number;
   /** Becomes true when the player first approaches (OW-3b). */
   discovered: boolean;
+  /** DI-2b: deterministic site-family identity, derived from (world seed, col, row). */
+  siteFamily: DungeonSiteFamily;
+  /** DI-2b: reward-bias tags fixed per site family — hints for future loot/reward generation. */
+  rewardBias: DungeonRewardBiasTag[];
+  /** DI-2b: true if this site family can offer an elite companion recruit. */
+  eliteRecruitOpportunity: boolean;
+  /** DI-2b: true if clearing this site produces tower-defense intel. */
+  defenseIntelSource: boolean;
 }
+
 
 // ── WorldData ──────────────────────────────────────────────────────────────────
 

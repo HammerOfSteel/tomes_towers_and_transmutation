@@ -1438,6 +1438,11 @@ async function main() {
   }
 
   // ── Story toast ──────────────────────────────────────────────────────────
+  /** DI-2b: human-readable label for a dungeon's site-family identity, for the discovery toast. */
+  function _siteFamilyLabel(family: string): string {
+    return family.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
   function _storyToast(text: string, kind: 'beat' | 'act'): void {
     const el = document.createElement('div');
     const isBeat = kind === 'beat';
@@ -2724,6 +2729,11 @@ async function main() {
               // Enter a seeded dungeon whose floor count was set at world-gen time
               _activeDungeonId = dngHandle.entry.id;
               _activeDungeonEntrancePos = dngHandle.position.clone();
+              // DI-2b: announce the site-family identity the first time this
+              // entrance is approached (matches the cave/glade discovery toast).
+              if (!discoveryTracker.isDungeonFound(dngHandle.entry.id)) {
+                _storyToast(`🗝 Discovered ${_siteFamilyLabel(dngHandle.entry.siteFamily)}: ${dngHandle.entry.name}`, 'beat');
+              }
               discoveryTracker.markDungeonFound(dngHandle.entry.id);
               const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
               overworld.exit();

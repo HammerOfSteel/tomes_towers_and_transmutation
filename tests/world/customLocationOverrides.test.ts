@@ -22,6 +22,10 @@ function entry(id: number): DungeonEntry {
     name: `Generated ${id}`,
     floorCount: 3,
     discovered: false,
+    siteFamily: 'beast_lair',
+    rewardBias: ['beast_capture_opportunity'],
+    eliteRecruitOpportunity: true,
+    defenseIntelSource: false,
   };
 }
 

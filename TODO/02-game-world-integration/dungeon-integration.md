@@ -9,14 +9,11 @@ metadata) shipped as pure/tested modules (`src/world/DungeonEntranceBuilder.ts`,
 `OverworldScene.ts`/`main.ts` already have their own **separate, working**
 live dungeon pipeline against `WorldData`'s `DungeonEntry` — entrance props
 render, `[E]` loads a seeded `generateDungeon()` floor via `sceneManager`,
-and exiting already returns the player to the overworld. DI-1/DI-2/DI-2b's
-pure modules (site-family/reward-bias metadata, procedural entrance-prop
-variants) are **not** wired into this live `DungeonEntry`/dungeon-generation
-path — `DungeonEntry` has no `siteFamily`/`rewardBias` fields at all, and the
-live dungeon entrance prop is a plain existing GLB (`tower-square-mid-door`),
-not `DungeonEntranceBuilder.ts`'s procedural variants. That remains a real,
-open gap (see DI-4b below) — distinct from DI-3, which turned out to already
-mostly work.
+and exiting already returns the player to the overworld. DI-2/DI-2b's site
+metadata is **now also wired live** (see below); DI-1's procedural entrance
+prop variants are still not — the live dungeon entrance prop remains the
+existing GLB (`tower-square-mid-door`), not `DungeonEntranceBuilder.ts`'s
+procedural variants (a smaller, purely-cosmetic remaining gap).
 
 **DI-3 fix this session:** the live exit path (`switchToExterior()` in
 `main.ts`) always teleported the player to a **fixed position outside the
@@ -78,19 +75,32 @@ Dungeons generated in OW-B appear as entrance props at their realm map positions
 - [ ] Marker differentiation by site family or intel value — blocked on
       DI-4b below (no site-family data exists on the live `DungeonEntry` yet)
 
-### DI-4b — Quest / Candidate / Defense Hooks ⚠️ Not started (real gap)
+### DI-4b — Quest / Candidate / Defense Hooks 🚧 Data foundation shipped this session; quest/reward consumption still open
+- [x] **DI-2b metadata now lives on the live `DungeonEntry`**: `DungeonPlacer.ts`'s
+      `placeDungeons()` calls `enrichDungeonMarker(seed, {x: col, y: row})`
+      for every placed entrance and stores `siteFamily`, `rewardBias`,
+      `eliteRecruitOpportunity`, `defenseIntelSource` directly on the entry —
+      deterministic per (world seed, col, row), same as caves/glades' biome
+      assignment. `WorldData.DungeonEntry` gained these four fields.
+- [x] First-time approach now shows a discovery toast naming the site family
+      (e.g. "🗝 Discovered Library Ruin: <name>"), mirroring the cave/glade
+      discovery toast — `main.ts`'s `_siteFamilyLabel()` humanizes the family
+      enum for display.
 - [ ] Support quest-tagged dungeon entrances (species arc, general quest, or faction quest destinations)
 - [ ] Support candidate-archive-tagged sites for prior-candidate content
 - [ ] Support defense-intel-producing sites whose completion improves tower forecasts or counters
 - [ ] Support elite recruit opportunity tags so companion-focused players can route expeditions intentionally
-- Genuinely open: `DungeonSiteMetadata.ts`'s `enrichDungeonMarker()` (DI-2b)
-  has never been called against the live `DungeonEntry` — it operates on the
-  Studio's bare `{x,y}` marker shape. Wiring this in would mean extending
-  `DungeonEntry`/`WorldGenerator.ts`'s dungeon-placement pass to also derive
-  and store a `DungeonSite` per entry, then threading `siteFamily`/
-  `rewardBias`/quest tags through to the quest log and reward-generation
-  code — a larger, cross-cutting change (touches quest/reward systems, not
-  just world-gen/rendering) deliberately left as a separate task.
+- Still genuinely open: none of the above four bullets are consumed by
+  anything yet — the quest log, reward/loot generation, and tower-defense
+  forecast systems don't read `siteFamily`/`rewardBias`/
+  `eliteRecruitOpportunity`/`defenseIntelSource` at all. That's a larger,
+  cross-cutting change (touches quest generation and reward tables, not
+  just world-gen/rendering) deliberately left as a separate task — this
+  session only builds the data foundation those systems would consume.
+- Tests: `tests/world/DungeonPlacer.test.ts` (3 tests) — every placed
+  dungeon gets a valid site family/reward-bias, determinism across two
+  builds of the same seed, and an explicit check that the stored metadata
+  matches calling `enrichDungeonMarker()` directly on the entry's (col, row).
 
 ### DI-5 — Tests ⚠️ Partially covered; no dedicated live-integration test file
 - [x] Entrance triggers scene transition without error — exercised manually
