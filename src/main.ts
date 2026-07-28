@@ -2430,6 +2430,17 @@ async function main() {
         // A5: pass current hour so tower details (lights, gate) can respond
         (overworld as any)._timeHour = TimeSystem.instance.hour % 24;
 
+        // SI-4: settlement boundary crossing → "Entering/Leaving [Name]" toast
+        const _settleCrossing = overworld.checkSettlementBoundaryCrossing(player.group.position);
+        if (_settleCrossing) {
+          _storyToast(
+            _settleCrossing.crossing === 'entering'
+              ? `Entering ${_settleCrossing.name}`
+              : `Leaving ${_settleCrossing.name}`,
+            'beat',
+          );
+        }
+
         // ── Building interior entry / exit ────────────────────────────────
         if (_inBuildingInterior) {
           const _int = _activeInterior?.scene;

@@ -151,7 +151,9 @@ export class OverworldScene {
   private _skyT    = 0;
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
-  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
+  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3; radius: number }> = [];
+  /** SI-4: which settlement (index into _settlementPositions) the player was inside last frame, or -1. */
+  private _settlementInsideIdx = -1;
 
   // ── Resource nodes (Phase 7e) ─────────────────────────────────────────────
   private _resourceGroups:  THREE.Group[] = [];
@@ -489,6 +491,37 @@ export class OverworldScene {
       name:     s.name,
       worldPos: { x: s.worldPos.x, y: s.worldPos.y, z: s.worldPos.z },
     }));
+  }
+
+  /**
+   * SI-4 — call once per frame with the player's current position. Detects
+   * crossing a settlement boundary (2D distance vs. each settlement's cached
+   * radius) and returns `{ name, crossing: 'entering' | 'exiting' }` the
+   * first frame a transition happens, or `null` otherwise. Only one
+   * settlement is tracked "inside" at a time (the nearest containing one),
+   * matching how settlements are spaced apart on the world map.
+   */
+  checkSettlementBoundaryCrossing(pos: THREE.Vector3): { name: string; crossing: 'entering' | 'exiting' } | null {
+    let insideIdx = -1;
+    for (let i = 0; i < this._settlementPositions.length; i++) {
+      const s = this._settlementPositions[i]!;
+      const dx = pos.x - s.worldPos.x;
+      const dz = pos.z - s.worldPos.z;
+      if (Math.hypot(dx, dz) <= s.radius) { insideIdx = i; break; }
+    }
+
+    if (insideIdx === this._settlementInsideIdx) return null;
+
+    const prevIdx = this._settlementInsideIdx;
+    this._settlementInsideIdx = insideIdx;
+
+    if (insideIdx !== -1) {
+      return { name: this._settlementPositions[insideIdx]!.name, crossing: 'entering' };
+    }
+    if (prevIdx !== -1) {
+      return { name: this._settlementPositions[prevIdx]!.name, crossing: 'exiting' };
+    }
+    return null;
   }
 
   /**
@@ -1747,6 +1780,7 @@ export class OverworldScene {
     this._settlementPositions.push({
       name: `${payload.name} (Preview)`,
       worldPos: new THREE.Vector3(anchorWx, centreElev, anchorWz),
+      radius: 16, // dev-preview only — no boundary-crossing gameplay hookup needed here
     });
 
     if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
@@ -1776,9 +1810,19 @@ export class OverworldScene {
       const wx = (plan.centerCol - GHW) * T;
       const wz = (plan.centerRow - GHH) * T;
       const wy = this._wg.get(plan.centerCol, plan.centerRow).elevation * SH + 2.0;
+      // SI-4: boundary radius = farthest building from centre + a margin, so the
+      // boundary sits just outside the settlement rather than through a building.
+      let maxDist = 0;
+      for (const b of plan.buildings) {
+        const dx = (b.col - plan.centerCol) * T;
+        const dz = (b.row - plan.centerRow) * T;
+        maxDist = Math.max(maxDist, Math.hypot(dx, dz));
+      }
+      const radius = (maxDist > 0 ? maxDist : 10) + 4;
       this._settlementPositions.push({
         name:     plan.name,
         worldPos: new THREE.Vector3(wx, wy, wz),
+        radius,
       });
     }
 
