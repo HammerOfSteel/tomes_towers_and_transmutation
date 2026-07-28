@@ -23,15 +23,15 @@ One designer pattern, multiple entity types:
 - [x] Standalone `npc-creator.html` DOM page shipped (`src/npc-creator/main.ts`) — species/role/personality/body-preset chip pickers, 5-slot color pickers, live Three.js preview via `buildNpc(dna)` (OrbitControls + rebuild-on-change with stale-rebuild guarding), gallery list with delete, registered as a Vite build entry (`npcCreator` in `vite.config.ts`), confirmed clean `tsc --noEmit` + `vite build`
 - [ ] Broader Asset Library integration (saving straight to `AssetLibrary` type=`npc` instead of/alongside the NPC gallery) — deferred
 
-### Building Designer (`building-creator.html`) 🔲
-- Archetype: house/inn/shop/forge/temple/guard_post
-- Faction style: human/elven/dwarven/orcish/fae
-- Size: S/M/L
-- Colour scheme picker
-- Roofline variant picker
-- Live Three.js preview (isometric camera)
-- Floor plan preview (2D canvas)
-- Save → AssetLibrary
+### Building Designer (`building-creator.html`) 🚧
+- [x] Pure state-management layer shipped (`src/world/buildings/buildingCreatorState.ts`), mirroring `npc-creator/creatorState.ts`'s architecture — zero DOM/Three.js deps, fully unit-tested
+- [x] Archetype selector (`BUILDING_CREATOR_KINDS`) — all 19 `BuildingKind`s from `BuildingDNA.ts` (house/terraced/cottage/villa/shop/inn/tavern/apothecary/market_stall/guild/chapel/tower/watchtower/blacksmith/barn/well/gate/tent/ruin)
+- [x] Faction style selector (`BUILDING_CREATOR_FACTIONS`) — all 13 factions from `FACTION_PRESETS` (human_rural/human_town/human_noble/elven/dwarven/vampire/undead_common/draconic/celestial/vulperia/slime/fae/orcish); `setFaction` rebuilds style/colors/condition while preserving kind/size/seed
+- [x] Size selector (`BUILDING_CREATOR_SIZES`: tiny/small/medium/large) via `setSize`
+- [x] Additional controls beyond the minimum slice: `setFloors`, `setTerrace`, `setRotation`, `toggleFeature` (bay_window/jetty/battlements/buttress/awning/balcony), `setColor` (per-slot wall/roof/trim/door), `setName`
+- [x] `toLibraryPayload` — maps state → `AssetLibrary` type=`building` shaped payload (name/seed/tags/data), ready for `assetLibrary.add()`
+- [ ] Standalone `building-creator.html` DOM page + live Three.js preview via the existing synchronous `buildBuilding(dna)` pipeline (`src/world/buildings/BuildingBuilder.ts`) — still needs to be built (same pattern as `npc-creator.html`)
+- [ ] Floor plan 2D canvas preview — deferred
 
 ### Enemy Designer (inside `creature-lab.html`) 🔲
 - Extend existing creature-lab with enemy-specific controls
