@@ -14,6 +14,7 @@
 import type { NpcDNA, NpcRole } from './types';
 import type { PrincessDNA } from '@/princess-creator/types';
 import type { BuiltEntity } from '@/procedural/builder/BaseBuilder';
+import type { AnimId } from '@/princess-creator/anim/clips';
 
 // ── Public contract ───────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ export interface NpcInstance extends BuiltEntity<NpcDNA> {
   speak():  void;
   /** Return to idle loop. */
   stopSpeaking(): void;
+  /** Drive walk/idle (or any other) animation state from external FSM logic. */
+  setAnimState(id: AnimId): void;
 }
 
 // ── Species → archetype PrincessDNA base ────────────────────────────────────
@@ -205,6 +208,9 @@ export async function buildNpc(dna: NpcDNA): Promise<NpcInstance> {
         inst.setState('idle');
       }
     },
+    setAnimState(id: AnimId) {
+      inst.setState(id);
+    },
   };
 }
 
@@ -218,6 +224,7 @@ export function buildNpcSync(dna: NpcDNA): NpcInstance {
     dispose:      () => {},
     speak:        () => {},
     stopSpeaking: () => {},
+    setAnimState: () => {},
   };
   buildNpc(dna).then(inst => {
     // Swap geometry when ready
@@ -226,6 +233,7 @@ export function buildNpcSync(dna: NpcDNA): NpcInstance {
     placeholder.dispose      = () => { inst.dispose(); };
     placeholder.speak        = () => inst.speak();
     placeholder.stopSpeaking = () => inst.stopSpeaking();
+    placeholder.setAnimState = (id) => inst.setAnimState(id);
   }).catch(e => console.error('[buildNpcSync] async build failed:', e));
   return placeholder;
 }
