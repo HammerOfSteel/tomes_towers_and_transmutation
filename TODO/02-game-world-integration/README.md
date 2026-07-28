@@ -1,6 +1,6 @@
 # 02 — Game World Integration
-> ⚠️ BIG GAP — Turn Overworld Studio output into the actual 3D playable world.
-> **This entire section needs design work before implementation begins.**
+> 🚧 Turn Overworld Studio output into the actual 3D playable world.
+> **First slice (realm terrain data transform) now underway — settlement/dungeon/cave integration still need design work.**
 
 ## The Problem
 Overworld Studio generates beautiful maps (realm, settlements, dungeons, caves, solar system).
@@ -36,7 +36,7 @@ CavePlan (from OW-C)
 
 | File | Topic | Status |
 |---|---|---|
-| [Realm Integration](./realm-integration.md) | 3D terrain from biome cells | ⚠️ GAP |
+| [Realm Integration](./realm-integration.md) | 3D terrain from biome cells | 🚧 In Progress |
 | [Settlement Integration](./settlement-integration.md) | 3D settlements from plans | ⚠️ GAP |
 | [Dungeon Integration](./dungeon-integration.md) | Dungeon entrances + loading | ⚠️ GAP |
 | [Cave Integration](./cave-glade-integration.md) | Cave + glade entrances | ⚠️ GAP |

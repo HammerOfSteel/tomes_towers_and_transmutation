@@ -3468,14 +3468,14 @@ function redrawCave() { if (currentCaveData) drawCaveGlade(currentCaveData, canv
 
 // ── OW-A: Realm / Macro World Generator ──────────────────────────────────────
 
-type RealmBiome =
+export type RealmBiome =
   | 'deep_ocean' | 'ocean' | 'beach'
   | 'desert' | 'savanna' | 'grassland' | 'forest' | 'taiga' | 'tundra' | 'snow';
 
 type RealmShape   = 'island' | 'continents' | 'archipelago' | 'pangaea';
 type RealmClimate = 'tropical' | 'temperate' | 'arctic';
 
-interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
+export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
 interface RealmRiver { points: Vec2[]; }
 
 interface RealmSettlement {
