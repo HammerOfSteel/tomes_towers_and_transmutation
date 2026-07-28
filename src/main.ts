@@ -2712,19 +2712,20 @@ async function main() {
               const caveHandle = overworld.nearCaveEntrance(player.group.position);
               const gladeHandle = !caveHandle ? overworld.nearGladeEntrance(player.group.position) : null;
               if (caveHandle) {
-                // CG-3/CG-4: entrance discovered — full cave-floor scene transition
-                // (CaveScene generation from the entrance's biome/seed) is not yet
-                // implemented; for now mark it found so it can show up in the
-                // journal/minimap once those hooks land.
-                if (!caveHandle.entry.discovered) {
-                  caveHandle.entry.discovered = true;
+                // CG-4: full cave-floor scene transition (CaveScene generation from
+                // the entrance's biome/seed) is not yet implemented; for now mark it
+                // found so it persists to the minimap/journal via DiscoveryTracker.
+                if (!discoveryTracker.isCaveFound(caveHandle.entry.id)) {
+                  discoveryTracker.markCaveFound(caveHandle.entry.id);
+                  discoveryTracker.saveToStorage();
                   _storyToast(`🕳 Discovered a ${caveHandle.entry.biome} cave`, 'beat');
                 } else {
                   _storyToast('The cave entrance looks unstable — no way in yet.', 'beat');
                 }
               } else if (gladeHandle) {
-                if (!gladeHandle.entry.discovered) {
-                  gladeHandle.entry.discovered = true;
+                if (!discoveryTracker.isGladeFound(gladeHandle.entry.id)) {
+                  discoveryTracker.markGladeFound(gladeHandle.entry.id);
+                  discoveryTracker.saveToStorage();
                   _storyToast('🌿 Discovered a hidden glade', 'beat');
                 } else {
                   _storyToast('A peaceful glade. Nothing more to do here yet.', 'beat');

@@ -49,7 +49,7 @@ Turn Overworld Studio output into the actual 3D playable world. **Depends on 01.
 | [Realm Integration](./02-game-world-integration/realm-integration.md)           | Generate 3D terrain from realm map biomes | 🚧     |
 | [Settlement Integration](./02-game-world-integration/settlement-integration.md) | Place generated settlements in 3D world   | 🚧     |
 | [Dungeon Integration](./02-game-world-integration/dungeon-integration.md)       | Dungeon entrances/exits on realm map      | 🚧     |
-| [Cave Integration](./02-game-world-integration/cave-glade-integration.md)       | Cave & glade entrances on realm map — live wiring done, transition/minimap deferred | 🚧 In Progress |
+| [Cave Integration](./02-game-world-integration/cave-glade-integration.md)       | Cave & glade entrances on realm map — live wiring + minimap + persistence done, floor transition deferred | 🚧 In Progress |
 
 > 🚧 **Realm Integration's core data-transform slices (RI-1 through RI-4) have shipped** — `src/world/RealmToTerrain.ts` maps realm cells to `TileDNA` placements with height smoothing and biome-transition flags, `src/world/RealmRiverMesh.ts` builds width-varying river ribbons, and `src/world/ChunkManager.ts` provides generic chunk load/unload streaming logic. All pure and unit-tested (34 new tests); wiring these into an actual `OverworldScene.ts` terrain renderer, plus settlement/dungeon/cave integration, are still open.
 

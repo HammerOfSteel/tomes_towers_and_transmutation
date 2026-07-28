@@ -8,7 +8,7 @@
  * Toggle with [M].  Hidden by default inside dungeons/buildings.
  */
 
-import type { WorldData, DungeonEntry, SettlementEntry } from '@/world/WorldData';
+import type { WorldData, DungeonEntry, SettlementEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { WorldGrid }                                from '@/world/WorldGrid';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ export class OWMinimap {
   }
 
   constructor(worldData: WorldData) {
-    const { grid, settlements, dungeons } = worldData;
+    const { grid, settlements, dungeons, caves, glades } = worldData;
     this._gw = grid.width;
     this._gh = grid.height;
     // Tower is at world-space (0,0) → grid centre
@@ -97,6 +97,8 @@ export class OWMinimap {
     this._renderTerrain(grid);
     this._renderSettlements(settlements ?? []);
     this._renderDungeons(dungeons ?? []);
+    this._renderCaves(caves ?? []);
+    this._renderGlades(glades ?? []);
     this._renderTower();
 
     // ── Keyboard toggle [M] ─────────────────────────────────────────────────
@@ -204,6 +206,46 @@ export class OWMinimap {
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(200,40,40,0.4)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+  }
+
+  /** CG-5: 🕳 marker for cave entrances — dark disc with a grey rim. */
+  private _renderCaves(caves: CaveEntry[]): void {
+    const ctx = this._bgCtx;
+    for (const c of caves) {
+      const x = this._cx(c.col);
+      const y = this._cy(c.row);
+
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(140,140,140,0.5)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+  }
+
+  /** CG-5: 🌿 marker for glade entrances — small green dot with a light-green rim. */
+  private _renderGlades(glades: GladeEntry[]): void {
+    const ctx = this._bgCtx;
+    for (const g of glades) {
+      const x = this._cx(g.col);
+      const y = this._cy(g.row);
+
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#4fae4f';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(140,230,140,0.45)';
       ctx.lineWidth   = 1;
       ctx.stroke();
     }
