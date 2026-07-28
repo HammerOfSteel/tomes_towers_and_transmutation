@@ -61,6 +61,8 @@ export interface TileDNA {
   size: number;
   /** Optional hex color override (e.g. "#7a8a6a") — bypasses biome default palette. */
   colorOverride?: string;
+  /** Optional material roughness override [0–1]. Builder defaults to 0.85 when absent. */
+  roughness?: number;
 }
 
 export const TILE_DNA_VERSION = 1;
@@ -70,7 +72,7 @@ export function makeTileDNA(
   biome: TileBiome,
   variant: string,
   seed: number,
-  overrides: Partial<Pick<TileDNA, 'category' | 'size' | 'colorOverride'>> = {},
+  overrides: Partial<Pick<TileDNA, 'category' | 'size' | 'colorOverride' | 'roughness'>> = {},
 ): TileDNA {
   return {
     v: TILE_DNA_VERSION,
@@ -80,6 +82,7 @@ export function makeTileDNA(
     seed,
     size: overrides.size ?? 2,
     ...(overrides.colorOverride ? { colorOverride: overrides.colorOverride } : {}),
+    ...(overrides.roughness !== undefined ? { roughness: overrides.roughness } : {}),
   };
 }
 
@@ -122,6 +125,9 @@ export function validateTileDNA(raw: unknown): TileDNA {
   if (raw.colorOverride !== undefined && typeof raw.colorOverride !== 'string') {
     throw new TileDNAError('colorOverride must be a string when present');
   }
+  if (raw.roughness !== undefined && (typeof raw.roughness !== 'number' || raw.roughness < 0 || raw.roughness > 1)) {
+    throw new TileDNAError('roughness must be a number in [0, 1] when present');
+  }
 
   return {
     v: TILE_DNA_VERSION,
@@ -131,6 +137,7 @@ export function validateTileDNA(raw: unknown): TileDNA {
     seed: raw.seed,
     size: raw.size,
     ...(typeof raw.colorOverride === 'string' ? { colorOverride: raw.colorOverride } : {}),
+    ...(typeof raw.roughness === 'number' ? { roughness: raw.roughness } : {}),
   };
 }
 

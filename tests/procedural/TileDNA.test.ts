@@ -34,6 +34,13 @@ describe('makeTileDNA', () => {
     expect(dna.size).toBe(4);
     expect(dna.colorOverride).toBe('#123456');
   });
+
+  it('omits roughness by default and applies it when overridden', () => {
+    const dna = makeTileDNA('grassland', 'short', 7);
+    expect(dna.roughness).toBeUndefined();
+    const rough = makeTileDNA('grassland', 'short', 7, { roughness: 0.4 });
+    expect(rough.roughness).toBe(0.4);
+  });
 });
 
 describe('isKnownVariant', () => {
@@ -99,5 +106,16 @@ describe('validateTileDNA', () => {
 
   it('rejects non-string colorOverride', () => {
     expect(() => validateTileDNA({ ...makeTileDNA('desert', 'sand', 1), colorOverride: 5 })).toThrow(/colorOverride/);
+  });
+
+  it('accepts a valid roughness', () => {
+    const dna = makeTileDNA('desert', 'sand', 1, { roughness: 0.6 });
+    expect(validateTileDNA(dna).roughness).toBe(0.6);
+  });
+
+  it('rejects out-of-range or non-number roughness', () => {
+    expect(() => validateTileDNA({ ...makeTileDNA('desert', 'sand', 1), roughness: 'x' })).toThrow(/roughness/);
+    expect(() => validateTileDNA({ ...makeTileDNA('desert', 'sand', 1), roughness: 1.5 })).toThrow(/roughness/);
+    expect(() => validateTileDNA({ ...makeTileDNA('desert', 'sand', 1), roughness: -0.1 })).toThrow(/roughness/);
   });
 });

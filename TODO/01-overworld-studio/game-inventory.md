@@ -472,7 +472,7 @@ This maps each Overworld Studio generator to the asset types it must produce. **
 | `solar-controls`                                   | solar system + planet selection state        | Studio Now      | Not yet          | none yet                                              | realm/planet drill-down       |
 | ~~future~~ `npc-creator.html` (shipped)             | NPC DNA/profile + preview                    | ✅ Shipped      | Yes              | `npc`                                                 | settlement/NPC runtime        |
 | ~~future enemy mode in `creature-lab.html`~~ → `enemy-creator.html` (shipped standalone) | enemy DNA/profile + preview | ✅ Shipped | Yes | `enemy` (decided — extended `AssetLibrary.AssetType`) | enemy runtime                 |
-| future tile designer                               | tile DNA + preview variants                  | Studio Next     | Yes              | `terrain` or `tile` (decide in Asset Library slice)   | realm/dungeon/cave rendering  |
+| future tile designer                               | tile DNA + preview variants                  | ✅ Shipped      | Yes               | `tile` (decided — extended `AssetLibrary.AssetType`)  | realm/dungeon/cave rendering  |
 | spell VFX sandbox                                  | spell preview only                           | Runtime Later   | No               | none                                                  | ability/VFX runtime           |
 
 ### New generators to build (priority order)
@@ -530,7 +530,7 @@ Deferred from first slice:
 
 - complete enemy roster content completion
 
-### Tile Designer first slice
+### Tile Designer first slice ✅ Shipped
 
 Required output:
 
@@ -539,10 +539,13 @@ Required output:
 - preview surface
 - save/export path
 
+Shipped as standalone `tile-creator.html` + `src/tile-creator/main.ts`, mirroring the enemy/prop/building/NPC creator pattern: category/biome/variant chip pickers, colour override + roughness/size sliders, isometric/top-down camera toggle, "Generate Variations" (`generateVariationSeeds()`), and Save → `AssetLibrary` (type `tile`).
+
 Deferred from first slice:
 
 - full runtime tile-placement integration
 - exhaustive biome tile-set completion
+- JSON DNA + PNG thumbnail export (same gap as the other four creators — tracked as a shared follow-up utility rather than duplicated per-designer)
 
 ---
 
