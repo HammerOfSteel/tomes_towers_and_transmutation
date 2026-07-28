@@ -1,7 +1,7 @@
 # Procedural Tile Designer
 > Planned tile-variant design surface for procedural terrain, dungeon, cave, and settlement tiles.
 
-## Status: 🚧 In Progress — TileDNA schema + TileRegistry data layer shipped (TV-1, TV-4); designer UI (TV-3) and variant sets (TV-2) still pending
+## Status: 🚧 In Progress — TileDNA schema + TileRegistry data layer shipped (TV-1, TV-4); default variant color palette shipped (TV-2); designer UI (TV-3) still pending
 
 ## What Tiles Are
 Tiles are the repeatable ground/wall/feature units that compose:
@@ -31,6 +31,10 @@ Currently these are scattered rendering/building helpers with no systematic tile
 | Cave rock | 4 (wet, dry, crystal-veined, lava-rimmed) |
 | Settlement cobble | 3 (worn, new, decorated) |
 | Water | 2 (shallow, deep) |
+
+- [x] `TILE_VARIANT_COLOR` — canonical default hex color for every biome+variant pair above (`src/procedural/TileColor.ts`)
+- [x] `resolveTileColor(dna)` — resolves a TileDNA to a display color, honouring `colorOverride` first, falling back to the palette, then neutral grey for variants authored outside this table
+- [ ] Actual mesh/material variant construction (textures, normal maps, roughness) — deferred to TV-3, this slice only covers the flat-color data layer
 
 ### TV-3 — Tile Designer Tool (in Overworld Studio or standalone)
 - [ ] Category/biome/variant selector
