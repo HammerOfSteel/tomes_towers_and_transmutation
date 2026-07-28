@@ -379,6 +379,33 @@ describe('AssetLibrary', () => {
     expect(ids).toEqual(['new', 'mid', 'old']);
   });
 
+  it('exportCustomEntries() returns only custom entries, oldest-first, JSON-safe', () => {
+    lib.add(makeEntry({ id: 'proc', isCustom: false, createdAt: 100 }));
+    lib.add(makeEntry({ id: 'custom_b', isCustom: true, createdAt: 400, type: 'room' }));
+    lib.add(makeEntry({
+      id: 'custom_a',
+      isCustom: true,
+      createdAt: 200,
+      type: 'dungeon',
+      data: { rooms: new Map([['r0', { id: 'r0' }]]), startRoomId: 'r0', seed: 3 },
+    }));
+
+    const exported = lib.exportCustomEntries();
+    expect(exported.map(e => e.id)).toEqual(['custom_a', 'custom_b']);
+    expect((exported[0]!.data as any).rooms.__tttType).toBe('Map');
+    expect(() => JSON.stringify(exported)).not.toThrow();
+  });
+
+  it('exportCustomEntries() can be filtered by asset type', () => {
+    lib.add(makeEntry({ id: 'c_room', isCustom: true, type: 'room', createdAt: 1 }));
+    lib.add(makeEntry({ id: 'c_bldg', isCustom: true, type: 'building', createdAt: 2 }));
+    lib.add(makeEntry({ id: 'p_room', isCustom: false, type: 'room', createdAt: 3 }));
+
+    expect(lib.exportCustomEntries(['room']).map(e => e.id)).toEqual(['c_room']);
+    expect(lib.exportCustomEntries(['room', 'building']).map(e => e.id)).toEqual(['c_room', 'c_bldg']);
+    expect(lib.exportCustomEntries([]).map(e => e.id)).toEqual(['c_room', 'c_bldg']);
+  });
+
   it('size getter returns entry count', () => {
     expect(lib.size).toBe(0);
     lib.add(makeEntry({ id: 'e1' }));

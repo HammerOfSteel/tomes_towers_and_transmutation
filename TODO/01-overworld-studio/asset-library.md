@@ -42,7 +42,8 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 - [x] Extend runtime override lookup to custom room layouts (`src/levels/customRoomOverrides.ts` → `generateDungeon`, matched by `room:<instanceId>` tag or blueprint id, footprint-guarded so generated door wiring stays valid)
 - [x] Extend runtime override lookup to named overworld locations — custom `dungeon`/`cave` library entries override placed entrances (`src/world/customLocationOverrides.ts` → `placeDungeons`), matched by `dungeon:<id>`/`cave:<id>` tag or `data.dungeonId`; name/type/seed/floorCount are overridable, grid placement stays generator-owned
 - [ ] Extend runtime override lookup to glades and other realm POIs once those placers exist
-- [ ] Custom blueprints exported in the World Package ZIP (see OW-F4)
+- [x] Custom blueprints exported in the World Package (see OW-F4) — `assetLibrary.exportCustomEntries()` embeds every `isCustom` entry (JSON-safe, Map-encoded) under `customAssets` in the exported world package JSON
+- [ ] World Package import path that restores `customAssets` back into a local library
 - [ ] Runtime override path for additional duplicated/custom library entry classes
 
 ## Dependencies

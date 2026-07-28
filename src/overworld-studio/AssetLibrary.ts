@@ -38,7 +38,7 @@ export interface LibraryEntry {
   thumbnail: string | null;
 }
 
-interface StoredLibraryEntry extends Omit<LibraryEntry, 'data'> {
+export interface StoredLibraryEntry extends Omit<LibraryEntry, 'data'> {
   data: unknown;
 }
 
@@ -187,6 +187,19 @@ export class AssetLibrary {
       ...entry,
       data: encodeValue(entry.data),
     };
+  }
+
+  /**
+   * Return JSON-safe snapshots of every custom (designer-authored) entry.
+   * Used by the World Package export so runtime override entries travel with
+   * the world they belong to. Optionally filtered by asset type.
+   */
+  exportCustomEntries(types?: readonly AssetType[]): StoredLibraryEntry[] {
+    const allowed = types && types.length > 0 ? new Set(types) : null;
+    return this._entries
+      .filter(e => e.isCustom && (!allowed || allowed.has(e.type)))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map(entry => ({ ...entry, data: encodeValue(entry.data) }));
   }
 
   /**

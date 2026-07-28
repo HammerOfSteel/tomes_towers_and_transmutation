@@ -4708,6 +4708,9 @@ document.getElementById('btn-export-world-package')?.addEventListener('click', (
       y: d.y,
       seed: ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0),
     })),
+    // AL-4: custom (designer-authored) library entries travel with the world so
+    // runtime override lookups keep working after import on another machine.
+    customAssets: assetLibrary.exportCustomEntries(),
   } as const;
 
   const blob = new Blob([JSON.stringify(worldPackage, null, 2)], { type: 'application/json' });
@@ -4723,6 +4726,7 @@ document.getElementById('btn-export-world-package')?.addEventListener('click', (
       seed: realmSeed,
       settlements: worldPackage.settlements.length,
       dungeons: worldPackage.dungeons.length,
+      customAssets: worldPackage.customAssets.length,
     };
   }
 });
