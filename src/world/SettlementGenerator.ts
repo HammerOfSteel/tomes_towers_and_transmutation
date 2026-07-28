@@ -295,8 +295,26 @@ function _planTown(
   const buildings: PlacedBuilding[] = [];
   const roadSet = new Set<string>();
 
+  const MIX: BuildingType[] = [
+    'tavern', 'inn', 'smithy', 'market_stall', 'market_stall',
+    'inn', 'cottage', 'cottage', 'cottage', 'cottage',
+    'cottage', 'well', 'guard_tower', 'cottage',
+    'cottage', 'market_stall', 'cottage',
+  ];
+  // Scale the original hand-tuned 4-tile step/setback so real (possibly much
+  // larger) BuildingDNA footprints never overlap, while keeping the same
+  // slot COUNT as the original hand-authored layout.
+  let maxHalf = 0;
+  for (const t of MIX) {
+    const [fw, fd] = BUILDING_SPECS[t].footprint;
+    maxHalf = Math.max(maxHalf, Math.ceil(fw / 2), Math.ceil(fd / 2));
+  }
+  const scale   = Math.max(1, maxHalf / 2);
+  const step    = Math.round(4 * scale);
+  const setback = Math.round(4 * scale);
+  const SL      = Math.round(8 * scale);
+
   // Main E-W street (3 tiles wide = 6 WU — feels like a real market high street)
-  const SL = 8;
   for (let i = -SL; i <= SL; i++) {
     for (const dr of [-1, 0, 1]) {
       const c = cc + i, r = cr + dr;
@@ -313,25 +331,39 @@ function _planTown(
 
   // Central market_cross
   if (_valid(grid, cc, cr)) {
-    buildings.push({ type: 'market_cross', col: cc, row: cr, rotation: 0, seed: (seed ^ 0x01) >>> 0 });
+    const [fw, fd] = BUILDING_SPECS['market_cross'].footprint;
+    const hw = Math.ceil(fw / 2);
+    const hd = Math.ceil(fd / 2);
+    let hitsRoad = false;
+    for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+      for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+        if (roadSet.has(`${cc + dc},${cr + dr}`)) hitsRoad = true;
+      }
+    }
+    if (!hitsRoad) {
+      buildings.push({ type: 'market_cross', col: cc, row: cr, rotation: 0, seed: (seed ^ 0x01) >>> 0 });
+    }
   }
 
-  const MIX: BuildingType[] = [
-    'tavern', 'inn', 'smithy', 'market_stall', 'market_stall',
-    'inn', 'cottage', 'cottage', 'cottage', 'cottage',
-    'cottage', 'well', 'guard_tower', 'cottage',
-    'cottage', 'market_stall', 'cottage',
-  ];
   let mi = 0;
 
-  // Buildings along E-W street — setback 4 tiles (from road centre), step every 4 tiles
-  for (let step = -8; step <= 8; step += 4) {
+  // Buildings along E-W street — setback `setback` tiles from road centre, step every `step` tiles
+  for (let n = -2; n <= 2; n++) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
-      const col = cc + step;
-      const row = cr + side * 4;
+      const col = cc + n * step;
+      const row = cr + side * setback;
       const btype = MIX[mi]!;
-      if (roadSet.has(`${col},${row}`))                                continue;  // skip road tiles
+      const [fw, fd] = BUILDING_SPECS[btype].footprint;
+      const hw = Math.ceil(fw / 2);
+      const hd = Math.ceil(fd / 2);
+      let hitsRoad = false;
+      for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+        for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+          if (roadSet.has(`${col + dc},${row + dr}`)) hitsRoad = true;
+        }
+      }
+      if (hitsRoad)                                                    continue;  // skip if overlaps road
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
@@ -342,14 +374,25 @@ function _planTown(
     }
   }
 
-  // Buildings along N-S cross street — setback 4 tiles, step every 4 tiles
-  for (let step = -6; step <= 6; step += 4) {
+  // Buildings along N-S cross street — same setback, matching the original
+  // 4-slot spacing pattern (offsets -6,-2,2,6 tiles when step was fixed at 4)
+  const crossMultipliers = [-1.5, -0.5, 0.5, 1.5];
+  for (const mult of crossMultipliers) {
     for (const side of [-1, 1]) {
       if (mi >= MIX.length) break;
-      const col = cc + side * 4;
-      const row = cr + step;
+      const col = cc + side * setback;
+      const row = cr + Math.round(mult * step);
       const btype = MIX[mi]!;
-      if (roadSet.has(`${col},${row}`))                                continue;  // skip road tiles
+      const [fw, fd] = BUILDING_SPECS[btype].footprint;
+      const hw = Math.ceil(fw / 2);
+      const hd = Math.ceil(fd / 2);
+      let hitsRoad = false;
+      for (let dc = -hw; dc <= hw && !hitsRoad; dc++) {
+        for (let dr = -hd; dr <= hd && !hitsRoad; dr++) {
+          if (roadSet.has(`${col + dc},${row + dr}`)) hitsRoad = true;
+        }
+      }
+      if (hitsRoad)                                                    continue;  // skip if overlaps road
       if (!_valid(grid, col, row) || !_noOverlap(buildings, col, row, btype, 2)) continue;
       buildings.push({
         type:     MIX[mi++],
