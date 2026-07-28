@@ -38,4 +38,23 @@ describe('closestDistanceToBuildingFootprint', () => {
     );
     expect(d).toBeCloseTo(0, 6);
   });
+
+  it('handles an arbitrary non-cardinal rotation (45 degrees)', () => {
+    // Square footprint w=4, d=4 (half=2 each), centered at origin, rotated
+    // 45 degrees. A point 5 units out along the footprint's *local* +X axis
+    // maps to world coordinates via the forward rotation (wx = lx*cos(θ)+
+    // lz*sin(θ), wz = -lx*sin(θ)+lz*cos(θ)) — at θ=45°, local (5, 0) maps to
+    // world (5*cos45, -5*sin45) ≈ (3.5355, -3.5355). Feeding that world
+    // point back through closestDistanceToBuildingFootprint should recover
+    // local (5, 0), clamp to the box's half-extents (2, 0), and yield a
+    // distance of 5 - 2 = 3 — confirming the rotation math holds at a
+    // non-cardinal angle, not just 0/90 degrees.
+    const theta = Math.PI / 4;
+    const worldX = 5 * Math.cos(theta);
+    const worldZ = -5 * Math.sin(theta);
+    const d = closestDistanceToBuildingFootprint(
+      { x: worldX, z: worldZ }, { x: 0, z: 0 }, { w: 4, d: 4 }, theta,
+    );
+    expect(d).toBeCloseTo(3, 6);
+  });
 });
