@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildNpc } from '@/npc-creator/builder';
+import { buildNpc, buildNpcSync } from '@/npc-creator/builder';
 import { getDefaultNpcDna } from '@/npc-creator/defaults/NpcDefaults';
 
 describe('NpcInstance.setAnimState', () => {
@@ -20,5 +20,12 @@ describe('NpcInstance.setAnimState', () => {
     const inst = await buildNpc({ ...dna, name: 'Test Citizen 2' });
     expect(() => inst.setAnimState('walk')).not.toThrow();
     expect(() => inst.setAnimState('idle')).not.toThrow();
+  });
+
+  it('does not throw when called on buildNpcSync placeholder before async swap resolves', () => {
+    const dna = getDefaultNpcDna('human', 'citizen', 3);
+    const placeholder = buildNpcSync({ ...dna, name: 'Test Sync Placeholder' });
+    // Call setAnimState immediately, before the async build has resolved
+    expect(() => placeholder.setAnimState('walk')).not.toThrow();
   });
 });
