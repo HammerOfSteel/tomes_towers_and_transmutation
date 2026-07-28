@@ -47,7 +47,7 @@ Turn Overworld Studio output into the actual 3D playable world. **Depends on 01.
 | File                                                                            | Topic                                     | Status |
 | ------------------------------------------------------------------------------- | ----------------------------------------- | ------ |
 | [Realm Integration](./02-game-world-integration/realm-integration.md)           | Generate 3D terrain from realm map biomes | 🚧     |
-| [Settlement Integration](./02-game-world-integration/settlement-integration.md) | Place generated settlements in 3D world (live pipeline already builds/roads/NPCs; boundary toast added, LOD still open) | 🚧     |
+| [Settlement Integration](./02-game-world-integration/settlement-integration.md) | Place generated settlements in 3D world (live pipeline already builds/roads/NPCs; boundary toast added, LOD still open; building placement is now footprint-aware and interiors route through `sceneManager.loadDungeon()` with real multi-floor staircases) | 🚧     |
 | [Dungeon Integration](./02-game-world-integration/dungeon-integration.md)       | Dungeon entrances/exits on realm map (live enter/exit works; exit-position bug fixed; site-family metadata now live + shown in toast; quest/reward consumption still open) | 🚧     |
 | [Cave Integration](./02-game-world-integration/cave-glade-integration.md)       | Cave & glade entrances on realm map — live wiring + minimap + persistence done, floor transition deferred | 🚧 In Progress |
 

@@ -22,6 +22,33 @@ boundary-crossing behaviour (toast/audio/collision) and SI-5's
 distance-based LOD, since the live settlement code had no boundary or LOD
 concept at all until this session.
 
+### Building placement & interiors ✅ (shipped)
+See `docs/superpowers/specs/2026-07-28-building-placement-and-interiors-design.md`
+and `docs/superpowers/plans/2026-07-28-building-placement-and-interiors-plan.md`
+for the full design/plan.
+- [x] Settlement layout is now footprint-aware — buildings use their real
+  `getFootprint()` dimensions (not a fixed placeholder size) for placement,
+  overlap-avoidance (`_noOverlap()`), and road-clearance checks; settlements
+  are allowed to grow larger/more spread out to fit real footprints instead
+  of clipping/shrinking buildings to preserve the old tight layout
+  (`src/world/buildings/BuildingTypes.ts`, `SettlementGenerator.ts`)
+- [x] Building interiors now route through `sceneManager.loadDungeon()` and
+  `buildingToDungeonPlan()`, the same dungeon-style architecture as real
+  dungeons and the greenhouse — the old bespoke overlay-mount interior system
+  (`_mountInterior`/`_unmountInterior`/`enterBuildingInterior`/
+  `_switchBuildingFloor`/`leaveBuildingInterior`/`INTERIOR_Y`) has been fully
+  removed from `main.ts`
+- [x] Multi-floor buildings get real staircases (`StaircaseEntry` wiring with
+  `.direction: 'up'/'down'`, matching `TowerGenerator.ts`'s convention) with
+  working stair-step geometry and `getStaircaseTrigger()`/`getStaircaseHint()`
+  support, instead of plain doors invisible to staircase-specific APIs
+- [x] Fixed a latent player-fall-through-floor bug: a redundant hardcoded
+  post-`loadDungeon()` teleport in `main.ts` (present for dungeons/greenhouse
+  too, just usually masked by larger room sizes) was overriding
+  `executeRoomSwap()`'s own correct centered spawn point
+- [x] `tests/e2e/building-floors.spec.ts` covers single-floor and multi-floor
+  building entry/exit/floor-navigation end-to-end (7/7 passing)
+
 ### This session — SI-4 boundary crossing ✅ (partial — toast only)
 - [x] `OverworldScene.ts`: each live settlement's boundary radius is now
   computed at build time (farthest building from centre, in world units, +4u
