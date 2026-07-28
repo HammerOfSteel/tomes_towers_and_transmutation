@@ -656,19 +656,6 @@ export class OverworldScene {
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**
-   * Build a Rapier heightfield collider that mirrors the visual tile grid.
-   *
-   * Rapier heightfield convention (column-major):
-   *   heights[gridRow * GW + gridCol] = elevation * SH
-   *   nrows = GW − 1  (X direction, tile columns)
-   *   ncols = GH − 1  (Z direction, tile rows)
-   *   scale = { x: (GW−1)*T, y: 1.0, z: (GH−1)*T }
-   *
-   * World-space vertex positions produced:
-   *   x = −(GW−1)*T/2 + gridCol*T = (gridCol − GHW)*T  ✓
-   *   z = −(GH−1)*T/2 + gridRow*T = (gridRow − GHH)*T  ✓
-   */
-  /**
    * Build a Rapier trimesh collider from the exact same vertex/index buffers
    * used to render the terrain (`buildTerrainGeometryData`) — physics and
    * visuals can never mismatch, including at elevation-edge cliff faces.
