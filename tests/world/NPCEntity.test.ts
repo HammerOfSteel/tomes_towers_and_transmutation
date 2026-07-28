@@ -5,7 +5,7 @@
  * gameplay surface (name, role, group, dispose) intact.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { NPCEntity } from '@/world/NPCEntity';
 import type { SettlementEntry } from '@/world/WorldData';
