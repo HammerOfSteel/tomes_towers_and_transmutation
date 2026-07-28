@@ -1,7 +1,7 @@
 # Procedural Tile Designer
 > Planned tile-variant design surface for procedural terrain, dungeon, cave, and settlement tiles.
 
-## Status: 🔲 Planned — tracked contract exists, but no dedicated tool or runtime tile DNA system has shipped yet
+## Status: 🚧 In Progress — TileDNA schema + TileRegistry data layer shipped (TV-1, TV-4); designer UI (TV-3) and variant sets (TV-2) still pending
 
 ## What Tiles Are
 Tiles are the repeatable ground/wall/feature units that compose:
@@ -15,9 +15,10 @@ Currently these are scattered rendering/building helpers with no systematic tile
 ## Proposed: Tile Variant System
 
 ### TV-1 — Tile DNA
-- [ ] `TileDNA` interface: `{ category, biome, variant, seed, size, colorOverride? }`
-- [ ] Categories: `ground | wall | ceiling | feature | transition`
-- [ ] `buildTile(dna): THREE.Group` — consistent builder pattern
+- [x] `TileDNA` interface: `{ v, category, biome, variant, seed, size, colorOverride? }` (`src/procedural/TileDNA.ts`)
+- [x] Categories: `ground | wall | ceiling | feature | transition`
+- [x] Validation (`validateTileDNA`) + deterministic construction (`makeTileDNA`)
+- [ ] `buildTile(dna): THREE.Group` — consistent builder pattern (deferred to TV-3, needs mesh/material work)
 
 ### TV-2 — Tile Variant Sets (what we need)
 | Biome/Type | Variants needed |
@@ -41,9 +42,9 @@ Currently these are scattered rendering/building helpers with no systematic tile
 - [ ] Export: JSON DNA + PNG thumbnail
 
 ### TV-4 — Tile Registry
-- [ ] `TileRegistry.ts` — maps `(biome, variant)` → `TileDNA`
-- [ ] Used by world generator to select correct tile per cell
-- [ ] Allows designer overrides for specific named locations
+- [x] `TileRegistry.ts` — maps `(biome, variant)` → `TileDNA`, singleton `tileRegistry` export
+- [x] Allows designer overrides for specific named locations (`registerForLocation`/`resolveForLocation`)
+- [ ] Used by world generator to select correct tile per cell (blocked on TV-3 builder existing)
 
 ## Dependencies
 - Requires: PROC-A entity registry pattern ✅ (apply same pattern)

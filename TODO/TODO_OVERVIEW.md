@@ -34,7 +34,7 @@ Design tools (Overworld Studio web app) that produce world data consumed by the 
 | [Asset Library](./01-overworld-studio/asset-library.md)                                  | Browse & manage all generated assets                                      | 🚧     |
 | [Game Inventory](./01-overworld-studio/game-inventory.md)                                | Master contract for procedural asset outputs needed from Overworld Studio | 🚧     |
 | [Procedural Asset Designer](./01-overworld-studio/procedural-designer/asset-designer.md) | Visual designer for DNA-based entities                                    | 🚧     |
-| [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md)   | Tile variant tool for biome/dungeon tiles                                 | 🔲     |
+| [Procedural Tile Designer](./01-overworld-studio/procedural-designer/tile-designer.md)   | Tile variant tool for biome/dungeon tiles                                 | 🚧     |
 
 **Shipped (OW-A thru OW-F4):** Realm Map, Dungeon tab, Cave tab, 3D Planet, Hex Planet, Planet DNA, Solar System, Dwelling Layer (building-viewer), Layer Navigation (breadcrumbs + drill-downs), Full Solar→Planet→Realm→City chain ✅
 
