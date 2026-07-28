@@ -512,8 +512,14 @@ async function main() {
     minimap?.show();
     // E2: Show Solmor at tower entrance after prologue
     if (_towerPrologueDone) solmorPresence.show();
-    // Spawn just south of the tower door
-    player.teleport(new THREE.Vector3(0, 1.5, 8));
+    // DI-3: return to the dungeon entrance the player used, if any — otherwise
+    // (tower exit) spawn just south of the tower door as before.
+    if (_activeDungeonEntrancePos) {
+      player.teleport(_activeDungeonEntrancePos.clone().setY(1.5));
+      _activeDungeonEntrancePos = null;
+    } else {
+      player.teleport(new THREE.Vector3(0, 1.5, 8));
+    }
     // Widen fog for the open world
     scene.fog = new THREE.Fog(0x0a1408, 60, 180);
     console.log('[switchToExterior] COMPLETE ✓');
@@ -524,6 +530,7 @@ async function main() {
     _weatherSys.setActive(false);
     _cancelHarvest();
     gameMode = 'interior';
+    _activeDungeonEntrancePos = null; // tower entry — exit always returns to the tower door
     physics.cullingRadius = 30;   // re-enable culling for dungeon rooms
     _occlusionMgr?.setScene(scene);  // scene-wide occlusion for dungeon/tower walls
     minimap?.hide();
@@ -594,6 +601,10 @@ async function main() {
   const questLog         = new QuestJournal();
   const discoveryTracker = new DiscoveryTracker();
   let _activeDungeonId: number | null = null;
+  /** DI-3: world position of the entrance the player used to enter the active
+   *  dungeon (null when inside the tower or a building instead), so exiting
+   *  returns them to where they went in rather than always to the tower door. */
+  let _activeDungeonEntrancePos: THREE.Vector3 | null = null;
   let _questCheckTimer = 0;
   let _storyRunner: StoryRunner | null = null;
   /** Tower room-clear counter — increments each time a room's enemies are all defeated.
@@ -2712,6 +2723,7 @@ async function main() {
             if (dngHandle) {
               // Enter a seeded dungeon whose floor count was set at world-gen time
               _activeDungeonId = dngHandle.entry.id;
+              _activeDungeonEntrancePos = dngHandle.position.clone();
               discoveryTracker.markDungeonFound(dngHandle.entry.id);
               const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
               overworld.exit();

@@ -43,7 +43,7 @@ CavePlan (from OW-C)
 |---|---|---|
 | [Realm Integration](./realm-integration.md) | 3D terrain from biome cells | 🚧 In Progress |
 | [Settlement Integration](./settlement-integration.md) | 3D settlements from plans (live buildings/roads/NPCs already working independently; boundary-crossing toast added) | 🚧 In Progress |
-| [Dungeon Integration](./dungeon-integration.md) | Dungeon entrances + loading | 🚧 In Progress |
+| [Dungeon Integration](./dungeon-integration.md) | Dungeon entrances + loading (live enter/exit works, exit-position bug fixed; site-family/quest hooks still open) | 🚧 In Progress |
 | [Cave Integration](./cave-glade-integration.md) | Cave + glade entrances (live wiring + minimap icons + save persistence done; only floor scene transition deferred) | 🚧 In Progress |
 
 ## Dependencies
