@@ -8,32 +8,15 @@
  *  • SettlementType       (village/town/city → style tier)
  */
 
-import type { BuildingType }    from './BuildingTypes';
+import { KIND_MAP, SIZE_MAP, type BuildingType } from './BuildingTypes';
 import type { SettlementType }  from '../SettlementGenerator';
 import type { PlacedBuilding }  from '../SettlementGenerator';
 import {
   STYLE_COLORS,
   type BuildingDNA,
-  type BuildingKind,
   type BuildingStyle,
-  type BuildingSize,
 } from './BuildingDNA';
 import { mulberry32 } from '@/core/prng';
-
-// ── Kind mapping ─────────────────────────────────────────────────────────────
-
-const KIND_MAP: Record<BuildingType, BuildingKind> = {
-  cottage:      'cottage',
-  inn:          'inn',
-  market_stall: 'market_stall',
-  smithy:       'blacksmith',
-  tavern:       'tavern',
-  temple:       'chapel',
-  city_hall:    'guild',
-  guard_tower:  'watchtower',
-  well:         'well',
-  market_cross: 'market_stall',
-};
 
 // ── Style selection by settlement tier ───────────────────────────────────────
 
@@ -52,24 +35,6 @@ const STYLE_OVERRIDES: Partial<Record<BuildingType, BuildingStyle>> = {
   guard_tower: 'stone',
   well:        'stone',
   smithy:      'stone',
-};
-
-// ── Size from old BuildingSpec footprint ──────────────────────────────────────
-// SIZE_FOOTPRINT: tiny=4×4, small=6×5, medium=9×7, large=13×10 (world units)
-// Old BUILDING_SPECS footprints (tiles × T=2 WU): cottage=4×4, inn=6×8, smithy=4×4
-// Map to the closest size so buildings fit the settlement grid.
-
-const SIZE_MAP: Partial<Record<BuildingType, BuildingSize>> = {
-  cottage:      'tiny',    // 4×4 WU = old [2,2] tiles ✓
-  inn:          'small',   // 6×5 WU ≈ old [3,4] tiles (6×8) — depth a bit short
-  market_stall: 'tiny',
-  smithy:       'tiny',    // 4×4 WU = old [2,2] tiles ✓
-  tavern:       'small',   // 6×5 WU ≈ old [4,3] tiles (8×6)
-  temple:       'medium',  // 9×7 WU ≈ old [4,4] tiles (8×8)
-  city_hall:    'large',   // 13×10 WU ≈ old [6,4] tiles (12×8)
-  guard_tower:  'tiny',    // 4×4 WU = old [2,2] tiles ✓
-  well:         'tiny',
-  market_cross: 'tiny',
 };
 
 // ── Floors from old BuildingSpec ──────────────────────────────────────────────
@@ -99,8 +64,8 @@ export function createSettlementBuildingDna(
 ): BuildingDNA {
   const rand = mulberry32(b.seed ^ 0x9E3779B9);
 
-  const kind  = KIND_MAP[b.type]  ?? 'house';
-  const size  = SIZE_MAP[b.type]  ?? 'medium';
+  const kind  = KIND_MAP[b.type];
+  const size  = SIZE_MAP[b.type];
   const floors = FLOORS_MAP[b.type] ?? 2;
 
   let style: BuildingStyle;
