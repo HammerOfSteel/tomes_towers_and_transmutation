@@ -1,7 +1,7 @@
 # Dungeon Integration
-> ⚠️ GAP — Place dungeon entrances on the realm overworld map and wire up loading.
+> 🚧 In Progress — Place dungeon entrances on the realm overworld map and wire up loading.
 
-## Status: ⚠️ Not planned
+## Status: 🚧 In Progress — DI-2/DI-2b's metadata layer shipped as a pure, tested data-transform module (`src/world/DungeonSiteMetadata.ts`); DI-1 (entrance prop builder), DI-3 (scene transition), DI-4/DI-4b (minimap + quest hooks), and DI-5 (integration tests) still pending.
 
 ## Goal
 Dungeons generated in OW-B appear as entrance props at their realm map positions, carry meaningful **site-family identity**, and feed the title pillars through knowledge, materials, recruits, and defense intelligence. Walking up to the entrance and pressing E loads the dungeon.
@@ -14,33 +14,17 @@ Dungeons generated in OW-B appear as entrance props at their realm map positions
 - [ ] Interaction trigger zone: 2 WU radius, `[E] Enter Dungeon` prompt
 
 ### DI-2 — Realm Map Placement
-- [ ] `RealmData` extended: `dungeons: Array<{x, y, seed, type, faction}>`
-- [ ] OW-A generator places 2-4 dungeon markers per realm (near settlements, at biome boundaries)
-- [ ] Dungeon entrance rendered at correct world position on terrain
+- [x] `RealmData` dungeon markers enriched: `enrichDungeonMarker(realmSeed, {x, y})` (`src/world/DungeonSiteMetadata.ts`) derives a deterministic `DungeonSite` — seed, faction, site-family, reward-bias — from a bare marker, without modifying `overworld-studio.ts`'s existing marker-placement algorithm (spacing dungeons from settlements/each other) or its `dungeons: {x,y}[]` field shape
+- [x] OW-A generator already places 2-4+ dungeon markers per realm, spaced from settlements and each other (pre-existing `generateRealmData` logic — unchanged)
+- [ ] Dungeon entrance rendered at correct world position on terrain — needs DI-1's entrance prop + `OverworldScene.ts` wiring (same RI-1 terrain-height-sampling pattern as SI-1's buildings)
 
-### DI-2b — Site-Family Identity & Reward Bias
-- [ ] Extend dungeon metadata with site-family tags, for example:
-  - `tower_floor`
-  - `library_ruin`
-  - `alchemy_vault`
-  - `tomb_barrow`
-  - `beast_lair`
-  - `mine_works`
-  - `observatory_ruin`
-  - `surface_threat`
-- [ ] Add reward-bias tags:
-  - `knowledge_rich`
-  - `volatile_materials`
-  - `beast_capture_opportunity`
-  - `defense_intel`
-  - `candidate_archive`
-  - school bias tags where relevant
-- [ ] Add metadata fields for:
-  - likely book families
-  - likely reagent/material families
-  - elite recruit opportunity flag
-  - defense-intel source flag
-- [ ] Ensure site-family identity is available both to runtime scene loading and future content seeding
+### DI-2b — Site-Family Identity & Reward Bias ✅
+- [x] `DungeonSiteFamily` (all 8 spec values: `tower_floor`, `library_ruin`, `alchemy_vault`, `tomb_barrow`, `beast_lair`, `mine_works`, `observatory_ruin`, `surface_threat`) — seeded per-dungeon assignment via `enrichDungeonMarker`
+- [x] `DungeonRewardBiasTag` (all 5 spec values) — fixed per site family via `SITE_FAMILY_PROFILES`
+- [x] `schoolBias` field — provisional `ProvisionalSchool[]` (6 placeholder schools), explicitly flagged in the module header as a stand-in until `TODO/06-game-systems/tomes-research-spellcraft.md`'s TRS-1 finalizes the real school list
+- [x] `likelyBookFamilies` / `likelyReagentFamilies` string-hint fields per site family, `eliteRecruitOpportunity` / `defenseIntelSource` boolean flags — all on `DungeonSite`
+- [x] Deterministic and available to any consumer (runtime or content-seeding) via a pure `(realmSeed, marker) → DungeonSite` function — no coupling to scene loading
+- [x] Unit tests: `tests/world/DungeonSiteMetadata.test.ts` (8 tests) — determinism per (seed, position), variation across positions/seeds, valid site-family + reward-bias shape across 50 seeds, elite-recruit-opportunity flag matches its site family, batch enrichment matches individual calls
 
 ### DI-3 — Scene Transition
 - [ ] Enter → black fade → load `DungeonScene` with matching seed
