@@ -3,6 +3,7 @@ import { EffectComposer, EffectPass, RenderPass, BloomEffect, KernelSize } from 
 import { GameLoop } from '@/core/GameLoop';
 import { InputManager } from '@/core/InputManager';
 import { CameraRig } from '@/core/CameraRig';
+import { WoWCameraController } from '@/core/WoWCameraController';
 import { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PlayerController } from '@/player/PlayerController';
 import { CombatSystem } from '@/combat/CombatSystem';
@@ -153,6 +154,12 @@ async function main() {
   const player = new PlayerController(physics, new THREE.Vector3(0, 1.5, 0));
   scene.add(player.shadow);
   scene.add(player.group);
+
+  // WoW-style camera mode: mouse-driven orbit input, inert while isometric.
+  // The controller is fully event-driven; void suppresses noUnusedLocals.
+  void new WoWCameraController(cameraRig, canvas, {
+    onTurnPlayer: (yaw) => player.setFacingAngle(yaw),
+  });
 
   // ── Scene / room manager ──────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player, (dmg) => {
@@ -1886,6 +1893,12 @@ async function main() {
       return;
     }
 
+    // V — toggle between isometric and WoW-style third-person camera
+    if ((e.key === 'v' || e.key === 'V') && !gameMenu.isOpen && !editMode.isActive) {
+      cameraRig.toggleMode(player.facingAngleRad);
+      return;
+    }
+
     if (e.key === 'Escape') {
       if (bookReader.isOpen) {
         bookReader.close();         // close book → game
@@ -2231,7 +2244,7 @@ async function main() {
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
     if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
-      player.update(input.state, dt);
+      player.update(input.state, dt, cameraRig.mode, cameraRig.yaw);
       // PC4: tick princess creator animations each frame
       if (player.hasPrincess) player.updatePrincess(performance.now() / 1000, dt);
 
@@ -2511,10 +2524,13 @@ async function main() {
         );
       }
 
-      // 5. Melee attack (mouse button 0, 0.4s cooldown)
+      // 5. Melee attack (mouse button 0 in isometric mode, Digit5 always,
+      //    0.4s cooldown). In WoW camera mode, left-click is consumed by
+      //    camera drag, so Digit5 is the only trigger there.
       meleeCooldown = Math.max(0, meleeCooldown - dt);
-      const attackJustPressed = s.attack && !lastAttackInput;
-      lastAttackInput = s.attack;
+      const meleeButtonHeld = cameraRig.mode === 'wow' ? s.meleeKey : (s.attack || s.meleeKey);
+      const attackJustPressed = meleeButtonHeld && !lastAttackInput;
+      lastAttackInput = meleeButtonHeld;
       if (attackJustPressed && meleeCooldown <= 0) {
         meleeCooldown = 0.4;
         const meleeAngle = Math.atan2(
