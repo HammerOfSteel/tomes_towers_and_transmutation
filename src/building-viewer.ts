@@ -27,7 +27,6 @@ import { PhysicsWorld }     from '@/physics/PhysicsWorld';
 import { PlayerController } from '@/player/PlayerController';
 import { SceneManager }     from '@/levels/SceneManager';
 import { LightingSystem }   from '@/rendering/LightingSystem';
-import { WallOcclusionManager } from '@/rendering/WallOcclusionManager';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import type { Blueprint }   from '@/levels/blueprint';
 
@@ -132,8 +131,6 @@ async function main(): Promise<void> {
   // ── 9. SceneManager ──────────────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player, () => {});
   sceneManager.showFloorTitle = false;  // suppress tower floor-name overlay
-  // ── 10. Wall occlusion ────────────────────────────────────────────────────────
-  const wallOccMgr = new WallOcclusionManager();
 
   // Floor physics: each room needs a static floor collider so the player doesn't
   // fall through. Tracked here so the old one is removed when the room changes.
@@ -141,8 +138,6 @@ async function main(): Promise<void> {
   let _floorBody: any = null;
 
   sceneManager.onRoomLoaded = (bp: Blueprint) => {
-    wallOccMgr.reset();
-
     // Replace floor physics body for the new room
     if (_floorBody) {
       physics.removeBody(_floorBody);
@@ -184,7 +179,6 @@ async function main(): Promise<void> {
     sceneManager.update(dt, player.group.position);
     cameraRig.updateZoom(dt);
     cameraRig.follow(player.group.position, dt);
-    wallOccMgr.update(cameraRig.camera, player.group, sceneManager.currentRoomGroup);
     renderer.render(scene, cameraRig.camera);
   });
 
