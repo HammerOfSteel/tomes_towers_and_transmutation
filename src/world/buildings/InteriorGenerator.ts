@@ -18,7 +18,6 @@ import { FLOOR_HEIGHT, STYLE_COLORS } from './BuildingDNA';
 import { buildProp } from '@/prop-creator/builder';
 import type { PropKind, PropMaterial, PropTheme } from '@/prop-creator/types';
 import { MATERIAL_COLORS } from '@/prop-creator/types';
-import { applyDollhouseCut } from '@/rendering/DollhouseCutaway';
 import { stoneTexture, brickTexture, renderTexture } from './TextureFactory';
 import { mulberry32 } from '@/core/prng';
 
@@ -538,12 +537,6 @@ function buildWallSurfaces(g: THREE.Group, plan: HousePlan, style: StyleProfile,
     }
   }
 
-  const roomCenterXZ = { x: plan.w / 2, z: plan.d / 2 };
-  g.traverse((obj) => {
-    const mesh = obj as THREE.Mesh;
-    if (!mesh.isMesh || mesh.userData.isOccluder !== true) return;
-    applyDollhouseCut(mesh, roomCenterXZ);
-  });
 }
 
 // ── Furnishing rule engine ────────────────────────────────────────────────────
