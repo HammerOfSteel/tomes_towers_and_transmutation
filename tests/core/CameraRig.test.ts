@@ -85,6 +85,28 @@ describe('CameraRig', () => {
     expect(rig.camera.position.z).toBeCloseTo(target.z + ISO_OFFSET.z);
   });
 
+  it('isometric follow() restores the fixed isometric rotation after returning from wow mode', () => {
+    const target = new THREE.Vector3(2, 0, -4);
+    rig.follow(target);
+    const isoQuatBefore = rig.camera.quaternion.clone();
+
+    // Enter wow mode, orbit around (rotating the camera via lookAt), then
+    // return to isometric — the camera's rotation must be restored, not
+    // left over from the wow-mode orbit.
+    rig.toggleMode(1.2);
+    rig.adjustYaw(2.5);
+    rig.adjustPitch(0.6);
+    rig.follow(target);
+    expect(rig.camera.quaternion.equals(isoQuatBefore)).toBe(false); // sanity: wow mode did rotate it
+
+    rig.toggleMode(1.2); // back to isometric
+    rig.follow(target);
+    expect(rig.camera.quaternion.x).toBeCloseTo(isoQuatBefore.x, 5);
+    expect(rig.camera.quaternion.y).toBeCloseTo(isoQuatBefore.y, 5);
+    expect(rig.camera.quaternion.z).toBeCloseTo(isoQuatBefore.z, 5);
+    expect(rig.camera.quaternion.w).toBeCloseTo(isoQuatBefore.w, 5);
+  });
+
   // ── WoW mode: orbit math ───────────────────────────────────────────────────
 
   it('wow mode follow() places camera behind target along yaw, at distance/pitch offset', () => {
@@ -151,13 +173,15 @@ describe('CameraRig', () => {
     expect(after).not.toBe(before);
   });
 
-  it('applyScroll() adjusts distance instead of frustum in wow mode', () => {
+  it('applyScroll() adjusts frustum zoom in wow mode too (orthographic camera has no ' +
+     'perspective falloff, so orbit distance alone produces zero visible zoom)', () => {
     rig.toggleMode(0);
     const distBefore = rig.distance;
     const frustumBefore = (rig as unknown as { _targetFrustumHeight: number })['_targetFrustumHeight'];
     rig.applyScroll(100);
-    expect(rig.distance).not.toBeCloseTo(distBefore, 5);
     const frustumAfter = (rig as unknown as { _targetFrustumHeight: number })['_targetFrustumHeight'];
-    expect(frustumAfter).toBeCloseTo(frustumBefore, 5);
+    expect(frustumAfter).not.toBeCloseTo(frustumBefore, 5);
+    // Distance is left untouched by scroll now — it's no longer the zoom mechanism.
+    expect(rig.distance).toBeCloseTo(distBefore, 5);
   });
 });

@@ -104,16 +104,20 @@ export function calculateMoveDirection(
 }
 
 /** Returns the desired horizontal direction from forward/backward input,
- *  relative to the given camera yaw (radians), as a normalized Vector3
+ *  relative to the given facing angle (radians), as a normalized Vector3
  *  (y=0). Used in WoW camera mode, where A/D turn the character instead of
  *  strafing — only forward/backward come from calculateWoWMoveDirection.
+ *  Movement always follows the player's own facing angle (updated by A/D
+ *  turning and by left-drag camera sync), NOT the camera's free-look yaw —
+ *  right-drag orbits the camera independently without affecting movement,
+ *  matching vanilla WoW's decoupled free-look behavior.
  *  Yaw convention matches facingAngle: forward = (sin(yaw), 0, cos(yaw)). */
 export function calculateWoWMoveDirection(
   input: Pick<InputState, 'moveForward' | 'moveBackward'>,
-  cameraYaw: number,
+  facingAngle: number,
 ): THREE.Vector3 {
   const dir = new THREE.Vector3();
-  const forward = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw));
+  const forward = new THREE.Vector3(Math.sin(facingAngle), 0, Math.cos(facingAngle));
   if (input.moveForward) dir.add(forward);
   if (input.moveBackward) dir.sub(forward);
   if (dir.lengthSq() > 0) dir.normalize();
@@ -511,7 +515,6 @@ export class PlayerController {
     input: InputState,
     dt: number,
     cameraMode: 'isometric' | 'wow' = 'isometric',
-    cameraYaw = 0,
   ): void {
     // ── 1. TIMERS ──────────────────────────────────────────────────────────
     this.health.tick(dt);
@@ -781,12 +784,23 @@ export class PlayerController {
       this.velocity.y = GROUND_PUSH;
     }
 
+    // ── 5a. WOW-MODE TURNING (A/D rotate character in place, not strafe) ───
+    // Must run before movement direction is computed below, so W/S move
+    // along the facing angle this same frame's A/D turn just produced
+    // (not last frame's stale facing).
+    if (cameraMode === 'wow') {
+      const WOW_TURN_RATE = 2.4; // radians/sec
+      if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
+      if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
+      this.group.rotation.y = this.facingAngle;
+    }
+
     // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────
     // Skip normal acceleration when dodge is active (dodge overrides velocity)
     if (this.dodgeTimer <= 0) {
       const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
       const moveDir = cameraMode === 'wow'
-        ? calculateWoWMoveDirection(input, cameraYaw)
+        ? calculateWoWMoveDirection(input, this.facingAngle)
         : calculateMoveDirection(input);
       const isMoving = moveDir.lengthSq() > 0.01;
       const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
@@ -799,14 +813,6 @@ export class PlayerController {
         this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
         this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
       }
-    }
-
-    // ── 5b. WOW-MODE TURNING (A/D rotate character in place, not strafe) ───
-    if (cameraMode === 'wow') {
-      const WOW_TURN_RATE = 2.4; // radians/sec
-      if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
-      if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
-      this.group.rotation.y = this.facingAngle;
     }
 
     // ── 6. KCC ─────────────────────────────────────────────────────────────

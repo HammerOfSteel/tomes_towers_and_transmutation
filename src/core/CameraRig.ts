@@ -14,8 +14,6 @@ const ZOOM_SCROLL_FACTOR = 0.12;
 const WOW_DISTANCE_DEFAULT = 12;
 const WOW_DISTANCE_MIN = 6;
 const WOW_DISTANCE_MAX = 22;
-/** Wheel-tick distance change factor (mirrors ZOOM_SCROLL_FACTOR's feel). */
-const WOW_DISTANCE_SCROLL_FACTOR = 0.02;
 /** Pitch is the elevation angle above the horizontal plane through the target.
  *  0 = camera level with target (never allowed — would clip into the player);
  *  PI/2 = camera directly overhead (never allowed — disorienting top-down flip). */
@@ -42,6 +40,8 @@ export const ISO_OFFSET = new THREE.Vector3(14, 20, 14);
 export class CameraRig {
   readonly camera: THREE.OrthographicCamera;
   private _aspect: number;
+  /** Fixed isometric-mode camera rotation, cached once at construction. */
+  private readonly _isoQuaternion: THREE.Quaternion;
   private _frustumHeight: number = FRUSTUM_HEIGHT;
   private _targetFrustumHeight: number = FRUSTUM_HEIGHT;
 
@@ -69,6 +69,10 @@ export class CameraRig {
     this.camera = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 300);
     this.camera.position.copy(ISO_OFFSET);
     this.camera.lookAt(0, 0, 0);
+    // The isometric angle is fixed forever — cache the rotation so it can be
+    // restored exactly after WoW mode's per-frame lookAt() has rotated the
+    // camera away from it (see follow()'s isometric branch).
+    this._isoQuaternion = this.camera.quaternion.clone();
   }
 
   /** Active camera mode. Isometric is the default and is unaffected by WoW-mode state. */
@@ -162,6 +166,11 @@ export class CameraRig {
         ISO_OFFSET.y,
         target.z + ISO_OFFSET.z + oz,
       );
+      // WoW mode calls camera.lookAt() every frame, which rotates the
+      // camera away from the fixed isometric angle. Restore that fixed
+      // rotation explicitly so returning from WoW mode doesn't leave the
+      // camera pointed in whatever direction it last orbited to.
+      this.camera.quaternion.copy(this._isoQuaternion);
       return;
     }
 
@@ -183,15 +192,15 @@ export class CameraRig {
 
   /**
    * Feed mouse-wheel delta to smoothly zoom in/out.
-   * Isometric mode: adjusts the orthographic frustum height (unchanged).
-   * WoW mode: adjusts orbit distance instead — frustum height is untouched.
+   * Adjusts the orthographic frustum height in both modes — this is the
+   * only mechanism that visually zooms an orthographic camera. (WoW mode's
+   * orbit `distance` is deliberately NOT used for zoom: translating an
+   * orthographic camera along a fixed view direction has zero effect on
+   * apparent size, and changing distance can push the camera into/through
+   * nearby geometry, which looks like walls flickering in and out of view.)
    * Call from a 'wheel' event listener: `rig.applyScroll(e.deltaY)`.
    */
   applyScroll(deltaY: number): void {
-    if (this._mode === 'wow') {
-      this.adjustDistance(deltaY * WOW_DISTANCE_SCROLL_FACTOR);
-      return;
-    }
     this._targetFrustumHeight *= 1 + deltaY * ZOOM_SCROLL_FACTOR * 0.01;
     this._targetFrustumHeight = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this._targetFrustumHeight));
   }

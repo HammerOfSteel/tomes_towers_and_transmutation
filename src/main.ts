@@ -1592,6 +1592,20 @@ async function main() {
       getCameraMode: () => cameraRig.mode,
       /** Current WoW-mode camera yaw (radians). For tests. */
       getCameraYaw: () => cameraRig.yaw,
+      /** Current camera world position { x, y, z }. For tests. */
+      getCameraPos: () => {
+        const p = cameraRig.camera.position;
+        return { x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3) };
+      },
+      /** Current camera quaternion { x, y, z, w }. For tests. */
+      getCameraQuaternion: () => {
+        const q = cameraRig.camera.quaternion;
+        return { x: +q.x.toFixed(5), y: +q.y.toFixed(5), z: +q.z.toFixed(5), w: +q.w.toFixed(5) };
+      },
+      /** Current player facing angle (radians). For tests. */
+      getPlayerFacing: () => player.facingAngleRad,
+      /** Toggle isometric/WoW camera mode (mirrors the 'V' keybinding). For tests. */
+      toggleCameraMode: () => cameraRig.toggleMode(player.facingAngleRad),
       /** Whether the player group is marked visible. */
       isPlayerVisible: () => player.group.visible,
       /** Teleport player to a specific world position (for tests). */
@@ -2223,8 +2237,12 @@ async function main() {
   });
 
   // ── Scroll-to-zoom ───────────────────────────────────────────────────────
+  // In WoW mode, WoWCameraController owns the wheel listener (attached only
+  // while cameraRig.mode === 'wow') — skip here to avoid double-applying the
+  // same wheel event (this listener + WoWCameraController's would otherwise
+  // both fire and double the zoom rate).
   window.addEventListener('wheel', (e) => {
-    if (gameMode === 'exterior' || gameMode === 'interior') {
+    if ((gameMode === 'exterior' || gameMode === 'interior') && cameraRig.mode !== 'wow') {
       e.preventDefault();
       cameraRig.applyScroll(e.deltaY);
     }
@@ -2248,7 +2266,7 @@ async function main() {
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
     if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
-      player.update(input.state, dt, cameraRig.mode, cameraRig.yaw);
+      player.update(input.state, dt, cameraRig.mode);
       // PC4: tick princess creator animations each frame
       if (player.hasPrincess) player.updatePrincess(performance.now() / 1000, dt);
 

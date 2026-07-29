@@ -88,11 +88,15 @@ describe('WoWCameraController', () => {
     expect(rig.yaw).toBe(0);
   });
 
-  it('wheel adjusts distance while in wow mode', () => {
+  it('wheel adjusts frustum zoom (not distance) while in wow mode', () => {
     rig.toggleMode(0);
-    const before = rig.distance;
+    const distBefore = rig.distance;
+    const frustumBefore = (rig as unknown as { _targetFrustumHeight: number })['_targetFrustumHeight'];
     el.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
-    expect(rig.distance).not.toBeCloseTo(before, 5);
+    const frustumAfter = (rig as unknown as { _targetFrustumHeight: number })['_targetFrustumHeight'];
+    expect(frustumAfter).not.toBeCloseTo(frustumBefore, 5);
+    // Orbit distance is no longer the WoW zoom mechanism (see CameraRig.applyScroll).
+    expect(rig.distance).toBeCloseTo(distBefore, 5);
   });
 
   it('detaches listeners when switching back to isometric mode', () => {
