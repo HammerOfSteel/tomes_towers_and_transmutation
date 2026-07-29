@@ -18,6 +18,7 @@ import { FLOOR_HEIGHT, STYLE_COLORS } from './BuildingDNA';
 import { buildProp } from '@/prop-creator/builder';
 import type { PropKind, PropMaterial, PropTheme } from '@/prop-creator/types';
 import { MATERIAL_COLORS } from '@/prop-creator/types';
+import { applyDollhouseCut } from '@/rendering/DollhouseCutaway';
 import { stoneTexture, brickTexture, renderTexture } from './TextureFactory';
 import { mulberry32 } from '@/core/prng';
 
@@ -464,20 +465,20 @@ function buildWallSurfaces(g: THREE.Group, plan: HousePlan, style: StyleProfile,
           const pz = nz + 0.5;
           for (const px2 of [nx, nx + 1]) {
             const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), trimMat);
-            post.position.set(px2, postH / 2, pz); g.add(post);
+            post.position.set(px2, postH / 2, pz); post.userData.isOccluder = true; g.add(post);
           }
           // Lintel above
           const lintel = new THREE.Mesh(new THREE.BoxGeometry(1 + postW, postW, postW * 1.5), trimMat);
-          lintel.position.set(nx + 0.5, postH, pz); g.add(lintel);
+          lintel.position.set(nx + 0.5, postH, pz); lintel.userData.isOccluder = true; g.add(lintel);
         } else {
           // Door runs along Z axis
           const px2 = nx + 0.5;
           for (const pz2 of [nz, nz + 1]) {
             const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), trimMat);
-            post.position.set(px2, postH / 2, pz2); g.add(post);
+            post.position.set(px2, postH / 2, pz2); post.userData.isOccluder = true; g.add(post);
           }
           const lintel = new THREE.Mesh(new THREE.BoxGeometry(postW * 1.5, postW, 1 + postW), trimMat);
-          lintel.position.set(px2, postH, nz + 0.5); g.add(lintel);
+          lintel.position.set(px2, postH, nz + 0.5); lintel.userData.isOccluder = true; g.add(lintel);
         }
       }
 
@@ -505,7 +506,7 @@ function buildWallSurfaces(g: THREE.Group, plan: HousePlan, style: StyleProfile,
           const wz = dz < 0 ? z + wOff : z + 1 - wOff;
           // Glass
           const glass = new THREE.Mesh(new THREE.BoxGeometry(0.55, wH, 0.04), glassMat);
-          glass.position.set(x + 0.5, wBot + wH / 2, wz); g.add(glass);
+          glass.position.set(x + 0.5, wBot + wH / 2, wz); glass.userData.isOccluder = true; g.add(glass);
           // Frame
           for (const [fw, fh, fx2, fz2] of [
             [0.59, 0.05, x + 0.5, wz],       // top rail
@@ -515,45 +516,34 @@ function buildWallSurfaces(g: THREE.Group, plan: HousePlan, style: StyleProfile,
           ] as [number,number,number,number][]) {
             const fr = new THREE.Mesh(new THREE.BoxGeometry(fw, fh, 0.06), trimMat);
             fr.position.set(fx2, fh === 0.05 ? (fz2 === wz ? wBot + wH + 0.02 : wBot - 0.02) : wBot + wH / 2, fz2);
+            fr.userData.isOccluder = true;
             g.add(fr);
           }
         } else {
           const wx = dx < 0 ? x + wOff : x + 1 - wOff;
           const glass = new THREE.Mesh(new THREE.BoxGeometry(0.04, wH, 0.55), glassMat);
-          glass.position.set(wx, wBot + wH / 2, z + 0.5); g.add(glass);
+          glass.position.set(wx, wBot + wH / 2, z + 0.5); glass.userData.isOccluder = true; g.add(glass);
           for (const [fw, fh, fx2, fz2] of [
             [0.06, 0.05, wx, z + 0.5],
             [0.06, wH + 0.05, wx, z + 0.22],
             [0.06, wH + 0.05, wx, z + 0.78],
           ] as [number,number,number,number][]) {
             const fr = new THREE.Mesh(new THREE.BoxGeometry(0.06, fh, fw), trimMat);
-            fr.position.set(fx2, fh === 0.05 ? wBot + wH + 0.02 : wBot + wH / 2, fz2); g.add(fr);
+            fr.position.set(fx2, fh === 0.05 ? wBot + wH + 0.02 : wBot + wH / 2, fz2);
+            fr.userData.isOccluder = true;
+            g.add(fr);
           }
         }
       }
     }
   }
-}
 
-// ── Ceiling ───────────────────────────────────────────────────────────────────
-
-function buildCeiling(g: THREE.Group, plan: HousePlan, style: StyleProfile, h: number): void {
-  const ceilMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(style.wallDark), side: THREE.BackSide });
-  const ceil    = new THREE.Mesh(new THREE.PlaneGeometry(plan.w, plan.d), ceilMat);
-  ceil.rotation.x = -Math.PI / 2;
-  ceil.position.set(plan.w / 2, h - 0.05, plan.d / 2);
-  ceil.userData.isOccluder = true; ceil.userData._origOpacity = 1;
-  g.add(ceil);
-
-  // Timber beam runners (visual only)
-  const beamMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(style.woodDark) });
-  const beamSpacing = Math.max(2, Math.floor(plan.w / 3));
-  for (let bx = beamSpacing; bx < plan.w; bx += beamSpacing) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, plan.d), beamMat);
-    beam.position.set(bx, h - 0.14, plan.d / 2);
-    beam.userData.isOccluder = true; beam.userData._origOpacity = 1;
-    g.add(beam);
-  }
+  const roomCenterXZ = { x: plan.w / 2, z: plan.d / 2 };
+  g.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || mesh.userData.isOccluder !== true) return;
+    applyDollhouseCut(mesh, roomCenterXZ);
+  });
 }
 
 // ── Furnishing rule engine ────────────────────────────────────────────────────
@@ -729,10 +719,9 @@ export function generateInterior(dna: BuildingDNA, floorIndex = 0): InteriorScen
   const ambient = new THREE.AmbientLight(0xffffff, 0.35);
   g.add(ambient);
 
-  // Floor / walls / ceiling
+  // Floor / walls — buildWallSurfaces applies the dollhouse cutaway pass.
   layFloorSurface(g, plan, style);
   buildWallSurfaces(g, plan, style, h);
-  buildCeiling(g, plan, style, h);
 
   // Furnish each room
   for (let ri = 0; ri < rooms.length; ri++) {

@@ -232,3 +232,35 @@ describe('generateInterior — faction presets', () => {
     });
   }
 });
+
+describe('dollhouse cutaway (InteriorGenerator)', () => {
+  it('produces no ceiling mesh', () => {
+    const scene = generateInterior(makeDna('house'));
+    let ceilingCount = 0;
+
+    scene.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || !(mesh.geometry instanceof THREE.PlaneGeometry)) return;
+      if (obj.userData.isOccluder && mesh.position.y > 1) ceilingCount++;
+    });
+
+    expect(ceilingCount).toBe(0);
+  });
+
+  it('hides some near-camera-side wall-surface meshes and keeps some far-side ones visible', () => {
+    const scene = generateInterior(makeDna('house'));
+    const occluders: THREE.Mesh[] = [];
+
+    scene.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh && obj.userData.isOccluder) occluders.push(mesh);
+    });
+
+    const hidden = occluders.filter((m) => m.userData.dollhouseCut === true);
+    const visible = occluders.filter((m) => m.userData.dollhouseCut !== true);
+
+    expect(hidden.length).toBeGreaterThan(0);
+    expect(visible.length).toBeGreaterThan(0);
+    for (const mesh of hidden) expect(mesh.visible).toBe(false);
+  });
+});
