@@ -302,45 +302,41 @@ describe('doorSpawnPosition', () => {
   });
 });
 
-describe('dollhouse cutaway (BlueprintRenderer)', () => {
-  it('hides the near-camera-side wall tile and keeps the far-side one visible', () => {
+describe('wall/door-frame visibility (BlueprintRenderer)', () => {
+  // Dollhouse cutaway (hiding camera-facing walls) was removed — see
+  // docs/superpowers/plans/2026-07-29-disable-indoor-wall-occlusion.md.
+  // Every wall and door frame must now always render, regardless of
+  // position relative to the camera.
+  it('keeps every wall tile visible, near and far, with no dollhouseCut tag', () => {
     const physics = makeMockPhysics();
     const room = renderBlueprint(VALID_BP, physics as never);
     const wallMeshes = room.group.children.filter(
       (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isWall === true,
     );
-
-    // Near corner: grid (2,2) → world (2,2) → dot > 0 → cut/hidden
-    const nearWall = wallMeshes.find((m) => m.position.x === 2 && m.position.z === 2);
-    expect(nearWall).toBeDefined();
-    expect(nearWall!.visible).toBe(false);
-    expect(nearWall!.userData.dollhouseCut).toBe(true);
-
-    // Far corner: grid (0,0) → world (-2,-2) → dot < 0 → kept visible
-    const farWall = wallMeshes.find((m) => m.position.x === -2 && m.position.z === -2);
-    expect(farWall).toBeDefined();
-    expect(farWall!.visible).toBe(true);
-    expect(farWall!.userData.dollhouseCut).toBeUndefined();
+    expect(wallMeshes.length).toBeGreaterThan(0);
+    for (const m of wallMeshes) {
+      expect(m.visible).toBe(true);
+      expect(m.userData.dollhouseCut).toBeUndefined();
+    }
   });
 
-  it('still creates a physics body for a hidden (cutaway) wall — collision unaffected', () => {
+  it('still creates a physics body for every wall — collision unaffected', () => {
     const physics = makeMockPhysics();
     renderBlueprint(VALID_BP, physics as never);
     // Same 7 bodies as the pre-cutaway baseline test: 5 wall tiles + 1 floor + 1 interactable
     expect(physics.createStaticBox).toHaveBeenCalledTimes(7);
   });
 
-  it('hides door frame posts/lintel when the door is on the camera-facing side', () => {
+  it('keeps door frame posts/lintel visible regardless of camera-facing side', () => {
     const physics = makeMockPhysics();
     const room = renderBlueprint(VALID_BP, physics as never);
     const doorFrameMeshes = room.group.children.filter(
       (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isDoorFrame === true,
     );
-    // VALID_BP's door is at grid (1,2) → world (0,2) → dot = 2*0.707 > 0 → cut
     expect(doorFrameMeshes.length).toBeGreaterThan(0);
     for (const m of doorFrameMeshes) {
-      expect(m.visible).toBe(false);
-      expect(m.userData.dollhouseCut).toBe(true);
+      expect(m.visible).toBe(true);
+      expect(m.userData.dollhouseCut).toBeUndefined();
     }
   });
 });

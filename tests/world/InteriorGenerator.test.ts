@@ -233,7 +233,7 @@ describe('generateInterior — faction presets', () => {
   }
 });
 
-describe('dollhouse cutaway (InteriorGenerator)', () => {
+describe('wall/occluder visibility (InteriorGenerator)', () => {
   it('produces no ceiling mesh', () => {
     const scene = generateInterior(makeDna('house'));
     let ceilingCount = 0;
@@ -247,7 +247,10 @@ describe('dollhouse cutaway (InteriorGenerator)', () => {
     expect(ceilingCount).toBe(0);
   });
 
-  it('hides some near-camera-side wall-surface meshes and keeps some far-side ones visible', () => {
+  // Dollhouse cutaway (hiding camera-facing wall-surface meshes) was removed —
+  // see docs/superpowers/plans/2026-07-29-disable-indoor-wall-occlusion.md.
+  // All occluder-tagged meshes must now always stay visible.
+  it('keeps every wall-surface occluder mesh visible, near and far, with no dollhouseCut tag', () => {
     const scene = generateInterior(makeDna('house'));
     const occluders: THREE.Mesh[] = [];
 
@@ -256,11 +259,10 @@ describe('dollhouse cutaway (InteriorGenerator)', () => {
       if (mesh.isMesh && obj.userData.isOccluder) occluders.push(mesh);
     });
 
-    const hidden = occluders.filter((m) => m.userData.dollhouseCut === true);
-    const visible = occluders.filter((m) => m.userData.dollhouseCut !== true);
-
-    expect(hidden.length).toBeGreaterThan(0);
-    expect(visible.length).toBeGreaterThan(0);
-    for (const mesh of hidden) expect(mesh.visible).toBe(false);
+    expect(occluders.length).toBeGreaterThan(0);
+    for (const mesh of occluders) {
+      expect(mesh.visible).toBe(true);
+      expect(mesh.userData.dollhouseCut).toBeUndefined();
+    }
   });
 });
