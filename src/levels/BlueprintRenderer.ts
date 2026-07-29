@@ -648,18 +648,6 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
     });
   }
 
-  // ── Dollhouse cutaway ──────────────────────────────────────────────────
-  // Permanently hide the camera-facing side of the room: walls, pillars, and
-  // door frames beyond the room's own centroid relative to the fixed iso
-  // camera direction. Room centre is always local (0,0) — cellToWorld()
-  // already centres every Blueprint's own coordinate space on its origin.
-  // Physics bodies created above are untouched; only the visual mesh is hidden.
-  group.traverse((obj) => {
-    const mesh = obj as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    if (!(mesh.userData.isWall === true || mesh.userData.isDoorFrame === true)) return;
-  });
-
   // ── Interactables ─────────────────────────────────────────────────────
   for (const item of bp.interactables) {
     const { x: ix, z: iz } = cellToWorld(item.x, item.z, bp);
