@@ -2673,9 +2673,12 @@ async function main() {
         }
       }
 
-      // 6b. Right-click → cast active equipped spell
-      const castJustPressed = s.castSpell && !lastCastInput;
-      lastCastInput = s.castSpell;
+      // 6b. Right-click → cast active equipped spell. In WoW camera mode,
+      //     right-click/drag is reserved for look-only camera orbit (see
+      //     WoWCameraController), so casting is suppressed there.
+      const castHeld = cameraRig.mode === 'wow' ? false : s.castSpell;
+      const castJustPressed = castHeld && !lastCastInput;
+      lastCastInput = castHeld;
       if (castJustPressed) {
         const activeSpell = progression.getEquippedSlot(s.activeSlot);
         if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
