@@ -1588,6 +1588,10 @@ async function main() {
       },
       /** Current scene mode: 'interior' | 'exterior'. */
       getGameMode: () => gameMode,
+      /** Current camera mode: 'isometric' | 'wow'. For tests. */
+      getCameraMode: () => cameraRig.mode,
+      /** Current WoW-mode camera yaw (radians). For tests. */
+      getCameraYaw: () => cameraRig.yaw,
       /** Whether the player group is marked visible. */
       isPlayerVisible: () => player.group.visible,
       /** Teleport player to a specific world position (for tests). */
