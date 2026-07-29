@@ -119,7 +119,10 @@ export function calculateMoveDirection(
  *     without touching facingAngle.
  *
  *  Yaw convention matches facingAngle: forward = (sin(yaw), 0, cos(yaw)),
- *  right = (cos(yaw), 0, -sin(yaw)). */
+ *  right = forward × up = (-cos(yaw), 0, sin(yaw)) — this matches the
+ *  handedness already established by ISO_RIGHT/ISO_LEFT in isometric mode
+ *  (ISO_RIGHT = cross(ISO_FORWARD, up)), not the mirrored cross(up, forward)
+ *  used by an earlier, incorrect version of this function. */
 export function calculateWoWMoveDirection(
   input: Pick<InputState, 'moveForward' | 'moveBackward' | 'moveLeft' | 'moveRight'>,
   facingAngle: number,
@@ -130,7 +133,7 @@ export function calculateWoWMoveDirection(
   if (input.moveForward) dir.add(forward);
   if (input.moveBackward) dir.sub(forward);
   if (strafing) {
-    const right = new THREE.Vector3(Math.cos(facingAngle), 0, -Math.sin(facingAngle));
+    const right = new THREE.Vector3(-Math.cos(facingAngle), 0, Math.sin(facingAngle));
     if (input.moveRight) dir.add(right);
     if (input.moveLeft) dir.sub(right);
   }
@@ -173,6 +176,11 @@ export class PlayerController {
   // Movement
   private readonly velocity = new THREE.Vector3();
   private facingAngle = 0;
+  /** Current WoW-mode A/D turn angular velocity (rad/sec), eased toward its
+   *  target each frame (see section 5a in update()) so turning ramps up and
+   *  spins down smoothly instead of snapping to a fixed rate, matching
+   *  isometric mode's eased facing feel. */
+  private wowTurnVelocity = 0;
   private isGrounded = false;
 
   // Jump state
@@ -809,11 +817,26 @@ export class PlayerController {
     // handled by the mouse during that drag and the side keys move the
     // character sideways relative to its facing. Right-drag ("look-only")
     // doesn't touch facing, so A/D there still turns as normal.
-    if (cameraMode === 'wow' && !input.turnDragHeld) {
-      const WOW_TURN_RATE = 2.4; // radians/sec
-      if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
-      if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
-      this.group.rotation.y = this.facingAngle;
+    //
+    // Turn angular velocity is eased toward its target (WOW_TURN_RATE or 0)
+    // each frame rather than snapping instantly, so starting/releasing a
+    // turn ramps up/spins down smoothly — matching isometric mode's eased
+    // facing feel instead of a stiff constant-rate rotation.
+    if (cameraMode === 'wow') {
+      const WOW_TURN_RATE = 2.4; // radians/sec, target angular velocity at full turn
+      const WOW_TURN_EASE = 10;  // ease factor — higher = snappier ramp up/down
+      let targetTurnVel = 0;
+      if (!input.turnDragHeld) {
+        if (input.moveLeft) targetTurnVel -= WOW_TURN_RATE;
+        if (input.moveRight) targetTurnVel += WOW_TURN_RATE;
+      }
+      this.wowTurnVelocity = lerp(this.wowTurnVelocity, targetTurnVel, WOW_TURN_EASE * dt);
+      if (!input.turnDragHeld) {
+        this.facingAngle += this.wowTurnVelocity * dt;
+        this.group.rotation.y = this.facingAngle;
+      }
+    } else {
+      this.wowTurnVelocity = 0;
     }
 
     // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────

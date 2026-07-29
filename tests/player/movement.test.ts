@@ -206,23 +206,23 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
     expect(dir.lengthSq()).toBeCloseTo(0, 5);
   });
 
-  it('D key strafes right when strafing=true — yaw=0 returns (1,0,0)', () => {
+  it('D key strafes right when strafing=true — yaw=0 returns (-1,0,0)', () => {
     const dir = calculateWoWMoveDirection(
       { moveForward: false, moveBackward: false, moveLeft: false, moveRight: true },
       0,
       true,
     );
-    expect(dir.x).toBeCloseTo(1, 5);
+    expect(dir.x).toBeCloseTo(-1, 5);
     expect(dir.z).toBeCloseTo(0, 5);
   });
 
-  it('A key strafes left when strafing=true — yaw=0 returns (-1,0,0)', () => {
+  it('A key strafes left when strafing=true — yaw=0 returns (1,0,0)', () => {
     const dir = calculateWoWMoveDirection(
       { moveForward: false, moveBackward: false, moveLeft: true, moveRight: false },
       0,
       true,
     );
-    expect(dir.x).toBeCloseTo(-1, 5);
+    expect(dir.x).toBeCloseTo(1, 5);
     expect(dir.z).toBeCloseTo(0, 5);
   });
 
@@ -235,15 +235,31 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
     expect(dir.lengthSq()).toBeCloseTo(0, 5);
   });
 
-  it('W+D strafing=true produces a normalized forward-right diagonal', () => {
+  it('W+D strafing=true produces a normalized forward diagonal (right = -x at yaw=0)', () => {
     const dir = calculateWoWMoveDirection(
       { moveForward: true, moveBackward: false, moveLeft: false, moveRight: true },
       0,
       true,
     );
     expect(dir.length()).toBeCloseTo(1, 5);
-    expect(dir.x).toBeGreaterThan(0);
+    expect(dir.x).toBeLessThan(0);
     expect(dir.z).toBeGreaterThan(0);
+  });
+
+  it('strafe right vector matches the handedness of ISO_RIGHT at the equivalent facing angle', () => {
+    // ISO_FORWARD = (-1,0,-1) normalized corresponds to yaw = 5*PI/4 in the
+    // (sin(yaw), 0, cos(yaw)) convention. At that yaw, strafing right should
+    // reduce to exactly ISO_RIGHT = (1,0,-1) normalized — confirming this
+    // function uses the same forward-cross-up handedness as isometric mode,
+    // not the mirrored (and previously-buggy) up-cross-forward convention.
+    const yaw = (5 * Math.PI) / 4;
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false, moveLeft: false, moveRight: true },
+      yaw,
+      true,
+    );
+    expect(dir.x).toBeCloseTo(1 / Math.SQRT2, 5);
+    expect(dir.z).toBeCloseTo(-1 / Math.SQRT2, 5);
   });
 });
 
