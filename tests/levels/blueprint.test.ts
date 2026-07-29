@@ -301,3 +301,46 @@ describe('doorSpawnPosition', () => {
     expect(sp.z).toBeCloseTo(0);
   });
 });
+
+describe('dollhouse cutaway (BlueprintRenderer)', () => {
+  it('hides the near-camera-side wall tile and keeps the far-side one visible', () => {
+    const physics = makeMockPhysics();
+    const room = renderBlueprint(VALID_BP, physics as never);
+    const wallMeshes = room.group.children.filter(
+      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isWall === true,
+    );
+
+    // Near corner: grid (2,2) → world (2,2) → dot > 0 → cut/hidden
+    const nearWall = wallMeshes.find((m) => m.position.x === 2 && m.position.z === 2);
+    expect(nearWall).toBeDefined();
+    expect(nearWall!.visible).toBe(false);
+    expect(nearWall!.userData.dollhouseCut).toBe(true);
+
+    // Far corner: grid (0,0) → world (-2,-2) → dot < 0 → kept visible
+    const farWall = wallMeshes.find((m) => m.position.x === -2 && m.position.z === -2);
+    expect(farWall).toBeDefined();
+    expect(farWall!.visible).toBe(true);
+    expect(farWall!.userData.dollhouseCut).toBeUndefined();
+  });
+
+  it('still creates a physics body for a hidden (cutaway) wall — collision unaffected', () => {
+    const physics = makeMockPhysics();
+    renderBlueprint(VALID_BP, physics as never);
+    // Same 7 bodies as the pre-cutaway baseline test: 5 wall tiles + 1 floor + 1 interactable
+    expect(physics.createStaticBox).toHaveBeenCalledTimes(7);
+  });
+
+  it('hides door frame posts/lintel when the door is on the camera-facing side', () => {
+    const physics = makeMockPhysics();
+    const room = renderBlueprint(VALID_BP, physics as never);
+    const doorFrameMeshes = room.group.children.filter(
+      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isDoorFrame === true,
+    );
+    // VALID_BP's door is at grid (1,2) → world (0,2) → dot = 2*0.707 > 0 → cut
+    expect(doorFrameMeshes.length).toBeGreaterThan(0);
+    for (const m of doorFrameMeshes) {
+      expect(m.visible).toBe(false);
+      expect(m.userData.dollhouseCut).toBe(true);
+    }
+  });
+});
