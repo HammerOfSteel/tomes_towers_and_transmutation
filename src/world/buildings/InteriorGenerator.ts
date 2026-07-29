@@ -766,9 +766,6 @@ export function generateInterior(dna: BuildingDNA, floorIndex = 0): InteriorScen
     }
   }
 
-  // Open hole in ceiling above stair (punch a gap by removing ceiling tile area)
-  // (kept simple — ceiling mesh already generated above; visual gap is implied)
-
   console.log(`[InteriorGenerator] ${dna.buildingKind}/${dna.style} floor ${floorIndex}/${totalFloors} — ${plan.w}×${plan.d} tiles, ${rooms.length} rooms, ${allLights.length} lights`);
 
   return {
