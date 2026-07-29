@@ -13,6 +13,10 @@ export interface InputState {
   attack: boolean;
   dodge: boolean;
   interact: boolean;
+  /** Digit5 — melee attack. Available in both camera modes; the only melee
+   *  trigger while WoW camera mode is active (left-click is consumed by
+   *  camera drag there). Additive in isometric mode alongside left-click. */
+  meleeKey: boolean;
   /** Right mouse button — cast the active equipped spell */
   castSpell: boolean;
   /** Currently selected spell slot (0-3), switched by keys 1–4 */
@@ -157,6 +161,7 @@ export class InputManager {
       attack:       !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(0),
       dodge:        this.heldKeys.has(b.dodge),
       interact:     this.heldKeys.has(b.interact),
+      meleeKey:     this.heldKeys.has('Digit5'),
       castSpell:    !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(2),
       activeSlot:   this._activeSlot,
       ability1:     this.heldKeys.has('KeyQ'),

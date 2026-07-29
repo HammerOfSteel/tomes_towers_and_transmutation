@@ -98,6 +98,17 @@ describe('InputManager', () => {
     expect(manager.state.interact).toBe(true);
   });
 
+  it('sets meleeKey when Digit5 is pressed', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit5' }));
+    expect(manager.state.meleeKey).toBe(true);
+  });
+
+  it('clears meleeKey when Digit5 is released', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit5' }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Digit5' }));
+    expect(manager.state.meleeKey).toBe(false);
+  });
+
   // ── Multiple keys held ────────────────────────────────────────────────────
 
   it('allows multiple keys to be held simultaneously', () => {
@@ -147,6 +158,7 @@ describe('InputManager', () => {
     expect(s.attack).toBe(false);
     expect(s.dodge).toBe(false);
     expect(s.interact).toBe(false);
+    expect(s.meleeKey).toBe(false);
     expect(s.mouseX).toBe(0);
     expect(s.mouseY).toBe(0);
   });
