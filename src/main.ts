@@ -80,7 +80,6 @@ import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
 import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
-import { WallOcclusionManager } from '@/rendering/WallOcclusionManager';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
 
 async function main() {
@@ -181,13 +180,8 @@ async function main() {
   /** True once the player has physically taken the master key from the basement workbench.
    *  Gates: front door exit, upward staircases. */
   let _hasMasterKey = false;
-  // Must be constructed BEFORE sceneManager.onRoomLoaded is assigned below,
-  // because loadDungeon() can fire onRoomLoaded synchronously during main().
-  const _wallOccMgr = new WallOcclusionManager();
 
   sceneManager.onRoomLoaded = (bp, _s) => {
-    // Reset wall occlusion on every room change (new room = new walls)
-    _wallOccMgr.reset();
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
 
@@ -2948,11 +2942,6 @@ async function main() {
 
     // 10. Render  (occlusion update runs here — single call, all modes)
     _occlusionMgr?.update(cameraRig.camera, player.group.position, dt);
-    // Per-wall occlusion: hides individual wall meshes between camera and player.
-    // Only active in interior mode — no cost when in overworld.
-    if (gameMode === 'interior') {
-      _wallOccMgr.update(cameraRig.camera, player.group, sceneManager.currentRoomGroup);
-    }
     composer.render(dt);
 
     // 11. Creative mode per-frame update (dev only)
