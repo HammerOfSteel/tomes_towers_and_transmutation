@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
-import { applyDollhouseCut } from '@/rendering/DollhouseCutaway';
 import { PALETTE } from '@/shaders/palette';
 import { MaterialLibrary } from '@/rendering/MaterialLibrary';
 import {
@@ -655,12 +654,10 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   // camera direction. Room centre is always local (0,0) — cellToWorld()
   // already centres every Blueprint's own coordinate space on its origin.
   // Physics bodies created above are untouched; only the visual mesh is hidden.
-  const roomCenterXZ = { x: 0, z: 0 };
   group.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh) return;
     if (!(mesh.userData.isWall === true || mesh.userData.isDoorFrame === true)) return;
-    applyDollhouseCut(mesh, roomCenterXZ);
   });
 
   // ── Interactables ─────────────────────────────────────────────────────
