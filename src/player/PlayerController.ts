@@ -103,26 +103,41 @@ export function calculateMoveDirection(
   return dir;
 }
 
-/** Returns the desired horizontal direction from forward/backward input,
- *  relative to the given facing angle (radians), as a normalized Vector3
- *  (y=0). Used in WoW camera mode, where A/D turn the character instead of
- *  strafing — only forward/backward come from calculateWoWMoveDirection.
+/** Returns the desired horizontal direction from forward/backward (and,
+ *  while strafing, left/right) input, relative to the given facing angle
+ *  (radians), as a normalized Vector3 (y=0). Used in WoW camera mode.
+ *
  *  Movement always follows the player's own facing angle (updated by A/D
- *  turning and by left-drag camera sync), NOT the camera's free-look yaw —
- *  right-drag orbits the camera independently without affecting movement,
- *  matching vanilla WoW's decoupled free-look behavior.
- *  Yaw convention matches facingAngle: forward = (sin(yaw), 0, cos(yaw)). */
+ *  turning and by right-drag camera-look sync), NOT the camera's free
+ *  orbit yaw on its own.
+ *
+ *  A/D behave contextually, matching real WoW:
+ *   - `strafing` false (no look-button held): A/D turn the character in
+ *     place instead of moving, so moveLeft/moveRight are ignored here.
+ *   - `strafing` true (look-button held, so the mouse already controls
+ *     facing): A/D become strafe — sideways movement relative to facing,
+ *     without touching facingAngle.
+ *
+ *  Yaw convention matches facingAngle: forward = (sin(yaw), 0, cos(yaw)),
+ *  right = (cos(yaw), 0, -sin(yaw)). */
 export function calculateWoWMoveDirection(
-  input: Pick<InputState, 'moveForward' | 'moveBackward'>,
+  input: Pick<InputState, 'moveForward' | 'moveBackward' | 'moveLeft' | 'moveRight'>,
   facingAngle: number,
+  strafing = false,
 ): THREE.Vector3 {
   const dir = new THREE.Vector3();
   const forward = new THREE.Vector3(Math.sin(facingAngle), 0, Math.cos(facingAngle));
   if (input.moveForward) dir.add(forward);
   if (input.moveBackward) dir.sub(forward);
+  if (strafing) {
+    const right = new THREE.Vector3(Math.cos(facingAngle), 0, -Math.sin(facingAngle));
+    if (input.moveRight) dir.add(right);
+    if (input.moveLeft) dir.sub(right);
+  }
   if (dir.lengthSq() > 0) dir.normalize();
   return dir;
 }
+
 
 // ── Internal math helpers ──────────────────────────────────────────────────
 
@@ -788,7 +803,11 @@ export class PlayerController {
     // Must run before movement direction is computed below, so W/S move
     // along the facing angle this same frame's A/D turn just produced
     // (not last frame's stale facing).
-    if (cameraMode === 'wow') {
+    // While the camera-look button (RMB) is held, mouse-look already
+    // controls facing, so A/D become strafe instead — matching real WoW,
+    // where turning is handled by the mouse during a look-drag and the
+    // side keys move the character sideways relative to its facing.
+    if (cameraMode === 'wow' && !input.lookHeld) {
       const WOW_TURN_RATE = 2.4; // radians/sec
       if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
       if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
@@ -800,7 +819,7 @@ export class PlayerController {
     if (this.dodgeTimer <= 0) {
       const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
       const moveDir = cameraMode === 'wow'
-        ? calculateWoWMoveDirection(input, this.facingAngle)
+        ? calculateWoWMoveDirection(input, this.facingAngle, input.lookHeld)
         : calculateMoveDirection(input);
       const isMoving = moveDir.lengthSq() > 0.01;
       const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;

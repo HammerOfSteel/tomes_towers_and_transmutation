@@ -2691,14 +2691,21 @@ async function main() {
         }
       }
 
-      // 6b. Right-click → cast active equipped spell. In WoW camera mode,
-      //     right-click/drag is reserved for look-only camera orbit (see
-      //     WoWCameraController), so casting is suppressed there.
-      const castHeld = cameraRig.mode === 'wow' ? false : s.castSpell;
-      const castJustPressed = castHeld && !lastCastInput;
-      lastCastInput = castHeld;
-      if (castJustPressed) {
-        const activeSpell = progression.getEquippedSlot(s.activeSlot);
+      // 6b. Cast active equipped spell. Isometric mode: right-click (rising
+      //     edge). WoW camera mode: right-click/drag is reserved for camera
+      //     orbit, so number keys (1-4) instant-cast instead — matching real
+      //     WoW's direct-cast-on-keypress convention (select-then-click would
+      //     conflict with the mouse being used for camera control).
+      let slotToCast: number | null = null;
+      if (cameraRig.mode === 'wow') {
+        if (!InputManager.suppressAttackAndSpell) slotToCast = input.consumeCastSlotRequest();
+      } else {
+        const castJustPressed = s.castSpell && !lastCastInput;
+        if (castJustPressed) slotToCast = s.activeSlot;
+      }
+      lastCastInput = cameraRig.mode === 'wow' ? false : s.castSpell;
+      if (slotToCast !== null) {
+        const activeSpell = progression.getEquippedSlot(slotToCast);
         if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
           spells.cast(
             activeSpell,

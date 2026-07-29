@@ -109,6 +109,49 @@ describe('InputManager', () => {
     expect(manager.state.meleeKey).toBe(false);
   });
 
+  // ── Look-held (right mouse button, used for WoW-mode strafe) ─────────────
+
+  it('sets lookHeld when right mouse button is pressed', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
+    expect(manager.state.lookHeld).toBe(true);
+  });
+
+  it('clears lookHeld when right mouse button is released', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
+    expect(manager.state.lookHeld).toBe(false);
+  });
+
+  // ── Instant-cast slot requests (Digit1-4, for WoW camera mode) ───────────
+
+  it('consumeCastSlotRequest() returns the slot on a fresh Digit1-4 press', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2' }));
+    expect(manager.consumeCastSlotRequest()).toBe(1);
+  });
+
+  it('consumeCastSlotRequest() returns null after being drained once', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1' }));
+    expect(manager.consumeCastSlotRequest()).toBe(0);
+    expect(manager.consumeCastSlotRequest()).toBeNull();
+  });
+
+  it('consumeCastSlotRequest() returns null when no digit was pressed', () => {
+    expect(manager.consumeCastSlotRequest()).toBeNull();
+  });
+
+  it('does not re-request on OS key-repeat of a held digit key', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit3' }));
+    expect(manager.consumeCastSlotRequest()).toBe(2);
+    // Simulate the browser's auto-repeat keydown while still held
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit3', repeat: true }));
+    expect(manager.consumeCastSlotRequest()).toBeNull();
+  });
+
+  it('still updates activeSlot on Digit1-4 press (unaffected by instant-cast request)', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit4' }));
+    expect(manager.activeSlot).toBe(3);
+  });
+
   // ── Multiple keys held ────────────────────────────────────────────────────
 
   it('allows multiple keys to be held simultaneously', () => {
@@ -159,6 +202,7 @@ describe('InputManager', () => {
     expect(s.dodge).toBe(false);
     expect(s.interact).toBe(false);
     expect(s.meleeKey).toBe(false);
+    expect(s.lookHeld).toBe(false);
     expect(s.mouseX).toBe(0);
     expect(s.mouseY).toBe(0);
   });

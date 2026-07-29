@@ -145,7 +145,7 @@ describe('calculateMoveDirection (isometric input mapping)', () => {
 describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
   it('W key with yaw=0 returns forward = (0,0,1)', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: true, moveBackward: false },
+      { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false },
       0,
     );
     expect(dir.x).toBeCloseTo(0, 5);
@@ -155,7 +155,7 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
 
   it('S key with yaw=0 returns backward = (0,0,-1)', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: false, moveBackward: true },
+      { moveForward: false, moveBackward: true, moveLeft: false, moveRight: false },
       0,
     );
     expect(dir.x).toBeCloseTo(0, 5);
@@ -164,7 +164,7 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
 
   it('W key rotates with yaw — yaw=PI/2 returns forward = (1,0,0)', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: true, moveBackward: false },
+      { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false },
       Math.PI / 2,
     );
     expect(dir.x).toBeCloseTo(1, 5);
@@ -173,7 +173,7 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
 
   it('W+S cancel to zero vector regardless of yaw', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: true, moveBackward: true },
+      { moveForward: true, moveBackward: true, moveLeft: false, moveRight: false },
       1.234,
     );
     expect(dir.lengthSq()).toBeCloseTo(0, 5);
@@ -181,7 +181,7 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
 
   it('no keys returns zero vector', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: false, moveBackward: false },
+      { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false },
       0,
     );
     expect(dir.lengthSq()).toBeCloseTo(0, 5);
@@ -189,9 +189,61 @@ describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
 
   it('result is always unit length when moving', () => {
     const dir = calculateWoWMoveDirection(
-      { moveForward: true, moveBackward: false },
+      { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false },
       0.9,
     );
     expect(dir.length()).toBeCloseTo(1, 5);
   });
+
+  // ── Strafing (right-mouse-look held) ────────────────────────────────────
+
+  it('A/D are ignored (no strafe) when strafing=false, matching turn-in-place mode', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false, moveLeft: true, moveRight: true },
+      0,
+      false,
+    );
+    expect(dir.lengthSq()).toBeCloseTo(0, 5);
+  });
+
+  it('D key strafes right when strafing=true — yaw=0 returns (1,0,0)', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false, moveLeft: false, moveRight: true },
+      0,
+      true,
+    );
+    expect(dir.x).toBeCloseTo(1, 5);
+    expect(dir.z).toBeCloseTo(0, 5);
+  });
+
+  it('A key strafes left when strafing=true — yaw=0 returns (-1,0,0)', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false, moveLeft: true, moveRight: false },
+      0,
+      true,
+    );
+    expect(dir.x).toBeCloseTo(-1, 5);
+    expect(dir.z).toBeCloseTo(0, 5);
+  });
+
+  it('A+D cancel to zero vector when strafing=true', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false, moveLeft: true, moveRight: true },
+      0,
+      true,
+    );
+    expect(dir.lengthSq()).toBeCloseTo(0, 5);
+  });
+
+  it('W+D strafing=true produces a normalized forward-right diagonal', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: true, moveBackward: false, moveLeft: false, moveRight: true },
+      0,
+      true,
+    );
+    expect(dir.length()).toBeCloseTo(1, 5);
+    expect(dir.x).toBeGreaterThan(0);
+    expect(dir.z).toBeGreaterThan(0);
+  });
 });
+
