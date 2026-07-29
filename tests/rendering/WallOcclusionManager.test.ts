@@ -185,9 +185,10 @@ describe('WallOcclusionManager', () => {
     expect(wall.visible).toBe(false);
   });
 
-  it('never restores a wall permanently hidden by dollhouse cutaway, even if it overlaps the player silhouette', () => {
-    // Same position as the "hides a wall mesh" test — would normally be
-    // detected as occluding — but pre-hidden and tagged dollhouseCut.
+  it('never restores a wall permanently hidden by dollhouse cutaway, even after the camera moves so it no longer occludes', () => {
+    // Frame 1: camera positioned so the wall WOULD be classified as occluding
+    // (same setup as "hides a wall mesh" test) — but it's pre-hidden and
+    // tagged dollhouseCut, so the guard must exclude it from collection.
     const wall = makeWall(0, 4);
     wall.visible = false;
     wall.userData.dollhouseCut = true;
@@ -199,9 +200,17 @@ describe('WallOcclusionManager', () => {
     mgr.update(camera, player, room);
     expect(wall.visible).toBe(false);
 
-    // Second frame: if the mesh had been added to _hidden, this restore
-    // step would incorrectly flip it back to visible. It must not.
-    mgr.update(camera, player, room);
+    // Frame 2: move the camera to the other side, exactly like the
+    // "restores previously hidden walls... when no longer occluding" test.
+    // Without the guard, the wall would have entered `_hidden` on frame 1
+    // and this restore step would incorrectly flip it back to visible.
+    // With the guard, the wall never enters `_hidden`, so it must stay
+    // hidden regardless of camera position.
+    const camera2 = cameraAt(0, 1.5, -8);
+    camera2.lookAt(0, 1.5, 4);
+    camera2.updateMatrixWorld();
+
+    mgr.update(camera2, player, room);
     expect(wall.visible).toBe(false);
   });
 
