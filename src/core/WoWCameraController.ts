@@ -24,6 +24,7 @@ export interface WoWCameraCallbacks {
  */
 export class WoWCameraController {
   private _attached = false;
+  private _disposed = false;
   private _draggingLeft = false;
   private _draggingRight = false;
   private _lastX = 0;
@@ -35,6 +36,7 @@ export class WoWCameraController {
     private readonly callbacks: WoWCameraCallbacks,
   ) {
     this.rig.onModeChange((mode) => {
+      if (this._disposed) return;
       if (mode === 'wow') this._attach();
       else this._detach();
     });
@@ -99,6 +101,7 @@ export class WoWCameraController {
 
   /** Remove all listeners regardless of current mode. Call on teardown. */
   dispose(): void {
+    this._disposed = true;
     this._detach();
   }
 }
