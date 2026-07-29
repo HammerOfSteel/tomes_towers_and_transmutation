@@ -78,7 +78,11 @@ export class WallOcclusionManager {
     // ── Collect tagged meshes (walls + pillars share userData.isWall = true) ─
     const wallMeshes: THREE.Mesh[] = [];
     roomGroup.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh && obj.userData.isWall === true) {
+      if (
+        (obj as THREE.Mesh).isMesh &&
+        obj.userData.isWall === true &&
+        obj.userData.dollhouseCut !== true
+      ) {
         wallMeshes.push(obj as THREE.Mesh);
       }
     });

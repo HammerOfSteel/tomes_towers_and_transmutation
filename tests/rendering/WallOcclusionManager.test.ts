@@ -185,4 +185,24 @@ describe('WallOcclusionManager', () => {
     expect(wall.visible).toBe(false);
   });
 
+  it('never restores a wall permanently hidden by dollhouse cutaway, even if it overlaps the player silhouette', () => {
+    // Same position as the "hides a wall mesh" test — would normally be
+    // detected as occluding — but pre-hidden and tagged dollhouseCut.
+    const wall = makeWall(0, 4);
+    wall.visible = false;
+    wall.userData.dollhouseCut = true;
+    const room   = makeRoomGroup(wall);
+    const camera = cameraAt(0, 1.5, 8);
+    const player = playerAt(0, 0, 0);
+
+    room.updateMatrixWorld(true);
+    mgr.update(camera, player, room);
+    expect(wall.visible).toBe(false);
+
+    // Second frame: if the mesh had been added to _hidden, this restore
+    // step would incorrectly flip it back to visible. It must not.
+    mgr.update(camera, player, room);
+    expect(wall.visible).toBe(false);
+  });
+
 });
