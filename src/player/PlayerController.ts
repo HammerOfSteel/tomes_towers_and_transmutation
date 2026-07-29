@@ -103,6 +103,23 @@ export function calculateMoveDirection(
   return dir;
 }
 
+/** Returns the desired horizontal direction from forward/backward input,
+ *  relative to the given camera yaw (radians), as a normalized Vector3
+ *  (y=0). Used in WoW camera mode, where A/D turn the character instead of
+ *  strafing — only forward/backward come from calculateWoWMoveDirection.
+ *  Yaw convention matches facingAngle: forward = (sin(yaw), 0, cos(yaw)). */
+export function calculateWoWMoveDirection(
+  input: Pick<InputState, 'moveForward' | 'moveBackward'>,
+  cameraYaw: number,
+): THREE.Vector3 {
+  const dir = new THREE.Vector3();
+  const forward = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw));
+  if (input.moveForward) dir.add(forward);
+  if (input.moveBackward) dir.sub(forward);
+  if (dir.lengthSq() > 0) dir.normalize();
+  return dir;
+}
+
 // ── Internal math helpers ──────────────────────────────────────────────────
 
 function lerp(a: number, b: number, t: number): number {
@@ -204,6 +221,14 @@ export class PlayerController {
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
+
+  /** Directly set the player's facing angle (radians) and sync the visual
+   *  rotation immediately. Used by WoWCameraController's left-drag handler
+   *  to keep facing in sync with camera yaw. */
+  setFacingAngle(angle: number): void {
+    this.facingAngle = angle;
+    this.group.rotation.y = angle;
+  }
 
   /** 0 = dodge just used (full cooldown), 1 = fully ready. */
   get dodgeReadyFraction(): number {
@@ -482,7 +507,12 @@ export class PlayerController {
    */
   noClipMode = false;
 
-  update(input: InputState, dt: number): void {
+  update(
+    input: InputState,
+    dt: number,
+    cameraMode: 'isometric' | 'wow' = 'isometric',
+    cameraYaw = 0,
+  ): void {
     // ── 1. TIMERS ──────────────────────────────────────────────────────────
     this.health.tick(dt);
     this.coyoteTimer -= dt;
@@ -755,7 +785,9 @@ export class PlayerController {
     // Skip normal acceleration when dodge is active (dodge overrides velocity)
     if (this.dodgeTimer <= 0) {
       const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
-      const moveDir = calculateMoveDirection(input);
+      const moveDir = cameraMode === 'wow'
+        ? calculateWoWMoveDirection(input, cameraYaw)
+        : calculateMoveDirection(input);
       const isMoving = moveDir.lengthSq() > 0.01;
       const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
       const decel = wasGrounded ? DECEL_GROUND : DECEL_AIR;
@@ -767,6 +799,14 @@ export class PlayerController {
         this.velocity.x = lerp(this.velocity.x, 0, decel * dt);
         this.velocity.z = lerp(this.velocity.z, 0, decel * dt);
       }
+    }
+
+    // ── 5b. WOW-MODE TURNING (A/D rotate character in place, not strafe) ───
+    if (cameraMode === 'wow') {
+      const WOW_TURN_RATE = 2.4; // radians/sec
+      if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
+      if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
+      this.group.rotation.y = this.facingAngle;
     }
 
     // ── 6. KCC ─────────────────────────────────────────────────────────────
@@ -807,8 +847,10 @@ export class PlayerController {
     // ── 9. VISUALS ─────────────────────────────────────────────────────────
     const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
 
-    // Rotate group to face direction of travel
-    if (hSpeed > 0.4) {
+    // Rotate group to face direction of travel — isometric mode only.
+    // WoW mode's facing is driven explicitly by A/D turning (5b, above) and
+    // by left-drag camera sync (setFacingAngle()), not by movement direction.
+    if (cameraMode !== 'wow' && hSpeed > 0.4) {
       const targetAngle = Math.atan2(this.velocity.x, this.velocity.z);
       const turnRate = wasGrounded ? TURN_SPEED_GROUND : TURN_SPEED_AIR;
       this.facingAngle = lerpAngle(this.facingAngle, targetAngle, turnRate * dt);

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   calculateMoveDirection,
+  calculateWoWMoveDirection,
   ISO_FORWARD,
   ISO_BACKWARD,
   ISO_LEFT,
@@ -138,5 +139,59 @@ describe('calculateMoveDirection (isometric input mapping)', () => {
     for (const c of cases) {
       expect(calculateMoveDirection(c).y).toBe(0);
     }
+  });
+});
+
+describe('calculateWoWMoveDirection (camera-relative input mapping)', () => {
+  it('W key with yaw=0 returns forward = (0,0,1)', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: true, moveBackward: false },
+      0,
+    );
+    expect(dir.x).toBeCloseTo(0, 5);
+    expect(dir.z).toBeCloseTo(1, 5);
+    expect(dir.y).toBe(0);
+  });
+
+  it('S key with yaw=0 returns backward = (0,0,-1)', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: true },
+      0,
+    );
+    expect(dir.x).toBeCloseTo(0, 5);
+    expect(dir.z).toBeCloseTo(-1, 5);
+  });
+
+  it('W key rotates with yaw — yaw=PI/2 returns forward = (1,0,0)', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: true, moveBackward: false },
+      Math.PI / 2,
+    );
+    expect(dir.x).toBeCloseTo(1, 5);
+    expect(dir.z).toBeCloseTo(0, 5);
+  });
+
+  it('W+S cancel to zero vector regardless of yaw', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: true, moveBackward: true },
+      1.234,
+    );
+    expect(dir.lengthSq()).toBeCloseTo(0, 5);
+  });
+
+  it('no keys returns zero vector', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: false, moveBackward: false },
+      0,
+    );
+    expect(dir.lengthSq()).toBeCloseTo(0, 5);
+  });
+
+  it('result is always unit length when moving', () => {
+    const dir = calculateWoWMoveDirection(
+      { moveForward: true, moveBackward: false },
+      0.9,
+    );
+    expect(dir.length()).toBeCloseTo(1, 5);
   });
 });
