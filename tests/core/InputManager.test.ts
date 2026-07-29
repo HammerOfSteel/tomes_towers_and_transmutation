@@ -111,15 +111,22 @@ describe('InputManager', () => {
 
   // ── Look-held (right mouse button, used for WoW-mode strafe) ─────────────
 
-  it('sets lookHeld when right mouse button is pressed', () => {
-    window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
-    expect(manager.state.lookHeld).toBe(true);
+  // ── Turn-drag-held (left mouse button, used for WoW-mode strafe) ────────
+
+  it('sets turnDragHeld when left mouse button is pressed', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    expect(manager.state.turnDragHeld).toBe(true);
   });
 
-  it('clears lookHeld when right mouse button is released', () => {
+  it('clears turnDragHeld when left mouse button is released', () => {
+    window.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+    expect(manager.state.turnDragHeld).toBe(false);
+  });
+
+  it('does not set turnDragHeld from the right mouse button', () => {
     window.dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
-    window.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
-    expect(manager.state.lookHeld).toBe(false);
+    expect(manager.state.turnDragHeld).toBe(false);
   });
 
   // ── Instant-cast slot requests (Digit1-4, for WoW camera mode) ───────────
@@ -202,7 +209,7 @@ describe('InputManager', () => {
     expect(s.dodge).toBe(false);
     expect(s.interact).toBe(false);
     expect(s.meleeKey).toBe(false);
-    expect(s.lookHeld).toBe(false);
+    expect(s.turnDragHeld).toBe(false);
     expect(s.mouseX).toBe(0);
     expect(s.mouseY).toBe(0);
   });

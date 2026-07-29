@@ -803,11 +803,13 @@ export class PlayerController {
     // Must run before movement direction is computed below, so W/S move
     // along the facing angle this same frame's A/D turn just produced
     // (not last frame's stale facing).
-    // While the camera-look button (RMB) is held, mouse-look already
-    // controls facing, so A/D become strafe instead — matching real WoW,
-    // where turning is handled by the mouse during a look-drag and the
-    // side keys move the character sideways relative to its facing.
-    if (cameraMode === 'wow' && !input.lookHeld) {
+    // While left-drag is held, the mouse is already continuously syncing
+    // facing to the camera (see WoWCameraController's onTurnPlayer), so
+    // A/D become strafe instead — matching real WoW, where turning is
+    // handled by the mouse during that drag and the side keys move the
+    // character sideways relative to its facing. Right-drag ("look-only")
+    // doesn't touch facing, so A/D there still turns as normal.
+    if (cameraMode === 'wow' && !input.turnDragHeld) {
       const WOW_TURN_RATE = 2.4; // radians/sec
       if (input.moveLeft) this.facingAngle -= WOW_TURN_RATE * dt;
       if (input.moveRight) this.facingAngle += WOW_TURN_RATE * dt;
@@ -819,7 +821,7 @@ export class PlayerController {
     if (this.dodgeTimer <= 0) {
       const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
       const moveDir = cameraMode === 'wow'
-        ? calculateWoWMoveDirection(input, this.facingAngle, input.lookHeld)
+        ? calculateWoWMoveDirection(input, this.facingAngle, input.turnDragHeld)
         : calculateMoveDirection(input);
       const isMoving = moveDir.lengthSq() > 0.01;
       const accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;

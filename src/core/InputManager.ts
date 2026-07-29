@@ -19,11 +19,14 @@ export interface InputState {
   meleeKey: boolean;
   /** Right mouse button — cast the active equipped spell */
   castSpell: boolean;
-  /** Right mouse button held (raw, unsuppressed) — in WoW camera mode this
-   *  means the camera-look drag is active, so A/D should strafe sideways
-   *  instead of turning the character (matches real WoW: turning is done by
-   *  the mouse while it's held, so the side keys become strafe keys). */
-  lookHeld: boolean;
+  /** Left mouse button held (raw, unsuppressed) — in WoW camera mode this is
+   *  the button that drags the camera *and* continuously syncs the
+   *  character's facing to the camera yaw (see WoWCameraController's
+   *  onTurnPlayer). While held, A/D should strafe sideways instead of
+   *  turning the character in place, since the mouse is already driving
+   *  facing. Right-drag ("look-only") doesn't touch facing, so A/D there
+   *  still turns as normal. */
+  turnDragHeld: boolean;
   /** Currently selected spell slot (0-3), switched by keys 1–4 */
   activeSlot: number;
   /** Species ability slots: Q = slot 0, R = slot 1, Z = slot 2, X = slot 3 */
@@ -187,7 +190,7 @@ export class InputManager {
       interact:     this.heldKeys.has(b.interact),
       meleeKey:     this.heldKeys.has('Digit5'),
       castSpell:    !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(2),
-      lookHeld:     this.heldMouseButtons.has(2),
+      turnDragHeld: this.heldMouseButtons.has(0),
       activeSlot:   this._activeSlot,
       ability1:     this.heldKeys.has('KeyQ'),
       ability2:     this.heldKeys.has('KeyR'),
