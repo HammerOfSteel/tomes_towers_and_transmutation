@@ -764,10 +764,10 @@ export class MainMenu {
         </div>
       </div>
       <div class="mm-setting-row">
-        <label class="mm-setting-label">Villages</label>
+        <label class="mm-setting-label">Settlements</label>
         <div class="mm-setting-ctl">
-          <input type="range" id="mm-wg-villages" class="mm-slider" min="0" max="6" value="${wg.villageCount}">
-          <span id="mm-wg-villages-val" class="mm-setting-val">${wg.villageCount}</span>
+          <input type="range" id="mm-wg-settlements" class="mm-slider" min="0" max="12" value="${wg.settlementCount}">
+          <span id="mm-wg-settlements-val" class="mm-setting-val">${wg.settlementCount}</span>
         </div>
       </div>
       <div class="mm-setting-row">
@@ -775,22 +775,6 @@ export class MainMenu {
         <div class="mm-setting-ctl">
           <input type="range" id="mm-wg-rivers" class="mm-slider" min="2" max="8" value="${wg.riverCount}">
           <span id="mm-wg-rivers-val" class="mm-setting-val">${wg.riverCount}</span>
-        </div>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">Towns</label>
-        <div class="mm-setting-ctl">
-          <input type="range" id="mm-wg-towns" class="mm-slider" min="0" max="4" value="${wg.townCount}">
-          <span id="mm-wg-towns-val" class="mm-setting-val">${wg.townCount}</span>
-        </div>
-      </div>
-      <div class="mm-setting-row">
-        <label class="mm-setting-label">City</label>
-        <div class="mm-setting-ctl">
-          <label class="mm-toggle">
-            <input type="checkbox" id="mm-wg-city" ${wg.hasCity ? 'checked' : ''}>
-            <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
-          </label>
         </div>
       </div>
       <div class="mm-setting-row mm-setting-row--share">
@@ -917,14 +901,10 @@ export class MainMenu {
         saveWg();
       });
     };
-    mkSlider('#mm-wg-dungeons', '#mm-wg-dungeons-val', 'dungeonCount');
-    mkSlider('#mm-wg-camps',    '#mm-wg-camps-val',    'enemyCampCount');
-    mkSlider('#mm-wg-villages', '#mm-wg-villages-val', 'villageCount');
-    mkSlider('#mm-wg-rivers',   '#mm-wg-rivers-val',   'riverCount');
-    mkSlider('#mm-wg-towns',    '#mm-wg-towns-val',    'townCount');
-
-    const cityToggle = card.querySelector<HTMLInputElement>('#mm-wg-city')!;
-    cityToggle.addEventListener('change', () => { wg.hasCity = cityToggle.checked; saveWg(); });
+    mkSlider('#mm-wg-dungeons',    '#mm-wg-dungeons-val',    'dungeonCount');
+    mkSlider('#mm-wg-camps',       '#mm-wg-camps-val',       'enemyCampCount');
+    mkSlider('#mm-wg-settlements', '#mm-wg-settlements-val', 'settlementCount');
+    mkSlider('#mm-wg-rivers',      '#mm-wg-rivers-val',      'riverCount');
 
     // ── Character mode + pack selection ──────────────────────────────────────
     const charModeCb   = card.querySelector<HTMLInputElement>('#mm-char-mode')!;
