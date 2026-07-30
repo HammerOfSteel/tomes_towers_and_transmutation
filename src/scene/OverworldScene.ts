@@ -1218,6 +1218,7 @@ export class OverworldScene {
         plan: {
           type:       'hamlet' as import('@/world/SettlementGenerator').SettlementType,
           name:       'Ruins',
+          faction:    'human',
           centerCol:  mCol,
           centerRow:  mRow,
           buildings:  [],
