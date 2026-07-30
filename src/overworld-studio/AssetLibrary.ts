@@ -282,6 +282,30 @@ export class AssetLibrary {
   }
 
   /**
+   * Replace an entry's generation data (its "DNA") with a new value, e.g.
+   * hand-edited via the Library panel's "Edit DNA" JSON editor. `rawData` is
+   * expected to be JSON.parse'd, encoded-shape data (the same shape
+   * exportEntry() produces) — decodeValue() restores any Map-backed fields.
+   * Marks the entry isCustom, since an edited entry is now a designer
+   * override rather than a pristine procedural result.
+   * Returns the updated entry, or null if id was not found.
+   */
+  updateData(id: string, rawData: unknown): LibraryEntry | null {
+    const idx = this._entries.findIndex(e => e.id === id);
+    if (idx < 0) return null;
+    const updated: LibraryEntry = {
+      ...this._entries[idx]!,
+      data: decodeValue(rawData),
+      isCustom: true,
+    };
+    this._entries[idx] = updated;
+    this._save();
+    console.log(`[AssetLibrary] updated DNA for "${updated.name}" (${updated.type})`);
+    (window as any).__assetLibrarySize = this._entries.length;
+    return updated;
+  }
+
+  /**
    * Pin an entry to a specific named world location by adding a location tag.
    * The tag convention matches what the runtime override readers already
    * expect (see `src/levels/customRoomOverrides.ts`,

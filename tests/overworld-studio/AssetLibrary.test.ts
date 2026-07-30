@@ -130,6 +130,85 @@ describe('AssetLibrary rename()', () => {
   });
 });
 
+describe('AssetLibrary updateData()', () => {
+  it('replaces data and marks the entry custom', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', isCustom: false, data: { hp: 10 } }));
+
+    const updated = lib.updateData('e1', { hp: 99 });
+
+    expect(updated).not.toBeNull();
+    expect(updated?.data).toEqual({ hp: 99 });
+    expect(updated?.isCustom).toBe(true);
+    expect(lib.getAll()[0]?.data).toEqual({ hp: 99 });
+  });
+
+  it('preserves id, name, seed, createdAt, tags, thumbnail', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({
+      id: 'e1',
+      name: 'Old Name',
+      seed: 7,
+      createdAt: 555,
+      tags: ['tag-a'],
+      thumbnail: 'data:image/png;base64,xyz',
+      data: { hp: 10 },
+    }));
+
+    const updated = lib.updateData('e1', { hp: 99 });
+
+    expect(updated?.id).toBe('e1');
+    expect(updated?.name).toBe('Old Name');
+    expect(updated?.seed).toBe(7);
+    expect(updated?.createdAt).toBe(555);
+    expect(updated?.tags).toEqual(['tag-a']);
+    expect(updated?.thumbnail).toBe('data:image/png;base64,xyz');
+  });
+
+  it('decodes Map-encoded payloads (textarea round-trip)', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', type: 'dungeon', data: { rooms: {}, startRoomId: 'r0', seed: 1 } }));
+
+    const updated = lib.updateData('e1', {
+      rooms: {
+        __tttType: 'Map',
+        entries: [['room_0', { id: 'room_0', width: 7 }]],
+      },
+      startRoomId: 'room_0',
+      seed: 1,
+    });
+
+    expect(updated).not.toBeNull();
+    const rooms = (updated?.data as { rooms: Map<string, unknown> }).rooms;
+    expect(rooms).toBeInstanceOf(Map);
+    expect(rooms.get('room_0')).toEqual({ id: 'room_0', width: 7 });
+  });
+
+  it('returns null when updating a missing entry and does not mutate the library', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', data: { hp: 10 } }));
+
+    const result = lib.updateData('missing', { hp: 1 });
+
+    expect(result).toBeNull();
+    expect(lib.getAll()[0]?.data).toEqual({ hp: 10 });
+  });
+
+  it('is idempotent on isCustom when the entry is already custom', () => {
+    const lib = new AssetLibrary('ttt_asset_library_test');
+    lib.clear();
+    lib.add(makeEntry({ id: 'e1', isCustom: true, data: { hp: 10 } }));
+
+    const updated = lib.updateData('e1', { hp: 20 });
+
+    expect(updated?.isCustom).toBe(true);
+  });
+});
+
 describe('AssetLibrary pinToLocation() / unpinFromLocation()', () => {
   it('adds a type-prefixed location tag and marks the entry custom', () => {
     const lib = new AssetLibrary('ttt_asset_library_test');
