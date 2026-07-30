@@ -49,6 +49,44 @@ has no wall mesh/collision system at all today. Adding one is a
 substantial, independent feature — deferred to a future follow-up. This
 sub-project covers **buildings + roads only**.
 
+### Revision: true per-building parity (not just ward-level parity)
+
+Studio's visual layout has a second layer below ward assignment that the
+first draft of this spec missed: each `withinCity` ward polygon is filled
+with **many** small buildings via one of 7 layout algorithms
+(`fillWardGrid`/`fillWardLinear`/`fillWardTerraced`/`fillWardPerimeter`/
+`fillWardRadial`/`fillWardClustered`/`fillWardOrganically`, dispatched by
+`fillWard()`), each placing 16×13-canvas-unit rectangles via `drawBldg()`
+directly to a `CanvasRenderingContext2D` — this data is never returned or
+stored on `SettlementModel`, only drawn. "One building per ward" (the
+pattern the existing dev-preview code in `OverworldScene.ts` uses) is a
+coarse simplification of this, not what Studio actually renders.
+
+**Decision (explicit user choice):** go for true per-building parity. The
+7 `fillWard*` functions are refactored to return building-rectangle data
+(`{x, y, w, h, angle}[]`) in addition to (not instead of) drawing — Studio's
+own rendering keeps working byte-for-byte identically by calling the new
+data-returning function and then drawing each returned rectangle, so
+Studio's visual output must not change.
+
+**Anchor vs. filler split (explicit user choice):** for each ward, the
+rectangle closest to `ward.center` becomes the **anchor** building — it
+gets a full `BuildingDNA` via the existing `WARD_TO_KIND`/`WARD_TO_SIZE`/
+`WARD_TO_FLOORS` → `factionBuildingDna()` path (unchanged from the first
+draft) and is registered in `OverworldScene._buildingData` so it is
+enterable (walkable interior, "Press E" prompt) exactly like today's
+settlement buildings. Every other rectangle in that ward becomes a
+**filler** building: same rendering pipeline (`buildBuilding()` → real 3D
+exterior mesh + `registerBuildingCollider()` so players can't walk through
+it) but built with `BuildingDNA.hasInterior = false` and **not** pushed to
+`_buildingData` — so it never becomes a "Press E" candidate and no interior
+is ever generated for it. (`hasInterior` already exists on `BuildingDNA`
+today but is currently unenforced/always `true`; nothing needs to change
+about interior-generation code to make this work — omission from
+`_buildingData` is what already gates interior generation, confirmed via
+`OverworldScene.getNearestBuilding()`'s implementation, which only scans
+`_buildingData`.)
+
 ## Architecture
 
 ### 1. Extract the pure ward/Voronoi generator
@@ -77,6 +115,37 @@ byte-for-byte unchanged.
 rendering, anything Canvas-2D-specific (`drawSettlement`, `drawSettlement2D5`).
 These stay in `overworld-studio.ts`.
 
+### 1b. Extract the ward-fill algorithms into data-producing functions
+
+Also move the per-ward building-fill family out of `overworld-studio.ts`
+into `SettlementModelGenerator.ts` (same file as the ward/Voronoi
+generator — they're tightly coupled and always used together):
+
+- `fillWard(ward, occ)`, and its 7 layout implementations
+  (`fillWardGrid`/`fillWardLinear`/`fillWardTerraced`/`fillWardPerimeter`/
+  `fillWardRadial`/`fillWardClustered`/`fillWardOrganically`)
+- Supporting geometry helpers: `OccupancyGrid`, `polygonPerimeter`,
+  `samplePerimeter`, `dominantEdgeAngle`, `minDistToEdge`, `minDistToRoads`,
+  `convexHullExpanded`
+
+Each `fillWard*` function's signature changes from
+`(ctx: CanvasRenderingContext2D, poly, wardType, seed, occ) => void` (draws
+directly) to `(poly, wardType, seed, occ) => BuildingRect[]` (returns data,
+draws nothing). `overworld-studio.ts`'s own rendering (`drawSettlement2D5`)
+is updated to call the new data-returning function and then loop over the
+returned rectangles calling the existing `drawBldg()` — this must produce
+pixel-identical output to today's Studio preview (verified by a Studio
+regression check in the plan's final task, not a new automated pixel test,
+since Studio has no existing visual-regression test suite to extend).
+
+```ts
+export interface BuildingRect {
+  x: number; y: number;       // centre, Studio canvas-space
+  w: number; d: number;       // width/depth, Studio canvas-space units
+  angle: number;               // radians
+}
+```
+
 ### 2. `SettlementGenerator.ts` calls the shared generator
 
 `planSettlement()`'s `_planVillage`/`_planTown`/`_planCity` functions are
@@ -87,12 +156,21 @@ replaced by one shared code path that:
    Studio's own type-based defaults, even though walls aren't rendered yet)
 2. Calls `buildSettlement(params)` to get a `SettlementModel`
 3. For each ward where `withinCity` is true:
-   - Look up `WARD_TO_KIND[ward.type]` — skip the ward (no building) if
-     there's no mapping, exactly like the existing Studio-preview code does
-   - Map the ward's `center: Vec2` (Studio canvas-space) to a `(col, row)`
-     on the `WorldGrid`, anchored at the settlement's `centerCol`/`centerRow`
+   - Look up `WARD_TO_KIND[ward.type]` — skip the entire ward (no
+     buildings at all, anchor or filler) if there's no mapping (`park`
+     wards), exactly like the existing Studio-preview code does
+   - Call the extracted `fillWard(ward, occ)` to get `BuildingRect[]`
+     for that ward (same occupancy-grid collision avoidance Studio uses,
+     so filler buildings never overlap each other within a ward)
+   - Pick the rect closest to `ward.center` as the anchor; all others
+     are filler
+   - Map each rect's `(x, y)` (Studio canvas-space) to a `(col, row)` on
+     the `WorldGrid`, anchored at the settlement's `centerCol`/`centerRow`
    - Snap to a valid tile if needed (see below)
-   - Emit a `PlacedBuilding` carrying the ward-derived kind/size/floors
+   - Emit a `PlacedBuilding` per rect: the anchor carries the ward-derived
+     `kind`/`size`/`floors` (`WARD_TO_KIND`/`SIZE`/`FLOORS`); fillers carry
+     the same `wardType` (so they render in a visually consistent kind/size
+     for that district) but always `size: 'tiny'` and `hasInterior: false`
 4. For each `Road` in the model, rasterize its Chaikin-smoothed polyline
    into grid `(col, row)` tiles (replacing the current Bresenham-line road
    generation) and emit `RoadSegment`s
@@ -100,24 +178,33 @@ replaced by one shared code path that:
 ### 3. Coordinate mapping and snapping
 
 Studio's model lives in local canvas-space: seeds spread within
-`radius ≈ min(width, height) * 0.42` around `(width/2, height/2)`. To place
-this on the `WorldGrid`:
+`radius ≈ min(width, height) * 0.42` around `(width/2, height/2)`, and
+individual building rectangles are ~16×13 canvas units. The live
+`WorldGrid` uses `WORLD_UNITS_PER_TILE = 2` (confirmed constant in
+`BuildingTypes.ts`, must match `OverworldScene.ts`'s `T`). To place Studio's
+model on the `WorldGrid`:
 
 - Fix a **world-tiles-per-Studio-unit** scale constant (new, e.g.
   `SETTLEMENT_MODEL_SCALE`), chosen so a `city`'s ward spread (`radius`)
   comfortably fits the zone radii `applySettlementToGrid()` already uses
   (`zoneR = 16` for city, `12` town, `8` village) — i.e. pick `GeneratorParams.width/height`
-  and the scale together so `radius * scale ≈ zoneR`.
-- `(col, row) = (centerCol + round((ward.center.x - CX) * scale), centerRow + round((ward.center.y - CY) * scale))`
+  and the scale together so `radius * scale ≈ zoneR`, and so a single
+  ~16×13-canvas-unit filler building maps to a small but non-zero footprint
+  (at least 1×1 tile) rather than collapsing to nothing.
+- `(col, row) = (centerCol + round((rect.x - CX) * scale), centerRow + round((rect.y - CY) * scale))`
 - If the resulting tile fails `_valid()` (water/river/dungeon/out-of-bounds,
   reusing the existing helper unchanged) or collides with an already-placed
-  building's footprint (reusing `_noOverlap()`'s AABB check with the
-  ward-derived building's `BUILDING_SPECS`-equivalent footprint from
-  `getFootprint()` in `BuildingDNA.ts`), snap outward via the same
-  8-direction ring search pattern `SettlementPlacer.ts` uses for settlement
-  siting (`DIRS8`, expanding radius, bounded retries). If no valid tile is
-  found within the retry budget, drop the building (log via the same
-  graceful-drop convention Task 3 established) rather than throwing.
+  building's footprint (reusing `_noOverlap()`'s AABB check, now against
+  `getFootprint()` from `BuildingDNA.ts` directly instead of the retired
+  `BUILDING_SPECS` table), snap outward via the same 8-direction ring
+  search pattern `SettlementPlacer.ts` uses for settlement siting (`DIRS8`,
+  expanding radius, bounded retries). If no valid tile is found within the
+  retry budget, drop the building (log via the same graceful-drop
+  convention Task 3 of the siting plan established) rather than throwing.
+  This applies identically to anchors and fillers — a dropped anchor means
+  that ward simply has no enterable building this generation, which is an
+  acceptable, already-precedented outcome (siting itself can drop
+  settlements the same way).
 - Road tiles are rasterized the same way, without snapping (a road tile
   landing on invalid terrain is acceptable — roads already tolerate this in
   the current implementation, e.g. crossing minor elevation steps).
@@ -128,23 +215,31 @@ this on the `WorldGrid`:
 
 ```ts
 export interface PlacedBuilding {
-  wardType: WardType;      // replaces `type: BuildingType`
-  col:      number;
-  row:      number;
-  rotation: number;
-  seed:     number;
+  wardType:    WardType;      // replaces `type: BuildingType`
+  isAnchor:    boolean;       // true = enterable, walkable interior; false = filler prop
+  col:         number;
+  row:         number;
+  rotation:    number;
+  seed:        number;
 }
 ```
 
 `OverworldScene.ts`'s `createSettlementBuildingDna(b, plan.type)` is
 replaced by a small adapter that mirrors the existing Studio-preview
-inline logic exactly:
+inline logic exactly, branching on `isAnchor`:
 
 ```ts
-const kind   = WARD_TO_KIND[b.wardType];      // skip if undefined (shouldn't happen — filtered upstream)
-const size   = WARD_TO_SIZE[b.wardType] ?? 'medium';
-const floors = WARD_TO_FLOORS[b.wardType] ?? (plan.type === 'city' ? 2 : 1);
-const dna    = factionBuildingDna(kind, settlementTypeToFaction(plan.type), b.seed, size, floors);
+const kind = WARD_TO_KIND[b.wardType];   // skip if undefined (shouldn't happen — filtered upstream)
+if (b.isAnchor) {
+  const size   = WARD_TO_SIZE[b.wardType] ?? 'medium';
+  const floors = WARD_TO_FLOORS[b.wardType] ?? (plan.type === 'city' ? 2 : 1);
+  const dna    = factionBuildingDna(kind, settlementTypeToFaction(plan.type), b.seed, size, floors);
+  // push to _buildingData (enterable) + registerBuildingCollider, as today
+} else {
+  const dna = factionBuildingDna(kind, settlementTypeToFaction(plan.type), b.seed, 'tiny', 1);
+  dna.hasInterior = false;
+  // registerBuildingCollider only — do NOT push to _buildingData
+}
 ```
 
 `applySettlementToGrid()`'s grid-marking logic (outskirts zone, elevation
@@ -173,12 +268,14 @@ assertions (asserting the hardcoded cross/street/grid shapes) are replaced
 with assertions on the new behavior:
 
 - Determinism: same seed → identical `buildings[]`/`roads[]`
-- Building kind/size/floors trace back correctly to `WARD_TO_KIND`/`SIZE`/`FLOORS`
-  for each ward type produced
-- No two buildings overlap (footprint-aware)
+- Exactly one `isAnchor: true` building per non-`park` ward that produced
+  at least one rect; anchor kind/size/floors trace back correctly to
+  `WARD_TO_KIND`/`SIZE`/`FLOORS` for its ward type; all other buildings in
+  that ward are `isAnchor: false` fillers with `size: 'tiny'`
+- No two buildings overlap (footprint-aware, anchors and fillers alike)
 - Snap-on-invalid-terrain behavior (mirroring the siting sub-project's
-  Task 3 test style: a grid rigged with water/dungeon tiles at a ward's
-  expected position, verifying the building lands on the nearest valid tile)
+  Task 3 test style: a grid rigged with water/dungeon tiles at a building's
+  expected position, verifying it lands on the nearest valid tile)
 - Graceful drop when no valid tile exists within the retry budget
 - `applySettlementToGrid()` still correctly marks road/building tiles given
   the new `PlacedBuilding` shape
@@ -186,7 +283,14 @@ with assertions on the new behavior:
 A new integration test in `tests/world/WorldGenerator.test.ts` (or
 extending the existing settlement-integration describe block from the
 siting sub-project) verifies `buildWorldData()`'s settlements have
-buildings whose kinds are valid `WARD_TO_KIND` outputs.
+buildings whose kinds are valid `WARD_TO_KIND` outputs, and that both
+anchor and filler buildings are present for a multi-ward settlement.
+
+A manual Studio regression check (not an automated test — Studio has no
+existing visual-regression suite to extend) is part of the final task:
+generate a settlement in Studio before and after the `fillWard*`
+refactor with the same seed/params and confirm the rendered canvas is
+visually identical.
 
 The existing dev-preview code path (`OverworldScene.ts`'s
 `_buildStudioSettlementPreview`/`_readStudioSettlementPreview`) is
@@ -197,9 +301,13 @@ this sub-project's normal per-realm-settlement generation path.
 ## Explicitly deferred (not this sub-project)
 
 - Walls and gates (new 3D mesh + collision system — user decision, see Goal)
-- Ward-layout sub-block mixing (`assignWardLayouts`, `ZONE_PALETTES`) —
-  affects only Studio's interior-block rendering style, which the live game
-  doesn't consume at this granularity
 - Deleting `BuildingType`/`BUILDING_SPECS` if it turns out to be fully dead
   after this change — flag for a future cleanup task, don't delete here
 - P1 sub-project (3), NPC population unification (next in sequence after this)
+
+Note: `assignWardLayouts()`/`ZONE_PALETTES` (ward-layout mixing) is **not**
+deferred — it's already called inside `buildFromSeeds()` (confirmed at
+`overworld-studio.ts:538`) and sets `ward.wardLayout`, which `fillWard()`
+reads to dispatch to the correct one of the 7 fill algorithms. It's
+included automatically as part of extracting `buildFromSeeds()` in
+Section 1 and is required for Section 1b's `fillWard()` to work at all.
