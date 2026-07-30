@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWorldGrid } from '@/world/WorldGenerator';
+import { buildWorldGrid, buildWorldData } from '@/world/WorldGenerator';
 import { DEFAULT_WORLD_GEN_CONFIG } from '@/world/WorldGenConfig';
 
 describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
@@ -52,5 +52,27 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
         expect(validBiomes.has(cell.biome)).toBe(true);
       }
     }
+  });
+});
+
+describe('buildWorldData — realm-sourced settlements (P1 siting)', () => {
+  it('sites at most config.settlementCount settlements, each with a valid name/type/faction', () => {
+    const cfg  = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 600 };
+    const data = buildWorldData(600, cfg);
+    expect(data.settlements.length).toBeLessThanOrEqual(cfg.settlementCount);
+    for (const entry of data.settlements) {
+      expect(entry.plan.name.length).toBeGreaterThan(0);
+      expect(['village', 'town', 'city']).toContain(entry.plan.type);
+      expect(entry.plan.faction.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('is deterministic for the same seed', () => {
+    const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 601 };
+    const a = buildWorldData(601, cfg);
+    const b = buildWorldData(601, cfg);
+    const summarize = (d: typeof a) =>
+      d.settlements.map(e => ({ col: e.plan.centerCol, row: e.plan.centerRow, name: e.plan.name }));
+    expect(summarize(a)).toEqual(summarize(b));
   });
 });
