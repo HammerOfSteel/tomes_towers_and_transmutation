@@ -1,7 +1,7 @@
 # Tomes, Research & Spellcraft
 > Core knowledge-progression layer for *Tomes, Towers & Transmutation*. Covers book taxonomy, personal library, school mastery, research unlocks, and structured spell mutation. Depends on world/content placement work in 02/03/05.
 
-## Status: ⚠️ GAP — design defined in `story_quests_mechanics/03-tomes-and-grimoire-progression.md`, no production plan yet
+## Status: ⚠️ GAP — design defined in `story_quests_mechanics/03-tomes-and-grimoire-progression.md`; Phase 0 schema unblocking is now defined, later runtime phases still need production implementation
 
 ## Goals
 - Make **books** a first-class progression system rather than one-off spell unlocks
@@ -24,7 +24,57 @@ This file does **not** cover:
 
 ---
 
+## Phase 0 — Data Schema (content unblocker)
+
+> Must ship before `TODO/05-content/quests.md` and `story-arcs.md` can safely reference book/manual/archive/research reward or event types. This is the schema-first step that breaks the current 05 ↔ 06 dependency loop.
+
+### Goals
+- Define the minimum knowledge/research contracts content can point at without waiting for full runtime implementation
+- Give quest rewards, lore placements, and story beats stable IDs/payload shapes
+- Keep later TRS implementation phases anchored to one source of truth
+
+### Tasks
+- [ ] Define the minimal `BookDef` schema for authored rewards/placements:
+  - `id`
+  - `title`
+  - `kind` (`note | tome | grimoire | archive | manual`)
+  - `role` (`spell_unlock | school_deepen | research_unlock | narrative_reveal | defense_doctrine | access_key`)
+  - `school?`
+  - `origin`
+  - `rewardPayload?`
+- [ ] Define the minimal `KnowledgeDef` / catalog-entry shape that 05 content can target:
+  - `knowledgeId`
+  - `bookId`
+  - `state` (`seen | learned | studied | transmuted`)
+  - `tags[]`
+  - `storyHooks[]`
+- [ ] Define `ResearchProjectDef` early enough for quest/story reward references:
+  - `id`
+  - `title`
+  - `sourceBookIds[]`
+  - `facilityRequirement?`
+  - `materialRequirementSummary?`
+  - `outcomeType`
+- [ ] Define the shared enums/ID namespaces content will reference before runtime exists:
+  - school IDs
+  - book kinds/roles
+  - knowledge-state enum
+  - research outcome types
+- [ ] Document which 05-content references must wait on these schemas:
+  - book rewards
+  - archive/manual rewards
+  - research unlock rewards
+  - lore-book placement IDs used by story arcs
+
+### Done means
+- 05-content can reference stable book/knowledge/research IDs without inventing one-off payloads
+- later library/research/spellcraft runtime phases can implement against the agreed schema instead of reinterpreting content
+
+---
+
 ## Phase TRS-1 — Book Taxonomy & Data Model
+
+> Needs Phase 0 first.
 
 ### Goals
 - Distinguish notes, tomes, grimoires, and archives in data

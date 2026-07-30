@@ -1,7 +1,7 @@
 # Alchemy, Transmutation & Crafting
 > Core material-conversion layer for *Tomes, Towers & Transmutation*. Covers reagent families, refinement tiers, facility-gated crafting, potion/formula families, transmutation risk, and links to quests, companions, and defense. Depends on world/resource distribution work in 02/03 and knowledge progression in `tomes-research-spellcraft.md`.
 
-## Status: ⚠️ GAP — design defined in `story_quests_mechanics/04-transmutation-alchemy-and-spellcrafting.md`, no production plan yet
+## Status: ⚠️ GAP — design defined in `story_quests_mechanics/04-transmutation-alchemy-and-spellcrafting.md`; Phase 0 schema unblocking is now defined, later runtime phases still need production implementation
 
 ## Goals
 - Make **transmutation** a pillar mechanic rather than a generic crafting sidebar
@@ -26,7 +26,57 @@ This file does **not** cover:
 
 ---
 
+## Phase 0 — Data Schema (content unblocker)
+
+> Must ship before `TODO/05-content/quests.md` and `story-arcs.md` can safely reference transmutation items, formulas, or crafting-gated quest solutions. This is the schema-first step that unblocks content without requiring full alchemy runtime.
+
+### Goals
+- Define the minimum item/material/recipe contracts that authored quest and story content can safely point at
+- Separate data-schema work from later crafting/facility implementation
+- Prevent reward/event docs from inventing incompatible alchemy payloads
+
+### Tasks
+- [ ] Define the minimal `MaterialDef` / `ReagentDef` taxonomy:
+  - `id`
+  - `name`
+  - `family`
+  - `rarity`
+  - `stability`
+  - `refinementTier`
+  - `originSiteFamily?`
+- [ ] Define the minimal `RecipeDef` shape for authored unlocks and quest gates:
+  - `id`
+  - `name`
+  - `category`
+  - `inputs[]`
+  - `outputs[]`
+  - `facilityRequirement?`
+  - `researchRequirementIds?`
+- [ ] Define the shared enums/ID namespaces content needs first:
+  - material families
+  - refinement tiers
+  - recipe categories (`potion | utility | transmutation | defense_prep | companion_support`)
+  - facility IDs used by recipe gating
+- [ ] Define the reward/reference payloads 05 content will need to point at:
+  - material stack reward
+  - recipe unlock reward
+  - permanent transmutation-capacity upgrade reward
+  - crafted-solution objective target IDs
+- [ ] Document which 05-content references must wait on these schemas:
+  - transmutation item rewards
+  - crafted quest-solution beats
+  - defense-prep consumable references
+  - facility-process unlock rewards
+
+### Done means
+- 05-content can reference stable material/reagent/recipe IDs without pretending crafting delivery already exists
+- later alchemy implementation phases can build against a fixed contract instead of backfilling content names
+
+---
+
 ## Phase ATC-1 — Material Taxonomy & Inventory Model
+
+> Needs Phase 0 first.
 
 ### Goals
 - Classify all alchemical inputs into clear families

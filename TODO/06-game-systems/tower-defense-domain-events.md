@@ -1,7 +1,7 @@
 # Tower Defense & Domain Events
 > Companion-centered tower defense for *Tomes, Towers & Transmutation*. Covers forecast → preparation → assault → consequence flow, doctrine selection, tower assignments, floor-specific stakes, and story/system trigger sources. Depends on followers/companions, transmutation support items, and world threat hooks.
 
-## Status: ⚠️ GAP — design defined in `story_quests_mechanics/06-towers-companions-and-defense-events.md`, no production plan yet
+## Status: ⚠️ GAP — design defined in `story_quests_mechanics/06-towers-companions-and-defense-events.md`; Phase 0 schema unblocking is now defined, later runtime phases still need production implementation
 
 ## Goals
 - Make the **Towers** pillar a real gameplay loop without drifting into RTS construction
@@ -31,7 +31,57 @@ This file does **not** cover:
 
 ---
 
+## Phase 0 — Data Schema (content unblocker)
+
+> Must ship before `TODO/05-content/quests.md` and `story-arcs.md` can safely reference defense escalation, doctrine unlocks, forecast bonuses, tower-pressure events, or tower-state aftermath. This is the schema-first step that unblocks content before any assault runtime exists.
+
+### Goals
+- Define the minimum event/doctrine/forecast contracts authored content can safely reference
+- Give quests and story arcs stable IDs for tower pressure without implying a working defense runtime
+- Separate naming/taxonomy work from later prep/assault/consequence implementation
+
+### Tasks
+- [ ] Define the minimal `TowerEventDef` / defense-event taxonomy:
+  - `id`
+  - `family`
+  - `triggerSource`
+  - `threatLevel`
+  - `forecastLeadTime`
+  - `targetScope` (room/floor/domain)
+  - `counterTags[]`
+- [ ] Define the minimal `DefenseDoctrineDef` shape for authored unlock rewards:
+  - `id`
+  - `name`
+  - `focus`
+  - `allowedTargetScopes[]`
+  - `bonusSummary`
+- [ ] Define the minimal `TowerForecastState` / escalation-state shape:
+  - `eventId`
+  - `state` (`dormant | brewing | forecasted | active | resolved | aftermath`)
+  - `eta`
+  - `confidence`
+  - `targetRefs[]`
+- [ ] Define the shared enums/ID namespaces content needs first:
+  - event family IDs
+  - trigger source IDs
+  - doctrine IDs
+  - forecast/escalation-state enum
+  - tower target-scope IDs
+- [ ] Document which 05-content references must wait on these schemas:
+  - defense reward payloads
+  - tower/domain escalation beats in story arcs
+  - forecast/pressure notes attached to quests
+  - tower-state aftermath references
+
+### Done means
+- 05-content can reference stable defense/doctrine/forecast IDs without inventing ad hoc event names
+- later tower-defense phases can implement against one shared taxonomy
+
+---
+
 ## Phase TDE-1 — Event Taxonomy & Trigger Model
+
+> Needs Phase 0 first.
 
 ### Goals
 - Define what kinds of assaults and crises can happen

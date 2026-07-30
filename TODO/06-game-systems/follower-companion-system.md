@@ -1,7 +1,7 @@
 # Follower & Companion System
 > Full companion strategy layer for *Tomes, Towers & Transmutation*. Covers familiars, followers, recruited monsters, field roles, tower roles, assignment logic, recovery, morale, and save-state implications. Depends on quest/content rewards in 05 and enemy/species support in 04.
 
-## Status: ⚠️ GAP — partially referenced in quests and enemy docs, but no dedicated production plan exists
+## Status: ⚠️ GAP — partially referenced in quests and enemy docs; Phase 0 schema unblocking is now defined, later runtime phases still need dedicated production implementation
 
 ## Goals
 - Turn followers into a **core strategic pillar**, not a side reward
@@ -30,7 +30,55 @@ This file does **not** cover:
 
 ---
 
+## Phase 0 — Data Schema (content unblocker)
+
+> Must ship before `TODO/05-content/quests.md` and `story-arcs.md` can safely reference follower recruits, companion rewards, roster roles, or tower-companion presence. This is the schema-first step that unblocks content before any AI/runtime work exists.
+
+### Goals
+- Define the minimum companion/recruit contracts that authored content can target
+- Establish one roster language before quests/story arcs invent incompatible follower labels
+- Separate schema unblocking from later acquisition/assignment/runtime implementation
+
+### Tasks
+- [ ] Define the minimal `CompanionDef` schema for quest/story rewards:
+  - `id`
+  - `displayName`
+  - `taxonomy` (`familiar | follower_ally | recruited_monster | signature_companion`)
+  - `sourceType`
+  - `speciesAffinity?`
+  - `fieldRoleIds[]`
+  - `towerRoleIds[]`
+  - `signatureTags[]`
+- [ ] Define the minimal roster/save-state shape content will rely on:
+  - active party IDs
+  - reserve roster IDs
+  - assignment entries by room/floor/role
+  - unavailable/recovering state
+- [ ] Define the shared enums/ID namespaces content needs first:
+  - field role enum
+  - tower role enum
+  - bond/morale/wound state enums
+  - acquisition/source tags for quest/story references
+- [ ] Define the reward/reference payloads 05 content will need to point at:
+  - direct companion recruit reward
+  - roster-cap increase reward
+  - role unlock reward
+  - signature-companion unlock reward
+- [ ] Document which 05-content references must wait on these schemas:
+  - follower rewards in quests
+  - companion/recruit identity notes in story arcs
+  - tower-room companion presence outcomes
+  - defense-assignment privilege rewards
+
+### Done means
+- 05-content can reference stable companion IDs/roles instead of prose-only recruit promises
+- later companion runtime phases can implement against one roster contract
+
+---
+
 ## Phase FCS-1 — Taxonomy, Data Model & Roster State
+
+> Needs Phase 0 first.
 
 ### Goals
 - Create one model that can represent all meaningful companion types
