@@ -12,7 +12,6 @@
 import { WorldGrid }           from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldData }      from './WorldData';
-import { createNoise2D, fbm }  from '@/core/SimplexNoise';
 import { generateHydrology }   from './HydrologyGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
@@ -20,6 +19,8 @@ import { placeCavesAndGlades } from './CaveGladeWorldPlacer';
 import { buildInterSettlementRoads } from './RoadGenerator';
 import { simulateWorldHistory }      from './WorldHistory';
 import { placeResourceNodes }         from './ResourceNodePlacer';
+import { generateRealmData }   from './RealmGenerator';
+import { realmToWorldGrid }    from './RealmToWorldGrid';
 
 const MLV = 4;
 
@@ -41,8 +42,12 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   const rimStart = GHW * 0.80;
   const rimRange = GHW * 0.36;
 
-  const noise = createNoise2D(seed ^ 0x5E_A1_9D_7B);
-  const grid  = new WorldGrid(GW, GH);
+  // P0 — terrain is now sourced from the same realm generator Overworld
+  // Studio uses, instead of an independent FBM-noise algorithm, so the
+  // same seed produces recognizably the same land/water/mountain layout
+  // in both places. See TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md.
+  const realm = generateRealmData(seed);
+  const grid  = realmToWorldGrid(realm, config.worldSize);
 
   for (let row = 0; row < GH; row++) {
     for (let col = 0; col < GW; col++) {
@@ -50,28 +55,24 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
       const dr  = row - GHH;
       const tR  = Math.sqrt(dc * dc + dr * dr);
 
-      const nx  = dc / GW;
-      const nz  = dr / GH;
-      const raw = (fbm(noise, nx * 3.8, nz * 3.8, 4) + 1) * 0.5;
-      let level = Math.min(MLV, Math.floor(raw * (MLV + 1)));
+      let level = grid.get(col, row).elevation;
 
-      // Smooth flatness gradient around the tower site
+      // Smooth flatness gradient around the tower site — kept as a
+      // gameplay requirement (guaranteed buildable land at the tower)
+      // independent of what the realm placed there.
       const flatness = Math.max(0, 1 - tR / FR);
       level = Math.round(level * (1 - flatness));
 
-      // Rim elevation bias (bowl walls)
+      // Rim elevation bias (bowl walls) — kept unchanged.
       const rimBias = Math.max(0, (tR - rimStart) / rimRange);
       level = Math.min(MLV, Math.round(level + rimBias * 1.8));
 
-      const biomes = ['bog', 'grass', 'forest', 'highland', 'rocky'] as const;
-      grid.set(col, row, {
-        elevation: level,
-        biome:     biomes[level],
-      });
+      grid.set(col, row, { elevation: level });
     }
   }
 
-  // OW-2: carve rivers into the grid
+  // OW-2: carve rivers into the grid (unchanged — out of scope for P0,
+  // see design spec's "Explicitly out of scope" section)
   generateHydrology(grid, config, seed);
 
   return grid;
