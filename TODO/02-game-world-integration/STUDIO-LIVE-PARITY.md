@@ -43,12 +43,15 @@ Work through these in order. Each tier is a separate spec → plan →
 implementation cycle (see `writing-plans`/`brainstorming` skill flow) —
 do not skip ahead.
 
-### P0 — Realm/Terrain unification (foundation, blocks P1 and P3)
-Live game loads an actual Studio-exported realm (a WG-5-style world
-package) instead of running `WorldGenerator.ts`'s independent algorithm.
-This is the highest-risk, highest-priority piece: nothing placed on top of
-terrain (settlements, caves, dungeons) can be trusted to match Studio
-preview until this lands.
+### P0 — Realm/Terrain unification ✅ (elevation + biome layout only)
+`buildWorldGrid()` now calls the same `generateRealmData()` Overworld
+Studio uses (extracted to `src/world/RealmGenerator.ts`), resampled onto
+`WorldGrid` via `src/world/RealmToWorldGrid.ts`. Elevation + biome layout
+now matches Studio's realm preview for a given seed. Still separate,
+tracked as follow-ups: river rasterization (`HydrologyGenerator.ts` still
+runs its own independent river algorithm) and full 10-value biome fidelity
+(currently collapsed to `WorldGrid`'s 6-value `BiomeId`). P1 and P3 can now
+proceed — they build on this slice's realm-derived terrain.
 
 ### P1 — Settlement unification (depends on P0)
 Once realm data is shared, settlement layout and NPC population converge
