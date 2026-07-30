@@ -42,7 +42,7 @@ field carried from realm data; settlement `name` now comes from realm data too.
 - Produces: `WorldGenConfig.settlementCount: number` (replaces `villageCount`, `townCount`, `hasCity`). `DEFAULT_WORLD_GEN_CONFIG.settlementCount = 6`.
 - Consumes: nothing new.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/levels/settlementGenerator.test.ts`, replace the `BASE_CONFIG` declaration:
 
@@ -56,12 +56,12 @@ const BASE_CONFIG: WorldGenConfig = {
 
 (This alone will fail to compile/typecheck against the current `WorldGenConfig` interface, which still requires `villageCount`/`townCount`/`hasCity` and doesn't know `settlementCount`.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts`
 Expected: FAIL — TypeScript error or runtime error referencing missing/unknown config fields (vitest's esbuild transform may not catch missing-required-field errors, but the later steps in this task update the `placeSettlements` tests to read `BASE_CONFIG.settlementCount`, which will be `undefined` here and cause assertion failures. If nothing fails yet, proceed to Step 3 first — the important gate is Step 4/6, verified below.)
 
-- [ ] **Step 3: Update the `WorldGenConfig` interface and defaults**
+- [x] **Step 3: Update the `WorldGenConfig` interface and defaults**
 
 In `src/world/WorldGenConfig.ts`, replace lines 26-31:
 
@@ -92,12 +92,12 @@ Then replace lines 58-60 (`villageCount: 3, townCount: 1, hasCity: true,`) with:
   settlementCount: 6,
 ```
 
-- [ ] **Step 4: Run test to verify config compiles**
+- [x] **Step 4: Run test to verify config compiles**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts`
 Expected: still FAIL at this point (the `placeSettlements` describe block further down in this same file still references `BASE_CONFIG.hasCity`/`.townCount`/`.villageCount`, which no longer exist — these get fixed in Task 3). This is expected and will be resolved by Task 3's test updates; do not fix them now.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/world/WorldGenConfig.ts tests/levels/settlementGenerator.test.ts
@@ -116,7 +116,7 @@ git commit -m "Collapse villageCount/townCount/hasCity into settlementCount"
 - Consumes: nothing new from other tasks.
 - Produces: `SettlementPlan.faction: string` (new required field, default `'human'` when not overridden). `planSettlement(type, centerCol, centerRow, seed, grid, name?: string, faction?: string): SettlementPlan` — two new optional trailing parameters; all existing call sites (`SettlementPlacer.ts`, both `.test.ts`/`.js` test files) remain valid unchanged since the new parameters are optional and appended at the end.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/levels/settlementGenerator.test.ts`, inside `describe('planSettlement', ...)` (after the existing `'plan has a non-empty name'` test), add:
 
@@ -135,12 +135,12 @@ In `tests/levels/settlementGenerator.test.ts`, inside `describe('planSettlement'
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts -t "faction"`
 Expected: FAIL — `plan.faction` is `undefined` (property doesn't exist yet), and the 6-argument call doesn't match the current 5-parameter signature.
 
-- [ ] **Step 3: Add `faction` to `SettlementPlan` and update the three plan helpers**
+- [x] **Step 3: Add `faction` to `SettlementPlan` and update the three plan helpers**
 
 In `src/world/SettlementGenerator.ts`, in the `SettlementPlan` interface (around line 40-49), add a `faction` field:
 
@@ -178,7 +178,7 @@ At line 537 (`_planCity`'s return):
            population: 80 + Math.floor(rand() * 71) };
 ```
 
-- [ ] **Step 4: Update `planSettlement()`'s signature to accept `name`/`faction` overrides**
+- [x] **Step 4: Update `planSettlement()`'s signature to accept `name`/`faction` overrides**
 
 Replace the current `planSettlement()` function:
 
@@ -223,12 +223,12 @@ export function planSettlement(
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts`
 Expected: PASS — all tests in this file pass, including the two new ones. (The `placeSettlements` describe block further down is still broken from Task 1's config change; that's expected until Task 3.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/world/SettlementGenerator.ts tests/levels/settlementGenerator.test.ts
@@ -247,7 +247,7 @@ git commit -m "Add faction field and name/faction overrides to planSettlement()"
 - Consumes: `generateRealmData(seed, W, H, nSettlements, shape?, climate?, roughness?): RealmData` from `src/world/RealmGenerator.ts` (existing, from P0). `planSettlement(type, centerCol, centerRow, seed, grid, name?, faction?): SettlementPlan` and `applySettlementToGrid(plan, grid, id): void` from Task 2's updated `SettlementGenerator.ts`. `WorldGenConfig.settlementCount` from Task 1.
 - Produces: `placeSettlements(grid: WorldGrid, config: WorldGenConfig, seed: number): SettlementEntry[]` — same signature and `SettlementEntry { id, seed, plan }` shape as before (unchanged), so `WorldGenerator.ts`'s `buildWorldData()` call site needs zero changes.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/levels/settlementGenerator.test.ts`, replace the entire `describe('placeSettlements', ...)` block with:
 
@@ -355,12 +355,12 @@ Add the missing import at the top of the file (alongside the existing imports):
 import { generateRealmData } from '@/world/RealmGenerator';
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts -t "placeSettlements"`
 Expected: FAIL — `placeSettlements` still reads `config.hasCity`/`.townCount`/`.villageCount` (now `undefined`), so it currently produces 0 settlements regardless of seed, failing the "places at most" / "unique names" / "priority order" / "carries over" / "minimum spacing" tests (their positive-count expectations won't hold).
 
-- [ ] **Step 3: Rewrite `src/world/SettlementPlacer.ts`**
+- [x] **Step 3: Rewrite `src/world/SettlementPlacer.ts`**
 
 Replace the entire file contents with:
 
@@ -529,17 +529,17 @@ export function placeSettlements(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/levels/settlementGenerator.test.ts`
 Expected: PASS — all tests in the file, including the rewritten `placeSettlements` block.
 
-- [ ] **Step 5: Run `tsc --noEmit` to confirm no type errors**
+- [x] **Step 5: Run `tsc --noEmit` to confirm no type errors**
 
 Run: `npx tsc --noEmit`
 Expected: same error count as the pre-existing baseline (159 errors, per the P0 ledger) — no new errors introduced by this task.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/world/SettlementPlacer.ts tests/levels/settlementGenerator.test.ts
@@ -558,7 +558,7 @@ git commit -m "Site settlements from realm data instead of independent Poisson-d
 - Consumes: `WorldGenConfig.settlementCount` (Task 1).
 - Produces: no new exports — this is leaf UI wiring with no other consumers.
 
-- [ ] **Step 1: Replace the three settlement controls with one slider**
+- [x] **Step 1: Replace the three settlement controls with one slider**
 
 In `src/ui/MainMenu.ts`, replace this block (the "Villages" row):
 
@@ -607,7 +607,7 @@ Then remove the "Towns" row and "City" row entirely:
 
 (delete both blocks — nothing replaces them, "Settlements" above now covers all three).
 
-- [ ] **Step 2: Update the event-wiring section**
+- [x] **Step 2: Update the event-wiring section**
 
 Replace:
 
@@ -631,12 +631,12 @@ with:
     mkSlider('#mm-wg-rivers',      '#mm-wg-rivers-val',      'riverCount');
 ```
 
-- [ ] **Step 3: Verify the build compiles**
+- [x] **Step 3: Verify the build compiles**
 
 Run: `npx tsc --noEmit`
 Expected: same error count as the baseline (159 errors) — no new errors. There is no dedicated automated test for `MainMenu.ts`'s settings UI (confirmed: no existing test file references `mm-wg-villages`/`mm-wg-towns`/`mm-wg-city`), so a type-check is the verification gate for this task.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/ui/MainMenu.ts
@@ -654,7 +654,7 @@ git commit -m "Collapse Villages/Towns/City MainMenu controls into one Settlemen
 - Consumes: `buildWorldData(seed, config): WorldData` from `src/world/WorldGenerator.ts` (already exported, unchanged signature). `WorldData.settlements: SettlementEntry[]` from `src/world/WorldData.ts` (unchanged shape).
 - Produces: nothing new — this is a pure test addition confirming Tasks 1-3 integrate correctly end-to-end.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/world/WorldGenerator.test.ts`, update the import line:
 
@@ -689,17 +689,17 @@ describe('buildWorldData — realm-sourced settlements (P1 siting)', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/world/WorldGenerator.test.ts -t "buildWorldData"`
 Expected: FAIL — `buildWorldData` is not yet imported/exported in a way the test can resolve (it exists already in `WorldGenerator.ts`, so this should actually resolve; if Tasks 1-4 were done correctly this test should already pass. Run it anyway as the verification gate for the full integration, per TDD discipline — if it fails, that reveals a real integration bug to fix before continuing, not a step to skip.)
 
-- [ ] **Step 3: Run test to verify it passes**
+- [x] **Step 3: Run test to verify it passes**
 
 Run: `npx vitest run tests/world/WorldGenerator.test.ts`
 Expected: PASS — all tests in the file, including the two new ones.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/world/WorldGenerator.test.ts
@@ -718,7 +718,7 @@ git commit -m "Add buildWorldData integration test for realm-sourced settlements
 - Consumes: nothing — documentation-only task.
 - Produces: nothing — documentation-only task.
 
-- [ ] **Step 1: Update the P1 section of `STUDIO-LIVE-PARITY.md`**
+- [x] **Step 1: Update the P1 section of `STUDIO-LIVE-PARITY.md`**
 
 Replace:
 
@@ -757,21 +757,21 @@ cycle.
 reimplemented radial-scatter NPC spawner.
 ```
 
-- [ ] **Step 2: Run the full test suite**
+- [x] **Step 2: Run the full test suite**
 
 Run: `npx vitest run`
 Expected: same 16 known pre-existing failures as the P0 baseline (enemyLoader/towerGenerator/talentSystem `.js`/`.ts` duplicate pairs), no new failures.
 
-- [ ] **Step 3: Run the full type-check**
+- [x] **Step 3: Run the full type-check**
 
 Run: `npx tsc --noEmit`
 Expected: same 159-error baseline count as recorded after P0, no new errors.
 
-- [ ] **Step 4: Check off every remaining checkbox in this plan document**
+- [x] **Step 4: Check off every remaining checkbox in this plan document**
 
 Mark all `- [ ]` boxes in this file as `- [x]`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md docs/superpowers/plans/2026-07-30-settlement-siting-unification.md

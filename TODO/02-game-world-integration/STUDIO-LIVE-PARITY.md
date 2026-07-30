@@ -54,10 +54,27 @@ runs its own independent river algorithm) and full 10-value biome fidelity
 proceed — they build on this slice's realm-derived terrain.
 
 ### P1 — Settlement unification (depends on P0)
-Once realm data is shared, settlement layout and NPC population converge
-to one algorithm. Either the live game adopts Studio's ward/Voronoi model,
-or a new shared placement module replaces both. `SettlementGenerator.ts`'s
-independently-reimplemented NPC spawner gets retired in favor of one path.
+Split into three ordered sub-projects: (1) siting ✅, (2) building layout,
+(3) NPC population.
+
+**(1) Siting ✅ shipped.** `SettlementPlacer.ts` now calls the same
+`generateRealmData()` Overworld Studio uses to get settlement
+positions/names/types/factions, instead of running an independent
+Poisson-disk placement. `WorldGenConfig`'s `villageCount`/`townCount`/
+`hasCity` collapsed into one `settlementCount` field (type is assigned by
+the realm algorithm). Building layout (`SettlementGenerator.ts`'s
+plan/apply functions) and NPC population are untouched by this slice.
+
+**(2) Building layout — not started.** Reconciling Studio's Voronoi-ward
+zone-label system, the live game's current cross/street/boulevard
+patterns, and the unused concentric-ring algorithm in
+`SettlementSpawner.ts`. Genuinely unresolved architecture question (Studio
+produces ward *labels*, not building instances) — needs its own design
+cycle.
+
+**(3) NPC population — not started.** Wire up the unused
+`SettlementPopulator.ts` to retire `OverworldScene.ts`'s independently
+reimplemented radial-scatter NPC spawner.
 
 ### P2 — Building custom-override wiring (independent, small, start anytime)
 Close AL-4's actual remaining gap: a custom building saved in the Asset
