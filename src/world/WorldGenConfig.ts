@@ -23,14 +23,26 @@ export interface WorldGenConfig {
   caveCount:      number;
   /** Glade entrances to scatter across forest terrain (CG-3). */
   gladeCount:     number;
-  /** Small villages to generate (OW-5). */
-  villageCount:   number;
-  /** Mid-size towns to generate (OW-5). */
-  townCount:      number;
-  /** Whether to include one large city (OW-5). */
-  hasCity:        boolean;
+  /**
+   * Total settlements to generate (P1 siting unification). Type
+   * (village/town/city) is assigned by the realm algorithm, not
+   * user-configurable per type — matches Overworld Studio's `nSettlements`
+   * parameter to `generateRealmData()`.
+   */
+  settlementCount: number;
   /** Number of enemy camps to place. */
   enemyCampCount: number;
+  /**
+   * Asset rendering mode for settlements/NPCs.
+   * 'code'  — procedural generator (default).
+   * 'asset' — load models from asset packs.
+   */
+  assetMode:  'code' | 'asset';
+  /**
+   * Which asset pack IDs to activate when assetMode is 'asset'.
+   * Pack IDs match folder names under public/assets/.
+   */
+  assetPacks: string[];
   /**
    * Character rendering mode.
    * 'code'  — procedural DNA builder (default).
@@ -55,10 +67,10 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   dungeonCount:   6,
   caveCount:      3,
   gladeCount:     2,
-  villageCount:   3,
-  townCount:      1,
-  hasCity:        true,
+  settlementCount: 6,
   enemyCampCount: 8,
+  assetMode:      'code',
+  assetPacks:     [],
   charMode:       'code',
   charPacks:      ['fox', 'slime', 'goblin_pack', 'villager_npc'],
 };
