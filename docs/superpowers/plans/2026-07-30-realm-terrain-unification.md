@@ -30,7 +30,7 @@
 **Interfaces:**
 - Produces: `chaikin(pts: {x:number,y:number}[], passes?: number): {x:number,y:number}[]` — exported from `src/core/chaikin.ts`, used by both `overworld-studio.ts` and (in Task 2) `src/world/RealmGenerator.ts`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/core/chaikin.test.ts`:
 
@@ -71,12 +71,12 @@ describe('chaikin', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/core/chaikin.test.ts`
 Expected: FAIL — `Cannot find module '@/core/chaikin'` (module doesn't exist yet).
 
-- [ ] **Step 3: Create `src/core/chaikin.ts`**
+- [x] **Step 3: Create `src/core/chaikin.ts`**
 
 ```typescript
 /**
@@ -111,12 +111,12 @@ export function chaikin(pts: Point2[], passes = 3): Point2[] {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/core/chaikin.test.ts`
 Expected: PASS (5/5 tests)
 
-- [ ] **Step 5: Update `overworld-studio.ts` to use the shared module**
+- [x] **Step 5: Update `overworld-studio.ts` to use the shared module**
 
 In `src/overworld-studio.ts`, find the import block near the top (around line 25, after `import { createNoise2D } from '@/core/SimplexNoise';`) and add:
 
@@ -146,12 +146,12 @@ function chaikin(pts: Vec2[], passes = 3): Vec2[] {
 
 Delete that whole block. Keep the `lerp` function above it (still used elsewhere in the file at line ~431) and the `dist`/`centroid` functions untouched.
 
-- [ ] **Step 6: Verify no regressions**
+- [x] **Step 6: Verify no regressions**
 
 Run: `npx tsc --noEmit` — expect the same error count as the pre-existing baseline (no new errors; `chaikin`'s call sites in `overworld-studio.ts` are unchanged in signature, `Vec2` and `Point2` are structurally identical `{x:number,y:number}` shapes so TypeScript's structural typing accepts the import without changes at call sites).
 Run: `npx vitest run` — expect the same pass count as the pre-existing baseline plus the 5 new chaikin tests.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/core/chaikin.ts tests/core/chaikin.test.ts src/overworld-studio.ts
@@ -171,7 +171,7 @@ git commit -m "refactor: extract chaikin corner-cutting into src/core/chaikin.ts
 - Consumes: `chaikin(pts, passes?)` from Task 1's `src/core/chaikin.ts`; `mulberry32(seed)` from `@/core/prng`; `createNoise2D(seed)` from `@/core/SimplexNoise`; types `RealmData, RealmCell, RealmBiome, RealmRiver, RealmSettlement, SettlementFaction, Vec2` (all already exported from `src/overworld-studio.ts`, imported here via `import type` only — zero runtime coupling, same pattern already used by `src/world/RealmToTerrain.ts`).
 - Produces: `generateRealmData(seed, W?, H?, nSettlements?, shape?, climate?, roughness?): RealmData`, and the exported types `RealmShape`, `RealmClimate` — both consumed by Task 3 (`RealmToWorldGrid.ts` doesn't need these types directly, but Task 4's `WorldGenerator.ts` calls `generateRealmData`) and re-exported from `overworld-studio.ts` for its own UI code to keep using.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/world/RealmGenerator.test.ts`:
 
@@ -241,12 +241,12 @@ describe('generateRealmData', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/world/RealmGenerator.test.ts`
 Expected: FAIL — `Cannot find module '@/world/RealmGenerator'`.
 
-- [ ] **Step 3: Create `src/world/RealmGenerator.ts`**
+- [x] **Step 3: Create `src/world/RealmGenerator.ts`**
 
 ```typescript
 /**
@@ -488,12 +488,12 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
 
 Note: `rand2` is declared but was already unused in the original code (pre-existing, not introduced by this extraction) — leave it exactly as-is; do not "clean it up" as that's out of scope for a pure move.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/world/RealmGenerator.test.ts`
 Expected: PASS (8/8 tests)
 
-- [ ] **Step 5: Update `overworld-studio.ts` to import from the new module**
+- [x] **Step 5: Update `overworld-studio.ts` to import from the new module**
 
 In `src/overworld-studio.ts`, add near the top import block (after the `chaikin` import added in Task 1):
 
@@ -512,12 +512,12 @@ Delete these two lines only — keep `export type RealmBiome = ...` and `export 
 
 2. The entire block from `const NAME_PRE = [...]` through the closing `}` of `generateRealmData` (currently at approximately lines 3568-3777) — this is the exact block moved into `RealmGenerator.ts` in Step 3 above (NAME_PRE, NAME_SUFF, `realmName`, `classifyBiome`, `fbmR`, `generateRealmData`). Delete the whole block; the import added above replaces it.
 
-- [ ] **Step 6: Verify no regressions**
+- [x] **Step 6: Verify no regressions**
 
 Run: `npx tsc --noEmit` — expect the same error count as the Task 1 baseline (the one call site at the old line ~4572, `currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);`, keeps working unchanged since the imported function has an identical signature).
 Run: `npx vitest run` — expect the same pass count as the Task 1 baseline plus the 8 new `RealmGenerator` tests.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/world/RealmGenerator.ts tests/world/RealmGenerator.test.ts src/overworld-studio.ts
@@ -536,7 +536,7 @@ git commit -m "refactor: extract generateRealmData into pure src/world/RealmGene
 - Consumes: `RealmData` (type-only import from `@/overworld-studio`), `WorldGrid`/`BiomeId` from `./WorldGrid`, `WorldSize` from `./WorldGenConfig`.
 - Produces: `realmToWorldGrid(realm: RealmData, worldSize: WorldSize): WorldGrid` — consumed by Task 4's modified `buildWorldGrid()`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/world/RealmToWorldGrid.test.ts`:
 
@@ -627,12 +627,12 @@ describe('realmToWorldGrid', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/world/RealmToWorldGrid.test.ts`
 Expected: FAIL — `Cannot find module '@/world/RealmToWorldGrid'`.
 
-- [ ] **Step 3: Create `src/world/RealmToWorldGrid.ts`**
+- [x] **Step 3: Create `src/world/RealmToWorldGrid.ts`**
 
 ```typescript
 /**
@@ -709,17 +709,17 @@ export function realmToWorldGrid(realm: RealmData, worldSize: WorldSize): WorldG
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/world/RealmToWorldGrid.test.ts`
 Expected: PASS (6/6 tests)
 
-- [ ] **Step 5: Verify no regressions**
+- [x] **Step 5: Verify no regressions**
 
 Run: `npx tsc --noEmit` — expect the same error count as the Task 2 baseline (this is a new, self-contained file with no existing callers yet).
 Run: `npx vitest run` — expect the same pass count as the Task 2 baseline plus the 6 new tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/world/RealmToWorldGrid.ts tests/world/RealmToWorldGrid.test.ts
@@ -738,7 +738,7 @@ git commit -m "feat: add RealmToWorldGrid converter (realm cells -> WorldGrid bi
 - Consumes: `generateRealmData` from Task 2's `@/world/RealmGenerator`, `realmToWorldGrid` from Task 3's `@/world/RealmToWorldGrid`.
 - Produces: `buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid` — signature and return type unchanged from before this task, so `buildWorldData()` (same file), `main.ts`, and `src/editor/BlueprintLayer.ts` need zero changes.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/world/WorldGenerator.test.ts`:
 
@@ -802,12 +802,12 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/world/WorldGenerator.test.ts`
 Expected: FAIL on the water-tiles test (`waterCount` will be 0 — today's FBM generator never produces `'water'`) and the flat-zone test may or may not already pass by coincidence; the water-tiles failure is the meaningful RED signal that terrain isn't realm-sourced yet.
 
-- [ ] **Step 3: Modify `buildWorldGrid()` in `src/world/WorldGenerator.ts`**
+- [x] **Step 3: Modify `buildWorldGrid()` in `src/world/WorldGenerator.ts`**
 
 Replace the imports at the top of the file:
 
@@ -948,12 +948,12 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
 
 Note the tower flat-zone/rim-bias post-processing loop now only patches `elevation` (via `grid.set(col, row, { elevation: level })`, a partial patch — `WorldGrid.set()` is `Partial<WorldCell>`-based per its existing API) and leaves `biome` exactly as `realmToWorldGrid` set it, since biome shouldn't change just because the tower flattened the terrain height at that spot.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/world/WorldGenerator.test.ts`
 Expected: PASS (5/5 tests)
 
-- [ ] **Step 5: Run the full regression suite**
+- [x] **Step 5: Run the full regression suite**
 
 Run: `npx vitest run`
 Expected: same pass count as the Task 3 baseline plus the 5 new `WorldGenerator.test.ts` tests, and in particular:
@@ -966,7 +966,7 @@ If either `DungeonPlacer.test.ts` or `CaveGladeWorldPlacer.test.ts` fails, read 
 Run: `npx tsc --noEmit`
 Expected: same error count as the Task 3 baseline (no new errors — `buildWorldGrid`'s signature is unchanged).
 
-- [ ] **Step 6: Manual live verification**
+- [x] **Step 6: Manual live verification**
 
 Run the dev server (`npm run dev` or the project's existing dev script) and:
 1. Open Overworld Studio, generate a realm with a specific seed (note it), observe the land/water/mountain layout in the realm preview.
@@ -974,14 +974,14 @@ Run the dev server (`npm run dev` or the project's existing dev script) and:
 3. Confirm the overworld terrain's land/water/mountain layout visually corresponds to the Studio preview (not pixel-identical, given nearest-neighbor resampling and the tower flat-zone override, but recognizably the same coastline/mountain shapes — e.g. if Studio showed a large ocean in the northeast quadrant, the live game should show water in the same relative area).
 4. Confirm the game is still playable: player can walk around, settlements/dungeons still appear (their placement algorithm is unchanged from before this plan).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/world/WorldGenerator.ts tests/world/WorldGenerator.test.ts
 git commit -m "feat: buildWorldGrid sources terrain from generateRealmData (P0 realm/terrain unification)"
 ```
 
-- [ ] **Step 8: Update the TODO doc**
+- [x] **Step 8: Update the TODO doc**
 
 In `TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md`, update the P0 section to note it's shipped:
 
@@ -1008,7 +1008,7 @@ runs its own independent river algorithm) and full 10-value biome fidelity
 proceed — they build on this slice's realm-derived terrain.
 ```
 
-- [ ] **Step 9: Commit the TODO update**
+- [x] **Step 9: Commit the TODO update**
 
 ```bash
 git add TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md
