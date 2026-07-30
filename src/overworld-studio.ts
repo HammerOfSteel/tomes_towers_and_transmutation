@@ -5135,6 +5135,7 @@ function _selectLibraryEntry(id: string) {
   _renderPinTags(entry);
   _previewLibraryEntry(entry);
   _renderLibraryGrid();
+  _closeDnaEditor();
 }
 
 // ── Pin to location ───────────────────────────────────────────────────────────
@@ -5288,6 +5289,50 @@ document.getElementById('btn-library-duplicate')?.addEventListener('click', () =
   _renderLibraryGrid();
   _selectLibraryEntry(copy.id);
   _showToast(`✓ Duplicated "${source.name}"`);
+});
+
+// ── Edit DNA ──────────────────────────────────────────────────────────────────
+function _closeDnaEditor() {
+  const editor = document.getElementById('library-dna-editor') as HTMLElement | null;
+  if (editor) editor.style.display = 'none';
+}
+
+document.getElementById('btn-library-editdna')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const exported = assetLibrary.exportEntry(_librarySelectedId);
+  if (!exported) return;
+  const textarea = document.getElementById('library-dna-textarea') as HTMLTextAreaElement | null;
+  const editor = document.getElementById('library-dna-editor') as HTMLElement | null;
+  if (!textarea || !editor) return;
+  textarea.value = JSON.stringify(exported.data, null, 2);
+  editor.style.display = 'block';
+});
+
+document.getElementById('btn-library-dna-cancel')?.addEventListener('click', () => {
+  _closeDnaEditor();
+});
+
+document.getElementById('btn-library-dna-save')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const textarea = document.getElementById('library-dna-textarea') as HTMLTextAreaElement | null;
+  if (!textarea) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(textarea.value);
+  } catch (err) {
+    console.error('[AssetLibrary] Edit DNA: invalid JSON', err);
+    _showToast('✕ Invalid JSON');
+    return;
+  }
+  const updated = assetLibrary.updateData(_librarySelectedId, parsed);
+  if (!updated) {
+    _showToast('✕ Update failed');
+    return;
+  }
+  _closeDnaEditor();
+  _renderLibraryGrid();
+  _selectLibraryEntry(updated.id);
+  _showToast('✓ DNA updated');
 });
 
 // ── Export ────────────────────────────────────────────────────────────────────

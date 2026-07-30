@@ -575,6 +575,7 @@
             <span id="library-preview-name" style="font-size:11px;color:#e8d0a0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
             <div style="display:flex;gap:4px;flex-shrink:0">
               <button class="btn" id="btn-library-duplicate" title="Duplicate" style="padding:2px 6px">⧉</button>
+              <button class="btn" id="btn-library-editdna" title="Edit DNA" style="padding:2px 6px">✏️</button>
               <button class="btn" id="btn-library-export" title="Export JSON" style="padding:2px 6px">⬇</button>
               <button class="btn" id="btn-library-delete" title="Delete" style="padding:2px 6px;color:#c05050">✕</button>
             </div>
@@ -598,6 +599,17 @@
             <button class="btn" id="btn-library-pin" title="Pin to location" style="padding:2px 6px">📌</button>
           </div>
           <div id="library-pin-tags" style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5"></div>
+          <div id="library-dna-editor" style="display:none;margin-top:6px">
+            <textarea
+              id="library-dna-textarea"
+              spellcheck="false"
+              style="width:100%;min-height:140px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;font-family:monospace;box-sizing:border-box;padding:6px"
+            ></textarea>
+            <div style="display:flex;gap:4px;margin-top:4px">
+              <button class="btn" id="btn-library-dna-save" style="flex:1">Save DNA</button>
+              <button class="btn" id="btn-library-dna-cancel" style="flex:1">Cancel</button>
+            </div>
+          </div>
         </div>
       </div><!-- /library-panel -->
 
