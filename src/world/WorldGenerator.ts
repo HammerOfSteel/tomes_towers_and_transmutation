@@ -25,9 +25,13 @@ import { realmToWorldGrid }    from './RealmToWorldGrid';
 const MLV = 4;
 
 /**
- * Build a WorldGrid with elevation (0–4) and biome data from seeded simplex
- * noise.  The algorithm matches the original OverworldScene._buildGrid with
- * distances parameterised to the grid size:
+ * Build a WorldGrid with elevation (0–4) and biome data sourced from the
+ * same `generateRealmData()` realm generator Overworld Studio uses (P0
+ * realm/terrain unification — see
+ * TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md), resampled onto
+ * this grid's shape via `realmToWorldGrid()`. The tower flat-zone/rim-bias
+ * post-processing below matches the original OverworldScene._buildGrid
+ * with distances parameterised to the grid size:
  *   – Flat zone  ≈ 28 % of half-width  (FR = 7 at GW = 51)
  *   – Rim bias starts at 80 % of half-width and spans 36 %
  */
