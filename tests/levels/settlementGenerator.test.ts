@@ -16,6 +16,7 @@ import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
 import { BUILDING_SPECS } from '@/world/buildings/BuildingTypes';
 import type { PlacedBuilding } from '@/world/SettlementGenerator';
+import { generateRealmData } from '@/world/RealmGenerator';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,8 @@ function flatGrid(size = 64): WorldGrid {
 
 const BASE_CONFIG: WorldGenConfig = {
   seed: 42, worldSize: 128, riverCount: 2, lakeCount: 0,
-  dungeonCount: 2, settlementCount: 3, enemyCampCount: 2,
+  dungeonCount: 2, caveCount: 0, gladeCount: 0,
+  settlementCount: 3, enemyCampCount: 2,
   assetMode: 'code', assetPacks: [], charMode: 'code', charPacks: [],
 };
 
@@ -136,25 +138,97 @@ describe('applySettlementToGrid', () => {
 // ── placeSettlements ──────────────────────────────────────────────────────────
 
 describe('placeSettlements', () => {
-  it('places at most config total settlements', () => {
+  it('places at most config.settlementCount settlements', () => {
     const g = flatGrid(128);
     const entries = placeSettlements(g, BASE_CONFIG, 42);
-    const total = (BASE_CONFIG.hasCity ? 1 : 0) + BASE_CONFIG.townCount + BASE_CONFIG.villageCount;
-    expect(entries.length).toBeLessThanOrEqual(total);
+    expect(entries.length).toBeLessThanOrEqual(BASE_CONFIG.settlementCount);
   });
 
   it('produces unique names per settlement', () => {
-    const g     = flatGrid(128);
-    const entries = placeSettlements(g, { ...BASE_CONFIG, villageCount: 3 }, 99);
-    const names  = entries.map(e => e.plan.name);
-    // Names may occasionally collide due to seeding, but generally unique
+    const g = flatGrid(128);
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 5 }, 99);
+    const names = entries.map(e => e.plan.name);
     expect(new Set(names).size).toBeGreaterThan(0);
   });
 
-  it('returns empty array when all counts are zero', () => {
-    const g   = flatGrid(64);
-    const cfg = { ...BASE_CONFIG, hasCity: false, townCount: 0, villageCount: 0 };
-    const entries = placeSettlements(g, cfg, 7);
+  it('returns empty array when settlementCount is 0', () => {
+    const g = flatGrid(64);
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 0 }, 7);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('is deterministic for the same seed', () => {
+    const cfg = { ...BASE_CONFIG, settlementCount: 6 };
+    const e1 = placeSettlements(flatGrid(128), cfg, 777);
+    const e2 = placeSettlements(flatGrid(128), cfg, 777);
+    const summarize = (es: typeof e1) => es.map(e => ({ col: e.plan.centerCol, row: e.plan.centerRow, name: e.plan.name }));
+    expect(summarize(e1)).toEqual(summarize(e2));
+  });
+
+  it('processes settlements in city -> town -> village priority order', () => {
+    const g = flatGrid(128);
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 6 }, 42);
+    const idsByType: Record<string, number[]> = { city: [], town: [], village: [] };
+    for (const e of entries) idsByType[e.plan.type]!.push(e.id);
+    const maxCityId    = idsByType.city!.length    ? Math.max(...idsByType.city!)    : -Infinity;
+    const minTownId    = idsByType.town!.length    ? Math.min(...idsByType.town!)    : Infinity;
+    const maxTownId    = idsByType.town!.length    ? Math.max(...idsByType.town!)    : -Infinity;
+    const minVillageId = idsByType.village!.length ? Math.min(...idsByType.village!) : Infinity;
+    expect(maxCityId).toBeLessThan(minTownId);
+    expect(maxTownId).toBeLessThan(minVillageId);
+  });
+
+  it('carries over realm name, faction, and type onto the settlement plan', () => {
+    const g = flatGrid(128);
+    const cfg = { ...BASE_CONFIG, settlementCount: 6 };
+    const realm = generateRealmData(42, 96, 72, cfg.settlementCount);
+    const entries = placeSettlements(g, cfg, 42);
+    expect(entries.length).toBeGreaterThan(0);
+    const realmByName = new Map(realm.settlements.map(s => [s.name, s]));
+    for (const e of entries) {
+      const src = realmByName.get(e.plan.name);
+      expect(src).toBeDefined();
+      expect(e.plan.type).toBe(src!.size);
+      expect(e.plan.faction).toBe(src!.faction);
+    }
+  });
+
+  it('enforces minimum spacing between placed settlements by (later-placed) type', () => {
+    const g = flatGrid(128);
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 6 }, 42);
+    const MIN_DIST: Record<string, number> = { city: 35, town: 22, village: 14 };
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i]!.plan, b = entries[j]!.plan; // b was placed after a
+        const dist = Math.hypot(a.centerCol - b.centerCol, a.centerRow - b.centerRow);
+        expect(dist).toBeGreaterThanOrEqual(MIN_DIST[b.type]! - 0.001);
+      }
+    }
+  });
+
+  it('never sites a settlement on a tile pre-occupied by a dungeon', () => {
+    const g = flatGrid(128);
+    for (let row = 60; row <= 68; row++) {
+      for (let col = 60; col <= 68; col++) {
+        g.set(col, row, { content: 'dungeon_entrance' });
+      }
+    }
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 3 }, 11);
+    for (const e of entries) {
+      const inBlockedZone = e.plan.centerCol >= 60 && e.plan.centerCol <= 68 &&
+                             e.plan.centerRow >= 60 && e.plan.centerRow <= 68;
+      expect(inBlockedZone).toBe(false);
+    }
+  });
+
+  it('drops all settlements when the entire grid is invalid terrain', () => {
+    const g = new WorldGrid(64, 64);
+    for (let row = 0; row < 64; row++) {
+      for (let col = 0; col < 64; col++) {
+        g.set(col, row, { elevation: 1, biome: 'water', content: 'empty', feature: 'none', walkable: false });
+      }
+    }
+    const entries = placeSettlements(g, { ...BASE_CONFIG, settlementCount: 3 }, 5);
     expect(entries).toHaveLength(0);
   });
 });
