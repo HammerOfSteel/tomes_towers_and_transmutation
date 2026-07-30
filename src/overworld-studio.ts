@@ -23,6 +23,7 @@
 import { Delaunay } from 'd3-delaunay';
 // @ts-ignore
 import { createNoise2D } from '@/core/SimplexNoise';
+import { chaikin } from '@/core/chaikin';
 import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from './buildingToDungeonPlan';
@@ -255,22 +256,6 @@ function centroid(pts: Vec2[]): Vec2 {
            y: pts.reduce((s, p) => s + p.y, 0) / pts.length };
 }
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
-
-/** Chaikin corner-cutting — 3 passes gives smooth road curves */
-function chaikin(pts: Vec2[], passes = 3): Vec2[] {
-  let p = pts;
-  for (let pass = 0; pass < passes; pass++) {
-    const out: Vec2[] = [p[0]!];
-    for (let i = 0; i < p.length - 1; i++) {
-      const a = p[i]!, b = p[i + 1]!;
-      out.push({ x: lerp(a.x, b.x, 0.25), y: lerp(a.y, b.y, 0.25) });
-      out.push({ x: lerp(a.x, b.x, 0.75), y: lerp(a.y, b.y, 0.75) });
-    }
-    out.push(p[p.length - 1]!);
-    p = out;
-  }
-  return p;
-}
 
 // ── Ward rater functions ──────────────────────────────────────────────────────
 
