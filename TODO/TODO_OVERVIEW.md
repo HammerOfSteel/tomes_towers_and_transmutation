@@ -18,6 +18,16 @@
 08 Polish & Release        → performance, UX, fundraising  ← LAST
 ```
 
+> ⚠️ **Correction (2026-08 audit, see G15):** "05 depends on 04, 06 depends
+> on 04+05" is not literally true — 05's quest/story content already
+> references reward and event types (follower recruits, transmutation
+> items, defense escalation) that only 06's systems can deliver, and those
+> 06 systems are currently zero-code, design-only. In practice: **finalize
+> data models/schemas for 06's systems (TRS, ATC, FCS, TDE, Save) before
+> locking down 05's content**, so quest/story authoring doesn't reference
+> reward types that don't exist yet. Full 06 implementation can still trail
+> 05 — only the schemas need to come first.
+
 ---
 
 ## Section Index
@@ -143,7 +153,7 @@ Last pass. **Nothing here starts until 07 is green.**
 
 | #   | Gap                                                                                                                                                                 | Impact        | Where to fix                                               |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------------------------------------------------- |
-| G1  | **Game World Integration** — realm terrain/river/chunking (RI-1 to RI-4), settlement spawning/roads/population/boundary/LOD (SI-1 to SI-6), dungeon entrance prop + site metadata (DI-1, DI-2, DI-2b), and cave/glade entrance props + realm placement (CG-1, CG-2, CG-3) data-transform/mesh/geometry slices all shipped as pure/tested modules; cave/glade entrances are now also fully wired into the live `OverworldScene.ts` (props render, discovery prompt + `[E]` toast, minimap icons, save persistence), the live settlement pipeline (already independently building/roads/NPCs) gained SI-4 boundary-crossing toasts, and the live dungeon pipeline (already working) had its exit-position bug fixed (DI-3) and site-family/reward-bias metadata wired live onto `DungeonEntry` + surfaced in the discovery toast (DI-2b) — quest/loot/elite-recruit consumption of that metadata (DI-4b), cave/glade floor scene transition (CG-4), and settlement LOD (SI-5) still needed                                             | Blocking demo | `02-game-world-integration/`                               |
+| G1  | **Game World Integration** — realm terrain/river/chunking (RI-1 to RI-4), settlement spawning/roads/population/boundary/LOD (SI-1 to SI-6), dungeon entrance prop + site metadata (DI-1, DI-2, DI-2b), and cave/glade entrance props + realm placement (CG-1, CG-2, CG-3) data-transform/mesh/geometry slices all shipped as pure/tested modules; cave/glade entrances are now also fully wired into the live `OverworldScene.ts` (props render, discovery prompt + `[E]` toast, minimap icons, save persistence), the live settlement pipeline (already independently building/roads/NPCs) gained SI-4 boundary-crossing toasts, and the live dungeon pipeline (already working) had its exit-position bug fixed (DI-3) and site-family/reward-bias metadata wired live onto `DungeonEntry` + surfaced in the discovery toast (DI-2b) — **⚠️ audit (2026-08) found Studio and live game run separate, unrelated generators for realm/terrain and settlements (see [STUDIO-LIVE-PARITY.md](./02-game-world-integration/STUDIO-LIVE-PARITY.md)); quest/loot/elite-recruit consumption of that metadata (DI-4b), cave/glade floor scene transition (CG-4), and settlement LOD (SI-5) are now blocked-by-design pending the parity work's P0/P1/P3, not just "still needed"** | Blocking demo | `02-game-world-integration/`                               |
 | G2  | **Asset Library UI** — partial; save/preview/export/import/rename/duplicate/delete exist for Studio asset types, but full creator/runtime coverage is still missing | Medium        | `01-overworld-studio/asset-library.md`                     |
 | G3  | **Game Inventory** — stabilize the master contract of procedural asset outputs so phase-01 tools have a clear source of truth                                       | Medium        | `01-overworld-studio/game-inventory.md`                    |
 | G5  | **Audio System** — referenced everywhere but has no phased plan                                                                                                     | High          | `06-game-systems/audio.md`                                 |
@@ -156,6 +166,7 @@ Last pass. **Nothing here starts until 07 is green.**
 | G12 | **Alchemy / Transmutation / Crafting** — core material-conversion pillar lacked a phased production plan                                                            | High          | `06-game-systems/alchemy-transmutation-crafting.md`        |
 | G13 | **Follower & Companion System** — quest rewards and recruits lacked a dedicated runtime/roster/assignment plan                                                      | High          | `06-game-systems/follower-companion-system.md`             |
 | G14 | **Tower Defense / Domain Events** — companion-centered defense and tower pressure loop lacked a dedicated plan                                                      | High          | `06-game-systems/tower-defense-domain-events.md`           |
+| G15 | **05 ↔ 06 circular dependency + false-done claims** — quests.md/story-arcs.md reference follower/alchemy/defense reward & event types that TRS/ATC/FCS/TDE (all zero-code, design-only) would need to deliver; also two claimed-done items don't exist in code: `customPrincess` toggle (princess-creator.md) and `survive_wave` beat type (story-arcs.md — silently auto-completes via a placeholder, `WaveManager` doesn't exist) | High          | `05-content/`, `06-game-systems/`                          |
 
 ---
 

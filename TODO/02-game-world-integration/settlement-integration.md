@@ -1,6 +1,11 @@
 # Settlement Integration
 > 🚧 In Progress — Place generated settlements from OW-A/B into the 3D overworld at correct realm map positions.
 
+> ⚠️ **This is P1 in [STUDIO-LIVE-PARITY.md](./STUDIO-LIVE-PARITY.md)** —
+> depends on P0 (Realm/Terrain unification) landing first. **SI-5 (LOD) is
+> explicitly paused** until then — don't build LOD against a settlement
+> layout/position that P1 may still change.
+
 ## Status: 🚧 In Progress — SI-1 through SI-6 all shipped as pure, tested
 data-transform/mesh/geometry modules (`SettlementSpawner.ts`,
 `SettlementRoadMesh.ts`, `SettlementPopulator.ts`, `SettlementBoundary.ts`,

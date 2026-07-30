@@ -11,7 +11,13 @@
 ## The Problem
 Overworld Studio generates beautiful maps (realm, settlements, dungeons, caves, solar system).
 The game has `OverworldScene.ts` and `WorldGenerator.ts`.
-But there is NO clear plan for how one feeds the other.
+An audit (2026-08) confirmed these mostly run **separate, unrelated
+algorithms** rather than one feeding the other — see
+**[STUDIO-LIVE-PARITY.md](./STUDIO-LIVE-PARITY.md)** for the full findings,
+the "Studio is source of truth" decision, and the required build order
+(P0 Realm → P1 Settlement → P2 Building overrides → P3 Cave/Glade → P4
+Dungeon placement). **Read that doc before starting any sub-todo below** —
+several items here (SI-5, CG-4, DI-4b) are explicitly paused pending it.
 
 ## The Contract (what needs to be defined)
 

@@ -1,6 +1,12 @@
 # Realm Integration
 > Generate the 3D playable overworld terrain directly from the OW-A realm map.
 
+> ⚠️ **This is P0 in [STUDIO-LIVE-PARITY.md](./STUDIO-LIVE-PARITY.md)** — the
+> foundation everything else (settlements, caves, dungeons) sits on top of.
+> "Wiring RI-1–4 in" is not a small renderer hookup: it means replacing
+> `WorldGenerator.ts`'s independent algorithm with actual Studio-generated
+> realm data. Read the parity doc before starting here.
+
 ## Status: 🚧 In Progress — RI-1, RI-2, RI-3 (river mesh), and RI-4 (chunk streaming core) shipped as pure, unit-tested modules; only the actual `OverworldScene.ts` renderer wiring (LOD, textures, river colliders, chunk↔terrain integration) remains
 
 ## Goal

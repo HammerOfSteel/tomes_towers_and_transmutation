@@ -39,6 +39,11 @@ The game generates NPCs, buildings, enemies, props, and creatures procedurally. 
 - [x] Dungeon generator: "Save room layouts from this dungeon" as separate reusable sub-assets
 
 ### AL-4 — Library → Game Runtime
+> ⚠️ The two unchecked items below (settlement buildings, glade/POI
+> overrides) are tracked as **P2** in
+> [STUDIO-LIVE-PARITY.md](../02-game-world-integration/STUDIO-LIVE-PARITY.md)
+> — small and independent of the realm/settlement unification work, safe to
+> pick up anytime.
 - [x] `WorldGen.ts` now checks library for custom settlement NPC entries and uses them instead of procedural settlement NPC generation when a matching custom override exists
 - [x] Extend runtime override lookup to custom settlement buildings
 - [x] Extend runtime override lookup to custom room layouts (`src/levels/customRoomOverrides.ts` → `generateDungeon`, matched by `room:<instanceId>` tag or blueprint id, footprint-guarded so generated door wiring stays valid)

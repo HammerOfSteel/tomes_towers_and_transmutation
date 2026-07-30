@@ -1,6 +1,11 @@
 # Cave & Glade Integration
 > ⚠️ GAP — Place cave and glade entrances on the realm overworld map.
 
+> ⚠️ **This is P3 in [STUDIO-LIVE-PARITY.md](./STUDIO-LIVE-PARITY.md)** —
+> depends on P0 (Realm/Terrain unification). **CG-4 (floor scene
+> transition) is explicitly paused** until the two placer modules
+> (`CaveGladePlacer.ts` / `CaveGladeWorldPlacer.ts`) converge under P3.
+
 ## Status: 🚧 In Progress — CG-1/CG-2/CG-3/CG-5 done; CG-3 shipped for **both**
 the Studio's `RealmData` (pure/tested) **and** the live game's `WorldGrid`,
 with the live version fully wired into `OverworldScene.ts` (props render,
