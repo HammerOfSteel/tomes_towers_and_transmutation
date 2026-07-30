@@ -40,6 +40,7 @@ export interface RoadSegment {
 export interface SettlementPlan {
   type:       SettlementType;
   name:       string;
+  faction:    string;
   centerCol:  number;
   centerRow:  number;
   buildings:  PlacedBuilding[];
@@ -56,13 +57,18 @@ export function planSettlement(
   centerRow: number,
   seed:      number,
   grid:      WorldGrid,
+  name?:     string,
+  faction?:  string,
 ): SettlementPlan {
-  const name = generateSettlementName(seed, type);
+  const settlementName = name ?? generateSettlementName(seed, type);
+  let plan: SettlementPlan;
   switch (type) {
-    case 'village': return _planVillage(centerCol, centerRow, seed, grid, name);
-    case 'town':    return _planTown(centerCol, centerRow, seed, grid, name);
-    case 'city':    return _planCity(centerCol, centerRow, seed, grid, name);
+    case 'village': plan = _planVillage(centerCol, centerRow, seed, grid, settlementName); break;
+    case 'town':    plan = _planTown(centerCol, centerRow, seed, grid, settlementName); break;
+    case 'city':    plan = _planCity(centerCol, centerRow, seed, grid, settlementName); break;
   }
+  if (faction !== undefined) plan.faction = faction;
+  return plan;
 }
 
 /**
@@ -281,7 +287,7 @@ function _planVillage(
     roads.push({ col: c!, row: r! });
   }
 
-  return { type: 'village', name, centerCol: cc, centerRow: cr, buildings, roads,
+  return { type: 'village', name, faction: 'human', centerCol: cc, centerRow: cr, buildings, roads,
            population: 8 + Math.floor(rand() * 9) };
 }
 
@@ -409,7 +415,7 @@ function _planTown(
     roads.push({ col: c!, row: r! });
   }
 
-  return { type: 'town', name, centerCol: cc, centerRow: cr, buildings, roads,
+  return { type: 'town', name, faction: 'human', centerCol: cc, centerRow: cr, buildings, roads,
            population: 25 + Math.floor(rand() * 26) };
 }
 
@@ -534,6 +540,6 @@ function _planCity(
     roads.push({ col: c, row: r });
   }
 
-  return { type: 'city', name, centerCol: cc, centerRow: cr, buildings, roads,
+  return { type: 'city', name, faction: 'human', centerCol: cc, centerRow: cr, buildings, roads,
            population: 80 + Math.floor(rand() * 71) };
 }

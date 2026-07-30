@@ -92,6 +92,19 @@ describe('planSettlement', () => {
     const plan = planSettlement('village', cc, cr, 0x5678, g);
     expect(plan.name.length).toBeGreaterThan(0);
   });
+
+  it('defaults to faction "human" when no faction is given', () => {
+    const g = flatGrid(GW);
+    const plan = planSettlement('village', cc, cr, 0x1111, g);
+    expect(plan.faction).toBe('human');
+  });
+
+  it('accepts an explicit name and faction override', () => {
+    const g = flatGrid(GW);
+    const plan = planSettlement('town', cc, cr, 0x2222, g, 'Custom Falls', 'elven');
+    expect(plan.name).toBe('Custom Falls');
+    expect(plan.faction).toBe('elven');
+  });
 });
 
 // ── applySettlementToGrid ─────────────────────────────────────────────────────
