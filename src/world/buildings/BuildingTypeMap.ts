@@ -1,114 +1,30 @@
-/**
- * BuildingTypeMap — bridges the old BuildingType identifier system (used by
- * SettlementGenerator / WorldData) to the new BuildingDNA system.
- *
- * createSettlementBuildingDna() produces a deterministic BuildingDNA from:
- *  • PlacedBuilding.type  (old kind string)
- *  • PlacedBuilding.seed  (drives deterministic variation)
- *  • SettlementType       (village/town/city → style tier)
- */
+import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
+import type { SettlementType, PlacedBuilding } from '../SettlementGenerator';
+import type { BuildingDNA, Faction } from './BuildingDNA';
+import { factionBuildingDna } from './BuildingDNA';
 
-import { KIND_MAP, SIZE_MAP, type BuildingType } from './BuildingTypes';
-import type { SettlementType }  from '../SettlementGenerator';
-import type { PlacedBuilding }  from '../SettlementGenerator';
-import {
-  STYLE_COLORS,
-  type BuildingDNA,
-  type BuildingStyle,
-  type Faction,
-} from './BuildingDNA';
-import { mulberry32 } from '@/core/prng';
-
-// ── Style selection by settlement tier ───────────────────────────────────────
-
-type StyleTier = [primary: BuildingStyle, secondary: BuildingStyle];
-
-const TIER_STYLES: Record<SettlementType, StyleTier> = {
-  village: ['thatched', 'timber'],
-  town:    ['timber',   'stone'],
-  city:    ['stone',    'tudor'],
-};
-
-/**
- * Maps a settlement tier to the Faction used to derive its buildings' style
- * preset (via factionBuildingDna()) when routing building interiors through
- * buildingToDungeonPlan(). Mirrors TIER_STYLES' existing style intent
- * (village=thatched/rural, town=timber, city=stone/noble).
- */
 export function settlementTypeToFaction(type: SettlementType): Faction {
   switch (type) {
     case 'village': return 'human_rural';
-    case 'town':    return 'human_town';
-    case 'city':    return 'human_noble';
+    case 'town': return 'human_town';
+    case 'city': return 'human_noble';
   }
 }
 
-/** Certain kinds always use a specific style regardless of settlement tier. */
-const STYLE_OVERRIDES: Partial<Record<BuildingType, BuildingStyle>> = {
-  temple:      'gothic',
-  city_hall:   'stone',
-  guard_tower: 'stone',
-  well:        'stone',
-  smithy:      'stone',
-};
-
-// ── Floors from old BuildingSpec ──────────────────────────────────────────────
-
-const FLOORS_MAP: Partial<Record<BuildingType, 1 | 2 | 3 | 4>> = {
-  cottage:      1,
-  inn:          2,
-  market_stall: 1,
-  smithy:       1,
-  tavern:       2,
-  temple:       2,
-  city_hall:    3,
-  guard_tower:  4,
-  well:         1,
-  market_cross: 1,
-};
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Convert a PlacedBuilding + SettlementType → fully specified BuildingDNA.
- * Deterministic: same inputs → same DNA.
- */
 export function createSettlementBuildingDna(
-  b:              PlacedBuilding,
+  b: PlacedBuilding,
   settlementType: SettlementType,
-): BuildingDNA {
-  const rand = mulberry32(b.seed ^ 0x9E3779B9);
-
-  const kind  = KIND_MAP[b.type];
-  const size  = SIZE_MAP[b.type];
-  const floors = FLOORS_MAP[b.type] ?? 2;
-
-  let style: BuildingStyle;
-  if (STYLE_OVERRIDES[b.type]) {
-    style = STYLE_OVERRIDES[b.type]!;
-  } else {
-    // 70/30 split: primary style vs secondary
-    const [primary, secondary] = TIER_STYLES[settlementType];
-    style = rand() < 0.7 ? primary : secondary;
+  faction: Faction,
+): BuildingDNA | null {
+  const kind = WARD_TO_KIND[b.wardType];
+  if (!kind) return null;
+  if (b.isAnchor) {
+    const size = WARD_TO_SIZE[b.wardType] ?? 'medium';
+    const floors = WARD_TO_FLOORS[b.wardType] ?? (settlementType === 'city' ? 2 : 1);
+    return factionBuildingDna(kind, faction, b.seed, size, floors as 1 | 2 | 3 | 4);
   }
-
-  const colors = STYLE_COLORS[style] ?? STYLE_COLORS['timber']!;
-
-  return {
-    v:              1,
-    kind:           'building',
-    name:           `${settlementType}_${b.type}_${b.seed}`,
-    seed:           b.seed,
-    buildingKind:   kind,
-    size,
-    floors:         floors as 1 | 2 | 3 | 4,
-    style,
-    condition:      rand() < 0.7 ? 'weathered' : 'pristine',
-    hasInterior:    true,
-    interiorLayout: 'single_room',
-    colors,
-    rotation:       0,
-    terrace:        'none',
-    features:       [],
-  };
+  const dna = factionBuildingDna(kind, faction, b.seed, 'tiny', 1);
+  dna.hasInterior = false;
+  dna.interiorLayout = 'none';
+  return dna;
 }

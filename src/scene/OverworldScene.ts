@@ -1743,13 +1743,17 @@ export class OverworldScene {
         const wz = (b.row - GHH) * T;
         const lv = this._wg.get(b.col, b.row).elevation;
         const wy = lv * SH;
-        const dna = createSettlementBuildingDna(b, plan.type);
+        const runtimeFaction = this._mapStudioFactionToRuntimeFaction(plan.faction);
+        const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
+        if (!dna) continue;
         const inst = buildBuilding(dna);
         const grp = inst.exteriorGroup;
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
-        this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: settlementTypeToFaction(plan.type), rotationY: b.rotation });
+        if (b.isAnchor) {
+          this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: b.rotation });
+        }
         this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), b.rotation);
       }
 

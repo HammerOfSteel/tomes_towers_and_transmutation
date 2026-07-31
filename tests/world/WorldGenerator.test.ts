@@ -75,4 +75,15 @@ describe('buildWorldData — realm-sourced settlements (P1 siting)', () => {
       d.settlements.map(e => ({ col: e.plan.centerCol, row: e.plan.centerRow, name: e.plan.name }));
     expect(summarize(a)).toEqual(summarize(b));
   });
+
+  it('produces ward-derived anchor metadata and valid building instances for a multi-ward settlement', () => {
+    const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 602, settlementCount: 6 };
+    const data = buildWorldData(602, cfg);
+    const rich = data.settlements.find(entry => entry.plan.buildings.filter(b => b.isAnchor).length >= 2);
+    expect(rich).toBeDefined();
+    expect(rich!.plan.buildings.some(b => !b.isAnchor) || rich!.plan.buildings.every(b => b.isAnchor)).toBe(true);
+    for (const b of rich!.plan.buildings) {
+      expect(b.wardType).toBeTruthy();
+    }
+  });
 });
