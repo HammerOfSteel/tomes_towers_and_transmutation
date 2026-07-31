@@ -298,6 +298,32 @@ untouched — it's a separate, manual, single-settlement dev tool that
 already talks to the ward model directly via localStorage, not part of
 this sub-project's normal per-realm-settlement generation path.
 
+### 6. Faction wiring (real per-settlement faction, not always human)
+
+Today `BuildingTypeMap.ts`'s `createSettlementBuildingDna()` always derives
+a building's faction from `settlementTypeToFaction(plan.type)`
+(village/town/city → human_rural/human_town/human_noble), ignoring
+`SettlementPlan.faction` (the real per-settlement `SettlementFaction`,
+e.g. `'elven'`/`'dwarven'`, already populated by the siting sub-project
+from `generateRealmData()`). Studio's own ward algorithm varies by
+faction too — `FACTION_EXTRA_ASSIGNS` (e.g. dwarven settlements get extra
+smithy wards) and `FACTION_LAYOUT_PREF` (e.g. elves prefer `radial`
+layouts) both key off `GeneratorParams.faction`. For true parity (user
+decision), this sub-project also:
+
+- Passes `plan.faction` into `buildSettlement()`'s `GeneratorParams.faction`
+  when planning a settlement (so ward extras/layout preference match the
+  settlement's real faction, not always `'human'`)
+- Reuses the existing `_mapStudioFactionToRuntimeFaction()` mapping
+  (currently only used by the dev-preview code path in
+  `OverworldScene.ts`) to convert `SettlementFaction` → the runtime
+  `Faction` type for both anchor and filler `factionBuildingDna()` calls,
+  instead of `settlementTypeToFaction(plan.type)`
+- `settlementTypeToFaction()` itself is not deleted (still used to derive
+  the *tier* — floors/size defaults lean on `plan.type`, not faction — but
+  its call sites in `createSettlementBuildingDna()` for faction purposes
+  are replaced)
+
 ## Explicitly deferred (not this sub-project)
 
 - Walls and gates (new 3D mesh + collision system — user decision, see Goal)
