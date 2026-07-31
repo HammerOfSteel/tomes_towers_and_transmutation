@@ -13,7 +13,7 @@
 - Start a new game — narrative campfire intro with the wizard's talking fire-salamander familiar
 - Play all 4 species with unique dialogue, abilities, and story arcs
 - Explore a procedurally-generated 9-floor wizard's tower
-- Fight 28+ enemy types from 6 asset packs (KayKit + Kenney + custom Meshy models)
+- Fight 28+ procedurally-generated enemy types
 - Cast 12+ spells across 6 elements — fire, ice, lightning, arcane, shadow, nature
 - Build a monster army by sparing enemies at low HP
 - Unlock and spend talent points on a 30-node constellation per species
@@ -30,7 +30,7 @@
 | **Combat** | ALttP-style real-time — melee arcs, aimed spells, dodge-rolls with i-frames, hit-stop, screen shake |
 | **4 playable species** | Human / Undead / Vulperia (fox) / Slime — each with unique passives, abilities, talent paths, and a full 4-act story |
 | **Procedural tower** | 9+ floors, seeded BSP rooms, encounter pools, floor title cards, staircase flavour text |
-| **Asset integration** | 4,517 GLB models from 48 kits (KayKit + Kenney) loaded lazily — tree/rock/dungeon/settlement props |
+| **Procedural art** | All environment/prop/enemy geometry generated in code (Three.js primitives + procedural textures) — no external GLB asset kits |
 | **Monster recruitment** | Spare enemies below 15% HP → add to party (PatrolBehavior FSM, TacticalBrute tier-2 AI) |
 | **Creative Mode** | Fly mode, asset browser, drag-place, undo/redo, spawn palette, backroom portals, quest builder |
 | **Game Bot** | `npm run bot` — Playwright scenarios: creative-smoke, quest-chain, explore-floor, bot-place-forest… |
@@ -52,13 +52,20 @@
 | Testing | Vitest (1,558 unit tests) + Playwright (E2E specs) |
 | UI / Dialogue | HTML/CSS overlays on canvas — DaisyUI v3 for tooling pages |
 | Level format | JSON blueprints with `EditorVersioning` snapshots |
-| 3D assets | 48 KayKit/Kenney GLB kits, loaded lazily from `/assets-index/<kit>.json` |
+| 3D assets | Procedurally generated in code — no external GLB kits; a handful of hand-authored intro-scene assets (public/, assets/) are versioned via Git LFS |
 
 ---
 
 ## Getting Started
 
+> **Requires [Git LFS](https://git-lfs.com/)** — this repo stores `*.glb`/`*.fbx`/`*.zip`/`*.mp3` binaries via LFS.
+> Without it, `git clone` silently checks out tiny pointer-stub files instead of real assets
+> (models fail to load / audio is silent, with no obvious error).
+
 ```bash
+# One-time per machine, before cloning:
+git lfs install
+
 git clone https://github.com/HammerOfSteel/tomes_towers_and_transmutation.git
 cd tomes_towers_and_transmutation
 npm install
@@ -67,8 +74,10 @@ npm run dev          # → http://localhost:5173
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+
+- [Node.js](https://nodejs.org/) v20+ (see `.nvmrc`)
 - npm v9+
+- [Git LFS](https://git-lfs.com/) — install, then run `git lfs install` once before cloning.
+  If you already cloned without it: `git lfs install && git lfs pull`.
 
 ### Install & Run
 

@@ -2,7 +2,7 @@
 """Generate creature system files and rewrite CharacterCreation.ts"""
 import pathlib, os
 
-ROOT = pathlib.Path('/Users/terrygoleman/Documents/dev/games/tomes_towers_and_transmutation/src')
+ROOT = pathlib.Path(__file__).parent.parent / 'src'
 C = ROOT / 'creatures'
 C.mkdir(exist_ok=True)
 

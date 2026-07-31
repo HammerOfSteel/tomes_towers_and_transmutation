@@ -2,6 +2,10 @@
   "name": "tomes-towers-and-transmutation",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=9"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -15,6 +19,7 @@
     "fix:glb": "node scripts/fix-glb-materials.mjs",
     "coverage": "vitest run --coverage",
     "manifest": "node scripts/gen-manifest.mjs",
+    "doctor": "node scripts/repo-doctor.mjs",
     "extract:chars": "node scripts/extract-char-assets.mjs",
     "gen:char-manifest": "node scripts/gen-char-manifest.mjs",
     "setup:chars": "npm run extract:chars && npm run gen:char-manifest",
