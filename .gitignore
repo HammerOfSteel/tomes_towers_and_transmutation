@@ -11,7 +11,12 @@ screenshots/
 
 # macOS backup files created by some editors
 **/*~
-assets/
+/assets/
 .agents
 .claude/*
 skills/
+
+# Stray tsc-compiled output (tsc is type-check only; noEmit in tsconfig.json)
+src/**/*.js
+tests/**/*.js
+!src/**/*.config.js
