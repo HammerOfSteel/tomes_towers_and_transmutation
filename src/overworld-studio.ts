@@ -24,23 +24,6 @@ import { Delaunay } from 'd3-delaunay';
 // @ts-ignore
 import { createNoise2D } from '@/core/SimplexNoise';
 import { generateRealmData, type RealmShape, type RealmClimate } from '@/world/RealmGenerator';
-import {
-  buildSettlement,
-  generateBaseSeeds,
-  buildFromSeeds,
-  assignWardLayouts,
-  fillWard,
-  OccupancyGrid,
-  dominantEdgeAngle,
-  minDistToEdge,
-  type BuildingRect,
-  type Ward,
-  type Road,
-  type SettlementModel,
-  type LayoutType,
-  type GeneratorParams,
-  type WardType,
-} from '@/world/SettlementModelGenerator';
 import { generateDungeon } from '@/levels/DungeonGenerator';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from './buildingToDungeonPlan';
@@ -64,9 +47,32 @@ import * as THREE from 'three';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type SettlementType = 'village' | 'town' | 'city';
-
 export interface Vec2 { x: number; y: number; }
+
+export type {
+  WardType,
+  SettlementType,
+  LayoutType,
+  SettlementModel,
+} from '@/world/SettlementModelGenerator';
+import type {
+  WardType,
+  SettlementType,
+  LayoutType,
+  Ward,
+  Road,
+  SettlementModel,
+  GeneratorParams,
+  BuildingRect,
+} from '@/world/SettlementModelGenerator';
+import {
+  generateBaseSeeds,
+  buildFromSeeds,
+  dominantEdgeAngle,
+  minDistToEdge,
+  OccupancyGrid,
+  fillWard,
+} from '@/world/SettlementModelGenerator';
 
 // ── Ward colour palette ───────────────────────────────────────────────────────
 
@@ -162,43 +168,13 @@ const FACTION_PALETTE: Record<SettlementFaction, FactionPalette> = {
   fae:      { bldg: '#c0a0c8', bldg_dk: '#4a2870', bg: '#e0d4e8', road: '#b080c0', field: '#cdb8d8' },
 };
 
-/**
- * Preferred layout per faction — used when global layout is 'auto'.
- * Dwarven packs tight grids; elves radiate from a grove; orcs march in lines.
- */
-const FACTION_LAYOUT_PREF: Partial<Record<SettlementFaction, LayoutType>> = {
-  dwarven:  'grid',
-  elven:    'radial',
-  orcish:   'linear',
-  vampire:  'perimeter',
-  slime:    'cluster',
-  fae:      'cluster',
-  vulperia: 'cluster',
-};
-
-/**
- * Extra ward assignments injected after the standard ones — gives each
- * faction its cultural flavour without removing the base settlement logic.
- * Each entry: [wardType, minPatches to trigger, placement style].
- */
-type WardPlacement = 'random' | 'central' | 'outer';
-const FACTION_EXTRA_ASSIGNS: Partial<Record<SettlementFaction, Array<[WardType, number, WardPlacement]>>> = {
-  undead:   [['park', 0, 'random'], ['slum', 6, 'outer']],
-  elven:    [['park', 0, 'central']],
-  dwarven:  [['smithy', 0, 'central'], ['smithy', 10, 'random']],
-  orcish:   [['smithy', 0, 'random'], ['slum', 6, 'outer']],
-  vampire:  [['patriciate', 0, 'central'], ['slum', 6, 'outer']],
-  slime:    [['park', 0, 'central']],
-  fae:      [['park', 0, 'central'], ['park', 10, 'random']],
-  vulperia: [['inn', 0, 'central']],
-};
-
 /** Look up the faction-flavoured display name for a ward type. */
 function factionWardLabel(faction: SettlementFaction, type: WardType): string {
   return FACTION_WARD_NAMES[faction]?.[type] ?? WARD_LABELS[type];
 }
 
 // ── Deterministic PRNG (mulberry32) ──────────────────────────────────────────
+// Shared by settlement, dungeon, cave and cloud-texture generators below.
 
 function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
@@ -210,57 +186,1217 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-// ── Geometry helpers ──────────────────────────────────────────────────────────
+// ── 2.5D cartographic renderer ─────────────────────────────────────────────
+// Inspired by Watabou's city-generator: cream background, grey buildings,
+// streets visible as negative space between ward polygons, subtle 2px shadow.
+// Building lots are grid-filled aligned to the dominant ward edge direction.
 
-function dist(a: Vec2, b: Vec2) { return Math.hypot(a.x - b.x, a.y - b.y); }
-function centroid(pts: Vec2[]): Vec2 {
-  return { x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-           y: pts.reduce((s, p) => s + p.y, 0) / pts.length };
+// ── Colour palette ────────────────────────────────────────────────────────────
+
+const CARTO = {
+  bg:       '#ddd8c8',   // cream background (streets + fields)
+  field:    '#cac2ae',   // slightly darker for farms
+  city_gnd: '#d4cebb',   // city ground between wards
+  bldg:     '#9a9288',   // generic building grey
+  bldg_dk:  '#2a2520',   // church / citadel
+  bldg_mkt: '#b0a890',   // market area
+  shadow:   'rgba(0,0,0,0.28)',
+  road_dk:  '#b8b0a0',
+  road_lt:  '#ccc4b4',
+  wall:     '#6a6258',
+  water:    '#8aacbe',
+  label:    'rgba(40,35,28,0.85)',
+};
+
+/** Active roads — set once per drawSettlement2D5 call so fillWard can check road clearance. */
+let _activeRoads: Road[] = [];
+
+/** Draw a flat building rectangle (shadow then fill). Skips if too close to a road. */
+function drawBldg(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, bw: number, bh: number,
+  rot: number, fill: string,
+): void {
+  // Road-building separation is handled implicitly by ward polygon setback —
+  // roads run between wards so the STREET gap naturally creates the clearance.
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const hw = bw/2, hh = bh/2;
+  const pts: [number,number][] = [
+    [cx + cos*-hw - sin*-hh, cy + sin*-hw + cos*-hh],
+    [cx + cos* hw - sin*-hh, cy + sin* hw + cos*-hh],
+    [cx + cos* hw - sin* hh, cy + sin* hw + cos* hh],
+    [cx + cos*-hw - sin* hh, cy + sin*-hw + cos* hh],
+  ];
+  // Shadow (offset upper-right)
+  const SX = 2, SY = -2;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x+SX, y+SY) : ctx.moveTo(x+SX, y+SY));
+  ctx.closePath();
+  ctx.fillStyle = CARTO.shadow;
+  ctx.fill();
+  // Building face
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
 }
-function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
-// ── Ward rater functions ──────────────────────────────────────────────────────
-
-function rateMarket(w: Ward, centre: Vec2)    { return dist(w.seed, centre); }
-function rateChurch(_w: Ward, _c: Vec2, i: number) { return i; }  // low index = central
-function rateInn(w: Ward, centre: Vec2)       { return dist(w.seed, centre) * 0.6; }
-function ratePatriciate(w: Ward, centre: Vec2){ return dist(w.seed, centre) * 0.35; }
-function rateSlum(w: Ward, centre: Vec2)      { return -dist(w.seed, centre); }
-// ── Core generator ────────────────────────────────────────────────────────────
-
-export function buildSettlement(p: GeneratorParams): SettlementModel {
-  const seeds = generateBaseSeeds(p);
-  return buildFromSeeds(seeds, p);
+/** Building fill colour for a ward type (church handled separately upstream). */
+function wardBuildingColor(wardType: WardType): string {
+  return wardType === 'gateward' ? CARTO.bldg_dk
+       : wardType === 'merchant' ? '#908878' : CARTO.bldg;
 }
 
-/** Step 1: Generate seed points (spiral + Simplex warp). Returns mutable Vec2[]. */
-export function generateBaseSeeds(p: GeneratorParams): Vec2[] {
-  const rand = mulberry32(p.seed);
-  const noise = (nx: number, ny: number) => {
-    const r = mulberry32(Math.round((nx * 73856093 ^ ny * 19349663) >>> 0) ^ p.seed);
-    return r() * 2 - 1;
-  };
+/** Draw all BuildingRects returned by fillWard() for a ward. */
+function drawWardBuildings(ctx: CanvasRenderingContext2D, ward: Ward, occ: OccupancyGrid): void {
+  const rects: BuildingRect[] = fillWard(ward, occ, _activeRoads);
+  const col = wardBuildingColor(ward.type);
+  for (const r of rects) drawBldg(ctx, r.x, r.y, r.w, r.d, r.angle, col);
+}
 
-  const CX = p.width / 2, CY = p.height / 2;
-  const R  = Math.min(p.width, p.height) * 0.42;
-  const sa = rand() * Math.PI * 2;
+export function drawSettlement2D5(
+  model: SettlementModel,
+  canvas: HTMLCanvasElement,
+  showLabels = true,
+  layout: LayoutType = 'organic',
+  faction: SettlementFaction = 'human',
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
 
-  const seeds: Vec2[] = [];
-  for (let i = 0; i < p.nPatches * 8; i++) {
-    const a = sa + Math.sqrt(i) * 5;
-    const r = i === 0 ? 0 : R * 0.12 + i * (R * 0.018 + rand() * R * 0.012);
-    const WARP_SCALE = 0.006;
-    const bx = CX + Math.cos(a) * r;
-    const by = CY + Math.sin(a) * r;
-    seeds.push({
-      x: bx + p.warp * R * 0.4 * noise(bx * WARP_SCALE, by * WARP_SCALE),
-      y: by + p.warp * R * 0.4 * noise(bx * WARP_SCALE + 100, by * WARP_SCALE + 100),
-    });
+  // Apply faction palette (mutates CARTO — each draw resets it)
+  const pal = FACTION_PALETTE[faction];
+  CARTO.bldg    = pal.bldg;
+  CARTO.bldg_dk = pal.bldg_dk;
+  CARTO.bg      = pal.bg;
+  CARTO.road_dk = pal.road;
+  CARTO.field   = pal.field;
+
+  // Set active roads so drawBldg can check road clearance
+  _activeRoads = model.roads;
+
+  // ── Background ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = CARTO.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.045)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // ── Fields (outer wards) — hachure fill ─────────────────────────────────────
+  for (const ward of model.wards) {
+    if (ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    ctx.fillStyle = CARTO.field;
+    ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(80,70,50,0.12)'; ctx.lineWidth = 0.8;
+    for (let x = -H; x < W+H; x += 10) {
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+H,H); ctx.stroke();
+    }
+    ctx.restore();
   }
-  return seeds;
+
+  // ── Roads ─────────────────────────────────────────────────────────────────────
+  for (let ri = 0; ri < model.roads.length; ri++) {
+    const road = model.roads[ri]!;
+    if (road.points.length < 2) continue;
+    const main = ri === 0;
+    ctx.beginPath();
+    road.points.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.strokeStyle = CARTO.road_dk;
+    ctx.lineWidth   = main ? 5 : 3.5;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.strokeStyle = CARTO.road_lt;
+    ctx.lineWidth   = main ? 3 : 2;
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // ── Buildings (painter order: low Y last = in front) ─────────────────────────
+  const occ = new OccupancyGrid(W, H);
+  const sorted = model.wards.filter(w => w.withinCity)
+    .sort((a,b) => a.center.y - b.center.y);
+
+  for (const ward of sorted) {
+    if (!ward.polygon.length) continue;
+
+    if (ward.type === 'church') {
+      // Prominent church: large footprint + spire cross
+      const cx = ward.center.x, cy = ward.center.y;
+      const churchAngle = dominantEdgeAngle(ward.polygon);
+      occ.mark(cx, cy, 20, 28, churchAngle);
+      drawBldg(ctx, cx, cy, 20, 28, churchAngle, CARTO.bldg_dk);
+      // Spire (smaller, offset via 2px shadow so it reads as taller)
+      drawBldg(ctx, cx-1, cy-3, 7, 7, 0, '#1a1512');
+      // Cross at apex
+      ctx.strokeStyle = '#0a0a08'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx-5,cy-7); ctx.lineTo(cx+5,cy-7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,cy-11); ctx.lineTo(cx,cy-4); ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'market') {
+      // Open market square: light fill + perimeter stalls
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#ccc4b4';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+      // Small stalls along edges
+      for (let i = 0; i < ward.polygon.length; i++) {
+        const a = ward.polygon[i]!, b = ward.polygon[(i+1)%ward.polygon.length]!;
+        const ang = Math.atan2(b.y-a.y, b.x-a.x);
+        const len = Math.hypot(b.x-a.x, b.y-a.y);
+        for (let t = 0.1; t < 0.9; t += 12/len) {
+          const sx = a.x+(b.x-a.x)*t, sy = a.y+(b.y-a.y)*t;
+          if (minDistToEdge({x:sx,y:sy}, ward.polygon) < 3) continue;
+          if (occ.blocked(sx, sy, 6, 8, ang)) continue;
+          occ.mark(sx, sy, 6, 8, ang);
+          drawBldg(ctx, sx, sy, 6, 8, ang, CARTO.bldg_mkt);
+        }
+      }
+      // Well/fountain
+      ctx.beginPath();
+      ctx.arc(ward.center.x, ward.center.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.water; ctx.fill();
+      ctx.strokeStyle = CARTO.bldg_dk; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'park') {
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#b8c8a0'; ctx.fill();
+      ctx.strokeStyle = '#8aaa70'; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    drawWardBuildings(ctx, ward, occ);
+  }
+
+  // ── Wall ─────────────────────────────────────────────────────────────────────
+  if (model.wall && model.wall.length > 2) {
+    const wall = model.wall;
+    ctx.beginPath();
+    wall.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = '#8a8070';  ctx.lineWidth = 2; ctx.stroke();
+    // Towers at corners
+    for (let i = 0; i < wall.length; i += Math.max(1, Math.floor(wall.length/8))) {
+      const p = wall[i]!;
+      ctx.fillStyle = CARTO.wall;
+      ctx.fillRect(p.x-4, p.y-4, 8, 8);
+      ctx.strokeStyle = '#6a6258'; ctx.lineWidth = 1; ctx.strokeRect(p.x-4, p.y-4, 8, 8);
+    }
+    // Gates
+    for (const gate of model.gates) {
+      ctx.beginPath(); ctx.arc(gate.x, gate.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.bg; ctx.fill();
+      ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+
+  // ── Labels ───────────────────────────────────────────────────────────────────
+  if (showLabels) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '9px Georgia, "Times New Roman", serif';
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      ctx.fillStyle = CARTO.label;
+      ctx.fillText(factionWardLabel(faction, ward.type).toUpperCase(), ward.center.x, ward.center.y);
+    }
+  }
 }
 
-/** Step 2: Build SettlementModel from existing (possibly user-warped) seeds. */
+// ── Canvas 2D Renderer ────────────────────────────────────────────────────────
+
+// ── Canvas 2D Renderer ────────────────────────────────────────────────────────
+
+export function drawSettlement(
+  model:        SettlementModel,
+  canvas:       HTMLCanvasElement,
+  showLabels    = true,
+  showBuildings = true,
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#0c0e11';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 0.5;
+  const GRID = 40;
+  for (let x = 0; x < W; x += GRID) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Farm patches (outside city)
+  for (const ward of model.wards) {
+    if (ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ctx.moveTo(ward.polygon[0]!.x, ward.polygon[0]!.y);
+    for (let i = 1; i < ward.polygon.length; i++) ctx.lineTo(ward.polygon[i]!.x, ward.polygon[i]!.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(40,58,30,0.4)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(60,80,40,0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // City ward polygons
+  for (const ward of model.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    const col = WARD_COLORS[ward.type];
+    ctx.beginPath();
+    ctx.moveTo(ward.polygon[0]!.x, ward.polygon[0]!.y);
+    for (let i = 1; i < ward.polygon.length; i++) ctx.lineTo(ward.polygon[i]!.x, ward.polygon[i]!.y);
+    ctx.closePath();
+
+    // Fill with colour + transparency
+    ctx.fillStyle = col + '28';
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = col + '88';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Wall polygon
+  if (model.wall && model.wall.length) {
+    ctx.beginPath();
+    ctx.moveTo(model.wall[0]!.x, model.wall[0]!.y);
+    for (let i = 1; i < model.wall.length; i++) ctx.lineTo(model.wall[i]!.x, model.wall[i]!.y);
+    ctx.closePath();
+    ctx.strokeStyle = '#b09060';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Roads — draw with width variation (main road = wider)
+  for (let ri = 0; ri < model.roads.length; ri++) {
+    const road = model.roads[ri]!;
+    if (road.points.length < 2) continue;
+    const isMain = ri === 0;
+
+    // Shadow / dirt under-road
+    ctx.beginPath();
+    ctx.moveTo(road.points[0]!.x, road.points[0]!.y);
+    for (let i = 1; i < road.points.length; i++) ctx.lineTo(road.points[i]!.x, road.points[i]!.y);
+    ctx.strokeStyle = 'rgba(60,50,35,0.8)';
+    ctx.lineWidth   = isMain ? 5.5 : 3.5;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.stroke();
+
+    // Road surface
+    ctx.beginPath();
+    ctx.moveTo(road.points[0]!.x, road.points[0]!.y);
+    for (let i = 1; i < road.points.length; i++) ctx.lineTo(road.points[i]!.x, road.points[i]!.y);
+    ctx.strokeStyle = isMain ? '#b09870' : '#9a8860';
+    ctx.lineWidth   = isMain ? 3 : 2;
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // Building footprints (small rectangles near ward centres)
+  if (showBuildings) {
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      const col = WARD_COLORS[ward.type];
+      const cx = ward.center.x, cy = ward.center.y;
+
+      const count = ward.type === 'market' ? 4
+                  : ward.type === 'craftsmen' ? 3
+                  : ward.type === 'slum' ? 5 : 2;
+
+      const rand2 = mulberry32(Math.round(cx * 100 + cy));
+      for (let b = 0; b < count; b++) {
+        const angle = rand2() * Math.PI * 2;
+        const r     = 4 + rand2() * 8;
+        const bx    = cx + Math.cos(angle) * r;
+        const by    = cy + Math.sin(angle) * r;
+        const bw    = 4 + rand2() * 6;
+        const bh    = 4 + rand2() * 5;
+        const rot   = rand2() * Math.PI * 2;
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(rot);
+        ctx.fillStyle = col + 'cc';
+        ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.restore();
+      }
+    }
+  }
+
+  // Gate markers
+  for (const gate of model.gates) {
+    ctx.beginPath();
+    ctx.arc(gate.x, gate.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle   = '#b09060';
+    ctx.fill();
+    ctx.strokeStyle = '#d4b880';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+  }
+
+  // Centre dot
+  ctx.beginPath();
+  ctx.arc(model.centre.x, model.centre.y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff44';
+  ctx.fill();
+
+  // Ward labels
+  if (showLabels) {
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = '9px monospace';
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      const col = WARD_COLORS[ward.type];
+      ctx.fillStyle = col;
+      ctx.fillText(WARD_LABELS[ward.type], ward.center.x, ward.center.y);
+    }
+  }
+}
+
+// ── Application bootstrap ─────────────────────────────────────────────────────
+
+const canvas    = document.getElementById('map-canvas')    as HTMLCanvasElement;
+const overlay   = document.getElementById('overlay-canvas') as HTMLCanvasElement;
+const genTimeEl = document.getElementById('gen-time')!;
+const hoverEl   = document.getElementById('hover-info')!;
+const seedInput = document.getElementById('seed-input') as HTMLInputElement;
+
+function resize() {
+  const wrap = canvas.parentElement!;
+  canvas.width  = overlay.width  = wrap.clientWidth;
+  canvas.height = overlay.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener('resize', () => {
+  resize();
+  if (planetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  if (hexPlanetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  generate();
+});
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let currentModel: SettlementModel | null = null;
+let persistentSeeds: Vec2[] | null = null;   // mutable seeds for interactive warp
+let lastParams: GeneratorParams | null = null;
+
+// ── Active tool ───────────────────────────────────────────────────────────────
+
+type ToolName = 'select' | 'warp';
+let activeTool: ToolName = 'select';
+type ViewMode = 'flat' | 'iso';
+let viewMode: ViewMode = (sessionStorage.getItem('ow-view') as ViewMode) ?? 'iso';
+
+function setTool(name: ToolName) {
+  activeTool = name;
+  document.querySelectorAll<HTMLElement>('.tool-btn[id^="tool-"]').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tool-${name}`)?.classList.add('active');
+  canvas.classList.remove('tool-warp');
+  if (name === 'warp') canvas.classList.add('tool-warp');
+}
+
+function setView(mode: ViewMode) {
+  viewMode = mode;
+  sessionStorage.setItem('ow-view', mode);
+  redraw();  // always 2.5D
+}
+
+function redraw() {
+  if (studioMode === 'dungeon') { redrawDungeon(); return; }
+  if (studioMode === 'cave')    { redrawCave();    return; }
+  if (studioMode === 'realm')   { redrawRealm();   return; }
+  if (!currentModel) return;
+  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
+  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
+  const layoutParam = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
+  const faction     = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction ?? 'human';
+  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels, layoutParam, faction);
+  else                    drawSettlement(currentModel, canvas, showLabels, showBuildings);
+}
+
+function getParams(): GeneratorParams {
+  const type    = (document.querySelector('#type-pills .pill.active')    as HTMLElement)?.dataset.type    as SettlementType    ?? 'village';
+  const layout  = (document.querySelector('#layout-pills .pill.active')  as HTMLElement)?.dataset.layout  as LayoutType        ?? 'organic';
+  const faction = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction  ?? 'human';
+  return {
+    seed:       parseInt(seedInput.value) || Date.now(),
+    type,
+    layout,
+    faction,
+    nPatches:   parseInt((document.getElementById('patches') as HTMLInputElement).value),
+    warp:       parseFloat((document.getElementById('warp')    as HTMLInputElement).value),
+    nGates:     parseInt((document.getElementById('roads')   as HTMLInputElement).value),
+    walled:     (document.getElementById('walls') as HTMLInputElement).checked,
+    hasCitadel: (document.getElementById('citadel') as HTMLInputElement).checked,
+    hasPlaza:   (document.getElementById('plaza')   as HTMLInputElement).checked,
+    width:      canvas.width,
+    height:     canvas.height,
+  };
+}
+
+function generate(keepSeeds = false) {
+  const params = getParams();
+  lastParams = params;
+  if (!keepSeeds || !persistentSeeds) {
+    persistentSeeds = generateBaseSeeds(params);
+  }
+  const model = buildFromSeeds(persistentSeeds, params);
+  currentModel = model;
+  redraw();
+  genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards  ·  ${model.roads.length} roads`;
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+
+// Settlement type pills
+document.getElementById('type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(false);
+});
+
+document.getElementById('layout-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#layout-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(true);  // keep seeds when switching layout style
+});
+
+document.getElementById('faction-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#faction-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  updateLegend((pill.dataset.faction as SettlementFaction) ?? 'human');
+  generate(false);  // regen — faction changes ward assignments
+});
+
+// Sliders — live update with value display
+for (const [id, valId] of [['patches', 'patches-val'], ['warp', 'warp-val'], ['roads', 'roads-val']] as const) {
+  const input = document.getElementById(id) as HTMLInputElement;
+  const valEl = document.getElementById(valId)!;
+  const resetOn = id === 'patches';
+  input.addEventListener('input', () => { valEl.textContent = input.value; generate(!resetOn); });
+}
+
+// Checkboxes
+for (const id of ['show-labels', 'show-buildings']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
+}
+for (const id of ['walls', 'citadel', 'plaza']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
+}
+
+// Buttons
+document.getElementById('btn-roll')!.addEventListener('click', () => {
+  seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  currentRealmData   = null;
+  currentSolarData   = null;
+  if (studioMode === 'cave')         generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
+  else generate();
+});
+document.getElementById('btn-gen')!.addEventListener('click', () => {
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  currentRealmData   = null;
+  currentSolarData   = null;
+  if (studioMode === 'cave')         generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
+  else generate(false);
+});
+
+// Solar generate button
+document.getElementById('btn-solar-generate')?.addEventListener('click', () => {
+  currentSolarData = null;
+  generateSolarView();
+});
+
+// Export PNG
+document.getElementById('btn-png')!.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = `settlement-${seedInput.value}.png`;
+  a.href = canvas.toDataURL();
+  a.click();
+});
+
+// Export JSON
+document.getElementById('btn-json')!.addEventListener('click', () => {
+  if (!currentModel) return;
+  const blob = new Blob([JSON.stringify(currentModel, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.download = `settlement-${seedInput.value}.json`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+window.addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement) return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
+      generate();
+      break;
+    case 'Enter': generate(); break;
+    case '+': case '=': {
+      const el = document.getElementById('patches') as HTMLInputElement;
+      el.value = String(Math.min(40, parseInt(el.value) + 1));
+      document.getElementById('patches-val')!.textContent = el.value;
+      generate(); break;
+    }
+    case '-': {
+      const el = document.getElementById('patches') as HTMLInputElement;
+      el.value = String(Math.max(4, parseInt(el.value) - 1));
+      document.getElementById('patches-val')!.textContent = el.value;
+      generate(); break;
+    }
+    case 'w': case 'W': {
+      const el = document.getElementById('walls') as HTMLInputElement;
+      el.checked = !el.checked;
+      generate(true); break;  // keep seeds when toggling walls
+    }
+    case 's': case 'S': setTool('select'); break;
+    case 'd': case 'D': setTool('warp');   break;
+    case 'r': case 'R': persistentSeeds = null; generate(false); break;
+
+  }
+});
+
+// ── Tool button wiring ────────────────────────────────────────────────────────
+
+document.getElementById('tool-select')!.addEventListener('click', () => setTool('select'));
+document.getElementById('tool-warp')!.addEventListener('click',   () => setTool('warp'));
+document.getElementById('tool-reset')!.addEventListener('click',  () => {
+  persistentSeeds = null;
+  generate(false);
+});
+// 2.5D only — no flat view button
+
+// ── Interactive warp interaction ──────────────────────────────────────────────
+// Left-drag in warp mode: push nearby Voronoi seeds with smooth quadratic falloff.
+// The influence radius = 22% of the canvas short side.
+// Strength scales linearly with drag speed but is capped to prevent explosion.
+
+let warpDragging = false;
+let warpPrevX = 0, warpPrevY = 0;
+const WARP_RADIUS_FRAC = 0.22;  // fraction of min(W,H)
+
+function canvasXY(e: PointerEvent): [number, number] {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    (e.clientX - rect.left) * (canvas.width  / rect.width),
+    (e.clientY - rect.top)  * (canvas.height / rect.height),
+  ];
+}
+
+// ── OW-E1: Breadcrumb navigation ─────────────────────────────────────────────
+
+interface BreadcrumbEntry {
+  mode:  StudioMode;
+  label: string;
+  /** Seed to restore when navigating back to this level. */
+  seed?: number;
+}
+
+let _navStack: BreadcrumbEntry[] = [];
+
+function _updateBreadcrumb(): void {
+  const bar   = document.getElementById('studio-breadcrumb')!;
+  const items = document.getElementById('breadcrumb-items')!;
+  if (_navStack.length === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  items.innerHTML = _navStack.map((entry, i) => {
+    const isLast = i === _navStack.length - 1;
+    if (isLast) {
+      return `<span style="color:#e8d0a0">${entry.label}</span>`;
+    }
+    return `<a href="#" data-nav-idx="${i}" style="color:#c8a96e;text-decoration:none;cursor:pointer"
+      >${entry.label}</a><span style="opacity:0.5;margin:0 4px">›</span>`;
+  }).join('');
+
+  // Wire back-link clicks
+  items.querySelectorAll<HTMLAnchorElement>('[data-nav-idx]').forEach(a => {
+    a.addEventListener('click', ev => {
+      ev.preventDefault();
+      const idx = parseInt(a.dataset.navIdx!);
+      const target = _navStack[idx]!;
+      _navStack = _navStack.slice(0, idx);
+      _switchMode(target.mode, target.seed);
+    });
+  });
+}
+
+/**
+ * Programmatically switch studio mode, optionally loading a specific seed.
+ * Pushes to the breadcrumb stack if `breadcrumbLabel` is provided.
+ */
+function _flashStudioTransition(label = '', durationMs = 180): void {
+  let flash = document.getElementById('studio-transition-flash') as HTMLDivElement | null;
+  if (!flash) {
+    flash = document.createElement('div');
+    flash.id = 'studio-transition-flash';
+    flash.style.cssText =
+      'position:fixed;inset:0;pointer-events:none;z-index:9998;display:none;opacity:0;' +
+      'background:radial-gradient(circle at center, rgba(255,245,220,0.85) 0%, rgba(200,170,110,0.35) 30%, rgba(20,18,14,0.92) 100%);' +
+      'transition:opacity 140ms ease-out;';
+    const text = document.createElement('div');
+    text.id = 'studio-transition-flash-label';
+    text.style.cssText =
+      'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
+      'font:700 18px Georgia,serif;letter-spacing:1px;color:#f0d8a8;text-shadow:0 2px 12px rgba(0,0,0,0.8);';
+    flash.appendChild(text);
+    document.body.appendChild(flash);
+  }
+
+  const labelEl = document.getElementById('studio-transition-flash-label');
+  if (labelEl) labelEl.textContent = label;
+
+  clearTimeout((flash as any)._hideTimer);
+  flash.style.display = 'block';
+  flash.style.opacity = '0';
+
+  (window as any).__owStudioTransitionCount = ((window as any).__owStudioTransitionCount ?? 0) + 1;
+  (window as any).__owStudioLastTransitionLabel = label;
+  (window as any).__owStudioLastTransitionAt = Date.now();
+
+  requestAnimationFrame(() => {
+    if (flash) flash.style.opacity = '1';
+    window.setTimeout(() => {
+      if (flash) flash.style.opacity = '0';
+      (flash as any)._hideTimer = window.setTimeout(() => {
+        if (flash) flash.style.display = 'none';
+      }, 170);
+    }, durationMs);
+  });
+}
+
+function _switchMode(
+  mode:            StudioMode,
+  seedOverride?:   number,
+  breadcrumbLabel?: string,
+): void {
+  // Push the CURRENT mode to the stack before switching (if labelled)
+  if (breadcrumbLabel) {
+    const currentLabel: Record<StudioMode, string> = {
+      settlement: '🏙 Settlement', dungeon: '⚔ Dungeon',
+      cave: '🌿 Cave', realm: '🌍 Realm', solar: '☀ Solar',
+    };
+    _navStack.push({
+      mode:  studioMode,
+      label: currentLabel[studioMode],
+      seed:  parseInt(seedInput.value) || undefined,
+    });
+    _navStack.push({ mode, label: breadcrumbLabel });
+  }
+
+  // Apply seed override before triggering tab
+  if (seedOverride !== undefined) {
+    seedInput.value = String(seedOverride);
+  }
+
+  _flashStudioTransition(breadcrumbLabel || `${mode[0]!.toUpperCase()}${mode.slice(1)}`);
+
+  // Simulate tab click
+  const tab = document.querySelector<HTMLElement>(`.studio-tab[data-mode="${mode}"]`);
+  tab?.click();
+  _updateBreadcrumb();
+}
+
+// ── OW-E2: Realm map → Settlement drill-down ─────────────────────────────────
+
+/**
+ * Test if canvas point (px, py) is within a settlement dot OR a dungeon marker.
+ * Returns `{ kind: 'settlement', data: RealmSettlement }` or `{ kind: 'dungeon', data: {x,y} }` or null.
+ */
+function _realmHitTest(px: number, py: number): { kind: 'settlement'; data: RealmSettlement } | { kind: 'dungeon'; data: { x: number; y: number } } | null {
+  if (!currentRealmData) return null;
+  const { W, H, settlements, dungeons } = currentRealmData;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H),
+  ));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+
+  const settleDotR = Math.max(2, CELL * 0.75) + 6;
+  for (const s of settlements) {
+    const sx = offX + (s.x + 0.5) * CELL;
+    const sy = offY + (s.y + 0.5) * CELL;
+    if (Math.hypot(px - sx, py - sy) <= settleDotR) return { kind: 'settlement', data: s };
+  }
+
+  const dungeonDotR = Math.max(2, CELL * 0.55) + 6;
+  for (const d of dungeons) {
+    const dx = offX + (d.x + 0.5) * CELL;
+    const dy = offY + (d.y + 0.5) * CELL;
+    if (Math.hypot(px - dx, py - dy) <= dungeonDotR) return { kind: 'dungeon', data: d };
+  }
+  return null;
+}
+
+canvas.addEventListener('click', e => {
+  if (studioMode !== 'realm') return;
+  if (realmViewMode !== 'map') return;
+
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  const hit = _realmHitTest(px, py);
+  if (!hit) return;
+
+  if (hit.kind === 'settlement') {
+    const s = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const settleSeed = ((realmSeed ^ (s.x * 73856093 + s.y * 19349663)) >>> 0);
+    console.log(`[OW-E2] drill-down: ${s.name} (${s.size}, ${s.faction}) seed=${settleSeed}`);
+    const factionBtn = document.querySelector<HTMLElement>(
+      `#faction-pills [data-faction="${s.faction}"]`,
+    );
+    factionBtn?.click();
+    _switchMode('settlement', settleSeed, `🏙 ${s.name}`);
+  } else {
+    const d = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const dungeonSeed = ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0);
+    console.log(`[OW-E4] drill-down: dungeon at (${d.x},${d.y}) seed=${dungeonSeed}`);
+    _switchMode('dungeon', dungeonSeed, `⚔ Dungeon (${d.x},${d.y})`);
+  }
+});
+
+canvas.addEventListener('pointerdown', e => {
+  if (activeTool !== 'warp' || e.button !== 0) return;
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('dragging');
+  warpDragging = true;
+  [warpPrevX, warpPrevY] = canvasXY(e);
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!warpDragging || activeTool !== 'warp' || !persistentSeeds || !lastParams) return;
+
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+
+  // Drag delta capped to prevent too-large single-frame jumps
+  const dx = Math.max(-30, Math.min(30, (mx - warpPrevX) * 0.8));
+  const dy = Math.max(-30, Math.min(30, (my - warpPrevY) * 0.8));
+  warpPrevX = mx; warpPrevY = my;
+
+  // Push seeds within radius (quadratic falloff: smooth at edge, strong at centre)
+  for (const seed of persistentSeeds) {
+    const d = Math.hypot(seed.x - mx, seed.y - my);
+    if (d < WARP_R) {
+      const t = d / WARP_R;
+      const strength = (1 - t * t);  // quadratic: 1 at centre, 0 at edge
+      seed.x += dx * strength;
+      seed.y += dy * strength;
+    }
+  }
+
+  // Rebuild Voronoi instantly (2–5ms)
+  const model = buildFromSeeds(persistentSeeds, lastParams);
+  currentModel = model;
+  redraw();
+  genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards`;
+
+  // Draw warp influence circle on overlay
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  // Outer ring
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.45)';
+  octx.lineWidth = 1.5;
+  octx.setLineDash([5, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
+  // Inner strength core (25% radius)
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R * 0.25, 0, Math.PI * 2);
+  octx.fillStyle = 'rgba(124, 106, 245, 0.12)';
+  octx.fill();
+  // Centre crosshair
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.7)';
+  octx.lineWidth = 1;
+  for (const [ax, ay, bx, by] of [[mx-6,my,mx+6,my],[mx,my-6,mx,my+6]] as const) {
+    octx.beginPath(); octx.moveTo(ax, ay); octx.lineTo(bx, by); octx.stroke();
+  }
+});
+
+canvas.addEventListener('pointerup', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+canvas.addEventListener('pointercancel', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+});
+
+// Show warp radius preview on hover when warp tool active (not dragging)
+canvas.addEventListener('pointermove', e => {
+  if (activeTool !== 'warp' || warpDragging) return;
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.25)';
+  octx.lineWidth = 1;
+  octx.setLineDash([4, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
+});
+
+// ── Ward hover inspection ─────────────────────────────────────────────────────
+
+canvas.addEventListener('mousemove', e => {
+  if (studioMode === 'realm' && realmViewMode === 'map') {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+    const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    canvas.style.cursor = _realmHitTest(px, py) !== null ? 'pointer' : '';
+  } else if (studioMode !== 'settlement' || activeTool === 'select') {
+    canvas.style.cursor = '';
+  }
+  if (studioMode !== 'settlement') return;
+  if (!currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  // Find the ward whose polygon contains the mouse
+  let found: Ward | null = null;
+  for (const ward of currentModel.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    if (pointInPolygon({ x: mx, y: my }, ward.polygon)) { found = ward; break; }
+  }
+
+  if (found) {
+    hoverEl.textContent = `${WARD_LABELS[found.type]} ward  ·  (${found.seed.x.toFixed(0)}, ${found.seed.y.toFixed(0)})`;
+    // Highlight
+    const octx = overlay.getContext('2d')!;
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    if (found.polygon.length) {
+      octx.beginPath();
+      octx.moveTo(found.polygon[0]!.x, found.polygon[0]!.y);
+      for (let i = 1; i < found.polygon.length; i++) octx.lineTo(found.polygon[i]!.x, found.polygon[i]!.y);
+      octx.closePath();
+      octx.strokeStyle = WARD_COLORS[found.type];
+      octx.lineWidth = 2;
+      octx.stroke();
+    }
+  } else {
+    hoverEl.textContent = 'hover a ward to inspect';
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+  }
+});
+canvas.addEventListener('mouseleave', () => {
+  if (studioMode !== 'settlement') return;
+  hoverEl.textContent = 'hover a ward to inspect';
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+
+// ── Settlement: double-click ward → building interior modal ──────────────────
+
+canvas.addEventListener('dblclick', e => {
+  if (studioMode !== 'settlement' || !currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  let hit: typeof currentModel.wards[0] | null = null;
+  for (const ward of currentModel.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    if (pointInPolygon({ x: mx, y: my }, ward.polygon)) { hit = ward; break; }
+  }
+  if (!hit) return;
+
+  const kind = WARD_TO_KIND[hit.type];
+  if (!kind) return;
+
+  const factionStr = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction ?? 'human';
+  const FACTION_MAP: Record<string, Faction> = {
+    human: 'human_town', elven: 'elven', dwarven: 'dwarven',
+    orcish: 'orcish', vampire: 'vampire', undead: 'undead_common',
+    vulperia: 'human_town', slime: 'human_rural', fae: 'fae',
+  };
+  const faction: Faction = FACTION_MAP[factionStr] ?? 'human_town';
+  const buildingSeed    = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
+  const size            = WARD_TO_SIZE[hit.type]   ?? 'medium';
+  const floors          = WARD_TO_FLOORS[hit.type] ?? 2;
+  const bldgPlan        = buildingToDungeonPlan(kind, faction, buildingSeed, size, floors as 1|2|3|4);
+  const title           = `${WARD_LABELS[hit.type]} — ${kind} (${factionStr})`;
+  const settlementId    = `settlement-${currentModel.seed}`;
+  showBuildingModal(bldgPlan, title, floors as number, {
+    settlementId,
+    wardType: hit.type,
+  });
+});
+
+// ── Building interior modal ───────────────────────────────────────────────────
+
+let _bModal: HTMLDivElement | null = null;
+let _bModalCanvas: HTMLCanvasElement | null = null;
+let _bModalPlan: DungeonPlan | null = null;
+let _bModalTitle = 'Building';
+let _bModalTags: string[] = [];
+let _bModalSettlementId: string | null = null;
+let _bModalBuildingId: string | null = null;
+let _bModalWardType: string | null = null;
+let _bModalZoom = 1.0;
+let _bModalPanX = 0;
+let _bModalPanY = 0;
+let _bModalDragging = false;
+let _bModalDragX = 0;
+let _bModalDragY = 0;
+
+function _bModalSetup(): void {
+  if (_bModal) return;
+  const wrap = canvas.parentElement!;
+
+  _bModal = document.createElement('div');
+  _bModal.style.cssText =
+    'position:absolute;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);' +
+    'width:min(660px,92%);height:min(540px,88%);' +
+    'background:#0e0c0a;border:1px solid #4a3820;' +
+    'border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.9);' +
+    'display:none;flex-direction:column;overflow:hidden;';
+  wrap.appendChild(_bModal);
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText =
+    'display:flex;align-items:center;justify-content:space-between;' +
+    'padding:7px 12px;background:#160e08;border-bottom:1px solid #3a2810;flex-shrink:0;gap:8px;';
+  _bModal.appendChild(hdr);
+
+  const titleEl = document.createElement('span');
+  titleEl.id = '_bm_title';
+  titleEl.style.cssText = 'font:bold 11px Georgia,serif;color:#d4b87a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+  hdr.appendChild(titleEl);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText =
+    'padding:2px 7px;background:#2a1008;color:#d08060;border:1px solid #6a2808;' +
+    'border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
+  closeBtn.addEventListener('click', hideBuildingModal);
+  hdr.appendChild(closeBtn);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.id = 'btn-save-building';
+  saveBtn.textContent = '💾 Save to Library';
+  saveBtn.title = 'Save this building blueprint to the Asset Library';
+  saveBtn.style.cssText =
+    'padding:2px 9px;background:#1e1808;color:#d8b86a;border:1px solid #5a4020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  saveBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    const data = {
+      ..._bModalPlan,
+      settlementId: _bModalSettlementId,
+      buildingId: _bModalBuildingId,
+      wardType: _bModalWardType,
+    };
+    const tags = [..._bModalTags];
+    if (_bModalSettlementId && !tags.includes(`settlement:${_bModalSettlementId}`)) tags.push(`settlement:${_bModalSettlementId}`);
+    if (_bModalBuildingId && !tags.includes(`building:${_bModalBuildingId}`)) tags.push(`building:${_bModalBuildingId}`);
+    if (_bModalWardType && !tags.includes(`ward:${_bModalWardType}`)) tags.push(`ward:${_bModalWardType}`);
+    _saveToLibrary('building', _bModalTitle, _bModalPlan.seed, data, tags);
+  });
+  hdr.insertBefore(saveBtn, closeBtn);
+
+  // 🎮 Play in 3D — opens the game, auto-loads building, enters creative mode
+  const play3dBtn = document.createElement('button');
+  play3dBtn.textContent = '🎮 Play in 3D';
+  play3dBtn.title = 'Open the game and walk through this building in 3D (creative mode)';
+  play3dBtn.style.cssText =
+    'padding:2px 9px;background:#0a2810;color:#80d060;border:1px solid #2a6020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  play3dBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    // Serialize DungeonPlan (Map → Object) and store for game to pick up
+    const planData = {
+      rooms:       Object.fromEntries(_bModalPlan.rooms),
+      startRoomId: _bModalPlan.startRoomId,
+      seed:        _bModalPlan.seed,
+    };
+    localStorage.setItem('ttt_building_preview', JSON.stringify(planData));
+    // Open game in new tab — it will auto-start, load building, enter creative
+    window.open('/building-viewer.html', '_blank');
+  });
+  hdr.insertBefore(play3dBtn, closeBtn);
+
+  _bModalCanvas = document.createElement('canvas');
+  _bModalCanvas.style.cssText = 'flex:1;display:block;cursor:grab;min-height:0;';
+  _bModal.appendChild(_bModalCanvas);
+
+  const hint = document.createElement('div');
+  hint.style.cssText =
+    'padding:4px 10px;background:#0a0806;font-size:9px;color:#504030;flex-shrink:0;text-align:center;';
+  hint.textContent = 'All floors connected · scroll to zoom · drag to pan · double-click to fit';
+  _bModal.appendChild(hint);
+
+  // ── Zoom/pan ─────────────────────────────────────────────────────────────
+  _bModalCanvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const rect2 = _bModalCanvas!.getBoundingClientRect();
+    const cx2   = (e.clientX - rect2.left) * (_bModalCanvas!.width / rect2.width);
+    const cy2   = (e.clientY - rect2.top)  * (_bModalCanvas!.height / rect2.height);
+    _bModalPanX = cx2 + (_bModalPanX - cx2) * factor;
+    _bModalPanY = cy2 + (_bModalPanY - cy2) * factor;
+    _bModalZoom = Math.max(0.4, Math.min(10, _bModalZoom * factor));
+    _bModalRedraw();
+  }, { passive: false });
+
+  _bModalCanvas.addEventListener('mousedown', e => {
+    _bModalDragging = true;
+    _bModalDragX    = e.clientX - _bModalPanX;
+    _bModalDragY    = e.clientY - _bModalPanY;
+    _bModalCanvas!.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_bModalDragging) return;
+    _bModalPanX = e.clientX - _bModalDragX;
+    _bModalPanY = e.clientY - _bModalDragY;
+    _bModalRedraw();
+  });
+  window.addEventListener('mouseup', () => {
+    _bModalDragging = false;
+    if (_bModalCanvas) _bModalCanvas.style.cursor = 'grab';
+  });
+  _bModalCanvas.addEventListener('dblclick', _bModalResetView);
+}
+
+function _bModalResetView(): void {
+  _bModalZoom = 1.0; _bModalPanX = 0; _bModalPanY = 0;
+  _bModalRedraw();
+}
+
+function _bModalRedraw(): void {
+  if (!_bModalPlan || !_bModalCanvas) return;
+  const w = _bModalCanvas.offsetWidth  || 620;
+  const h = _bModalCanvas.offsetHeight || 460;
+  if (_bModalCanvas.width !== w || _bModalCanvas.height !== h) {
+    _bModalCanvas.width  = w;
+    _bModalCanvas.height = h;
+  }
+  // Render all connected floors to an offscreen canvas
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  drawDungeonFloorPlan(_bModalPlan, off);  // no floorFilter → all floors connected via BFS
+
+  const ctx = _bModalCanvas.getContext('2d')!;
+  ctx.fillStyle = '#0a0908';
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(_bModalPanX + w * (1 - _bModalZoom) / 2, _bModalPanY + h * (1 - _bModalZoom) / 2);
+  ctx.scale(_bModalZoom, _bModalZoom);
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+}
+
+function showBuildingModal(
+  plan: DungeonPlan,
+  title: string,
+  floors: number,
+  opts: { settlementId?: string | null; buildingId?: string | null; wardType?: string | null } = {},
+): void {
+  _bModalSetup();
+  if (!_bModal || !_bModalCanvas) return;
+  _bModalPlan  = plan;
+  _bModalTitle = title;
+  _bModalSettlementId = opts.settlementId ?? null;
+  _bModalBuildingId = opts.buildingId ?? null;
+  _bModalWardType = opts.wardType ?? null;
+  _bModalTags  = [
+    'dtype:building',
+    `floors:${floors}`,
+    `startRoom:${plan.startRoomId}`,
+  ];
+  if (_bModalSettlementId) _bModalTags.push(`settlement:${_bModalSettlementId}`);
+  if (_bModalBuildingId) _bModalTags.push(`building:${_bModalBuildingId}`);
+  if (_bModalWardType) _bModalTags.push(`ward:${_bModalWardType}`);
+  _bModalZoom  = 1.0;
+  _bModalPanX  = 0;
+  _bModalPanY  = 0;
+
+  const titleEl = document.getElementById('_bm_title');
+  if (titleEl) titleEl.textContent = `🏠 ${title}`;
+
+  _bModal.style.display = 'flex';
+  requestAnimationFrame(() => { _bModalRedraw(); });
+  hoverEl.textContent = `${title} — Esc to close · scroll to zoom · drag to pan`;
+}
+
+function hideBuildingModal(): void {
+  if (_bModal) _bModal.style.display = 'none';
+  hoverEl.textContent = 'hover a ward · double-click to enter building';
+}
+
+// Escape key closes modal
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _bModal?.style.display !== 'none') hideBuildingModal();
+});
+
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
