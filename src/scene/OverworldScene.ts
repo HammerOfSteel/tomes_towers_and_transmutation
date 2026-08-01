@@ -379,6 +379,8 @@ export class OverworldScene {
     // A5: update tower window lights + portcullis gate
     const hour = (this as any)._timeHour ?? 12;   // set by DayNightSystem if wired
     this.updateTowerDetails(hour, pos);
+    // Phase 4: update settlement lamp-post lights (same hour value, same day/night rhythm)
+    this.updateNightLighting(hour);
 
     // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
     this._syncSlimeIM();
@@ -1030,6 +1032,15 @@ export class OverworldScene {
       const targetY = dist < 6 ? 3.2 : 0;
       pc.position.y += (targetY - pc.position.y) * 0.08;
     }
+  }
+
+  /** Phase 4: fade all settlement lamp-post lights on/off based on game hour.
+   *  Uses the same isNight threshold + flicker formula as updateTowerDetails
+   *  so all of the overworld's night light sources pulse in the same rhythm. */
+  updateNightLighting(hour: number): void {
+    const isNight = hour >= 18 || hour < 6;
+    const intensity = isNight ? 0.7 + 0.1 * Math.sin(Date.now() * 0.001) : 0;
+    for (const light of this._lampLights) light.intensity = intensity;
   }
 
   // ── Tree placement ─────────────────────────────────────────────────────────
