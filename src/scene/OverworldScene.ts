@@ -64,6 +64,8 @@ import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
 import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
+import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -100,7 +102,7 @@ export interface GladeEntranceHandle {
 
 // Internal storage entries (not exported)
 interface TreeEntry { group: THREE.Group; px: number; pz: number; biome: string; }
-interface RockEntry { mesh: THREE.Mesh; px: number; py: number; pz: number; r: number; }
+interface RockEntry { mesh: THREE.Object3D; px: number; py: number; pz: number; r: number; }
 
 // ── OverworldScene ────────────────────────────────────────────────────────────
 
@@ -218,6 +220,8 @@ export class OverworldScene {
     this._plantTrees(rand);
     console.log('[OverworldScene] _placeRocks...');
     this._placeRocks(rand);
+    console.log('[OverworldScene] _plantBushes...');
+    this._plantBushes(rand);
     console.log('[OverworldScene] _spawnCamps...');
     this._spawnCamps(rand, config.enemyCampCount);
     console.log('[OverworldScene] _addRuins...');
@@ -399,8 +403,16 @@ export class OverworldScene {
     this._freeGroup(this._tower);
     for (const tr of this._trees) this._freeGroup(tr.group);
     for (const rk of this._rocks) {
-      rk.mesh.geometry.dispose();
-      (rk.mesh.material as THREE.Material).dispose();
+      // rk.mesh may be a single Mesh (boulder/slab archetypes) or a Group of 3 Meshes sharing
+      // one material (cluster archetype) — traverse so all archetypes dispose correctly.
+      rk.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          const mat = obj.material;
+          if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+          else (mat as THREE.Material).dispose();
+        }
+      });
     }
     for (const ru of this._ruins)        this._freeGroup(ru);
     for (const en of this._enemies)       en.dispose(this.physics);
@@ -1030,14 +1042,22 @@ export class OverworldScene {
       if (cell.settlementId > 0)        continue;   // no trees inside settlement zones
       const level = cell.elevation;
 
-      const tree = this._makeTree(rand);
+      const tree = this._makeTree(rand, wx, wz);
       tree.position.set(wx, level * SH, wz);
       tree.rotation.y = rand() * Math.PI * 2;
       this._trees.push({ group: tree, px: wx, pz: wz, biome: cell.biome ?? 'forest' });
     }
   }
 
-  private _makeTree(rand: () => number): THREE.Group {
+  private _makeTree(rand: () => number, wx: number, wz: number): THREE.Group {
+    const archetype = pickTreeArchetype(wx, wz);
+    if (archetype === 'deciduous') return this._buildDeciduousTree(rand);
+    if (archetype === 'sparse')    return this._buildSparseTree(rand);
+    return this._buildConiferTree(rand);
+  }
+
+  /** Original cone-stack conifer — kept as archetype 1 of 3 for visual continuity. */
+  private _buildConiferTree(rand: () => number): THREE.Group {
     const g      = new THREE.Group();
     const trunkH = 1.6 + rand() * 1.2;
     const trunkR = 0.12 + rand() * 0.07;
@@ -1054,20 +1074,98 @@ export class OverworldScene {
 
     // Lower canopy cone
     const greenBase = 0x1a4610 + Math.floor(rand() * 6) * 0x010100;
-    const coneL = new THREE.Mesh(
-      new THREE.ConeGeometry(coneR, coneH, 6),
-      new THREE.MeshLambertMaterial({ color: greenBase }),
-    );
+    const canopyMat = new THREE.MeshLambertMaterial({
+      color: greenBase,
+      map: makeMottledCanvasTexture(greenBase, 0.18, Math.floor(rand() * 1e6)),
+    });
+    const coneL = new THREE.Mesh(new THREE.ConeGeometry(coneR, coneH, 6), canopyMat);
     coneL.position.y = trunkH + coneH * 0.48;
     g.add(coneL);
 
     // Upper canopy cone (smaller, slightly lighter)
     const coneU = new THREE.Mesh(
       new THREE.ConeGeometry(coneR * 0.65, coneH * 0.70, 6),
-      new THREE.MeshLambertMaterial({ color: greenBase + 0x040800 }),
+      new THREE.MeshLambertMaterial({
+        color: greenBase + 0x040800,
+        map: makeMottledCanvasTexture(greenBase + 0x040800, 0.18, Math.floor(rand() * 1e6)),
+      }),
     );
     coneU.position.y = trunkH + coneH * 0.88;
     g.add(coneU);
+
+    return g;
+  }
+
+  /** Rounded/lumpy canopy built from overlapping icosahedra — broadleaf tree archetype. */
+  private _buildDeciduousTree(rand: () => number): THREE.Group {
+    const g      = new THREE.Group();
+    const trunkH = 1.3 + rand() * 0.9;
+    const trunkR = 0.16 + rand() * 0.08;
+
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(trunkR * 0.8, trunkR, trunkH, 6),
+      new THREE.MeshLambertMaterial({ color: 0x4a2810 }),
+    );
+    trunk.position.y = trunkH / 2;
+    g.add(trunk);
+
+    const greenBase = 0x2c5a18 + Math.floor(rand() * 5) * 0x010200;
+    const canopyMat = new THREE.MeshLambertMaterial({
+      color: greenBase,
+      map: makeMottledCanvasTexture(greenBase, 0.22, Math.floor(rand() * 1e6)),
+    });
+
+    // 3 overlapping blobs give a rounded, non-symmetric canopy silhouette.
+    const blobCount = 3;
+    for (let i = 0; i < blobCount; i++) {
+      const radius = 0.65 + rand() * 0.45;
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 0), canopyMat);
+      const angle = (i / blobCount) * Math.PI * 2 + rand() * 0.6;
+      const spread = 0.35 + rand() * 0.25;
+      blob.position.set(
+        Math.cos(angle) * spread,
+        trunkH + radius * 0.75 + rand() * 0.3,
+        Math.sin(angle) * spread,
+      );
+      g.add(blob);
+    }
+
+    return g;
+  }
+
+  /** Thin trunk with sparse bare-branch fragments — bog/dead-tree archetype. */
+  private _buildSparseTree(rand: () => number): THREE.Group {
+    const g      = new THREE.Group();
+    const trunkH = 1.8 + rand() * 1.4;
+    const trunkR = 0.08 + rand() * 0.04;
+
+    const barkColor = 0x3a2818 + Math.floor(rand() * 4) * 0x010101;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(trunkR * 0.5, trunkR, trunkH, 5),
+      new THREE.MeshLambertMaterial({ color: barkColor }),
+    );
+    trunk.position.y = trunkH / 2;
+    g.add(trunk);
+
+    // A few small angular "sparse foliage / bare branch" fragments near the top.
+    const fragmentCount = 2 + Math.floor(rand() * 2);
+    const sparseGreen = 0x3a4a20 + Math.floor(rand() * 4) * 0x010100;
+    const fragMat = new THREE.MeshLambertMaterial({
+      color: sparseGreen,
+      map: makeMottledCanvasTexture(sparseGreen, 0.28, Math.floor(rand() * 1e6)),
+    });
+    for (let i = 0; i < fragmentCount; i++) {
+      const size = 0.25 + rand() * 0.2;
+      const frag = new THREE.Mesh(new THREE.IcosahedronGeometry(size, 0), fragMat);
+      const angle = rand() * Math.PI * 2;
+      const spread = 0.2 + rand() * 0.3;
+      frag.position.set(
+        Math.cos(angle) * spread,
+        trunkH - 0.1 + rand() * 0.4,
+        Math.sin(angle) * spread,
+      );
+      g.add(frag);
+    }
 
     return g;
   }
@@ -1102,16 +1200,101 @@ export class OverworldScene {
 
       const grey  = 0x58 + Math.floor(rand() * 0x18);
       const color = (grey << 16) | (Math.floor(grey * 0.96) << 8) | Math.floor(grey * 0.88);
-      const mesh  = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(radius, 0),
-        new THREE.MeshLambertMaterial({ color }),
-      );
+      const mat = new THREE.MeshLambertMaterial({
+        color,
+        map: makeMottledCanvasTexture(color, 0.12, Math.floor(rand() * 1e6)),
+      });
+
+      const archetype = pickRockArchetype(wx, wz);
+      let mesh: THREE.Object3D;
+      if (archetype === 'slab') {
+        // Flattened box — mimics a flat rock outcrop/slab.
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.6, radius * 0.5, radius * 1.3), mat);
+      } else if (archetype === 'cluster') {
+        // Grouped small dodecahedra scattered around a shared centre — rock pile look.
+        const grp = new THREE.Group();
+        const pieceCount = 3;
+        for (let i = 0; i < pieceCount; i++) {
+          const pieceR = radius * (0.45 + rand() * 0.35);
+          const piece = new THREE.Mesh(new THREE.DodecahedronGeometry(pieceR, 0), mat);
+          const angle = (i / pieceCount) * Math.PI * 2 + rand() * 0.5;
+          const spread = radius * 0.5;
+          piece.position.set(Math.cos(angle) * spread, pieceR * 0.4, Math.sin(angle) * spread);
+          piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+          grp.add(piece);
+        }
+        mesh = grp;
+      } else {
+        // Default 'boulder' — original dodecahedron look.
+        mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0), mat);
+      }
       mesh.position.set(wx, wy + radius * 0.45, wz);
       mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
       mesh.scale.set(1 + rand() * 0.4, 0.5 + rand() * 0.55, 0.9 + rand() * 0.3);
 
       this._rocks.push({ mesh, px: wx, py: wy + radius * 0.5, pz: wz, r: radius });
     }
+  }
+
+  // ── Bush placement (ground clutter — no physics collider) ─────────────────
+
+  private _plantBushes(rand: () => number): void {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
+    const W  = GW * T;
+    const H  = GH * T;
+    const bushInner = FR * T + 4;
+    const bushOuter = GHW * T * 0.90;
+    // Tighter spacing than trees (5.5) — bushes are denser undergrowth.
+    const pts = poissonDisk(W, H, 3.2, rand);
+
+    for (const [px, pz] of pts) {
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+      const d  = Math.sqrt(wx * wx + wz * wz);
+      if (d < bushInner || d > bushOuter) continue;
+
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+
+      const cell = this._wg.get(c, r);
+      if (cell.elevation < 1)           continue;   // no bushes on bog/water
+      if (cell.feature === 'road')      continue;
+      if (cell.feature === 'road_dirt') continue;
+      if (cell.content  !== 'empty')    continue;
+      if (cell.settlementId > 0)        continue;
+      // Only plant a bush on roughly 1 in 3 valid candidates — trees already use a
+      // similar Poisson pass at a different spacing; without this thinning, bushes
+      // would be too dense given the tighter 3.2 spacing above.
+      if (rand() > 0.35) continue;
+
+      const level = cell.elevation;
+      const bush = this._makeBush(rand);
+      bush.position.set(wx, level * SH, wz);
+      bush.rotation.y = rand() * Math.PI * 2;
+      this._clutter.push(bush);
+    }
+  }
+
+  private _makeBush(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const greenBase = 0x2e4a1a + Math.floor(rand() * 5) * 0x010200;
+    const mat = new THREE.MeshLambertMaterial({
+      color: greenBase,
+      map: makeMottledCanvasTexture(greenBase, 0.20, Math.floor(rand() * 1e6)),
+    });
+
+    const blobCount = 2 + Math.floor(rand() * 3); // 2..4 blobs
+    for (let i = 0; i < blobCount; i++) {
+      const radius = 0.22 + rand() * 0.2;
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 0), mat);
+      const angle = rand() * Math.PI * 2;
+      const spread = rand() * 0.22;
+      blob.position.set(Math.cos(angle) * spread, radius * 0.7, Math.sin(angle) * spread);
+      blob.scale.y = 0.7 + rand() * 0.3; // flatten slightly — low mound, not a sphere
+      g.add(blob);
+    }
+
+    return g;
   }
 
   // ── Phase 7h.2 — InstancedMesh sync ──────────────────────────────────────
