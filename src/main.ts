@@ -3,6 +3,7 @@ import { EffectComposer, EffectPass, RenderPass, BloomEffect, KernelSize } from 
 import { GameLoop } from '@/core/GameLoop';
 import { InputManager } from '@/core/InputManager';
 import { CameraRig } from '@/core/CameraRig';
+import { WoWCameraController } from '@/core/WoWCameraController';
 import { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { PlayerController } from '@/player/PlayerController';
 import { CombatSystem } from '@/combat/CombatSystem';
@@ -31,6 +32,7 @@ import { InteractableSystem } from '@/interactables/InteractableSystem';
 import { SpellBook } from '@/ui/SpellBook';
 import { DevPanel, devModeEnabled } from '@/ui/DevPanel';
 import { generateDungeon, type DungeonPlan } from '@/levels/DungeonGenerator';
+import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
@@ -79,7 +81,7 @@ import { QuestAcceptModal } from '@/ui/QuestAcceptModal';
 import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
-import { preloadDungeonProps, addPropsToRoom } from '@/rendering/KayKitDungeonProps';
+import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
 
 async function main() {
   injectHudTheme();
@@ -115,6 +117,8 @@ async function main() {
   // ── Physics ────────────────────────────────────────────────────────────────
   const physics = new PhysicsWorld();
   await physics.init();
+  // G1: cull static bodies beyond 30 WU from the player each physics step
+  physics.cullingRadius = 30;
 
   // ── Input ──────────────────────────────────────────────────────────────────
   const input = new InputManager();
@@ -151,6 +155,12 @@ async function main() {
   scene.add(player.shadow);
   scene.add(player.group);
 
+  // WoW-style camera mode: mouse-driven orbit input, inert while isometric.
+  // The controller is fully event-driven; void suppresses noUnusedLocals.
+  void new WoWCameraController(cameraRig, canvas, {
+    onTurnPlayer: (yaw) => player.setFacingAngle(yaw),
+  });
+
   // ── Scene / room manager ──────────────────────────────────────────────────
   const sceneManager = new SceneManager(scene, physics, player, (dmg) => {
     if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); }
@@ -164,8 +174,6 @@ async function main() {
   const enemyBars   = new EnemyHealthBars(cameraRig.camera, canvas);
   // Track last floor so onRoomLoaded can detect floor changes and show the location card.
   let _prevFloorIdx = Number.MIN_SAFE_INTEGER;
-  // A4: KayKit dungeon prop group for the currently loaded room — removed on next room swap.
-  let _roomPropGroup: THREE.Group | null = null;
   // Visited rooms — rooms entered at least once get instant lighting on re-entry.
   // First-visit rooms fade up from darkness for an exploration reveal effect.
   const _visitedRoomIds = new Set<string>();
@@ -183,12 +191,6 @@ async function main() {
   sceneManager.onRoomLoaded = (bp, _s) => {
     lighting.clearTorches();
     lighting.addTorchesForBlueprint(bp);
-
-    // A4: inject KayKit dungeon props (torches, pillars, barrels) into the room
-    const dungeonPropGroup = addPropsToRoom(bp, assetLoader, bp.id);
-    scene.add(dungeonPropGroup);
-    // Store ref on bp so SceneManager teardown can remove it (we track via _roomPropGroup)
-    _roomPropGroup = dungeonPropGroup;
 
     // Apply ambiance preset, then optionally override intensity for fade.
     const preset = (bp as any).lightPreset ?? 'dungeon';
@@ -249,6 +251,25 @@ async function main() {
             [2]:  "The cauldrons are enormous. You briefly consider whether you could fit inside one.\nFor research purposes only.",
             [3]:  "The carpet here is very soft. You take a moment to appreciate this.\nEveryone deserves a moment like this.",
           },
+          // NS1: New Tier-1 species staircase flavour
+          elf: {
+            [-1]: "The preservation wards down here are standard second-era work.\nCompetent. Not elegant. You could do better, but you were not asked.",
+            [1]:  "The library. You have been in better libraries.\nYou have also been in worse, but you are choosing to appreciate this one on its merits.",
+            [2]:  "The fermentation level. Something is still actively producing.\nYou find this impressive and slightly worrying in equal measure.",
+            [3]:  "The wizard's own quarters. Personal, deliberate, and slightly chaotic in ways he probably does not see.\nYou have notes.",
+          },
+          celestial: {
+            [-1]: "The ward architecture down here is pre-Conclave methodology with a modern retrofit.\nSomeone who knew what they were doing built this. The retrofit was less careful.",
+            [1]:  "A library of unusual breadth. You have read most of what is here, in various forms.\nThe margin notes are new. You find them charming.",
+            [2]:  "Fermentation. The smell is complex and technically impressive.\nYou appreciate precision applied to unexpected domains.",
+            [3]:  "The wizard's quarters. Every object has been placed with intent.\nThe star chart on the desk is almost correct. Almost.",
+          },
+          draconic: {
+            [-1]: "The laboratory. The temperature differential between the ward surfaces tells you a great deal about their construction date.\nOld. Careful. She approves.",
+            [1]:  "The library.\nShe approves of libraries.",
+            [2]:  "The fermentation level. The alchemical array is well-maintained.\nThe smell is not her preference but the craft is evident.",
+            [3]:  "The wizard's sanctum. Every item here was chosen.\nThe forge on the level above was more interesting, but she does not say this aloud.",
+          },
         };
         const msg = STAIR_FLAVOUR[_characterSpecies]?.[bp.floor];
         if (msg) _storyToast(msg, 'beat');
@@ -265,6 +286,13 @@ async function main() {
   let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
   let overworld: OverworldScene | null = null;
   let minimap:   OWMinimap | null = null;
+
+  // Always-on occlusion manager — switches between scene-wide and mesh-list modes
+  import('@/rendering/OcclusionManager').then(({ OcclusionManager }) => {
+    _occlusionMgr = new OcclusionManager();
+  });
+  let _occlusionMgr: import('@/rendering/OcclusionManager').OcclusionManager | null = null;
+
   // E2: Solmor 3D presence near tower entrance (shown after prologue complete)
   const solmorPresence = new SolmorPresence(scene);
   solmorPresence.load().catch(() => {});  // fire-and-forget
@@ -301,10 +329,13 @@ async function main() {
   };
 
   function _makeOverworld(seed: number): OverworldScene {
+    console.log('[_makeOverworld] START seed=' + seed);
     // Always re-read so changes made in the Settings modal are picked up.
     worldGenConfig = loadWorldGenConfig();
     const cfg       = { ...worldGenConfig, seed };
+    console.log('[_makeOverworld] building world data...');
     const worldData = buildWorldData(seed, cfg);
+    console.log('[_makeOverworld] worldData built');
     // Rebuild minimap for the new world
     minimap?.dispose();
     minimap = new OWMinimap(worldData);
@@ -312,7 +343,9 @@ async function main() {
     // Create (or recreate) the overworld editor bound to this scene instance
     owEditor?.dispose();
     owEditor = new OverworldEditor(scene, cameraRig.camera, canvas);
+    console.log('[_makeOverworld] creating OverworldScene...');
     const ow = new OverworldScene(scene, physics, player, worldData);
+    console.log('[_makeOverworld] OverworldScene created');
     // Inject already-cleared camps so they aren't re-spawned
     ow.clearedCamps = discoveryTracker.clearedCamps;
     ow.onCampCleared = (wx, wz) => {
@@ -320,6 +353,9 @@ async function main() {
       discoveryTracker.saveToStorage();
     };
     ow.onMerchant = (name) => { MerchantUI.open(name, inventory); };
+    MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
+    // E1: pass current species so species-specific encounter NPCs spawn correctly
+    ow.characterSpecies = _characterSpecies;
     MerchantUI._onBuyPotion = (id) => { consumables.addPotion(id); };
     ow.onQuestGiven = (quest) => {
       questModal.show(quest, () => {
@@ -333,63 +369,20 @@ async function main() {
         );
       });
     };
-    // Fire-and-forget: swap procedural geometry for GLB assets when ready.
-    // Each upgrade is independent — a failure in one doesn't block the others.
-    // Asset upgrades are ONLY applied when the user has enabled Kenney asset mode
-    // in Settings (default is code-first procedural geometry).
-    if (worldGenConfig.assetMode === 'kenney') {
-      const packs = new Set(worldGenConfig.assetPacks);
-
-      if (packs.has('nature')) {
-        ow.upgradeTreesWithAssets(assetLoader).catch((e) =>
-          console.warn('[main] tree asset upgrade failed:', e),
-        );
-        ow.upgradeRocksWithAssets(assetLoader).catch((e) =>
-          console.warn('[main] rock asset upgrade failed:', e),
-        );
-        ow.addGroundClutter(assetLoader).catch((e) =>
-          console.warn('[main] ground clutter failed:', e),
-        );
-        ow.replaceWaterWithRiverTiles(assetLoader).catch((e) =>
-          console.warn('[main] river tile upgrade failed:', e),
-        );
-      }
-      if (packs.has('castle')) {
-        ow.upgradeTowerWithAssets(assetLoader).catch((e) =>
-          console.warn('[main] tower upgrade failed:', e),
-        );
-      }
-      if (packs.has('town')) {
-        ow.upgradeSettlementsWithAssets(assetLoader, worldData).catch((e) =>
-          console.warn('[main] settlement decoration failed:', e),
-        );
-      }
-      if (packs.has('buildings')) {
-        ow.upgradeBuildingsWithAssets(assetLoader, worldData).catch((e) =>
-          console.warn('[main] modular buildings failed:', e),
-        );
-      }
-      if (packs.has('town') || packs.has('nature')) {
-        ow.upgradeRoadsWithAssets(assetLoader, worldData).catch((e) =>
-          console.warn('[main] road tile upgrade failed:', e),
-        );
-      }
-      if (packs.has('dungeon')) {
-        ow.upgradeDungeonEntrancesWithAssets(assetLoader).catch((e) =>
-          console.warn('[main] dungeon entrance upgrade failed:', e),
-        );
-      }
-    }
     return ow;
   }
 
   function switchToExterior(): void {
+    console.log('[switchToExterior] START gameMode=' + gameMode + ' overworld=' + !!overworld);
     // MUST unload dungeon first — onExitTrigger fires directly without
     // going through executeRoomSwap, so the room geometry + physics bodies
     // would otherwise stay in the scene and interfere with the overworld.
     sceneManager.unloadCurrentRoom();
+    console.log('[switchToExterior] dungeon unloaded');
     if (!overworld) {
+      console.log('[switchToExterior] creating overworld...');
       overworld = _makeOverworld(currentSeed);
+      console.log('[switchToExterior] overworld created');
     }
     // Mark last visited dungeon as cleared (enter = cleared, simplification for now)
     if (_activeDungeonId !== null) {
@@ -397,16 +390,26 @@ async function main() {
       _activeDungeonId = null;
     }
     gameMode = 'exterior';
+    physics.cullingRadius = 0;   // terrain heightfield is at world-origin; culling would disable it when player moves >30u away
+    _occlusionMgr?.setScene(scene);  // switch to scene-wide occlusion (trees, buildings, rocks)
+    console.log('[switchToExterior] calling overworld.enter()...');
     overworld.enter();
+    console.log('[switchToExterior] overworld.enter() complete');
     _weatherSys.setActive(true);
     minimap?.show();
     // E2: Show Solmor at tower entrance after prologue
     if (_towerPrologueDone) solmorPresence.show();
-    // Spawn just south of the tower door, high enough that the KCC capsule
-    // starts above the heightfield surface and falls cleanly to ground.
-    player.teleport(new THREE.Vector3(0, 1.5, 8));
+    // DI-3: return to the dungeon entrance the player used, if any — otherwise
+    // (tower exit) spawn just south of the tower door as before.
+    if (_activeDungeonEntrancePos) {
+      player.teleport(_activeDungeonEntrancePos.clone().setY(1.5));
+      _activeDungeonEntrancePos = null;
+    } else {
+      player.teleport(new THREE.Vector3(0, 1.5, 8));
+    }
     // Widen fog for the open world
     scene.fog = new THREE.Fog(0x0a1408, 60, 180);
+    console.log('[switchToExterior] COMPLETE ✓');
   }
 
   function switchToInterior(roomId?: string): void {
@@ -414,23 +417,38 @@ async function main() {
     _weatherSys.setActive(false);
     _cancelHarvest();
     gameMode = 'interior';
+    _activeDungeonEntrancePos = null; // tower entry — exit always returns to the tower door
+    physics.cullingRadius = 30;   // re-enable culling for dungeon rooms
+    _occlusionMgr?.setScene(scene);  // scene-wide occlusion for dungeon/tower walls
     minimap?.hide();
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60); // restore dungeon fog
-    // Remove previous room's KayKit props before loading new room
-    if (_roomPropGroup) { scene.remove(_roomPropGroup); _roomPropGroup = null; }
     sceneManager.loadRoomImmediate(roomId ?? sceneManager.startRoomId ?? 'cell_start');
   }
 
   sceneManager.onExitTrigger = () => {
+    console.log('[onExitTrigger] fired — hasMasterKey=' + _hasMasterKey + ' gameMode=' + gameMode);
+    // Already in exterior — ignore spurious re-trigger
+    if (gameMode === 'exterior') {
+      console.log('[onExitTrigger] already exterior — ignoring');
+      return;
+    }
     // Block the front door until the player has the master key.
     if (!_hasMasterKey && gameMode === 'interior') {
+      console.log('[onExitTrigger] blocked — no master key');
       _storyToast(
         'The front door is sealed with heavy magic. You need the master key — it must be in the basement.',
         'beat',
       );
       return;
     }
-    switchToExterior();
+    console.log('[onExitTrigger] calling switchToExterior...');
+    try {
+      switchToExterior();
+    } catch (err) {
+      console.error('[onExitTrigger] ❌ switchToExterior threw:', err);
+      return;
+    }
+    console.log('[onExitTrigger] switchToExterior returned');
 
     // E2: After the prologue, trigger Solmor's first encounter the first time
     // the player exits the tower with the master key.
@@ -470,6 +488,10 @@ async function main() {
   const questLog         = new QuestJournal();
   const discoveryTracker = new DiscoveryTracker();
   let _activeDungeonId: number | null = null;
+  /** DI-3: world position of the entrance the player used to enter the active
+   *  dungeon (null when inside the tower or a building instead), so exiting
+   *  returns them to where they went in rather than always to the tower door. */
+  let _activeDungeonEntrancePos: THREE.Vector3 | null = null;
   let _questCheckTimer = 0;
   let _storyRunner: StoryRunner | null = null;
   /** Tower room-clear counter — increments each time a room's enemies are all defeated.
@@ -556,6 +578,7 @@ async function main() {
 
   interactables.onKeyPickup = () => {
     if (_hasMasterKey) return; // already picked up
+    console.log('[onKeyPickup] master key picked up');
     _hasMasterKey = true;
     _storyToast(
       'You take the master key.\nThe binding ward dissolves in your palm.',
@@ -693,6 +716,9 @@ async function main() {
       if (!import.meta.env.DEV) return;
       CreativeMode.enterBackroom('spell_lab');
     },
+    onOpenPrincessAtelier: () => {
+      window.open('princess-creator.html', '_blank');
+    },
   });
 
   const gameMenu = new GameMenu({
@@ -712,6 +738,7 @@ async function main() {
 
   /** Write current progress to the active save slot. */
   function autoSave(): void {
+    if (_activeSlotId < 0) return;   // preview / no-save mode
     patchSaveSlot(_activeSlotId, {
       floor:        _currentFloor,
       hasMasterKey: _hasMasterKey,
@@ -721,6 +748,7 @@ async function main() {
 
   /** Shared start-game logic — called by character creation onStart and by tests. */
   function startGame(seed?: number, cfg?: CharacterConfig): void {
+    console.log(`[startGame] seed=${seed ?? 'random'} char=${cfg?.characterId ?? 'none'} boon=${cfg?.boon ?? 'none'} princess=${!!cfg?.princessDna}`);
     currentSeed = seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
     overworld?.dispose();
     overworld = null;
@@ -752,11 +780,29 @@ async function main() {
     if (cfg?.boon === 'tome') {
       progression.grantSpell('flame_dart');
     } else if (cfg?.boon === 'blood') {
-      // +6 vitality → derivedMaxHp = 10 + 6*5 = 40 (+30 HP)
-      progression.boostStat('vitality', 6);
+      progression.boostStat('vitality', 6);    // +30 HP
     } else if (cfg?.boon === 'swift') {
-      // +7 swiftness → dodge CD mult ≈ 0.65, speed mult ≈ 1.28
-      progression.boostStat('swiftness', 7);
+      progression.boostStat('swiftness', 7);   // dodge CD ≈ 0.65, speed ≈ 1.28
+    }
+    // NS4: new boons
+    else if (cfg?.boon === 'herbalist') {
+      progression.grantSpell('minor_heal');
+      progression.mods.herbYieldMult *= 1.25;
+    } else if (cfg?.boon === 'night_touched') {
+      // Handled per-frame by DayNightSystem — flag here so it can check
+      progression.mods.hasNightTouched = true;
+    } else if (cfg?.boon === 'static_charge') {
+      progression.grantSpell('lightning_bolt');
+      progression.mods.aoeRadiusMult *= 1.10;
+    } else if (cfg?.boon === 'silver_tongue') {
+      progression.mods.silverTongue = true;
+    } else if (cfg?.boon === 'resonant_mind') {
+      progression.mods.spellCooldownMult = (progression.mods.spellCooldownMult ?? 1) * 0.80;
+      // +30 starting mana (grant via progression's mana pool through mods)
+      progression.mods.startingManaBonus = (progression.mods.startingManaBonus ?? 0) + 30;
+    } else if (cfg?.boon === 'tower_trained') {
+      progression.boostStat('vitality', 4);    // +20 HP
+      progression.mods.firstHitImmune = true;
     }
 
     // ── Apply narrative stat bonuses (from NewGameFlow conversation) ───
@@ -775,12 +821,27 @@ async function main() {
       if (entry) progression.boostStat(entry[0], entry[1]);
     }
 
-    // Apply player character appearance — asset model takes priority over DNA
-    if (cfg?.assetModel) {
-      player.applyAssetModel(cfg.assetModel).catch((e) =>
-        console.error('[main] failed to load asset model:', e));
-    } else if (cfg?.dna) {
-      player.applyDNA(cfg.dna);
+    // ── Apply player character appearance ─────────────────────────────────
+    // Always use the princess rig system:
+    //   • Documentation path  → user's gallery pick  (cfg.princessDna set)
+    //   • Every other path    → static species blueprint from PrincessDefaults
+    //   Never fall back to old KayKit asset models for the playable character.
+    {
+      const dnaToApply = cfg?.princessDna ?? null;
+      if (dnaToApply) {
+        console.log('[main] applyPrincess (gallery pick) → dna:', dnaToApply.name, dnaToApply.species);
+        player.applyPrincess(dnaToApply).catch((e) =>
+          console.error('[main] ❌ applyPrincess failed:', e));
+      } else {
+        // Lazy-import so PrincessDefaults doesn't bloat the initial bundle
+        import('@/princess-creator/defaults/PrincessDefaults').then(({ getDefaultPrincessForCharId }) => {
+          const defaultDna = getDefaultPrincessForCharId(cfg?.characterId);
+          console.log('[main] applyPrincess (default blueprint) → char:', cfg?.characterId,
+            '→ dna:', defaultDna.name, defaultDna.species);
+          player.applyPrincess(defaultDna).catch((e) =>
+            console.error('[main] ❌ applyPrincess (default) failed:', e));
+        });
+      }
     }
 
     // ── Start story quest line ─────────────────────────────────────────────
@@ -788,30 +849,36 @@ async function main() {
     _craftedItemCount = 0;
     consumables.reset();
     hud.setConsumables({ minorHealCount: 0, majorHealCount: 0 });
-    if (cfg?.characterId) {
-      _characterSpecies = speciesForCharacter(cfg.characterId);
+    // PC4: princess species override
+    const cfgSpecies = cfg?.princessSpecies
+      ? (cfg.princessSpecies as import('@/world/StoryQuestLine').SpeciesId)
+      : null;
+    if (cfg?.characterId || cfgSpecies) {
+      _characterSpecies = cfgSpecies ?? speciesForCharacter(cfg!.characterId!);
       // D6: gate species-specific talent nodes
       talentSystem.activeSpecies = _characterSpecies as import('@/progression/TalentSystem').TalentSpecies;
       mainMenu.setActiveSpecies(_characterSpecies);
       // Apply species-specific active abilities (D1/D6)
-      applyCharacterAbilities(abilities, cfg.characterId);
-      _storyRunner = new StoryRunner(cfg.characterId, questLog);
-      // C1: Update quest journal species tab with the story arc title (fire-and-forget)
-      import('@/world/StoryQuestLine').then(({ getStoryLine, speciesForCharacter }) => {
-        const species = speciesForCharacter(cfg.characterId as any);
-        if (species) {
-          const line = getStoryLine(species as any);
-          if (line) questLog.setSpeciesTitle(line.displayTitle);
-        }
+      if (cfg?.characterId) applyCharacterAbilities(abilities, cfg.characterId);
+      _storyRunner = cfg?.characterId
+        ? new StoryRunner(cfg.characterId, questLog)
+        : new StoryRunner(_characterSpecies as any, questLog);
+      // C1: Update quest journal species tab
+      const _sl = import('@/world/StoryQuestLine').then(({ getStoryLineBySpecies }) => {
+        const line = getStoryLineBySpecies(_characterSpecies as any);
+        if (line) questLog.setSpeciesTitle(line.displayTitle);
       });
       _storyRunner.onBeatComplete = (text, xp, gold) => {
         progression.grantXP(xp);
         if (gold > 0) inventory.add('gold', gold);
         _storyToast(text, 'beat');
-        objTracker.clear(); // beat done — onBeatActivate fires next and will set the new one
+        objTracker.clear();
+        hud.setQuestTracker(null);   // G2: hide until next beat activates
       };
       _storyRunner.onBeatActivate = (title, desc) => {
         objTracker.setObjective(title, desc, true);
+        // G2: update quest tracker widget with active beat
+        hud.setQuestTracker({ title, beat: desc });
       };
       _storyRunner.onActBegin = (title, intro) => {
         _storyToast(intro, 'act');
@@ -855,15 +922,15 @@ async function main() {
       // onBeatActivate fires during start() for the first beat — no manual init needed
     }
 
-    // A4: preload KayKit dungeon props so first room has assets ready
-    preloadDungeonProps(assetLoader).catch(() => { /* non-fatal */ });
-
     // Initialise creative mode with game context (dev only)
     if (import.meta.env.DEV) {
       CreativeMode.init({
         player: {
           ...(player as Parameters<typeof CreativeMode.init>[0]['player']),
+          // Prototype methods are not copied by spread — add them explicitly:
+          teleport:        (pos: THREE.Vector3) => player.teleport(pos),
           applyAssetModel: (def) => player.applyAssetModel(def),
+          applyPrincess:   (dna) => player.applyPrincess(dna),
         },
         regularHUD:   { el: (hud as unknown as { el?: HTMLElement }).el },
         sceneManager: sceneManager as Parameters<typeof CreativeMode.init>[0]['sceneManager'],
@@ -871,14 +938,14 @@ async function main() {
         camera:       cameraRig.camera,
         canvas:       renderer.domElement,
         openCharSheet: () => statPanel.open(progression),
-        orbit: orbit as CreativeModeContext['orbit'],
+        orbit: undefined,
       });
     }
 
     gameLoop.start();
+    (window as any).__gameStarted = true;   // test hook — one-way flag
+    console.log('[startGame] gameLoop started ✓');
   }
-
-  /** XP kill tracker — grants XP for each new kill registered. */
   let prevKillCount = 0;
   /** E1/E2: Named elite enemy IDs killed this session (for defeat_elite beats). */
   const _eliteEnemiesKilled   = new Set<string>();
@@ -899,70 +966,11 @@ async function main() {
   };
 
   // ── Sandbox mode helpers ──────────────────────────────────────────────────
-
-  function startSandbox(): void {
-    // Show a launcher modal offering the dev tools
-    _showDevLauncher();
-  }
-
-  function _showDevLauncher(): void {
-    const existing = document.getElementById('dev-launcher-modal');
-    if (existing) { existing.remove(); }
-
-    const overlay = document.createElement('div');
-    overlay.id = 'dev-launcher-modal';
-    overlay.style.cssText = [
-      'position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;',
-      'align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)',
-    ].join('');
-
-    const panel = document.createElement('div');
-    panel.style.cssText = [
-      'background:#161a20;border:1px solid #2a2f38;border-radius:10px;',
-      'padding:28px 32px;min-width:360px;color:#d0d8e8;font:13px/1.5 "Segoe UI",sans-serif',
-    ].join('');
-
-    panel.innerHTML = `
-      <h2 style="font-size:16px;font-weight:700;margin-bottom:6px;color:#d8a96a;letter-spacing:.04em">Backrooms</h2>
-      <p style="color:#7a8a9a;margin-bottom:20px;font-size:12px">Development tools — the place things get weird.</p>
-      <div style="display:flex;flex-direction:column;gap:8px" id="dev-launcher-btns"></div>
-      <button id="dev-launcher-close" style="
-        margin-top:18px;width:100%;padding:8px;background:none;border:1px solid #2a2f38;
-        border-radius:6px;color:#7a8a9a;font:inherit;font-size:12px;cursor:pointer
-      ">Cancel</button>
-    `;
-
-    const btns = [
-      { label: '✦ World Editor', desc: 'Asset Studio · Models · Tile Painter · Tower Rooms · Buildings · Library',
-        action: () => { overlay.remove(); window.open('world-editor.html', '_blank'); } },
-      { label: '⚡ Dev Panel (in-game)', desc: 'Spell Lab · Enemy Lab · Creature Creator · Cheats',
-        action: () => { overlay.remove(); _startDevPanelInGame(); } },
-    ];
-
-    const btnContainer = panel.querySelector('#dev-launcher-btns')!;
-    for (const b of btns) {
-      const el = document.createElement('button');
-      el.style.cssText = [
-        'background:#1a1e28;border:1px solid #2a2f38;border-radius:7px;',
-        'padding:10px 14px;text-align:left;cursor:pointer;color:#d0d8e8;font:inherit;',
-        'transition:background .12s,border-color .12s',
-      ].join('');
-      el.innerHTML = `
-        <div style="font-size:13px;font-weight:600;margin-bottom:2px">${b.label}</div>
-        <div style="font-size:11px;color:#7a8a9a">${b.desc}</div>
-      `;
-      el.addEventListener('mouseover', () => { el.style.background = '#1e2535'; el.style.borderColor = '#6a9fd8'; });
-      el.addEventListener('mouseout',  () => { el.style.background = '#1a1e28'; el.style.borderColor = '#2a2f38'; });
-      el.addEventListener('click', b.action);
-      btnContainer.appendChild(el);
-    }
-
-    panel.querySelector('#dev-launcher-close')!.addEventListener('click', () => { overlay.remove(); mainMenu.show(); });
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); mainMenu.show(); } });
-
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-  }
+  // NOTE: the main-menu "Dev Lab" button now links directly to Overworld
+  // Studio (see onDevLab above). The in-game Dev Panel (Spell Lab / Enemy
+  // Lab / Creature Creator / Cheats) previously reached via a launcher modal
+  // here is preserved and now opened with the Insert key while in dev mode
+  // (see the keydown handler below), so no functionality is lost.
 
   function _startDevPanelInGame(): void {
     mainMenu.hide();
@@ -1317,15 +1325,21 @@ async function main() {
   }
 
   // ── Story toast ──────────────────────────────────────────────────────────
+  /** DI-2b: human-readable label for a dungeon's site-family identity, for the discovery toast. */
+  function _siteFamilyLabel(family: string): string {
+    return family.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
   function _storyToast(text: string, kind: 'beat' | 'act'): void {
     const el = document.createElement('div');
     const isBeat = kind === 'beat';
     Object.assign(el.style, {
       position:   'fixed',
-      bottom:     isBeat ? '90px' : '50%',
+      top:        isBeat ? 'auto'  : '100px',   // act toasts: below HUD, not centre
+      bottom:     isBeat ? '90px' : 'auto',
       left:       '50%',
-      transform:  isBeat ? 'translateX(-50%)' : 'translate(-50%, 50%)',
-      maxWidth:   '480px',
+      transform:  'translateX(-50%)',
+      maxWidth:   isBeat ? '480px' : '560px',
       padding:    isBeat ? '10px 20px' : '16px 28px',
       background: isBeat ? 'rgba(20,14,6,0.88)' : 'rgba(12,8,3,0.94)',
       border:     `1px solid ${isBeat ? '#5a3a1a' : '#c8963c'}`,
@@ -1454,14 +1468,19 @@ async function main() {
         flow.play(document.body, slotId).then(cfg => {
           flow.dispose();
           // Persist character identity so "Continue" can restore it
-          patchSaveSlot(slotId, {
-            characterId:  cfg.characterId,
-            boon:         cfg.boon,
-            statBonuses:  cfg.statBonuses,
-            hasMasterKey: false,
-            floor:        0,
-            location:     'The Tower',
+          import('@/princess-creator/dna').then(({ dnaToShareCode }) => {
+            patchSaveSlot(slotId, {
+              characterId:     cfg.characterId,
+              boon:            cfg.boon,
+              statBonuses:     cfg.statBonuses,
+              hasMasterKey:    false,
+              floor:           0,
+              location:        'The Tower',
+              princessCode:    cfg.princessDna ? dnaToShareCode(cfg.princessDna) : undefined,
+              princessSpecies: cfg.princessSpecies,
+            });
           });
+          console.log('[newGame] saved princess to slot:', !!cfg.princessDna);
           startGame(undefined, cfg);
         }).catch(err => {
           console.error('[NewGameFlow] failed:', err);
@@ -1481,18 +1500,24 @@ async function main() {
           // Dynamically load the model list to rebuild assetModel
           import('@/characters/charManifest').then(({ CHAR_MODELS }) => {
             import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
-              const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
-              cfg = {
-                name:         charId,
-                boon:         (saved.boon ?? 'tome') as import('@/ui/CharacterCreation').StartingBoon,
-                slotId,
-                dna:          { ...DEFAULT_PLAYER_DNA },
-                assetModel:   assetModel ?? undefined,
-                statBonuses:  (saved.statBonuses ?? []) as StatBonus[],
-                characterId:  charId,
-                hasMasterKey: saved.hasMasterKey ?? false,
-              };
-              startGame(undefined, cfg);
+              import('@/princess-creator/dna').then(({ shareCodeToDna }) => {
+                const assetModel = CHAR_MODELS.find(m => m.id === manifestId) ?? null;
+                const princessDna = saved.princessCode ? shareCodeToDna(saved.princessCode) : undefined;
+                console.log('[continue] restoring — char:', charId, 'princess:', !!princessDna);
+                cfg = {
+                  name:            charId,
+                  boon:            (saved.boon ?? 'tome') as import('@/ui/CharacterCreation').StartingBoon,
+                  slotId,
+                  dna:             { ...DEFAULT_PLAYER_DNA },
+                  assetModel:      princessDna ? undefined : (assetModel ?? undefined),
+                  statBonuses:     (saved.statBonuses ?? []) as StatBonus[],
+                  characterId:     charId,
+                  hasMasterKey:    saved.hasMasterKey ?? false,
+                  princessDna:     princessDna ?? undefined,
+                  princessSpecies: saved.princessSpecies as any,
+                };
+                startGame(undefined, cfg);
+              });
             });
           });
         } else {
@@ -1500,13 +1525,46 @@ async function main() {
         }
       }
     },
-    onDevLab: () => startSandbox(),
+    onDevLab: () => window.open('overworld-studio.html', '_blank'),
     rebindControls: {
       getBindings: () => input.bindings as import('@/core/InputManager').Bindings,
       rebind:       (action, code) => input.rebind(action, code),
       resetBindings: () => input.resetBindings(),
     },
   });
+
+  const _pendingOverworldPreview = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+  mainMenu.show();
+
+  // ── Princess Atelier quick-play handoff ───────────────────────────────────
+  // "▶ Play as Her" in the Atelier sets this key → we skip the campfire
+  // entirely and drop the player straight into the game with their princess.
+  {
+    const quickCode = localStorage.getItem('ttt_quickplay_princess');
+    if (quickCode) {
+      localStorage.removeItem('ttt_quickplay_princess');
+      mainMenu.hide();
+      import('@/princess-creator/dna').then(async ({ shareCodeToDna }) => {
+        const dna = shareCodeToDna(quickCode);
+        import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+          startGame(undefined, {
+            name:           dna?.name ?? 'Princess',
+            boon:           'tome',
+            slotId:         0,
+            dna:            { ...DEFAULT_PLAYER_DNA },
+            statBonuses:    ['intelligence', 'magic_power'],
+            characterId:    'rogue',
+            princessDna:    dna ?? undefined,
+            princessSpecies: 'human',
+          });
+        });
+      });
+    }
+  }
+
+  // ── Overworld Studio settlement preview handoff ───────────────────────────
+  // Deferred until the end of main() so late-initialized systems (HUD, spells,
+  // ability bar, etc.) already exist before startGame() runs.
 
   // ── Test / debug hook (dev builds only) ──────────────────────────────────
   // Exposed on window so Playwright e2e tests can drive the game without
@@ -1530,6 +1588,24 @@ async function main() {
       },
       /** Current scene mode: 'interior' | 'exterior'. */
       getGameMode: () => gameMode,
+      /** Current camera mode: 'isometric' | 'wow'. For tests. */
+      getCameraMode: () => cameraRig.mode,
+      /** Current WoW-mode camera yaw (radians). For tests. */
+      getCameraYaw: () => cameraRig.yaw,
+      /** Current camera world position { x, y, z }. For tests. */
+      getCameraPos: () => {
+        const p = cameraRig.camera.position;
+        return { x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3) };
+      },
+      /** Current camera quaternion { x, y, z, w }. For tests. */
+      getCameraQuaternion: () => {
+        const q = cameraRig.camera.quaternion;
+        return { x: +q.x.toFixed(5), y: +q.y.toFixed(5), z: +q.z.toFixed(5), w: +q.w.toFixed(5) };
+      },
+      /** Current player facing angle (radians). For tests. */
+      getPlayerFacing: () => player.facingAngleRad,
+      /** Toggle isometric/WoW camera mode (mirrors the 'V' keybinding). For tests. */
+      toggleCameraMode: () => cameraRig.toggleMode(player.facingAngleRad),
       /** Whether the player group is marked visible. */
       isPlayerVisible: () => player.group.visible,
       /** Teleport player to a specific world position (for tests). */
@@ -1538,6 +1614,214 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Active physics static body count in the overworld scene (for tests). */
+      getStaticBodyCount: () => overworld?.getStaticBodyCount() ?? 0,
+      /** Registered building collider spec count — persists across exit()/enter() (for tests). */
+      getBuildingColliderSpecCount: () => overworld?.getBuildingColliderSpecCount() ?? 0,
+      /** Whether the game loop is actively running (true only after startGame completes). */
+      isGameRunning: () => (gameLoop as any).running === true,
+      /** Force-give the master key (for tests). */
+      giveMasterKey: () => { _hasMasterKey = true; console.log('[__game] master key granted'); },
+      /** Whether master key is held. */
+      hasMasterKey: () => _hasMasterKey,
+      /** Trigger the exit door as if player walked into it. */
+      triggerExit: () => { console.log('[__game] triggerExit called'); sceneManager.onExitTrigger?.(); },
+      /** All settlements with world-space position + name (exterior mode only). For tests. */
+      getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
+      /** Name + species of the active princess rig (null if none). For tests. */
+      getPrincessInfo: () => {
+        const inst = (player as any)._princessInstance;
+        if (!inst) return null;
+        return { name: inst.dna?.name ?? '?', species: inst.dna?.species ?? '?' };
+      },
+      /** First settlement NPC's visual/gameplay info (null if none spawned). For tests. */
+      getNpcSample: () => {
+        const npc = (overworld as any)?._npcs?.[0];
+        if (!npc) return null;
+        const root = npc.group as THREE.Group;
+        // buildNpcSync wraps the real geometry as a child once the async
+        // princess build resolves — a populated child means the new visual
+        // system successfully built (not just showing the empty placeholder).
+        const hasNewVisual = root.children.length > 0;
+        const pos = root.position;
+        return {
+          role: npc.role as string,
+          name: npc.name as string,
+          position: { x: +pos.x.toFixed(3), y: +pos.y.toFixed(3), z: +pos.z.toFixed(3) },
+          hasNewVisual,
+        };
+      },
+      /** PROC dev: spawn a test NPC in the current scene. */
+      spawnTestNpc: (species = 'human', role = 'merchant') => {
+        import('@/npc-creator/defaults/NpcDefaults').then(({ getDefaultNpcDna }) => {
+          import('@/npc-creator/builder').then(({ buildNpc }) => {
+            const dna = getDefaultNpcDna(species as any, role as any, Date.now());
+            buildNpc({ ...dna, name: `Test ${species} ${role}` }).then(inst => {
+              const pos = player.group.position;
+              inst.root.position.set(pos.x + 2, pos.y, pos.z);
+              scene.add(inst.root);
+              console.log(`[spawnTestNpc] spawned ${dna.species}/${dna.role} near player`);
+            });
+          });
+        });
+      },
+      /** PROC dev: spawn a test enemy in the current scene. */
+      spawnTestEnemy: (species = 'undead', role = 'melee', tier = 1) => {
+        import('@/enemy-creator/defaults/EnemyDefaults').then(({ getDefaultEnemyDna }) => {
+          import('@/enemy-creator/builder').then(({ buildEnemy }) => {
+            const dna = getDefaultEnemyDna(species as any, role as any, tier as any, Date.now());
+            buildEnemy({ ...dna, name: `Test ${species} ${role} T${tier}` }).then(result => {
+              const pos = player.group.position;
+              result.rig.group.position.set(pos.x - 2, pos.y, pos.z + 2);
+              scene.add(result.rig.group);
+              console.log(`[spawnTestEnemy] spawned ${dna.species}/${dna.combatRole} tier ${tier} near player`);
+            });
+          });
+        });
+      },
+      /** PROC dev: decorate the current room with props. */
+      decorateCurrentRoom: () => {
+        import('@/levels/PropPlacer').then(({ decorateRoom, themeForFloor }) => {
+          const floor = _currentFloor;
+          const placed = decorateRoom({ floorIndex: floor, halfWidth: 5, halfDepth: 5, seed: Date.now(), maxProps: 8 });
+          for (const { built, x, z, rotation } of placed) {
+            built.root.position.set(x, 0, z);
+            built.root.rotation.y = rotation;
+            scene.add(built.root);
+          }
+          console.log(`[decorateCurrentRoom] placed ${placed.length} props on floor ${floor} (theme: ${themeForFloor(floor)})`);
+        });
+      },
+      /** PROC dev: spawn a test building in the current scene. */
+      spawnTestBuilding: (kind = 'house', style = 'thatched', size = 'small') => {
+        import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {
+          import('@/world/buildings/BuildingDNA').then(({ STYLE_COLORS }) => {
+            const dna = {
+              v: 1, kind: 'building', name: `Test ${kind}`, seed: Date.now(),
+              buildingKind: kind, size, floors: 2, style,
+              condition: 'weathered', hasInterior: true, interiorLayout: 'single_room',
+              colors: STYLE_COLORS[style as import('@/world/buildings/BuildingDNA').BuildingStyle] ?? STYLE_COLORS['thatched'],
+              rotation: 0,
+            } as any;
+            const inst = buildBuilding(dna);
+            const pos  = player.group.position;
+            inst.exteriorGroup.position.set(pos.x + 8, 0, pos.z);
+            scene.add(inst.exteriorGroup);
+            console.log(`[spawnTestBuilding] spawned ${kind}/${style}/${size} near player`);
+          });
+        });
+      },
+      /** Building interior state — used by E2E tests. Buildings now route through the
+       *  same sceneManager.loadDungeon() system as real dungeons/the greenhouse, so
+       *  this is true for ANY interior (tower/dungeon/greenhouse/building), not just
+       *  buildings specifically — name kept for e2e-test API stability. */
+      isInBuildingInterior:   () => gameMode === 'interior',
+      getBuildingFloor:       () => sceneManager.currentFloor,
+      getBuildingTotalFloors: () => sceneManager.loadedFloorCount,
+      getBuildingStairUpPos: () => {
+        const t = sceneManager.getStaircaseTrigger('up');
+        return t ? { x: t.x, y: t.y, z: t.z } : null;
+      },
+      getBuildingStairDownPos: () => {
+        const t = sceneManager.getStaircaseTrigger('down');
+        return t ? { x: t.x, y: t.y, z: t.z } : null;
+      },
+      /** Spawn a test building directly in front of the player (returns world pos). */
+      spawnBuildingNearPlayer: (kind = 'inn', style = 'tudor', floors = 2) => {
+        return new Promise<{x: number; z: number}>((resolve) => {
+          import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {
+            import('@/world/buildings/BuildingDNA').then(({ STYLE_COLORS }) => {
+              const pos = player.group.position;
+              const bx = pos.x + 6, bz = pos.z;
+              const dna: any = {
+                v:1, kind:'building', name:`Test ${kind}`, seed: 0xBEEF_1234,
+                buildingKind: kind, size:'medium', floors, style,
+                condition:'weathered', hasInterior:true, interiorLayout:'single_room',
+                colors: (STYLE_COLORS as Record<string, any>)[style] ?? STYLE_COLORS['timber'],
+                rotation:0, terrace:'none', features:[],
+              };
+              const inst = buildBuilding(dna);
+              inst.exteriorGroup.position.set(bx, 0, bz);
+              scene.add(inst.exteriorGroup);
+              // Register in overworld building data so getNearestBuilding finds it
+              (overworld as any)?._buildingData?.push({
+                dna, pos: new THREE.Vector3(bx, 0, bz), faction: 'human_town', rotationY: 0,
+              });
+              overworld?.registerBuildingCollider(dna, new THREE.Vector3(bx, 0, bz), 0);
+              console.log(`[spawnBuildingNearPlayer] ${kind}/${style} floors=${floors} at (${bx},${bz})`);
+              resolve({ x: bx, z: bz });
+            });
+          });
+        });
+      },
+      /** Current princess animation state (idle/walk/run/jump_idle) — for tests. */
+      getPrincessAnimState: () => player.princessAnimState,
+
+      /**
+       * Enter a dev backroom directly (no portal navigation needed).
+       * Unloads the current dungeon room, builds the backroom scene, teleports the player.
+       * Sets window.__backroomReady = true when done.
+       * @param id  backroom id — default 'building_lab'
+       */
+      enterBackroom: async (id = 'building_lab') => {
+        (window as any).__backroomReady = false;
+        // Clear dungeon geometry + physics bodies
+        sceneManager.unloadCurrentRoom();
+        // No culling — backroom walls can be >30u away from player
+        physics.cullingRadius = 0;
+        // Create ground plane SYNCHRONOUSLY before any await so the
+        // player never falls through during the async scene build.
+        const groundBody = physics.createGroundPlane(0);
+
+        const prev = (window as any).__activeBackroomCleanup as (() => void) | undefined;
+        prev?.();
+
+        // Import backroom scene builders
+        const [{ buildBuildingLab, buildEmptyRoom }, { BackroomRegistry }] = await Promise.all([
+          import('@/creative/backroomScenes'),
+          import('@/creative/Backrooms'),
+        ]);
+
+        const def = BackroomRegistry.get(id);
+        const sp  = def?.spawnPoint ?? { x: 0, y: 1.5, z: 0 };
+
+        // Teleport before the scene builds so player stands on the ground
+        // plane we just created, rather than free-falling during async load.
+        player.teleport(new THREE.Vector3(sp.x, sp.y, sp.z));
+
+        let sceneCleaner: (() => void) | undefined;
+        if (id === 'building_lab') {
+          sceneCleaner = await buildBuildingLab(scene, physics);
+        } else {
+          sceneCleaner = buildEmptyRoom(scene, id, def?.portalColor ?? 0x884488);
+        }
+
+        (window as any).__activeBackroomCleanup = () => {
+          sceneCleaner?.();
+          try { physics.rapierWorld.removeRigidBody(groundBody); } catch { /* already removed */ }
+          physics.cullingRadius = 30;  // restore interior default
+          _occlusionMgr?.dispose();
+          _occlusionMgr = null;
+        };
+        (window as any).__backroomReady = true;
+        // Use scene-wide occlusion for backroom — catches all tagged + untagged walls
+        if (_occlusionMgr) {
+          _occlusionMgr.setScene(scene);
+        } else {
+          import('@/rendering/OcclusionManager').then(({ OcclusionManager: OM }) => {
+            _occlusionMgr = new OM();
+            _occlusionMgr.setScene(scene);
+          });
+        }
+        console.log('[enterBackroom] ready:', id);
+      },
+
+      exitBackroom: () => {
+        const cleanup = (window as any).__activeBackroomCleanup as (() => void) | undefined;
+        cleanup?.();
+        (window as any).__activeBackroomCleanup = null;
+        (window as any).__backroomReady = false;
+      },
       hasAssetTrees:   () => !!(scene as any).__assetTreesLoaded,
       hasAssetRocks:       () => !!(scene as any).__assetRocksLoaded,
       hasAssetClutter:     () => !!(scene as any).__assetClutterLoaded,
@@ -1547,6 +1831,53 @@ async function main() {
       hasAssetDungeon:     () => !!(scene as any).__assetDungeonLoaded,
       /** Open the character creation screen (slot 0 by default). */
       openCharCreation: (slotId = 0) => charCreation.show(slotId),
+      /** Skip campfire and start immediately as a princess (share code or DNA). */
+      quickPlayPrincess: (codeOrDna: string | object) => {
+        console.log('[quickPlayPrincess] called');
+        const code = typeof codeOrDna === 'string' ? codeOrDna : null;
+        const dna  = typeof codeOrDna === 'object'  ? codeOrDna : null;
+        import('@/princess-creator/dna').then(({ shareCodeToDna }) => {
+          const resolved = code ? shareCodeToDna(code) : dna;
+          import('@/creatures/CreatureDNA').then(({ DEFAULT_PLAYER_DNA }) => {
+            mainMenu.hide();
+            startGame(undefined, {
+              name:            (resolved as any)?.name ?? 'Princess',
+              boon:            'tome',
+              slotId:          0,
+              dna:             { ...DEFAULT_PLAYER_DNA },
+              statBonuses:     ['intelligence', 'magic_power'],
+              characterId:     'rogue',
+              princessDna:     (resolved as import('@/princess-creator/types').PrincessDNA) ?? undefined,
+              princessSpecies: 'human',
+            });
+          });
+        });
+      },
+      /** Jump directly to a tower floor by index (-1=basement, 0=ground, 1-9=upper). */
+      goToFloor: (floorIndex: number) => {
+        const floorDefs: Record<number, string> = {
+          [-1]: 'tower_floor_alchemy_chamber',
+          [0]:  sceneManager.startRoomId ?? 'tower_floor_0_chamber',
+        };
+        const roomId = floorDefs[floorIndex] ?? `tower_floor_${floorIndex}_chamber`;
+        console.log(`[goToFloor] floor=${floorIndex} roomId=${roomId}`);
+        switchToInterior(roomId);
+      },
+      /** Trigger the full NewGameFlow campfire for a given slot (Playwright-friendly). */
+      triggerNewGame: (slotId = 0) => {
+        console.log(`[triggerNewGame] slotId=${slotId}`);
+        mainMenu.hide();
+        const flow = new NewGameFlow();
+        flow.play(document.body, slotId).then(cfg => {
+          console.log(`[triggerNewGame] campfire done → char=${cfg.characterId} princess=${!!cfg.princessDna}`);
+          flow.dispose();
+          startGame(undefined, cfg);
+        }).catch(err => {
+          console.error('[triggerNewGame] campfire FAILED:', err);
+          flow.dispose();
+          startGame();
+        });
+      },
       /** Snapshot of current character creation state — for Playwright tests. */
       getCharCreationState: () => charCreation.getState(),
       /** Enter creative mode (dev only). */
@@ -1559,6 +1890,18 @@ async function main() {
       getCurrentFloor: () => _currentFloor,
       /** Current room ID as loaded in SceneManager. */
       getCurrentRoom: () => sceneManager.currentFloor,
+      /** Set game time scale (1=normal, 0.1=slow-motion, 2=fast). */
+      setGameSpeed: (scale: number) => { physics.cullingRadius; gameLoop.timeScale = Math.max(0.01, Math.min(4, scale)); },
+      /** Get current game time scale. */
+      getGameSpeed: () => gameLoop.timeScale,
+      /** PC5: Build a princess from DNA or share code and attach to the player. */
+      buildPrincess: (dna: import('@/princess-creator/types').PrincessDNA | string) => {
+        import('@/princess-creator/dna').then(({ sanitizeDna, shareCodeToDna }) => {
+          const resolved = typeof dna === 'string' ? shareCodeToDna(dna) : sanitizeDna(dna as any);
+          if (!resolved) { console.error('[__game.buildPrincess] invalid DNA'); return; }
+          player.applyPrincess(resolved).catch(console.error);
+        });
+      },
     };
   }
   // ── Centralised key routing ──────────────────────────────────────────────
@@ -1571,6 +1914,12 @@ async function main() {
       e.preventDefault();
       if (CreativeMode.active) CreativeMode.exit();
       else                     CreativeMode.enter();
+      return;
+    }
+
+    // V — toggle between isometric and WoW-style third-person camera
+    if ((e.key === 'v' || e.key === 'V') && !gameMenu.isOpen && !editMode.isActive) {
+      cameraRig.toggleMode(player.facingAngleRad);
       return;
     }
 
@@ -1617,6 +1966,11 @@ async function main() {
       if (!gameMenu.isOpen && !editMode.isActive) _toggleConstructionMode();
     } else if (e.key === '\\' && gameMode === 'exterior') {
       if (!gameMenu.isOpen && devModeEnabled()) owEditor?.toggle();
+    } else if (e.key === 'Insert') {
+      // In-game Dev Panel (Spell Lab / Enemy Lab / Creature Creator / Cheats) —
+      // formerly reached via the main-menu Dev Lab launcher; Dev Lab now links
+      // directly to Overworld Studio, so this shortcut keeps the panel reachable.
+      if (!gameMenu.isOpen && devModeEnabled()) _startDevPanelInGame();
     }
   });
 
@@ -1889,8 +2243,12 @@ async function main() {
   });
 
   // ── Scroll-to-zoom ───────────────────────────────────────────────────────
+  // In WoW mode, WoWCameraController owns the wheel listener (attached only
+  // while cameraRig.mode === 'wow') — skip here to avoid double-applying the
+  // same wheel event (this listener + WoWCameraController's would otherwise
+  // both fire and double the zoom rate).
   window.addEventListener('wheel', (e) => {
-    if (gameMode === 'exterior' || gameMode === 'interior') {
+    if ((gameMode === 'exterior' || gameMode === 'interior') && cameraRig.mode !== 'wow') {
       e.preventDefault();
       cameraRig.applyScroll(e.deltaY);
     }
@@ -1906,13 +2264,17 @@ async function main() {
       return;
     }
 
-    // 1. Physics
+    // 1. Physics — G1: update culling origin to player position each frame
+    const _pp = player.group.position;
+    physics.cullingOrigin = { x: _pp.x, y: _pp.y, z: _pp.z };
     physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
     if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
       // 2. Player movement
-      player.update(input.state, dt);
+      player.update(input.state, dt, cameraRig.mode);
+      // PC4: tick princess creator animations each frame
+      if (player.hasPrincess) player.updatePrincess(performance.now() / 1000, dt);
 
       // 3. Update mouse world position for spell aim
       const s = input.state;
@@ -1984,6 +2346,7 @@ async function main() {
       if (gameMode === 'interior') {
         hud.setTime(null);
         sceneManager.update(dt, player.group.position);
+        // occlusion handled globally before render
 
         // Story runner tick — interior branch (prologue beats).
         // Throttled to 1 Hz like the exterior branch.
@@ -2009,10 +2372,32 @@ async function main() {
         TimeSystem.instance.update(dt);
         _dayNight.update(TimeSystem.instance.hour);
         hud.setTime(TimeSystem.instance.formatted);
+        // NS4: night-touched boon — apply damage boost at night (hours 18–6)
+        if (progression.mods.hasNightTouched) {
+          const _hr = TimeSystem.instance.hour % 24;
+          const _isNight = _hr >= 18 || _hr < 6;
+          progression.mods.spellDamageMult = _isNight
+            ? Math.max(progression.mods.spellDamageMult, 1.15)
+            : (progression.mods.spellDamageMult > 1.14 ? 1.0 : progression.mods.spellDamageMult);
+        }
         const _dayNum = Math.floor(TimeSystem.instance.hour / 24);
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();
         overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
+        // A5: pass current hour so tower details (lights, gate) can respond
+        (overworld as any)._timeHour = TimeSystem.instance.hour % 24;
+
+        // SI-4: settlement boundary crossing → "Entering/Leaving [Name]" toast
+        const _settleCrossing = overworld.checkSettlementBoundaryCrossing(player.group.position);
+        if (_settleCrossing) {
+          _storyToast(
+            _settleCrossing.crossing === 'entering'
+              ? `Entering ${_settleCrossing.name}`
+              : `Leaving ${_settleCrossing.name}`,
+            'beat',
+          );
+        }
+
         solmorPresence.update(dt);   // E2: bob + anim tick
         party.pruneDead();
         tamingGame.update(dt);
@@ -2074,23 +2459,36 @@ async function main() {
           if (_dng) {
             _setExteriorPrompt(_dng.entry.name);
           } else {
-            const _bld = overworld.nearBuilding(_pos);
-            if (_bld) {
-              _setExteriorPrompt(_bld.label);
+            const _cave = overworld.nearCaveEntrance(_pos);
+            const _glade = !_cave ? overworld.nearGladeEntrance(_pos) : null;
+            if (_cave) {
+              _setExteriorPrompt('🕳 Cave Entrance');
+            } else if (_glade) {
+              _setExteriorPrompt('🌿 Glade');
             } else {
-              // NPC talk check
-              const _nearNPC = overworld.nearestNPC(_pos);
-              if (_nearNPC) {
-                _setExteriorPrompt(`Talk to ${_nearNPC}`);
+              const _bld = overworld.nearBuilding(_pos);
+              if (_bld) {
+                _setExteriorPrompt(_bld.label);
               } else {
-                // Watch Perch guard assignment
-                const _wp = baseScene.nearWatchPerch(_pos);
-                if (_wp && party.members.some(m => !m.isGuarding)) {
-                  _setExteriorPrompt('🗼 Assign guard');
+                const _genBld = overworld.getNearestBuilding(_pos, 4);
+                if (_genBld) {
+                  _setExteriorPrompt(`Enter ${_genBld.dna.buildingKind}`);
                 } else {
-                  const _res = overworld.nearResourceNode(_pos);
-                  const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
-                  _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                  // NPC talk check
+                  const _nearNPC = overworld.nearestNPC(_pos);
+                  if (_nearNPC) {
+                    _setExteriorPrompt(`Talk to ${_nearNPC}`);
+                  } else {
+                    // Watch Perch guard assignment
+                    const _wp = baseScene.nearWatchPerch(_pos);
+                    if (_wp && party.members.some(m => !m.isGuarding)) {
+                      _setExteriorPrompt('🗼 Assign guard');
+                    } else {
+                      const _res = overworld.nearResourceNode(_pos);
+                      const _LABELS: Record<string, string> = { ore: '⛏ Mine ore', timber: '🪵 Chop timber', essence: '✨ Harvest essence' };
+                      _setExteriorPrompt(_res ? (_LABELS[_res.node.type] ?? 'Harvest') : null);
+                    }
+                  }
                 }
               }
             }
@@ -2154,10 +2552,13 @@ async function main() {
         );
       }
 
-      // 5. Melee attack (mouse button 0, 0.4s cooldown)
+      // 5. Melee attack (mouse button 0 in isometric mode, Digit5 always,
+      //    0.4s cooldown). In WoW camera mode, left-click is consumed by
+      //    camera drag, so Digit5 is the only trigger there.
       meleeCooldown = Math.max(0, meleeCooldown - dt);
-      const attackJustPressed = s.attack && !lastAttackInput;
-      lastAttackInput = s.attack;
+      const meleeButtonHeld = cameraRig.mode === 'wow' ? s.meleeKey : (s.attack || s.meleeKey);
+      const attackJustPressed = meleeButtonHeld && !lastAttackInput;
+      lastAttackInput = meleeButtonHeld;
       if (attackJustPressed && meleeCooldown <= 0) {
         meleeCooldown = 0.4;
         const meleeAngle = Math.atan2(
@@ -2217,14 +2618,44 @@ async function main() {
             if (dngHandle) {
               // Enter a seeded dungeon whose floor count was set at world-gen time
               _activeDungeonId = dngHandle.entry.id;
+              _activeDungeonEntrancePos = dngHandle.position.clone();
+              // DI-2b: announce the site-family identity the first time this
+              // entrance is approached (matches the cave/glade discovery toast).
+              if (!discoveryTracker.isDungeonFound(dngHandle.entry.id)) {
+                _storyToast(`🗝 Discovered ${_siteFamilyLabel(dngHandle.entry.siteFamily)}: ${dngHandle.entry.name}`, 'beat');
+              }
               discoveryTracker.markDungeonFound(dngHandle.entry.id);
               const dngPlan = generateDungeon(dngHandle.entry.seed, dngHandle.entry.floorCount);
               overworld.exit();
               gameMode = 'interior';
               scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+              // loadDungeon() → executeRoomSwap(id, null) already teleports the
+              // player to the entrance room's centre (0, 1.5, 0) — a hardcoded
+              // re-teleport here can land outside a small room's floor bounds.
               sceneManager.loadDungeon(dngPlan);
-              player.teleport(new THREE.Vector3(0, 1.5, 8));
             } else {
+              const caveHandle = overworld.nearCaveEntrance(player.group.position);
+              const gladeHandle = !caveHandle ? overworld.nearGladeEntrance(player.group.position) : null;
+              if (caveHandle) {
+                // CG-4: full cave-floor scene transition (CaveScene generation from
+                // the entrance's biome/seed) is not yet implemented; for now mark it
+                // found so it persists to the minimap/journal via DiscoveryTracker.
+                if (!discoveryTracker.isCaveFound(caveHandle.entry.id)) {
+                  discoveryTracker.markCaveFound(caveHandle.entry.id);
+                  discoveryTracker.saveToStorage();
+                  _storyToast(`🕳 Discovered a ${caveHandle.entry.biome} cave`, 'beat');
+                } else {
+                  _storyToast('The cave entrance looks unstable — no way in yet.', 'beat');
+                }
+              } else if (gladeHandle) {
+                if (!discoveryTracker.isGladeFound(gladeHandle.entry.id)) {
+                  discoveryTracker.markGladeFound(gladeHandle.entry.id);
+                  discoveryTracker.saveToStorage();
+                  _storyToast('🌿 Discovered a hidden glade', 'beat');
+                } else {
+                  _storyToast('A peaceful glade. Nothing more to do here yet.', 'beat');
+                }
+              } else {
               // Watch Perch guard assignment — priority over buildings
               const _perch = baseScene.nearWatchPerch(player.group.position);
               const _available = party.members.find(m => !m.isGuarding && !m.isDead);
@@ -2232,36 +2663,55 @@ async function main() {
                 _available.assignGuard(new THREE.Vector3(_perch.wx, 0.9, _perch.wz));
               } else {
                 const bld = overworld.nearBuilding(player.group.position);
-                if (bld) {
-                  if (bld.type === 'greenhouse') {
-                    // Load the greenhouse interior dungeon
-                    const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                if (bld && bld.type === 'greenhouse') {
+                  // Load the greenhouse interior dungeon
+                  const ghPlan = generateGreenhouse(currentSeed ^ 0x6745_23f1);
+                  overworld.exit();
+                  gameMode = 'interior';
+                  scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                  // loadDungeon() already teleports the player to the entrance
+                  // room's centre (0, 1.5, 0); no extra teleport needed.
+                  sceneManager.loadDungeon(ghPlan);
+                } else {
+                  const genBld = overworld.getNearestBuilding(player.group.position, 4);
+                  if (genBld) {
+                    const bldPlan = buildingToDungeonPlan(
+                      genBld.dna.buildingKind, genBld.faction, genBld.dna.seed,
+                      genBld.dna.size, genBld.dna.floors,
+                    );
+                    _activeDungeonEntrancePos = player.group.position.clone();
                     overworld.exit();
                     gameMode = 'interior';
                     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
-                    sceneManager.loadDungeon(ghPlan);
-                    player.teleport(new THREE.Vector3(0, 1.5, 8));
-                  } else {
-                    // Generic building — load a random dungeon floor
-                    const bldSeed = currentSeed ^ 0xCAFE_BABE;
-                    const bldPlan = generateDungeon(bldSeed, 1);
-                    overworld.exit();
-                    gameMode = 'interior';
-                    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+                    // loadDungeon() already teleports the player to the entrance
+                    // room's centre (0, 1.5, 0); a hardcoded re-teleport to z=8
+                    // landed outside small building rooms' floor bounds, causing
+                    // the player to fall through the world on entry.
                     sceneManager.loadDungeon(bldPlan);
                   }
                 }
+              }
               }
             }
           }
         }
       }
 
-      // 6b. Right-click → cast active equipped spell
-      const castJustPressed = s.castSpell && !lastCastInput;
-      lastCastInput = s.castSpell;
-      if (castJustPressed) {
-        const activeSpell = progression.getEquippedSlot(s.activeSlot);
+      // 6b. Cast active equipped spell. Isometric mode: right-click (rising
+      //     edge). WoW camera mode: right-click/drag is reserved for camera
+      //     orbit, so number keys (1-4) instant-cast instead — matching real
+      //     WoW's direct-cast-on-keypress convention (select-then-click would
+      //     conflict with the mouse being used for camera control).
+      let slotToCast: number | null = null;
+      if (cameraRig.mode === 'wow') {
+        if (!InputManager.suppressAttackAndSpell) slotToCast = input.consumeCastSlotRequest();
+      } else {
+        const castJustPressed = s.castSpell && !lastCastInput;
+        if (castJustPressed) slotToCast = s.activeSlot;
+      }
+      lastCastInput = cameraRig.mode === 'wow' ? false : s.castSpell;
+      if (slotToCast !== null) {
+        const activeSpell = progression.getEquippedSlot(slotToCast);
         if (activeSpell && progression.isSpellUnlocked(activeSpell)) {
           spells.cast(
             activeSpell,
@@ -2353,15 +2803,9 @@ async function main() {
                 // No arcane light pulse — just the dark shadow VFX from SpellSystem
               },
               onLevitateToggle: () => {
-                player.levitateMode = !player.levitateMode;
-                if (player.levitateMode) {
-                  (player as unknown as { _levitateTargetY: number })._levitateTargetY =
-                    player.group.position.y + (player as unknown as { LEVITATE_HEIGHT: number }).LEVITATE_HEIGHT;
-                  particles.burst(player.group.position, 0x88ddff, 14, 2.5, 0.5);
-                } else {
-                  // Landing — deactivate levitate, physics resumes
-                  particles.burst(player.group.position, 0x88ddff, 8, 1.5, 0.3);
-                }
+                // Grant/refresh 30s levitate buff — hold Space to float
+                player.group.userData['_levitateBuffDuration'] = 30;
+                particles.burst(player.group.position, 0x88ddff, 18, 2.5, 0.5);
               },
               onFlyBurst: (_angle) => {
                 // Toggle sustained fly spell mode (WoW-style free flight)
@@ -2377,12 +2821,12 @@ async function main() {
           );
           // Trigger cast animation on the character model (Throw / Use_Item clip)
           player.triggerCast();
-          // G3: zoom punch on spell cast (orthographic FOV-kick equivalent)
-          cameraRig.punch(1.8, 0.18);
-          // Phase 7.5c — cast light pulse: brief PointLight flash at cast origin
-          lighting.addSpellPulse(player.group.position, spells.getSpellColor(activeSpell));
-          // Phase 7.5d — spell cast particle burst
-          particles.burst(player.group.position, spells.getSpellColor(activeSpell), 24, 4.0, 0.5);
+          // Phase 7.5c — cast light pulse at muzzle position (1 unit ahead of player toward cursor)
+          const _castDir = new THREE.Vector3().subVectors(mouseWorld, player.group.position).setY(0).normalize();
+          const _muzzlePos = player.group.position.clone().addScaledVector(_castDir, 1.0).setY(player.group.position.y + 0.5);
+          lighting.addSpellPulse(_muzzlePos, spells.getSpellColor(activeSpell));
+          // Phase 7.5d — small directional particle burst at muzzle, not inside player
+          particles.burst(_muzzlePos, spells.getSpellColor(activeSpell), 8, 2.0, 0.4);
         }
       }
 
@@ -2550,13 +2994,33 @@ async function main() {
       })),
     );
 
-    // 10. Render
+    // 10. Render  (occlusion update runs here — single call, all modes)
+    _occlusionMgr?.update(cameraRig.camera, player.group.position, dt);
     composer.render(dt);
 
     // 11. Creative mode per-frame update (dev only)
     if (import.meta.env.DEV) CreativeMode.update(dt);
   });
   // Game loop is started by MainMenu.onPlay — not here.
+
+  // ── Deferred Overworld Studio settlement preview handoff ─────────────────
+  if (_pendingOverworldPreview) {
+    try {
+      (window as any).__tttOverworldPreviewStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttOverworldPreviewStage = 'starting-game';
+      startGame();
+      (window as any).__tttOverworldPreviewStage = 'switching-exterior';
+      switchToExterior();
+      (window as any).__tttOverworldPreviewStage = 'booted';
+      (window as any).__tttOverworldPreviewBooted = true;
+      localStorage.removeItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+    } catch (e) {
+      (window as any).__tttOverworldPreviewStage = 'error';
+      (window as any).__tttOverworldPreviewError = String(e);
+      console.error('[overworld-preview] boot failed:', e);
+    }
+  }
 }
 
 // Export the startup promise so unit tests can await full initialisation.

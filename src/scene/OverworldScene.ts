@@ -35,11 +35,25 @@ import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { WorldGrid }              from '@/world/WorldGrid';
-import type { WorldData, DungeonEntry } from '@/world/WorldData';
+import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
-import { generateBuilding }            from '@/world/buildings/BuildingGenerator';
+import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
+import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
+import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
+import {
+  factionBuildingDna,
+  getFootprint,
+  FLOOR_HEIGHT,
+  type BuildingDNA,
+  type Faction,
+} from '@/world/buildings/BuildingDNA';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
+import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
+import {
+  OVERWORLD_SETTLEMENT_PREVIEW_KEY,
+  type OverworldSettlementPreviewPayload,
+} from '@/overworld-studio/SettlementPreviewPayload';
 import { OWMinimap }                   from '@/ui/OWMinimap';
 import { ProceduralSkybox }            from '@/rendering/ProceduralSkybox';
 import { NPCEntity }                   from '@/world/NPCEntity';
@@ -47,25 +61,14 @@ import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
 import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
 import { SpatialHash }                 from '@/core/SpatialHash';
+import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
+import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
+import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
 const T   = 2;                // tile side length in world units (= interior cell)
 const SH  = 0.55;             // world-unit height increment per level
-
-// ── Biome vertex colours [r, g, b] for height levels 0–4 ─────────────────────
-//   Slightly darker at night-ish palette to match the dungeon interior mood.
-
-const BIOME: readonly [number, number, number][] = [
-  [0.20, 0.26, 0.11],   // 0  bog / muddy path
-  [0.26, 0.44, 0.16],   // 1  grass
-  [0.20, 0.36, 0.13],   // 2  forest floor
-  [0.35, 0.41, 0.26],   // 3  highland
-  [0.44, 0.41, 0.30],   // 4  rocky upland
-];
-
-const BIOME_RIVER: [number, number, number]       = [0.18, 0.38, 0.62]; // blue channel
-const BIOME_WATER: [number, number, number]       = [0.14, 0.26, 0.48]; // deep water
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +83,18 @@ export interface BuildingEntrance {
 /** Lightweight handle returned by nearDungeonEntrance(). */
 export interface DungeonEntranceHandle {
   entry:    DungeonEntry;
+  position: THREE.Vector3;
+}
+
+/** Lightweight handle returned by nearCaveEntrance() (CG-1/CG-3 renderer wiring). */
+export interface CaveEntranceHandle {
+  entry:    CaveEntry;
+  position: THREE.Vector3;
+}
+
+/** Lightweight handle returned by nearGladeEntrance() (CG-2/CG-3 renderer wiring). */
+export interface GladeEntranceHandle {
+  entry:    GladeEntry;
   position: THREE.Vector3;
 }
 
@@ -99,7 +114,17 @@ export class OverworldScene {
   private readonly _ruins:          THREE.Group[] = [];
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
+  /** CG-1/CG-2 — built entrance props (Three.js group + dispose + optional particle update). */
+  private readonly _caveEntranceBuilts:  BuiltCaveEntrance[]  = [];
+  private readonly _gladeEntranceBuilts: BuiltGladeEntrance[] = [];
   private readonly _buildingGroups: THREE.Group[] = [];
+  /** DNA + world-space position + faction per placed building — used for building-entry proximity
+   *  and to derive a matching interior style via buildingToDungeonPlan(). */
+  private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number }> = [];
+  /** Collider specs for every registered building — persists across exit()/enter() cycles so
+   *  colliders can be rebuilt each time the overworld scene is re-entered (exit() destroys all
+   *  rigid bodies in `_staticBodies`, including buildings', so they must be recreated on enter()). */
+  private readonly _buildingColliderSpecs: Array<{ dna: BuildingDNA; pos: THREE.Vector3; rotationY: number }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
@@ -121,7 +146,9 @@ export class OverworldScene {
   private _skyT    = 0;
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
-  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3 }> = [];
+  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3; radius: number }> = [];
+  /** SI-4: which settlement (index into _settlementPositions) the player was inside last frame, or -1. */
+  private _settlementInsideIdx = -1;
 
   // ── Resource nodes (Phase 7e) ─────────────────────────────────────────────
   private _resourceGroups:  THREE.Group[] = [];
@@ -133,6 +160,9 @@ export class OverworldScene {
 
   readonly buildingEntrances:  BuildingEntrance[]   = [];
   readonly dungeonEntrances:   DungeonEntranceHandle[] = [];
+  /** CG-3 renderer wiring — placed cave/glade entrances the player can approach. */
+  readonly caveEntrances:  CaveEntranceHandle[]  = [];
+  readonly gladeEntrances: GladeEntranceHandle[] = [];
 
   // ── Physics handles (created in enter(), cleared in exit())
   private _groundBody:   RAPIER.RigidBody | null = null;
@@ -154,6 +184,11 @@ export class OverworldScene {
   onCampCleared?: (wx: number, wz: number) => void;
   /** Set of already-cleared camp keys ("wx:wz") — injected before enter(). */
   clearedCamps: Set<string> = new Set();
+  /**
+   * E1: Active player species — set from main.ts after character creation.
+   * Controls which species-specific encounter NPCs spawn near the tower.
+   */
+  characterSpecies: string | null = null;
 
   // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -173,20 +208,34 @@ export class OverworldScene {
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
+    console.log('[OverworldScene] _buildTerrain...');
     this._terrain   = this._buildTerrain();
+    console.log('[OverworldScene] _buildWaterMesh...');
     this._waterMesh = this._buildWaterMesh();
+    console.log('[OverworldScene] _buildTower...');
     this._tower     = this._buildTower();
-
+    console.log('[OverworldScene] _plantTrees...');
     this._plantTrees(rand);
+    console.log('[OverworldScene] _placeRocks...');
     this._placeRocks(rand);
+    console.log('[OverworldScene] _spawnCamps...');
     this._spawnCamps(rand, config.enemyCampCount);
+    console.log('[OverworldScene] _addRuins...');
     this._addRuins(rand);
+    console.log('[OverworldScene] _placeDungeonEntrances...');
     this._placeDungeonEntrances(worldData.dungeons, rand);
+    console.log('[OverworldScene] _placeCaveGladeEntrances...');
+    this._placeCaveGladeEntrances(worldData.caves ?? [], worldData.glades ?? []);
+    console.log('[OverworldScene] _buildSettlements...');
     this._buildSettlements(worldData);
+    console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
+    console.log('[OverworldScene] _buildResourceNodes...');
     this._buildResourceNodes(worldData.resourceNodes ?? []);
+    console.log('[OverworldScene] minimap...');
     this._minimap = new OWMinimap(worldData);
-    this._minimap.hide(); // shown only while overworld is active
+    this._minimap.hide();
+    console.log('[OverworldScene] constructor DONE ✓');
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -216,6 +265,11 @@ export class OverworldScene {
       this._addStaticBody(rk.px, rk.py, rk.pz, RAPIER.ColliderDesc.ball(rk.r * 0.85));
     }
 
+    // Building colliders — must be recreated every enter() since exit() clears all
+    // _staticBodies (buildings are placed once at construction time but their physics
+    // bodies get destroyed on every scene exit).
+    this._createBuildingColliders();
+
     // Add visuals
     this.scene.add(this._terrain, this._tower);
     if (this._waterMesh)  this.scene.add(this._waterMesh);
@@ -226,6 +280,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
     for (const dg of this._dungeonGroups) this.scene.add(dg);
+    for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
+    for (const gb of this._gladeEntranceBuilts) this.scene.add(gb.root);
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
     for (const cl of this._clutter)       this.scene.add(cl);
@@ -240,6 +296,9 @@ export class OverworldScene {
       for (const rm of this._roadMeshes) rm.visible = false;
       for (const rg of this._roadTileGroups) this.scene.add(rg);
     }
+
+    // E1: Spawn species-specific NPC encounters near the tower door
+    this._spawnSpeciesEncounters();
   }
 
   /** Remove geometry from scene and destroy physics colliders. */
@@ -264,6 +323,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
+    for (const cb of this._caveEntranceBuilts)  this.scene.remove(cb.root);
+    for (const gb of this._gladeEntranceBuilts) this.scene.remove(gb.root);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
     for (const cl of this._clutter)        this.scene.remove(cl);
@@ -300,6 +361,13 @@ export class OverworldScene {
       }
     }
     for (const npc of this._npcs) npc.update(dt, pos, inputE);
+
+    // CG-2 — drift the glade entrance ambient particles.
+    for (const gb of this._gladeEntranceBuilts) gb.update(dt);
+
+    // A5: update tower window lights + portcullis gate
+    const hour = (this as any)._timeHour ?? 12;   // set by DayNightSystem if wired
+    this.updateTowerDetails(hour, pos);
 
     // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
     this._syncSlimeIM();
@@ -340,6 +408,8 @@ export class OverworldScene {
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
+    for (const cb of this._caveEntranceBuilts)  cb.dispose();
+    for (const gb of this._gladeEntranceBuilts) gb.dispose();
     for (const bg of this._buildingGroups) this._freeGroup(bg);
     for (const rm of this._roadMeshes) {
       rm.geometry.dispose();
@@ -356,749 +426,24 @@ export class OverworldScene {
     this._resourceGroups = [];
   }
 
-  // ── Asset upgrade ─────────────────────────────────────────────────────────
-
-  /**
-   * Swap procedural tree groups for real KayKit Forest pack GLTF models,
-   * selected by biome so each zone looks distinct:
-   *   forest   → KayKit broadleaf trees (Tree_1, Tree_2, Tree_3 variants)
-   *   bog      → KayKit bare / dead trees (Tree_Bare variants)
-   *   highland → KayKit pine / conifer (Tree_4 variants)
-   *   default  → Kenney nature-kit trees (fallback)
-   *
-   * Physics colliders are keyed by world position and are unaffected.
-   */
-  async upgradeTreesWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    // ── KayKit Forest pack — biome pools ──────────────────────────────────
-    const KK_FOREST = [
-      '/assets/kaykit_nature/Tree_1_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_1_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_1_C_Color1.gltf',
-      '/assets/kaykit_nature/Tree_2_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_2_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_2_C_Color1.gltf',
-      '/assets/kaykit_nature/Tree_3_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_3_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_3_C_Color1.gltf',
-    ];
-    const KK_BARE = [
-      '/assets/kaykit_nature/Tree_Bare_1_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_Bare_1_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_Bare_1_C_Color1.gltf',
-      '/assets/kaykit_nature/Tree_Bare_2_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_Bare_2_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_Bare_2_C_Color1.gltf',
-    ];
-    const KK_PINE = [
-      '/assets/kaykit_nature/Tree_4_A_Color1.gltf',
-      '/assets/kaykit_nature/Tree_4_B_Color1.gltf',
-      '/assets/kaykit_nature/Tree_4_C_Color1.gltf',
-    ];
-    // Kenney nature-kit fallback (works as default / mixed-biome areas)
-    const KN_DEFAULT = [
-      '/assets/nature/tree_default.glb',
-      '/assets/nature/tree_cone.glb',
-      '/assets/nature/tree_blocks.glb',
-      '/assets/nature/tree_detailed.glb',
-    ];
-
-    const allPaths = [...KK_FOREST, ...KK_BARE, ...KK_PINE, ...KN_DEFAULT];
-    await loader.preload(allPaths);
-
-    for (const tr of this._trees) {
-      const hash = Math.abs((Math.round(tr.px * 17) ^ Math.round(tr.pz * 31)));
-
-      // Pick pool and scale based on biome
-      let pool: string[];
-      let scale: number;
-      switch (tr.biome) {
-        case 'bog':
-          pool  = KK_BARE;
-          scale = 2.2;
-          break;
-        case 'highland':
-        case 'rocky':
-          pool  = KK_PINE;
-          scale = 2.8;
-          break;
-        case 'forest':
-          pool  = KK_FOREST;
-          scale = 2.5;
-          break;
-        default:
-          pool  = KN_DEFAULT;
-          scale = 3.0;
-      }
-
-      const model = loader.getClone(pool[hash % pool.length]!);
-      if (!model) continue;
-      model.scale.setScalar(scale);
-      tr.group.clear();
-      tr.group.add(model);
-    }
-
-    (this.scene as any).__assetTreesLoaded = true;
-  }
-
-  // ── Phase 1.2 — Rock upgrade ────────────────────────────────────────────
-
-  /**
-   * Replace DodecahedronGeometry rocks with Kenney nature-kit rock GLBs.
-   * Three size tiers mapped from procedural radius.
-   */
-  async upgradeRocksWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    const SMALL  = [
-      '/assets/nature/rock_smallA.glb', '/assets/nature/rock_smallB.glb',
-      '/assets/nature/rock_smallC.glb', '/assets/nature/rock_smallD.glb',
-      '/assets/nature/rock_smallE.glb', '/assets/nature/rock_smallF.glb',
-    ];
-    const LARGE  = [
-      '/assets/nature/rock_largeA.glb', '/assets/nature/rock_largeB.glb',
-      '/assets/nature/rock_largeC.glb', '/assets/nature/rock_largeD.glb',
-      '/assets/nature/rock_largeE.glb', '/assets/nature/rock_largeF.glb',
-    ];
-    const TALL   = [
-      '/assets/nature/rock_tallA.glb',  '/assets/nature/rock_tallB.glb',
-      '/assets/nature/rock_tallC.glb',  '/assets/nature/rock_tallD.glb',
-      '/assets/nature/rock_tallE.glb',  '/assets/nature/rock_tallF.glb',
-    ];
-    await loader.preload([...SMALL, ...LARGE, ...TALL]);
-
-    for (const rk of this._rocks) {
-      // Pick pool based on procedural radius
-      const pool = rk.r < 0.7 ? SMALL : rk.r < 1.1 ? LARGE : TALL;
-      const hash  = Math.abs((Math.round(rk.px * 13) ^ Math.round(rk.pz * 29)));
-      const model = loader.getClone(pool[hash % pool.length]!);
-      if (!model) continue;
-      // Scale so the GLB rock matches the procedural rock's radius.
-      // Kenney rocks are ~0.5 WU in their native 1-unit scale.
-      model.scale.setScalar(rk.r * 2.0);
-      // Preserve Y rotation from the original mesh for natural variation
-      model.rotation.y = rk.mesh.rotation.y;
-      // Blank the original geometry so the Mesh no longer draws its
-      // DodecahedronGeometry self, while still acting as a positioned container.
-      rk.mesh.geometry = new THREE.BufferGeometry();
-      rk.mesh.clear();
-      rk.mesh.add(model);
-    }
-    (this.scene as any).__assetRocksLoaded = true;
-  }
-
-  // ── Phase 1.3 — Ground clutter ──────────────────────────────────────────
-
-  /**
-   * Scatter nature-kit grass, flowers and mushrooms across the world.
-   * Props are stored in `_clutter` and added to the scene immediately if
-   * the scene is already active.
-   */
-  async addGroundClutter(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-
-    const GRASS    = ['/assets/nature/grass.glb', '/assets/nature/grass_large.glb'];
-    const FLOWERS  = [
-      '/assets/nature/flower_redA.glb',    '/assets/nature/flower_purpleA.glb',
-      '/assets/nature/flower_yellowA.glb',
-    ];
-    const MUSHROOM = ['/assets/nature/mushroom_red.glb', '/assets/nature/mushroom_tan.glb'];
-    // KayKit Forest pack — bog and dense forest cover
-    const KK_GRASS = [
-      '/assets/kaykit_nature/Grass_1_A_Color1.gltf',
-      '/assets/kaykit_nature/Grass_1_B_Color1.gltf',
-      '/assets/kaykit_nature/Grass_1_C_Color1.gltf',
-    ];
-    const KK_BUSH = [
-      '/assets/kaykit_nature/Bush_1_A_Color1.gltf',
-      '/assets/kaykit_nature/Bush_2_B_Color1.gltf',
-      '/assets/kaykit_nature/Bush_3_A_Color1.gltf',
-      '/assets/kaykit_nature/Bush_4_A_Color1.gltf',
-    ];
-    // Small rocks for highland / bog scatter
-    const KK_ROCK_SMALL = [
-      '/assets/kaykit_nature/Rock_1_A_Color1.gltf',
-      '/assets/kaykit_nature/Rock_2_A_Color1.gltf',
-      '/assets/kaykit_nature/Rock_3_A_Color1.gltf',
-    ];
-    await loader.preload([...GRASS, ...FLOWERS, ...MUSHROOM,
-      ...KK_GRASS, ...KK_BUSH, ...KK_ROCK_SMALL]);
-
-    const W  = GW * T;
-    const H  = GH * T;
-    // Poisson disk with generous spacing — we only want visual accents
-    const rand = mulberry32(0xC1_07_7E_42);
-    const pts  = poissonDisk(W, H, 6.5, rand);
-
-    for (const [px, pz] of pts) {
-      const wx = px - W / 2;
-      const wz = pz - H / 2;
-      const c  = Math.floor(wx / T + GHW);
-      const r  = Math.floor(wz / T + GHH);
-      const cell = this._wg.get(c, r);
-
-      if (cell.feature !== 'none')  continue; // don't clutter roads/rivers
-      if (cell.content  !== 'empty') continue;
-      if (cell.settlementId > 0)    continue;
-
-      const lv = cell.elevation;
-      const wy = lv * SH;
-
-      // Choose prop type by biome + hash
-      const hash = Math.abs((Math.round(wx * 11) ^ Math.round(wz * 23)));
-      let path: string;
-      let propScale = 1.4;
-
-      if (cell.biome === 'bog') {
-        // Bog: KayKit grass clumps + small bushes + Kenney mushrooms
-        if (hash % 5 === 0)       path = MUSHROOM[hash % MUSHROOM.length]!;
-        else if (hash % 4 === 0)  path = KK_ROCK_SMALL[hash % KK_ROCK_SMALL.length]!;
-        else if (hash % 2 === 0)  path = KK_BUSH[hash % KK_BUSH.length]!;
-        else                      path = KK_GRASS[hash % KK_GRASS.length]!;
-        propScale = 1.2;
-      } else if (cell.biome === 'forest' || lv >= 2) {
-        // Forest/highland: KayKit bushes and grass
-        if (hash % 3 === 0)       path = KK_BUSH[hash % KK_BUSH.length]!;
-        else                      path = KK_GRASS[hash % KK_GRASS.length]!;
-        propScale = 1.3;
-      } else if (lv === 1) {
-        // Meadow: Kenney flowers + KayKit grass
-        if (hash % 3 === 0)       path = FLOWERS[hash % FLOWERS.length]!;
-        else                      path = GRASS[hash % GRASS.length]!;
-      } else {
-        continue; // water tiles — no clutter
-      }
-
-      const model = loader.getClone(path);
-      if (!model) continue;
-      model.scale.setScalar(propScale);
-      model.rotation.y = (hash % 8) * Math.PI / 4;
-      const grp = new THREE.Group();
-      grp.position.set(wx, wy, wz);
-      grp.add(model);
-      this._clutter.push(grp);
-    }
-
-    if (this._isInScene) {
-      for (const cl of this._clutter) this.scene.add(cl);
-    }
-    (this.scene as any).__assetClutterLoaded = true;
-  }
-
-  // ── Phase 1.4 — River tiles ─────────────────────────────────────────────
-
-  /**
-   * Replace the procedural semi-transparent water mesh with Kenney nature-kit
-   * river tile GLBs.  Tile type is selected by looking at N/S/E/W river
-   * neighbours (classic 4-bit auto-tiling).
-   */
-  async replaceWaterWithRiverTiles(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-
-    const PATHS = [
-      '/assets/nature/ground_riverStraight.glb',
-      '/assets/nature/ground_riverBend.glb',
-      '/assets/nature/ground_riverCorner.glb',
-      '/assets/nature/ground_riverEnd.glb',
-      '/assets/nature/ground_riverCross.glb',
-      '/assets/nature/ground_riverSplit.glb',
-      '/assets/nature/ground_riverTile.glb',
-    ];
-    await loader.preload(PATHS);
-
-    const isRiver = (col: number, row: number) =>
-      this._wg.get(col, row).feature === 'river';
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        if (!isRiver(col, row)) continue;
-
-        const n = isRiver(col, row - 1) ? 1 : 0;  // north (−Z)
-        const s = isRiver(col, row + 1) ? 1 : 0;  // south (+Z)
-        const e = isRiver(col + 1, row) ? 1 : 0;  // east  (+X)
-        const w = isRiver(col - 1, row) ? 1 : 0;  // west  (−X)
-        const count = n + s + e + w;
-
-        // Pick GLB path and Y-rotation
-        let path: string;
-        let rotY = 0;
-
-        if (count === 4) {
-          path = '/assets/nature/ground_riverCross.glb';
-        } else if (count === 3) {
-          path = '/assets/nature/ground_riverSplit.glb';
-          // Rotate so the "closed" side faces the missing neighbour
-          if (!n) rotY = Math.PI;
-          else if (!s) rotY = 0;
-          else if (!e) rotY = Math.PI / 2;
-          else         rotY = -Math.PI / 2;
-        } else if (count === 2) {
-          if ((n && s) || (e && w)) {
-            path = '/assets/nature/ground_riverStraight.glb';
-            rotY = (e && w) ? Math.PI / 2 : 0;
-          } else {
-            path = '/assets/nature/ground_riverBend.glb';
-            // Bend: rotate so the open ends face the river neighbours
-            if      (n && e) rotY = 0;
-            else if (e && s) rotY = Math.PI / 2;
-            else if (s && w) rotY = Math.PI;
-            else             rotY = -Math.PI / 2;  // w && n
-          }
-        } else if (count === 1) {
-          path = '/assets/nature/ground_riverEnd.glb';
-          if      (s) rotY = 0;
-          else if (e) rotY = Math.PI / 2;
-          else if (n) rotY = Math.PI;
-          else        rotY = -Math.PI / 2;
-        } else {
-          path = '/assets/nature/ground_riverTile.glb'; // isolated tile
-        }
-
-        const model = loader.getClone(path);
-        if (!model) continue;
-
-        // Kenney river tiles are 1-unit. Scale to fill our T=2 tile.
-        model.scale.setScalar(T);
-        model.rotation.y = rotY;
-
-        const wx = (col - GHW) * T + T / 2;  // tile centre x
-        const wz = (row - GHH) * T + T / 2;  // tile centre z
-        const wy = this._wg.get(col, row).elevation * SH;
-
-        const grp = new THREE.Group();
-        grp.position.set(wx, wy, wz);
-        grp.add(model);
-        this._riverGroups.push(grp);
-      }
-    }
-
-    // Activate in scene if already running
-    if (this._isInScene) {
-      if (this._waterMesh) this._waterMesh.visible = false;
-      for (const rg of this._riverGroups) this.scene.add(rg);
-    }
-    (this.scene as any).__assetRiverLoaded = true;
-  }
-
-  // ── Phase 1.5 — Tower upgrade ───────────────────────────────────────────
-
-  /**
-   * Replace the procedural cylinder tower with stacked castle-kit modules
-   * (tower-square-base → mid × 3 → top).  Physics collider unchanged.
-   */
-  async upgradeTowerWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    const BASE   = '/assets/castle/tower-square-base.glb';
-    const MID    = '/assets/castle/tower-square-mid.glb';
-    const MID_W  = '/assets/castle/tower-square-mid-windows.glb';
-    const MID_D  = '/assets/castle/tower-square-mid-door.glb';
-    const TOP    = '/assets/castle/tower-square-top.glb';
-    const ROOF   = '/assets/castle/tower-square-roof.glb';
-
-    await loader.preload([BASE, MID, MID_W, MID_D, TOP, ROOF]);
-
-    // Kenney castle tower modules are exactly 1 × 1.01 × 1 WU native.
-    // Scale S = 2 fills a T=2 game tile footprint and gives ~2.02 WU per module.
-    // The module origin sits at the BOTTOM face, so stacking interval = 1.01 × S.
-    const S       = 2.0;
-    const tileH   = 1.01 * S;  // ≈ 2.02 WU per module – correct stacking interval
-
-    // Layer order bottom → top: base, door-mid, plain-mid, window-mid, plain-mid, top, roof
-    const layers: Array<string> = [BASE, MID_D, MID, MID_W, MID, TOP, ROOF];
-    const modules = layers.map(path => loader.getClone(path));
-    if (modules.some(m => !m)) return;
-
-    this._tower.clear();
-    modules.forEach((m, i) => {
-      m!.scale.setScalar(S);
-      m!.position.set(0, i * tileH, 0);
-      this._tower.add(m!);
-    });
-    (this.scene as any).__assetTowerLoaded = true;
-  }
-
-  // ── Phase 2 — Settlement decoration ────────────────────────────────────────
-
-  /**
-   * Scatter town-kit props (lanterns, fountains, stalls, hedges, banners,
-   * carts) around each settlement using the settlement road-tile positions
-   * stored in WorldGrid.  Props are added directly to the scene so they
-   * appear immediately when `enter()` has already been called.
-   *
-   * Strategy: for every settlement, pull its road-edge tiles (tiles that
-   * are adjacent to at least one non-road walkable tile) and place a random
-   * prop there.  The fountain goes at the settlement centre tile.
-   */
-  async upgradeSettlementsWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-    worldData: import('@/world/WorldData').WorldData,
-  ): Promise<void> {
-    const { settlements } = worldData;
-    if (!settlements || settlements.length === 0) return;
-
-    const { _GHW: GHW, _GHH: GHH } = this;
-
-    // Props to preload
-    const LANTERN   = '/assets/town/lantern.glb';
-    const FOUNTAIN  = '/assets/town/fountain-round.glb';
-    const STALL_G   = '/assets/town/stall-green.glb';
-    const STALL_R   = '/assets/town/stall-red.glb';
-    const HEDGE     = '/assets/town/hedge.glb';
-    const HEDGE_L   = '/assets/town/hedge-large.glb';
-    const BANNER_G  = '/assets/town/banner-green.glb';
-    const BANNER_R  = '/assets/town/banner-red.glb';
-    const CART      = '/assets/town/cart.glb';
-    const CART_H    = '/assets/town/cart-high.glb';
-    const FENCE     = '/assets/town/fence.glb';
-
-    await loader.preload([
-      LANTERN, FOUNTAIN, STALL_G, STALL_R, HEDGE, HEDGE_L,
-      BANNER_G, BANNER_R, CART, CART_H, FENCE,
-    ]);
-
-    const _decor: THREE.Group[] = [];
-
-    const addProp = (path: string, wx: number, wy: number, wz: number, rotY = 0, s = 1.8) => {
-      const m = loader.getClone(path);
-      if (!m) return;
-      m.scale.setScalar(s);
-      m.rotation.y = rotY;
-      const g = new THREE.Group();
-      g.position.set(wx, wy, wz);
-      g.add(m);
-      _decor.push(g);
-    };
-
-    for (const entry of settlements) {
-      const { plan } = entry;
-      const { centerCol: cc, centerRow: cr } = plan;
-      const centreElev = this._wg.get(cc, cr).elevation;
-      const centreWy   = centreElev * SH;
-
-      // ── Fountain at settlement centre ──────────────────────────────────
-      const fwx = (cc - GHW) * T;
-      const fwz = (cr - GHH) * T;
-      addProp(FOUNTAIN, fwx, centreWy, fwz, 0, 2.0);
-
-      // ── Lanterns at road-tile corners ──────────────────────────────────
-      // Sample every 3rd road tile, put a lantern at alternating corners.
-      const roads = plan.roads ?? [];
-      let roadIdx = 0;
-      const lanternInterval = Math.max(2, Math.floor(roads.length / 8));
-
-      for (const r of roads) {
-        roadIdx++;
-        if (roadIdx % lanternInterval !== 0) continue;
-        // Check if this road tile is on the settlement perimeter
-        const n = this._wg.get(r.col, r.row - 1);
-        const s2 = this._wg.get(r.col, r.row + 1);
-        const e2 = this._wg.get(r.col + 1, r.row);
-        const w2 = this._wg.get(r.col - 1, r.row);
-        const isEdge = n.feature !== 'road' || s2.feature !== 'road' ||
-                       e2.feature !== 'road' || w2.feature !== 'road';
-        if (!isEdge) continue;
-
-        const lx = (r.col - GHW) * T + T * 0.35;
-        const lz = (r.row - GHH) * T + T * 0.35;
-        const ly = centreElev * SH;
-        const hash = Math.abs((r.col * 17) ^ (r.row * 31));
-        addProp(LANTERN, lx, ly, lz, hash * 0.4, 1.6);
-      }
-
-      // ── Perimeter hedges/fences / stalls / carts ──────────────────────
-      // Place stalls and carts near roads using a hash to pick type.
-      let stallCount = 0;
-      const maxStalls = plan.type === 'city' ? 6 : plan.type === 'town' ? 3 : 1;
-
-      for (const r of roads) {
-        if (stallCount >= maxStalls) break;
-        const hash = Math.abs((r.col * 13) ^ (r.row * 7));
-        if (hash % 6 !== 0) continue;   // sparse
-
-        const rx = (r.col - GHW) * T + (((hash >> 2) % 3) - 1) * T * 0.3;
-        const rz = (r.row - GHH) * T + (((hash >> 4) % 3) - 1) * T * 0.3;
-        const ry = centreElev * SH;
-        const rotY = (hash % 4) * (Math.PI / 2);
-
-        if (hash % 3 === 0) {
-          addProp(hash % 2 === 0 ? STALL_G : STALL_R, rx, ry, rz, rotY, 1.8);
-        } else if (hash % 3 === 1) {
-          addProp(hash % 2 === 0 ? CART : CART_H, rx, ry, rz, rotY, 1.8);
-        } else {
-          addProp(hash % 2 === 0 ? BANNER_G : BANNER_R, rx, ry, rz, rotY, 1.8);
-        }
-        stallCount++;
-      }
-
-      // ── Hedges along settlement perimeter ─────────────────────────────
-      for (const r of roads) {
-        const hash = Math.abs((r.col * 19) ^ (r.row * 23));
-        if (hash % 10 !== 0) continue;  // ~10% of road-edge tiles
-
-        const n2 = this._wg.get(r.col, r.row - 1);
-        const isEdge2 = n2.feature !== 'road';
-        if (!isEdge2) continue;
-
-        const hx = (r.col - GHW) * T - T * 0.4;
-        const hz = (r.row - GHH) * T - T * 0.4;
-        const hy = centreElev * SH;
-        addProp(hash % 2 === 0 ? HEDGE : HEDGE_L, hx, hy, hz, 0, 1.8);
-      }
-    }
-
-    // Add to scene if active
-    for (const g of _decor) {
-      this._clutter.push(g);
-      if (this._isInScene) this.scene.add(g);
-    }
-    (this.scene as any).__assetSettlementLoaded = true;
-  }
-
-  // ── Phase 2b — Modular building upgrade ────────────────────────────────────
-
-  /**
-   * Replace all procedural `generateBuilding()` groups with modular-kit
-   * assemblies from the Kenney Retro Fantasy Kit (buildings/ pack).
-   *
-   * Strategy: clear the existing `_buildingGroups`, assemble fresh GLB-based
-   * groups for every building in every settlement, and add them back to the
-   * scene if it is currently active.
-   */
-  async upgradeBuildingsWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-    worldData: import('@/world/WorldData').WorldData,
-  ): Promise<void> {
-    const {
-      assembleBuilding,
-      BUILDING_PRELOAD_PATHS,
-    } = await import('@/world/buildings/AssetBuildingAssembler');
-
-    await loader.preload([...BUILDING_PRELOAD_PATHS]);
-
-    const { settlements } = worldData;
-    if (!settlements || settlements.length === 0) return;
-
-    const { _GHW: GHW, _GHH: GHH } = this;
-
-    // Remove old procedural building groups from scene and free GPU resources.
-    if (this._isInScene) {
-      for (const bg of this._buildingGroups) this.scene.remove(bg);
-    }
-    for (const bg of this._buildingGroups) this._freeGroup(bg);
-    (this._buildingGroups as THREE.Group[]).length = 0;
-
-    // Assemble new GLB buildings for each settlement's plan.
-    for (const entry of settlements) {
-      const { plan } = entry;
-
-      for (const b of plan.buildings) {
-        const wx = (b.col - GHW) * T;
-        const wz = (b.row - GHH) * T;
-        const lv = this._wg.get(b.col, b.row).elevation;
-        const wy = lv * SH;
-
-        const grp = assembleBuilding(loader, b.type, b.seed);
-        grp.position.set(wx, wy, wz);
-        grp.rotation.y = b.rotation;
-
-        this._buildingGroups.push(grp);
-        if (this._isInScene) this.scene.add(grp);
-      }
-    }
-
-    (this.scene as any).__assetBuildingsLoaded = true;
-  }
-
-  // ── Phase 2c — Road tile upgrade ───────────────────────────────────────────
-
-  /**
-   * Replace the flat cobblestone InstancedMesh road tiles with proper Kenney
-   * town-kit road GLBs (settlement interior) and nature-kit ground-path GLBs
-   * (inter-settlement dirt roads).
-   *
-   * A 4-bit neighbour bitmask drives auto-tiling:
-   *   bit 0 = North, bit 1 = South, bit 2 = East, bit 3 = West
-   * Missing variants fall back to road.glb / ground_pathStraight.glb.
-   */
-  async upgradeRoadsWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-    worldData: import('@/world/WorldData').WorldData,
-  ): Promise<void> {
-    const ROAD        = '/assets/town/road.glb';
-    const ROAD_CORNER = '/assets/town/road-corner.glb';
-    const PATH        = '/assets/nature/ground_pathStraight.glb';
-    const PATH_BEND   = '/assets/nature/ground_pathBend.glb';
-    const PATH_CROSS  = '/assets/nature/ground_pathCross.glb';
-
-    await loader.preload([ROAD, ROAD_CORNER, PATH, PATH_BEND, PATH_CROSS]);
-
-    const { settlements, interRoads } = worldData;
-    const { _GHW: GHW, _GHH: GHH } = this;
-
-    // Build a fast lookup of which (col, row) cells are road tiles.
-    const roadSet = new Set<string>();
-    if (settlements) {
-      for (const { plan } of settlements) {
-        for (const r of plan.roads) roadSet.add(`${r.col},${r.row}`);
-      }
-    }
-    const interSet = new Set<string>();
-    for (const r of interRoads ?? []) interSet.add(`${r.col},${r.row}`);
-
-    // ── Town road GLB tiles (settlement interiors) ──────────────────────
-    const settlementRoadsSeen = new Set<string>();
-    const roadGroups: THREE.Group[] = [];
-
-    if (settlements) {
-      for (const { plan } of settlements) {
-        const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
-        const wy = centreElev * SH + 0.02;
-
-        for (const r of plan.roads) {
-          const key = `${r.col},${r.row}`;
-          if (settlementRoadsSeen.has(key)) continue;
-          settlementRoadsSeen.add(key);
-
-          // 4-bit neighbour mask: N=1, S=2, E=4, W=8
-          const n = roadSet.has(`${r.col},${r.row - 1}`) ? 1 : 0;
-          const s = roadSet.has(`${r.col},${r.row + 1}`) ? 2 : 0;
-          const e = roadSet.has(`${r.col + 1},${r.row}`) ? 4 : 0;
-          const w = roadSet.has(`${r.col - 1},${r.row}`) ? 8 : 0;
-          const mask = n | s | e | w;
-
-          const wx = (r.col - GHW) * T;
-          const wz = (r.row - GHH) * T;
-
-          // Choose tile + rotation
-          let path = ROAD;
-          let rotY = 0;
-
-          // Two adjacent perpendicular neighbours → corner
-          if      (mask === (1 | 4))  { path = ROAD_CORNER; rotY = 0; }          // N+E
-          else if (mask === (2 | 4))  { path = ROAD_CORNER; rotY =  Math.PI / 2; }  // S+E
-          else if (mask === (2 | 8))  { path = ROAD_CORNER; rotY =  Math.PI; }    // S+W
-          else if (mask === (1 | 8))  { path = ROAD_CORNER; rotY = -Math.PI / 2; }  // N+W
-          // E–W straight (or single E/W)
-          else if ((mask & (1 | 2)) === 0 && (mask & (4 | 8)) !== 0) {
-            path = ROAD; rotY = Math.PI / 2;
-          }
-          // N–S straight (or single N/S) — default rotY=0
-
-          const clone = loader.getClone(path);
-          if (!clone) continue;
-          clone.scale.setScalar(T);
-          clone.rotation.y = rotY;
-          const g = new THREE.Group();
-          g.position.set(wx, wy, wz);
-          g.add(clone);
-          roadGroups.push(g);
-        }
-      }
-    }
-
-    // Ground-path GLB tiles (inter-settlement dirt roads)
-    const pathSeen = new Set<string>();
-
-    for (const r of interRoads ?? []) {
-      const key = `${r.col},${r.row}`;
-      if (pathSeen.has(key)) continue;
-      pathSeen.add(key);
-
-      const n = interSet.has(`${r.col},${r.row - 1}`) ? 1 : 0;
-      const s = interSet.has(`${r.col},${r.row + 1}`) ? 2 : 0;
-      const e = interSet.has(`${r.col + 1},${r.row}`) ? 4 : 0;
-      const w = interSet.has(`${r.col - 1},${r.row}`) ? 8 : 0;
-      const mask = n | s | e | w;
-
-      const wx = (r.col - GHW) * T;
-      const wz = (r.row - GHH) * T;
-      const wy = this._wg.get(r.col, r.row).elevation * SH + 0.02;
-
-      let path = PATH;
-      let rotY = 0;
-
-      // Bend (2 perpendicular neighbours)
-      if      (mask === (1 | 4))  { path = PATH_BEND; rotY =  0; }
-      else if (mask === (2 | 4))  { path = PATH_BEND; rotY =  Math.PI / 2; }
-      else if (mask === (2 | 8))  { path = PATH_BEND; rotY =  Math.PI; }
-      else if (mask === (1 | 8))  { path = PATH_BEND; rotY = -Math.PI / 2; }
-      // 4-way cross
-      else if (mask === 15)       { path = PATH_CROSS; rotY = 0; }
-      // E–W straight
-      else if ((mask & (1 | 2)) === 0 && (mask & (4 | 8)) !== 0) {
-        path = PATH; rotY = Math.PI / 2;
-      }
-
-      const clone = loader.getClone(path);
-      if (!clone) continue;
-      clone.scale.setScalar(T);
-      clone.rotation.y = rotY;
-      const g = new THREE.Group();
-      g.position.set(wx, wy, wz);
-      g.add(clone);
-      roadGroups.push(g);
-    }
-
-    // Hide old procedural road meshes; add new GLB groups.
-    if (this._isInScene) {
-      for (const rm of this._roadMeshes) rm.visible = false;
-      for (const rg of roadGroups) this.scene.add(rg);
-    }
-    for (const rg of roadGroups) this._roadTileGroups.push(rg);
-
-    (this.scene as any).__assetRoadsLoaded = true;
-  }
-
-  // ── Phase 3 — Dungeon entrance upgrade ─────────────────────────────────────
-
-  /**
-   * Replace the procedural dungeon entrance meshes with Kenney dungeon-kit
-   * GLBs.  Each entrance gets a gate GLB with a matching rotY and the
-   * procedural group's children are swapped out (the group itself stays, so
-   * world-space position / physics trigger radius is unchanged).
-   */
-  async upgradeDungeonEntrancesWithAssets(
-    loader: import('@/assets/AssetLoader').AssetLoader,
-  ): Promise<void> {
-    const GATE       = '/assets/dungeon/gate.glb';
-    const GATE_DOOR  = '/assets/dungeon/gate-door.glb';
-    const GATE_BARS  = '/assets/dungeon/gate-metal-bars.glb';
-    const CORRIDOR_E = '/assets/dungeon/corridor-end.glb';
-    const STAIRS     = '/assets/dungeon/stairs.glb';
-
-    await loader.preload([GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS]);
-
-    // Cycle through entrance variants for variety
-    const variants = [GATE, GATE_DOOR, GATE_BARS, CORRIDOR_E, STAIRS];
-
-    for (let i = 0; i < this._dungeonGroups.length; i++) {
-      const grp = this._dungeonGroups[i]!;
-      const path = variants[i % variants.length]!;
-      const model = loader.getClone(path);
-      if (!model) continue;
-
-      // Kenney dungeon tiles are ~4-unit squares at native scale.
-      // Scale down to fit nicely at ground level (~2.5 WU wide).
-      model.scale.setScalar(0.65);
-      model.rotation.y = (i % 4) * (Math.PI / 2);
-
-      grp.clear();
-      grp.add(model);
-    }
-    (this.scene as any).__assetDungeonLoaded = true;
-  }
 
   /** True when the player is close enough to the tower door to press E.
    *  Radius 6.5 — larger than the tower capsule (4.5) + player radius (0.35),
    *  so the prompt fires as the player approaches the door, not after clipping in. */
   nearTowerEntrance(pos: THREE.Vector3): boolean {
     return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
+  }
+
+  /** Number of active static physics bodies (terrain, tower, trees, rocks, buildings).
+   *  Used by tests to verify building colliders survive exit()/enter() cycles. */
+  getStaticBodyCount(): number {
+    return this._staticBodies.length;
+  }
+
+  /** Number of registered building collider specs (persists across exit()/enter(), unlike
+   *  the physics bodies themselves). Used by tests. */
+  getBuildingColliderSpecCount(): number {
+    return this._buildingColliderSpecs.length;
   }
 
   /** Returns the nearest building entrance if the player is within range. */
@@ -1134,6 +479,22 @@ export class OverworldScene {
     return null;
   }
 
+  /** Returns the nearest cave entrance if the player is within trigger range (CG-1/CG-3). */
+  nearCaveEntrance(pos: THREE.Vector3): CaveEntranceHandle | null {
+    for (const c of this.caveEntrances) {
+      if (isNearCaveEntrance({ x: pos.x, z: pos.z }, { x: c.position.x, z: c.position.z })) return c;
+    }
+    return null;
+  }
+
+  /** Returns the nearest glade entrance if the player is within trigger range (CG-2/CG-3). */
+  nearGladeEntrance(pos: THREE.Vector3): GladeEntranceHandle | null {
+    for (const g of this.gladeEntrances) {
+      if (isNearGladeEntrance({ x: pos.x, z: pos.z }, { x: g.position.x, z: g.position.z })) return g;
+    }
+    return null;
+  }
+
   getActiveEnemies(): SlimeEnemy[] { return this._enemies; }
 
   /** Returns all settlements with their world-space position for fast travel. */
@@ -1142,6 +503,99 @@ export class OverworldScene {
       name:     s.name,
       worldPos: { x: s.worldPos.x, y: s.worldPos.y, z: s.worldPos.z },
     }));
+  }
+
+  /**
+   * SI-4 — call once per frame with the player's current position. Detects
+   * crossing a settlement boundary (2D distance vs. each settlement's cached
+   * radius) and returns `{ name, crossing: 'entering' | 'exiting' }` the
+   * first frame a transition happens, or `null` otherwise. Only one
+   * settlement is tracked "inside" at a time (the nearest containing one),
+   * matching how settlements are spaced apart on the world map.
+   */
+  checkSettlementBoundaryCrossing(pos: THREE.Vector3): { name: string; crossing: 'entering' | 'exiting' } | null {
+    let insideIdx = -1;
+    for (let i = 0; i < this._settlementPositions.length; i++) {
+      const s = this._settlementPositions[i]!;
+      const dx = pos.x - s.worldPos.x;
+      const dz = pos.z - s.worldPos.z;
+      if (Math.hypot(dx, dz) <= s.radius) { insideIdx = i; break; }
+    }
+
+    if (insideIdx === this._settlementInsideIdx) return null;
+
+    const prevIdx = this._settlementInsideIdx;
+    this._settlementInsideIdx = insideIdx;
+
+    if (insideIdx !== -1) {
+      return { name: this._settlementPositions[insideIdx]!.name, crossing: 'entering' };
+    }
+    if (prevIdx !== -1) {
+      return { name: this._settlementPositions[prevIdx]!.name, crossing: 'exiting' };
+    }
+    return null;
+  }
+
+  /**
+   * Returns the nearest building whose exterior surface is within `maxDist`
+   * world units of `pos`, or null if none is close enough. Distance is
+   * measured to the building's rotated footprint rectangle (its nearest
+   * wall), not its center — see BuildingCollision.ts. Used by main.ts to
+   * show the "Press E to enter" prompt.
+   */
+  getNearestBuilding(pos: THREE.Vector3, maxDist = 4): { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number } | null {
+    let best: { dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number } | null = null;
+    let bestD = maxDist;
+    for (const bd of this._buildingData) {
+      const fp = getFootprint(bd.dna.buildingKind, bd.dna.size);
+      const d = closestDistanceToBuildingFootprint(
+        { x: pos.x, z: pos.z },
+        { x: bd.pos.x, z: bd.pos.z },
+        fp,
+        bd.rotationY,
+      );
+      if (d < bestD) { bestD = d; best = bd; }
+    }
+    return best;
+  }
+
+  /**
+   * Create and register a static box collider matching a building's
+   * footprint, position, rotation, and floor count. Call this for every
+   * building placed in the overworld (settlements, studio previews, and
+   * dev test-spawn hooks) so every building blocks player movement.
+   * `pos` is the building's placement position (its local origin — see
+   * `BuildingCollision.ts` docs: buildings are authored centered at local
+   * origin with the door facing local +Z).
+   */
+  registerBuildingCollider(dna: BuildingDNA, pos: THREE.Vector3, rotationY: number): void {
+    this._buildingColliderSpecs.push({ dna, pos: pos.clone(), rotationY });
+    // If the scene is currently active, create the physics body immediately (matches prior
+    // behavior for callers invoked after enter(), e.g. dev spawnBuildingNearPlayer()).
+    // Otherwise it will be created on the next enter() via _createBuildingColliders().
+    if (this._isInScene) this._createOneBuildingCollider(dna, pos, rotationY);
+  }
+
+  /** Create a single static box collider matching a building's footprint/position/rotation/floors. */
+  private _createOneBuildingCollider(dna: BuildingDNA, pos: THREE.Vector3, rotationY: number): void {
+    const fp = getFootprint(dna.buildingKind, dna.size);
+    const halfH = (dna.floors * FLOOR_HEIGHT) / 2;
+    const rotQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationY);
+    this._staticBodies.push(
+      this.physics.createStaticRotatedBox(
+        new THREE.Vector3(pos.x, pos.y + halfH, pos.z),
+        rotQuat,
+        new THREE.Vector3(fp.w / 2, halfH, fp.d / 2),
+      ),
+    );
+  }
+
+  /** Recreate physics colliders for every registered building. Called on enter() since exit()
+   *  destroys all rigid bodies in `_staticBodies` (buildings included). */
+  private _createBuildingColliders(): void {
+    for (const spec of this._buildingColliderSpecs) {
+      this._createOneBuildingCollider(spec.dna, spec.pos, spec.rotationY);
+    }
   }
 
   /** Convert a world-space (x, z) position to the nearest grid (col, row). */
@@ -1272,39 +726,17 @@ export class OverworldScene {
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**
-   * Build a Rapier heightfield collider that mirrors the visual tile grid.
-   *
-   * Rapier heightfield convention (column-major):
-   *   heights[gridRow * GW + gridCol] = elevation * SH
-   *   nrows = GW − 1  (X direction, tile columns)
-   *   ncols = GH − 1  (Z direction, tile rows)
-   *   scale = { x: (GW−1)*T, y: 1.0, z: (GH−1)*T }
-   *
-   * World-space vertex positions produced:
-   *   x = −(GW−1)*T/2 + gridCol*T = (gridCol − GHW)*T  ✓
-   *   z = −(GH−1)*T/2 + gridRow*T = (gridRow − GHH)*T  ✓
+   * Build a Rapier trimesh collider from the exact same vertex/index buffers
+   * used to render the terrain (`buildTerrainGeometryData`) — physics and
+   * visuals can never mismatch, including at elevation-edge cliff faces.
    */
   private _createTerrainCollider(): RAPIER.RigidBody {
-    const { _GW: GW, _GH: GH } = this;
-    const heights = new Float32Array(GW * GH);
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        heights[row * GW + col] = this._wg.get(col, row).elevation * SH;
-      }
-    }
-
-    const body = this.physics.rapierWorld.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed(),
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    const { positions, indices } = buildTerrainGeometryData(this._wg, GW, GH, GHW, GHH, T, SH);
+    return this.physics.createStaticTrimesh(
+      new Float32Array(positions),
+      new Uint32Array(indices),
     );
-    this.physics.rapierWorld.createCollider(
-      RAPIER.ColliderDesc.heightfield(
-        GW - 1, GH - 1, heights,
-        new RAPIER.Vector3((GW - 1) * T, 1.0, (GH - 1) * T),
-      ),
-      body,
-    );
-    return body;
   }
 
   /** Create a fixed static rigid body with the given collider at (x, y, z). */
@@ -1331,118 +763,15 @@ export class OverworldScene {
    */
   private _buildTerrain(): THREE.Mesh {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const pos: number[] = [];
-    const nrm: number[] = [];
-    const clr: number[] = [];
-    const idx: number[] = [];
-
-    /** Height level of a (possibly out-of-bounds) tile. */
-    const lvl = (c: number, r: number): number =>
-      this._wg.get(c, r).elevation;
-
-    /**
-     * Append a quad face to the buffers.
-     * v0→v1→v2→v3 must be counter-clockwise when viewed along the outward normal.
-     */
-    const addFace = (
-      v0: [number, number, number], v1: [number, number, number],
-      v2: [number, number, number], v3: [number, number, number],
-      nx: number, ny: number, nz: number,
-      r: number, g: number, b: number,
-    ): void => {
-      const base = pos.length / 3;
-      pos.push(...v0, ...v1, ...v2, ...v3);
-      nrm.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
-      clr.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
-      idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
-    };
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        const H   = lvl(col, row);
-        const wy  = H * SH;
-        const wx  = (col - GHW) * T;
-        const wz  = (row - GHH) * T;
-        const wx1 = wx + T;
-        const wz1 = wz + T;
-
-        // Subtle per-tile brightness variation (avoids repetitive flat look)
-        const v = 0.92 + ((col * 29 + row * 19) % 18) / 200;
-
-        // Biome/feature-aware colour selection
-        const cell = this._wg.get(col, row);
-        let biomeRgb: [number, number, number];
-        if (cell.biome === 'water') {
-          biomeRgb = BIOME_WATER;
-        } else if (cell.feature === 'river') {
-          biomeRgb = BIOME_RIVER;
-        } else if (cell.feature === 'river_bank') {
-          const b = BIOME[H];
-          biomeRgb = [b[0] * 0.88, b[1] * 0.80, b[2] * 0.68];
-        } else {
-          biomeRgb = BIOME[H];
-        }
-        const [rb, gb, bb] = biomeRgb;
-        const tr = rb * v, tg = gb * v, tb = bb * v;
-
-        // ── TOP face (normal +Y) ─────────────────────────────────────────
-        // v0(wx,wz) → v1(wx,wz1) → v2(wx1,wz1) → v3(wx1,wz) gives +Y normal
-        addFace(
-          [wx, wy, wz], [wx, wy, wz1], [wx1, wy, wz1], [wx1, wy, wz],
-          0, 1, 0,  tr, tg, tb,
-        );
-
-        // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────
-        const Hs = lvl(col, row + 1);
-        if (Hs < H) {
-          const wy2 = Hs * SH;
-          const d = 0.76;
-          addFace(
-            [wx1, wy, wz1], [wx, wy, wz1], [wx, wy2, wz1], [wx1, wy2, wz1],
-            0, 0, 1,  tr * d, tg * d, tb * d,
-          );
-        }
-
-        // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
-        const Hn = lvl(col, row - 1);
-        if (Hn < H) {
-          const wy2 = Hn * SH;
-          const d = 0.50;
-          addFace(
-            [wx, wy, wz], [wx1, wy, wz], [wx1, wy2, wz], [wx, wy2, wz],
-            0, 0, -1,  tr * d, tg * d, tb * d,
-          );
-        }
-
-        // ── EAST wall (+X face, at wx1) ──────────────────────────────────
-        const He = lvl(col + 1, row);
-        if (He < H) {
-          const wy2 = He * SH;
-          const d = 0.63;
-          addFace(
-            [wx1, wy, wz], [wx1, wy, wz1], [wx1, wy2, wz1], [wx1, wy2, wz],
-            1, 0, 0,  tr * d, tg * d, tb * d,
-          );
-        }
-
-        // ── WEST wall (−X face, at wx) ───────────────────────────────────
-        const Hw = lvl(col - 1, row);
-        if (Hw < H) {
-          const wy2 = Hw * SH;
-          const d = 0.55;
-          addFace(
-            [wx, wy, wz1], [wx, wy, wz], [wx, wy2, wz], [wx, wy2, wz1],
-            -1, 0, 0,  tr * d, tg * d, tb * d,
-          );
-        }
-      }
-    }
+    const { positions, normals, colors, indices } = buildTerrainGeometryData(
+      this._wg, GW, GH, GHW, GHH, T, SH,
+    );
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(nrm, 3));
-    geo.setAttribute('color',    new THREE.Float32BufferAttribute(clr, 3));
-    geo.setIndex(idx);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
 
     return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   }
@@ -1612,7 +941,66 @@ export class OverworldScene {
     glw.position.set(0, 1.55, DZ - 1.4);
     grp.add(glw);
 
+    // A5: Portcullis gate — iron bar grid that rises when player approaches
+    const gateGroup = new THREE.Group();
+    gateGroup.name = '__portcullis';
+    const barMat = new THREE.MeshLambertMaterial({ color: 0x2a2824 });
+    // 4 vertical bars
+    for (let b = 0; b < 4; b++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.5, 0.1), barMat);
+      bar.position.set(-0.75 + b * 0.5, 1.75, DZ + 0.05);
+      gateGroup.add(bar);
+    }
+    // 3 horizontal cross-bars
+    for (let h = 0; h < 3; h++) {
+      const hbar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 0.1), barMat);
+      hbar.position.set(0, 0.8 + h * 1.2, DZ + 0.05);
+      gateGroup.add(hbar);
+    }
+    grp.add(gateGroup);
+
+    // A5: Window point lights (activated at night via TimeSystem)
+    const winLightPositions: [number, number, number][] = [
+      [0, 5.0,  3.9],  // floor 1 south
+      [0, 10.0, 3.6],  // floor 2 south
+      [0, 15.0, 3.3],  // floor 3 south
+    ];
+    for (const [lx, ly, lz] of winLightPositions) {
+      const wLight = new THREE.PointLight(0xffcc66, 0, 5);  // starts off
+      wLight.name = '__window_light';
+      wLight.position.set(lx, ly, lz);
+      grp.add(wLight);
+    }
+
     return grp;
+  }
+
+  /** A5: Update tower window lights and portcullis gate each frame.
+   *  @param hour  Game hour (0–24)
+   *  @param playerPos  Player world position
+   */
+  updateTowerDetails(hour: number, playerPos: THREE.Vector3): void {
+    // Night = hours 18–6 (roughly)
+    const isNight = hour >= 18 || hour < 6;
+    const intensity = isNight ? 0.7 + 0.1 * Math.sin(Date.now() * 0.001) : 0;
+
+    let portcullis: THREE.Group | null = null;
+    this._tower.traverse(child => {
+      if (child.name === '__window_light') {
+        (child as THREE.PointLight).intensity = intensity;
+      }
+      if (child.name === '__portcullis') {
+        portcullis = child as THREE.Group;
+      }
+    });
+
+    // Raise gate when player is within 6 WU of tower door, lower otherwise
+    if (portcullis !== null) {
+      const pc = portcullis as THREE.Group;
+      const dist = playerPos.distanceTo(this._tower.position);
+      const targetY = dist < 6 ? 3.2 : 0;
+      pc.position.y += (targetY - pc.position.y) * 0.08;
+    }
   }
 
   // ── Tree placement ─────────────────────────────────────────────────────────
@@ -1780,7 +1168,50 @@ export class OverworldScene {
     }
   }
 
-  // ── Ruined greenhouse structures ───────────────────────────────────────────
+  // ── E1: Species-specific NPC encounter triggers ──────────────────────────────
+
+  private _spawnSpeciesEncounters(): void {
+    if (!this.characterSpecies) return;
+
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    if (this.characterSpecies === 'vulperia') {
+      // Bounty hunter — lurks south-east of the tower, 12–14 WU from door
+      const bCol = GHW + 5; const bRow = GHH + 4;
+      const bWx  = 14; const bWz = 10;
+      const hunter = new NPCEntity(
+        bCol, bRow, bWx, bWz,
+        'guard',
+        { seed: 0xB077F, type: 'village', population: 0, name: 'Road', col: bCol, row: bRow } as any,
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      if (this.onQuestGiven) hunter.onQuestGiven = this.onQuestGiven;
+      // Override dialogue to hint at the bounty contract (checked by StoryRunner)
+      (hunter as any)._isSpeciesEncounter = 'vulperia_bounty_hunter';
+      this._npcs.push(hunter);
+      hunter.addToScene(this.scene);
+    }
+
+    if (this.characterSpecies === 'undead') {
+      // Wandering scholar — found near the western ruins, 10 WU from tower
+      const sCol = GHW - 4; const sRow = GHH + 3;
+      const sWx  = -10; const sWz = 8;
+      const scholar = new NPCEntity(
+        sCol, sRow, sWx, sWz,
+        'scholar',
+        { seed: 0x5C1101, type: 'village', population: 0, name: 'Road', col: sCol, row: sRow } as any,
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      if (this.onQuestGiven) scholar.onQuestGiven = this.onQuestGiven;
+      (scholar as any)._isSpeciesEncounter = 'undead_wandering_scholar';
+      this._npcs.push(scholar);
+      scholar.addToScene(this.scene);
+    }
+  }
 
   private _addRuins(rand: () => number): void {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
@@ -1789,9 +1220,12 @@ export class OverworldScene {
     const ruinInner   = GHW * T * 0.60;
     const ruinOuter   = GHW * T * 0.88;
     const ruinSpacing = Math.max(45, Math.round(GW * T * 0.441));
+    console.log(`[_addRuins] W=${W} H=${H} spacing=${ruinSpacing} inner=${ruinInner.toFixed(0)} outer=${ruinOuter.toFixed(0)}`);
     const pts = poissonDisk(W, H, ruinSpacing, rand);
+    console.log(`[_addRuins] poissonDisk done — ${pts.length} candidate points`);
 
-    for (const [px, pz] of pts) {
+    for (let i = 0; i < pts.length; i++) {
+      const [px, pz] = pts[i];
       if (this.buildingEntrances.length >= 2) break;
       const wx = px - W / 2;
       const wz = pz - H / 2;
@@ -1802,14 +1236,48 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const level = this._wg.get(c, r).elevation;
       const wy = level * SH;
+      console.log(`[_addRuins] making ruin ${i} at (${wx.toFixed(1)}, ${wz.toFixed(1)})...`);
 
       this._ruins.push(this._makeRuin(wx, wy, wz, rand));
+      console.log(`[_addRuins] ruin ${i} built`);
       this.buildingEntrances.push({
         type:     'greenhouse',
         position: new THREE.Vector3(wx, wy, wz),
         label:    'Ruined Greenhouse',
       });
+
+      // C1: Spawn a mysterious NPC near each ruin
+      const mCol = Math.round((wx + 3) / T + GHW);
+      const mRow = Math.round((wz + 1) / T + GHH);
+      console.log(`[_addRuins] creating NPC for ruin ${i}...`);
+      const syntheticSettlement: import('@/world/WorldData').SettlementEntry = {
+        id:   0,
+        seed: (mCol * 73856093) ^ (mRow * 19349663),
+        plan: {
+          type:       'hamlet' as import('@/world/SettlementGenerator').SettlementType,
+          name:       'Ruins',
+          faction:    'human',
+          centerCol:  mCol,
+          centerRow:  mRow,
+          buildings:  [],
+          roads:      [],
+          population: 0,
+        },
+      };
+      const mystNpc = new NPCEntity(
+        mCol, mRow, wx + 3, wz + 1,
+        'mysterious',
+        syntheticSettlement,
+        [],
+        undefined, undefined, undefined,
+        [],
+      );
+      console.log(`[_addRuins] NPC created for ruin ${i}`);
+      if (this.onQuestGiven) mystNpc.onQuestGiven = this.onQuestGiven;
+      mystNpc.group.position.y = wy;
+      this._npcs.push(mystNpc);
     }
+    console.log('[_addRuins] DONE');
   }
 
   private _makeRuin(
@@ -1880,6 +1348,37 @@ export class OverworldScene {
       });
     }
   }
+
+  // ── Cave / Glade entrances (CG-1, CG-2, CG-3 renderer wiring) ─────────────
+
+  private _placeCaveGladeEntrances(caves: CaveEntry[], glades: GladeEntry[]): void {
+    const { _GHW: GHW, _GHH: GHH } = this;
+
+    for (const entry of caves) {
+      const wx = (entry.col - GHW) * T;
+      const wz = (entry.row - GHH) * T;
+      const lv = this._wg.get(entry.col, entry.row).elevation;
+      const wy = lv * SH;
+
+      const built = buildCaveEntrance(entry.biome);
+      built.root.position.set(wx, wy, wz);
+      this._caveEntranceBuilts.push(built);
+      this.caveEntrances.push({ entry, position: new THREE.Vector3(wx, wy, wz) });
+    }
+
+    for (const entry of glades) {
+      const wx = (entry.col - GHW) * T;
+      const wz = (entry.row - GHH) * T;
+      const lv = this._wg.get(entry.col, entry.row).elevation;
+      const wy = lv * SH;
+
+      const built = buildGladeEntrance();
+      built.root.position.set(wx, wy, wz);
+      this._gladeEntranceBuilts.push(built);
+      this.gladeEntrances.push({ entry, position: new THREE.Vector3(wx, wy, wz) });
+    }
+  }
+
 
   private _buildEntranceMesh(
     key:  EntranceMeshKey,
@@ -2127,9 +1626,117 @@ export class OverworldScene {
 
   // ── Settlements ────────────────────────────────────────────────────────────
 
+  private _readStudioSettlementPreview(): OverworldSettlementPreviewPayload | null {
+    try {
+      const raw = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<OverworldSettlementPreviewPayload> | null;
+      if (!parsed || parsed.version !== 1 || !parsed.model?.wards?.length) return null;
+      return parsed as OverworldSettlementPreviewPayload;
+    } catch (e) {
+      console.warn('[OverworldScene] failed to parse studio settlement preview:', e);
+      return null;
+    }
+  }
+
+  private _mapStudioFactionToRuntimeFaction(faction: string): Faction {
+    const map: Record<string, Faction> = {
+      human: 'human_town',
+      elven: 'elven',
+      dwarven: 'dwarven',
+      orcish: 'orcish',
+      vampire: 'vampire',
+      undead: 'undead_common',
+      vulperia: 'vulperia',
+      slime: 'slime',
+      fae: 'fae',
+    };
+    return map[faction] ?? 'human_town';
+  }
+
+  private _buildStudioSettlementPreview(): void {
+    const payload = this._readStudioSettlementPreview();
+    if (!payload) return;
+
+    const cityWards = payload.model.wards.filter(w => w.withinCity);
+    if (cityWards.length === 0) return;
+
+    const { _GHW: GHW, _GHH: GHH, _GW: GW, _GH: GH } = this;
+    const anchorCol = Math.max(6, Math.min(GW - 7, Math.round(GHW + this._FR + 7)));
+    const anchorRow = Math.max(6, Math.min(GH - 7, Math.round(GHH + this._FR + 7)));
+    const anchorWx = (anchorCol - GHW) * T;
+    const anchorWz = (anchorRow - GHH) * T;
+    const previewRadiusWU = 14;
+    const runtimeFaction = this._mapStudioFactionToRuntimeFaction(payload.faction);
+    const usedTiles = new Set<string>();
+    let buildingCount = 0;
+
+    for (const ward of cityWards) {
+      const kind = WARD_TO_KIND[ward.type];
+      if (!kind) continue;
+
+      const dx = (ward.center.x - payload.model.centre.x) / Math.max(1, payload.model.radius);
+      const dz = (ward.center.y - payload.model.centre.y) / Math.max(1, payload.model.radius);
+
+      let wx = anchorWx + dx * previewRadiusWU;
+      let wz = anchorWz + dz * previewRadiusWU;
+
+      let { col, row } = this._wg.worldToGrid(wx, wz);
+      col = Math.max(3, Math.min(GW - 4, Math.round(col)));
+      row = Math.max(3, Math.min(GH - 4, Math.round(row)));
+
+      const tileKey = `${col},${row}`;
+      if (usedTiles.has(tileKey)) continue;
+      usedTiles.add(tileKey);
+
+      wx = (col - GHW) * T;
+      wz = (row - GHH) * T;
+      const wy = this._wg.get(col, row).elevation * SH;
+
+      const seed = ((payload.seed ^ (Math.round(ward.center.x) * 73856093 + Math.round(ward.center.y) * 19349663)) >>> 0);
+      const size = WARD_TO_SIZE[ward.type] ?? 'medium';
+      const floors = WARD_TO_FLOORS[ward.type] ?? (payload.settlementType === 'city' ? 2 : 1);
+      const dna = factionBuildingDna(kind, runtimeFaction, seed, size, floors as 1 | 2 | 3 | 4);
+      const inst = buildBuilding(dna);
+      const grp = inst.exteriorGroup;
+
+      const buildingRotationY = (seed % 4) * (Math.PI / 2);
+      grp.position.set(wx, wy, wz);
+      grp.rotation.y = buildingRotationY;
+      grp.userData['studioPreview'] = true;
+      grp.userData['studioWardType'] = ward.type;
+
+      this._buildingGroups.push(grp);
+      this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: buildingRotationY });
+      this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), buildingRotationY);
+      buildingCount++;
+    }
+
+    const centreElev = this._wg.get(anchorCol, anchorRow).elevation * SH + 2.0;
+    this._settlementPositions.push({
+      name: `${payload.name} (Preview)`,
+      worldPos: new THREE.Vector3(anchorWx, centreElev, anchorWz),
+      radius: 16, // dev-preview only — no boundary-crossing gameplay hookup needed here
+    });
+
+    if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+      (window as any).__tttOverworldPreviewLoaded = {
+        name: payload.name,
+        seed: payload.seed,
+        faction: payload.faction,
+        buildingCount,
+      };
+    }
+
+    console.log(`[OverworldScene] studio preview "${payload.name}" loaded (${buildingCount} buildings)`);
+  }
+
   private _buildSettlements(worldData: WorldData): void {
     const { settlements } = worldData;
-    if (!settlements || settlements.length === 0) return;
+    if (!settlements || settlements.length === 0) {
+      this._buildStudioSettlementPreview();
+      return;
+    }
 
     const { _GHW: GHW, _GHH: GHH } = this;
 
@@ -2139,9 +1746,19 @@ export class OverworldScene {
       const wx = (plan.centerCol - GHW) * T;
       const wz = (plan.centerRow - GHH) * T;
       const wy = this._wg.get(plan.centerCol, plan.centerRow).elevation * SH + 2.0;
+      // SI-4: boundary radius = farthest building from centre + a margin, so the
+      // boundary sits just outside the settlement rather than through a building.
+      let maxDist = 0;
+      for (const b of plan.buildings) {
+        const dx = (b.col - plan.centerCol) * T;
+        const dz = (b.row - plan.centerRow) * T;
+        maxDist = Math.max(maxDist, Math.hypot(dx, dz));
+      }
+      const radius = (maxDist > 0 ? maxDist : 10) + 4;
       this._settlementPositions.push({
         name:     plan.name,
         worldPos: new THREE.Vector3(wx, wy, wz),
+        radius,
       });
     }
 
@@ -2164,10 +1781,18 @@ export class OverworldScene {
         const wz = (b.row - GHH) * T;
         const lv = this._wg.get(b.col, b.row).elevation;
         const wy = lv * SH;
-        const grp = generateBuilding(b.type, b.seed);
+        const runtimeFaction = this._mapStudioFactionToRuntimeFaction(plan.faction);
+        const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
+        if (!dna) continue;
+        const inst = buildBuilding(dna);
+        const grp = inst.exteriorGroup;
         grp.position.set(wx, wy, wz);
         grp.rotation.y = b.rotation;
         this._buildingGroups.push(grp);
+        if (b.isAnchor) {
+          this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: b.rotation });
+        }
+        this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), b.rotation);
       }
 
       // Collect settlement road tiles — all at centre elevation for a flat pavement
@@ -2195,6 +1820,8 @@ export class OverworldScene {
       this._roadMeshes.push(im);
     }
     sqGeo.dispose();
+
+    this._buildStudioSettlementPreview();
 
     // ── Inter-settlement roads — axis-aligned flat dirt tile planes ──────
     const interRoads = worldData.interRoads ?? [];
@@ -2241,9 +1868,9 @@ export class OverworldScene {
     const histEvents = history?.events ?? [];
 
     // Role distributions per settlement type
-    const VILLAGE_ROLES: NPCRole[] = ['citizen','citizen','citizen','merchant','guard'];
-    const TOWN_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith'];
-    const CITY_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','scholar'];
+    const VILLAGE_ROLES: NPCRole[] = ['citizen','citizen','citizen','merchant','guard','quest_giver'];
+    const TOWN_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','settlement_elder'];
+    const CITY_ROLES:    NPCRole[] = ['citizen','citizen','merchant','merchant','guard','guard','innkeeper','blacksmith','scholar','settlement_elder','quest_giver'];
 
     for (const entry of settlements) {
       const { plan, seed } = entry;

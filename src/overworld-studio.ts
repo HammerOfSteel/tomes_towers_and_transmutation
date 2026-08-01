@@ -1,0 +1,4511 @@
+/**
+ * overworld-studio.ts — Overworld Settlement Generator Studio
+ *
+ * Architecture (Azgaar FMG 4-layer pattern):
+ *   State     : SettlementModel (JSON-serialisable)
+ *   Generator : buildSettlement(params) → SettlementModel
+ *   Editor    : sliders/pills/click mutate params → trigger re-generate
+ *   Renderer  : drawSettlement(model, canvas) — pure Canvas 2D, no side effects
+ *
+ * Algorithm (Watabou TownGeneratorOS pattern):
+ *   1. Spiral-distribute seed points
+ *   2. Build Voronoi (d3-delaunay)
+ *   3. Lloyd relax central cells × 2
+ *   4. Apply Simplex warp to seed points
+ *   5. Assign ward types by rateLocation()
+ *   6. Build street graph from Voronoi edges
+ *   7. Chaikin-smooth all road polylines
+ *   8. Render to Canvas 2D
+ */
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { Delaunay } from 'd3-delaunay';
+// @ts-ignore
+import { createNoise2D } from '@/core/SimplexNoise';
+import { generateRealmData, type RealmShape, type RealmClimate } from '@/world/RealmGenerator';
+import { generateDungeon } from '@/levels/DungeonGenerator';
+import type { DungeonPlan } from '@/levels/DungeonGenerator';
+import { buildingToDungeonPlan, WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from './buildingToDungeonPlan';
+import type { Faction } from './world/buildings/BuildingDNA';
+import { generateTower } from '@/levels/TowerGenerator';
+import type { Blueprint } from '@/levels/blueprint';
+import { generateSettlementNpcs, type PlacedNpc } from '@/procedural/WorldGen';
+import { npcDna, npcName, type NPCRole } from '@/world/NPCDnaGenerator';
+import { PlanetRenderer, buildDayTexture, buildNightTexture, buildSpecularTexture, buildCloudTexture } from './planet-renderer';
+import { HexPlanetRenderer } from './hex-planet-renderer';
+import { type PlanetType, generatePlanetDNA } from './planet-dna';
+import { SolarSystemRenderer, generateSolarSystem, type SolarSystemData } from './solar-system-renderer';
+import { assetLibrary, type AssetType, type LibraryEntry } from './overworld-studio/AssetLibrary';
+import { importWorldPackage } from './overworld-studio/WorldPackage';
+import {
+  OVERWORLD_SETTLEMENT_PREVIEW_KEY,
+  type OverworldSettlementPreviewPayload,
+} from './overworld-studio/SettlementPreviewPayload';
+
+import * as THREE from 'three';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface Vec2 { x: number; y: number; }
+
+export type {
+  WardType,
+  SettlementType,
+  LayoutType,
+  SettlementModel,
+} from '@/world/SettlementModelGenerator';
+import type {
+  WardType,
+  SettlementType,
+  LayoutType,
+  Ward,
+  Road,
+  SettlementModel,
+  GeneratorParams,
+  BuildingRect,
+} from '@/world/SettlementModelGenerator';
+import {
+  generateBaseSeeds,
+  buildFromSeeds,
+  dominantEdgeAngle,
+  minDistToEdge,
+  OccupancyGrid,
+  fillWard,
+} from '@/world/SettlementModelGenerator';
+
+// ── Ward colour palette ───────────────────────────────────────────────────────
+
+export const WARD_COLORS: Record<WardType, string> = {
+  market:     '#f5c842',
+  church:     '#d4e8ff',
+  inn:        '#e8b86a',
+  smithy:     '#c04030',
+  craftsmen:  '#7a8a6a',
+  merchant:   '#6a9a8a',
+  patriciate: '#9a8ac8',
+  slum:       '#5a5248',
+  gateward:   '#a09060',
+  farm:       '#4a6a38',
+  park:       '#3a7a48',
+};
+
+const WARD_LABELS: Record<WardType, string> = {
+  market: 'Market', church: 'Church', inn: 'Inn', smithy: 'Smithy',
+  craftsmen: 'Craftsmen', merchant: 'Merchant', patriciate: 'Patriciate',
+  slum: 'Slum', gateward: 'Gate', farm: 'Farm', park: 'Park',
+};
+
+// ── Faction system ────────────────────────────────────────────────────────────
+
+export type SettlementFaction =
+  'human' | 'elven' | 'dwarven' | 'orcish' |
+  'vampire' | 'undead' | 'vulperia' | 'slime' | 'fae';
+
+/** Ward display names per faction — what "church" is called in an elven village, etc. */
+const FACTION_WARD_NAMES: Partial<Record<SettlementFaction, Partial<Record<WardType, string>>>> = {
+  undead: {
+    church: 'Bone Shrine',   park: 'Graveyard',     market: 'Wraith Bazaar',
+    patriciate: 'Lich Tower', craftsmen: 'Bonecrafters', slum: 'Shambling Dead',
+    inn: 'Carrion Inn',       merchant: 'Specter Trade',  farm: 'Bone Fields',
+    smithy: 'Death Forge',    gateward: 'Crypt Gate',
+  },
+  elven: {
+    church: 'Ancient Shrine', park: 'Sacred Grove',  market: 'Moonlit Exchange',
+    patriciate: "Elder's Hall", craftsmen: 'Artisan Quarter', slum: 'Outcast Wood',
+    inn: 'Wayhouse',          merchant: 'Trade Post',      farm: 'Moon Garden',
+    smithy: 'Elven Workshop', gateward: 'Forest Gate',
+  },
+  dwarven: {
+    church: 'Stone Temple',  park: 'Mushroom Hall',  market: 'Trade Vault',
+    patriciate: 'Guild Hall', craftsmen: 'Forge Quarter', slum: "Miner's Row",
+    inn: "Traveler's Vault", merchant: 'Merchant Vault', farm: 'Mushroom Farm',
+    smithy: 'Great Forge',   gateward: 'Iron Gate',
+  },
+  orcish: {
+    church: 'War Shrine',    park: 'Pit Arena',      market: 'Loot Pile',
+    patriciate: 'Warlord Hall', craftsmen: 'Weapon Works', slum: 'Slave Pens',
+    inn: 'Mead Hall',        merchant: 'War Merchant',   farm: 'Slave Farm',
+    smithy: 'Armory',        gateward: 'Warband Camp',
+  },
+  vampire: {
+    church: 'Blood Chapel',  park: 'Moon Courtyard', market: 'Blood Market',
+    patriciate: "Count's Tower", craftsmen: 'Servant Quarter', slum: 'Thrall Quarter',
+    inn: 'Blood House',      merchant: 'Coven House',    farm: 'Blood Garden',
+    smithy: 'Torture Chamber', gateward: 'Castle Gate',
+  },
+  vulperia: {
+    church: "Den Mother's Hall", park: 'Burrow Commons', market: 'Night Market',
+    patriciate: 'Fox Den',   craftsmen: "Tinker's Row",  slum: 'Poor Burrows',
+    inn: "Wanderer's Den",   merchant: 'Merchant Den',   farm: 'Fox Garden',
+    smithy: "Tinkerer's Shop", gateward: 'Burrow Gate',
+  },
+  slime: {
+    church: 'Pulse Pool',    park: 'Slime Pool',     market: 'Goo Stall',
+    patriciate: 'Elder Blob', craftsmen: 'Ooze Workshop', slum: 'Puddle Quarter',
+    inn: 'Sludge Tavern',    merchant: 'Trade Blob',     farm: 'Spore Garden',
+    smithy: 'Slime Forge',   gateward: 'Ooze Gate',
+  },
+  fae: {
+    church: 'Faerie Ring',   park: 'Enchanted Glade', market: 'Twilight Market',
+    patriciate: 'Fae Court', craftsmen: 'Craft Hollow',  slum: "Waif's Glen",
+    inn: 'Dream Lodge',      merchant: 'Moonlit Market', farm: 'Petal Farm',
+    smithy: 'Glamour Forge', gateward: 'Veil Gate',
+  },
+};
+
+/** Canvas building/map colors per faction. */
+interface FactionPalette { bldg: string; bldg_dk: string; bg: string; road: string; field: string; }
+const FACTION_PALETTE: Record<SettlementFaction, FactionPalette> = {
+  human:    { bldg: '#9a9288', bldg_dk: '#2a2520', bg: '#ddd8c8', road: '#b8b0a0', field: '#cac2ae' },
+  elven:    { bldg: '#a0b888', bldg_dk: '#2a5020', bg: '#d4e0cc', road: '#8fae80', field: '#b8cfa8' },
+  dwarven:  { bldg: '#9a8870', bldg_dk: '#3a2810', bg: '#cec4b0', road: '#a89070', field: '#b8a888' },
+  orcish:   { bldg: '#7a8060', bldg_dk: '#283018', bg: '#c8ccb0', road: '#88907a', field: '#aaae90' },
+  vampire:  { bldg: '#786080', bldg_dk: '#180828', bg: '#c0b8cc', road: '#806880', field: '#aaa0b8' },
+  undead:   { bldg: '#787068', bldg_dk: '#201810', bg: '#c4bcb0', road: '#8a8278', field: '#a89e92' },
+  vulperia: { bldg: '#c09060', bldg_dk: '#4a2808', bg: '#ddd0b4', road: '#c0a060', field: '#caac7a' },
+  slime:    { bldg: '#70cc88', bldg_dk: '#186030', bg: '#c4e8ce', road: '#80b890', field: '#aad8b8' },
+  fae:      { bldg: '#c0a0c8', bldg_dk: '#4a2870', bg: '#e0d4e8', road: '#b080c0', field: '#cdb8d8' },
+};
+
+/** Look up the faction-flavoured display name for a ward type. */
+function factionWardLabel(faction: SettlementFaction, type: WardType): string {
+  return FACTION_WARD_NAMES[faction]?.[type] ?? WARD_LABELS[type];
+}
+
+// ── Deterministic PRNG (mulberry32) ──────────────────────────────────────────
+// Shared by settlement, dungeon, cave and cloud-texture generators below.
+
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ── 2.5D cartographic renderer ─────────────────────────────────────────────
+// Inspired by Watabou's city-generator: cream background, grey buildings,
+// streets visible as negative space between ward polygons, subtle 2px shadow.
+// Building lots are grid-filled aligned to the dominant ward edge direction.
+
+// ── Colour palette ────────────────────────────────────────────────────────────
+
+const CARTO = {
+  bg:       '#ddd8c8',   // cream background (streets + fields)
+  field:    '#cac2ae',   // slightly darker for farms
+  city_gnd: '#d4cebb',   // city ground between wards
+  bldg:     '#9a9288',   // generic building grey
+  bldg_dk:  '#2a2520',   // church / citadel
+  bldg_mkt: '#b0a890',   // market area
+  shadow:   'rgba(0,0,0,0.28)',
+  road_dk:  '#b8b0a0',
+  road_lt:  '#ccc4b4',
+  wall:     '#6a6258',
+  water:    '#8aacbe',
+  label:    'rgba(40,35,28,0.85)',
+};
+
+/** Active roads — set once per drawSettlement2D5 call so fillWard can check road clearance. */
+let _activeRoads: Road[] = [];
+
+/** Draw a flat building rectangle (shadow then fill). Skips if too close to a road. */
+function drawBldg(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, bw: number, bh: number,
+  rot: number, fill: string,
+): void {
+  // Road-building separation is handled implicitly by ward polygon setback —
+  // roads run between wards so the STREET gap naturally creates the clearance.
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const hw = bw/2, hh = bh/2;
+  const pts: [number,number][] = [
+    [cx + cos*-hw - sin*-hh, cy + sin*-hw + cos*-hh],
+    [cx + cos* hw - sin*-hh, cy + sin* hw + cos*-hh],
+    [cx + cos* hw - sin* hh, cy + sin* hw + cos* hh],
+    [cx + cos*-hw - sin* hh, cy + sin*-hw + cos* hh],
+  ];
+  // Shadow (offset upper-right)
+  const SX = 2, SY = -2;
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x+SX, y+SY) : ctx.moveTo(x+SX, y+SY));
+  ctx.closePath();
+  ctx.fillStyle = CARTO.shadow;
+  ctx.fill();
+  // Building face
+  ctx.beginPath();
+  pts.forEach(([x,y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+}
+
+/** Building fill colour for a ward type (church handled separately upstream). */
+function wardBuildingColor(wardType: WardType): string {
+  return wardType === 'gateward' ? CARTO.bldg_dk
+       : wardType === 'merchant' ? '#908878' : CARTO.bldg;
+}
+
+/** Draw all BuildingRects returned by fillWard() for a ward. */
+function drawWardBuildings(ctx: CanvasRenderingContext2D, ward: Ward, occ: OccupancyGrid): void {
+  const rects: BuildingRect[] = fillWard(ward, occ, _activeRoads);
+  const col = wardBuildingColor(ward.type);
+  for (const r of rects) drawBldg(ctx, r.x, r.y, r.w, r.d, r.angle, col);
+}
+
+export function drawSettlement2D5(
+  model: SettlementModel,
+  canvas: HTMLCanvasElement,
+  showLabels = true,
+  layout: LayoutType = 'organic',
+  faction: SettlementFaction = 'human',
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Apply faction palette (mutates CARTO — each draw resets it)
+  const pal = FACTION_PALETTE[faction];
+  CARTO.bldg    = pal.bldg;
+  CARTO.bldg_dk = pal.bldg_dk;
+  CARTO.bg      = pal.bg;
+  CARTO.road_dk = pal.road;
+  CARTO.field   = pal.field;
+
+  // Set active roads so drawBldg can check road clearance
+  _activeRoads = model.roads;
+
+  // ── Background ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = CARTO.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.045)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // ── Fields (outer wards) — hachure fill ─────────────────────────────────────
+  for (const ward of model.wards) {
+    if (ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    ctx.fillStyle = CARTO.field;
+    ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(80,70,50,0.12)'; ctx.lineWidth = 0.8;
+    for (let x = -H; x < W+H; x += 10) {
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+H,H); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── Roads ─────────────────────────────────────────────────────────────────────
+  for (let ri = 0; ri < model.roads.length; ri++) {
+    const road = model.roads[ri]!;
+    if (road.points.length < 2) continue;
+    const main = ri === 0;
+    ctx.beginPath();
+    road.points.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.strokeStyle = CARTO.road_dk;
+    ctx.lineWidth   = main ? 5 : 3.5;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.strokeStyle = CARTO.road_lt;
+    ctx.lineWidth   = main ? 3 : 2;
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // ── Buildings (painter order: low Y last = in front) ─────────────────────────
+  const occ = new OccupancyGrid(W, H);
+  const sorted = model.wards.filter(w => w.withinCity)
+    .sort((a,b) => a.center.y - b.center.y);
+
+  for (const ward of sorted) {
+    if (!ward.polygon.length) continue;
+
+    if (ward.type === 'church') {
+      // Prominent church: large footprint + spire cross
+      const cx = ward.center.x, cy = ward.center.y;
+      const churchAngle = dominantEdgeAngle(ward.polygon);
+      occ.mark(cx, cy, 20, 28, churchAngle);
+      drawBldg(ctx, cx, cy, 20, 28, churchAngle, CARTO.bldg_dk);
+      // Spire (smaller, offset via 2px shadow so it reads as taller)
+      drawBldg(ctx, cx-1, cy-3, 7, 7, 0, '#1a1512');
+      // Cross at apex
+      ctx.strokeStyle = '#0a0a08'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx-5,cy-7); ctx.lineTo(cx+5,cy-7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,cy-11); ctx.lineTo(cx,cy-4); ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'market') {
+      // Open market square: light fill + perimeter stalls
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#ccc4b4';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+      // Small stalls along edges
+      for (let i = 0; i < ward.polygon.length; i++) {
+        const a = ward.polygon[i]!, b = ward.polygon[(i+1)%ward.polygon.length]!;
+        const ang = Math.atan2(b.y-a.y, b.x-a.x);
+        const len = Math.hypot(b.x-a.x, b.y-a.y);
+        for (let t = 0.1; t < 0.9; t += 12/len) {
+          const sx = a.x+(b.x-a.x)*t, sy = a.y+(b.y-a.y)*t;
+          if (minDistToEdge({x:sx,y:sy}, ward.polygon) < 3) continue;
+          if (occ.blocked(sx, sy, 6, 8, ang)) continue;
+          occ.mark(sx, sy, 6, 8, ang);
+          drawBldg(ctx, sx, sy, 6, 8, ang, CARTO.bldg_mkt);
+        }
+      }
+      // Well/fountain
+      ctx.beginPath();
+      ctx.arc(ward.center.x, ward.center.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.water; ctx.fill();
+      ctx.strokeStyle = CARTO.bldg_dk; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    if (ward.type === 'park') {
+      ctx.beginPath();
+      ward.polygon.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+      ctx.closePath();
+      ctx.fillStyle = '#b8c8a0'; ctx.fill();
+      ctx.strokeStyle = '#8aaa70'; ctx.lineWidth = 1; ctx.stroke();
+      continue;
+    }
+
+    drawWardBuildings(ctx, ward, occ);
+  }
+
+  // ── Wall ─────────────────────────────────────────────────────────────────────
+  if (model.wall && model.wall.length > 2) {
+    const wall = model.wall;
+    ctx.beginPath();
+    wall.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.closePath();
+    ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = '#8a8070';  ctx.lineWidth = 2; ctx.stroke();
+    // Towers at corners
+    for (let i = 0; i < wall.length; i += Math.max(1, Math.floor(wall.length/8))) {
+      const p = wall[i]!;
+      ctx.fillStyle = CARTO.wall;
+      ctx.fillRect(p.x-4, p.y-4, 8, 8);
+      ctx.strokeStyle = '#6a6258'; ctx.lineWidth = 1; ctx.strokeRect(p.x-4, p.y-4, 8, 8);
+    }
+    // Gates
+    for (const gate of model.gates) {
+      ctx.beginPath(); ctx.arc(gate.x, gate.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = CARTO.bg; ctx.fill();
+      ctx.strokeStyle = CARTO.wall; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+
+  // ── Labels ───────────────────────────────────────────────────────────────────
+  if (showLabels) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '9px Georgia, "Times New Roman", serif';
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      ctx.fillStyle = CARTO.label;
+      ctx.fillText(factionWardLabel(faction, ward.type).toUpperCase(), ward.center.x, ward.center.y);
+    }
+  }
+}
+
+// ── Canvas 2D Renderer ────────────────────────────────────────────────────────
+
+// ── Canvas 2D Renderer ────────────────────────────────────────────────────────
+
+export function drawSettlement(
+  model:        SettlementModel,
+  canvas:       HTMLCanvasElement,
+  showLabels    = true,
+  showBuildings = true,
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#0c0e11';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 0.5;
+  const GRID = 40;
+  for (let x = 0; x < W; x += GRID) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Farm patches (outside city)
+  for (const ward of model.wards) {
+    if (ward.withinCity || !ward.polygon.length) continue;
+    ctx.beginPath();
+    ctx.moveTo(ward.polygon[0]!.x, ward.polygon[0]!.y);
+    for (let i = 1; i < ward.polygon.length; i++) ctx.lineTo(ward.polygon[i]!.x, ward.polygon[i]!.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(40,58,30,0.4)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(60,80,40,0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // City ward polygons
+  for (const ward of model.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    const col = WARD_COLORS[ward.type];
+    ctx.beginPath();
+    ctx.moveTo(ward.polygon[0]!.x, ward.polygon[0]!.y);
+    for (let i = 1; i < ward.polygon.length; i++) ctx.lineTo(ward.polygon[i]!.x, ward.polygon[i]!.y);
+    ctx.closePath();
+
+    // Fill with colour + transparency
+    ctx.fillStyle = col + '28';
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = col + '88';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Wall polygon
+  if (model.wall && model.wall.length) {
+    ctx.beginPath();
+    ctx.moveTo(model.wall[0]!.x, model.wall[0]!.y);
+    for (let i = 1; i < model.wall.length; i++) ctx.lineTo(model.wall[i]!.x, model.wall[i]!.y);
+    ctx.closePath();
+    ctx.strokeStyle = '#b09060';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Roads — draw with width variation (main road = wider)
+  for (let ri = 0; ri < model.roads.length; ri++) {
+    const road = model.roads[ri]!;
+    if (road.points.length < 2) continue;
+    const isMain = ri === 0;
+
+    // Shadow / dirt under-road
+    ctx.beginPath();
+    ctx.moveTo(road.points[0]!.x, road.points[0]!.y);
+    for (let i = 1; i < road.points.length; i++) ctx.lineTo(road.points[i]!.x, road.points[i]!.y);
+    ctx.strokeStyle = 'rgba(60,50,35,0.8)';
+    ctx.lineWidth   = isMain ? 5.5 : 3.5;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.stroke();
+
+    // Road surface
+    ctx.beginPath();
+    ctx.moveTo(road.points[0]!.x, road.points[0]!.y);
+    for (let i = 1; i < road.points.length; i++) ctx.lineTo(road.points[i]!.x, road.points[i]!.y);
+    ctx.strokeStyle = isMain ? '#b09870' : '#9a8860';
+    ctx.lineWidth   = isMain ? 3 : 2;
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // Building footprints (small rectangles near ward centres)
+  if (showBuildings) {
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      const col = WARD_COLORS[ward.type];
+      const cx = ward.center.x, cy = ward.center.y;
+
+      const count = ward.type === 'market' ? 4
+                  : ward.type === 'craftsmen' ? 3
+                  : ward.type === 'slum' ? 5 : 2;
+
+      const rand2 = mulberry32(Math.round(cx * 100 + cy));
+      for (let b = 0; b < count; b++) {
+        const angle = rand2() * Math.PI * 2;
+        const r     = 4 + rand2() * 8;
+        const bx    = cx + Math.cos(angle) * r;
+        const by    = cy + Math.sin(angle) * r;
+        const bw    = 4 + rand2() * 6;
+        const bh    = 4 + rand2() * 5;
+        const rot   = rand2() * Math.PI * 2;
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(rot);
+        ctx.fillStyle = col + 'cc';
+        ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.restore();
+      }
+    }
+  }
+
+  // Gate markers
+  for (const gate of model.gates) {
+    ctx.beginPath();
+    ctx.arc(gate.x, gate.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle   = '#b09060';
+    ctx.fill();
+    ctx.strokeStyle = '#d4b880';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+  }
+
+  // Centre dot
+  ctx.beginPath();
+  ctx.arc(model.centre.x, model.centre.y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff44';
+  ctx.fill();
+
+  // Ward labels
+  if (showLabels) {
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = '9px monospace';
+    for (const ward of model.wards) {
+      if (!ward.withinCity) continue;
+      const col = WARD_COLORS[ward.type];
+      ctx.fillStyle = col;
+      ctx.fillText(WARD_LABELS[ward.type], ward.center.x, ward.center.y);
+    }
+  }
+}
+
+// ── Application bootstrap ─────────────────────────────────────────────────────
+
+const canvas    = document.getElementById('map-canvas')    as HTMLCanvasElement;
+const overlay   = document.getElementById('overlay-canvas') as HTMLCanvasElement;
+const genTimeEl = document.getElementById('gen-time')!;
+const hoverEl   = document.getElementById('hover-info')!;
+const seedInput = document.getElementById('seed-input') as HTMLInputElement;
+
+function resize() {
+  const wrap = canvas.parentElement!;
+  canvas.width  = overlay.width  = wrap.clientWidth;
+  canvas.height = overlay.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener('resize', () => {
+  resize();
+  if (planetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  if (hexPlanetRenderer) {
+    const wrap = planet3dCanvas.parentElement!;
+    hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  generate();
+});
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let currentModel: SettlementModel | null = null;
+let persistentSeeds: Vec2[] | null = null;   // mutable seeds for interactive warp
+let lastParams: GeneratorParams | null = null;
+
+// ── Active tool ───────────────────────────────────────────────────────────────
+
+type ToolName = 'select' | 'warp';
+let activeTool: ToolName = 'select';
+type ViewMode = 'flat' | 'iso';
+let viewMode: ViewMode = (sessionStorage.getItem('ow-view') as ViewMode) ?? 'iso';
+
+function setTool(name: ToolName) {
+  activeTool = name;
+  document.querySelectorAll<HTMLElement>('.tool-btn[id^="tool-"]').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tool-${name}`)?.classList.add('active');
+  canvas.classList.remove('tool-warp');
+  if (name === 'warp') canvas.classList.add('tool-warp');
+}
+
+function setView(mode: ViewMode) {
+  viewMode = mode;
+  sessionStorage.setItem('ow-view', mode);
+  redraw();  // always 2.5D
+}
+
+function redraw() {
+  if (studioMode === 'dungeon') { redrawDungeon(); return; }
+  if (studioMode === 'cave')    { redrawCave();    return; }
+  if (studioMode === 'realm')   { redrawRealm();   return; }
+  if (!currentModel) return;
+  const showLabels    = (document.getElementById('show-labels')    as HTMLInputElement).checked;
+  const showBuildings = (document.getElementById('show-buildings') as HTMLInputElement).checked;
+  const layoutParam = (document.querySelector('#layout-pills .pill.active') as HTMLElement)?.dataset.layout as LayoutType ?? 'organic';
+  const faction     = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction ?? 'human';
+  if (viewMode === 'iso') drawSettlement2D5(currentModel, canvas, showLabels, layoutParam, faction);
+  else                    drawSettlement(currentModel, canvas, showLabels, showBuildings);
+}
+
+function getParams(): GeneratorParams {
+  const type    = (document.querySelector('#type-pills .pill.active')    as HTMLElement)?.dataset.type    as SettlementType    ?? 'village';
+  const layout  = (document.querySelector('#layout-pills .pill.active')  as HTMLElement)?.dataset.layout  as LayoutType        ?? 'organic';
+  const faction = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction as SettlementFaction  ?? 'human';
+  return {
+    seed:       parseInt(seedInput.value) || Date.now(),
+    type,
+    layout,
+    faction,
+    nPatches:   parseInt((document.getElementById('patches') as HTMLInputElement).value),
+    warp:       parseFloat((document.getElementById('warp')    as HTMLInputElement).value),
+    nGates:     parseInt((document.getElementById('roads')   as HTMLInputElement).value),
+    walled:     (document.getElementById('walls') as HTMLInputElement).checked,
+    hasCitadel: (document.getElementById('citadel') as HTMLInputElement).checked,
+    hasPlaza:   (document.getElementById('plaza')   as HTMLInputElement).checked,
+    width:      canvas.width,
+    height:     canvas.height,
+  };
+}
+
+function generate(keepSeeds = false) {
+  const params = getParams();
+  lastParams = params;
+  if (!keepSeeds || !persistentSeeds) {
+    persistentSeeds = generateBaseSeeds(params);
+  }
+  const model = buildFromSeeds(persistentSeeds, params);
+  currentModel = model;
+  redraw();
+  genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards  ·  ${model.roads.length} roads`;
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+
+// Settlement type pills
+document.getElementById('type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(false);
+});
+
+document.getElementById('layout-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#layout-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  generate(true);  // keep seeds when switching layout style
+});
+
+document.getElementById('faction-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#faction-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  updateLegend((pill.dataset.faction as SettlementFaction) ?? 'human');
+  generate(false);  // regen — faction changes ward assignments
+});
+
+// Sliders — live update with value display
+for (const [id, valId] of [['patches', 'patches-val'], ['warp', 'warp-val'], ['roads', 'roads-val']] as const) {
+  const input = document.getElementById(id) as HTMLInputElement;
+  const valEl = document.getElementById(valId)!;
+  const resetOn = id === 'patches';
+  input.addEventListener('input', () => { valEl.textContent = input.value; generate(!resetOn); });
+}
+
+// Checkboxes
+for (const id of ['show-labels', 'show-buildings']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
+}
+for (const id of ['walls', 'citadel', 'plaza']) {
+  document.getElementById(id)!.addEventListener('change', () => generate(true));
+}
+
+// Buttons
+document.getElementById('btn-roll')!.addEventListener('click', () => {
+  seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  currentRealmData   = null;
+  currentSolarData   = null;
+  if (studioMode === 'cave')         generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
+  else generate();
+});
+document.getElementById('btn-gen')!.addEventListener('click', () => {
+  currentDungeonPlan = null;
+  currentCaveData    = null;
+  currentRealmData   = null;
+  currentSolarData   = null;
+  if (studioMode === 'cave')         generateCaveView();
+  else if (studioMode === 'dungeon') generateDungeonView();
+  else if (studioMode === 'realm')   generateRealmView();
+  else if (studioMode === 'solar')   generateSolarView();
+  else generate(false);
+});
+
+// Solar generate button
+document.getElementById('btn-solar-generate')?.addEventListener('click', () => {
+  currentSolarData = null;
+  generateSolarView();
+});
+
+// Export PNG
+document.getElementById('btn-png')!.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = `settlement-${seedInput.value}.png`;
+  a.href = canvas.toDataURL();
+  a.click();
+});
+
+// Export JSON
+document.getElementById('btn-json')!.addEventListener('click', () => {
+  if (!currentModel) return;
+  const blob = new Blob([JSON.stringify(currentModel, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.download = `settlement-${seedInput.value}.json`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+window.addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement) return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      seedInput.value = (Math.random() * 0xFFFF_FFFF >>> 0).toString();
+      generate();
+      break;
+    case 'Enter': generate(); break;
+    case '+': case '=': {
+      const el = document.getElementById('patches') as HTMLInputElement;
+      el.value = String(Math.min(40, parseInt(el.value) + 1));
+      document.getElementById('patches-val')!.textContent = el.value;
+      generate(); break;
+    }
+    case '-': {
+      const el = document.getElementById('patches') as HTMLInputElement;
+      el.value = String(Math.max(4, parseInt(el.value) - 1));
+      document.getElementById('patches-val')!.textContent = el.value;
+      generate(); break;
+    }
+    case 'w': case 'W': {
+      const el = document.getElementById('walls') as HTMLInputElement;
+      el.checked = !el.checked;
+      generate(true); break;  // keep seeds when toggling walls
+    }
+    case 's': case 'S': setTool('select'); break;
+    case 'd': case 'D': setTool('warp');   break;
+    case 'r': case 'R': persistentSeeds = null; generate(false); break;
+
+  }
+});
+
+// ── Tool button wiring ────────────────────────────────────────────────────────
+
+document.getElementById('tool-select')!.addEventListener('click', () => setTool('select'));
+document.getElementById('tool-warp')!.addEventListener('click',   () => setTool('warp'));
+document.getElementById('tool-reset')!.addEventListener('click',  () => {
+  persistentSeeds = null;
+  generate(false);
+});
+// 2.5D only — no flat view button
+
+// ── Interactive warp interaction ──────────────────────────────────────────────
+// Left-drag in warp mode: push nearby Voronoi seeds with smooth quadratic falloff.
+// The influence radius = 22% of the canvas short side.
+// Strength scales linearly with drag speed but is capped to prevent explosion.
+
+let warpDragging = false;
+let warpPrevX = 0, warpPrevY = 0;
+const WARP_RADIUS_FRAC = 0.22;  // fraction of min(W,H)
+
+function canvasXY(e: PointerEvent): [number, number] {
+  const rect = canvas.getBoundingClientRect();
+  return [
+    (e.clientX - rect.left) * (canvas.width  / rect.width),
+    (e.clientY - rect.top)  * (canvas.height / rect.height),
+  ];
+}
+
+// ── OW-E1: Breadcrumb navigation ─────────────────────────────────────────────
+
+interface BreadcrumbEntry {
+  mode:  StudioMode;
+  label: string;
+  /** Seed to restore when navigating back to this level. */
+  seed?: number;
+}
+
+let _navStack: BreadcrumbEntry[] = [];
+
+function _updateBreadcrumb(): void {
+  const bar   = document.getElementById('studio-breadcrumb')!;
+  const items = document.getElementById('breadcrumb-items')!;
+  if (_navStack.length === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  items.innerHTML = _navStack.map((entry, i) => {
+    const isLast = i === _navStack.length - 1;
+    if (isLast) {
+      return `<span style="color:#e8d0a0">${entry.label}</span>`;
+    }
+    return `<a href="#" data-nav-idx="${i}" style="color:#c8a96e;text-decoration:none;cursor:pointer"
+      >${entry.label}</a><span style="opacity:0.5;margin:0 4px">›</span>`;
+  }).join('');
+
+  // Wire back-link clicks
+  items.querySelectorAll<HTMLAnchorElement>('[data-nav-idx]').forEach(a => {
+    a.addEventListener('click', ev => {
+      ev.preventDefault();
+      const idx = parseInt(a.dataset.navIdx!);
+      const target = _navStack[idx]!;
+      _navStack = _navStack.slice(0, idx);
+      _switchMode(target.mode, target.seed);
+    });
+  });
+}
+
+/**
+ * Programmatically switch studio mode, optionally loading a specific seed.
+ * Pushes to the breadcrumb stack if `breadcrumbLabel` is provided.
+ */
+function _flashStudioTransition(label = '', durationMs = 180): void {
+  let flash = document.getElementById('studio-transition-flash') as HTMLDivElement | null;
+  if (!flash) {
+    flash = document.createElement('div');
+    flash.id = 'studio-transition-flash';
+    flash.style.cssText =
+      'position:fixed;inset:0;pointer-events:none;z-index:9998;display:none;opacity:0;' +
+      'background:radial-gradient(circle at center, rgba(255,245,220,0.85) 0%, rgba(200,170,110,0.35) 30%, rgba(20,18,14,0.92) 100%);' +
+      'transition:opacity 140ms ease-out;';
+    const text = document.createElement('div');
+    text.id = 'studio-transition-flash-label';
+    text.style.cssText =
+      'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);' +
+      'font:700 18px Georgia,serif;letter-spacing:1px;color:#f0d8a8;text-shadow:0 2px 12px rgba(0,0,0,0.8);';
+    flash.appendChild(text);
+    document.body.appendChild(flash);
+  }
+
+  const labelEl = document.getElementById('studio-transition-flash-label');
+  if (labelEl) labelEl.textContent = label;
+
+  clearTimeout((flash as any)._hideTimer);
+  flash.style.display = 'block';
+  flash.style.opacity = '0';
+
+  (window as any).__owStudioTransitionCount = ((window as any).__owStudioTransitionCount ?? 0) + 1;
+  (window as any).__owStudioLastTransitionLabel = label;
+  (window as any).__owStudioLastTransitionAt = Date.now();
+
+  requestAnimationFrame(() => {
+    if (flash) flash.style.opacity = '1';
+    window.setTimeout(() => {
+      if (flash) flash.style.opacity = '0';
+      (flash as any)._hideTimer = window.setTimeout(() => {
+        if (flash) flash.style.display = 'none';
+      }, 170);
+    }, durationMs);
+  });
+}
+
+function _switchMode(
+  mode:            StudioMode,
+  seedOverride?:   number,
+  breadcrumbLabel?: string,
+): void {
+  // Push the CURRENT mode to the stack before switching (if labelled)
+  if (breadcrumbLabel) {
+    const currentLabel: Record<StudioMode, string> = {
+      settlement: '🏙 Settlement', dungeon: '⚔ Dungeon',
+      cave: '🌿 Cave', realm: '🌍 Realm', solar: '☀ Solar',
+    };
+    _navStack.push({
+      mode:  studioMode,
+      label: currentLabel[studioMode],
+      seed:  parseInt(seedInput.value) || undefined,
+    });
+    _navStack.push({ mode, label: breadcrumbLabel });
+  }
+
+  // Apply seed override before triggering tab
+  if (seedOverride !== undefined) {
+    seedInput.value = String(seedOverride);
+  }
+
+  _flashStudioTransition(breadcrumbLabel || `${mode[0]!.toUpperCase()}${mode.slice(1)}`);
+
+  // Simulate tab click
+  const tab = document.querySelector<HTMLElement>(`.studio-tab[data-mode="${mode}"]`);
+  tab?.click();
+  _updateBreadcrumb();
+}
+
+// ── OW-E2: Realm map → Settlement drill-down ─────────────────────────────────
+
+/**
+ * Test if canvas point (px, py) is within a settlement dot OR a dungeon marker.
+ * Returns `{ kind: 'settlement', data: RealmSettlement }` or `{ kind: 'dungeon', data: {x,y} }` or null.
+ */
+function _realmHitTest(px: number, py: number): { kind: 'settlement'; data: RealmSettlement } | { kind: 'dungeon'; data: { x: number; y: number } } | null {
+  if (!currentRealmData) return null;
+  const { W, H, settlements, dungeons } = currentRealmData;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H),
+  ));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+
+  const settleDotR = Math.max(2, CELL * 0.75) + 6;
+  for (const s of settlements) {
+    const sx = offX + (s.x + 0.5) * CELL;
+    const sy = offY + (s.y + 0.5) * CELL;
+    if (Math.hypot(px - sx, py - sy) <= settleDotR) return { kind: 'settlement', data: s };
+  }
+
+  const dungeonDotR = Math.max(2, CELL * 0.55) + 6;
+  for (const d of dungeons) {
+    const dx = offX + (d.x + 0.5) * CELL;
+    const dy = offY + (d.y + 0.5) * CELL;
+    if (Math.hypot(px - dx, py - dy) <= dungeonDotR) return { kind: 'dungeon', data: d };
+  }
+  return null;
+}
+
+canvas.addEventListener('click', e => {
+  if (studioMode !== 'realm') return;
+  if (realmViewMode !== 'map') return;
+
+  const rect = canvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  const hit = _realmHitTest(px, py);
+  if (!hit) return;
+
+  if (hit.kind === 'settlement') {
+    const s = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const settleSeed = ((realmSeed ^ (s.x * 73856093 + s.y * 19349663)) >>> 0);
+    console.log(`[OW-E2] drill-down: ${s.name} (${s.size}, ${s.faction}) seed=${settleSeed}`);
+    const factionBtn = document.querySelector<HTMLElement>(
+      `#faction-pills [data-faction="${s.faction}"]`,
+    );
+    factionBtn?.click();
+    _switchMode('settlement', settleSeed, `🏙 ${s.name}`);
+  } else {
+    const d = hit.data;
+    const realmSeed = parseInt(seedInput.value) || 0;
+    const dungeonSeed = ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0);
+    console.log(`[OW-E4] drill-down: dungeon at (${d.x},${d.y}) seed=${dungeonSeed}`);
+    _switchMode('dungeon', dungeonSeed, `⚔ Dungeon (${d.x},${d.y})`);
+  }
+});
+
+canvas.addEventListener('pointerdown', e => {
+  if (activeTool !== 'warp' || e.button !== 0) return;
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('dragging');
+  warpDragging = true;
+  [warpPrevX, warpPrevY] = canvasXY(e);
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!warpDragging || activeTool !== 'warp' || !persistentSeeds || !lastParams) return;
+
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+
+  // Drag delta capped to prevent too-large single-frame jumps
+  const dx = Math.max(-30, Math.min(30, (mx - warpPrevX) * 0.8));
+  const dy = Math.max(-30, Math.min(30, (my - warpPrevY) * 0.8));
+  warpPrevX = mx; warpPrevY = my;
+
+  // Push seeds within radius (quadratic falloff: smooth at edge, strong at centre)
+  for (const seed of persistentSeeds) {
+    const d = Math.hypot(seed.x - mx, seed.y - my);
+    if (d < WARP_R) {
+      const t = d / WARP_R;
+      const strength = (1 - t * t);  // quadratic: 1 at centre, 0 at edge
+      seed.x += dx * strength;
+      seed.y += dy * strength;
+    }
+  }
+
+  // Rebuild Voronoi instantly (2–5ms)
+  const model = buildFromSeeds(persistentSeeds, lastParams);
+  currentModel = model;
+  redraw();
+  genTimeEl.textContent = `${model.genTimeMs.toFixed(1)} ms  ·  ${model.wards.filter(w => w.withinCity).length} wards`;
+
+  // Draw warp influence circle on overlay
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  // Outer ring
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.45)';
+  octx.lineWidth = 1.5;
+  octx.setLineDash([5, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
+  // Inner strength core (25% radius)
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R * 0.25, 0, Math.PI * 2);
+  octx.fillStyle = 'rgba(124, 106, 245, 0.12)';
+  octx.fill();
+  // Centre crosshair
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.7)';
+  octx.lineWidth = 1;
+  for (const [ax, ay, bx, by] of [[mx-6,my,mx+6,my],[mx,my-6,mx,my+6]] as const) {
+    octx.beginPath(); octx.moveTo(ax, ay); octx.lineTo(bx, by); octx.stroke();
+  }
+});
+
+canvas.addEventListener('pointerup', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+canvas.addEventListener('pointercancel', () => {
+  warpDragging = false;
+  canvas.classList.remove('dragging');
+});
+
+// Show warp radius preview on hover when warp tool active (not dragging)
+canvas.addEventListener('pointermove', e => {
+  if (activeTool !== 'warp' || warpDragging) return;
+  const [mx, my] = canvasXY(e);
+  const WARP_R = Math.min(canvas.width, canvas.height) * WARP_RADIUS_FRAC;
+  const octx = overlay.getContext('2d')!;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  octx.beginPath();
+  octx.arc(mx, my, WARP_R, 0, Math.PI * 2);
+  octx.strokeStyle = 'rgba(124, 106, 245, 0.25)';
+  octx.lineWidth = 1;
+  octx.setLineDash([4, 4]);
+  octx.stroke();
+  octx.setLineDash([]);
+});
+
+// ── Ward hover inspection ─────────────────────────────────────────────────────
+
+canvas.addEventListener('mousemove', e => {
+  if (studioMode === 'realm' && realmViewMode === 'map') {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+    const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    canvas.style.cursor = _realmHitTest(px, py) !== null ? 'pointer' : '';
+  } else if (studioMode !== 'settlement' || activeTool === 'select') {
+    canvas.style.cursor = '';
+  }
+  if (studioMode !== 'settlement') return;
+  if (!currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  // Find the ward whose polygon contains the mouse
+  let found: Ward | null = null;
+  for (const ward of currentModel.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    if (pointInPolygon({ x: mx, y: my }, ward.polygon)) { found = ward; break; }
+  }
+
+  if (found) {
+    hoverEl.textContent = `${WARD_LABELS[found.type]} ward  ·  (${found.seed.x.toFixed(0)}, ${found.seed.y.toFixed(0)})`;
+    // Highlight
+    const octx = overlay.getContext('2d')!;
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    if (found.polygon.length) {
+      octx.beginPath();
+      octx.moveTo(found.polygon[0]!.x, found.polygon[0]!.y);
+      for (let i = 1; i < found.polygon.length; i++) octx.lineTo(found.polygon[i]!.x, found.polygon[i]!.y);
+      octx.closePath();
+      octx.strokeStyle = WARD_COLORS[found.type];
+      octx.lineWidth = 2;
+      octx.stroke();
+    }
+  } else {
+    hoverEl.textContent = 'hover a ward to inspect';
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+  }
+});
+canvas.addEventListener('mouseleave', () => {
+  if (studioMode !== 'settlement') return;
+  hoverEl.textContent = 'hover a ward to inspect';
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+});
+
+// ── Settlement: double-click ward → building interior modal ──────────────────
+
+canvas.addEventListener('dblclick', e => {
+  if (studioMode !== 'settlement' || !currentModel) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+
+  let hit: typeof currentModel.wards[0] | null = null;
+  for (const ward of currentModel.wards) {
+    if (!ward.withinCity || !ward.polygon.length) continue;
+    if (pointInPolygon({ x: mx, y: my }, ward.polygon)) { hit = ward; break; }
+  }
+  if (!hit) return;
+
+  const kind = WARD_TO_KIND[hit.type];
+  if (!kind) return;
+
+  const factionStr = (document.querySelector('#faction-pills .pill.active') as HTMLElement)?.dataset.faction ?? 'human';
+  const FACTION_MAP: Record<string, Faction> = {
+    human: 'human_town', elven: 'elven', dwarven: 'dwarven',
+    orcish: 'orcish', vampire: 'vampire', undead: 'undead_common',
+    vulperia: 'human_town', slime: 'human_rural', fae: 'fae',
+  };
+  const faction: Faction = FACTION_MAP[factionStr] ?? 'human_town';
+  const buildingSeed    = currentModel.seed ^ Math.round(hit.center.x * 397 + hit.center.y * 103);
+  const size            = WARD_TO_SIZE[hit.type]   ?? 'medium';
+  const floors          = WARD_TO_FLOORS[hit.type] ?? 2;
+  const bldgPlan        = buildingToDungeonPlan(kind, faction, buildingSeed, size, floors as 1|2|3|4);
+  const title           = `${WARD_LABELS[hit.type]} — ${kind} (${factionStr})`;
+  const settlementId    = `settlement-${currentModel.seed}`;
+  showBuildingModal(bldgPlan, title, floors as number, {
+    settlementId,
+    wardType: hit.type,
+  });
+});
+
+// ── Building interior modal ───────────────────────────────────────────────────
+
+let _bModal: HTMLDivElement | null = null;
+let _bModalCanvas: HTMLCanvasElement | null = null;
+let _bModalPlan: DungeonPlan | null = null;
+let _bModalTitle = 'Building';
+let _bModalTags: string[] = [];
+let _bModalSettlementId: string | null = null;
+let _bModalBuildingId: string | null = null;
+let _bModalWardType: string | null = null;
+let _bModalZoom = 1.0;
+let _bModalPanX = 0;
+let _bModalPanY = 0;
+let _bModalDragging = false;
+let _bModalDragX = 0;
+let _bModalDragY = 0;
+
+function _bModalSetup(): void {
+  if (_bModal) return;
+  const wrap = canvas.parentElement!;
+
+  _bModal = document.createElement('div');
+  _bModal.style.cssText =
+    'position:absolute;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);' +
+    'width:min(660px,92%);height:min(540px,88%);' +
+    'background:#0e0c0a;border:1px solid #4a3820;' +
+    'border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.9);' +
+    'display:none;flex-direction:column;overflow:hidden;';
+  wrap.appendChild(_bModal);
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText =
+    'display:flex;align-items:center;justify-content:space-between;' +
+    'padding:7px 12px;background:#160e08;border-bottom:1px solid #3a2810;flex-shrink:0;gap:8px;';
+  _bModal.appendChild(hdr);
+
+  const titleEl = document.createElement('span');
+  titleEl.id = '_bm_title';
+  titleEl.style.cssText = 'font:bold 11px Georgia,serif;color:#d4b87a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+  hdr.appendChild(titleEl);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText =
+    'padding:2px 7px;background:#2a1008;color:#d08060;border:1px solid #6a2808;' +
+    'border-radius:3px;font-size:12px;cursor:pointer;flex-shrink:0;';
+  closeBtn.addEventListener('click', hideBuildingModal);
+  hdr.appendChild(closeBtn);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.id = 'btn-save-building';
+  saveBtn.textContent = '💾 Save to Library';
+  saveBtn.title = 'Save this building blueprint to the Asset Library';
+  saveBtn.style.cssText =
+    'padding:2px 9px;background:#1e1808;color:#d8b86a;border:1px solid #5a4020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  saveBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    const data = {
+      ..._bModalPlan,
+      settlementId: _bModalSettlementId,
+      buildingId: _bModalBuildingId,
+      wardType: _bModalWardType,
+    };
+    const tags = [..._bModalTags];
+    if (_bModalSettlementId && !tags.includes(`settlement:${_bModalSettlementId}`)) tags.push(`settlement:${_bModalSettlementId}`);
+    if (_bModalBuildingId && !tags.includes(`building:${_bModalBuildingId}`)) tags.push(`building:${_bModalBuildingId}`);
+    if (_bModalWardType && !tags.includes(`ward:${_bModalWardType}`)) tags.push(`ward:${_bModalWardType}`);
+    _saveToLibrary('building', _bModalTitle, _bModalPlan.seed, data, tags);
+  });
+  hdr.insertBefore(saveBtn, closeBtn);
+
+  // 🎮 Play in 3D — opens the game, auto-loads building, enters creative mode
+  const play3dBtn = document.createElement('button');
+  play3dBtn.textContent = '🎮 Play in 3D';
+  play3dBtn.title = 'Open the game and walk through this building in 3D (creative mode)';
+  play3dBtn.style.cssText =
+    'padding:2px 9px;background:#0a2810;color:#80d060;border:1px solid #2a6020;' +
+    'border-radius:3px;font-size:10px;cursor:pointer;flex-shrink:0;margin-right:4px;';
+  play3dBtn.addEventListener('click', () => {
+    if (!_bModalPlan) return;
+    // Serialize DungeonPlan (Map → Object) and store for game to pick up
+    const planData = {
+      rooms:       Object.fromEntries(_bModalPlan.rooms),
+      startRoomId: _bModalPlan.startRoomId,
+      seed:        _bModalPlan.seed,
+    };
+    localStorage.setItem('ttt_building_preview', JSON.stringify(planData));
+    // Open game in new tab — it will auto-start, load building, enter creative
+    window.open('/building-viewer.html', '_blank');
+  });
+  hdr.insertBefore(play3dBtn, closeBtn);
+
+  _bModalCanvas = document.createElement('canvas');
+  _bModalCanvas.style.cssText = 'flex:1;display:block;cursor:grab;min-height:0;';
+  _bModal.appendChild(_bModalCanvas);
+
+  const hint = document.createElement('div');
+  hint.style.cssText =
+    'padding:4px 10px;background:#0a0806;font-size:9px;color:#504030;flex-shrink:0;text-align:center;';
+  hint.textContent = 'All floors connected · scroll to zoom · drag to pan · double-click to fit';
+  _bModal.appendChild(hint);
+
+  // ── Zoom/pan ─────────────────────────────────────────────────────────────
+  _bModalCanvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const rect2 = _bModalCanvas!.getBoundingClientRect();
+    const cx2   = (e.clientX - rect2.left) * (_bModalCanvas!.width / rect2.width);
+    const cy2   = (e.clientY - rect2.top)  * (_bModalCanvas!.height / rect2.height);
+    _bModalPanX = cx2 + (_bModalPanX - cx2) * factor;
+    _bModalPanY = cy2 + (_bModalPanY - cy2) * factor;
+    _bModalZoom = Math.max(0.4, Math.min(10, _bModalZoom * factor));
+    _bModalRedraw();
+  }, { passive: false });
+
+  _bModalCanvas.addEventListener('mousedown', e => {
+    _bModalDragging = true;
+    _bModalDragX    = e.clientX - _bModalPanX;
+    _bModalDragY    = e.clientY - _bModalPanY;
+    _bModalCanvas!.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_bModalDragging) return;
+    _bModalPanX = e.clientX - _bModalDragX;
+    _bModalPanY = e.clientY - _bModalDragY;
+    _bModalRedraw();
+  });
+  window.addEventListener('mouseup', () => {
+    _bModalDragging = false;
+    if (_bModalCanvas) _bModalCanvas.style.cursor = 'grab';
+  });
+  _bModalCanvas.addEventListener('dblclick', _bModalResetView);
+}
+
+function _bModalResetView(): void {
+  _bModalZoom = 1.0; _bModalPanX = 0; _bModalPanY = 0;
+  _bModalRedraw();
+}
+
+function _bModalRedraw(): void {
+  if (!_bModalPlan || !_bModalCanvas) return;
+  const w = _bModalCanvas.offsetWidth  || 620;
+  const h = _bModalCanvas.offsetHeight || 460;
+  if (_bModalCanvas.width !== w || _bModalCanvas.height !== h) {
+    _bModalCanvas.width  = w;
+    _bModalCanvas.height = h;
+  }
+  // Render all connected floors to an offscreen canvas
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  drawDungeonFloorPlan(_bModalPlan, off);  // no floorFilter → all floors connected via BFS
+
+  const ctx = _bModalCanvas.getContext('2d')!;
+  ctx.fillStyle = '#0a0908';
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(_bModalPanX + w * (1 - _bModalZoom) / 2, _bModalPanY + h * (1 - _bModalZoom) / 2);
+  ctx.scale(_bModalZoom, _bModalZoom);
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+}
+
+function showBuildingModal(
+  plan: DungeonPlan,
+  title: string,
+  floors: number,
+  opts: { settlementId?: string | null; buildingId?: string | null; wardType?: string | null } = {},
+): void {
+  _bModalSetup();
+  if (!_bModal || !_bModalCanvas) return;
+  _bModalPlan  = plan;
+  _bModalTitle = title;
+  _bModalSettlementId = opts.settlementId ?? null;
+  _bModalBuildingId = opts.buildingId ?? null;
+  _bModalWardType = opts.wardType ?? null;
+  _bModalTags  = [
+    'dtype:building',
+    `floors:${floors}`,
+    `startRoom:${plan.startRoomId}`,
+  ];
+  if (_bModalSettlementId) _bModalTags.push(`settlement:${_bModalSettlementId}`);
+  if (_bModalBuildingId) _bModalTags.push(`building:${_bModalBuildingId}`);
+  if (_bModalWardType) _bModalTags.push(`ward:${_bModalWardType}`);
+  _bModalZoom  = 1.0;
+  _bModalPanX  = 0;
+  _bModalPanY  = 0;
+
+  const titleEl = document.getElementById('_bm_title');
+  if (titleEl) titleEl.textContent = `🏠 ${title}`;
+
+  _bModal.style.display = 'flex';
+  requestAnimationFrame(() => { _bModalRedraw(); });
+  hoverEl.textContent = `${title} — Esc to close · scroll to zoom · drag to pan`;
+}
+
+function hideBuildingModal(): void {
+  if (_bModal) _bModal.style.display = 'none';
+  hoverEl.textContent = 'hover a ward · double-click to enter building';
+}
+
+// Escape key closes modal
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _bModal?.style.display !== 'none') hideBuildingModal();
+});
+
+function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i]!.x, yi = poly[i]!.y, xj = poly[j]!.x, yj = poly[j]!.y;
+    if (((yi > p.y) !== (yj > p.y)) && p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// ── Ward legend ───────────────────────────────────────────────────────────────
+
+
+const legendEl = document.getElementById('ward-legend')!;
+
+function updateLegend(faction: SettlementFaction = 'human'): void {
+  legendEl.innerHTML = '';
+  for (const [type, col] of Object.entries(WARD_COLORS)) {
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = `<div class="swatch" style="background:${col}"></div><span>${factionWardLabel(faction, type as WardType)}</span>`;
+    legendEl.appendChild(row);
+  }
+}
+
+updateLegend('human');
+
+// ── Dungeon Floor Plan Renderer (OW-B) ───────────────────────────────────────
+
+/** Dungeon canvas color palette — ink-map on parchment style. */
+// ── Rich Procedural Floor Plan Generator (OW-B) ──────────────────────────────
+//
+// Creates a branching multi-room dungeon entirely in-memory (no JSON blueprints).
+// Each room is a Blueprint built from scratch: perimeter walls, typed content,
+// doors wired to neighbours.  Used by the Overworld Studio dungeon tab only —
+// the game's DungeonGenerator is unchanged.
+
+type RoomCategory = 'entry' | 'library' | 'barracks' | 'armory' | 'treasure' | 'ritual' | 'boss' | 'corridor';
+
+interface RichRoomDef {
+  id:   string;
+  cat:  RoomCategory;
+  col:  number;   // virtual grid column (1 slot per room)
+  row:  number;
+  w:    number;   // cell width
+  d:    number;   // cell depth
+  connections: Array<{ dir: 'N'|'S'|'E'|'W'; toId: string }>;
+}
+
+const ROOM_SIZES: Record<RoomCategory, [number, number][]> = {
+  entry:    [[7,7],[7,9]],
+  library:  [[9,9],[9,7],[11,9]],
+  barracks: [[9,7],[11,7],[9,9]],
+  armory:   [[7,7],[7,9]],
+  treasure: [[5,7],[7,7],[7,5]],
+  ritual:   [[9,9],[11,11]],
+  boss:     [[13,13],[11,13],[13,11]],
+  corridor: [[3,7],[7,3]],
+};
+
+const ROOM_FLOOR_TYPE: Record<RoomCategory, import('@/levels/blueprint').FloorType> = {
+  entry:    'stone_herald',
+  library:  'wood',
+  barracks: 'stone',
+  armory:   'stone_scorched',
+  treasure: 'stone',
+  ritual:   'stone_alchemy',
+  boss:     'stone_damp',
+  corridor: 'stone',
+};
+
+/** Floor display color per floor type. */
+const FLOOR_TYPE_COLOR: Partial<Record<string, string>> = {
+  stone:          '#d0c8b8',
+  stone_herald:   '#d8d4c4',
+  stone_alchemy:  '#ccc4d4',   // slight lavender
+  stone_scorched: '#d0b8a8',   // warm terracotta
+  stone_damp:     '#b8c4b8',   // cool green-grey
+  stone_celestial:'#c4d0e0',   // pale blue
+  wood:           '#d4c0a0',   // warm tan
+  grass:          '#c4d0b0',
+  dirt:           '#c8b898',
+};
+
+const ROOM_INTERACTABLES: Record<RoomCategory, import('@/levels/blueprint').InteractableType[]> = {
+  entry:    ['lectern', 'candelabra'],
+  library:  ['bookshelf', 'bookshelf', 'lectern', 'reading_table'],
+  barracks: ['bunk', 'bunk', 'mess_table'],
+  armory:   ['anvil', 'weapon_stand', 'weapon_stand'],
+  treasure: ['chest', 'chest', 'candelabra'],
+  ritual:   ['containment_ring', 'cauldron', 'candelabra'],
+  boss:     ['quest_board'],
+  corridor: [],
+};
+
+const ROOM_SPAWN_COUNTS: Record<RoomCategory, number> = {
+  entry: 0, library: 1, barracks: 3, armory: 2, treasure: 1, ritual: 2, boss: 5, corridor: 0,
+};
+
+/** Build wall tiles for a W×D room (perimeter only) with optional corner pillars. */
+function buildRoomTiles(w: number, d: number): import('@/levels/blueprint').TileEntry[] {
+  const tiles: import('@/levels/blueprint').TileEntry[] = [];
+  for (let x = 0; x < w; x++) {
+    tiles.push({ x, z: 0,   type: 'wall' });
+    tiles.push({ x, z: d-1, type: 'wall' });
+  }
+  for (let z = 1; z < d-1; z++) {
+    tiles.push({ x: 0,   z, type: 'wall' });
+    tiles.push({ x: w-1, z, type: 'wall' });
+  }
+  // Corner pillars for larger rooms
+  if (w >= 9 && d >= 9) {
+    const ip = 2;
+    for (const [px, pz] of [[ip,ip],[w-1-ip,ip],[ip,d-1-ip],[w-1-ip,d-1-ip]] as [number,number][]) {
+      tiles.push({ x: px, z: pz, type: 'pillar' });
+    }
+  }
+  return tiles;
+}
+
+/** Remove a wall tile at (tx, tz) from a tile list (for door placement). */
+function openWallAt(tiles: import('@/levels/blueprint').TileEntry[], tx: number, tz: number): void {
+  const idx = tiles.findIndex(t => t.x === tx && t.z === tz);
+  if (idx !== -1) tiles.splice(idx, 1);
+}
+
+/** Door position for a direction on a room of size w×d. */
+function doorPos(dir: 'N'|'S'|'E'|'W', w: number, d: number): {x:number,z:number,facing:import('@/levels/blueprint').DoorFacing} {
+  switch (dir) {
+    case 'N': return { x: Math.floor(w/2), z: 0,   facing: 'north' };
+    case 'S': return { x: Math.floor(w/2), z: d-1, facing: 'south' };
+    case 'E': return { x: w-1, z: Math.floor(d/2), facing: 'east'  };
+    case 'W': return { x: 0,   z: Math.floor(d/2), facing: 'west'  };
+  }
+}
+
+/** Scatter N interactables pseudo-randomly inside a room (interior cells only). */
+function placeInteractables(
+  types: import('@/levels/blueprint').InteractableType[],
+  w: number, d: number, rand: ()=>number,
+): import('@/levels/blueprint').InteractableEntry[] {
+  const result: import('@/levels/blueprint').InteractableEntry[] = [];
+  const used = new Set<string>();
+  for (const type of types) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const x = 1 + Math.floor(rand() * (w - 2));
+      const z = 1 + Math.floor(rand() * (d - 2));
+      const key = `${x},${z}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      result.push({ x, z, type });
+      break;
+    }
+  }
+  return result;
+}
+
+/** Scatter N enemy spawns inside a room. */
+function placeSpawns(count: number, w: number, d: number, rand: ()=>number): import('@/levels/blueprint').SpawnEntry[] {
+  const result: import('@/levels/blueprint').SpawnEntry[] = [];
+  const used = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const x = 2 + Math.floor(rand() * (w - 4));
+      const z = 2 + Math.floor(rand() * (d - 4));
+      const key = `${x},${z}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      result.push({ x, z, type: 'slime' });
+      break;
+    }
+  }
+  return result;
+}
+
+const CATEGORY_SEQ: RoomCategory[] = ['library','barracks','armory','ritual','treasure','library','barracks'];
+
+/**
+ * Generate a branching dungeon floor plan with typed rooms.
+ * Returns a DungeonPlan compatible with drawDungeonFloorPlan().
+ */
+export function generateRichFloorPlan(seed: number, complexity: number): DungeonPlan {
+  const rand = mulberry32(seed);
+  const occupied = new Set<string>();
+  const defs: RichRoomDef[] = [];
+  let idx = 0;
+
+  function tryPlace(cat: RoomCategory, col: number, row: number): RichRoomDef | null {
+    const key = `${col},${row}`;
+    if (occupied.has(key)) return null;
+    const sizes = ROOM_SIZES[cat];
+    const [w, d] = sizes[Math.floor(rand() * sizes.length)]!;
+    const def: RichRoomDef = { id: `room_${idx++}`, cat, col, row, w, d, connections: [] };
+    occupied.add(key);
+    defs.push(def);
+    return def;
+  }
+
+  // Start room
+  const entry = tryPlace('entry', 0, 0)!;
+
+  // BFS expansion
+  const queue: RichRoomDef[] = [entry];
+  const targetRooms = 4 + Math.floor(complexity * 1.2);
+  const DIRS: Array<['N'|'S'|'E'|'W', number, number]> = [['N',0,-1],['S',0,1],['E',1,0],['W',-1,0]];
+
+  let catIdx = 0;
+  while (queue.length && defs.length < targetRooms) {
+    const parent = queue[Math.floor(rand() * Math.min(queue.length, 3))]!;
+    const branches = 1 + Math.floor(rand() * 2);
+    const shuffledDirs = [...DIRS].sort(() => rand() - 0.5);
+    let added = 0;
+    for (const [dir, dc, dr] of shuffledDirs) {
+      if (added >= branches || defs.length >= targetRooms) break;
+      // Skip dir if parent already has a connection that way
+      if (parent.connections.some(c => c.dir === dir)) continue;
+      const nc = parent.col + dc, nr = parent.row + dr;
+      const cat: RoomCategory = defs.length >= targetRooms - 1 ? 'boss'
+                               : CATEGORY_SEQ[catIdx % CATEGORY_SEQ.length]!;
+      const child = tryPlace(cat, nc, nr);
+      if (!child) continue;
+      const opp: Record<string, 'N'|'S'|'E'|'W'> = {N:'S',S:'N',E:'W',W:'E'};
+      parent.connections.push({ dir, toId: child.id });
+      child.connections.push({ dir: opp[dir]!, toId: parent.id });
+      queue.push(child);
+      catIdx++;
+      added++;
+    }
+    queue.splice(queue.indexOf(parent), 1);
+  }
+
+  // Always add a boss room connected to the furthest room from entry
+  if (defs.length >= 3) {
+    const furthest = defs.reduce((a, b) =>
+      Math.abs(b.col) + Math.abs(b.row) > Math.abs(a.col) + Math.abs(a.row) ? b : a);
+    const bossDir = DIRS.find(([dir]) => !furthest.connections.some(c => c.dir === dir));
+    if (bossDir) {
+      const [dir, dc, dr] = bossDir;
+      const nc = furthest.col + dc, nr = furthest.row + dr;
+      const boss = tryPlace('boss', nc, nr);
+      if (boss) {
+        const opp: Record<string, 'N'|'S'|'E'|'W'> = {N:'S',S:'N',E:'W',W:'E'};
+        furthest.connections.push({ dir, toId: boss.id });
+        boss.connections.push({ dir: opp[dir]!, toId: furthest.id });
+      }
+    }
+  }
+
+  // Build Blueprint map
+  const rooms = new Map<string, Blueprint>();
+  for (const def of defs) {
+    const { id, cat, w, d, connections } = def;
+    const tiles = buildRoomTiles(w, d);
+    const doors: import('@/levels/blueprint').DoorEntry[] = [];
+
+    for (const conn of connections) {
+      const dp = doorPos(conn.dir, w, d);
+      openWallAt(tiles, dp.x, dp.z);
+      doors.push({ x: dp.x, z: dp.z, facing: dp.facing, targetId: conn.toId });
+    }
+
+    const bp: Blueprint = {
+      id, version: 1 as const,
+      width: w, depth: d,
+      cellSize: 2, wallHeight: 3,
+      tiles, doors,
+      staircases: [],
+      spawns:          cat === 'corridor' ? [] : placeSpawns(ROOM_SPAWN_COUNTS[cat], w, d, rand),
+      interactables:   cat === 'corridor' ? [] : placeInteractables(ROOM_INTERACTABLES[cat], w, d, rand),
+      floor: 0,
+      floorType: ROOM_FLOOR_TYPE[cat],
+    };
+    rooms.set(id, bp);
+  }
+
+  return { rooms, startRoomId: 'room_0', seed };
+}
+
+// ── Rich name labels ──────────────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<RoomCategory, string> = {
+  entry: 'Entry', library: 'Library', barracks: 'Barracks', armory: 'Armory',
+  treasure: 'Treasure', ritual: 'Ritual Chamber', boss: 'Boss Chamber', corridor: '',
+};
+
+function guessRoomLabel(id: string, floorType?: string): string {
+  if (id.includes('cell_start'))   return 'Cell';
+  if (id.includes('library_large'))return 'Grand Library';
+  if (id.includes('library'))      return 'Library';
+  if (id.includes('corridor'))     return '';
+  if (id.includes('chamber'))      return 'Chamber';
+  if (id.includes('boss'))         return 'Boss';
+  if (floorType === 'stone_alchemy') return 'Ritual';
+  if (floorType === 'stone_scorched') return 'Forge';
+  if (floorType === 'wood')          return 'Library';
+  return '';
+}
+
+const DMAP = {
+  bg:          '#e4dece',   // parchment background
+  floor:       '#d0c8b8',   // room floor (slightly darker than bg)
+  wall:        '#3a3028',   // thick ink walls
+  pillar:      '#2a2018',   // darker pillars
+  door:        '#a06828',   // warm amber door gap
+  door_exit:   '#d08030',   // brighter amber for exterior exits
+  stair_up:    '#4870c0',   // blue stair up
+  stair_dn:    '#c07040',   // orange stair down
+  spawn:       '#c03020',   // red enemy spawn
+  interactable:'#506090',   // blue-grey interactable
+  corridor:    '#c8c0b0',   // corridor connection line
+  label:       'rgba(58,48,40,0.75)',
+  start_mark:  '#40a060',   // green for start room
+};
+
+/** Interactable single-character symbols — legible at 7px. */
+const DMAP_SYMBOLS: Partial<Record<string, string>> = {
+  bookshelf: '≡', lectern: '♦', cauldron: '◎', telescope: '○',
+  forge: '⊓', quest_board: '□', chest: '▪', candelabra: '·',
+  anvil: '⊓', workbench_key: '⚿', locked_door: '⊠',
+  bed: '═', wardrobe: '▫', writing_desk: '▭', bunk: '║', mess_table: '▬',
+  reading_table: '▭', globe: '○', map_table: '▭', weapon_stand: '↑',
+  plant_pot: '✿', raised_planter: '⊟', containment_ring: '⊕', astrolabe: '✦',
+  banner: '|', rug: '▬',
+};
+
+interface RoomPos { px: number; py: number; }
+
+/**
+ * Draw a single dungeon floor plan from a DungeonPlan on a canvas.
+ * Lays rooms out via BFS from startRoom, aligning door cells between rooms.
+ */
+export function drawDungeonFloorPlan(
+  plan: DungeonPlan,
+  canvas: HTMLCanvasElement,
+  floorFilter?: number,   // if set, only draw rooms with blueprint.floor === floorFilter
+): void {
+  const ctx = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  // Clear
+  ctx.fillStyle = DMAP.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const CELL = 9;   // pixels per grid cell
+  const GAP  = 14;  // pixel gap between rooms
+
+  // Filter rooms by floor if requested (tower mode)
+  const rooms = floorFilter !== undefined
+    ? new Map([...plan.rooms].filter(([, bp]) => bp.floor === floorFilter))
+    : plan.rooms;
+
+  if (rooms.size === 0) {
+    ctx.fillStyle = DMAP.label;
+    ctx.font = '12px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No rooms on this floor', W / 2, H / 2);
+    return;
+  }
+
+  // BFS layout: assign top-left canvas position to each room
+  const positions = new Map<string, RoomPos>();
+  const startId = rooms.has(plan.startRoomId) ? plan.startRoomId : rooms.keys().next().value!;
+  positions.set(startId, { px: 0, py: 0 });
+
+  const visited = new Set([startId]);
+  const queue   = [startId];
+
+  while (queue.length) {
+    const rid   = queue.shift()!;
+    const room  = rooms.get(rid);
+    if (!room) continue;
+    const pos   = positions.get(rid)!;
+
+    for (const door of room.doors) {
+      if (!door.targetId || visited.has(door.targetId)) continue;
+      if (!rooms.has(door.targetId)) continue;
+      visited.add(door.targetId);
+      queue.push(door.targetId);
+
+      const target = rooms.get(door.targetId)!;
+      // Find the reciprocal door in the target room
+      const oppDoor = target.doors.find(d => d.targetId === rid);
+      const ox = oppDoor?.x ?? 0;
+      const oz = oppDoor?.z ?? 0;
+
+      let npx: number, npy: number;
+      switch (door.facing) {
+        case 'north':
+          npx = pos.px + (door.x - ox) * CELL;
+          npy = pos.py - target.depth * CELL - GAP;
+          break;
+        case 'south':
+          npx = pos.px + (door.x - ox) * CELL;
+          npy = pos.py + room.depth * CELL + GAP;
+          break;
+        case 'east':
+          npx = pos.px + room.width * CELL + GAP;
+          npy = pos.py + (door.z - oz) * CELL;
+          break;
+        case 'west':
+          npx = pos.px - target.width * CELL - GAP;
+          npy = pos.py + (door.z - oz) * CELL;
+          break;
+      }
+      positions.set(door.targetId, { px: npx!, py: npy! });
+    }
+
+    // Follow staircases too (tower mode)
+    for (const stair of room.staircases) {
+      if (!stair.targetId || visited.has(stair.targetId)) continue;
+      if (!rooms.has(stair.targetId)) continue;
+      // Don't follow inter-floor stairs in BFS — just mark as seen
+      visited.add(stair.targetId);
+    }
+  }
+
+  // Compute bounding box and centre on canvas
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    minX = Math.min(minX, pos.px);
+    minY = Math.min(minY, pos.py);
+    maxX = Math.max(maxX, pos.px + room.width * CELL);
+    maxY = Math.max(maxY, pos.py + room.depth * CELL);
+  }
+
+  const PAD = 24;
+  const totalW = maxX - minX, totalH = maxY - minY;
+  const offX   = (W - totalW) / 2 - minX;
+  const offY   = (H - totalH) / 2 - minY;
+
+  // ── Draw corridor lines between connected doors ─────────────────────────
+  ctx.strokeStyle = DMAP.corridor;
+  ctx.lineWidth   = CELL - 2;
+  ctx.lineCap     = 'round';
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    for (const door of room.doors) {
+      if (!door.targetId || !positions.has(door.targetId)) continue;
+      if (!rooms.has(door.targetId)) continue;
+      const ax = offX + pos.px + door.x * CELL + CELL / 2;
+      const ay = offY + pos.py + door.z * CELL + CELL / 2;
+      const tpos  = positions.get(door.targetId)!;
+      const troom = rooms.get(door.targetId)!;
+      const oppDoor = troom.doors.find(d => d.targetId === rid);
+      if (!oppDoor) continue;
+      const bx = offX + tpos.px + oppDoor.x * CELL + CELL / 2;
+      const by = offY + tpos.py + oppDoor.z * CELL + CELL / 2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+  }
+  void PAD;
+
+  // ── Draw each room ───────────────────────────────────────────────────────
+  for (const [rid, pos] of positions) {
+    const room = rooms.get(rid)!;
+    const ox   = offX + pos.px;
+    const oy   = offY + pos.py;
+    const rw   = room.width  * CELL;
+    const rd   = room.depth  * CELL;
+
+    // Floor fill — color-coded by room type
+    const floorCol = rid === startId
+      ? '#d0e8d4'   // green entry
+      : (FLOOR_TYPE_COLOR[room.floorType ?? 'stone'] ?? DMAP.floor);
+    ctx.fillStyle = floorCol;
+    ctx.fillRect(ox, oy, rw, rd);
+
+    // Subtle drop shadow for depth
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur  = 4;
+    ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+    ctx.fillRect(ox, oy, rw, rd);  // shadow pass
+    ctx.restore();
+
+    // Build wall/pillar lookup
+    const wallSet = new Set(room.tiles.map(t => `${t.x},${t.z}`));
+
+    // Draw wall and pillar cells
+    for (const tile of room.tiles) {
+      ctx.fillStyle = tile.type === 'pillar' ? DMAP.pillar : DMAP.wall;
+      ctx.fillRect(ox + tile.x * CELL, oy + tile.z * CELL, CELL, CELL);
+    }
+
+    // Fill cells NOT in tiles and not floor as wall (implicit solid border)
+    // (walls are already explicit in tile entries — this handles edge cells)
+
+    // Draw room border (thin outline)
+    ctx.strokeStyle = DMAP.wall;
+    ctx.lineWidth   = 0.5;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, rw - 1, rd - 1);
+
+    // Draw doors
+    for (const door of room.doors) {
+      const isExit = !door.targetId;
+      const doorCol = isExit ? DMAP.door_exit : DMAP.door;
+      // Erase wall cell at door position (draw floor color)
+      ctx.fillStyle = floorCol;
+      ctx.fillRect(ox + door.x * CELL, oy + door.z * CELL, CELL, CELL);
+      // Draw door dot
+      ctx.fillStyle = doorCol;
+      const dcx = ox + door.x * CELL + CELL / 2;
+      const dcy = oy + door.z * CELL + CELL / 2;
+      ctx.beginPath(); ctx.arc(dcx, dcy, CELL * 0.3, 0, Math.PI * 2); ctx.fill();
+      // If exit door — draw small arrowhead indicating direction
+      if (isExit) {
+        ctx.strokeStyle = DMAP.door_exit;
+        ctx.lineWidth   = 1.5;
+        const [ax, ay] = {
+          north: [dcx, dcy - CELL * 0.55],
+          south: [dcx, dcy + CELL * 0.55],
+          east:  [dcx + CELL * 0.55, dcy],
+          west:  [dcx - CELL * 0.55, dcy],
+        }[door.facing] as [number, number];
+        ctx.beginPath(); ctx.moveTo(dcx, dcy); ctx.lineTo(ax, ay); ctx.stroke();
+      }
+    }
+
+    // Draw staircases
+    for (const stair of room.staircases) {
+      const sx = ox + stair.x * CELL + CELL / 2;
+      const sy = oy + stair.z * CELL + CELL / 2;
+      // Clear wall tile if it exists
+      if (wallSet.has(`${stair.x},${stair.z}`)) {
+        ctx.fillStyle = DMAP.floor;
+        ctx.fillRect(ox + stair.x * CELL, oy + stair.z * CELL, CELL, CELL);
+      }
+      ctx.fillStyle  = stair.direction === 'up' ? DMAP.stair_up : DMAP.stair_dn;
+      ctx.font       = `bold ${CELL + 1}px sans-serif`;
+      ctx.textAlign  = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(stair.direction === 'up' ? '↑' : '↓', sx, sy);
+    }
+
+    // Draw interactables
+    ctx.font      = `${CELL - 1}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const item of room.interactables) {
+      const ix = ox + item.x * CELL + CELL / 2;
+      const iy = oy + item.z * CELL + CELL / 2;
+      // Draw a small colored square under the symbol
+      ctx.fillStyle = DMAP.interactable + '55';
+      ctx.fillRect(ox + item.x * CELL + 1, oy + item.z * CELL + 1, CELL - 2, CELL - 2);
+      ctx.fillStyle = DMAP.interactable;
+      ctx.fillText(DMAP_SYMBOLS[item.type] ?? '◆', ix, iy);
+    }
+
+    // Draw spawns
+    for (const spawn of room.spawns) {
+      const spx = ox + spawn.x * CELL + CELL / 2;
+      const spy = oy + spawn.z * CELL + CELL / 2;
+      ctx.fillStyle = DMAP.spawn;
+      ctx.beginPath(); ctx.arc(spx, spy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Room label — human-readable name centred in room
+    const label = guessRoomLabel(room.id, room.floorType);
+    if (label) {
+      ctx.fillStyle    = 'rgba(58,48,40,0.55)';
+      ctx.font         = `bold ${Math.min(8, Math.floor(rw / label.length * 1.2))}px Georgia, serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label.toUpperCase(), ox + rw / 2, oy + rd / 2);
+    }
+  }
+
+  // Title
+  ctx.fillStyle    = DMAP.label;
+  ctx.font         = '10px Georgia, serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`Dungeon · seed ${plan.seed} · ${rooms.size} room${rooms.size !== 1 ? 's' : ''}`, W / 2, H - 6);
+}
+
+// ── Studio mode state ─────────────────────────────────────────────────────────
+
+type StudioMode = 'settlement' | 'dungeon' | 'cave' | 'realm' | 'solar';
+let studioMode: StudioMode = 'settlement';
+let currentDungeonPlan: DungeonPlan | null = null;
+
+function generateDungeonView() {
+  const seed       = parseInt(seedInput.value) || Date.now();
+  const dtype      = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  const complexity = parseInt((document.getElementById('dfloors') as HTMLInputElement).value);
+  try {
+    if (dtype === 'tower') {
+      currentDungeonPlan = generateTower(seed);
+    } else {
+      // Use the rich procedural generator for the visual floor plan
+      currentDungeonPlan = generateRichFloorPlan(seed, complexity);
+    }
+  } catch (e) {
+    console.error('Dungeon generation failed:', e);
+    return;
+  }
+  redrawDungeon();
+  const rooms = currentDungeonPlan.rooms;
+  genTimeEl.textContent = `${rooms.size} rooms  ·  seed ${seed}`;
+}
+
+function redrawDungeon() {
+  if (!currentDungeonPlan) return;
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  let floorFilter: number | undefined;
+  if (dtype === 'tower') {
+    floorFilter = parseInt((document.getElementById('dfloor') as HTMLInputElement).value);
+  }
+  drawDungeonFloorPlan(currentDungeonPlan, canvas, floorFilter);
+}
+
+// ── Dungeon controls event wiring ─────────────────────────────────────────────
+
+document.getElementById('dungeon-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill) return;
+  document.querySelectorAll('#dungeon-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  const isTower = pill.dataset.dtype === 'tower';
+  (document.getElementById('tower-floor-row') as HTMLElement).style.display = isTower ? '' : 'none';
+  currentDungeonPlan = null;
+  generateDungeonView();
+});
+
+document.getElementById('dfloors')!.addEventListener('input', () => {
+  (document.getElementById('dfloors-val') as HTMLElement).textContent =
+    (document.getElementById('dfloors') as HTMLInputElement).value;
+  currentDungeonPlan = null;
+  generateDungeonView();
+});
+
+document.getElementById('dfloor')?.addEventListener('input', () => {
+  const v = (document.getElementById('dfloor') as HTMLInputElement).value;
+  (document.getElementById('dfloor-val') as HTMLElement).textContent = v;
+  redrawDungeon();
+});
+
+document.getElementById('btn-dungeon-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `dungeon-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Cave / Glade controls event wiring ────────────────────────────────────────
+
+document.getElementById('cave-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.ctype) return;
+  document.querySelectorAll('#cave-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  _syncCaveTypeSections(pill.dataset.ctype as CaveType);
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-biome-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.biome) return;
+  document.querySelectorAll('#cave-biome-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('glade-biome-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.gbiome) return;
+  document.querySelectorAll('#glade-biome-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-size')?.addEventListener('input', function() {
+  const input = this as HTMLInputElement;
+  const lbl = document.getElementById('cave-size-val');
+  if (lbl) lbl.textContent = ({ '1': 'S', '2': 'M', '3': 'L' } as Record<string, string>)[input.value] ?? input.value;
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('cave-density')?.addEventListener('input', function() {
+  const input = this as HTMLInputElement;
+  const lbl = document.getElementById('cave-density-val');
+  if (lbl) lbl.textContent = (parseInt(input.value) / 100).toFixed(2);
+  currentCaveData = null;
+  generateCaveView();
+});
+
+document.getElementById('btn-cave-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `cave-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Cave / Glade Generator & Renderer (OW-C) ──────────────────────────────────
+
+type CaveType = 'cave' | 'glade';
+type CaveBiome  = 'stone'|'coastal'|'volcanic'|'desert'|'verdant'|'frozen';
+type GladeBiome = 'forest'|'autumn'|'blossom'|'wetland'|'tundra';
+
+interface CaveFeature { x: number; y: number; kind: 'water'|'mineral'|'spawn'|'treasure'|'tree'|'flower'|'mushroom'; }
+
+interface CaveData {
+  grid: boolean[][];
+  W: number; H: number;
+  seed: number;
+  type: CaveType;
+  biome: string;     // CaveBiome | GladeBiome
+  features: CaveFeature[];
+}
+
+// ── Biome palette definitions ─────────────────────────────────────────────────
+
+interface BiomePal {
+  bg: string; wall: string; wall2: string;
+  floor: string; floor2: string; water: string;
+  mineral: string; spawn: string; treasure: string;
+  tree: string; flower: string; mushroom: string;
+  label: string; border: string;
+  name: string;
+}
+
+const CAVE_BIOMES: Record<CaveBiome, BiomePal> = {
+  stone:   { bg:'#16120c', wall:'#221c14', wall2:'#201a12', floor:'#3e3830', floor2:'#46403a', water:'#2040a0', mineral:'#909888', spawn:'#c03020', treasure:'#e0b030', tree:'#0',  flower:'#0',  mushroom:'#0',  label:'rgba(200,190,170,0.7)', border:'#3a3028', name:'Stone Cave' },
+  coastal: { bg:'#060e1e', wall:'#0e1e38', wall2:'#101c34', floor:'#1e3858', floor2:'#24406a', water:'#1040d0', mineral:'#78c0d0', spawn:'#e04040', treasure:'#f0d060', tree:'#0',  flower:'#60c0c0', mushroom:'#0', label:'rgba(160,200,230,0.8)', border:'#183060', name:'Coastal Cave' },
+  volcanic:{ bg:'#0e0404', wall:'#2a0c08', wall2:'#320e08', floor:'#4a1c10', floor2:'#5a2018', water:'#e04000', mineral:'#d08040', spawn:'#ff4020', treasure:'#ffb030', tree:'#0',  flower:'#0',  mushroom:'#0',  label:'rgba(220,170,130,0.8)', border:'#602010', name:'Volcanic Cave' },
+  desert:  { bg:'#180e04', wall:'#3a3020', wall2:'#342c1c', floor:'#6a5830', floor2:'#7a6a3a', water:'#1868a0', mineral:'#c8b880', spawn:'#e04020', treasure:'#ffe060', tree:'#0',  flower:'#0',  mushroom:'#d0a020', label:'rgba(220,210,170,0.8)', border:'#605030', name:'Desert Cave' },
+  verdant: { bg:'#040e04', wall:'#0e2210', wall2:'#102814', floor:'#204820', floor2:'#285c28', water:'#204880', mineral:'#78d050', spawn:'#c03020', treasure:'#e0c030', tree:'#0',  flower:'#e040a0', mushroom:'#c84020', label:'rgba(160,220,140,0.8)', border:'#205020', name:'Verdant Cave' },
+  frozen:  { bg:'#080c18', wall:'#182038', wall2:'#1c2840', floor:'#304870', floor2:'#38587c', water:'#60c0f0', mineral:'#a8d8f8', spawn:'#d03040', treasure:'#e0f0ff', tree:'#0',  flower:'#0',  mushroom:'#0',  label:'rgba(160,200,240,0.8)', border:'#203870', name:'Ice Cave' },
+};
+
+const GLADE_BIOMES: Record<GladeBiome, BiomePal> = {
+  forest:  { bg:'#040c04', wall:'#1a3010', wall2:'#203818', floor:'#4a7830', floor2:'#5a9038', water:'#2860a0', mineral:'#80b040', spawn:'#c03020', treasure:'#e0c030', tree:'#1a3010', flower:'#d85080', mushroom:'#c84020', label:'rgba(170,220,140,0.8)', border:'#2a5018', name:'Forest Glade' },
+  autumn:  { bg:'#100804', wall:'#3a1e0a', wall2:'#4a2810', floor:'#8a5828', floor2:'#9a6830', water:'#3050a0', mineral:'#c89030', spawn:'#c03020', treasure:'#ffe040', tree:'#6a2808', flower:'#e05020', mushroom:'#803020', label:'rgba(230,190,140,0.8)', border:'#6a3010', name:'Autumn Glade' },
+  blossom: { bg:'#140808', wall:'#3c1428', wall2:'#481830', floor:'#a87898', floor2:'#b888a8', water:'#4868a0', mineral:'#e890b0', spawn:'#c03020', treasure:'#ffe0f0', tree:'#4a1028', flower:'#f040a0', mushroom:'#d05080', label:'rgba(240,190,220,0.8)', border:'#701840', name:'Blossom Glade' },
+  wetland: { bg:'#040c08', wall:'#0e2818', wall2:'#122c1c', floor:'#305030', floor2:'#386038', water:'#1a6050', mineral:'#60c890', spawn:'#c03020', treasure:'#c8f080', tree:'#0e2818', flower:'#50d080', mushroom:'#408040', label:'rgba(150,220,180,0.8)', border:'#185030', name:'Wetland Glade' },
+  tundra:  { bg:'#0c1018', wall:'#283848', wall2:'#30404e', floor:'#505e70', floor2:'#5c6a7c', water:'#90cce8', mineral:'#c0d8e8', spawn:'#d03040', treasure:'#d8f0ff', tree:'#283848', flower:'#b0d0c8', mushroom:'#8090a8', label:'rgba(180,210,230,0.8)', border:'#304860', name:'Tundra Glade' },
+};
+
+/** Get the active palette from cave data. */
+function getBiomePal(data: CaveData): BiomePal {
+  if (data.type === 'cave') return CAVE_BIOMES[data.biome as CaveBiome] ?? CAVE_BIOMES.stone;
+  return GLADE_BIOMES[data.biome as GladeBiome] ?? GLADE_BIOMES.forest;
+}
+
+/**
+ * 5-step cellular automata cave generation.
+ * Rule: a cell is floor if ≥ 5 of its 8 neighbours are floor.
+ * Border is always wall.
+ */
+// ── Biome structural parameters + labels ─────────────────────────────────────
+
+/** CA rule overrides per cave biome (applied on top of user density slider). */
+const BIOME_CA: Record<CaveBiome, { fillOffset: number; iter: number; survive: number; birth: number }> = {
+  stone:    { fillOffset:  0.00, iter: 5, survive: 5, birth: 5 },
+  coastal:  { fillOffset: -0.08, iter: 4, survive: 4, birth: 5 },
+  volcanic: { fillOffset: +0.07, iter: 6, survive: 5, birth: 6 },
+  desert:   { fillOffset: -0.14, iter: 3, survive: 4, birth: 4 },
+  verdant:  { fillOffset: -0.04, iter: 7, survive: 5, birth: 4 },
+  frozen:   { fillOffset: +0.04, iter: 5, survive: 5, birth: 5 },
+};
+
+const CAVE_FEAT_LABELS: Record<CaveBiome, Partial<Record<CaveFeature['kind'], string>>> = {
+  stone:    { water:'Underground Lake', mineral:'Ore Vein',    spawn:'Cave Beast',    treasure:'Treasure Cache', mushroom:'Fungus' },
+  coastal:  { water:'Tidal Pool',       mineral:'Coral',        spawn:'Sea Creature',  treasure:'Sunken Cache',   flower:'Anemone' },
+  volcanic: { water:'Lava River',       mineral:'Obsidian',     spawn:'Fire Imp',      treasure:'Dragon Hoard' },
+  desert:   { water:'Hidden Oasis',     mineral:'Sandstone',    spawn:'Scorpion',      treasure:'Buried Relic' },
+  verdant:  { water:'Glowing Pool',     mineral:'Cave Moss',    spawn:'Cave Toad',     treasure:'Crystal Cache',  mushroom:'Giant Mushroom' },
+  frozen:   { water:'Frozen Lake',      mineral:'Ice Crystal',  spawn:'Frost Beast',   treasure:'Frozen Relic' },
+};
+
+const GLADE_FEAT_LABELS: Record<GladeBiome, Partial<Record<CaveFeature['kind'], string>>> = {
+  forest:  { water:'Forest Pool', tree:'Oak',          flower:'Wildflower',    mushroom:'Toadstool',   spawn:'Forest Beast' },
+  autumn:  { water:'Autumn Pool', tree:'Oak',           flower:'Fallen Leaf',   mushroom:'Bracket Fungus',spawn:'Forest Spirit' },
+  blossom: { water:'Petal Pool',  tree:'Cherry Tree',   flower:'Cherry Blossom',mushroom:'Pink Cap',    spawn:'Sprite' },
+  wetland: { water:'Marsh Pool',  tree:'Willow',        flower:'Lily Pad',      mushroom:'Swamp Shroom',spawn:'Marsh Creature' },
+  tundra:  { water:'Ice Melt',    tree:'Pine',          flower:'Frost Flower',  mushroom:'Frost Cap',   spawn:'Tundra Beast' },
+};
+
+function generateCaveData(
+  seed: number,
+  type: CaveType,
+  biome: string = type === 'cave' ? 'stone' : 'forest',
+  size: number = 2,
+  density: number = 0.47,
+): CaveData {
+  const SIZES: Record<number, [number, number]> = { 1: [52, 40], 2: [72, 54], 3: [92, 68] };
+  const [W, H] = SIZES[size] ?? SIZES[2]!;
+  const rand = mulberry32(seed);
+  let grid: boolean[][];
+
+  if (type === 'cave') {
+    const ca = BIOME_CA[biome as CaveBiome] ?? BIOME_CA.stone;
+    const fill = Math.min(0.65, Math.max(0.25, density + ca.fillOffset));
+    grid = Array.from({ length: H }, (_, y) =>
+      Array.from({ length: W }, (_, x) => {
+        if (x < 2 || y < 2 || x > W - 3 || y > H - 3) return false;
+        return rand() > fill;
+      }),
+    );
+    for (let iter = 0; iter < ca.iter; iter++) {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= ca.survive;
+        }),
+      );
+    }
+    // Desert: extra wind-erosion pass = wider passages
+    if (biome === 'desert') {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= 3;
+        }),
+      );
+    }
+    // Flood-fill: keep only the largest connected region
+    const visited = Array.from({ length: H }, () => new Array<boolean>(W).fill(false));
+    let bestCells: Array<[number, number]> = [];
+    for (let sy = 1; sy < H - 1; sy++) {
+      for (let sx = 1; sx < W - 1; sx++) {
+        if (!grid[sy]![sx] || visited[sy]![sx]) continue;
+        const region: Array<[number, number]> = [];
+        const q: Array<[number, number]> = [[sx, sy]];
+        while (q.length) {
+          const [cx, cy] = q.pop()!;
+          if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
+          if (visited[cy]![cx] || !grid[cy]![cx]) continue;
+          visited[cy]![cx] = true;
+          region.push([cx, cy]);
+          q.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+        }
+        if (region.length > bestCells.length) bestCells = region;
+      }
+    }
+    const mainSet = new Set(bestCells.map(([x, y]) => `${x},${y}`));
+    grid = grid.map((row, y) => row.map((v, x) => v && mainSet.has(`${x},${y}`)));
+    // Desert: scatter rock pillar islands in open areas
+    if (biome === 'desert') {
+      const nPillars = 2 + Math.floor(rand() * 3);
+      for (let p = 0; p < nPillars; p++) {
+        const px = 5 + Math.floor(rand() * (W - 10));
+        const py = 5 + Math.floor(rand() * (H - 10));
+        const r  = 1 + Math.floor(rand() * 2);
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++)
+            if (dx*dx + dy*dy <= r*r + 1 && py+dy >= 1 && py+dy < H-1 && px+dx >= 1 && px+dx < W-1)
+              grid[py+dy]![px+dx] = false;
+      }
+    }
+  } else {
+    // Organic glade: ellipse clearing with noisy CA-smoothed edge
+    const cx = W / 2, cy = H / 2;
+    const rx = W * (0.20 + rand() * 0.08);
+    const ry = H * (0.22 + rand() * 0.08);
+    grid = Array.from({ length: H }, (_, y) =>
+      Array.from({ length: W }, (_, x) => {
+        const dx = (x - cx) / rx, dy = (y - cy) / ry;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const jitter = Math.sin(x * 0.8) * 0.18 + Math.cos(y * 0.9) * 0.14 + (rand() - 0.5) * 0.2;
+        return dist + jitter < 1.0;
+      }),
+    );
+    for (let iter = 0; iter < 3; iter++) {
+      grid = grid.map((row, y) =>
+        row.map((_, x) => {
+          if (x < 1 || y < 1 || x > W - 2 || y > H - 2) return false;
+          let n = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (grid[y + dy]?.[x + dx]) n++;
+          return n >= 4;
+        }),
+      );
+    }
+    const numBranch = 1 + Math.floor(rand() * 2);
+    for (let b = 0; b < numBranch; b++) {
+      const angle = rand() * Math.PI * 2;
+      const dist  = rx * (0.8 + rand() * 0.5);
+      const brx = cx + Math.cos(angle) * dist;
+      const bry = cy + Math.sin(angle) * dist;
+      const brR = rx * (0.3 + rand() * 0.3);
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const ddx = x - brx, ddy = y - bry;
+          if (ddx*ddx + ddy*ddy < brR*brR) grid[y]![x] = true;
+        }
+      const steps = 12;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const px = Math.round(cx + (brx - cx) * t);
+        const py = Math.round(cy + (bry - cy) * t);
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            if (py+dy >= 0 && py+dy < H && px+dx >= 0 && px+dx < W)
+              grid[py+dy]![px+dx] = true;
+      }
+    }
+  }
+
+  // ── Scatter features ──────────────────────────────────────────────────────
+  const features: CaveFeature[] = [];
+  const floorCells: Array<[number, number]> = [];
+  const edgeCells:  Array<[number, number]> = [];
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      if (!grid[y]![x]) continue;
+      floorCells.push([x, y]);
+      let isEdge = false;
+      for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][])
+        if (!grid[y+dy]?.[x+dx]) { isEdge = true; break; }
+      if (isEdge) edgeCells.push([x, y]);
+    }
+  }
+  const shuffled = (arr: Array<[number,number]>) => [...arr].sort(() => rand() - 0.5);
+
+  if (type === 'cave') {
+    const b = biome as CaveBiome;
+    if (b === 'coastal') {
+      // Sea floods bottom 35% — continuous water floor
+      const seaLine = Math.floor(H * 0.65);
+      for (let y = seaLine; y < H; y++)
+        for (let x = 0; x < W; x++)
+          if (grid[y]?.[x]) features.push({ x, y, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells.filter(([,ey]) => ey < seaLine)).slice(0, 14))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(edgeCells.filter(([,ey]) => ey < seaLine)).slice(0, 6))
+        features.push({ x, y, kind: 'flower' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'volcanic') {
+      // 1-2 lava rivers: diagonal strips crossing the cave
+      const nRivers = 1 + Math.floor(rand() * 2);
+      for (let r = 0; r < nRivers; r++) {
+        const sy = 4 + Math.floor(rand() * (H - 8));
+        const drift = Math.floor((rand() - 0.5) * H * 0.4);
+        for (let x = 1; x < W - 1; x++) {
+          const y = Math.round(sy + drift * x / (W - 2));
+          for (let dy = -1; dy <= 1; dy++) {
+            const ty = y + dy;
+            if (ty >= 1 && ty < H - 1 && grid[ty]?.[x])
+              features.push({ x, y: ty, kind: 'water' });
+          }
+        }
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 16 + Math.floor(rand() * 8)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 5 + Math.floor(rand() * 5)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'desert') {
+      // Single rare oasis
+      const [ox, oy] = shuffled(floorCells)[0] ?? [W/2|0, H/2|0];
+      const or = 1 + Math.floor(rand() * 2);
+      for (let dy = -or; dy <= or; dy++)
+        for (let dx = -or; dx <= or; dx++)
+          if (dx*dx+dy*dy <= or*or && grid[oy+dy]?.[ox+dx])
+            features.push({ x: ox+dx, y: oy+dy, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells).slice(0, 18 + Math.floor(rand() * 8)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 6 + Math.floor(rand() * 4)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 2))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'verdant') {
+      // Winding bioluminescent cave streams
+      const nStreams = 1 + Math.floor(rand() * 2);
+      for (let s = 0; s < nStreams; s++) {
+        const [sx, sy] = floorCells[Math.floor(rand() * floorCells.length)] ?? [W/2|0, H/2|0];
+        let [wx, wy] = [sx, sy];
+        for (let step = 0; step < 24; step++) {
+          if (grid[wy]?.[wx]) features.push({ x: wx, y: wy, kind: 'water' });
+          const DXDY: [number,number][] = [[1,0],[-1,0],[0,1],[0,-1]];
+          const [ndx, ndy] = DXDY[Math.floor(rand() * 4)]!;
+          const nx = wx + ndx, ny = wy + ndy;
+          if (nx >= 1 && nx < W-1 && ny >= 1 && ny < H-1 && grid[ny]?.[nx]) { wx = nx; wy = ny; }
+        }
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 20))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 18))
+        features.push({ x, y, kind: 'mushroom' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 5))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 2))
+        features.push({ x, y, kind: 'treasure' });
+    } else if (b === 'frozen') {
+      // Large central frozen lake
+      const [lx, ly] = shuffled(floorCells)[Math.floor(floorCells.length * 0.5)] ?? [W/2|0, H/2|0];
+      const lr = 4 + Math.floor(rand() * 4);
+      for (let dy = -lr; dy <= lr; dy++)
+        for (let dx = -lr; dx <= lr; dx++)
+          if (dx*dx+dy*dy <= lr*lr && grid[ly+dy]?.[lx+dx])
+            features.push({ x: lx+dx, y: ly+dy, kind: 'water' });
+      for (const [x, y] of shuffled(edgeCells).slice(0, 14))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1))
+        features.push({ x, y, kind: 'treasure' });
+    } else {
+      // Stone (default)
+      const lakeSeeds = shuffled(floorCells).slice(0, 2 + Math.floor(rand() * 2));
+      for (const [sx, sy] of lakeSeeds) {
+        const r = 2 + Math.floor(rand() * 3);
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++)
+            if (dx*dx+dy*dy <= r*r && grid[sy+dy]?.[sx+dx])
+              features.push({ x: sx+dx, y: sy+dy, kind: 'water' });
+      }
+      for (const [x, y] of shuffled(edgeCells).slice(0, 12 + Math.floor(rand() * 10)))
+        features.push({ x, y, kind: 'mineral' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 4 + Math.floor(rand() * 5)))
+        features.push({ x, y, kind: 'spawn' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 1 + Math.floor(rand() * 2)))
+        features.push({ x, y, kind: 'treasure' });
+      for (const [x, y] of shuffled(floorCells).slice(0, 6))
+        features.push({ x, y, kind: 'mushroom' });
+    }
+  } else {
+    // Glade features
+    const [pw, ph] = floorCells[Math.floor(rand() * floorCells.length)] ?? [W/2|0, H/2|0];
+    const pr = 2 + Math.floor(rand() * 3);
+    for (let dy = -pr; dy <= pr; dy++)
+      for (let dx = -pr; dx <= pr; dx++)
+        if (dx*dx+dy*dy <= pr*pr && grid[(ph+dy)]?.[(pw+dx)])
+          features.push({ x: pw+dx, y: ph+dy, kind: 'water' });
+    const flowerRatio = biome === 'blossom' ? 0.5 : biome === 'wetland' ? 0.2 : 0.3;
+    for (const [x, y] of shuffled(floorCells).slice(0, 20 + Math.floor(rand() * 10)))
+      features.push({ x, y, kind: rand() < flowerRatio ? 'flower' : rand() < 0.3 ? 'mushroom' : 'flower' });
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        if (grid[y]![x]) continue;
+        let adjFloor = false;
+        for (const [dy, dx] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][])
+          if (grid[y+dy]?.[x+dx]) { adjFloor = true; break; }
+        if (adjFloor && rand() > 0.45) features.push({ x, y, kind: 'tree' });
+      }
+    for (const [x, y] of shuffled(floorCells).slice(0, 2))
+      features.push({ x, y, kind: 'spawn' });
+  }
+
+  return { grid, W, H, seed, type, biome, features };
+}
+
+/**
+ * Render a cave or glade map on a canvas.
+ */
+export function drawCaveGlade(data: CaveData, canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const { grid, W, H, type, features, seed } = data;
+  const biome = data.biome;
+  const pal = getBiomePal(data);
+
+  const CELL = Math.min(Math.floor((canvas.width  - 8) / W),
+                        Math.floor((canvas.height - 8) / H));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const featureMap = new Map<string, CaveFeature>();
+  for (const f of features) featureMap.set(`${f.x},${f.y}`, f);
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const feat  = featureMap.get(`${x},${y}`);
+      const floor = grid[y]![x];
+      const cx = offX + x * CELL, cy = offY + y * CELL;
+      if (feat?.kind === 'water') {
+        ctx.fillStyle = pal.water;
+      } else if (!floor) {
+        // Wall — two-tone texture
+        ctx.fillStyle = (Math.sin(x * 3.1 + y * 2.3) > 0.1) ? pal.wall : pal.wall2;
+      } else {
+        ctx.fillStyle = (x + y) % 2 === 0 ? pal.floor : pal.floor2;
+      }
+      ctx.fillRect(cx, cy, CELL, CELL);
+    }
+  }
+
+  const SZ = Math.max(4, CELL - 1);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (const feat of features) {
+    if (feat.kind === 'water') continue;
+    const cx = offX + feat.x * CELL + CELL / 2;
+    const cy = offY + feat.y * CELL + CELL / 2;
+    switch (feat.kind) {
+      case 'mineral':
+        ctx.fillStyle = pal.mineral;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'spawn':
+        ctx.fillStyle = pal.spawn;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'treasure':
+        ctx.fillStyle = pal.treasure;
+        ctx.font = `bold ${SZ + 1}px sans-serif`;
+        ctx.fillText('★', cx, cy);
+        ctx.font = `${SZ}px sans-serif`;
+        break;
+      case 'tree':
+        ctx.fillStyle = pal.tree;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - CELL * 0.42);
+        ctx.lineTo(cx + CELL * 0.38, cy + CELL * 0.38);
+        ctx.lineTo(cx - CELL * 0.38, cy + CELL * 0.38);
+        ctx.closePath(); ctx.fill();
+        break;
+      case 'flower':
+        ctx.fillStyle = pal.flower;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.25, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'mushroom':
+        ctx.fillStyle = pal.mushroom;
+        ctx.beginPath(); ctx.arc(cx, cy - CELL * 0.08, CELL * 0.28, 0, Math.PI * 2); ctx.fill();
+        break;
+    }
+  }
+
+  ctx.strokeStyle = pal.border;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(offX, offY, W * CELL, H * CELL);
+
+  // ── On-canvas legend ───────────────────────────────────────────────────────
+  const featLabels = type === 'cave'
+    ? (CAVE_FEAT_LABELS[biome as CaveBiome] ?? {})
+    : (GLADE_FEAT_LABELS[biome as GladeBiome] ?? {});
+
+  // Build legend entries from features actually present
+  const seenKinds = new Set(features.map(f => f.kind));
+  type LegendEntry = { color: string; symbol: string; label: string };
+  const legendEntries: LegendEntry[] = [];
+
+  const kindMeta: Partial<Record<CaveFeature['kind'], { color: ()=>string; symbol: string }>> = {
+    water:    { color: () => pal.water,    symbol: '■' },
+    mineral:  { color: () => pal.mineral,  symbol: '●' },
+    spawn:    { color: () => pal.spawn,    symbol: '●' },
+    treasure: { color: () => pal.treasure, symbol: '★' },
+    mushroom: { color: () => pal.mushroom, symbol: '●' },
+    flower:   { color: () => pal.flower,   symbol: '●' },
+    tree:     { color: () => pal.tree,     symbol: '▲' },
+  };
+
+  for (const [kind, label] of Object.entries(featLabels) as Array<[CaveFeature['kind'], string]>) {
+    if (!label || !seenKinds.has(kind)) continue;
+    const meta = kindMeta[kind];
+    if (!meta) continue;
+    legendEntries.push({ color: meta.color(), symbol: meta.symbol, label });
+  }
+
+  if (legendEntries.length > 0) {
+    const LH = 13, LW = 118;
+    const LX = offX + 5;
+    const LY = offY + H * CELL - LH * legendEntries.length - 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(LX - 2, LY - 3, LW, LH * legendEntries.length + 6);
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < legendEntries.length; i++) {
+      const e = legendEntries[i]!;
+      const ly = LY + i * LH + LH * 0.5;
+      ctx.fillStyle = e.color;
+      ctx.font = `${Math.max(6, CELL)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(e.symbol, LX + 6, ly);
+      ctx.fillStyle = 'rgba(240,235,220,0.92)';
+      ctx.font = '7px Georgia, serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(e.label, LX + 14, ly);
+    }
+  }
+
+  ctx.fillStyle = pal.label;
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${pal.name}  ·  seed ${seed}`, canvas.width / 2, canvas.height - 4);
+}
+
+// ── Cave mode state ───────────────────────────────────────────────────────────
+
+let currentCaveData: CaveData | null = null;
+
+function getCaveParams(): { type: CaveType; biome: string; size: number; density: number } {
+  const type    = (document.querySelector('#cave-type-pills .pill.active')  as HTMLElement)?.dataset.ctype  as CaveType ?? 'cave';
+  const biome   = type === 'cave'
+    ? ((document.querySelector('#cave-biome-pills .pill.active')  as HTMLElement)?.dataset.biome  ?? 'stone')
+    : ((document.querySelector('#glade-biome-pills .pill.active') as HTMLElement)?.dataset.gbiome ?? 'forest');
+  const size    = parseInt((document.getElementById('cave-size')    as HTMLInputElement)?.value    ?? '2');
+  const density = parseInt((document.getElementById('cave-density') as HTMLInputElement)?.value ?? '47') / 100;
+  return { type, biome, size, density };
+}
+
+function generateCaveView() {
+  const seed = parseInt(seedInput.value) || Date.now();
+  const { type, biome, size, density } = getCaveParams();
+  currentCaveData = generateCaveData(seed, type, biome, size, density);
+  drawCaveGlade(currentCaveData, canvas);
+  const floors = currentCaveData.grid.flat().filter(Boolean).length;
+  genTimeEl.textContent = `${(CAVE_BIOMES[biome as CaveBiome] ?? GLADE_BIOMES[biome as GladeBiome])?.name ?? biome}  ·  ${floors} open cells  ·  seed ${seed}`;
+}
+
+function redrawCave() { if (currentCaveData) drawCaveGlade(currentCaveData, canvas); }
+
+// ── OW-A: Realm / Macro World Generator ──────────────────────────────────────
+
+export type RealmBiome =
+  | 'deep_ocean' | 'ocean' | 'beach'
+  | 'desert' | 'savanna' | 'grassland' | 'forest' | 'taiga' | 'tundra' | 'snow';
+
+export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
+export interface RealmRiver { points: Vec2[]; }
+
+export interface RealmSettlement {
+  x: number; y: number;
+  name: string;
+  size: 'village' | 'town' | 'city';
+  faction: SettlementFaction;
+}
+
+export interface RealmData {
+  cells: RealmCell[][];
+  W: number; H: number;
+  rivers: RealmRiver[];
+  settlements: RealmSettlement[];
+  /** Dungeon entrance positions — clickable markers on the realm map. */
+  dungeons: { x: number; y: number }[];
+  towerX: number; towerY: number;
+  seed: number;
+}
+
+const REALM_BIOME_COLOR: Record<RealmBiome, string> = {
+  deep_ocean: '#304880', ocean: '#4060b0', beach: '#d4c880',
+  desert: '#d8b060', savanna: '#a8c050', grassland: '#60a038',
+  forest: '#2a7030', taiga: '#386858', tundra: '#708090', snow: '#c8d8e4',
+};
+
+const REALM_BIOME_LABEL: Record<RealmBiome, string> = {
+  deep_ocean:'Deep Ocean', ocean:'Ocean', beach:'Coastline',
+  desert:'Desert', savanna:'Savanna', grassland:'Grassland',
+  forest:'Forest', taiga:'Taiga', tundra:'Tundra', snow:'Snowfield',
+};
+
+const SETTLEMENT_SIZE_COLOR: Record<'village'|'town'|'city', string> = {
+  village: '#d8c090', town: '#e8a848', city: '#e05828',
+};
+
+// ── Shared helper: compute CELL size + offsets for realm rendering ─────────────
+function realmLayout(data: RealmData, canvas: HTMLCanvasElement) {
+  const { W, H } = data;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H),
+  ));
+  const offX = Math.floor((canvas.width  - W * CELL) / 2);
+  const offY = Math.floor((canvas.height - H * CELL) / 2);
+  return { CELL, offX, offY };
+}
+
+export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const { cells, W, H, rivers, settlements, dungeons, towerX, towerY, seed } = data;
+  const CELL = Math.max(2, Math.min(
+    Math.floor((canvas.width  - 4) / W),
+    Math.floor((canvas.height - 4) / H)
+  ));
+  const offX = Math.floor((canvas.width  - W*CELL) / 2);
+  const offY = Math.floor((canvas.height - H*CELL) / 2);
+
+  // Background (outer ocean)
+  ctx.fillStyle = '#1a2840'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // ── Biome cells with ocean depth shading ──────────────────────────────────
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const c = cells[y]![x]!;
+      if (c.biome === 'deep_ocean') {
+        // Depth gradient: deeper = darker
+        const depth = Math.max(0, 1 - c.elevation / 0.28);
+        const r = Math.round(20 + (1-depth)*20),  g = Math.round(32 + (1-depth)*28),  b = Math.round(70 + (1-depth)*30);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else if (c.biome === 'ocean') {
+        const t = Math.max(0, 1 - (c.elevation - 0.28) / 0.07);
+        const r = Math.round(50 + t*15),  g = Math.round(80 + t*15),  b = Math.round(160 + t*20);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else {
+        ctx.fillStyle = REALM_BIOME_COLOR[c.biome];
+      }
+      ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
+    }
+  }
+
+  // ── Elevation shading on land (mountain height gradient) ──────────────────
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const c = cells[y]![x]!;
+      if (c.biome === 'ocean' || c.biome === 'deep_ocean') continue;
+      if (c.elevation > 0.60) {
+        const t = (c.elevation - 0.60) / 0.40;
+        ctx.fillStyle = `rgba(255,255,255,${t * 0.32})`;
+        ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
+      }
+      // Subtle terrain shadow (south face slightly darker)
+      if (c.elevation > 0.45 && y > 0) {
+        const above = cells[y-1]![x]!.elevation;
+        if (above > c.elevation + 0.04) {
+          ctx.fillStyle = `rgba(0,0,0,0.12)`;
+          ctx.fillRect(offX+x*CELL, offY+y*CELL, CELL, CELL);
+        }
+      }
+    }
+  }
+
+  // ── Contour lines ─────────────────────────────────────────────────────────
+  if (CELL >= 3) {
+    for (const [level, alpha] of [[0.50, 0.12],[0.62, 0.16],[0.74, 0.22],[0.85, 0.28]] as [number,number][]) {
+      ctx.strokeStyle = `rgba(70,55,35,${alpha})`;
+      ctx.lineWidth = 0.5;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const e = cells[y]![x]!.elevation;
+        const eR = cells[y]?.[x+1]?.elevation ?? e;
+        const eD = cells[y+1]?.[x]?.elevation ?? e;
+        if ((e >= level) !== (eR >= level)) {
+          ctx.beginPath(); ctx.moveTo(offX+(x+1)*CELL, offY+y*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); ctx.stroke();
+        }
+        if ((e >= level) !== (eD >= level)) {
+          ctx.beginPath(); ctx.moveTo(offX+x*CELL, offY+(y+1)*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // ── Forest stipple ────────────────────────────────────────────────────────
+  if (CELL >= 3) {
+    ctx.fillStyle = 'rgba(20,50,20,0.42)';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+      if (cells[y]![x]!.biome === 'forest' && (x*3 + y*7) % 5 === 0) {
+        ctx.beginPath(); ctx.arc(offX+x*CELL+CELL/2, offY+y*CELL+CELL/2, CELL*0.22, 0, Math.PI*2); ctx.fill();
+      }
+  }
+
+  // ── Mountain △ symbols (only when cells are large enough) ─────────────────
+  if (CELL >= 5) {
+    ctx.font = `${CELL+1}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = cells[y]![x]!;
+      if (c.elevation > 0.78 && c.biome !== 'ocean' && c.biome !== 'deep_ocean') {
+        ctx.fillStyle = c.elevation > 0.88 ? 'rgba(240,240,255,0.7)' : 'rgba(60,50,35,0.6)';
+        ctx.fillText('△', offX+x*CELL+CELL/2, offY+y*CELL+CELL/2);
+      }
+    }
+  }
+
+  // ── Coastline border ───────────────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(20,30,80,0.45)'; ctx.lineWidth = 0.7;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const isO = cells[y]![x]!.biome === 'ocean' || cells[y]![x]!.biome === 'deep_ocean';
+    for (const [dy, dx] of [[0,1],[1,0]] as [number,number][]) {
+      const ny2=y+dy, nx2=x+dx;
+      if (ny2>=H||nx2>=W) continue;
+      const nO = cells[ny2]![nx2]!.biome === 'ocean' || cells[ny2]![nx2]!.biome === 'deep_ocean';
+      if (isO!==nO) {
+        ctx.beginPath();
+        if (dx===1) { ctx.moveTo(offX+(x+1)*CELL, offY+y*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); }
+        else        { ctx.moveTo(offX+x*CELL, offY+(y+1)*CELL); ctx.lineTo(offX+(x+1)*CELL, offY+(y+1)*CELL); }
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ── Settlement roads ───────────────────────────────────────────────────────
+  if (settlements.length > 1) {
+    ctx.strokeStyle = 'rgba(170,140,70,0.55)'; ctx.lineWidth = 0.8; ctx.setLineDash([2,3]);
+    for (let i = 0; i < settlements.length; i++) {
+      for (let j = i+1; j < settlements.length; j++) {
+        const d = Math.hypot(settlements[i].x - settlements[j].x, settlements[i].y - settlements[j].y);
+        if (d < W / 3.5) {
+          ctx.beginPath();
+          ctx.moveTo(offX+(settlements[i].x+0.5)*CELL, offY+(settlements[i].y+0.5)*CELL);
+          ctx.lineTo(offX+(settlements[j].x+0.5)*CELL, offY+(settlements[j].y+0.5)*CELL);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  // ── Rivers ────────────────────────────────────────────────────────────────
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for (let ri = 0; ri < rivers.length; ri++) {
+    const river = rivers[ri]!;
+    if (river.points.length < 2) continue;
+    // Rivers get slightly wider downstream
+    const w = Math.max(0.8, Math.min(2.5, CELL * 0.4 + ri * 0.1));
+    ctx.strokeStyle = '#6090d8'; ctx.lineWidth = w;
+    ctx.beginPath();
+    river.points.forEach((p, i) => {
+      const px = offX+p.x*CELL, py = offY+p.y*CELL;
+      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    });
+    ctx.stroke();
+  }
+
+  // ── Tower ─────────────────────────────────────────────────────────────────
+  const tx = offX+(towerX+0.5)*CELL, ty2 = offY+(towerY+0.5)*CELL;
+  const tr = Math.max(3, CELL*1.4);
+  // Glow
+  ctx.strokeStyle = 'rgba(240,200,30,0.3)'; ctx.lineWidth = 4;
+  ctx.beginPath(); for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*1.5*Math.cos(a),ty2+tr*1.5*Math.sin(a)):ctx.lineTo(tx+tr*1.5*Math.cos(a),ty2+tr*1.5*Math.sin(a)); } ctx.closePath(); ctx.stroke();
+  // Hex ring
+  ctx.strokeStyle = '#f0d020'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (let i=0;i<6;i++) { const a=(i/6)*Math.PI*2-Math.PI/6; i===0?ctx.moveTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)):ctx.lineTo(tx+tr*Math.cos(a),ty2+tr*Math.sin(a)); } ctx.closePath(); ctx.stroke();
+  ctx.fillStyle='#f0d020'; ctx.font=`${Math.max(6,CELL)}px sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('⬡',tx,ty2);
+
+  // ── Dungeons ─────────────────────────────────────────────────────────────
+  const dR = Math.max(2, CELL * 0.55);
+  ctx.font = `${Math.max(6, Math.min(9, CELL+1))}px Georgia, serif`; ctx.textBaseline = 'top';
+  for (const d of data.dungeons) {
+    const dx = offX + (d.x + 0.5) * CELL, dy = offY + (d.y + 0.5) * CELL;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(dx, dy, dR+1.5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6a3060';          ctx.beginPath(); ctx.arc(dx, dy, dR,    0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(200,160,220,0.9)'; ctx.textAlign = 'center'; ctx.fillText('⚔', dx, dy + dR + 1);
+  }
+
+  // ── Settlements ───────────────────────────────────────────────────────────
+  const dotR = Math.max(2, CELL*0.75);
+  ctx.font = `${Math.max(7,Math.min(10,CELL+2))}px Georgia, serif`; ctx.textBaseline='top';
+  for (const s of settlements) {
+    const sx=offX+(s.x+0.5)*CELL, sy=offY+(s.y+0.5)*CELL;
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(sx,sy,dotR+1.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=SETTLEMENT_SIZE_COLOR[s.size]; ctx.beginPath(); ctx.arc(sx,sy,dotR,0,Math.PI*2); ctx.fill();
+    // White ring for cities
+    if (s.size === 'city') { ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=0.8; ctx.beginPath(); ctx.arc(sx,sy,dotR+0.5,0,Math.PI*2); ctx.stroke(); }
+    ctx.fillStyle='rgba(240,230,200,0.95)'; ctx.textAlign='center'; ctx.fillText(s.name,sx,sy+dotR+1);
+  }
+
+  // ── Compass rose ───────────────────────────────────────────────────────────
+  const cr = Math.max(8, CELL * 2.5);
+  const crx = offX + W*CELL - cr - 8, cry = offY + H*CELL - cr - 8;
+  ctx.save(); ctx.translate(crx, cry);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.arc(0, 0, cr*1.1, 0, Math.PI*2); ctx.fill();
+  // N petal
+  ctx.fillStyle = '#d8c888';
+  ctx.beginPath(); ctx.moveTo(0,-cr); ctx.lineTo(cr*0.28,0); ctx.lineTo(0,cr*0.38); ctx.closePath(); ctx.fill();
+  // S petal
+  ctx.fillStyle = '#6a6050';
+  ctx.beginPath(); ctx.moveTo(0,cr); ctx.lineTo(-cr*0.28,0); ctx.lineTo(0,-cr*0.38); ctx.closePath(); ctx.fill();
+  // E/W bars
+  ctx.strokeStyle = '#d8c888'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(-cr*0.7,0); ctx.lineTo(cr*0.7,0); ctx.stroke();
+  // N label
+  ctx.fillStyle='#d8c888'; ctx.font=`bold ${Math.max(6,cr*0.5)}px Georgia,serif`;
+  ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText('N',0,-cr-2);
+  ctx.restore();
+
+  // ── Frame ─────────────────────────────────────────────────────────────────
+  ctx.strokeStyle='#8a7a58'; ctx.lineWidth=2;
+  ctx.strokeRect(offX, offY, W*CELL, H*CELL);
+  // Inner thin frame
+  ctx.strokeStyle='rgba(140,120,80,0.4)'; ctx.lineWidth=0.8;
+  ctx.strokeRect(offX+3, offY+3, W*CELL-6, H*CELL-6);
+
+  // ── Biome legend ──────────────────────────────────────────────────────────
+  const present = new Set(data.cells.flat().map(c=>c.biome));
+  const lbs = (['ocean','beach','desert','savanna','grassland','forest','taiga','tundra','snow'] as RealmBiome[]).filter(b=>present.has(b));
+  const LH=11, LX=offX+5, LY=offY+5;
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(LX-2, LY-2, 86, LH*lbs.length+4);
+  lbs.forEach((b, i) => {
+    ctx.fillStyle=REALM_BIOME_COLOR[b]; ctx.fillRect(LX, LY+i*LH+2, 8, 7);
+    ctx.fillStyle='rgba(240,235,220,0.92)'; ctx.font='7px Georgia, serif';
+    ctx.textAlign='left'; ctx.textBaseline='top'; ctx.fillText(REALM_BIOME_LABEL[b], LX+11, LY+i*LH+2);
+  });
+
+  // ── Settlement size key ───────────────────────────────────────────────────
+  const KX=offX+W*CELL-68, KY=offY+5;
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(KX-2, KY-2, 68, 40);
+  let ki=0;
+  for (const [sz, lab] of [['village','Village'],['town','Town'],['city','City']] as Array<['village'|'town'|'city', string]>) {
+    ctx.fillStyle=SETTLEMENT_SIZE_COLOR[sz]; ctx.beginPath(); ctx.arc(KX+5, KY+5+ki*12, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(240,235,220,0.92)'; ctx.font='7px Georgia, serif';
+    ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(lab, KX+11, KY+5+ki*12);
+    ki++;
+  }
+
+  // ── Title ─────────────────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(220,210,180,0.75)'; ctx.font='10px Georgia, serif';
+  ctx.textAlign='center'; ctx.textBaseline='bottom';
+  ctx.fillText(`Realm  ·  seed ${seed}  ·  ${settlements.length} settlements`, canvas.width/2, canvas.height-4);
+}
+
+// ── Realm mode state ──────────────────────────────────────────────────────────
+
+// ── Planet view renderer (OW-A v2 — per-pixel orthographic projection) ─────────
+//
+// Each canvas pixel is mapped to a sphere surface point via orthographic projection:
+//   dx,dy = normalised screen offset from planet centre
+//   dz = sqrt(1 - dx² - dy²)   (sphere surface normal Z component)
+//   lon = atan2(dx, dz) + lonOffset
+//   lat = asin(dy)
+//   → sample biome grid at (lon, lat)
+//
+// All shading (diffuse, specular, atmosphere limb, terminator) is computed per pixel.
+// Clouds, stars, and city lights are baked into the same ImageData loop.
+// Total cost: ~5–30 ms for a 600×600 canvas. No WebGL required.
+
+/** Value-noise cloud texture (256×128), precomputed once per seed. */
+function buildCloudGrid(W: number, H: number, seed: number): Float32Array {
+  const tex = new Float32Array(W * H);
+  const rand = mulberry32(seed ^ 0x514C100D);
+
+  // Two octave value noise
+  for (let oct = 0; oct < 2; oct++) {
+    const freq = oct === 0 ? 6 : 14;
+    const amp  = oct === 0 ? 0.65 : 0.35;
+    const GW = freq + 2, GH = Math.floor(freq * H / W) + 2;
+    const grid = new Float32Array(GW * GH);
+    for (let i = 0; i < grid.length; i++) grid[i] = rand();
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const gx = x / W * freq, gy = y / H * (freq * H / W);
+        const ix = Math.floor(gx), iy = Math.floor(gy);
+        const fx = gx - ix, fy = gy - iy;
+        const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy);
+        const gi = (ix % GW + GW) % GW, gj = (iy % GH + GH) % GH;
+        const v00 = grid[gj*GW + gi] ?? 0;
+        const v10 = grid[gj*GW + ((gi+1)%GW)] ?? 0;
+        const v01 = grid[((gj+1)%GH)*GW + gi] ?? 0;
+        const v11 = grid[((gj+1)%GH)*GW + ((gi+1)%GW)] ?? 0;
+        tex[y*W + x] += amp * (v00*(1-ux)*(1-uy) + v10*ux*(1-uy) + v01*(1-ux)*uy + v11*ux*uy);
+      }
+    }
+  }
+  return tex;
+}
+
+const PLANET_BIOME_RGB: Record<RealmBiome, readonly [number,number,number]> = {
+  deep_ocean: [18,  38, 88],
+  ocean:      [32,  62, 148],
+  beach:      [198, 182, 105],
+  desert:     [208, 148, 55],
+  savanna:    [135, 158, 45],
+  grassland:  [50,  128, 38],
+  forest:     [25,  88, 28],
+  taiga:      [40,  88, 65],
+  tundra:     [88,  108, 125],
+  snow:       [218, 235, 248],
+};
+
+export function drawRealmPlanet(data: RealmData, canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const { cells, W, H, rivers: _rivers, settlements, towerX, towerY, seed } = data;
+  void _rivers;
+  const CW = canvas.width, CH = canvas.height;
+  const planetR = Math.min(CW, CH) * 0.43;
+  const pcx = Math.floor(CW / 2), pcy = Math.floor(CH / 2);
+
+  // Seeded sun direction (longitude angle, elevation)
+  const sunLon  = ((seed * 0.00137) % 1) * Math.PI * 2;
+  const sunElev = 0.35 + ((seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+  const sunX    =  Math.cos(sunElev) * Math.sin(sunLon);
+  const sunY    = -Math.sin(sunElev);
+  const sunZ    =  Math.cos(sunElev) * Math.cos(sunLon);
+
+  // Centre view on the tower (tower appears at front of planet)
+  const towerLon = (towerX / W) * Math.PI * 2 - Math.PI;
+  const towerLat = (towerY / H - 0.5) * Math.PI;
+  const lonOffset = -towerLon;
+  const latOffset = -towerLat * 0.5;   // partial tilt toward tower
+
+  // Precompute cloud texture (256×128) — fast value noise
+  const CLOUD_W = 256, CLOUD_H = 128;
+  const cloudTex = buildCloudGrid(CLOUD_W, CLOUD_H, seed);
+
+  // Build image per-pixel using ImageData
+  const imgData = ctx.createImageData(CW, CH);
+  const px = imgData.data;
+
+  const invR = 1 / planetR;
+  const TWO_PI = Math.PI * 2;
+
+  for (let sy = 0; sy < CH; sy++) {
+    const dy = (sy - pcy) * invR;
+    const dy2 = dy * dy;
+
+    for (let sx = 0; sx < CW; sx++) {
+      const base = (sy * CW + sx) << 2;
+      const dx = (sx - pcx) * invR;
+      const r2 = dx * dx + dy2;
+
+      // ── Star field + deep space ─────────────────────────────────────────────
+      if (r2 > 1.12) {
+        // Simple hash-based stars — no extra pass needed
+        const sh = Math.sin(sx * 4127.1 + sy * 2931.7 + seed * 0.0001);
+        const sv = sh - Math.floor(sh);
+        if (sv > 0.9968) {
+          const b = Math.round(((sv - 0.9968) / 0.0032) * 255);
+          px[base] = b; px[base+1] = b; px[base+2] = b + Math.round(b * 0.15);
+        } else {
+          px[base] = 3; px[base+1] = 4; px[base+2] = 10;
+        }
+        px[base+3] = 255;
+        continue;
+      }
+
+      // ── Atmosphere corona (just outside planet) ─────────────────────────────
+      if (r2 > 1.0) {
+        const t   = (r2 - 1.0) / 0.12;
+        const atm = Math.pow(Math.max(0, 1 - t), 2.5) * 0.6;
+        px[base]   = Math.round(atm * 60  + 3);
+        px[base+1] = Math.round(atm * 130 + 4);
+        px[base+2] = Math.round(atm * 255 + 10);
+        px[base+3] = 255;
+        continue;
+      }
+
+      // ── On planet surface ──────────────────────────────────────────────────
+      const dz      = Math.sqrt(Math.max(0, 1 - r2));
+      const nrm_x   = dx, nrm_y = dy, nrm_z = dz;
+
+      // Diffuse lighting
+      const nDotL   = nrm_x * sunX + nrm_y * sunY + nrm_z * sunZ;
+      const diffuse = Math.max(0, nDotL);
+      const ambient = 0.10;
+      const light   = ambient + diffuse * (1 - ambient);
+
+      // Soft terminator (smooth day/night line)
+      const termMix = Math.min(1, Math.max(0, nDotL * 6 + 0.8));
+
+      // Sphere surface → lon / lat via orthographic projection
+      const lon = Math.atan2(nrm_x, nrm_z) + lonOffset;
+      const lat = Math.asin(Math.max(-1, Math.min(1, nrm_y + latOffset * dz)));
+
+      // Normalised UV [0,1]
+      const u = ((lon / TWO_PI % 1) + 1) % 1;
+      const v = lat / Math.PI + 0.5;
+
+      // Sample biome grid
+      const gx = Math.max(0, Math.min(W-1, Math.floor(u * W)));
+      const gy = Math.max(0, Math.min(H-1, Math.floor(v * H)));
+      const cell   = cells[gy]![gx]!;
+      const biome  = cell.biome;
+      const [br, bg, bb] = PLANET_BIOME_RGB[biome];
+
+      // Elevation brightness boost for mountains
+      const elev   = cell.elevation;
+      const eBoost = elev > 0.65 ? (elev - 0.65) / 0.35 * 0.28 : 0;
+
+      // Cloud layer
+      const cu   = Math.floor(u * CLOUD_W);
+      const cv   = Math.floor(v * CLOUD_H);
+      const cVal = cloudTex[cv * CLOUD_W + cu] ?? 0;
+      const cMix = cVal > 0.52 ? Math.pow((cVal - 0.52) / 0.48, 1.8) * 0.72 : 0;
+
+      // Polar ice caps (latitude-based)
+      const absLat = Math.abs(lat);
+      const iceMix = absLat > 1.28 ? Math.pow((absLat - 1.28) / 0.29, 1.5) : 0;
+
+      // Ocean specular (Phong)
+      let specBright = 0;
+      if (biome === 'ocean' || biome === 'deep_ocean') {
+        const rdz = 2 * nDotL * nrm_z - sunZ;
+        specBright = Math.pow(Math.max(0, rdz), 40) * 0.55 * diffuse;
+      }
+
+      // City lights on night side
+      let cityR = 0, cityG = 0, cityB = 0;
+      if (diffuse < 0.08) {
+        for (const s of settlements) {
+          const sU  = s.x / W;
+          const sLon2 = (sU * TWO_PI - Math.PI) + lonOffset;
+          const sV  = s.y / H;
+          const sLat2 = (sV - 0.5) * Math.PI + latOffset;
+          const scLat = Math.cos(sLat2), ssLat = Math.sin(sLat2);
+          const sdx = scLat * Math.sin(sLon2);
+          const sdy = ssLat;
+          const sdz = scLat * Math.cos(sLon2);
+          const dot = nrm_x*sdx + nrm_y*sdy + nrm_z*sdz;
+          if (dot > 0.978) {
+            const str = ((dot - 0.978) / 0.022) * (1 - diffuse * 12) * 1.2;
+            const glow = s.size === 'city' ? 1.4 : s.size === 'town' ? 1.0 : 0.65;
+            cityR += str * glow * 255;
+            cityG += str * glow * 170;
+            cityB += str * glow * 30;
+          }
+        }
+      }
+
+      // Atmosphere limb (blue tint at sphere edge where dz ≈ 0)
+      const limbAtm = Math.pow(1 - dz, 3.2) * 0.40;
+
+      // Compose terrain → clouds → ice
+      let tr = br * (1 + eBoost);
+      let tg = bg * (1 + eBoost);
+      let tb = bb * (1 + eBoost);
+
+      // Blend clouds
+      tr = tr * (1 - cMix) + 228 * cMix;
+      tg = tg * (1 - cMix) + 234 * cMix;
+      tb = tb * (1 - cMix) + 242 * cMix;
+
+      // Blend polar ice
+      tr = tr * (1 - iceMix) + 230 * iceMix;
+      tg = tg * (1 - iceMix) + 242 * iceMix;
+      tb = tb * (1 - iceMix) + 252 * iceMix;
+
+      // Apply lighting
+      tr = tr * light + specBright * 200 + cityR;
+      tg = tg * light + specBright * 210 + cityG;
+      tb = tb * light + specBright * 240 + cityB;
+
+      // Night side darkening with faint star-shine tint
+      tr = tr * termMix + (ambient * 0.6) * (1 - termMix) * br;
+      tg = tg * termMix + (ambient * 0.6) * (1 - termMix) * bg;
+      tb = tb * termMix + (ambient * 0.6) * (1 - termMix) * bb;
+
+      // Atmosphere limb tint (blue at edges)
+      tr = tr * (1 - limbAtm) + 65  * limbAtm;
+      tg = tg * (1 - limbAtm) + 148 * limbAtm;
+      tb = tb * (1 - limbAtm) + 255 * limbAtm;
+
+      px[base]   = Math.max(0, Math.min(255, Math.round(tr)));
+      px[base+1] = Math.max(0, Math.min(255, Math.round(tg)));
+      px[base+2] = Math.max(0, Math.min(255, Math.round(tb)));
+      px[base+3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // ── Post: atmosphere outer glow drawn over ImageData ──────────────────────
+  const atmGrad = ctx.createRadialGradient(pcx, pcy, planetR * 0.90, pcx, pcy, planetR * 1.14);
+  atmGrad.addColorStop(0,    'rgba(70,150,255,0)');
+  atmGrad.addColorStop(0.35, 'rgba(70,150,255,0.28)');
+  atmGrad.addColorStop(0.70, 'rgba(40,110,230,0.10)');
+  atmGrad.addColorStop(1,    'rgba(15,70,200,0)');
+  ctx.fillStyle = atmGrad;
+  ctx.beginPath(); ctx.arc(pcx, pcy, planetR * 1.14, 0, Math.PI * 2); ctx.fill();
+
+  // Specular bloom (top-left shine)
+  const bloom = ctx.createRadialGradient(pcx - planetR*0.25, pcy - planetR*0.28, 0, pcx, pcy, planetR);
+  bloom.addColorStop(0,   'rgba(255,255,255,0.10)');
+  bloom.addColorStop(0.4, 'rgba(255,255,255,0.03)');
+  bloom.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle = bloom;
+  ctx.beginPath(); ctx.arc(pcx, pcy, planetR, 0, Math.PI * 2); ctx.fill();
+
+  // Tower ⬡ marker (visible on day side)
+  const tLon = (towerX / W) * Math.PI * 2 - Math.PI + lonOffset;
+  const tLat = (towerY / H - 0.5) * Math.PI + latOffset;
+  const tDz  = Math.cos(tLat) * Math.cos(tLon);
+  if (tDz > 0.15) {  // on visible hemisphere
+    const tSx = pcx + Math.round(Math.cos(tLat) * Math.sin(tLon) * planetR);
+    const tSy = pcy + Math.round(Math.sin(tLat) * planetR);
+    const tr2  = Math.max(4, Math.floor(planetR * 0.025));
+    ctx.strokeStyle = `rgba(240,210,30,${0.6 + tDz * 0.4})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+      if (i === 0) ctx.moveTo(tSx + tr2*Math.cos(a), tSy + tr2*Math.sin(a));
+      else         ctx.lineTo(tSx + tr2*Math.cos(a), tSy + tr2*Math.sin(a));
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+
+  // Caption
+  ctx.fillStyle = 'rgba(155,185,220,0.65)';
+  ctx.font = '10px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`seed ${seed}  ·  ${W}×${H}  ·  ${settlements.length} settlements`, CW/2, CH-4);
+}
+
+
+type RealmViewMode = 'map' | 'planet' | 'hex';
+let realmViewMode: RealmViewMode = 'map';
+
+let currentRealmData: RealmData | null = null;
+
+// Lazily-created Three.js planet renderer (only when first needed)
+let planetRenderer: PlanetRenderer | null = null;
+let hexPlanetRenderer: HexPlanetRenderer | null = null;
+
+const planet3dCanvas = document.getElementById('planet-3d-canvas') as HTMLCanvasElement;
+
+function getPlanetRenderer(): PlanetRenderer {
+  if (!planetRenderer) {
+    planetRenderer = new PlanetRenderer(planet3dCanvas);
+    const wrap = planet3dCanvas.parentElement!;
+    planetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  return planetRenderer;
+}
+
+function getHexPlanetRenderer(): HexPlanetRenderer {
+  if (!hexPlanetRenderer) {
+    hexPlanetRenderer = new HexPlanetRenderer(planet3dCanvas);
+    const wrap = planet3dCanvas.parentElement!;
+    hexPlanetRenderer.resize(wrap.clientWidth, wrap.clientHeight);
+  }
+  return hexPlanetRenderer;
+}
+
+let currentPlanetType: PlanetType = 'terran';
+
+// ── Solar System state ────────────────────────────────────────────────────────
+let solarRenderer: SolarSystemRenderer | null = null;
+let currentSolarData: SolarSystemData | null = null;
+
+function _drillIntoSolarPlanet(p: SolarSystemData['planets'][number]): void {
+  // Gas giants have no surface — skip drill-down
+  if (p.type === 'gas_giant') return;
+
+  // 1. Set planet type for the 3D renderer
+  currentPlanetType = p.isTowerPlanet ? 'terran' : p.type;
+  document.querySelectorAll('#planet-type-pills .pill').forEach(x => x.classList.remove('active'));
+  const pTypePill = document.querySelector(`#planet-type-pills [data-ptype="${currentPlanetType}"]`) as HTMLElement | null;
+  pTypePill?.classList.add('active');
+
+  // 2. Derive deterministic realm seed from solar system seed + planet id
+  const solarSeed = (currentSolarData?.seed ?? parseInt(seedInput.value)) || 0;
+  const planetRealmSeed = ((solarSeed ^ (p.id * 0x9E3779B9)) >>> 0);
+  seedInput.value = String(planetRealmSeed);
+
+  // 3. Set realm generation params to match planet type
+  type PlanetRealmConfig = { shape: RealmShape; climate: RealmClimate; roughness: number; settlements: number };
+  const PLANET_REALM: Partial<Record<PlanetType, PlanetRealmConfig>> = {
+    terran:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 6  },
+    ocean:     { shape: 'archipelago', climate: 'temperate', roughness: 30, settlements: 3  },
+    ice:       { shape: 'island',      climate: 'arctic',    roughness: 70, settlements: 2  },
+    volcanic:  { shape: 'island',      climate: 'temperate', roughness: 90, settlements: 2  },
+    toxic:     { shape: 'continents',  climate: 'tropical',  roughness: 70, settlements: 3  },
+    desert:    { shape: 'pangaea',     climate: 'temperate', roughness: 30, settlements: 4  },
+    verdant:   { shape: 'island',      climate: 'tropical',  roughness: 50, settlements: 5  },
+    dead:      { shape: 'island',      climate: 'arctic',    roughness: 40, settlements: 1  },
+    ringed:    { shape: 'island',      climate: 'temperate', roughness: 50, settlements: 4  },
+  };
+  const cfg = PLANET_REALM[currentPlanetType] ?? { shape: 'island' as RealmShape, climate: 'temperate' as RealmClimate, roughness: 50, settlements: 6 };
+
+  // Apply shape pill
+  document.querySelectorAll('#realm-shape-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector(`#realm-shape-pills [data-shape="${cfg.shape}"]`) as HTMLElement | null)?.classList.add('active');
+  // Apply climate pill
+  document.querySelectorAll('#realm-climate-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector(`#realm-climate-pills [data-climate="${cfg.climate}"]`) as HTMLElement | null)?.classList.add('active');
+  // Apply roughness slider
+  const roughnessEl = document.getElementById('realm-roughness') as HTMLInputElement | null;
+  if (roughnessEl) { roughnessEl.value = String(cfg.roughness); const lbl = document.getElementById('realm-roughness-val'); if (lbl) lbl.textContent = cfg.roughness < 25 ? 'Flat' : cfg.roughness < 50 ? 'Rolling' : cfg.roughness < 75 ? 'Moderate' : 'Rugged'; }
+  // Apply settlements slider
+  const settleEl = document.getElementById('realm-settlements') as HTMLInputElement | null;
+  if (settleEl) { settleEl.value = String(cfg.settlements); const lbl = document.getElementById('realm-settlements-val'); if (lbl) lbl.textContent = String(cfg.settlements); }
+
+  // 4. Force realm regeneration and switch to Realm → Hex view
+  currentRealmData = null;
+  realmViewMode = 'hex';
+  document.querySelectorAll('#realm-view-pills .pill').forEach(x => x.classList.remove('active'));
+  (document.querySelector('#realm-view-pills [data-view="hex"]') as HTMLElement | null)?.classList.add('active');
+
+  // 5. Navigate with breadcrumb
+  _switchMode('realm', planetRealmSeed, `🌍 ${p.name}`);
+}
+
+function getSolarRenderer(): SolarSystemRenderer {
+  if (!solarRenderer) {
+    solarRenderer = new SolarSystemRenderer(canvas);
+    solarRenderer.onPlanetHover(p => {
+      const el = document.getElementById('solar-hover-info');
+      if (el) el.textContent = p ? `${PLANET_META_SS[p.type]} ${p.name}` : '—';
+    });
+    solarRenderer.onPlanetClick(p => {
+      _drillIntoSolarPlanet(p);
+    });
+  }
+  solarRenderer.resize(canvas.offsetWidth || 800, canvas.offsetHeight || 600);
+  return solarRenderer;
+}
+
+// Tiny planet meta for solar hover label
+const PLANET_META_SS: Record<string, string> = {
+  terran:'🌍', ocean:'🌊', gas_giant:'🪐', ice:'❄', volcanic:'🌋',
+  toxic:'☣', desert:'🏜', verdant:'🌿', dead:'☾', ringed:'💫',
+};
+
+function generateSolarView(): void {
+  const seed = parseInt(seedInput.value) || Date.now();
+  currentSolarData = generateSolarSystem(seed);
+  const sr = getSolarRenderer();
+  sr.setData(currentSolarData);
+  sr.start();
+  // Populate star info
+  const starEl = document.getElementById('solar-star-info');
+  if (starEl) starEl.textContent = `${currentSolarData.star.spectral}-type · ${currentSolarData.planets.length} planets`;
+  // Populate planet list
+  const listEl = document.getElementById('solar-planet-list');
+  if (listEl) listEl.innerHTML = currentSolarData.planets.map(p =>
+    `<div>${PLANET_META_SS[p.type] ?? ''} ${p.name}${p.isTowerPlanet ? ' ⬡' : ''}</div>`
+  ).join('');
+
+  (window as any).__owStudioForceFirstSolarPlanetClick = () => {
+    const candidate = currentSolarData?.planets.find(p => p.type !== 'gas_giant') ?? null;
+    if (!candidate) return false;
+    _drillIntoSolarPlanet(candidate);
+    return true;
+  };
+}
+
+
+function showPlanetCanvas(show: boolean): void {
+  planet3dCanvas.style.display = show ? '' : 'none';
+  canvas.style.display         = show ? 'none' : '';
+  overlay.style.display        = show ? 'none' : '';
+  const layerCtrl  = document.getElementById('planet-layer-controls');
+  const typeSection = document.getElementById('planet-type-section');
+  if (layerCtrl)   layerCtrl.style.display   = show ? '' : 'none';
+  if (typeSection) typeSection.style.display  = show ? '' : 'none';
+}
+
+function _publishRealmDebugState(): void {
+  (window as any).__owStudioCurrentRealmData = currentRealmData
+    ? {
+        W: currentRealmData.W,
+        H: currentRealmData.H,
+        settlements: currentRealmData.settlements.map(s => ({
+          x: s.x, y: s.y, name: s.name, size: s.size, faction: s.faction,
+        })),
+        dungeons: currentRealmData.dungeons.map(d => ({ x: d.x, y: d.y })),
+        seed: currentRealmData.seed,
+        view: realmViewMode,
+      }
+    : null;
+}
+
+function redrawRealm(): void {
+  if (!currentRealmData) return;
+  _publishRealmDebugState();
+  if (realmViewMode === 'planet') {
+    showPlanetCanvas(true);
+    if (hexPlanetRenderer) hexPlanetRenderer.stop();
+    const pr  = getPlanetRenderer();
+    const d   = currentRealmData;
+
+    // Build textures from realm data
+    const dayTex   = buildDayTexture(d.cells, d.W, d.H);
+    const nightTex = buildNightTexture(d.settlements.map(s => ({ x: s.x, y: s.y, size: s.size })), d.W, d.H);
+    const specTex  = buildSpecularTexture(d.cells, d.W, d.H);
+    const cloudTex = buildCloudTexture(d.seed);
+
+    // Sun direction — bias toward front of planet so day side faces camera
+    const sunLon  = ((d.seed * 0.00137) % 1) * Math.PI * 2;
+    const sunElev = 0.35 + ((d.seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+    const sunDir  = new THREE.Vector3(
+      Math.cos(sunElev) * Math.sin(sunLon) * 0.6,   // reduced X/Z so Z stays positive
+      -Math.sin(sunElev) * 0.4,
+      Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,  // bias toward +Z (camera dir)
+    ).normalize();
+
+    // Atmosphere colour from planet type
+    const prDna = generatePlanetDNA(d.seed, currentPlanetType);
+    const [par,pag,pab] = prDna.atmosphereColor;
+    const atmColor = new THREE.Color(par/255, pag/255, pab/255);
+
+    pr.loadPlanet({
+      day: dayTex, night: nightTex, specular: specTex, cloud: cloudTex,
+      sunDirection: sunDir, atmosphereColor: atmColor, seed: d.seed,
+      settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
+      W: d.W, H: d.H, dna: prDna,
+    });
+    // Apply current layer toggle states
+    const showClouds = (document.getElementById('planet-show-clouds') as HTMLInputElement)?.checked ?? true;
+    const showAtmos  = (document.getElementById('planet-show-atmos')  as HTMLInputElement)?.checked ?? true;
+    const dayOnly    = (document.getElementById('planet-day-only')     as HTMLInputElement)?.checked ?? false;
+    pr.setVisible('clouds',     showClouds);
+    pr.setVisible('atmosphere', showAtmos);
+    pr.setDayOnly(dayOnly);
+    pr.start();
+  } else if (realmViewMode === 'hex') {
+    showPlanetCanvas(true);
+    if (planetRenderer) planetRenderer.stop();
+    const hr = getHexPlanetRenderer();
+    const d  = currentRealmData;
+    const sunLon  = ((d.seed * 0.00137) % 1) * Math.PI * 2;
+    const sunElev = 0.35 + ((d.seed ^ 0x7F2A) & 0xFF) / 0xFF * 0.25;
+    const sunDir  = new THREE.Vector3(
+      Math.cos(sunElev) * Math.sin(sunLon) * 0.6,
+      -Math.sin(sunElev) * 0.4,
+      Math.cos(sunElev) * Math.cos(sunLon) * 0.6 + 0.6,
+    ).normalize();
+    // Derive subdivision from realm Size slider: S=6, M=8, L=12, XL=16, Planet=20
+    const SIZE_TO_SUB: Record<number, number> = { 1: 6, 2: 8, 3: 12, 4: 16, 5: 24 };
+    void SIZE_TO_SUB;  // kept for reference
+    const realmSize   = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
+    const roughness   = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+    const shape       = (document.querySelector('#realm-shape-pills .pill.active')  as HTMLElement)?.dataset.shape   as RealmShape   ?? 'island';
+    const climate     = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate  ?? 'temperate';
+    void shape; void climate;  // shape+climate baked into cells
+    // Tile count: always maximum (sub 24 = 5762 tiles). Size controls realm resolution.
+    const subdivisions = 24;
+    void realmSize;
+    const tileCount = 10 * 24 * 24 + 2;
+    const hexSubVal = document.getElementById('hex-sub-val');
+    if (hexSubVal) hexSubVal.textContent = `${tileCount} tiles (sub 24)`;
+    const dna = generatePlanetDNA(d.seed, currentPlanetType);
+    const [ar2,ag2,ab2] = dna.atmosphereColor;
+    hr.loadPlanet({
+      seed: d.seed,
+      subdivisions,
+      roughness,
+      sunDirection: sunDir,
+      atmosphereColor: new THREE.Color(ar2/255, ag2/255, ab2/255),
+      settlements: d.settlements.map(s => ({ x: s.x, y: s.y, name: s.name, size: s.size })),
+      cells: d.cells,
+      W: d.W, H: d.H,
+      planetType: currentPlanetType,
+      dna,
+    });
+    // Apply layer toggles
+    const showAtmos = (document.getElementById('planet-show-atmos') as HTMLInputElement)?.checked ?? true;
+    hr.setVisible('atmosphere', showAtmos);
+    hr.setAutoRotate((document.getElementById('planet-auto-rotate') as HTMLInputElement)?.checked ?? true);
+    hr.setDayOnly((document.getElementById('planet-day-only') as HTMLInputElement)?.checked ?? false);
+    hr.start();
+  } else {
+    showPlanetCanvas(false);
+    if (planetRenderer) planetRenderer.stop();
+    if (hexPlanetRenderer) hexPlanetRenderer.stop();
+    drawRealm(currentRealmData, canvas);
+  }
+}
+
+function generateRealmView(): void {
+  const seed = parseInt(seedInput.value) || Date.now();
+  const size     = parseInt((document.getElementById('realm-size')         as HTMLInputElement)?.value ?? '2');
+  const nS       = parseInt((document.getElementById('realm-settlements')  as HTMLInputElement)?.value ?? '6');
+  const shape    = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement)?.dataset.shape as RealmShape ?? 'island';
+  const climate  = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate as RealmClimate ?? 'temperate';
+  const roughness = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+  const REALM_SIZES: Record<number, [number,number]> = {1:[64,48],2:[96,72],3:[160,120],4:[220,164],5:[300,225]};
+  const [W, H] = REALM_SIZES[size] ?? REALM_SIZES[2]!;
+  const t0 = performance.now();
+  currentRealmData = generateRealmData(seed, W, H, nS, shape, climate, roughness);
+  _publishRealmDebugState();
+  redrawRealm();
+  const ms = (performance.now()-t0).toFixed(1);
+  genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
+}
+
+
+// ── Studio mode tab switching ─────────────────────────────────────────────────
+
+document.getElementById('studio-tabs')!.addEventListener('click', e => {
+  const tab = (e.target as HTMLElement).closest('.studio-tab') as HTMLElement | null;
+  if (!tab) return;
+  const mode = tab.dataset.mode as StudioMode;
+  if (mode === studioMode) return;
+  studioMode = mode;
+  // Clear breadcrumb on manual tab switch (user is navigating explicitly)
+  _navStack = [];
+  _updateBreadcrumb();
+  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('settlement-controls')!.style.display = mode === 'settlement' ? '' : 'none';
+  document.getElementById('dungeon-controls')!.style.display    = mode === 'dungeon'    ? '' : 'none';
+  document.getElementById('cave-controls')!.style.display       = mode === 'cave'       ? '' : 'none';
+  document.getElementById('realm-controls')!.style.display      = mode === 'realm'      ? '' : 'none';
+  document.getElementById('solar-controls')!.style.display      = mode === 'solar'      ? '' : 'none';
+  (document.querySelector('.map-toolbar') as HTMLElement).style.visibility = mode === 'settlement' ? '' : 'hidden';
+  // Stop 3D planet loop when leaving realm tab
+  // Close building modal when leaving settlement
+  if (mode !== 'settlement') hideBuildingModal();
+  if (mode !== 'realm' && planetRenderer) {
+    planetRenderer.stop();
+    showPlanetCanvas(false);
+  }
+  if (mode !== 'realm' && hexPlanetRenderer) {
+    hexPlanetRenderer.stop();
+  }
+  if (mode !== 'solar' && solarRenderer) {
+    solarRenderer.stop();
+  }  if (mode === 'dungeon') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentDungeonPlan) generateDungeonView();
+    else redrawDungeon();
+  } else if (mode === 'cave') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentCaveData) generateCaveView();
+    else redrawCave();
+  } else if (mode === 'realm') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    if (!currentRealmData) generateRealmView();
+    else redrawRealm();
+  } else if (mode === 'solar') {
+    overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+    hoverEl.textContent = '';
+    showPlanetCanvas(false);
+    generateSolarView();
+  } else {
+    redraw();
+  }
+});
+
+document.getElementById('btn-solar-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `solar-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── OW-E5: Realm view pills (Map / Planet / Hex) — wire to realmViewMode ─────
+document.getElementById('realm-view-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.view) return;
+  const nextView = pill.dataset.view as RealmViewMode;
+  if (nextView === realmViewMode) return;
+  realmViewMode = nextView;
+  _flashStudioTransition(nextView === 'map' ? 'Surface Map' : nextView === 'planet' ? 'Planet View' : 'Hex Sphere');
+  document.querySelectorAll('#realm-view-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (currentRealmData) redrawRealm();
+});
+
+// ── Realm shape pills ─────────────────────────────────────────────────────────
+document.getElementById('realm-shape-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.shape) return;
+  document.querySelectorAll('#realm-shape-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm climate pills ───────────────────────────────────────────────────────
+document.getElementById('realm-climate-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.climate) return;
+  document.querySelectorAll('#realm-climate-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm planet-type pills ───────────────────────────────────────────────────
+document.getElementById('planet-type-pills')!.addEventListener('click', e => {
+  const pill = (e.target as HTMLElement).closest('.pill') as HTMLElement | null;
+  if (!pill?.dataset.ptype) return;
+  currentPlanetType = pill.dataset.ptype as PlanetType;
+  document.querySelectorAll('#planet-type-pills .pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  if (studioMode === 'realm') redrawRealm();
+});
+
+// ── Realm sliders ─────────────────────────────────────────────────────────────
+const SIZE_LABELS: Record<string, string> = { '1':'XS','2':'S','3':'M','4':'L','5':'XL' };
+const ROUGHNESS_LABELS = (v: number) => v < 25 ? 'Flat' : v < 50 ? 'Rolling' : v < 75 ? 'Moderate' : v < 90 ? 'Rugged' : 'Extreme';
+
+(document.getElementById('realm-size') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-size-val');
+  if (lbl) lbl.textContent = SIZE_LABELS[this.value] ?? this.value;
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+(document.getElementById('realm-roughness') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-roughness-val');
+  if (lbl) lbl.textContent = ROUGHNESS_LABELS(parseInt(this.value));
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+(document.getElementById('realm-settlements') as HTMLInputElement)?.addEventListener('input', function() {
+  const lbl = document.getElementById('realm-settlements-val');
+  if (lbl) lbl.textContent = this.value;
+  if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm PNG export ──────────────────────────────────────────────────────────
+document.getElementById('btn-realm-png')?.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `realm-${seedInput.value}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── World Package JSON export (smallest OW-F4-6 slice) ──────────────────────
+// First slice: export the currently generated realm plus deterministic
+// settlement/dungeon descriptors. This is intentionally JSON-only for now;
+// ZIP bundling can come later once/import path is defined.
+document.getElementById('btn-export-world-package')?.addEventListener('click', () => {
+  if (!currentRealmData) generateRealmView();
+  if (!currentRealmData) return;
+
+  const realmSeed   = currentRealmData.seed;
+  const shape       = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate     = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  const roughnessUi = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement | null)?.value ?? '50');
+  const sizeUi      = parseInt((document.getElementById('realm-size') as HTMLInputElement | null)?.value ?? '2');
+  const settlementsUi = parseInt((document.getElementById('realm-settlements') as HTMLInputElement | null)?.value ?? String(currentRealmData.settlements.length));
+
+  const worldPackage = {
+    version: 1,
+    kind: 'ttt_world_package',
+    exportedAt: new Date().toISOString(),
+    source: 'overworld-studio',
+    seed: realmSeed,
+    planetType: currentPlanetType,
+    realmViewMode,
+    config: {
+      shape,
+      climate,
+      roughness: roughnessUi,
+      size: sizeUi,
+      settlementCount: settlementsUi,
+    },
+    realm: {
+      seed: currentRealmData.seed,
+      W: currentRealmData.W,
+      H: currentRealmData.H,
+      tower: { x: currentRealmData.towerX, y: currentRealmData.towerY },
+      cells: currentRealmData.cells,
+      rivers: currentRealmData.rivers,
+      settlements: currentRealmData.settlements,
+      dungeons: currentRealmData.dungeons,
+    },
+    settlements: currentRealmData.settlements.map((s) => ({
+      x: s.x,
+      y: s.y,
+      name: s.name,
+      size: s.size,
+      faction: s.faction,
+      seed: ((realmSeed ^ (s.x * 73856093 + s.y * 19349663)) >>> 0),
+    })),
+    dungeons: currentRealmData.dungeons.map((d) => ({
+      x: d.x,
+      y: d.y,
+      seed: ((realmSeed ^ (d.x * 48271 + d.y * 16807)) >>> 0),
+    })),
+    // AL-4: custom (designer-authored) library entries travel with the world so
+    // runtime override lookups keep working after import on another machine.
+    customAssets: assetLibrary.exportCustomEntries(),
+  } as const;
+
+  const blob = new Blob([JSON.stringify(worldPackage, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.download = `world-package-${realmSeed}.json`;
+  a.href     = url;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  if ((window as any).__owStudioCurrentRealmData) {
+    (window as any).__owStudioLastWorldPackage = {
+      seed: realmSeed,
+      settlements: worldPackage.settlements.length,
+      dungeons: worldPackage.dungeons.length,
+      customAssets: worldPackage.customAssets.length,
+    };
+  }
+});
+
+// ── World Package JSON import (AL-4) ────────────────────────────────────────
+// Restores the `customAssets` bundled in an exported package back into this
+// browser's Asset Library, so runtime override lookups work after transfer.
+document.getElementById('btn-import-world-package')?.addEventListener('click', () => {
+  (document.getElementById('world-package-import-file') as HTMLInputElement | null)?.click();
+});
+
+document.getElementById('world-package-import-file')?.addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    const result = importWorldPackage(await file.text(), assetLibrary);
+    if (!result.ok) {
+      _showToast(`✕ ${result.error ?? 'Import failed'}`);
+      return;
+    }
+    if (_libraryOpen) _renderLibraryGrid();
+    const n = result.imported.length;
+    _showToast(`✓ Imported world package (seed ${result.summary?.seed}) — ${n} custom asset${n === 1 ? '' : 's'}`);
+  } catch (err) {
+    console.error('[WorldPackage] import failed:', err);
+    _showToast('✕ Invalid world package file');
+  } finally {
+    if (input) input.value = '';
+  }
+});
+
+// ── Asset Library ─────────────────────────────────────────────────────────────
+
+// ── Library state ────────────────────────────────────────────────────────────
+let _libraryOpen = false;
+let _libraryTypeFilter: AssetType | 'all' = 'all';
+let _librarySelectedId: string | null = null;
+
+// ── Thumbnail helpers ─────────────────────────────────────────────────────────
+function _renderThumbnail(_type: AssetType): string | null {
+  const thumbCanvas = document.getElementById('library-thumb-canvas') as HTMLCanvasElement | null;
+  if (!thumbCanvas) return null;
+  const ctx = thumbCanvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, 80, 80);
+  // Draw a small version of the current canvas as the thumbnail
+  ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 80, 80);
+  return thumbCanvas.toDataURL('image/png');
+}
+
+// ── Grid rendering ────────────────────────────────────────────────────────────
+function _renderLibraryGrid() {
+  const grid  = document.getElementById('library-grid');
+  const empty = document.getElementById('library-empty');
+  const count = document.getElementById('library-count');
+  if (!grid) return;
+
+  const entries = _libraryTypeFilter === 'all'
+    ? assetLibrary.getAll()
+    : assetLibrary.getByType(_libraryTypeFilter);
+
+  const search = (document.getElementById('library-search') as HTMLInputElement)?.value ?? '';
+  const filtered = search.trim()
+    ? entries.filter(e => e.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : entries;
+
+  if (count) count.textContent = `(${assetLibrary.size})`;
+  if (filtered.length === 0) {
+    grid.style.display = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  grid.style.display = 'grid';
+  if (empty) empty.style.display = 'none';
+
+  grid.innerHTML = '';
+  for (const entry of filtered) {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#1a1610;border:1px solid '
+      + (_librarySelectedId === entry.id ? '#c8a96e' : '#3a3028')
+      + ';border-radius:3px;cursor:pointer;padding:4px;overflow:hidden;position:relative';
+    card.title = entry.name;
+    if (entry.thumbnail) {
+      const img = document.createElement('img');
+      img.src    = entry.thumbnail;
+      img.width  = 80;
+      img.height = 80;
+      img.style.cssText = 'display:block;width:100%;border-radius:2px;margin-bottom:2px';
+      card.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.style.cssText = 'width:100%;padding-top:100%;background:#2a2016;border-radius:2px;margin-bottom:2px;position:relative;font-size:20px;display:flex;align-items:center;justify-content:center';
+      const icon = { building: '🏠', dungeon: '⚔', room: '🚪', npc: '🧑', enemy: '👹', prop: '🪑', tile: '🧱', settlement: '🏙', realm: '🌍', planet: '🪐', solar: '☀', cave: '🌿' }[entry.type];
+      ph.textContent = icon;
+      card.appendChild(ph);
+    }
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:9px;color:#c8a96e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    lbl.textContent = entry.name;
+    card.appendChild(lbl);
+    card.addEventListener('click', () => _selectLibraryEntry(entry.id));
+    grid.appendChild(card);
+  }
+}
+
+function _getLibraryTag(entry: LibraryEntry, key: string): string | null {
+  const tag = entry.tags.find(t => t.startsWith(`${key}:`));
+  return tag ? tag.slice(key.length + 1) : null;
+}
+
+function _setActivePillByDataset(containerId: string, datasetKey: string, value: string | null | undefined) {
+  if (!value) return;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const pills = Array.from(container.querySelectorAll('.pill')) as HTMLElement[];
+  const match = pills.find(p => (p.dataset as any)[datasetKey] === value);
+  if (!match) return;
+  pills.forEach(p => p.classList.remove('active'));
+  match.classList.add('active');
+}
+
+function _syncCaveTypeSections(type: CaveType) {
+  const isCave = type === 'cave';
+  const denseLabel = document.getElementById('cave-density-row') as HTMLElement | null;
+  if (denseLabel) denseLabel.style.display = isCave ? '' : 'none';
+  const caveSection  = document.getElementById('cave-biome-section') as HTMLElement | null;
+  const gladeSection = document.getElementById('glade-biome-section') as HTMLElement | null;
+  if (caveSection)  caveSection.style.display  = isCave ? '' : 'none';
+  if (gladeSection) gladeSection.style.display = isCave ? 'none' : '';
+}
+
+function _setStudioModeForLibraryPreview(mode: StudioMode) {
+  studioMode = mode;
+  _navStack = [];
+  _updateBreadcrumb();
+
+  document.querySelectorAll('.studio-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.studio-tab[data-mode="${mode}"]`)?.classList.add('active');
+
+  const mapToolbar = document.querySelector('.map-toolbar') as HTMLElement | null;
+  if (mapToolbar) mapToolbar.style.visibility = mode === 'settlement' ? '' : 'hidden';
+
+  if (mode !== 'settlement') hideBuildingModal();
+  if (mode !== 'realm' && planetRenderer) {
+    planetRenderer.stop();
+    showPlanetCanvas(false);
+  }
+  if (mode !== 'realm' && hexPlanetRenderer) {
+    hexPlanetRenderer.stop();
+  }
+  if (mode !== 'solar' && solarRenderer) {
+    solarRenderer.stop();
+  }
+
+  overlay.getContext('2d')!.clearRect(0, 0, overlay.width, overlay.height);
+  hoverEl.textContent = '';
+}
+
+function _previewLibraryEntry(entry: LibraryEntry | null) {
+  (window as any).__owStudioLastLibraryPreview = entry
+    ? { id: entry.id, type: entry.type, name: entry.name, seed: entry.seed }
+    : null;
+
+  if (!entry) return;
+
+  if (entry.type === 'settlement') {
+    _setStudioModeForLibraryPreview('settlement');
+    _setActivePillByDataset('type-pills', 'type', _getLibraryTag(entry, 'type'));
+    _setActivePillByDataset('layout-pills', 'layout', _getLibraryTag(entry, 'layout'));
+    const faction = _getLibraryTag(entry, 'faction') as SettlementFaction | null;
+    _setActivePillByDataset('faction-pills', 'faction', faction);
+    if (faction) updateLegend(faction);
+
+    currentModel = entry.data as SettlementModel;
+    persistentSeeds = null;
+    lastParams = null;
+    redraw();
+    if (currentModel) {
+      genTimeEl.textContent = `${entry.name}  ·  ${currentModel.wards.filter(w => w.withinCity).length} wards  ·  ${currentModel.roads.length} roads  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'dungeon' || entry.type === 'building' || entry.type === 'room') {
+    _setStudioModeForLibraryPreview('dungeon');
+    const dtype = _getLibraryTag(entry, 'dtype') ?? (entry.type === 'building' ? 'tower' : 'generic');
+    _setActivePillByDataset('dungeon-type-pills', 'dtype', dtype);
+    const isTower = dtype === 'tower';
+    const towerFloorRow = document.getElementById('tower-floor-row') as HTMLElement | null;
+    if (towerFloorRow) towerFloorRow.style.display = isTower ? '' : 'none';
+
+    if (entry.type === 'room') {
+      const room = entry.data as Blueprint;
+      currentDungeonPlan = {
+        rooms: new Map([[room.id, room]]),
+        startRoomId: room.id,
+        seed: entry.seed,
+      };
+    } else {
+      currentDungeonPlan = entry.data as DungeonPlan;
+    }
+
+    const floorInput = document.getElementById('dfloor') as HTMLInputElement | null;
+    const floorVal = document.getElementById('dfloor-val') as HTMLElement | null;
+    if (currentDungeonPlan && floorInput && isTower) {
+      const floors = [...currentDungeonPlan.rooms.values()].map(room => room.floor ?? 0);
+      const minFloor = floors.length ? Math.min(...floors) : 0;
+      const maxFloor = floors.length ? Math.max(...floors) : 0;
+      floorInput.min = String(minFloor);
+      floorInput.max = String(maxFloor);
+      if (parseInt(floorInput.value, 10) < minFloor || parseInt(floorInput.value, 10) > maxFloor) {
+        floorInput.value = String(minFloor);
+      }
+      if (floorVal) floorVal.textContent = `F${floorInput.value}`;
+    }
+    redrawDungeon();
+    if (currentDungeonPlan) {
+      if (entry.type === 'room') {
+        const onlyRoom = [...currentDungeonPlan.rooms.values()][0];
+        genTimeEl.textContent = `${entry.name}  ·  room ${onlyRoom?.id ?? '?'}  ·  ${onlyRoom?.width ?? 0}×${onlyRoom?.depth ?? 0}  ·  seed ${entry.seed}`;
+      } else {
+        genTimeEl.textContent = `${entry.name}  ·  ${currentDungeonPlan.rooms.size} rooms  ·  seed ${entry.seed}`;
+      }
+    }
+    return;
+  }
+
+  if (entry.type === 'cave') {
+    _setStudioModeForLibraryPreview('cave');
+    const ctype = (_getLibraryTag(entry, 'ctype') as CaveType | null) ?? 'cave';
+    _setActivePillByDataset('cave-type-pills', 'ctype', ctype);
+    _syncCaveTypeSections(ctype);
+    if (ctype === 'cave') _setActivePillByDataset('cave-biome-pills', 'biome', _getLibraryTag(entry, 'biome'));
+    else                  _setActivePillByDataset('glade-biome-pills', 'gbiome', _getLibraryTag(entry, 'biome'));
+
+    currentCaveData = entry.data as CaveData;
+    redrawCave();
+    if (currentCaveData) {
+      const openCells = currentCaveData.grid.flat().filter(Boolean).length;
+      genTimeEl.textContent = `${entry.name}  ·  ${openCells} open cells  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'realm') {
+    _setStudioModeForLibraryPreview('realm');
+
+    const shape = _getLibraryTag(entry, 'shape');
+    const climate = _getLibraryTag(entry, 'climate');
+    const ptype = _getLibraryTag(entry, 'planetType');
+    const view = _getLibraryTag(entry, 'view') as RealmViewMode | null;
+
+    _setActivePillByDataset('realm-shape-pills', 'shape', shape);
+    _setActivePillByDataset('realm-climate-pills', 'climate', climate);
+    if (ptype) {
+      currentPlanetType = ptype as PlanetType;
+      _setActivePillByDataset('planet-type-pills', 'ptype', ptype);
+    }
+    if (view) {
+      realmViewMode = view;
+      _setActivePillByDataset('realm-view-pills', 'view', view);
+    }
+
+    currentRealmData = entry.data as RealmData;
+    redrawRealm();
+    if (currentRealmData) {
+      genTimeEl.textContent =
+        `${entry.name}  ·  ${currentRealmData.W}×${currentRealmData.H}  ·  ${currentRealmData.settlements.length} settlements  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'planet') {
+    _setStudioModeForLibraryPreview('realm');
+
+    const planetData = entry.data as {
+      realmData?: RealmData;
+      planetType?: PlanetType;
+      view?: RealmViewMode;
+    };
+
+    const shape = _getLibraryTag(entry, 'shape');
+    const climate = _getLibraryTag(entry, 'climate');
+    _setActivePillByDataset('realm-shape-pills', 'shape', shape);
+    _setActivePillByDataset('realm-climate-pills', 'climate', climate);
+
+    currentPlanetType = planetData.planetType ?? (_getLibraryTag(entry, 'planetType') as PlanetType | null) ?? 'terran';
+    _setActivePillByDataset('planet-type-pills', 'ptype', currentPlanetType);
+
+    realmViewMode = planetData.view ?? (_getLibraryTag(entry, 'view') as RealmViewMode | null) ?? 'planet';
+    _setActivePillByDataset('realm-view-pills', 'view', realmViewMode);
+
+    currentRealmData = planetData.realmData ?? null;
+    if (currentRealmData) {
+      redrawRealm();
+      genTimeEl.textContent =
+        `${entry.name}  ·  ${currentPlanetType}  ·  ${realmViewMode} view  ·  seed ${entry.seed}`;
+    }
+    return;
+  }
+
+  if (entry.type === 'solar') {
+    _setStudioModeForLibraryPreview('solar');
+    currentSolarData = entry.data as SolarSystemData;
+    const sr = getSolarRenderer();
+    sr.setData(currentSolarData);
+    sr.start();
+
+    const starEl = document.getElementById('solar-star-info');
+    if (starEl) starEl.textContent = `${currentSolarData.star.spectral}-type · ${currentSolarData.planets.length} planets`;
+
+    const listEl = document.getElementById('solar-planet-list');
+    if (listEl) {
+      listEl.innerHTML = currentSolarData.planets.map(p =>
+        `<div>${PLANET_META_SS[p.type] ?? ''} ${p.name}${p.isTowerPlanet ? ' ⬡' : ''}</div>`
+      ).join('');
+    }
+
+    const hoverInfo = document.getElementById('solar-hover-info');
+    if (hoverInfo) hoverInfo.textContent = '—';
+
+    genTimeEl.textContent =
+      `${entry.name}  ·  ${currentSolarData.star.spectral}-type  ·  ${currentSolarData.planets.length} planets  ·  seed ${entry.seed}`;
+    return;
+  }
+
+  if (entry.type === 'npc') {
+    _setStudioModeForLibraryPreview('settlement');
+    const npcData = entry.data as {
+      displayName?: string;
+      species?: string;
+      role?: string;
+      settlementName?: string;
+      settlementType?: string;
+      settlementFaction?: string;
+    };
+    genTimeEl.textContent =
+      `${npcData.displayName ?? entry.name}  ·  ${npcData.species ?? 'unknown'} ${npcData.role ?? 'npc'}  ·  ${npcData.settlementName ?? 'Settlement'}  ·  seed ${entry.seed}`;
+  }
+}
+
+function _selectLibraryEntry(id: string) {
+  _librarySelectedId = id;
+  const entry = assetLibrary.getAll().find(e => e.id === id) ?? null;
+  const section = document.getElementById('library-preview-section');
+  const nameLbl = document.getElementById('library-preview-name');
+  const renameInput = document.getElementById('library-rename-input') as HTMLInputElement | null;
+  if (section) section.style.display = entry ? '' : 'none';
+  if (nameLbl && entry) nameLbl.textContent = `${entry.name} (${entry.type}, seed ${entry.seed})`;
+  if (renameInput) renameInput.value = entry?.name ?? '';
+  _renderPinTags(entry);
+  _previewLibraryEntry(entry);
+  _renderLibraryGrid();
+  _closeDnaEditor();
+}
+
+// ── Pin to location ───────────────────────────────────────────────────────────
+function _renderPinTags(entry: ReturnType<typeof assetLibrary.getAll>[number] | null) {
+  const el = document.getElementById('library-pin-tags');
+  if (!el) return;
+  if (!entry || entry.tags.length === 0) {
+    el.textContent = '';
+    return;
+  }
+  el.innerHTML = entry.tags
+    .map(tag => `<span style="display:inline-block;background:#2a2116;border:1px solid #3a3028;border-radius:10px;padding:1px 7px;margin:2px 3px 0 0;cursor:pointer" data-pin-tag="${tag}" title="Click to unpin">${tag} ✕</span>`)
+    .join('');
+}
+document.getElementById('library-pin-tags')?.addEventListener('click', (e) => {
+  const target = (e.target as HTMLElement | null)?.closest('[data-pin-tag]') as HTMLElement | null;
+  if (!target || !_librarySelectedId) return;
+  const tag = target.getAttribute('data-pin-tag');
+  if (!tag) return;
+  const locationId = tag.includes(':') ? tag.slice(tag.indexOf(':') + 1) : tag;
+  const updated = assetLibrary.unpinFromLocation(_librarySelectedId, locationId);
+  if (updated) {
+    _renderPinTags(updated);
+    _showToast(`✓ Unpinned from "${locationId}"`);
+  }
+});
+document.getElementById('btn-library-pin')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const input = document.getElementById('library-pin-input') as HTMLInputElement | null;
+  if (!input) return;
+  const locationId = input.value.trim();
+  if (!locationId) {
+    _showToast('✕ Enter a location id to pin to');
+    return;
+  }
+  const updated = assetLibrary.pinToLocation(_librarySelectedId, locationId);
+  if (!updated) {
+    _showToast('✕ Pin failed');
+    return;
+  }
+  input.value = '';
+  _renderPinTags(updated);
+  _renderLibraryGrid();
+  _showToast(`✓ Pinned to "${locationId}"`);
+});
+document.getElementById('library-pin-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') (document.getElementById('btn-library-pin') as HTMLElement | null)?.click();
+});
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+function _setLibraryOpen(open: boolean) {
+  _libraryOpen = open;
+  (window as any).__owStudioLibraryOpen = open;
+  const panel = document.getElementById('library-panel') as HTMLElement | null;
+  if (panel) {
+    panel.style.display = open ? 'block' : 'none';
+  }
+  if (open) _renderLibraryGrid();
+  // Also hide other control panels when library is open
+  const controlPanels = ['settlement-controls','dungeon-controls','cave-controls','realm-controls','solar-controls'];
+  for (const pid of controlPanels) {
+    const p = document.getElementById(pid) as HTMLElement | null;
+    if (p) p.style.display = open ? 'none' : (pid === `${studioMode}-controls` ? '' : 'none');
+  }
+}
+
+// ── Library toggle button (inject into sidebar header) ──────────────────────
+(function _injectLibraryToggle() {
+  const aside = document.querySelector('aside');
+  if (!aside) return;
+  const btn = document.createElement('button');
+  btn.id        = 'btn-library-toggle';
+  btn.className = 'btn';
+  btn.textContent = '📚 Library';
+  btn.style.cssText = 'width:100%;margin-bottom:6px';
+  aside.insertBefore(btn, aside.firstChild);
+  btn.addEventListener('click', () => _setLibraryOpen(!_libraryOpen));
+})();
+
+// ── Type pills ────────────────────────────────────────────────────────────────
+document.getElementById('library-type-pills')?.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('[data-ltype]') as HTMLElement | null;
+  if (!btn) return;
+  _libraryTypeFilter = btn.dataset.ltype as AssetType | 'all';
+  document.querySelectorAll('[data-ltype]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _renderLibraryGrid();
+});
+
+// ── Search input ──────────────────────────────────────────────────────────────
+document.getElementById('library-search')?.addEventListener('input', () => _renderLibraryGrid());
+
+// ── Import ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-import')?.addEventListener('click', () => {
+  (document.getElementById('library-import-file') as HTMLInputElement | null)?.click();
+});
+
+document.getElementById('library-import-file')?.addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const imported = assetLibrary.importEntry(parsed);
+    if (!imported) {
+      _showToast('✕ Import failed');
+      return;
+    }
+    _librarySelectedId = imported.id;
+    _renderLibraryGrid();
+    _selectLibraryEntry(imported.id);
+    _showToast(`✓ Imported "${imported.name}"`);
+  } catch (err) {
+    console.error('[AssetLibrary] import failed:', err);
+    _showToast('✕ Invalid JSON import');
+  } finally {
+    if (input) input.value = '';
+  }
+});
+
+// ── Rename ────────────────────────────────────────────────────────────────────
+function _renameSelectedLibraryEntry() {
+  if (!_librarySelectedId) return;
+  const input = document.getElementById('library-rename-input') as HTMLInputElement | null;
+  const current = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  if (!input || !current) return;
+  const updated = assetLibrary.rename(_librarySelectedId, input.value);
+  if (!updated) {
+    input.value = current.name;
+    _showToast('✕ Name cannot be empty');
+    return;
+  }
+  _renderLibraryGrid();
+  _selectLibraryEntry(updated.id);
+  _showToast(`✓ Renamed to "${updated.name}"`);
+}
+document.getElementById('btn-library-rename')?.addEventListener('click', _renameSelectedLibraryEntry);
+document.getElementById('library-rename-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') _renameSelectedLibraryEntry();
+});
+
+// ── Duplicate ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-duplicate')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const source = assetLibrary.getAll().find(e => e.id === _librarySelectedId);
+  if (!source) return;
+  const copy = assetLibrary.duplicate(_librarySelectedId, `${source.name} Copy`);
+  if (!copy) return;
+  _librarySelectedId = copy.id;
+  _renderLibraryGrid();
+  _selectLibraryEntry(copy.id);
+  _showToast(`✓ Duplicated "${source.name}"`);
+});
+
+// ── Edit DNA ──────────────────────────────────────────────────────────────────
+function _closeDnaEditor() {
+  const editor = document.getElementById('library-dna-editor') as HTMLElement | null;
+  if (editor) editor.style.display = 'none';
+}
+
+document.getElementById('btn-library-editdna')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const exported = assetLibrary.exportEntry(_librarySelectedId);
+  if (!exported) return;
+  const textarea = document.getElementById('library-dna-textarea') as HTMLTextAreaElement | null;
+  const editor = document.getElementById('library-dna-editor') as HTMLElement | null;
+  if (!textarea || !editor) return;
+  textarea.value = JSON.stringify(exported.data, null, 2);
+  editor.style.display = 'block';
+});
+
+document.getElementById('btn-library-dna-cancel')?.addEventListener('click', () => {
+  _closeDnaEditor();
+});
+
+document.getElementById('btn-library-dna-save')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const textarea = document.getElementById('library-dna-textarea') as HTMLTextAreaElement | null;
+  if (!textarea) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(textarea.value);
+  } catch (err) {
+    console.error('[AssetLibrary] Edit DNA: invalid JSON', err);
+    _showToast('✕ Invalid JSON');
+    return;
+  }
+  const updated = assetLibrary.updateData(_librarySelectedId, parsed);
+  if (!updated) {
+    _showToast('✕ Update failed');
+    return;
+  }
+  _closeDnaEditor();
+  _renderLibraryGrid();
+  _selectLibraryEntry(updated.id);
+  _showToast('✓ DNA updated');
+});
+
+// ── Export ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-export')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  const entry = assetLibrary.exportEntry(_librarySelectedId);
+  if (!entry) return;
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${entry.name.replace(/\s+/g, '_')}_${entry.seed}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-library-delete')?.addEventListener('click', () => {
+  if (!_librarySelectedId) return;
+  assetLibrary.remove(_librarySelectedId);
+  _librarySelectedId = null;
+  const section = document.getElementById('library-preview-section');
+  if (section) section.style.display = 'none';
+  _renderLibraryGrid();
+});
+
+// ── Save helpers ─────────────────────────────────────────────────────────────
+let _toastTimer = 0;
+function _showToast(msg: string) {
+  let toast = document.getElementById('library-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'library-toast';
+    toast.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);'
+      + 'background:#2a4a2a;color:#90d090;border:1px solid #4a8a4a;border-radius:4px;'
+      + 'padding:6px 14px;font-size:12px;pointer-events:none;z-index:9999;transition:opacity 0.3s';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(_toastTimer);
+  _toastTimer = window.setTimeout(() => { if (toast) toast.style.opacity = '0'; }, 1800);
+}
+
+function _makeLibraryEntry(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []): LibraryEntry {
+  return {
+    id:        `${type}_${seed}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    name,
+    seed,
+    createdAt: Date.now(),
+    tags,
+    isCustom:  false,
+    data,
+    thumbnail: _renderThumbnail(type),
+  };
+}
+
+function _buildOverworldSettlementPreviewPayload(): OverworldSettlementPreviewPayload | null {
+  if (!currentModel) return null;
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  return {
+    version: 1,
+    seed,
+    name: `Settlement #${seed}`,
+    settlementType: params.type,
+    faction: params.faction,
+    model: {
+      centre: {
+        x: currentModel.centre.x,
+        y: currentModel.centre.y,
+      },
+      radius: currentModel.radius,
+      wards: currentModel.wards.map(ward => ({
+        type: ward.type,
+        center: {
+          x: ward.center.x,
+          y: ward.center.y,
+        },
+        withinCity: ward.withinCity,
+      })),
+    },
+  };
+}
+
+function _saveToLibrary(type: AssetType, name: string, seed: number, data: unknown, tags: string[] = []) {
+  const entry = _makeLibraryEntry(type, name, seed, data, tags);
+  assetLibrary.add(entry);
+  (window as any).__assetLibraryLastSaved = { id: entry.id, type, name, seed, tags };
+  (window as any).__assetLibraryLastSavedBatch = null;
+  _showToast(`✓ Saved "${name}" to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
+}
+
+function _mapPlacedNpcRole(role: PlacedNpc['role']): NPCRole {
+  switch (role) {
+    case 'elder': return 'settlement_elder';
+    case 'merchant':
+    case 'guard':
+    case 'innkeeper':
+    case 'quest_giver':
+    case 'scholar':
+    case 'mysterious':
+      return role;
+  }
+}
+
+function _saveSettlementNpcsToLibrary(): void {
+  if (!currentModel) { alert('Generate a settlement first.'); return; }
+
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  const settlementId = `studio-settlement-${seed}`;
+  const settlementName = `Settlement #${seed}`;
+  const centerX = Math.round(currentModel.centre.x);
+  const centerZ = Math.round(currentModel.centre.y);
+  const npcCountByType: Record<SettlementType, number> = {
+    village: 4,
+    town: 6,
+    city: 8,
+  };
+  const npcCount = npcCountByType[params.type] ?? 4;
+  const placedNpcs = generateSettlementNpcs(settlementId, seed, centerX, centerZ, npcCount);
+
+  const npcEntries = placedNpcs.map((npc, index) => {
+    const role = _mapPlacedNpcRole(npc.role);
+    const dna = npcDna(Math.round(npc.pos.x), Math.round(npc.pos.z), seed, role);
+    const displayName = npcName(npc.seed);
+
+    return _makeLibraryEntry('npc', `${displayName} (${npc.role})`, seed, {
+      npcId: npc.id,
+      displayName,
+      species: npc.species,
+      role: npc.role,
+      settlementId,
+      settlementName,
+      settlementType: params.type,
+      settlementFaction: params.faction,
+      pos: npc.pos,
+      npcSeed: npc.seed,
+      dna,
+    }, [
+      `source:settlement`,
+      `settlement:${settlementId}`,
+      `stype:${params.type}`,
+      `faction:${params.faction}`,
+      `species:${npc.species}`,
+      `role:${npc.role}`,
+      `index:${index}`,
+    ]);
+  });
+
+  for (const entry of npcEntries) assetLibrary.add(entry);
+
+  (window as any).__assetLibraryLastSavedBatch = {
+    type: 'npc',
+    count: npcEntries.length,
+    ids: npcEntries.map(entry => entry.id),
+  };
+
+  _showToast(`✓ Saved ${npcEntries.length} settlement NPC${npcEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
+}
+
+// ── Save: Settlement ──────────────────────────────────────────────────────────
+document.getElementById('btn-save-settlement')?.addEventListener('click', () => {
+  if (!currentModel) { alert('Generate a settlement first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  _saveToLibrary('settlement', `Settlement #${seed}`, seed, currentModel, [
+    `type:${params.type}`,
+    `layout:${params.layout}`,
+    `faction:${params.faction}`,
+  ]);
+});
+
+document.getElementById('btn-save-settlement-npcs')?.addEventListener('click', _saveSettlementNpcsToLibrary);
+
+document.getElementById('btn-preview-overworld')?.addEventListener('click', () => {
+  const payload = _buildOverworldSettlementPreviewPayload();
+  if (!payload) { alert('Generate a settlement first.'); return; }
+  localStorage.setItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY, JSON.stringify(payload));
+  (window as any).__owStudioLastOverworldPreview = {
+    name: payload.name,
+    seed: payload.seed,
+    faction: payload.faction,
+    wardCount: payload.model.wards.length,
+  };
+  _showToast(`✓ Opening overworld preview for "${payload.name}"`);
+  window.open('/index.html', '_blank');
+});
+
+// ── Save: Dungeon ─────────────────────────────────────────────────────────────
+document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
+  if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+  _saveToLibrary('dungeon', `Dungeon #${seed}`, seed, currentDungeonPlan, [
+    `dtype:${dtype}`,
+  ]);
+});
+
+document.getElementById('btn-save-dungeon-rooms')?.addEventListener('click', () => {
+  if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const dtype = (document.querySelector('#dungeon-type-pills .pill.active') as HTMLElement)?.dataset.dtype ?? 'generic';
+
+  const roomEntries = [...currentDungeonPlan.rooms.values()].map((room, index) => {
+    const roomCopy = typeof structuredClone === 'function'
+      ? structuredClone(room)
+      : JSON.parse(JSON.stringify(room)) as Blueprint;
+
+    return _makeLibraryEntry('room', `Room Layout ${index + 1} (${room.id})`, seed, roomCopy, [
+      `dtype:${dtype}`,
+      `room:${room.id}`,
+      `floor:${room.floor ?? 0}`,
+      `source:dungeon`,
+      ...(room.floorType ? [`floorType:${room.floorType}`] : []),
+    ]);
+  });
+
+  for (const entry of roomEntries) assetLibrary.add(entry);
+
+  (window as any).__assetLibraryLastSavedBatch = {
+    type: 'room',
+    count: roomEntries.length,
+    ids: roomEntries.map(entry => entry.id),
+  };
+
+  _showToast(`✓ Saved ${roomEntries.length} room layout${roomEntries.length === 1 ? '' : 's'} to Library (${assetLibrary.size} total)`);
+  if (_libraryOpen) _renderLibraryGrid();
+});
+
+// ── Save: Cave ────────────────────────────────────────────────────────────────
+document.getElementById('btn-save-cave')?.addEventListener('click', () => {
+  if (!currentCaveData) { alert('Generate a cave first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const { type, biome } = getCaveParams();
+  _saveToLibrary('cave', `Cave #${seed}`, seed, currentCaveData, [
+    `ctype:${type}`,
+    `biome:${biome}`,
+  ]);
+});
+
+document.getElementById('btn-save-realm')?.addEventListener('click', () => {
+  if (!currentRealmData) { alert('Generate a realm first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const shape = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  _saveToLibrary('realm', `Realm #${seed}`, seed, currentRealmData, [
+    `shape:${shape}`,
+    `climate:${climate}`,
+    `planetType:${currentPlanetType}`,
+    `view:${realmViewMode}`,
+  ]);
+});
+
+document.getElementById('btn-save-planet')?.addEventListener('click', () => {
+  if (!currentRealmData) { alert('Generate a planet/realm first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const shape = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement | null)?.dataset.shape ?? 'island';
+  const climate = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement | null)?.dataset.climate ?? 'temperate';
+  _saveToLibrary('planet', `Planet ${currentPlanetType} #${seed}`, seed, {
+    realmData: currentRealmData,
+    planetType: currentPlanetType,
+    view: realmViewMode,
+  }, [
+    `planetType:${currentPlanetType}`,
+    `view:${realmViewMode}`,
+    `shape:${shape}`,
+    `climate:${climate}`,
+    'source:realm',
+  ]);
+});
+
+document.getElementById('btn-save-solar')?.addEventListener('click', () => {
+  if (!currentSolarData) { alert('Generate a solar system first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  _saveToLibrary('solar', `Solar System #${seed}`, seed, currentSolarData, [
+    `spectral:${currentSolarData.star.spectral}`,
+    `planets:${currentSolarData.planets.length}`,
+    `towerPlanet:${currentSolarData.towerPlanetId}`,
+  ]);
+});
+
+// ── Initial generation ────────────────────────────────────────────────────────
+
+generate();

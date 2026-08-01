@@ -1,8 +1,9 @@
 /**
  * NPCEntity — a living NPC in the overworld.
  *
- * Wander/idle/interact FSM.  Uses buildCreature() from the creature creator
- * pipeline so NPCs share the same visual DNA system as the player character.
+ * Wander/idle/interact FSM. NPCs build their visual rig via buildNpcSync()
+ * from the npc-creator module, which generates procedurally-varied characters
+ * using the Princess Creator rig system and seeded DNA for consistency.
  *
  * Interaction [E] at 2.5u opens an HTML dialogue panel (parchment style,
  * reuses BookReader aesthetics) with 2–3 generated dialogue lines.
@@ -10,12 +11,11 @@
 
 import * as THREE            from 'three';
 import { TimeSystem }        from '@/world/TimeSystem';
-import { buildCreature }     from '@/creatures/CreatureBuilder';
-import type { CreatureRig }  from '@/creatures/CreatureBuilder';
-import { animateCreature }   from '@/creatures/CreatureAnimator';
+import { buildNpcSync }      from '@/npc-creator/builder';
+import type { NpcInstance }  from '@/npc-creator/builder';
 import { mulberry32 }        from '@/core/prng';
 import type { NPCRole }      from './NPCDnaGenerator';
-import { npcDna, npcName }   from './NPCDnaGenerator';
+import { npcName }           from './NPCDnaGenerator';
 import { generateGreeting, generateQuestHint } from './NPCDialogue';
 import { injectHudTheme } from '@/ui/hudTheme';
 import type { DialogueContext }                 from './NPCDialogue';
@@ -23,6 +23,9 @@ import type { HistoryEvent }                    from './WorldHistory';
 import type { SettlementEntry, DungeonEntry }   from './WorldData';
 import { generateQuest }                        from './QuestDef';
 import type { QuestDef, QuestContext }          from './QuestDef';
+import type { NpcRole, NpcDNA }                 from '@/npc-creator/types';
+import type { GameSpecies }                     from '@/procedural/ProceduralDNA';
+import { getDefaultNpcDna }                     from '@/npc-creator/defaults/NpcDefaults';
 
 // ── FSM state ─────────────────────────────────────────────────────────────────
 
@@ -49,13 +52,86 @@ let _dialoguePanel: HTMLDivElement | null = null;
 let _dialogueCloseKey: ((e: KeyboardEvent) => void) | null = null;
 
 const ROLE_BADGE_LABEL: Record<string, string> = {
-  merchant:   'Merchant',
-  guard:      'Guard',
-  citizen:    'Citizen',
-  scholar:    'Scholar',
-  innkeeper:  'Innkeeper',
-  blacksmith: 'Blacksmith',
+  merchant:          'Merchant',
+  guard:             'Guard',
+  citizen:           'Citizen',
+  scholar:           'Scholar',
+  innkeeper:         'Innkeeper',
+  blacksmith:        'Blacksmith',
+  // C1: Quest-giver archetypes
+  quest_giver:       'Wandering Merchant',
+  settlement_elder:  'Village Elder',
+  mysterious:        '???',
 };
+
+// ── Old → new visual-system bridge ────────────────────────────────────────────
+//
+// NPCEntity's public/external role type stays the old 9-value NPCRole (used
+// by OverworldScene.ts's VILLAGE_ROLES/TOWN_ROLES/CITY_ROLES tables and all 4
+// call sites) — this table maps it onto the new npc-creator NpcRole for the
+// visual layer only.
+
+const OLD_ROLE_TO_NEW_ROLE: Record<NPCRole, NpcRole> = {
+  merchant:         'merchant',
+  guard:            'guard',
+  citizen:          'citizen',
+  scholar:          'scholar',
+  innkeeper:        'innkeeper',
+  blacksmith:       'merchant',   // rare role — close-enough shopkeeper analog
+  quest_giver:      'quest_giver',
+  settlement_elder: 'elder',
+  mysterious:       'mysterious',
+};
+
+// Flavor-preserving replacement for the old SUBRACES pool (human/elf/goblin/
+// orc/gnome/fae) — same structure/weighting, mapped onto the new GameSpecies
+// set: goblin→vulperia, orc→draconic, gnome→slime, fae→celestial.
+const NPC_SPECIES_POOL: GameSpecies[] = [
+  'human', 'human', 'human', 'elf', 'vulperia', 'draconic', 'slime', 'celestial',
+];
+
+/**
+ * Build a new-system NpcDNA from the same seeded inputs the old npcDna()
+ * used, so each NPC still looks consistent across sessions.
+ */
+export function toNpcDna(
+  col:            number,
+  row:            number,
+  settlementSeed: number,
+  role:           NPCRole,
+): NpcDNA {
+  const seed = (col * 73856093) ^ (row * 19349663) ^ settlementSeed;
+  const rand = mulberry32(seed);
+
+  const newRole = OLD_ROLE_TO_NEW_ROLE[role] ?? 'citizen';
+  const species = NPC_SPECIES_POOL[Math.floor(rand() * NPC_SPECIES_POOL.length)] ?? 'human';
+
+  const dna = getDefaultNpcDna(species, newRole, seed);
+
+  // Per-NPC seeded color variety within a settlement (mirrors the old
+  // hue/sat/lit variety logic, overlaid on the species' base palette).
+  const hue = Math.floor(rand() * 360);
+  const sat = 40 + Math.floor(rand() * 40);
+  const lit = 50 + Math.floor(rand() * 20);
+  const primary   = hslToHex(hue, sat, lit);
+  const secondary = hslToHex((hue + 40) % 360, sat - 10, lit + 10);
+
+  return {
+    ...dna,
+    colors: { ...dna.colors, primary, secondary },
+  };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
 
 function _showDialogue(npcName: string, lines: string, role?: string): void {
   injectHudTheme();
@@ -155,7 +231,7 @@ export class NPCEntity {
   readonly name: string;
   readonly role: NPCRole;
 
-  private readonly _rig:      CreatureRig;
+  private readonly _rig:      NpcInstance;
   private readonly _homeWx:   number;
   private readonly _homeWz:   number;
   private readonly _seed:     number;
@@ -202,9 +278,9 @@ export class NPCEntity {
 
     const rand = mulberry32(this._seed | 1);
 
-    // Build creature rig from seeded DNA
-    const dna  = npcDna(col, row, settlement.seed, role);
-    this._rig  = buildCreature(dna);
+    // Build NPC rig from seeded DNA (new princess-rig-based visual system)
+    const dna  = toNpcDna(col, row, settlement.seed, role);
+    this._rig  = buildNpcSync(dna);
 
     // Slight idle rotation offset so NPCs don't all face the same direction
     this._rig.root.rotation.y = rand() * Math.PI * 2;
@@ -340,14 +416,9 @@ export class NPCEntity {
       this._rig.root.rotation.y = Math.atan2(tdx, tdz);
     }
 
-    // ── Serpent trail locomotion + creature animation ─────────────────────
-    const t = performance.now() * 0.001;
+    // ── Walk/idle animation ────────────────────────────────────────────────
     const isMoving = this._state === 'wander' && this._target !== null;
-    if (this._rig.snakeLoco) {
-      // Run follow-en-trail BEFORE animateCreature so sway (+=) layers on top.
-      this._rig.snakeLoco.update(this._rig.root, this._rig.bones.segments ?? []);
-    }
-    animateCreature(this._rig, { state: isMoving ? 'walk' : 'idle', time: t });
+    this._rig.setAnimState(isMoving ? 'walk' : 'idle');
   }
 
   // ── Label ─────────────────────────────────────────────────────────────────

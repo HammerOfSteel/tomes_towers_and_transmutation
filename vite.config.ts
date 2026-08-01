@@ -81,6 +81,8 @@ export default defineConfig(({ mode }) => ({
   // F4: 'warn' in production builds, 'info' in dev — suppress noisy info logs in prod
   logLevel: mode === 'production' ? 'warn' : 'info',
   resolve: {
+    // Prioritise .ts over .js so stale JS mirrors don't shadow the real source
+    extensions: ['.mts', '.ts', '.tsx', '.mjs', '.js', '.jsx', '.json', '.vue'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
@@ -88,11 +90,20 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       input: {
-        main:        path.resolve(__dirname, 'index.html'),
-        assetViewer: path.resolve(__dirname, 'asset-viewer.html'),
-        sandbox:     path.resolve(__dirname, 'sandbox.html'),
-        worldEditor: path.resolve(__dirname, 'world-editor.html'),
-        modelReview: path.resolve(__dirname, 'model-review.html'),
+        main:           path.resolve(__dirname, 'index.html'),
+        sandbox:        path.resolve(__dirname, 'sandbox.html'),
+        worldEditor:    path.resolve(__dirname, 'world-editor.html'),
+        modelReview:    path.resolve(__dirname, 'model-review.html'),
+        princessCreator:  path.resolve(__dirname, 'princess-creator.html'),
+        showroom:         path.resolve(__dirname, 'showroom.html'),
+        creatureLab:      path.resolve(__dirname, 'creature-lab.html'),
+        overworldStudio:  path.resolve(__dirname, 'overworld-studio.html'),
+        buildingViewer:   path.resolve(__dirname, 'building-viewer.html'),
+        npcCreator:       path.resolve(__dirname, 'npc-creator.html'),
+        buildingCreator:  path.resolve(__dirname, 'building-creator.html'),
+        enemyCreator:     path.resolve(__dirname, 'enemy-creator.html'),
+        propCreator:      path.resolve(__dirname, 'prop-creator.html'),
+        tileCreator:      path.resolve(__dirname, 'tile-creator.html'),
       },
     },
   },

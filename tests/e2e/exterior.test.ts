@@ -106,7 +106,113 @@ test.describe('Overworld (exterior) scene', () => {
     console.log(`✓ Minimum player Y over 2 s: ${minY}`);
   });
 
-  // ── 6. Tower entrance prompt zone ────────────────────────────────────────
+  // ── 6. Building blocks player movement (collision fix) ───────────────────
+
+  test('player cannot walk through a spawned building (blocked by collider)', async ({ page }) => {
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, '06-building-collision-before');
+
+    const before = await getPlayerPos(page);
+    const buildingPos = await page.evaluate(() =>
+      (window as any).__game.spawnBuildingNearPlayer('inn', 'tudor', 2),
+    ) as { x: number; z: number };
+
+    // spawnBuildingNearPlayer places the building 6 units along world +X from
+    // wherever the player stood (main.ts: bx = pos.x + 6, bz = pos.z), so the
+    // player already stands ~6 units west of the building's center, just
+    // outside its west wall ('inn' has no KIND_FOOTPRINT override -> default
+    // 'medium' footprint w=5, half-width 2.5, so the wall sits ~3.5 units
+    // ahead of the player's starting position).
+    //
+    // Movement here is isometric (see PlayerController.ts's ISO_RIGHT/
+    // ISO_BACKWARD/etc.) — ISO_RIGHT=(1,0,-1) + ISO_BACKWARD=(1,0,1) sum to
+    // pure world +X, so holding both ArrowRight and ArrowDown together walks
+    // the player straight toward the building along world +X.
+    for (let i = 0; i < 25; i++) {
+      await page.keyboard.down('ArrowRight');
+      await page.keyboard.down('ArrowDown');
+      await page.waitForTimeout(150);
+    }
+    await page.keyboard.up('ArrowRight');
+    await page.keyboard.up('ArrowDown');
+    await page.waitForTimeout(300);
+
+    const after = await getPlayerPos(page);
+    await page.screenshot({ path: 'tests/e2e/screenshots/06-building-collision-after.png' });
+
+    // At WALK_SPEED=5 u/s (PlayerController.ts), 25*150ms=3.75s of held input
+    // would carry an unobstructed player ~18 units forward — far past the
+    // building's far (east) wall (buildingPos.x + 2.5). If the collider
+    // works, the player should stop at (or just before) the near (west)
+    // wall instead.
+    const wallX = buildingPos.x - 2.5;
+    expect(after.x, `player should be blocked at/near the west wall x<=${wallX}+0.6, got ${after.x} (started at ${before.x}, building center at ${buildingPos.x})`)
+      .toBeLessThanOrEqual(wallX + 0.6);
+    // Sanity: confirm the player actually attempted to move (rules out a
+    // broken input simulation silently passing this test).
+    expect(after.x, 'player should have moved forward from the start position').toBeGreaterThan(before.x + 0.3);
+  });
+
+  // ── 7. Door-proximity prompt still works right at the wall ───────────────
+
+  test('getNearestBuilding still finds the building from just outside its wall', async ({ page }) => {
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, '07-building-door-proximity');
+
+    const buildingPos = await page.evaluate(() =>
+      (window as any).__game.spawnBuildingNearPlayer('cottage', 'thatched', 1),
+    ) as { x: number; z: number };
+
+    // 'cottage' footprint is w=5, d=4 (KIND_FOOTPRINT override) — its south
+    // wall sits 2 units before its center (buildingPos.z + 2). Stand
+    // 1 unit outside that wall (well within maxDist=4 of the wall, but
+    // more than 4 units from the *center* — this is exactly the scenario
+    // that broke before this fix).
+    await teleportPlayer(page, buildingPos.x, 1.5, buildingPos.z + 3);
+    await page.waitForTimeout(300);
+
+    // main.ts's exterior HUD toggles #exterior-prompt's opacity between
+    // '0' (hidden) and '1' (visible) via _setExteriorPrompt() — see
+    // main.ts ~line 2127-2146. getNearestBuilding() returning non-null
+    // sets its text to "Enter <buildingKind>" (main.ts ~line 2437-2439).
+    const opacity = await page.locator('#exterior-prompt').evaluate(el => (el as HTMLElement).style.opacity);
+    const text = await page.locator('#exterior-prompt').innerHTML();
+
+    expect(opacity, 'prompt should be visible (opacity 1) when within 1 unit of the wall').toBe('1');
+    expect(text).toContain('cottage');
+  });
+
+  // ── 8. Player does not clip through terrain at an elevation edge ─────────
+
+  test('player stays grounded at a terrain elevation edge (no clipping)', async ({ page }) => {
+    await loadPage(page);
+    await startGame(page);
+    await goExterior(page, '08-elevation-edge-before');
+
+    // Walk the player toward the world edge in a straight line, sampling Y
+    // periodically — elevation transitions exist somewhere along any long
+    // traversal across the default generated terrain. A negative or wildly
+    // fluctuating Y (falling into geometry) indicates the collider doesn't
+    // match the visual steps.
+    const samples: number[] = [];
+    for (let step = 0; step < 10; step++) {
+      await teleportPlayer(page, step * 4 - 20, 5, step * 4 - 20);
+      await page.waitForTimeout(200);
+      const p = await getPlayerPos(page);
+      samples.push(p.y);
+    }
+    await page.screenshot({ path: 'tests/e2e/screenshots/08-elevation-edge-after.png' });
+
+    console.log(`[test] Y samples across traversal: ${samples.map(y => y.toFixed(2)).join(', ')}`);
+    for (const y of samples) {
+      expect(y, `player Y should never fall below -1 (fell through terrain), got ${y}`)
+        .toBeGreaterThan(-1);
+    }
+  });
+
+  // ── 9. Tower entrance prompt zone ────────────────────────────────────────
 
   test('nearTowerEntrance is false at spawn (r=8) and true close to door', async ({ page }) => {
     await loadPage(page);
@@ -134,7 +240,7 @@ test.describe('Overworld (exterior) scene', () => {
     console.log(`✓ Spawn at r=${distFar.toFixed(2)}, door zone at r=${distNear.toFixed(2)}`);
   });
 
-  // ── 7. Round-trip interior → exterior → interior ─────────────────────────
+  // ── 10. Round-trip interior → exterior → interior ────────────────────────
 
   test('can switch interior → exterior → interior without error', async ({ page }) => {
     const errors: string[] = [];
@@ -146,12 +252,12 @@ test.describe('Overworld (exterior) scene', () => {
     // Go exterior
     await page.evaluate(() => (window as any).__game.switchToExterior());
     await page.waitForTimeout(500);
-    await page.screenshot({ path: 'tests/e2e/screenshots/07a-round-trip-exterior.png' });
+    await page.screenshot({ path: 'tests/e2e/screenshots/10a-round-trip-exterior.png' });
 
     // Go back interior
     await page.evaluate(() => (window as any).__game.switchToInterior());
     await page.waitForTimeout(500);
-    await page.screenshot({ path: 'tests/e2e/screenshots/07b-round-trip-interior.png' });
+    await page.screenshot({ path: 'tests/e2e/screenshots/10b-round-trip-interior.png' });
 
     const mode = await getGameMode(page);
     expect(mode).toBe('interior');
@@ -159,7 +265,7 @@ test.describe('Overworld (exterior) scene', () => {
     console.log('✓ Interior → Exterior → Interior round-trip clean');
   });
 
-  // ── 8. Elevated tile physics — player stands above y=0 when on level≥1 ───
+  // ── 11. Elevated tile physics — player stands above y=0 when on level≥1 ──
 
   test('player stands at elevated y on high-level terrain tiles', async ({ page }) => {
     await loadPage(page);
@@ -181,7 +287,7 @@ test.describe('Overworld (exterior) scene', () => {
     });
 
     const spawnPos = await waitForGrounded(page, 2_000);
-    await page.screenshot({ path: 'tests/e2e/screenshots/08-spawn-height.png' });
+    await page.screenshot({ path: 'tests/e2e/screenshots/11-spawn-height.png' });
 
     console.log(`✓ Spawn ground Y: ${spawnPos}`);
     // At spawn (flat zone, level 0) player should be around y=0.85

@@ -12,20 +12,26 @@
 import { WorldGrid }           from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldData }      from './WorldData';
-import { createNoise2D, fbm }  from '@/core/SimplexNoise';
 import { generateHydrology }   from './HydrologyGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
+import { placeCavesAndGlades } from './CaveGladeWorldPlacer';
 import { buildInterSettlementRoads } from './RoadGenerator';
 import { simulateWorldHistory }      from './WorldHistory';
 import { placeResourceNodes }         from './ResourceNodePlacer';
+import { generateRealmData }   from './RealmGenerator';
+import { realmToWorldGrid }    from './RealmToWorldGrid';
 
 const MLV = 4;
 
 /**
- * Build a WorldGrid with elevation (0–4) and biome data from seeded simplex
- * noise.  The algorithm matches the original OverworldScene._buildGrid with
- * distances parameterised to the grid size:
+ * Build a WorldGrid with elevation (0–4) and biome data sourced from the
+ * same `generateRealmData()` realm generator Overworld Studio uses (P0
+ * realm/terrain unification — see
+ * TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md), resampled onto
+ * this grid's shape via `realmToWorldGrid()`. The tower flat-zone/rim-bias
+ * post-processing below matches the original OverworldScene._buildGrid
+ * with distances parameterised to the grid size:
  *   – Flat zone  ≈ 28 % of half-width  (FR = 7 at GW = 51)
  *   – Rim bias starts at 80 % of half-width and spans 36 %
  */
@@ -40,8 +46,12 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   const rimStart = GHW * 0.80;
   const rimRange = GHW * 0.36;
 
-  const noise = createNoise2D(seed ^ 0x5E_A1_9D_7B);
-  const grid  = new WorldGrid(GW, GH);
+  // P0 — terrain is now sourced from the same realm generator Overworld
+  // Studio uses, instead of an independent FBM-noise algorithm, so the
+  // same seed produces recognizably the same land/water/mountain layout
+  // in both places. See TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md.
+  const realm = generateRealmData(seed);
+  const grid  = realmToWorldGrid(realm, config.worldSize);
 
   for (let row = 0; row < GH; row++) {
     for (let col = 0; col < GW; col++) {
@@ -49,28 +59,24 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
       const dr  = row - GHH;
       const tR  = Math.sqrt(dc * dc + dr * dr);
 
-      const nx  = dc / GW;
-      const nz  = dr / GH;
-      const raw = (fbm(noise, nx * 3.8, nz * 3.8, 4) + 1) * 0.5;
-      let level = Math.min(MLV, Math.floor(raw * (MLV + 1)));
+      let level = grid.get(col, row).elevation;
 
-      // Smooth flatness gradient around the tower site
+      // Smooth flatness gradient around the tower site — kept as a
+      // gameplay requirement (guaranteed buildable land at the tower)
+      // independent of what the realm placed there.
       const flatness = Math.max(0, 1 - tR / FR);
       level = Math.round(level * (1 - flatness));
 
-      // Rim elevation bias (bowl walls)
+      // Rim elevation bias (bowl walls) — kept unchanged.
       const rimBias = Math.max(0, (tR - rimStart) / rimRange);
       level = Math.min(MLV, Math.round(level + rimBias * 1.8));
 
-      const biomes = ['bog', 'grass', 'forest', 'highland', 'rocky'] as const;
-      grid.set(col, row, {
-        elevation: level,
-        biome:     biomes[level],
-      });
+      grid.set(col, row, { elevation: level });
     }
   }
 
-  // OW-2: carve rivers into the grid
+  // OW-2: carve rivers into the grid (unchanged — out of scope for P0,
+  // see design spec's "Explicitly out of scope" section)
   generateHydrology(grid, config, seed);
 
   return grid;
@@ -88,6 +94,9 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   // we build inter-settlement roads the grid already has settlement road tiles
   // marked — A* will cheaply reuse them.
   const settlements = placeSettlements(grid, cfg, seed);
+  // CG-3 — cave/glade entrances scattered after dungeons/settlements so they
+  // steer clear of tiles those passes already claimed.
+  const { caves, glades } = placeCavesAndGlades(grid, cfg, seed);
 
   // Build terrain-aware inter-settlement roads (MST + A* + DP simplification).
   const { tiles: interRoads } = buildInterSettlementRoads(settlements, grid);
@@ -100,9 +109,9 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
     }
   }
 
-  const partial = { config: cfg, grid, dungeons, settlements, interRoads,
+  const partial = { config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
                     resourceNodes: [] as import('./ResourceNodePlacer').ResourceNodeRecord[],
-                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, interRoads,
+                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
                       resourceNodes: [] }, seed) };
   partial.resourceNodes = placeResourceNodes(partial);
   return partial;

@@ -378,6 +378,14 @@ export class TalentTree {
       if (!node) return;
       const bought = this._talents!.hasNode(id);
       const canBuy = this._talents!.canBuy(id, this._prog!);
+
+      // D6/NS2: species gate — dim nodes not available to active species
+      const speciesLocked = !!(
+        node.allowedSpecies &&
+        this._talents!.activeSpecies &&
+        !(node.allowedSpecies as readonly string[]).includes(this._talents!.activeSpecies)
+      );
+
       const locked = !bought && !canBuy &&
         !node.prerequisites.every(p => this._talents!.hasNode(p));
       const color = PATH_COLOR[node.path] ?? '#888';
@@ -385,8 +393,15 @@ export class TalentTree {
       div.style.border = `2px solid ${bought ? color : canBuy ? color : '#1a1030'}`;
       div.style.background = bought ? `rgba(${rgb},0.35)` : canBuy ? 'rgba(10,4,26,0.8)' : 'rgba(4,2,10,0.6)';
       div.style.boxShadow = bought ? `0 0 14px rgba(${rgb},0.55)` : canBuy ? `0 0 8px rgba(${rgb},0.25)` : 'none';
-      div.style.opacity = locked ? '0.25' : '1';
+      div.style.opacity = speciesLocked ? '0.12' : locked ? '0.25' : '1';
       div.style.cursor = canBuy ? 'pointer' : 'default';
+      // Species-locked tooltip marker
+      if (speciesLocked) {
+        div.title = `${node.name}\n[${(node.allowedSpecies as readonly string[]).join('/')} only]`;
+        div.style.filter = 'grayscale(0.8)';
+      } else {
+        div.style.filter = '';
+      }
       // Update inner dot
       const dot = div.querySelector('div') as HTMLElement | null;
       if (dot && !dot.textContent?.includes('✦')) {

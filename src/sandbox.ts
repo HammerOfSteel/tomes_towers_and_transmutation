@@ -31,10 +31,6 @@
 import * as THREE from 'three';
 import { OrbitControls }    from 'three/addons/controls/OrbitControls.js';
 import { AssetLoader }      from '@/assets/AssetLoader';
-import {
-  assembleBuilding,
-  BUILDING_PRELOAD_PATHS,
-} from '@/world/buildings/AssetBuildingAssembler';
 import { generateBuilding }               from '@/world/buildings/BuildingGenerator';
 import type { BuildingType } from '@/world/buildings/BuildingTypes';
 import { mulberry32 }                     from '@/core/prng';
@@ -577,8 +573,7 @@ function filterPalette(query: string) {
 
 async function _placeBuilding(type: BuildingType, seed: number, col: number, row: number) {
   setStatus(`Assembling ${type}…`);
-  await loader.preload([...BUILDING_PRELOAD_PATHS]);
-  const grp = assembleBuilding(loader, type, seed);
+  const grp = generateBuilding(type, seed);
   grp.position.set(col * T, 0, row * T);
   scene.add(grp);
   placedTiles.push({ path: `preset:${type}`, col, row, floor: 0, rotY: 0, offX: 0, offZ: 0, group: grp });
@@ -1487,7 +1482,7 @@ async function init() {
   /** Sync palette collapse state + button highlights from saved config. */
   function applyAssetModeToUI() {
     const cfg = loadWorldGenConfig();
-    const isKenney = cfg.assetMode === 'kenney';
+    const isKenney = false;
     codeModeBtn.classList.toggle('active',  !isKenney);
     assetModeBtn.classList.toggle('active',  isKenney);
 
@@ -1546,7 +1541,7 @@ async function init() {
 
   assetModeBtn.addEventListener('click', () => {
     const cfg = loadWorldGenConfig();
-    cfg.assetMode = 'kenney';
+    // cfg.assetMode removed
     saveWorldGenConfig(cfg);
     applyAssetModeToUI();
   });

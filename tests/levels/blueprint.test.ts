@@ -301,3 +301,42 @@ describe('doorSpawnPosition', () => {
     expect(sp.z).toBeCloseTo(0);
   });
 });
+
+describe('wall/door-frame visibility (BlueprintRenderer)', () => {
+  // Dollhouse cutaway (hiding camera-facing walls) was removed — see
+  // docs/superpowers/plans/2026-07-29-disable-indoor-wall-occlusion.md.
+  // Every wall and door frame must now always render, regardless of
+  // position relative to the camera.
+  it('keeps every wall tile visible, near and far, with no dollhouseCut tag', () => {
+    const physics = makeMockPhysics();
+    const room = renderBlueprint(VALID_BP, physics as never);
+    const wallMeshes = room.group.children.filter(
+      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isWall === true,
+    );
+    expect(wallMeshes.length).toBeGreaterThan(0);
+    for (const m of wallMeshes) {
+      expect(m.visible).toBe(true);
+      expect(m.userData.dollhouseCut).toBeUndefined();
+    }
+  });
+
+  it('still creates a physics body for every wall — collision unaffected', () => {
+    const physics = makeMockPhysics();
+    renderBlueprint(VALID_BP, physics as never);
+    // Same 7 bodies as the pre-cutaway baseline test: 5 wall tiles + 1 floor + 1 interactable
+    expect(physics.createStaticBox).toHaveBeenCalledTimes(7);
+  });
+
+  it('keeps door frame posts/lintel visible regardless of camera-facing side', () => {
+    const physics = makeMockPhysics();
+    const room = renderBlueprint(VALID_BP, physics as never);
+    const doorFrameMeshes = room.group.children.filter(
+      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isDoorFrame === true,
+    );
+    expect(doorFrameMeshes.length).toBeGreaterThan(0);
+    for (const m of doorFrameMeshes) {
+      expect(m.visible).toBe(true);
+      expect(m.userData.dollhouseCut).toBeUndefined();
+    }
+  });
+});

@@ -103,6 +103,15 @@ export const BACKROOM_DEFS: ReadonlyArray<BackroomDef> = [
     persistent:  false,
     portalColor: 0xffee44,
   },
+  {
+    id:          'building_lab',
+    name:        'Building Interior Lab',
+    icon:        '🏗',
+    description: 'Walk through procedural building interiors as the fox princess. Tests room layouts, stair connections, collision, and NPC placement.',
+    spawnPoint:  { x: 0, y: 1.5, z: 12 },
+    persistent:  false,
+    portalColor: 0x44cc88,
+  },
 ];
 
 export const BackroomRegistry = {

@@ -11,11 +11,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true   # repo tracks .glb/.fbx/.zip/.mp3 via Git LFS; without this the dev server serves pointer stubs
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies

@@ -2,7 +2,24 @@
 
 > *A captive princess. A dusty library of forbidden magic. An oblivious wizard captor. Revenge.*
 
-**Tomes, Towers & Transmutation** is a narrative-driven isometric action-RPG built entirely in the browser. No game engine — just Three.js, Rapier3D physics, and raw WebGL shaders. A captive princess teaches herself magic from her captor's own textbooks, escapes, claims the tower, recruits a monster army, and delivers an overwhelmingly disproportionate act of revenge.
+**Tomes, Towers & Transmutation** is a narrative-driven isometric action-RPG built entirely in the browser using Three.js, Rapier3D physics, and TypeScript. No game engine — pure WebGL. Four species of captive princess (human, undead, vulperia, and slime) each escape a wizard's tower, claim it, and deliver a disproportionate act of revenge.
+
+**Current status:** Active development — `DEMO_RELEASE` branch targets a public alpha on itch.io.
+
+---
+
+## What You Can Do Right Now
+
+- Start a new game — narrative campfire intro with the wizard's talking fire-salamander familiar
+- Play all 4 species with unique dialogue, abilities, and story arcs
+- Explore a procedurally-generated 9-floor wizard's tower
+- Fight 28+ procedurally-generated enemy types
+- Cast 12+ spells across 6 elements — fire, ice, lightning, arcane, shadow, nature
+- Build a monster army by sparing enemies at low HP
+- Unlock and spend talent points on a 30-node constellation per species
+- Trigger Arcanist Solmor's 3-stage dialogue tree
+- Enter **Creative Mode** (Ctrl+Shift+C in dev builds) — Minecraft-style world editor
+- Run the **Game Bot** — autonomous Playwright-driven test agent
 
 ---
 
@@ -10,12 +27,17 @@
 
 | Feature | Details |
 |---|---|
-| **Combat** | ALttP-style real-time combat — sweeping melee arcs, aimed spell projectiles, dodge-rolls, i-frames |
-| **Procedural everything** | Geometry, textures, VFX — all generated in code (no external assets until Phase 8) |
-| **Tower as dungeon** | Procedurally generated multi-floor tower interior via seeded BSP/cellular-automata |
-| **Monster recruitment** | Spare enemies below 10% HP to add them to your party |
-| **Power fantasy arc** | Intentionally exponential power curve — the final boss is a narrative punchline |
-| **In-house level editor** | Toggleable dev tool to build/export rooms as JSON blueprints |
+| **Combat** | ALttP-style real-time — melee arcs, aimed spells, dodge-rolls with i-frames, hit-stop, screen shake |
+| **4 playable species** | Human / Undead / Vulperia (fox) / Slime — each with unique passives, abilities, talent paths, and a full 4-act story |
+| **Procedural tower** | 9+ floors, seeded BSP rooms, encounter pools, floor title cards, staircase flavour text |
+| **Procedural art** | All environment/prop/enemy geometry generated in code (Three.js primitives + procedural textures) — no external GLB asset kits |
+| **Monster recruitment** | Spare enemies below 15% HP → add to party (PatrolBehavior FSM, TacticalBrute tier-2 AI) |
+| **Creative Mode** | Fly mode, asset browser, drag-place, undo/redo, spawn palette, backroom portals, quest builder |
+| **Game Bot** | `npm run bot` — Playwright scenarios: creative-smoke, quest-chain, explore-floor, bot-place-forest… |
+| **Princess Atelier** | Standalone Spore-style creator — 21 species, DNA share codes, 24-clip animation set (`/princess-creator.html`) |
+| **Princess Atelier** | Standalone Spore-style character creator — 21 species, DNA share codes, 24-clip animation set, game-ready export (`/princess-creator.html`) |
+| **In-house level editor** | Toggleable world editor with blueprint versioning and asset-kit prop placement |
+| **Species talent trees** | 30 nodes per species (Blade Dancer / Arcanist / Warlock / … paths) + 4 species-gated signature nodes |
 
 ---
 
@@ -23,52 +45,96 @@
 
 | Layer | Technology |
 |---|---|
-| Renderer | [Three.js](https://threejs.org/) (WebGL) |
-| Physics | [Rapier3D](https://rapier.rs/) (WASM) |
-| Build tooling | [Vite](https://vitejs.dev/) |
-| Art (phases 1–7) | Procedural primitives + custom GLSL shaders |
-| UI / Dialogue | HTML/CSS overlay on canvas |
-| Level format | JSON blueprints |
+| Renderer | [Three.js 0.170](https://threejs.org/) (WebGL 2) |
+| Physics | [Rapier3D](https://rapier.rs/) (WASM, kinematic character controller) |
+| Language | TypeScript 5.6 (strict mode) |
+| Build | [Vite 6](https://vitejs.dev/) |
+| Testing | Vitest (1,558 unit tests) + Playwright (E2E specs) |
+| UI / Dialogue | HTML/CSS overlays on canvas — DaisyUI v3 for tooling pages |
+| Level format | JSON blueprints with `EditorVersioning` snapshots |
+| 3D assets | Procedurally generated in code — no external GLB kits; a handful of hand-authored intro-scene assets (public/, assets/) are versioned via Git LFS |
 
 ---
 
 ## Getting Started
 
+> **Requires [Git LFS](https://git-lfs.com/)** — this repo stores `*.glb`/`*.fbx`/`*.zip`/`*.mp3` binaries via LFS.
+> Without it, `git clone` silently checks out tiny pointer-stub files instead of real assets
+> (models fail to load / audio is silent, with no obvious error).
+
+```bash
+# One-time per machine, before cloning:
+git lfs install
+
+git clone https://github.com/HammerOfSteel/tomes_towers_and_transmutation.git
+cd tomes_towers_and_transmutation
+npm install
+npm run dev          # → http://localhost:5173
+```
+
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+
-- npm v9+ (or pnpm / yarn)
+- [Node.js](https://nodejs.org/) v20+ (see `.nvmrc`)
+- npm v9+
+- [Git LFS](https://git-lfs.com/) — install, then run `git lfs install` once before cloning.
+  If you already cloned without it: `git lfs install && git lfs pull`.
 
 ### Install & Run
 
 ```bash
-# clone
-git clone https://github.com/HammerOfSteel/tomes_towers_and_transmutation.git
-cd tomes_towers_and_transmutation
-
-# install deps (once a package.json exists — see Phase 1)
 npm install
-
-# start dev server
-npm run dev
+npm run dev       # → http://localhost:5173
 ```
-
-Open `http://localhost:5173` in your browser.
 
 ### Run Tests
 
 ```bash
-npm test
+npm test                    # 1,558 unit tests (Vitest)
+npm run test:e2e            # Playwright E2E specs (requires dev server)
+npm run bot -- --scenario creative-smoke --headed   # game bot
 ```
+
+---
+
+## Controls
+
+| Action | Key |
+|---|---|
+| Move | WASD |
+| Melee attack | Left-click |
+| Cast equipped spell | Right-click |
+| Dodge roll | F |
+| Interact / talk | E |
+| Spell slots 1–4 | 1 / 2 / 3 / 4 |
+| Abilities | Q / R / Z / X |
+| Quest journal | J |
+| Pause | Escape |
+| Creative mode (dev) | Ctrl+Shift+C |
 
 ---
 
 ## Project Structure
 
 ```
-tomes_towers_and_transmutation/
-├── src/
-│   ├── core/          # Engine bootstrapping, game loop
+src/
+  core/          GameLoop, InputManager, camera, physics helpers
+  player/        PlayerController, abilities, spells, dodge
+  enemy/         SlimeEnemy, PatrolBehavior, TacticalBrute, AggroSystem
+  levels/        SceneManager, BlueprintRenderer, TowerFloorDef, encounter pools
+  creative/      CreativeMode, HUD, AssetBrowser, Backrooms, SpawnPalette
+  world/         OverworldScene, NPCEntity, StoryRunner, StoryQuestLine, Solmor
+  ui/            HUD, QuestJournal, TalentTree, DamageNumbers, PickupVFX
+  progression/   ProgressionSystem, TalentSystem, AbilitySystem
+  rendering/     ProceduralProps, LightingSystem, ParticleSystem, shaders
+tests/
+  combat/        AbilitySystem, SpellSystem, StoryRunner, SolmorDialogue
+  levels/        Blueprint, Encounter, WaveSpawner, EnemyLoader
+  creative/      CreativeModeState, CreativeHUD DOM (34 tests)
+  e2e/           Playwright: startup, tower-prologue, save-load, quest-journal…
+  bot/           GameBot, BotLauncher, 9 scenarios
+public/
+  assets-index/  48 kit JSON files (4,517 total GLB references, lazy-loaded)
+```
 │   ├── physics/       # Rapier3D setup and helpers
 │   ├── player/        # Player controller, combat, spells
 │   ├── enemies/       # Enemy AI state machines
@@ -78,8 +144,8 @@ tomes_towers_and_transmutation/
 │   └── shaders/       # GLSL vertex/fragment shaders
 ├── levels/            # Exported JSON blueprint files
 ├── tests/             # Unit tests (Vitest)
-├── docs/              # Extended design documentation
-├── GDD.md             # Game Design Document
+├── docs/              # All design docs, system specs, research
+├── TODO/              # Structured task tracking (entry: TODO_OVERVIEW.md)
 ├── ARCHITECTURE.md    # Technical architecture & rules
 ├── TODO.md            # Phased implementation roadmap
 ├── CONTRIBUTING.md    # Dev workflow & conventions
@@ -102,7 +168,7 @@ tomes_towers_and_transmutation/
 | 7 | The OP power fantasy | ⬜ Not started |
 | 8 | Asset replacement & final boss | ⬜ Not started |
 
-Full details in [TODO.md](TODO.md).
+Full details in [TODO.md](TODO.md) · [Structured task tracker](TODO/TODO_OVERVIEW.md) · [**GitHub Project Board →**](https://github.com/users/HammerOfSteel/projects/2)
 
 ---
 
@@ -110,15 +176,17 @@ Full details in [TODO.md](TODO.md).
 
 | Doc | Purpose |
 |---|---|
-| [GDD.md](GDD.md) | Core game design — concept, loop, narrative |
+| [docs/GDD.md](docs/GDD.md) | Core game design — concept, loop, narrative |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical rules and dual-design system |
 | [TODO.md](TODO.md) | Phased roadmap with per-phase playtests |
+| [TODO/TODO_OVERVIEW.md](TODO/TODO_OVERVIEW.md) | Structured task tracker (44 files, 8 sections) |
+| [GitHub Project Board](https://github.com/users/HammerOfSteel/projects/2) | Kanban board — 28 issues across M1–M4 milestones |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Code style, branch strategy, test requirements |
 | [docs/MAGIC_SYSTEM.md](docs/MAGIC_SYSTEM.md) | Spell catalogue, progression, shader design |
 | [docs/WORLD_DESIGN.md](docs/WORLD_DESIGN.md) | Tower, overworld, and environment design |
 | [docs/ENEMY_DESIGN.md](docs/ENEMY_DESIGN.md) | Enemy types, AI states, recruitment |
 | [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md) | Procedural art style guide and shader conventions |
-| [TESTING_AND_TOOLS.md](TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
+| [docs/TESTING_AND_TOOLS.md](docs/TESTING_AND_TOOLS.md) | All test suites, `__lab` / `__game` APIs, AI agent workflow |
 | [docs/BLUEPRINT_SCHEMA.md](docs/BLUEPRINT_SCHEMA.md) | JSON level format specification |
 
 ---

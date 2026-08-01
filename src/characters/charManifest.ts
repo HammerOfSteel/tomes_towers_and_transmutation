@@ -23,7 +23,7 @@ export interface CharPackDef {
 }
 
 export interface CharModelDef {
-  /** Unique ID — "<packId>/<stem>", e.g. "kaykit_adventurers/Knight". */
+  /** Unique ID. */
   id:       string;
   packId:   string;
   /** Human-readable display name derived from filename stem. */
@@ -34,12 +34,10 @@ export interface CharModelDef {
   roles:    CharRole[];
   tags:     string[];
   /**
-   * KayKit Rig_Medium_General.glb path — load this alongside the character
    * GLB and pass both to AnimationRetargeter to get Idle/Attack/Die/etc. clips.
    */
   animRig?:  string;
   /**
-   * KayKit Rig_Medium_MovementBasic.glb path — provides Walk/Run clips.
    */
   animRigB?: string;
   /**
@@ -233,39 +231,7 @@ export const CHAR_PACKS: readonly CharPackDef[] = [
     "recommended": false,
     "modelCount": 3
   },
-  {
-    "id": "kaykit_adventurers",
-    "name": "KayKit Adventurers 2.0",
-    "icon": "⚔️",
-    "desc": "Barbarian, Knight, Mage, Ranger, Rogue — skinned with shared KayKit animation rig",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "recommended": true,
-    "modelCount": 6
-  },
-  {
-    "id": "kaykit_skeletons",
-    "name": "KayKit Skeletons 1.1",
-    "icon": "💀",
-    "desc": "Skeleton Mage, Minion, Rogue, Warrior — skinned with shared KayKit animation rig",
-    "roles": [
-      "player",
-      "enemy"
-    ],
-    "tags": [
-      "skeleton",
-      "undead",
-      "kaykit"
-    ],
-    "recommended": true,
-    "modelCount": 4
-  },
+
   {
     "id": "little_knight",
     "name": "Little Knight",
@@ -1589,190 +1555,7 @@ export const CHAR_MODELS: readonly CharModelDef[] = [
     ],
     "animated": false
   },
-  {
-    "id": "kaykit_adventurers/Barbarian",
-    "packId": "kaykit_adventurers",
-    "name": "Barbarian",
-    "path": "/assets/characters/kaykit_adventurers/Barbarian.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_adventurers/Knight",
-    "packId": "kaykit_adventurers",
-    "name": "Knight",
-    "path": "/assets/characters/kaykit_adventurers/Knight.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_adventurers/Mage",
-    "packId": "kaykit_adventurers",
-    "name": "Mage",
-    "path": "/assets/characters/kaykit_adventurers/Mage.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_adventurers/Ranger",
-    "packId": "kaykit_adventurers",
-    "name": "Ranger",
-    "path": "/assets/characters/kaykit_adventurers/Ranger.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_adventurers/Rogue",
-    "packId": "kaykit_adventurers",
-    "name": "Rogue",
-    "path": "/assets/characters/kaykit_adventurers/Rogue.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_adventurers/Rogue_Hooded",
-    "packId": "kaykit_adventurers",
-    "name": "Rogue Hooded",
-    "path": "/assets/characters/kaykit_adventurers/Rogue_Hooded.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "npc"
-    ],
-    "tags": [
-      "humanoid",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_skeletons/Skeleton_Mage",
-    "packId": "kaykit_skeletons",
-    "name": "Skeleton Mage",
-    "path": "/assets/characters/kaykit_skeletons/Skeleton_Mage.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "enemy"
-    ],
-    "tags": [
-      "skeleton",
-      "undead",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_skeletons/Skeleton_Minion",
-    "packId": "kaykit_skeletons",
-    "name": "Skeleton Minion",
-    "path": "/assets/characters/kaykit_skeletons/Skeleton_Minion.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "enemy"
-    ],
-    "tags": [
-      "skeleton",
-      "undead",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_skeletons/Skeleton_Rogue",
-    "packId": "kaykit_skeletons",
-    "name": "Skeleton Rogue",
-    "path": "/assets/characters/kaykit_skeletons/Skeleton_Rogue.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "enemy"
-    ],
-    "tags": [
-      "skeleton",
-      "undead",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
-  {
-    "id": "kaykit_skeletons/Skeleton_Warrior",
-    "packId": "kaykit_skeletons",
-    "name": "Skeleton Warrior",
-    "path": "/assets/characters/kaykit_skeletons/Skeleton_Warrior.glb",
-    "format": "glb",
-    "roles": [
-      "player",
-      "enemy"
-    ],
-    "tags": [
-      "skeleton",
-      "undead",
-      "kaykit"
-    ],
-    "animRig": "/assets/characters/animations/rig_medium/Rig_Medium_General.glb",
-    "animRigB": "/assets/characters/animations/rig_medium/Rig_Medium_MovementBasic.glb",
-    "animated": true
-  },
+
   {
     "id": "little_knight/Chr_Knight",
     "packId": "little_knight",

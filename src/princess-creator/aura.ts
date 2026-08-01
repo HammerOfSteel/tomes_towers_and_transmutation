@@ -1,0 +1,163 @@
+// ── Aura: motes, cold light, warm glow — "colour communicates story" ────────
+//
+//  Celestial glows warm, undead is cold, high elves shed drifting motes.
+//  Auras parent to the rig (they follow bobs and twirls) and register their
+//  tick + cleanup on the BuildResult hooks.
+
+import * as THREE from 'three';
+import type { PrincessDNA } from './types';
+import type { MaterialKit } from './materials';
+import type { BuildResult } from './synth/contracts';
+
+export function attachAura(result: BuildResult, dna: PrincessDNA, kit: MaterialKit): void {
+  const { style, intensity } = dna.aura;
+  if (style === 'none' || intensity < 0.02) return;
+  const p = result.proportions;
+
+  // Shared glow-mote material — tracks the kit's glow Color instance so
+  // palette retints recolor the aura live.
+  const moteMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.5 + intensity * 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  moteMat.color = kit.glow.color;
+  result.hooks.disposers.push(() => moteMat.dispose());
+
+  // ── Drifting motes (motes & warm) ──
+  if (style === 'motes' || style === 'warm') {
+    const count = style === 'warm' ? 5 : Math.round(5 + intensity * 5);
+    const motes: Array<{ mesh: THREE.Mesh; phase: number; r: number; h: number; speed: number }> = [];
+    const moteGeo = new THREE.SphereGeometry(0.11 + intensity * 0.07, 8, 6);
+    result.hooks.disposers.push(() => moteGeo.dispose());
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(moteGeo, moteMat);
+      const phase = (i / count) * Math.PI * 2;
+      const entry = {
+        mesh,
+        phase,
+        r: p.topR + 1.6 + (i % 3) * 0.8,
+        h: 1.5 + ((i * 37) % 100) / 100 * (p.headCY + p.headR),
+        speed: 0.5 + ((i * 53) % 100) / 100 * 0.5,
+      };
+      mesh.position.set(Math.cos(phase) * entry.r, entry.h, Math.sin(phase) * entry.r);
+      result.rig.root.add(mesh);
+      motes.push(entry);
+    }
+    result.hooks.tick.push((t) => {
+      for (const m of motes) {
+        const a = m.phase + t * m.speed;
+        m.mesh.position.set(
+          Math.cos(a) * m.r,
+          m.h + Math.sin(t * 1.3 + m.phase * 2) * 0.35,
+          Math.sin(a) * m.r,
+        );
+        const s = 1 + Math.sin(t * 2.2 + m.phase * 3) * 0.3;
+        m.mesh.scale.setScalar(s);
+      }
+    });
+  }
+
+  // ── Rising embers (ignis) ──
+  if (style === 'ember') {
+    const count = Math.round(7 + intensity * 6);
+    const sparkGeo = new THREE.SphereGeometry(0.09, 6, 5);
+    result.hooks.disposers.push(() => sparkGeo.dispose());
+    const sparks: Array<{ mesh: THREE.Mesh; phase: number; r: number; speed: number; drift: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(sparkGeo, moteMat);
+      const spark = {
+        mesh,
+        phase: (i * 0.73) % 1,
+        r: 0.8 + ((i * 37) % 100) / 100 * (p.hemR + 1.2),
+        speed: 0.14 + ((i * 53) % 100) / 100 * 0.12,
+        drift: (i * 2.1) % (Math.PI * 2),
+      };
+      result.rig.root.add(mesh);
+      sparks.push(spark);
+    }
+    const rise = p.headCY + p.headR + 3;
+    result.hooks.tick.push((t) => {
+      for (const s of sparks) {
+        const u = (t * s.speed + s.phase) % 1;      // 0 → 1 lifetime
+        const a = s.drift + t * 0.4 + u * 1.5;      // spiral upward
+        s.mesh.position.set(
+          Math.cos(a) * s.r * (1 - u * 0.4),
+          u * rise,
+          Math.sin(a) * s.r * (1 - u * 0.4),
+        );
+        s.mesh.scale.setScalar(Math.max(0.05, (1 - u) * (0.8 + intensity * 0.6)));
+      }
+    });
+    // Firelight: warm flickering glow from within
+    const fire = new THREE.PointLight(0xffffff, 0.7 * intensity, 12);
+    fire.color = kit.glow.color;
+    fire.position.y = 2.5;
+    result.rig.torso.add(fire);
+    result.hooks.tick.push((t) => {
+      fire.intensity = intensity * (0.6 + Math.sin(t * 9.2) * 0.12 + Math.sin(t * 23.7) * 0.08);
+    });
+  }
+
+  // ── Rising bubbles (naiad) ──
+  if (style === 'bubbles') {
+    const count = Math.round(6 + intensity * 5);
+    const bubbleGeo = new THREE.SphereGeometry(0.12, 8, 6);
+    result.hooks.disposers.push(() => bubbleGeo.dispose());
+    const bubbles: Array<{ mesh: THREE.Mesh; phase: number; r: number; speed: number; drift: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(bubbleGeo, moteMat);
+      bubbles.push({
+        mesh,
+        phase: (i * 0.61) % 1,
+        r: 1.2 + ((i * 41) % 100) / 100 * (p.hemR + 0.8),
+        speed: 0.05 + ((i * 59) % 100) / 100 * 0.05,
+        drift: (i * 1.7) % (Math.PI * 2),
+      });
+      result.rig.root.add(mesh);
+    }
+    const rise = p.headCY + p.headR + 2;
+    result.hooks.tick.push((t) => {
+      for (const b of bubbles) {
+        const u = (t * b.speed + b.phase) % 1;
+        b.mesh.position.set(
+          Math.cos(b.drift) * b.r + Math.sin(t * 1.1 + b.drift) * 0.35,
+          u * rise,
+          Math.sin(b.drift) * b.r + Math.cos(t * 0.9 + b.drift) * 0.35,
+        );
+        // grow gently, pop near the top
+        b.mesh.scale.setScalar(Math.sin(Math.min(u, 0.92) * Math.PI) * (0.5 + intensity * 0.5) + 0.12);
+      }
+    });
+  }
+
+  // ── Ambient light + soft shell (cold & warm) ──
+  if (style === 'cold' || style === 'warm') {
+    const light = new THREE.PointLight(0xffffff, (style === 'cold' ? 0.5 : 0.8) * intensity, 14);
+    light.color = kit.glow.color; // shared instance → follows palette
+    light.position.y = 1;
+    result.rig.torso.add(light);
+
+    const shellMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.035 + intensity * 0.05,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.BackSide,
+    });
+    shellMat.color = kit.glow.color;
+    result.hooks.disposers.push(() => shellMat.dispose());
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(p.hemR + 2.2, 20, 14),
+      shellMat,
+    );
+    shell.position.y = 1.5;
+    result.rig.root.add(shell);
+    result.hooks.tick.push((t) => {
+      const s = 1 + Math.sin(t * 1.6) * 0.05;
+      shell.scale.set(s, 1.15 * s, s);
+      light.intensity = (style === 'cold' ? 0.5 : 0.8) * intensity * (0.85 + Math.sin(t * 2.1) * 0.15);
+    });
+  }
+}

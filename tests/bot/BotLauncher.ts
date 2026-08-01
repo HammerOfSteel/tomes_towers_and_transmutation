@@ -29,6 +29,7 @@ import { findQuestNpcScenario }         from './scenarios/find-quest-npc';
 import { botPlaceForestScenario }       from './scenarios/bot-place-forest';
 import { botDesignDungeonRoomScenario } from './scenarios/bot-design-dungeon-room';
 import { botRedesignTowerFloorScenario } from './scenarios/bot-redesign-tower-floor';
+import { princessCreatorScenario }       from './scenarios/princess-creator';
 
 // ── Scenario registry ─────────────────────────────────────────────────────────
 const SCENARIOS: Record<string, (bot: GameBot) => Promise<void>> = {
@@ -41,6 +42,7 @@ const SCENARIOS: Record<string, (bot: GameBot) => Promise<void>> = {
   'bot-place-forest':          botPlaceForestScenario,
   'bot-design-dungeon-room':   botDesignDungeonRoomScenario,
   'bot-redesign-tower-floor':  botRedesignTowerFloorScenario,
+  'princess-creator':          princessCreatorScenario,
 };
 
 // ── CLI arg parsing ───────────────────────────────────────────────────────────

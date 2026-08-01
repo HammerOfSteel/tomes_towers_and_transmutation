@@ -1,0 +1,43 @@
+name: Fast CI
+
+# Fast, cheap sanity checks that run automatically on every push/PR — catches
+# the "works on my machine, broken on a fresh clone" class of bug (broken
+# npm install, stray build artifacts shadowing source, unresolved imports,
+# Git-LFS pointer stubs) before it lands. The heavier Playwright bot-ci /
+# bot-nightly workflows remain manual (workflow_dispatch) since they're much
+# slower and spin up a full browser + dev server.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  sanity:
+    name: Install, Doctor & Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true   # repo tracks .glb/.fbx/.zip/.mp3 via Git LFS
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Repo doctor (stray build artifacts, broken imports, LFS pointer stubs)
+        run: npm run doctor
+
+      - name: Unit tests
+        # NOTE: a handful of pre-existing content-mismatch failures (unrelated to
+        # portability/build health) are tracked separately and not yet fixed, so
+        # this step is informational for now. Flip to blocking once those are resolved.
+        run: npm test
+        continue-on-error: true

@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Overworld Studio — TT&T</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0e12;
+      --panel:   #161820;
+      --border:  #2a2d3a;
+      --accent:  #7c6af5;
+      --text:    #c8cad8;
+      --muted:   #5a5e72;
+      --gold:    #f5c842;
+      --green:   #52d98c;
+      --red:     #e05c5c;
+      --font:    'Segoe UI', system-ui, sans-serif;
+      --mono:    'Fira Mono', 'Consolas', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+    header .sep { color: var(--border); }
+
+    .seed-row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .seed-row label { color: var(--muted); font-size: 11px; }
+    #seed-input {
+      width: 100px; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 3px 7px; border-radius: 4px; font-family: var(--mono); font-size: 11px;
+    }
+    .btn {
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+      transition: border-color .15s, color .15s;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn.primary:hover { opacity: .85; }
+
+    /* ── Main layout ── */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Canvas area ── */
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #0a0b0e;
+    }
+    #map-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      cursor: default;
+    }
+    #map-canvas.tool-warp { cursor: crosshair; }
+    #map-canvas.tool-warp.dragging { cursor: grabbing; }
+    #overlay-canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* ── Floating map toolbar ── */
+    .map-toolbar {
+      position: absolute; top: 10px; left: 10px; z-index: 10;
+      display: flex; gap: 4px;
+    }
+    .tool-btn {
+      width: 32px; height: 32px; border-radius: 6px;
+      background: rgba(22,24,32,0.92); border: 1px solid var(--border);
+      color: var(--muted); cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: .12s; backdrop-filter: blur(4px);
+    }
+    .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .tool-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .gen-time {
+      position: absolute; bottom: 8px; left: 12px;
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .section {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-title {
+      font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 8px;
+    }
+
+    /* ── Studio mode tabs ── */
+    .studio-tabs {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      margin-bottom: 0; flex-shrink: 0;
+    }
+    .studio-tab {
+      flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.5px; cursor: pointer; border: none; background: transparent;
+      color: var(--muted); border-bottom: 2px solid transparent;
+      transition: .12s; margin-bottom: -1px;
+    }
+    .studio-tab:hover { color: var(--text); }
+    .studio-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Planet settlement labels (CSS2DRenderer) ── */
+    .planet-label { pointer-events:none; }
+
+    /* ── Type pills ── */
+    .pill-row { display: flex; flex-wrap: nowrap; gap: 4px; }
+    .pill-row--wrap { flex-wrap: wrap; }
+    .pill {
+      padding: 3px 8px; border-radius: 12px; cursor: pointer; font-size: 11px;
+      border: 1px solid var(--border); background: transparent; color: var(--text);
+      transition: .12s;
+    }
+    .pill:hover { border-color: var(--accent); }
+    .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Sliders ── */
+    .slider-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+    input[type=range] {
+      width: 100%; accent-color: var(--accent); height: 14px;
+    }
+
+    /* ── Ward legend ── */
+    .legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 11px; }
+    .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── Status bar ── */
+    footer {
+      padding: 4px 12px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    footer span { font-family: var(--mono); }
+    .status-key { color: var(--border); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⬡ OVERWORLD STUDIO</h1>
+    <span class="sep">|</span>
+    <span style="color:var(--muted);font-size:11px">TT&T Settlement Generator</span>
+    <div class="seed-row">
+      <label>SEED</label>
+      <input id="seed-input" type="text" value="445176186" />
+      <button class="btn" id="btn-roll" title="New random seed [Space]">🎲</button>
+      <button class="btn primary" id="btn-gen" title="Regenerate [Enter]">Generate</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <div class="canvas-wrap">
+      <!-- OW-E1: Breadcrumb navigation bar -->
+      <div id="studio-breadcrumb" style="display:none;align-items:center;gap:6px;padding:4px 10px;background:rgba(10,8,8,0.7);border-bottom:1px solid #3a3028;font-family:'IM Fell English',Georgia,serif;font-size:0.78rem;color:#c8a96e;flex-shrink:0;">
+        <span id="breadcrumb-items"></span>
+      </div>
+      <div class="map-toolbar">
+        <button class="tool-btn active" id="tool-select" title="Select [S] — hover to inspect wards">⬡</button>
+        <button class="tool-btn"        id="tool-warp"   title="Warp [D] — drag to push/pull settlement">⊹</button>
+        <button class="tool-btn"        id="tool-reset"  title="Reset warp [R] — restore current seed">↺</button>
+      </div>
+      <canvas id="map-canvas"></canvas>
+      <canvas id="planet-3d-canvas"   style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;border-radius:inherit;"></canvas>
+      <canvas id="dwelling-3d-canvas" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;border-radius:inherit;"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+      <div class="gen-time" id="gen-time">—</div>
+    </div>
+
+    <aside class="sidebar">
+
+      <!-- ── Studio mode tabs ─────────────────────────────────────── -->
+      <div class="studio-tabs" id="studio-tabs">
+        <button class="studio-tab active" data-mode="settlement">🏙 Settlement</button>
+        <button class="studio-tab"        data-mode="dungeon">⚔ Dungeon</button>
+        <button class="studio-tab"        data-mode="cave">🌿 Cave</button>
+        <button class="studio-tab"        data-mode="realm">🌍 Realm</button>
+        <button class="studio-tab"        data-mode="solar">☀ Solar System</button>
+      </div>
+
+      <!-- ── Settlement controls ──────────────────────────────────── -->
+      <div id="settlement-controls">
+      <div class="section">
+        <div class="section-title">Settlement Type</div>
+        <div class="pill-row" id="type-pills">
+          <button class="pill active" data-type="village">Village</button>
+          <button class="pill" data-type="town">Town</button>
+          <button class="pill" data-type="city">City</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Faction</div>
+        <div class="pill-row pill-row--wrap" id="faction-pills">
+          <button class="pill active" data-faction="human"    title="Human — organic streets, mixed wards">🧍 Human</button>
+          <button class="pill"        data-faction="elven"    title="Elven — radial grove-centred, no slums">🌿 Elven</button>
+          <button class="pill"        data-faction="dwarven"  title="Dwarven — tight grid, forge-heavy">⛏️ Dwarven</button>
+          <button class="pill"        data-faction="orcish"   title="Orcish — linear war camp, armory + slave pens">⚔️ Orcish</button>
+          <button class="pill"        data-faction="vampire"  title="Vampire — perimeter ring, crypt gate, thrall quarter">🧛 Vampire</button>
+          <button class="pill"        data-faction="undead"   title="Undead — graveyards, bone shrines, shambling dead">💀 Undead</button>
+          <button class="pill"        data-faction="vulperia" title="Vulperia — den mother's hall at centre, night market">🦊 Vulperia</button>
+          <button class="pill"        data-faction="slime"    title="Slime — radial, communal pools, spore gardens">🫧 Slime</button>
+          <button class="pill"        data-faction="fae"      title="Fae — enchanted glades, radial, dream lodges">🧚 Fae</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Street Layout</div>
+        <div class="pill-row" id="layout-pills">
+          <button class="pill active" data-layout="auto"     title="Auto-mix based on settlement type + ward position">Auto ✦</button>
+          <button class="pill"        data-layout="organic"  title="Voronoi — medieval organic everywhere">Organic</button>
+          <button class="pill"        data-layout="terraced" title="Parallel row houses — Welsh/English everywhere">Terrace</button>
+          <button class="pill"        data-layout="grid"     title="Orthogonal — Roman/American everywhere">Grid</button>
+          <button class="pill"        data-layout="perimeter" title="Hollow blocks — Barcelona/Vienna everywhere">Perim.</button>
+          <button class="pill"        data-layout="cluster"  title="Court clusters — Islamic medina / hosh / campo everywhere">Cluster</button>
+          <button class="pill"        data-layout="linear"   title="Strip along road — everywhere">Linear</button>
+          <button class="pill"        data-layout="radial"   title="Concentric rings — Baroque everywhere">Radial</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Size</div>
+        <div class="slider-row">
+          <div class="slider-label"><span>Patches</span><span id="patches-val">12</span></div>
+          <input type="range" id="patches" min="4" max="40" value="12" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><span>Warp</span><span id="warp-val">0.3</span></div>
+          <input type="range" id="warp" min="0" max="1" step="0.05" value="0.3" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><span>Roads</span><span id="roads-val">3</span></div>
+          <input type="range" id="roads" min="1" max="6" value="3" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Features</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="walls" /> Walls &amp; gates
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="citadel" /> Citadel
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="plaza" checked /> Market plaza
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="show-labels" checked /> Labels
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="show-buildings" checked /> Buildings
+          </label>
+        </div>
+      </div>
+
+      <div class="section" style="flex:1">
+        <div class="section-title">Ward Legend</div>
+        <div id="ward-legend"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Export</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <button class="btn" id="btn-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-settlement" style="width:100%">💾 Save to Library</button>
+          <button class="btn" id="btn-save-settlement-npcs" style="width:100%">🧑 Save Settlement NPCs</button>
+          <button class="btn" id="btn-preview-overworld" style="width:100%">🎮 Preview in Overworld 3D</button>
+          <button class="btn" id="btn-json" style="width:100%">📋 JSON</button>
+        </div>
+      </div>
+      </div><!-- /settlement-controls -->
+
+      <!-- ── Dungeon controls ──────────────────────────────────────── -->
+      <div id="dungeon-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">Dungeon Type</div>
+          <div class="pill-row" id="dungeon-type-pills">
+            <button class="pill active" data-dtype="generic" title="BSP corridor dungeon">Generic</button>
+            <button class="pill"        data-dtype="tower"   title="Circular tower chambers (all 11 floors)">Tower</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Complexity</span><span id="dfloors-val">3</span></div>
+            <input type="range" id="dfloors" min="1" max="9" value="3" />
+          </div>
+          <div class="slider-row" id="tower-floor-row" style="display:none">
+            <div class="slider-label"><span>Tower Floor</span><span id="dfloor-val">0</span></div>
+            <input type="range" id="dfloor" min="0" max="10" value="0" />
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Legend</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#3a3028;border-radius:1px"></span> Wall</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#c4b898;border-radius:1px"></span> Floor</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#a06828;border-radius:1px"></span> Door</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#4870c0;font-size:12px">↑</span> Stair up</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c07040;font-size:12px">↓</span> Stair down</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#c03020;font-size:12px">●</span> Enemy spawn</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#5868a0;font-size:12px">◆</span> Interactable</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-dungeon-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-dungeon" style="width:100%">💾 Save to Library</button>
+          <button class="btn" id="btn-save-dungeon-rooms" style="width:100%">🚪 Save Room Layouts</button>
+        </div>
+
+      </div><!-- /dungeon-controls -->
+
+      <!-- ── Cave / Glade controls ─────────────────────────────────── -->
+      <div id="cave-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">Type</div>
+          <div class="pill-row" id="cave-type-pills">
+            <button class="pill active" data-ctype="cave"  title="Cellular automata underground cave">🪨 Cave</button>
+            <button class="pill"        data-ctype="glade" title="Organic forest glade clearing">🌿 Glade</button>
+          </div>
+        </div>
+
+        <div class="section" id="cave-biome-section">
+          <div class="section-title">Cave Biome</div>
+          <div class="pill-row pill-row--wrap" id="cave-biome-pills">
+            <button class="pill active" data-biome="stone"    title="Grey rock, mineral veins">🪨 Stone</button>
+            <button class="pill"        data-biome="coastal"  title="Ocean cave, blue water, coral">🌊 Coastal</button>
+            <button class="pill"        data-biome="volcanic" title="Magma pools, ash floor">🌋 Volcanic</button>
+            <button class="pill"        data-biome="desert"   title="Sandy, warm, sparse">🏜 Desert</button>
+            <button class="pill"        data-biome="verdant"  title="Mossy green, mushrooms">🌿 Verdant</button>
+            <button class="pill"        data-biome="frozen"   title="Ice crystals, pale blue">❄ Frozen</button>
+          </div>
+        </div>
+
+        <div class="section" id="glade-biome-section" style="display:none">
+          <div class="section-title">Forest Biome</div>
+          <div class="pill-row pill-row--wrap" id="glade-biome-pills">
+            <button class="pill active" data-gbiome="forest"  title="Classic dark forest clearing">🌲 Forest</button>
+            <button class="pill"        data-gbiome="autumn"  title="Orange-brown autumn woodland">🍂 Autumn</button>
+            <button class="pill"        data-gbiome="blossom" title="Pink cherry blossoms">🌸 Blossom</button>
+            <button class="pill"        data-gbiome="wetland" title="Marshland, murky pools">🌊 Wetland</button>
+            <button class="pill"        data-gbiome="tundra"  title="Sparse, pale, frozen ground">❄ Tundra</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Size</span><span id="cave-size-val">M</span></div>
+            <input type="range" id="cave-size" min="1" max="3" value="2" />
+          </div>
+          <div class="slider-row" id="cave-density-row">
+            <div class="slider-label"><span>Density</span><span id="cave-density-val">0.47</span></div>
+            <input type="range" id="cave-density" min="35" max="60" value="47" />
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <button class="btn" id="btn-cave-png" style="width:100%">📷 PNG</button>
+          <button class="btn" id="btn-save-cave" style="width:100%">💾 Save to Library</button>
+        </div>
+
+      </div><!-- /cave-controls -->
+
+      <!-- ── Realm controls ────────────────────────────────────────── -->
+      <div id="realm-controls" style="display:none">
+
+        <div class="section">
+          <div class="section-title">View</div>
+          <div class="pill-row" id="realm-view-pills">
+            <button class="pill active" data-view="map">🗺 Map</button>
+            <button class="pill"        data-view="planet">🌍 Planet</button>
+            <button class="pill"        data-view="hex">🌐 Hex</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="pill-row pill-row--wrap" id="realm-shape-pills">
+            <button class="pill active" data-shape="island"      title="Single island mass">🏝 Island</button>
+            <button class="pill"        data-shape="continents"  title="2-3 large continents">🌎 Continents</button>
+            <button class="pill"        data-shape="archipelago" title="Scattered island chain">⛵ Archipelago</button>
+            <button class="pill"        data-shape="pangaea"     title="One vast supercontinent">🗺 Pangaea</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Climate</div>
+          <div class="pill-row" id="realm-climate-pills">
+            <button class="pill"        data-climate="tropical"  title="Hot, lush — deserts and forests">🌴 Tropical</button>
+            <button class="pill active" data-climate="temperate" title="Mixed — grasslands, forests, tundra">🌿 Temperate</button>
+            <button class="pill"        data-climate="arctic"    title="Cold — tundra and ice dominate">❄ Arctic</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Parameters</div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Size</span><span id="realm-size-val">M</span></div>
+            <input type="range" id="realm-size" min="1" max="5" value="2" />
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Roughness</span><span id="realm-roughness-val">Moderate</span></div>
+            <input type="range" id="realm-roughness" min="0" max="100" value="50" />
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Settlements</span><span id="realm-settlements-val">6</span></div>
+            <input type="range" id="realm-settlements" min="2" max="16" value="6" />
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Export</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <button class="btn" id="btn-realm-png" style="width:100%">📷 PNG</button>
+            <button class="btn" id="btn-save-realm" style="width:100%">💾 Save Realm</button>
+            <button class="btn" id="btn-save-planet" style="width:100%">🪐 Save Planet</button>
+            <button class="btn" id="btn-export-world-package" style="width:100%">📦 World Package JSON</button>
+            <button class="btn" id="btn-import-world-package" style="width:100%">📥 Import World Package</button>
+            <input type="file" id="world-package-import-file" accept="application/json,.json" style="display:none" />
+          </div>
+        </div>
+
+        <div class="section" id="planet-type-section" style="display:none">
+          <div class="section-title">Planet Type</div>
+          <div class="pill-row pill-row--wrap" id="planet-type-pills">
+            <button class="pill active" data-ptype="terran">🌍 Terran</button>
+            <button class="pill"        data-ptype="ocean">🌊 Ocean</button>
+            <button class="pill"        data-ptype="gas_giant">🪐 Gas Giant</button>
+            <button class="pill"        data-ptype="ice">❄ Ice</button>
+            <button class="pill"        data-ptype="volcanic">🌋 Volcanic</button>
+            <button class="pill"        data-ptype="toxic">☣ Toxic</button>
+            <button class="pill"        data-ptype="desert">🏜 Desert</button>
+            <button class="pill"        data-ptype="verdant">🌿 Verdant</button>
+            <button class="pill"        data-ptype="dead">☾ Dead</button>
+            <button class="pill"        data-ptype="ringed">💫 Ringed</button>
+          </div>
+        </div>
+
+        <div class="section" id="planet-layer-controls" style="display:none">
+          <div class="section-title">Planet Layers</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer" id="cloud-toggle-row">
+              <input type="checkbox" id="planet-show-clouds" checked /> ☁ Clouds
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+              <input type="checkbox" id="planet-show-atmos" checked /> 🌫 Atmosphere
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+              <input type="checkbox" id="planet-day-only" /> ☀ Always Day
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer" id="edge-toggle-row" style="display:none">
+              <input type="checkbox" id="hex-show-edges" checked /> ⬡ Tile Edges
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+              <input type="checkbox" id="planet-auto-rotate" checked /> 🔄 Auto Rotate
+            </label>
+          </div>
+          <div id="hex-subdivision-row" style="display:none;margin-top:8px;font-size:10px;color:var(--muted)">
+            ⬡ <span id="hex-sub-val">5762 tiles (sub 24)</span> — Size controls realm detail ↑
+          </div>
+        </div>
+
+      </div><!-- /realm-controls -->
+
+      <!-- ── Solar System controls ────────────────────────────────── -->
+      <div id="solar-controls" style="display:none">
+        <div class="section">
+          <div class="section-title">Star System</div>
+          <div id="solar-star-info" style="font-size:11px;color:var(--muted);margin-bottom:8px">—</div>
+          <button class="btn" id="btn-solar-generate" style="width:100%">✦ Generate</button>
+        </div>
+        <div class="section">
+          <div class="section-title">Planets</div>
+          <div id="solar-planet-list" style="font-size:10px;color:var(--muted);line-height:1.8">—</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Hover</div>
+          <div id="solar-hover-info" style="font-size:10px;color:var(--muted);min-height:28px">—</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Export</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <button class="btn" id="btn-solar-png" style="width:100%">📷 PNG</button>
+            <button class="btn" id="btn-save-solar" style="width:100%">💾 Save to Library</button>
+          </div>
+        </div>
+      </div><!-- /solar-controls -->
+
+      <!-- ── Asset Library ─────────────────────────────────── -->
+      <div id="library-panel" style="display:none">
+        <div class="section">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px">
+            <div class="section-title" style="margin-bottom:0">📚 Saved Assets <span id="library-count" style="opacity:0.5;font-weight:normal"></span></div>
+            <button class="btn" id="btn-library-import" title="Import JSON" style="padding:2px 6px">⬆</button>
+          </div>
+          <div class="pill-row pill-row--wrap" id="library-type-pills">
+            <button class="pill active" data-ltype="all">All</button>
+            <button class="pill" data-ltype="building" title="Buildings">🏠</button>
+            <button class="pill" data-ltype="dungeon" title="Dungeons">⚔</button>
+            <button class="pill" data-ltype="room" title="Room layouts">🚪</button>
+            <button class="pill" data-ltype="npc" title="NPCs">🧑</button>
+            <button class="pill" data-ltype="enemy" title="Enemies">👹</button>
+            <button class="pill" data-ltype="prop" title="Props">🪑</button>
+            <button class="pill" data-ltype="tile" title="Tiles">🧱</button>
+            <button class="pill" data-ltype="settlement" title="Settlements">🏙</button>
+            <button class="pill" data-ltype="realm" title="Realms">🌍</button>
+            <button class="pill" data-ltype="planet" title="Planets">🪐</button>
+            <button class="pill" data-ltype="solar" title="Solar systems">☀</button>
+            <button class="pill" data-ltype="cave" title="Caves">🌿</button>
+          </div>
+          <input type="text" id="library-search" placeholder="Search by name…"
+            style="width:100%;margin:4px 0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;box-sizing:border-box"/>
+          <div id="library-grid"
+            style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:300px;overflow-y:auto;margin-top:4px"></div>
+          <div id="library-empty"
+            style="color:var(--muted);font-size:11px;text-align:center;padding:16px 0;display:none">
+            No saved assets yet.<br>Use 💾 on any generated view.
+          </div>
+        </div>
+        <div class="section" id="library-preview-section" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
+            <span id="library-preview-name" style="font-size:11px;color:#e8d0a0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+              <button class="btn" id="btn-library-duplicate" title="Duplicate" style="padding:2px 6px">⧉</button>
+              <button class="btn" id="btn-library-editdna" title="Edit DNA" style="padding:2px 6px">✏️</button>
+              <button class="btn" id="btn-library-export" title="Export JSON" style="padding:2px 6px">⬇</button>
+              <button class="btn" id="btn-library-delete" title="Delete" style="padding:2px 6px;color:#c05050">✕</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <input
+              id="library-rename-input"
+              type="text"
+              placeholder="Rename selected asset…"
+              style="flex:1;min-width:0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px"
+            />
+            <button class="btn" id="btn-library-rename" title="Rename" style="padding:2px 6px">✎</button>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <input
+              id="library-pin-input"
+              type="text"
+              placeholder="Pin to location id…"
+              style="flex:1;min-width:0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px"
+            />
+            <button class="btn" id="btn-library-pin" title="Pin to location" style="padding:2px 6px">📌</button>
+          </div>
+          <div id="library-pin-tags" style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5"></div>
+          <div id="library-dna-editor" style="display:none;margin-top:6px">
+            <textarea
+              id="library-dna-textarea"
+              spellcheck="false"
+              style="width:100%;min-height:140px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;font-family:monospace;box-sizing:border-box;padding:6px"
+            ></textarea>
+            <div style="display:flex;gap:4px;margin-top:4px">
+              <button class="btn" id="btn-library-dna-save" style="flex:1">Save DNA</button>
+              <button class="btn" id="btn-library-dna-cancel" style="flex:1">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /library-panel -->
+
+      <!-- Hidden library helpers -->
+      <input id="library-import-file" type="file" accept="application/json,.json" style="display:none" />
+      <canvas id="library-thumb-canvas" width="80" height="80" style="display:none"></canvas>
+
+    </aside>
+  </div>
+
+  <!-- Library toggle button injected into header by JS -->
+
+  <footer>
+    <span><span class="status-key">Space</span> new seed</span>
+    <span><span class="status-key">Enter</span> regenerate</span>
+    <span><span class="status-key">+/−</span> patches</span>
+    <span><span class="status-key">S</span> select &nbsp;<span class="status-key">D</span> warp &nbsp;<span class="status-key">R</span> reset</span>
+    <span id="hover-info">hover a ward · double-click to enter building</span>
+  </footer>
+
+  <script type="module" src="/src/overworld-studio.ts"></script>
+</body>
+</html>

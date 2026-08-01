@@ -55,6 +55,8 @@ export class FloatingDialogue3D {
   private _meshes:        _Rec[]   = [];
   private _hoveredMesh:   THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
   private _resolveChoice: ((idx: number) => void) | null = null;
+  /** Pending programmatic choice (set before choices appear — resolved on next choose()). */
+  private _pendingForce:  number | null = null;
   private _isDragging  = false;
   private _dragStartX  = 0;
   private _dragStartY  = 0;
@@ -66,6 +68,9 @@ export class FloatingDialogue3D {
   // DOM blackout div for scene fade transitions
   private readonly _root:     HTMLElement;
   private readonly _blackout: HTMLElement;
+  /** G4: subtitle caption bar — mirrors spoken text below the 3D scene. On by default. */
+  private readonly _captionEl: HTMLElement;
+  captionsEnabled = false;  // opt-in accessibility feature — enable via Settings
 
   constructor(opts: {
     scene:    THREE.Scene;
@@ -87,6 +92,20 @@ export class FloatingDialogue3D {
     this._blackout.style.cssText =
       'position:absolute;inset:0;background:#000;opacity:0;transition:opacity 1.2s linear;';
     this._root.appendChild(this._blackout);
+
+    // G4: subtitle caption bar
+    this.captionsEnabled = localStorage.getItem('ttt_captions') === 'true';
+    this._captionEl = document.createElement('div');
+    this._captionEl.id = 'campfire-caption';
+    this._captionEl.style.cssText = [
+      'position:absolute;bottom:6%;left:50%;transform:translateX(-50%);',
+      'max-width:72%;padding:8px 18px;',
+      'background:rgba(0,0,0,0.72);backdrop-filter:blur(4px);border-radius:6px;',
+      'font-family:\'Segoe UI\',system-ui,sans-serif;font-size:15px;line-height:1.5;',
+      'color:rgba(255,245,220,0.95);text-align:center;',
+      'pointer-events:none;opacity:0;transition:opacity 0.3s;',
+    ].join('');
+    this._root.appendChild(this._captionEl);
   }
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
@@ -142,6 +161,9 @@ export class FloatingDialogue3D {
       // Fade out existing speech plane
       this._meshes.filter(r => !r.isChoice).forEach(r => { r.targetOpacity = 0; });
 
+      // G4: show caption
+      this._showCaption(`${speaker.replace(/^[—–\-]\s*/, '')}: ${text}`);
+
       setTimeout(() => {
         this._purge();
         this._addSpeech(text, speaker.replace(/^[—–\-]\s*/, ''));
@@ -153,6 +175,26 @@ export class FloatingDialogue3D {
 
   hideSpeech(): void {
     this._meshes.filter(r => !r.isChoice).forEach(r => { r.targetOpacity = 0; });
+    this._hideCaption();
+  }
+
+  /** G4: Show a subtitle caption below the 3D scene. */
+  private _showCaption(text: string): void {
+    if (!this.captionsEnabled) return;
+    this._captionEl.textContent = text;
+    this._captionEl.style.opacity = '1';
+  }
+
+  /** G4: Hide the caption bar. */
+  private _hideCaption(): void {
+    this._captionEl.style.opacity = '0';
+  }
+
+  /** G4: Toggle subtitles on/off, persisting preference. */
+  setCaptionsEnabled(on: boolean): void {
+    this.captionsEnabled = on;
+    localStorage.setItem('ttt_captions', String(on));
+    if (!on) this._hideCaption();
   }
 
   // ── choices ───────────────────────────────────────────────────────────────
@@ -160,14 +202,46 @@ export class FloatingDialogue3D {
   choose(choices: string[]): Promise<number> {
     return new Promise<number>((resolve) => {
       // Fade out speech and any stale choices immediately
-      this._meshes.forEach(r => { r.targetOpacity = 0; });
+      // Immediately hide speech (snap opacity to 0, don't lerp — avoids ugly overlap with choices)
+      this._meshes.forEach(r => {
+        r.targetOpacity         = 0;
+        r.mesh.material.opacity = 0;
+      });
+      this._hideCaption();  // G4: clear caption during choice
       this._resolveChoice = resolve;
 
+      // Honour a pending programmatic choice (e.g. from Playwright test hook)
+      if (this._pendingForce !== null) {
+        const idx = this._pendingForce;
+        this._pendingForce   = null;
+        this._resolveChoice  = null;
+        setTimeout(() => resolve(idx), 50);
+        return;
+      }
+
       setTimeout(() => {
+        if (this._resolveChoice === null) return; // forceChoice already resolved — don't show tiles
         this._purge();
         this._addChoices(choices);
-      }, 700);
+      }, 200);   // short delay — speech is already cleared instantly above
     });
+  }
+
+  /**
+   * Programmatically resolve the current (or next) choice — used by Playwright.
+   * If choices are already showing, resolves immediately.
+   * If called before `choose()` fires, queues the index for the next call.
+   */
+  forceChoice(idx: number): void {
+    if (this._resolveChoice) {
+      const resolve        = this._resolveChoice;
+      this._resolveChoice  = null;
+      this._pendingForce   = null;
+      this._purge();
+      resolve(idx);
+    } else {
+      this._pendingForce = idx;
+    }
   }
 
   // stubs kept for API compatibility with NewGameFlow
@@ -241,18 +315,24 @@ export class FloatingDialogue3D {
 
   private _addChoices(choices: string[]): void {
     // Choice planes: small and close — feel within arm's reach
-    const cellW  = 0.40;
-    const cellH  = 0.13;
-    const gapX   = 0.08;
-    const gapY   = 0.08;
-    const cols   = 2;
+    // Use 3-column layout for >4 choices so all options stay in frame
+    const many   = choices.length > 4;
+    const cols   = many ? 3 : 2;
+    const cellW  = many ? 0.36 : 0.40;
+    const cellH  = many ? 0.12 : 0.13;
+    const gapX   = many ? 0.06 : 0.08;
+    const gapY   = many ? 0.06 : 0.08;
     const totalW = cols * cellW + (cols - 1) * gapX;
+    const rows   = Math.ceil(choices.length / cols);
+    // Vertically centre the grid around 0 so it doesn't sink below view
+    const totalH = rows * (cellH + gapY) - gapY;
+    const startY = totalH / 2 - cellH / 2;
 
     choices.forEach((text, idx) => {
       const col   = idx % cols;
       const row   = Math.floor(idx / cols);
       const x     = -totalW / 2 + col * (cellW + gapX) + cellW / 2;
-      const baseY = -(row * (cellH + gapY)) - 0.04;
+      const baseY = startY - row * (cellH + gapY);
 
       const tex  = this._makeChoiceTex(text);
       const mat  = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, depthTest: false });

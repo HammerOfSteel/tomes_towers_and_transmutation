@@ -13,8 +13,20 @@ export interface InputState {
   attack: boolean;
   dodge: boolean;
   interact: boolean;
+  /** Digit5 — melee attack. Available in both camera modes; the only melee
+   *  trigger while WoW camera mode is active (left-click is consumed by
+   *  camera drag there). Additive in isometric mode alongside left-click. */
+  meleeKey: boolean;
   /** Right mouse button — cast the active equipped spell */
   castSpell: boolean;
+  /** Left mouse button held (raw, unsuppressed) — in WoW camera mode this is
+   *  the button that drags the camera *and* continuously syncs the
+   *  character's facing to the camera yaw (see WoWCameraController's
+   *  onTurnPlayer). While held, A/D should strafe sideways instead of
+   *  turning the character in place, since the mouse is already driving
+   *  facing. Right-drag ("look-only") doesn't touch facing, so A/D there
+   *  still turns as normal. */
+  turnDragHeld: boolean;
   /** Currently selected spell slot (0-3), switched by keys 1–4 */
   activeSlot: number;
   /** Species ability slots: Q = slot 0, R = slot 1, Z = slot 2, X = slot 3 */
@@ -64,6 +76,11 @@ export class InputManager {
   private mouseX = 0;
   private mouseY = 0;
   private _activeSlot = 0;
+  /** One-shot slot-cast request set on a fresh (non-repeat) Digit1-4 keydown;
+   *  drained by consumeCastSlotRequest(). Used by WoW camera mode, where both
+   *  mouse buttons are reserved for camera control so number keys must cast
+   *  directly (matching real WoW's instant-cast number-key convention). */
+  private _pendingCastSlot: number | null = null;
   /** Current key bindings — overrides DEFAULT_BINDINGS where set. */
   private _bindings: Record<RebindableAction, string>;
 
@@ -71,7 +88,10 @@ export class InputManager {
     this.heldKeys.add(e.code);
     // Slot selection: 1–4 keys
     const slot = ['Digit1','Digit2','Digit3','Digit4'].indexOf(e.code);
-    if (slot !== -1) this._activeSlot = slot;
+    if (slot !== -1) {
+      this._activeSlot = slot;
+      if (!e.repeat) this._pendingCastSlot = slot;
+    }
   };
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.heldKeys.delete(e.code);
@@ -113,6 +133,17 @@ export class InputManager {
 
   /** Currently selected spell slot index (0–3). */
   get activeSlot(): number { return this._activeSlot; }
+
+  /**
+   * Drain the one-shot slot-cast request set by a fresh Digit1-4 press.
+   * Returns the slot index (0-3) if a digit was just pressed since the last
+   * call, else null. Used to instant-cast in WoW camera mode.
+   */
+  consumeCastSlotRequest(): number | null {
+    const slot = this._pendingCastSlot;
+    this._pendingCastSlot = null;
+    return slot;
+  }
 
   /** Current bindings snapshot (copy). */
   get bindings(): Readonly<Record<RebindableAction, string>> {
@@ -157,7 +188,9 @@ export class InputManager {
       attack:       !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(0),
       dodge:        this.heldKeys.has(b.dodge),
       interact:     this.heldKeys.has(b.interact),
+      meleeKey:     this.heldKeys.has('Digit5'),
       castSpell:    !InputManager.suppressAttackAndSpell && this.heldMouseButtons.has(2),
+      turnDragHeld: this.heldMouseButtons.has(0),
       activeSlot:   this._activeSlot,
       ability1:     this.heldKeys.has('KeyQ'),
       ability2:     this.heldKeys.has('KeyR'),

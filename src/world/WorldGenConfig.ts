@@ -19,24 +19,28 @@ export interface WorldGenConfig {
   lakeCount:      number;
   /** Dungeon/cave entrances to scatter (OW-3). */
   dungeonCount:   number;
-  /** Small villages to generate (OW-5). */
-  villageCount:   number;
-  /** Mid-size towns to generate (OW-5). */
-  townCount:      number;
-  /** Whether to include one large city (OW-5). */
-  hasCity:        boolean;
+  /** Cave entrances to scatter across bog/highland/rocky terrain (CG-3). */
+  caveCount:      number;
+  /** Glade entrances to scatter across forest terrain (CG-3). */
+  gladeCount:     number;
+  /**
+   * Total settlements to generate (P1 siting unification). Type
+   * (village/town/city) is assigned by the realm algorithm, not
+   * user-configurable per type — matches Overworld Studio's `nSettlements`
+   * parameter to `generateRealmData()`.
+   */
+  settlementCount: number;
   /** Number of enemy camps to place. */
   enemyCampCount: number;
   /**
-   * Visual rendering mode.
-   * 'code'   — default: procedural Three.js geometry (fast, always consistent).
-   * 'kenney' — replaces procedural geometry with Kenney GLB tile assets.
-   *            Only packs listed in `assetPacks` are activated.
+   * Asset rendering mode for settlements/NPCs.
+   * 'code'  — procedural generator (default).
+   * 'asset' — load models from asset packs.
    */
-  assetMode:  'code' | 'kenney';
+  assetMode:  'code' | 'asset';
   /**
-   * Which Kenney asset packs to activate when assetMode is 'kenney'.
-   * Valid values: 'buildings' | 'castle' | 'dungeon' | 'nature' | 'town'
+   * Which asset pack IDs to activate when assetMode is 'asset'.
+   * Pack IDs match folder names under public/assets/.
    */
   assetPacks: string[];
   /**
@@ -52,24 +56,8 @@ export interface WorldGenConfig {
   charPacks: string[];
 }
 
-// ── Kenney pack catalogue (used by Settings UI + Sandbox) ────────────────────
-
-export interface KenneyPackDef {
-  id:          string;
-  name:        string;
-  icon:        string;
-  desc:        string;
-  recommended: boolean;
-}
-
-/** Ordered list of Kenney Retro Fantasy asset packs available in the project. */
-export const KENNEY_PACKS: readonly KenneyPackDef[] = [
-  { id: 'buildings', name: 'Buildings', icon: '🏠', desc: 'Walls, roofs, floors, towers, stairs',  recommended: true  },
-  { id: 'castle',    name: 'Castle',    icon: '🏰', desc: 'Tower sections, walls, gates, battlements', recommended: false },
-  { id: 'dungeon',   name: 'Dungeon',   icon: '🗝️', desc: 'Corridors, rooms, dungeon props',       recommended: false },
-  { id: 'nature',    name: 'Nature',    icon: '🌿', desc: 'Trees, rocks, rivers, ground tiles',    recommended: true  },
-  { id: 'town',      name: 'Town',      icon: '🏘️', desc: 'Roads, props, lanterns, fountains',    recommended: true  },
-] as const;
+/** Ordered list of available character packs (procedural + own assets). */
+export const KENNEY_PACKS: readonly { id: string; name: string; icon: string; desc: string; recommended: boolean }[] = [];
 
 export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   seed:           0,
@@ -77,14 +65,14 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   riverCount:     4,
   lakeCount:      2,
   dungeonCount:   6,
-  villageCount:   3,
-  townCount:      1,
-  hasCity:        true,
+  caveCount:      3,
+  gladeCount:     2,
+  settlementCount: 6,
   enemyCampCount: 8,
   assetMode:      'code',
-  assetPacks:     ['buildings', 'nature', 'town'],
+  assetPacks:     [],
   charMode:       'code',
-  charPacks:      ['kaykit_adventurers', 'kaykit_skeletons', 'fox', 'slime', 'goblin_pack', 'villager_npc'],
+  charPacks:      ['fox', 'slime', 'goblin_pack', 'villager_npc'],
 };
 
 const LS_KEY = 'ttt_world_gen_config';

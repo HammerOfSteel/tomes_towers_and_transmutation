@@ -11,6 +11,9 @@
 export class DiscoveryTracker {
   discoveredDungeons:    Set<number> = new Set();
   discoveredSettlements: Set<number> = new Set();
+  /** Cave/glade entrances the player has walked up to (CG-4/CG-5 discovery tracking). */
+  discoveredCaves:       Set<number> = new Set();
+  discoveredGlades:      Set<number> = new Set();
   /** Dungeons the player has entered at least once (treated as "cleared"). */
   clearedDungeons:       Set<number> = new Set();
   /** Enemy camps whose enemies have all been killed (key = "wx:wz"). */
@@ -18,6 +21,8 @@ export class DiscoveryTracker {
 
   markDungeonFound(id: number): void    { this.discoveredDungeons.add(id); }
   markSettlementFound(id: number): void { this.discoveredSettlements.add(id); }
+  markCaveFound(id: number): void       { this.discoveredCaves.add(id); }
+  markGladeFound(id: number): void      { this.discoveredGlades.add(id); }
   markDungeonCleared(id: number): void  { this.clearedDungeons.add(id); }
   markCampCleared(wx: number, wz: number): void {
     this.clearedCamps.add(`${wx.toFixed(1)}:${wz.toFixed(1)}`);
@@ -25,6 +30,8 @@ export class DiscoveryTracker {
 
   isDungeonFound(id: number): boolean    { return this.discoveredDungeons.has(id); }
   isSettlementFound(id: number): boolean { return this.discoveredSettlements.has(id); }
+  isCaveFound(id: number): boolean       { return this.discoveredCaves.has(id); }
+  isGladeFound(id: number): boolean      { return this.discoveredGlades.has(id); }
   isDungeonCleared(id: number): boolean  { return this.clearedDungeons.has(id); }
   isCampCleared(wx: number, wz: number): boolean {
     return this.clearedCamps.has(`${wx.toFixed(1)}:${wz.toFixed(1)}`);
@@ -34,6 +41,8 @@ export class DiscoveryTracker {
     return JSON.stringify({
       d:  [...this.discoveredDungeons],
       s:  [...this.discoveredSettlements],
+      cv: [...this.discoveredCaves],
+      gl: [...this.discoveredGlades],
       cc: [...this.clearedCamps],
     });
   }
@@ -41,9 +50,13 @@ export class DiscoveryTracker {
   static deserialize(raw: string): DiscoveryTracker {
     const t = new DiscoveryTracker();
     try {
-      const obj = JSON.parse(raw) as { d?: number[]; s?: number[]; cc?: string[] };
+      const obj = JSON.parse(raw) as {
+        d?: number[]; s?: number[]; cv?: number[]; gl?: number[]; cc?: string[];
+      };
       if (Array.isArray(obj.d))  obj.d.forEach(id  => t.discoveredDungeons.add(id));
       if (Array.isArray(obj.s))  obj.s.forEach(id  => t.discoveredSettlements.add(id));
+      if (Array.isArray(obj.cv)) obj.cv.forEach(id => t.discoveredCaves.add(id));
+      if (Array.isArray(obj.gl)) obj.gl.forEach(id => t.discoveredGlades.add(id));
       if (Array.isArray(obj.cc)) obj.cc.forEach(key => t.clearedCamps.add(key));
     } catch { /* corrupt save — start fresh */ }
     return t;

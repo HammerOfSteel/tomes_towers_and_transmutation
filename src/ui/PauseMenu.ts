@@ -9,6 +9,8 @@ export interface PauseMenuActions {
   onSave?:         () => void;
   /** Enter creative mode (dev builds only). */
   onEnterCreative?: () => void;
+  /** PC5: Open Princess Atelier in a new tab. */
+  onOpenPrincessAtelier?: () => void;
   /** Open the Backrooms portal list (dev builds only). */
   onOpenBackrooms?: () => void;
 }
@@ -87,6 +89,9 @@ export class PauseMenu {
         </button>
         <button class="pm-btn" data-action="backrooms" style="${BTN_STYLE.replace('#44405a','#0a1a2a')}">
           <span style="color:#4488ff;">🧪</span>&nbsp; Dev Backrooms
+        </button>
+        <button class="pm-btn" data-action="princess-atelier" style="${BTN_STYLE.replace('#44405a','#1a0a30')}">
+          <span style="color:#d88bff;">👸</span>&nbsp; Princess Atelier
         </button>` : ''}
 
         <div style="${DIVIDER_STYLE}margin-top:18px;"></div>
@@ -129,6 +134,8 @@ export class PauseMenu {
         } else if (action === 'backrooms') {
           this.close();
           this.actions.onOpenBackrooms?.();
+        } else if (action === 'princess-atelier') {
+          this.actions.onOpenPrincessAtelier?.();
         }
       });
     }

@@ -10,6 +10,20 @@ const ZOOM_MAX = 40;
 /** Speed multiplier applied to each wheel tick. */
 const ZOOM_SCROLL_FACTOR = 0.12;
 
+/** WoW-mode orbit-camera tuning. */
+const WOW_DISTANCE_DEFAULT = 12;
+const WOW_DISTANCE_MIN = 6;
+const WOW_DISTANCE_MAX = 22;
+/** Pitch is the elevation angle above the horizontal plane through the target.
+ *  0 = camera level with target (never allowed — would clip into the player);
+ *  PI/2 = camera directly overhead (never allowed — disorienting top-down flip). */
+const WOW_PITCH_DEFAULT = (25 * Math.PI) / 180;
+const WOW_PITCH_MIN = (5 * Math.PI) / 180;
+const WOW_PITCH_MAX = (80 * Math.PI) / 180;
+/** Mouse-drag sensitivity, radians per pixel of mouse movement. */
+export const WOW_YAW_SENSITIVITY = 0.006;
+export const WOW_PITCH_SENSITIVITY = 0.006;
+
 /** Fixed world-space offset from the tracked target to the camera position.
  *  This defines the isometric angle: equal x/z distance, slightly steeper y. */
 export const ISO_OFFSET = new THREE.Vector3(14, 20, 14);
@@ -26,6 +40,8 @@ export const ISO_OFFSET = new THREE.Vector3(14, 20, 14);
 export class CameraRig {
   readonly camera: THREE.OrthographicCamera;
   private _aspect: number;
+  /** Fixed isometric-mode camera rotation, cached once at construction. */
+  private readonly _isoQuaternion: THREE.Quaternion;
   private _frustumHeight: number = FRUSTUM_HEIGHT;
   private _targetFrustumHeight: number = FRUSTUM_HEIGHT;
 
@@ -39,6 +55,13 @@ export class CameraRig {
   private _punchTimer    = 0;
   private _punchDuration = 0;
 
+  // ── WoW-style third-person orbit camera ────────────────────────────────────
+  private _mode: 'isometric' | 'wow' = 'isometric';
+  private _yaw = 0;
+  private _pitch = WOW_PITCH_DEFAULT;
+  private _distance = WOW_DISTANCE_DEFAULT;
+  private readonly _modeChangeListeners: Array<(mode: 'isometric' | 'wow') => void> = [];
+
   constructor(aspectRatio: number) {
     this._aspect = aspectRatio;
     const hw = (FRUSTUM_HEIGHT * aspectRatio) / 2;
@@ -46,6 +69,61 @@ export class CameraRig {
     this.camera = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 300);
     this.camera.position.copy(ISO_OFFSET);
     this.camera.lookAt(0, 0, 0);
+    // The isometric angle is fixed forever — cache the rotation so it can be
+    // restored exactly after WoW mode's per-frame lookAt() has rotated the
+    // camera away from it (see follow()'s isometric branch).
+    this._isoQuaternion = this.camera.quaternion.clone();
+  }
+
+  /** Active camera mode. Isometric is the default and is unaffected by WoW-mode state. */
+  get mode(): 'isometric' | 'wow' { return this._mode; }
+
+  /** Current WoW-mode horizontal orbit angle, radians. Meaningless in isometric mode. */
+  get yaw(): number { return this._yaw; }
+
+  /** Current WoW-mode elevation angle above horizontal, radians, clamped to
+   *  [WOW_PITCH_MIN, WOW_PITCH_MAX]. Meaningless in isometric mode. */
+  get pitch(): number { return this._pitch; }
+
+  /** Current WoW-mode orbit distance, world units, clamped to
+   *  [WOW_DISTANCE_MIN, WOW_DISTANCE_MAX]. Meaningless in isometric mode. */
+  get distance(): number { return this._distance; }
+
+  /** Register a callback fired whenever the mode changes (via toggleMode()). */
+  onModeChange(callback: (mode: 'isometric' | 'wow') => void): void {
+    this._modeChangeListeners.push(callback);
+  }
+
+  /**
+   * Switch between isometric and WoW camera modes.
+   * @param playerFacingAngle  The player's current facing angle (radians, same
+   *   convention as PlayerController.facingAngleRad). Used to initialize yaw
+   *   so the camera starts behind the player when entering WoW mode. Ignored
+   *   when switching back to isometric.
+   */
+  toggleMode(playerFacingAngle: number): void {
+    this._mode = this._mode === 'isometric' ? 'wow' : 'isometric';
+    if (this._mode === 'wow') {
+      this._yaw = playerFacingAngle;
+      this._pitch = WOW_PITCH_DEFAULT;
+      this._distance = WOW_DISTANCE_DEFAULT;
+    }
+    for (const cb of this._modeChangeListeners) cb(this._mode);
+  }
+
+  /** Adjust WoW-mode yaw (horizontal orbit angle) by a delta in radians. No-op in isometric mode. */
+  adjustYaw(deltaRadians: number): void {
+    this._yaw += deltaRadians;
+  }
+
+  /** Adjust WoW-mode pitch (elevation angle), clamped. No-op in isometric mode. */
+  adjustPitch(deltaRadians: number): void {
+    this._pitch = Math.max(WOW_PITCH_MIN, Math.min(WOW_PITCH_MAX, this._pitch + deltaRadians));
+  }
+
+  /** Adjust WoW-mode orbit distance, clamped. No-op in isometric mode. */
+  adjustDistance(deltaWorldUnits: number): void {
+    this._distance = Math.max(WOW_DISTANCE_MIN, Math.min(WOW_DISTANCE_MAX, this._distance + deltaWorldUnits));
   }
 
   /**
@@ -63,8 +141,12 @@ export class CameraRig {
   }
 
   /** Translate the camera so it tracks the given world-space position.
-   *  The isometric angle is preserved — only x/z are inherited from target.
-   *  Screen shake offset is applied here each frame. */
+   *  Isometric mode: preserves the fixed isometric angle — only x/z are
+   *  inherited from target, y stays fixed, no per-frame lookAt (unchanged
+   *  from original behavior).
+   *  WoW mode: orbits the camera around the target using yaw/pitch/distance,
+   *  calling lookAt every frame so the camera always faces the target.
+   *  Screen shake offset is applied in both modes each frame. */
   follow(target: THREE.Vector3, dt = 0.016): void {
     // Decay shake timer
     this._shakeTimer = Math.max(0, this._shakeTimer - dt);
@@ -78,15 +160,44 @@ export class CameraRig {
     const ox = mag * (Math.sin(t * 47.3) + Math.sin(t * 31.7)) * 0.5;
     const oz = mag * (Math.cos(t * 53.1) + Math.cos(t * 29.9)) * 0.5;
 
+    if (this._mode === 'isometric') {
+      this.camera.position.set(
+        target.x + ISO_OFFSET.x + ox,
+        ISO_OFFSET.y,
+        target.z + ISO_OFFSET.z + oz,
+      );
+      // WoW mode calls camera.lookAt() every frame, which rotates the
+      // camera away from the fixed isometric angle. Restore that fixed
+      // rotation explicitly so returning from WoW mode doesn't leave the
+      // camera pointed in whatever direction it last orbited to.
+      this.camera.quaternion.copy(this._isoQuaternion);
+      return;
+    }
+
+    // WoW mode: spherical-to-Cartesian orbit offset, camera positioned
+    // behind the target along its yaw direction (yaw convention matches
+    // PlayerController.facingAngleRad: forward = (sin(yaw), 0, cos(yaw))).
+    const horiz = this._distance * Math.cos(this._pitch);
+    const offsetX = -horiz * Math.sin(this._yaw);
+    const offsetZ = -horiz * Math.cos(this._yaw);
+    const offsetY = this._distance * Math.sin(this._pitch);
+
     this.camera.position.set(
-      target.x + ISO_OFFSET.x + ox,
-      ISO_OFFSET.y,
-      target.z + ISO_OFFSET.z + oz,
+      target.x + offsetX + ox,
+      target.y + offsetY,
+      target.z + offsetZ + oz,
     );
+    this.camera.lookAt(target);
   }
 
   /**
    * Feed mouse-wheel delta to smoothly zoom in/out.
+   * Adjusts the orthographic frustum height in both modes — this is the
+   * only mechanism that visually zooms an orthographic camera. (WoW mode's
+   * orbit `distance` is deliberately NOT used for zoom: translating an
+   * orthographic camera along a fixed view direction has zero effect on
+   * apparent size, and changing distance can push the camera into/through
+   * nearby geometry, which looks like walls flickering in and out of view.)
    * Call from a 'wheel' event listener: `rig.applyScroll(e.deltaY)`.
    */
   applyScroll(deltaY: number): void {

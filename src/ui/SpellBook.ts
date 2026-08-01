@@ -46,7 +46,7 @@ const SPELL_DESC: Record<string, string> = {
   battle_hymn:  'Aura buff: recruited minions deal +50% damage for 12s. 20s cooldown.',
   mass_animate: 'Raises dead enemy corpses as temporary skeletal minions. [Conductor tier 2] 30s cooldown.',
   blink:        'Teleport 10u forward in your movement direction. Brief invulnerability. 8s cooldown.',
-  levitate:     'Toggle: float 1.8u above ground. Move freely while hovering. Cast again to land. 1s cooldown.',
+  levitate:     '30s buff: hold jump (Space) to float 1.8u above ground with a gentle bob and cloud puffs. Release to descend. Cast again to refresh.',
   fly:          'Toggle free flight. WASD = fly direction (2× speed), Space = ascend, Shift = descend. Cast again to land. 12s cooldown.',
 };
 

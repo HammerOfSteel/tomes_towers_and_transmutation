@@ -20,6 +20,8 @@ import type { WorldGrid }       from './WorldGrid';
 import type { DungeonEntry }    from './WorldData';
 import { pickDungeonType, DUNGEON_TYPE_CONFIGS } from './DungeonType';
 import { generateDungeonName }  from './DungeonNameGenerator';
+import { applyCustomLocationOverrides } from './customLocationOverrides';
+import { enrichDungeonMarker }  from './DungeonSiteMetadata';
 
 const T             = 2;     // world-units per tile (matches OverworldScene)
 const SPACING_WU    = 30;    // minimum world-unit distance between entrances
@@ -79,11 +81,25 @@ export function placeDungeons(
     const entrySeed  = (seed ^ (id * 0x9E_37_79_B9)) >>> 0;
     const name       = generateDungeonName(entrySeed, type);
 
-    dungeons.push({ id, seed: entrySeed, type, col, row, name, floorCount, discovered: false });
+    // DI-2b: deterministic site-family/reward-bias identity derived solely
+    // from (world seed, col, row) — same position + seed always yields the
+    // same site metadata, independent of dungeon-placement order.
+    const site = enrichDungeonMarker(seed, { x: col, y: row });
+
+    dungeons.push({
+      id, seed: entrySeed, type, col, row, name, floorCount, discovered: false,
+      siteFamily: site.siteFamily,
+      rewardBias: site.rewardBias,
+      eliteRecruitOpportunity: site.eliteRecruitOpportunity,
+      defenseIntelSource: site.defenseIntelSource,
+    });
 
     // Mark the grid cell
     grid.set(col, row, { content: 'dungeon_entrance', dungeonId: id });
   }
+
+  // AL-4: let Asset Library custom dungeon/cave entries override placed entrances.
+  applyCustomLocationOverrides(dungeons);
 
   return dungeons;
 }

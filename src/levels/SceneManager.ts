@@ -38,10 +38,19 @@ export class SceneManager {
 
   private currentBpId: string | null = null;
   private currentRoom: RenderedRoom | null = null;
+  /** Room IDs registered by the most recent loadDungeon() call — used by
+   *  loadedFloorCount to report only the active plan's floor count, not
+   *  every blueprint ever registered (including the base tower rooms). */
+  private _lastLoadedRoomIds: Set<string> = new Set();
+  /** THREE.Object3D roots placed by decorateRoom — cleared on every room swap. */
+  private readonly _decoratedPropRoots: THREE.Object3D[] = [];
   private activeEnemies: SlimeEnemy[] = [];
   private _currentFloor = 0;
   private _startRoomId: string | null = null;
   /** Callback invoked when the player walks through a null-target door (world exit). */
+  /** Set to false to suppress the floor-name title card (e.g. building-viewer). */
+  showFloorTitle = true;
+
   onExitTrigger: (() => void) | null = null;
   /**
    * Called before any staircase or door transition begins.
@@ -69,6 +78,10 @@ export class SceneManager {
 
   /** B3: Reward orbs spawned on room clear — ticked each frame, removed on pickup / timeout. */
   private _rewardOrbs: THREE.Group[] = [];
+
+  /** G1: Spawn pool — reuse dead SlimeEnemy instances rather than creating new ones. */
+  private readonly _enemyPool: SlimeEnemy[] = [];
+  private static readonly POOL_MAX = 30;
 
   /** Called when the player walks into a reward orb (proximity pickup).
    *  Wire in main.ts to grant XP / display message. */
@@ -178,6 +191,7 @@ export class SceneManager {
    * immediately teleport the player to the starting room.
    */
   loadDungeon(plan: import('./DungeonGenerator').DungeonPlan): void {
+    this._lastLoadedRoomIds = new Set(plan.rooms.keys());
     for (const [, bp] of plan.rooms) {
       this.registerBlueprint(bp);
     }
@@ -189,6 +203,11 @@ export class SceneManager {
   get currentBlueprint(): import('./blueprint').Blueprint | null {
     if (!this.currentBpId) return null;
     return this.blueprints.get(this.currentBpId) ?? null;
+  }
+
+  /** The THREE.Group of the currently rendered room, for occlusion raycasting. */
+  get currentRoomGroup(): THREE.Group | null {
+    return this.currentRoom?.group ?? null;
   }
 
   /** Instance ID of the dungeon's starting room, or `null` if no dungeon has
@@ -248,6 +267,35 @@ export class SceneManager {
     return null;
   }
 
+  /**
+   * Returns the world-space (x, y, z) position of the current room's
+   * staircase trigger in the given direction, or null if this room has none.
+   * Unlike getStaircaseHint(), there is no proximity range limit — used by
+   * debug tooling/e2e tests to teleport the player directly to a known
+   * staircase rather than needing to walk into range first.
+   */
+  getStaircaseTrigger(direction: 'up' | 'down'): { x: number; y: number; z: number } | null {
+    if (!this.currentRoom) return null;
+    for (const t of this.currentRoom.doorTriggers) {
+      if (t.direction === direction) return { x: t.cx, y: 1.5, z: t.cz };
+    }
+    return null;
+  }
+
+  /**
+   * Number of distinct floors registered by the most recently loaded
+   * loadDungeon() plan. Used by debug tooling/e2e tests to verify a
+   * generated dungeon/building's total floor count.
+   */
+  get loadedFloorCount(): number {
+    const floors = new Set<number>();
+    for (const id of this._lastLoadedRoomIds) {
+      const bp = this.blueprints.get(id);
+      if (bp) floors.add(bp.floor);
+    }
+    return floors.size;
+  }
+
   /** Enemies the player can target with attacks this frame. */
   getActiveEnemies(): SlimeEnemy[] {
     return this.activeEnemies;
@@ -298,7 +346,12 @@ export class SceneManager {
       const rig = enemy.group.userData['enemyRig'] as EnemyRig | undefined;
       if (rig) disposeEnemyRig(rig);
       this.scene.remove(enemy.group);
-      enemy.dispose(this.physics);
+      // G1: return dead enemies to pool; dispose live ones (safer)
+      if (enemy.isDead) {
+        this._returnToPool(enemy);
+      } else {
+        enemy.dispose(this.physics);
+      }
     }
     this.activeEnemies = [];
     this._waveState = null;
@@ -327,8 +380,8 @@ export class SceneManager {
         this.executeRoomSwap(this.pendingBpId!, this.pendingFromId);
         this.transitionState = 'fading_in';
         this.fadeTimer = FADE_DURATION;
-        // Show floor title card at peak-black
-        this._showTitleCard();
+        // Show floor title card at peak-black (skip if disabled, e.g. building-viewer)
+        if (this.showFloorTitle) this._showTitleCard();
       }
       return; // skip trigger checks and enemy updates while transitioning
     }
@@ -549,6 +602,40 @@ export class SceneManager {
   }
 
   /** Mark the current room cleared when all enemies are dead. */
+  /** G1: Acquire a SlimeEnemy from the pool or create a new one.
+   *  Pool limit: POOL_MAX live enemies max; excess are not spawned (drops silently). */
+  private _acquireEnemy(
+    spawnPos: THREE.Vector3,
+    onHit: (dmg: number) => void,
+  ): SlimeEnemy | null {
+    // Hard cap — don't spawn if we're already at the limit
+    if (this.activeEnemies.length >= SceneManager.POOL_MAX) return null;
+
+    // Recycle a dead pooled enemy
+    for (let i = 0; i < this._enemyPool.length; i++) {
+      const candidate = this._enemyPool[i]!;
+      if (candidate.isDead) {
+        this._enemyPool.splice(i, 1);
+        candidate.revive(spawnPos);
+        return candidate;
+      }
+    }
+
+    // Pool is fresh — create a new instance
+    const enemy = new SlimeEnemy(spawnPos, this.physics, onHit);
+    return enemy;
+  }
+
+  /** G1: Return a dead enemy to the pool (or dispose if pool is full). */
+  private _returnToPool(enemy: SlimeEnemy): void {
+    if (this._enemyPool.length < SceneManager.POOL_MAX) {
+      this._enemyPool.push(enemy);
+    } else {
+      // Pool full — dispose properly
+      enemy.dispose(this.physics);
+    }
+  }
+
   private _checkRoomCleared(): void {
     if (!this.currentBpId) return;
     if (this.clearedRooms.has(this.currentBpId)) return;
@@ -691,11 +778,13 @@ export class SceneManager {
         const z = (rng() * 0.7 - 0.35) * bp_d;
         const spawnPos = new THREE.Vector3(x, 1.5, z);
 
-        // Create SlimeEnemy for physics + AI (capsule collider, FSM, health).
-        const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) => {
+        // G1: Acquire from pool or create new (capped at POOL_MAX live enemies).
+        const enemy = this._acquireEnemy(spawnPos, (dmg) => {
+          console.log('[SpellDebug] onPlayerHit from enemy | dmg:', dmg);
           this.player.health.takeDamage(dmg);
           if (dmg > 0) this.onPlayerHit?.(dmg);
         });
+        if (!enemy) continue;  // pool cap reached
         enemy.group.userData['enemyId'] = group.enemyId;
 
         // B4: attach patrol behavior for patrol-pattern encounters.
@@ -753,6 +842,12 @@ export class SceneManager {
       this.scene.remove(this.currentRoom.group);
       this.currentRoom.dispose();
       this.currentRoom = null;
+
+      // Remove any props placed by decorateRoom for the previous room
+      for (const root of this._decoratedPropRoots) {
+        this.scene.remove(root);
+      }
+      this._decoratedPropRoots.length = 0;
     }
 
     // ── Load new room ─────────────────────────────────────────────────────
@@ -764,6 +859,30 @@ export class SceneManager {
     this._currentFloor = bp.floor;
     this._visitedFloorIndices.add(bp.floor);
     this.scene.add(this.currentRoom.group);
+
+    // ── PROC-B3: Decorate room with procedural props ───────────────────────
+    // Skip for building rooms (IDs like "inn_f0_r1") — they already have
+    // purpose-specific interactables from the Blueprint and don't need
+    // the random tower/dungeon props on top.
+    const isBuildingRoom = /^[a-z]+_f\d+_r\d+$/.test(newId);
+    if (!isBuildingRoom) {
+      import('@/levels/PropPlacer').then(({ decorateRoom }) => {
+        const placed = decorateRoom({
+          floorIndex: bp.floor,
+          halfWidth:  ((bp.width  - 1) * bp.cellSize) / 2 - 0.8,
+          halfDepth:  ((bp.depth  - 1) * bp.cellSize) / 2 - 0.8,
+          seed:       (bp.floor * 0x9E37_79B9 ^ bp.width * 0x1234_ABCD) >>> 0,
+          maxProps:   Math.min(8, bp.width + bp.depth),
+        });
+        for (const { built, x, z, rotation } of placed) {
+          built.root.position.set(x, 0, z);
+          built.root.rotation.y = rotation;
+          this.scene.add(built.root);
+          this._decoratedPropRoots.push(built.root);  // tracked for cleanup
+          console.log(`[PropPlacer] placed ${built.dna.propKind} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+        }
+      }).catch(e => console.warn('[PropPlacer] decoration failed:', e));
+    }
 
     // ── Spawn enemies (skip if room was previously cleared) ──────────────
     const skipEnemies = this.clearedRooms.has(newId);
@@ -791,6 +910,7 @@ export class SceneManager {
             (spawn.z + 0.5) * bp.cellSize - (bp.depth * bp.cellSize) / 2,
           );
           const enemy = new SlimeEnemy(spawnPos, this.physics, (dmg) => {
+            console.log('[SpellDebug] onPlayerHit from SlimeEnemy | dmg:', dmg);
             this.player.health.takeDamage(dmg);
             if (dmg > 0) this.onPlayerHit?.(dmg);
           });

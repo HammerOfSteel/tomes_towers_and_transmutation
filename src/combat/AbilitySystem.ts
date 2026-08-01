@@ -291,22 +291,20 @@ export const ABILITY_BLINK: Ability = {
 };
 
 /**
- * Levitate — toggle hover mode.  The player floats 1.8u above the ground,
- * can move XZ freely, and uses Jump_Idle animation with direction tilt.
- * Drains 0.8 mana/s while active.
+ * Levitate — 30-second buff.  While active, **hold Space** to float 1.8u above
+ * the ground with a sinusoidal bob.  Release Space to descend naturally.
+ * Cast again to refresh the buff duration.
  */
 export const ABILITY_LEVITATE: Ability = {
   id:          'levitate',
   name:        'Levitate',
-  description: 'Toggle hover mode. Float 1.8u above the ground with directional tilt. Drains mana while active.',
+  description: '30s buff: hold jump (Space) to float 1.8u above ground with a gentle bob. Release to descend. Cast again to refresh.',
   icon:        '🌀',
-  cooldown:    1,   // low CD so toggle feels responsive
-  manaCost:    0,   // mana drain is per-second in PlayerController, not on cast
+  cooldown:    1,
+  manaCost:    0,
   cast(ctx) {
-    // Signal PlayerController to toggle levitate via userData
-    const current = ctx.playerGroup.userData['_levitateMode'] as boolean | undefined;
-    ctx.playerGroup.userData['_levitateMode'] = !current;
-    ctx.playerGroup.userData['_levitateY']    = ctx.playerPos.y + 1.8;
+    // Grant / refresh the 30-second levitate buff via userData
+    ctx.playerGroup.userData['_levitateBuffDuration'] = 30;
     _levitateVfx(ctx.scene, ctx.playerPos.clone());
   },
 };
@@ -555,6 +553,123 @@ export function applyCharacterAbilities(
     abilities.equip('engulf', 1);
   }
 
+  // ── NS2: Elf abilities ─────────────────────────────────────────────────────
+  if (id.startsWith('elf_')) {
+    // Recall — replay last spell at no cost
+    const recall: Ability = {
+      id: 'recall', name: 'Recall', icon: '📜',
+      description: 'Briefly replay your last cast spell at no mana cost. The memory is perfect.',
+      cooldown: 8, manaCost: 0,
+      cast(ctx) {
+        // Try to invoke the last cast spell through the spell system
+        const lastSpell = (ctx as any).lastCastSpellId as string | undefined;
+        if (lastSpell) {
+          ctx.progression.grantSpell(lastSpell);  // ensure still unlocked
+        }
+        _recallVfx(ctx.scene, ctx.playerPos.clone());
+      },
+    };
+    abilities.register(recall);
+    abilities.equip('recall', 0);
+
+    // Arcane Library — instantly cycle to next equipped spell
+    const arcaneLib: Ability = {
+      id: 'arcane_library', name: 'Arcane Library', icon: '📚',
+      description: 'Cycle through your equipped spells instantly. The right tool for every moment.',
+      cooldown: 3, manaCost: 0,
+      cast(ctx) {
+        // Cycle active spell slot — note to implementation: wire to SpellSystem
+        console.log('[Arcane Library] cycling spell slots');
+        _recallVfx(ctx.scene, ctx.playerPos.clone());
+      },
+    };
+    abilities.register(arcaneLib);
+    abilities.equip('arcane_library', 1);
+  }
+
+  // ── NS2: Celestial abilities ────────────────────────────────────────────────
+  if (id.startsWith('celestial_')) {
+    // Starburst — 5-projectile spread
+    const starburst: Ability = {
+      id: 'starburst', name: 'Starburst', icon: '✨',
+      description: 'Launch 5 radiant bolts in a spread. Each deals 6 damage.',
+      cooldown: 10, manaCost: 30,
+      cast(ctx) {
+        const BASE_DMG = Math.ceil(6 * ctx.progression.mods.spellDamageMult);
+        const ANGLES = [-40, -20, 0, 20, 40];
+        for (const deg of ANGLES) {
+          const rad = (deg * Math.PI) / 180;
+          const dir = new THREE.Vector3(Math.sin(rad), 0, Math.cos(rad));
+          for (const e of ctx.enemies) {
+            if (e.isDead) continue;
+            const diff = e.worldPosition.clone().sub(ctx.playerPos);
+            const angle = diff.angleTo(dir);
+            if (angle < 0.25 && diff.length() < 12) { e.takeDamage(BASE_DMG); }
+          }
+        }
+        _starburstVfx(ctx.scene, ctx.playerPos.clone());
+      },
+    };
+    abilities.register(starburst);
+    abilities.equip('starburst', 0);
+
+    // Moonveil — 3s damage immunity
+    const moonveil: Ability = {
+      id: 'moonveil', name: 'Moonveil', icon: '🌙',
+      description: 'Wrap yourself in lunar light. Immune to all damage for 3 seconds.',
+      cooldown: 20, manaCost: 45,
+      cast(ctx) {
+        (ctx as any).isMoonveiled = true;
+        _levitateVfx(ctx.scene, ctx.playerPos.clone());
+        setTimeout(() => { (ctx as any).isMoonveiled = false; }, 3000);
+      },
+    };
+    abilities.register(moonveil);
+    abilities.equip('moonveil', 1);
+  }
+
+  // ── NS2: Draconic abilities ─────────────────────────────────────────────────
+  if (id.startsWith('draconic_')) {
+    // Breath — cone fire attack
+    const breath: Ability = {
+      id: 'dragon_breath', name: 'Dragon Breath', icon: '🔥',
+      description: 'Breathe fire in a 3u cone (45°). Each enemy hit takes 12 damage.',
+      cooldown: 8, manaCost: 25,
+      cast(ctx) {
+        const BASE_DMG = Math.ceil(12 * ctx.progression.mods.spellDamageMult);
+        const CONE_RANGE = 3.0;
+        const HALF_ANGLE = Math.PI / 8;   // 22.5° either side = 45° cone
+        for (const e of ctx.enemies) {
+          if (e.isDead) continue;
+          const diff = e.worldPosition.clone().sub(ctx.playerPos);
+          if (diff.length() > CONE_RANGE) continue;
+          // Face direction — use player facing angle from group.rotation.y
+          const facing = new THREE.Vector3(
+            Math.sin((ctx as any).playerFacingY ?? 0), 0,
+            Math.cos((ctx as any).playerFacingY ?? 0),
+          );
+          if (diff.angleTo(facing) <= HALF_ANGLE) e.takeDamage(BASE_DMG);
+        }
+        _breathVfx(ctx.scene, ctx.playerPos.clone());
+      },
+    };
+    abilities.register(breath);
+    abilities.equip('dragon_breath', 0);
+
+    // Harden — block next 3 hits
+    const harden: Ability = {
+      id: 'harden', name: 'Harden', icon: '🪨',
+      description: 'Harden your scales. Block the next 3 hits completely.',
+      cooldown: 15, manaCost: 20,
+      cast(ctx) {
+        (ctx as any).hardenCharges = 3;
+        _hardenVfx(ctx.scene, ctx.playerPos.clone());
+      },
+    };
+    abilities.register(harden);
+    abilities.equip('harden', 1);
+  }
+
   // ── Universal movement abilities (Z / X) — all species ────────────────────
   abilities.register(ABILITY_BLINK);
   abilities.register(ABILITY_LEVITATE);
@@ -674,4 +789,43 @@ function _flyBurstVfx(scene: THREE.Scene, pos: THREE.Vector3, dir: THREE.Vector3
     const geo = new THREE.SphereGeometry(0.18 - i * 0.04, 6, 4);
     _addTempMesh(scene, geo, mat, pos.clone().add(offset).setY(pos.y + 1.0), 0.3 + i * 0.1);
   }
+}
+
+// NS2: New species VFX ─────────────────────────────────────────────────────────
+
+function _recallVfx(scene: THREE.Scene, pos: THREE.Vector3): void {
+  // Purple spiral ring
+  const mat = new THREE.MeshBasicMaterial({ color: 0x9944ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+  const geo = new THREE.TorusGeometry(0.8, 0.06, 6, 24);
+  geo.rotateX(-Math.PI / 2);
+  _addTempMesh(scene, geo, mat, pos.clone().setY(pos.y + 1.2), 0.5);
+}
+
+function _starburstVfx(scene: THREE.Scene, pos: THREE.Vector3): void {
+  // 5 radiant shards fanning out
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.9 });
+    const geo = new THREE.SphereGeometry(0.12, 6, 4);
+    const target = pos.clone().add(new THREE.Vector3(Math.sin(angle) * 2, 0.8, Math.cos(angle) * 2));
+    _addTempMesh(scene, geo, mat, target, 0.4);
+  }
+  const glow = new THREE.MeshBasicMaterial({ color: 0xffffdd, transparent: true, opacity: 0.6 });
+  _addTempMesh(scene, new THREE.SphereGeometry(0.4, 8, 6), glow, pos.clone().setY(pos.y + 1.0), 0.3);
+}
+
+function _breathVfx(scene: THREE.Scene, pos: THREE.Vector3): void {
+  // Orange cone burst
+  for (let i = 0; i < 4; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: i < 2 ? 0xff6600 : 0xff3300, transparent: true, opacity: 0.7 - i * 0.12 });
+    const geo = new THREE.SphereGeometry(0.25 + i * 0.1, 6, 4);
+    _addTempMesh(scene, geo, mat, pos.clone().setY(pos.y + 1.0).addScaledVector(new THREE.Vector3(0, 0, -1), i * 0.5), 0.35);
+  }
+}
+
+function _hardenVfx(scene: THREE.Scene, pos: THREE.Vector3): void {
+  // Grey rock-shard shell
+  const mat = new THREE.MeshBasicMaterial({ color: 0x888866, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+  const geo = new THREE.IcosahedronGeometry(1.0, 0);
+  _addTempMesh(scene, geo, mat, pos.clone().setY(pos.y + 1.0), 0.6);
 }

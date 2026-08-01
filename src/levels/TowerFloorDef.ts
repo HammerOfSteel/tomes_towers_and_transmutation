@@ -281,6 +281,21 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
         content: 'A barrel of fermented grain mash. It smells like ambition and regret.' },
       { type: 'barrel', x: 13, z: 12,
         content: 'A sealed barrel marked \'BATCH 89 — DO NOT DISTURB UNTIL THE NEXT CONVERGENCE\'. The date is illegible.' },
+      // NS6: Elf arc lore book — a recipe in her own handwriting, three centuries old
+      {
+        type: 'lectern', x: 5, z: 13,
+        content:
+          'A slim handwritten recipe book, spine cracked with age.\n\n' +
+          'The title page reads: \'Fermentation Practices for the Extended Stay \u2014 A Practical Reference\'.\n\n' +
+          'The handwriting is yours.\n\n' +
+          'The date on the flyleaf is three hundred and nine years ago. The ink has aged to a deep amber. ' +
+          'You made this book. You left it here. You do not remember doing either of these things.\n\n' +
+          'You turn to the last written page. The final note reads: \n\n' +
+          '\'Batch 89 should be undisturbed until the next Convergence. I have already noted this on the barrel. ' +
+          'If this note finds the reader before the barrel does \u2014 refer to the barrel.\n\n\'\n\n' +
+          'The barrel is in the room. Batch 89 is in the barrel. The Convergence is, by your reckoning, ' +
+          'approximately six hundred years away.',
+      },
     ],
     encounterPool: ENCOUNTER_POOL_F2,
   },
@@ -384,6 +399,25 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
           'This notice is NOT to be distributed to independent contractors ' +
           'without guild clearance.\n\n' +
           '[Unsigned]"',
+      },
+      // NS6: Draconic arc lore book — territorial treatise on draco-compatible binding
+      {
+        type: 'lectern', x: 4, z: 4,
+        content:
+          'A monograph, precisely bound.\n\n' +
+          '\'A Preliminary Investigation into Draco-Compatible Binding Compounds\n' +
+          'and Their Application to Ward Construction in Formerly Territorial Zones.\'\n' +
+          'Author: Arcanist Solmor.\n\n' +
+          'The abstract reads:\n\n' +
+          '\'Where traditional binding compounds exhibit degradation in proximity to high-intensity ' +
+          'draconic residue, a modified compound — hereafter designated D-C Compound Alpha — ' +
+          'demonstrates significantly improved durability. ' +
+          'This is relevant to the construction of facilities on sites that retain draconic territorial marking ' +
+          '(see Appendix C: Known Territorial Markers Within A Fifty-League Radius).\n\n' +
+          'The author acknowledges that proceeding with construction despite identified territorial markers ' +
+          'was a calculated decision. The calculation is presented in Appendix D.\n\n' +
+          'The author further notes that Appendix D has been sealed.\'\n\n' +
+          'Appendix D is sealed.\n\nYou take careful note of this.',
       },
     ],
     encounterPool: ENCOUNTER_POOL_F4,
@@ -554,6 +588,28 @@ export const TOWER_FLOOR_DEFS: readonly TowerFloorDef[] = [
         content: 'A shelf of sealed, black-bound volumes. Each spine bears only a number. You do not open them.' },
       { type: 'bookshelf', x: 13, z: 12, rotation: 180 as const,
         content: 'Scrolls sealed with seven different wax stamps. One of the stamps is a thumbprint. A very large thumbprint.' },
+      // NS6: Celestial arc lore book — paper on celestial binding wards
+      {
+        type: 'lectern', x: 3, z: 12,
+        content:
+          'A research paper, neatly printed on formal vellum.\n\n' +
+          '\'Interim Report: Celestial Binding Efficacy at Ground Level (Preliminary Findings)\' ' +
+          'by Arcanist Solmor.\n\n' +
+          '\'Abstract: This paper presents initial results from a controlled field experiment ' +
+          'regarding the suppression of celestial abilities at ground-level altitude. A synthetic ' +
+          'resonance dampener — hereafter the Ward Stone — was placed at altitude zero within a ' +
+          'test facility. Ability suppression was measured at twelve-hour intervals over a period of ' +
+          'six months.\n\n' +
+          'Results: INCONCLUSIVE. The ward demonstrates significant suppression of passive abilities ' +
+          '(light emission, atmospheric resonance, signal transmission) but has no measurable effect ' +
+          'on active spellcasting. The theoretical model requires revision.\n\n' +
+          'Recommendation: Continue monitoring. The test subject is not currently aware of the ward.\n\n' +
+          'Note (addendum, ink different from main text): The test subject has read this paper.\n\n' +
+          'Note (second addendum, same ink as addendum one): The test subject would like it known that ' +
+          '"she has been aware of the ward for approximately three months."\n\n' +
+          'The paper is signed. The signature is followed by a small star drawn in gold ink, ' +
+          'which was clearly not added by Solmor.',
+      },
     ],
     encounterPool: ENCOUNTER_POOL_F8,
   },

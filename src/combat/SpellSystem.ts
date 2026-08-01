@@ -82,6 +82,9 @@ class Projectile {
   private timer = PROJECTILE_LIFETIME;
   private _hit = false;
   private _hitPos: THREE.Vector3 | null = null;
+  /** Skip wall detection for the first N frames so the bolt clears the
+   *  player’s capsule before we can detect a wall at spawn position. */
+  private _graceFrames = 3;
 
   constructor(
     private readonly pos: THREE.Vector3,
@@ -147,8 +150,9 @@ class Projectile {
     if (this.expired) return;
     this.timer -= dt;
 
-    // Wall collision: cast a ray ahead this frame; explode if wall is within reach
-    if (physics) {
+    // Wall collision: skip for the first few frames so the bolt clears the
+    // player’s spawn area before wall-detection can trigger a zero-distance fizzle.
+    if (physics && this._graceFrames <= 0) {
       const moveDistance = this.def.speed * dt;
       const wallDist = physics.castRayVsWalls(this.pos, this.dir, moveDistance + 0.35);
       if (wallDist !== null && wallDist <= moveDistance + 0.15) {
@@ -156,8 +160,14 @@ class Projectile {
         this.mesh.position.copy(this.pos);
         // _hitPos stays null → SpellSystem treats this as a wall fizzle
         this.timer = -1;
+        console.log('[SpellDebug] wall fizzle | wallDist:', wallDist.toFixed(3), '| pos:', this.pos.toArray().map(v => v.toFixed(2)));
+        (window as any).__spellLog = (window as any).__spellLog ?? [];
+        (window as any).__spellLog.push({ event: 'wallFizzle', wallDist: wallDist.toFixed(3), posX: this.pos.x.toFixed(2), posZ: this.pos.z.toFixed(2) });
+        (window as any).__lastFizzle = { wallDist: wallDist.toFixed(3) };
         return;
       }
+    } else if (this._graceFrames > 0) {
+      this._graceFrames--;
     }
 
     this.pos.addScaledVector(this.dir, this.def.speed * dt);
@@ -180,9 +190,18 @@ class Projectile {
       if (target.isDead || !target.worldPosition) continue;
       const dx = this.pos.x - target.worldPosition.x;
       const dz = this.pos.z - target.worldPosition.z;
-      if (Math.sqrt(dx * dx + dz * dz) < this.def.radius + 0.45) {
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const hitThresh = this.def.radius + 0.45;
+      if (dist < hitThresh) {
         const dmg = Math.round(this.def.damage * this.damageMult);
         const applied = target.takeDamage(dmg);
+        console.log(
+          '[SpellDebug] hit! target:', (target as any).constructor?.name ?? 'unknown',
+          '| dist:', dist.toFixed(2), '< thresh:', hitThresh.toFixed(2),
+          '| dmg:', dmg, 'applied:', applied,
+          '| pos:', this.pos.toArray().map(v => v.toFixed(2)),
+          '| targetPos:', target.worldPosition.toArray().map((v: number) => v.toFixed(2)),
+        );
         if (applied > 0) this.onHit?.(target, applied);
         this._hitPos = this.pos.clone();
         this._hit = true;
@@ -1216,8 +1235,16 @@ export class SpellSystem {
     onHit?: (t: Damageable, d: number) => void,
   ): void {
     const dir = new THREE.Vector3().subVectors(aimTarget, origin).setY(0).normalize();
-    const spawnPos = origin.clone().addScaledVector(dir, 0.6);
+    // Spawn 1.0 units forward (was 0.6) to better clear the player's capsule
+    // and reduce the chance of spawning inside a nearby wall tile.
+    const spawnPos = origin.clone().addScaledVector(dir, 1.0);
     spawnPos.y = origin.y + 0.5;
+    console.log(
+      '[SpellDebug] projectile spawned | origin:', origin.toArray().map(v => v.toFixed(2)),
+      '| spawnPos:', spawnPos.toArray().map(v => v.toFixed(2)),
+    );
+    (window as any).__spellLog = (window as any).__spellLog ?? [];
+    (window as any).__spellLog.push({ event: 'spawn', originX: origin.x.toFixed(2), originZ: origin.z.toFixed(2), spawnX: spawnPos.x.toFixed(2), spawnZ: spawnPos.z.toFixed(2) });
     const proj = new Projectile(spawnPos, dir, targets, def, dmgMult, onHit);
     scene.add(proj.mesh);
     this._projectiles.push(proj);

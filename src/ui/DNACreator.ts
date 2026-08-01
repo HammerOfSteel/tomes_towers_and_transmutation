@@ -26,7 +26,11 @@ import { generateNameForSpecies }         from '@/world/NameGenerator';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-export type StartingBoon = 'tome' | 'blood' | 'swift';
+export type StartingBoon =
+  | 'tome' | 'blood' | 'swift'
+  // NS4: New starting boons
+  | 'herbalist' | 'night_touched' | 'static_charge'
+  | 'silver_tongue' | 'resonant_mind' | 'tower_trained';
 
 export interface CharacterConfig {
   name:        string;
@@ -49,15 +53,33 @@ export interface CharacterConfig {
   characterId?: import('@/scene/CharacterDecisionTree').CharacterId;
   /** Restore master key state when continuing a saved game. */
   hasMasterKey?: boolean;
+  /**
+   * PC3: Princess creator DNA — set when custom princess mode is on.
+   * When present, `buildPrincess(princessDna, {targetHeight:1.6})` is used
+   * instead of the default GLB/DNA creature rig.
+   */
+  princessDna?: import('@/princess-creator/types').PrincessDNA;
+  /**
+   * PC3: Mapped game species from the princess's species field.
+   * Determined by PRINCESS_SPECIES_MAP in PrincessDefaults.ts.
+   */
+  princessSpecies?: 'human' | 'undead' | 'vulperia' | 'slime' | 'elf' | 'celestial' | 'draconic';
 }
 
 // ── Boon data ─────────────────────────────────────────────────────────────────
 
 interface BoonDef { id: StartingBoon; icon: string; title: string; desc: string; effect: string; }
 const BOONS: BoonDef[] = [
-  { id: 'tome',  icon: '📖', title: 'Ancient Tome',    desc: 'A singed spellbook left in the cell.',            effect: 'Start with Flame Dart' },
-  { id: 'blood', icon: '❤',  title: "Warrior's Blood", desc: 'Old lineage — harder to extinguish.',             effect: '+30 maximum HP' },
-  { id: 'swift', icon: '💨', title: 'Swift Feet',      desc: 'A talent for movement and mischief.',             effect: 'Dodge −35%  •  Move +15%' },
+  { id: 'tome',          icon: '📖', title: 'Ancient Tome',       desc: 'A singed spellbook left in the cell.',                    effect: 'Start with Flame Dart' },
+  { id: 'blood',         icon: '❤',  title: "Warrior's Blood",    desc: 'Old lineage — harder to extinguish.',                     effect: '+30 maximum HP' },
+  { id: 'swift',         icon: '💨', title: 'Swift Feet',         desc: 'A talent for movement and mischief.',                     effect: 'Dodge −35%  •  Move +15%' },
+  // NS4: New boons
+  { id: 'herbalist',     icon: '🌿', title: "Herbalist's Gift",   desc: 'Caution-first playstyle. The plants trust you.',           effect: 'Start with Minor Heal  •  Herb yield +25%' },
+  { id: 'night_touched', icon: '🌑', title: 'Night-Touched',      desc: 'Stronger in darkness. Things live in darkness.',           effect: '+15% dmg at night  •  Stealth at range >12u at night' },
+  { id: 'static_charge', icon: '⚡', title: 'Static Charge',      desc: 'Electric potential, poorly contained.',                   effect: 'Start with Lightning Bolt  •  AoE radius +10%' },
+  { id: 'silver_tongue', icon: '🎭', title: 'Silver Tongue',      desc: 'NPCs have always been easier than problems.',             effect: '+2 NPC dialogue options  •  Merchants −15%' },
+  { id: 'resonant_mind', icon: '🔮', title: 'Resonant Mind',      desc: 'The spells come faster. Everything else is negotiable.',  effect: 'Spell cooldowns −20%  •  Starting mana +30' },
+  { id: 'tower_trained', icon: '🛡', title: 'Tower-Trained',      desc: 'She read every trap manual in the library. Twice.',       effect: '+20 HP  •  First hit per room: immune' },
 ];
 
 // ── Archetype data ────────────────────────────────────────────────────────────
