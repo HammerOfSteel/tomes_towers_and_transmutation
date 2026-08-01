@@ -60,6 +60,7 @@ import { NPCEntity }                   from '@/world/NPCEntity';
 import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
 import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
+import { selectLampRoadTiles } from '@/world/LampPlacement';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
@@ -128,6 +129,10 @@ export class OverworldScene {
    *  rigid bodies in `_staticBodies`, including buildings', so they must be recreated on enter()). */
   private readonly _buildingColliderSpecs: Array<{ dna: BuildingDNA; pos: THREE.Vector3; rotationY: number }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
+  /** Settlement lamp-post props (post + lantern mesh) — decorative, no collider. */
+  private _lampGroups: THREE.Group[] = [];
+  /** Parallel array to _lampGroups — each lamp's point light, for per-frame intensity updates. */
+  private _lampLights: THREE.PointLight[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
   /** Phase 7h — spatial hash for O(1) hostile-enemy proximity lookups. */
@@ -289,6 +294,7 @@ export class OverworldScene {
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
     for (const cl of this._clutter)       this.scene.add(cl);
+    for (const lg of this._lampGroups)    this.scene.add(lg);
     for (const rg of this._resourceGroups) this.scene.add(rg);
     // River tile groups supersede the procedural water mesh when present
     if (this._riverGroups.length > 0) {
@@ -332,6 +338,7 @@ export class OverworldScene {
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
     for (const cl of this._clutter)        this.scene.remove(cl);
+    for (const lg of this._lampGroups)     this.scene.remove(lg);
     for (const rg of this._riverGroups)    this.scene.remove(rg);
     for (const rg of this._roadTileGroups) this.scene.remove(rg);
     for (const rg of this._resourceGroups) this.scene.remove(rg);
@@ -430,6 +437,16 @@ export class OverworldScene {
     this._roadMeshes = [];
     for (const cl of this._clutter)       this._freeGroup(cl);
     this._clutter = [];
+    for (const lg of this._lampGroups) {
+      lg.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          (obj.material as THREE.Material).dispose();
+        }
+      });
+    }
+    this._lampGroups = [];
+    this._lampLights = [];
     for (const rg of this._riverGroups)   this._freeGroup(rg);
     for (const rg of this._roadTileGroups) this._freeGroup(rg);
     this._roadTileGroups = [];
@@ -1988,6 +2005,17 @@ export class OverworldScene {
         const wz = (r.row - GHH) * T;
         sqPositions.push(new THREE.Vector3(wx, centreElev * SH + 0.02, wz));
       }
+
+      // Place lamp posts along a stride-sampled subset of this settlement's roads.
+      const lampTiles = selectLampRoadTiles(plan.roads, 4);
+      for (const t of lampTiles) {
+        const wx = (t.col - GHW) * T + 0.6; // small perpendicular offset so the post
+        const wz = (t.row - GHH) * T;       // doesn't sit dead-center of the walking path
+        const { group, light } = this._makeLampPost();
+        group.position.set(wx, centreElev * SH, wz);
+        this._lampGroups.push(group);
+        this._lampLights.push(light);
+      }
     }
 
     if (sqPositions.length > 0) {
@@ -2220,6 +2248,33 @@ export class OverworldScene {
       }
     }
     return grp;
+  }
+
+  // ── Settlement lamp posts (Phase 4 — night lighting) ───────────────────────
+
+  private _makeLampPost(): { group: THREE.Group; light: THREE.PointLight } {
+    const g = new THREE.Group();
+
+    const postMat = new THREE.MeshLambertMaterial({ color: 0x2a2620 });
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.4, 6), postMat);
+    post.position.y = 0.7;
+    g.add(post);
+
+    const lanternMat = new THREE.MeshStandardMaterial({
+      color: 0xffcc77,
+      emissive: 0xffaa44,
+      emissiveIntensity: 0.6,
+      roughness: 0.4,
+    });
+    const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), lanternMat);
+    lantern.position.y = 1.42;
+    g.add(lantern);
+
+    const light = new THREE.PointLight(0xffaa55, 0, 5); // starts off — day
+    light.position.y = 1.42;
+    g.add(light);
+
+    return { group: g, light };
   }
 
   /**
