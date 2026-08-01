@@ -228,11 +228,35 @@ function snapBuildingTile(grid: WorldGrid, placed: PlacedBuilding[], col: number
 
 function rasterizeRoads(roads: Road[], centerCol: number, centerRow: number, cx: number, cy: number): RoadSegment[] {
   const out = new Map<string, RoadSegment>();
+  const addTile = (col: number, row: number) => out.set(`${col},${row}`, { col, row });
+  // Bresenham line between two grid points — fills in every tile the segment crosses so
+  // roads render as continuous connected paths instead of scattered dots when the source
+  // Chaikin-smoothed points are sparser than the destination grid resolution.
+  const bresenham = (c0: number, r0: number, c1: number, r1: number) => {
+    let x0 = c0, y0 = r0;
+    const dx = Math.abs(c1 - c0), sx = c0 < c1 ? 1 : -1;
+    const dy = -Math.abs(r1 - r0), sy = r0 < r1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      addTile(x0, y0);
+      if (x0 === c1 && y0 === r1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  };
+  const toGrid = (p: { x: number; y: number }) => ({
+    col: centerCol + Math.round((p.x - cx) * SETTLEMENT_MODEL_SCALE),
+    row: centerRow + Math.round((p.y - cy) * SETTLEMENT_MODEL_SCALE),
+  });
   for (const road of roads) {
-    for (const p of road.points) {
-      const col = centerCol + Math.round((p.x - cx) * SETTLEMENT_MODEL_SCALE);
-      const row = centerRow + Math.round((p.y - cy) * SETTLEMENT_MODEL_SCALE);
-      out.set(`${col},${row}`, { col, row });
+    if (road.points.length === 0) continue;
+    let prev = toGrid(road.points[0]!);
+    addTile(prev.col, prev.row);
+    for (let i = 1; i < road.points.length; i++) {
+      const cur = toGrid(road.points[i]!);
+      bresenham(prev.col, prev.row, cur.col, cur.row);
+      prev = cur;
     }
   }
   return [...out.values()];

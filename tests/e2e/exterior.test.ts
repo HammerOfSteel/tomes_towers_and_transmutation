@@ -122,7 +122,7 @@ test.describe('Overworld (exterior) scene', () => {
     // wherever the player stood (main.ts: bx = pos.x + 6, bz = pos.z), so the
     // player already stands ~6 units west of the building's center, just
     // outside its west wall ('inn' has no KIND_FOOTPRINT override -> default
-    // 'medium' footprint w=9, half-width 4.5, so the wall sits ~1.5 units
+    // 'medium' footprint w=5, half-width 2.5, so the wall sits ~3.5 units
     // ahead of the player's starting position).
     //
     // Movement here is isometric (see PlayerController.ts's ISO_RIGHT/
@@ -143,10 +143,10 @@ test.describe('Overworld (exterior) scene', () => {
 
     // At WALK_SPEED=5 u/s (PlayerController.ts), 25*150ms=3.75s of held input
     // would carry an unobstructed player ~18 units forward — far past the
-    // building's far (east) wall (buildingPos.x + 4.5). If the collider
+    // building's far (east) wall (buildingPos.x + 2.5). If the collider
     // works, the player should stop at (or just before) the near (west)
     // wall instead.
-    const wallX = buildingPos.x - 4.5;
+    const wallX = buildingPos.x - 2.5;
     expect(after.x, `player should be blocked at/near the west wall x<=${wallX}+0.6, got ${after.x} (started at ${before.x}, building center at ${buildingPos.x})`)
       .toBeLessThanOrEqual(wallX + 0.6);
     // Sanity: confirm the player actually attempted to move (rules out a
@@ -165,12 +165,12 @@ test.describe('Overworld (exterior) scene', () => {
       (window as any).__game.spawnBuildingNearPlayer('cottage', 'thatched', 1),
     ) as { x: number; z: number };
 
-    // 'cottage' footprint is w=9, d=7 (KIND_FOOTPRINT override) — its south
-    // wall sits 3.5 units before its center (buildingPos.z + 3.5). Stand
+    // 'cottage' footprint is w=5, d=4 (KIND_FOOTPRINT override) — its south
+    // wall sits 2 units before its center (buildingPos.z + 2). Stand
     // 1 unit outside that wall (well within maxDist=4 of the wall, but
     // more than 4 units from the *center* — this is exactly the scenario
     // that broke before this fix).
-    await teleportPlayer(page, buildingPos.x, 1.5, buildingPos.z + 4.5);
+    await teleportPlayer(page, buildingPos.x, 1.5, buildingPos.z + 3);
     await page.waitForTimeout(300);
 
     // main.ts's exterior HUD toggles #exterior-prompt's opacity between

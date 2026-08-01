@@ -80,27 +80,33 @@ export interface BuildingDNA extends ProceduralDNA {
 }
 
 // ── Size → footprint in world units ──────────────────────────────────────────
-
+// Animal-Crossing-scale footprints: overworld buildings favor a compact,
+// readable silhouette over architectural realism, so settlements stay dense
+// and walkable rather than sprawling across a huge area. Roughly ~55% of the
+// original "realistic" footprints below, snapped to the nearest whole unit.
+//   tiny:   was 4x4,  small:  was 6x5,  medium: was 9x7,  large: was 13x10
 export const SIZE_FOOTPRINT: Record<BuildingSize, { w: number; d: number }> = {
-  tiny:   { w: 4,  d: 4  },
-  small:  { w: 6,  d: 5  },
-  medium: { w: 9,  d: 7  },
-  large:  { w: 13, d: 10 },
+  tiny:   { w: 3,  d: 3  },
+  small:  { w: 4,  d: 3  },
+  medium: { w: 5,  d: 4  },
+  large:  { w: 7,  d: 5  },
 };
 
-/** Footprint overrides per building kind (when default size table isn't right). */
+/** Footprint overrides per building kind (when default size table isn't right).
+ *  Same Animal-Crossing-scale reduction (~55%) applied to each prior override. */
 export const KIND_FOOTPRINT: Partial<Record<BuildingKind, { w: number; d: number }>> = {
-  terraced:     { w: 5,  d: 7  },   // narrow row house
-  cottage:      { w: 9,  d: 7  },   // wide single-storey
-  villa:        { w: 12, d: 9  },   // grand symmetrical
-  tavern:       { w: 12, d: 9  },   // wide frontage
-  apothecary:   { w: 5,  d: 6  },   // narrow and tall
-  watchtower:   { w: 3,  d: 3  },   // very narrow
-  blacksmith:   { w: 9,  d: 7  },   // wide open forge
-  tent:         { w: 5,  d: 5  },   // round-ish
-  market_stall: { w: 6,  d: 3  },   // shallow open front
-  chapel:       { w: 7,  d: 14 },   // long nave
+  terraced:     { w: 3,  d: 4  },   // narrow row house (was 5x7)
+  cottage:      { w: 5,  d: 4  },   // wide single-storey (was 9x7)
+  villa:        { w: 7,  d: 5  },   // grand symmetrical (was 12x9)
+  tavern:       { w: 7,  d: 5  },   // wide frontage (was 12x9)
+  apothecary:   { w: 3,  d: 4  },   // narrow and tall (was 5x6)
+  watchtower:   { w: 2,  d: 2  },   // very narrow (was 3x3)
+  blacksmith:   { w: 5,  d: 4  },   // wide open forge (was 9x7)
+  tent:         { w: 3,  d: 3  },   // round-ish (was 5x5)
+  market_stall: { w: 4,  d: 2  },   // shallow open front (was 6x3)
+  chapel:       { w: 4,  d: 8  },   // long nave (was 7x14)
 };
+
 
 /** Combine size footprint with kind override. */
 export function getFootprint(kind: BuildingKind, size: BuildingSize): { w: number; d: number } {

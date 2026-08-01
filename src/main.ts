@@ -1626,6 +1626,8 @@ async function main() {
       hasMasterKey: () => _hasMasterKey,
       /** Trigger the exit door as if player walked into it. */
       triggerExit: () => { console.log('[__game] triggerExit called'); sceneManager.onExitTrigger?.(); },
+      /** All settlements with world-space position + name (exterior mode only). For tests. */
+      getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
       /** Name + species of the active princess rig (null if none). For tests. */
       getPrincessInfo: () => {
         const inst = (player as any)._princessInstance;
