@@ -1614,6 +1614,10 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Active physics static body count in the overworld scene (for tests). */
+      getStaticBodyCount: () => overworld?.getStaticBodyCount() ?? 0,
+      /** Registered building collider spec count — persists across exit()/enter() (for tests). */
+      getBuildingColliderSpecCount: () => overworld?.getBuildingColliderSpecCount() ?? 0,
       /** Whether the game loop is actively running (true only after startGame completes). */
       isGameRunning: () => (gameLoop as any).running === true,
       /** Force-give the master key (for tests). */

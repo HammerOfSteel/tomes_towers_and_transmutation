@@ -121,6 +121,10 @@ export class OverworldScene {
   /** DNA + world-space position + faction per placed building — used for building-entry proximity
    *  and to derive a matching interior style via buildingToDungeonPlan(). */
   private readonly _buildingData: Array<{ dna: BuildingDNA; pos: THREE.Vector3; faction: Faction; rotationY: number }> = [];
+  /** Collider specs for every registered building — persists across exit()/enter() cycles so
+   *  colliders can be rebuilt each time the overworld scene is re-entered (exit() destroys all
+   *  rigid bodies in `_staticBodies`, including buildings', so they must be recreated on enter()). */
+  private readonly _buildingColliderSpecs: Array<{ dna: BuildingDNA; pos: THREE.Vector3; rotationY: number }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
   private _minimap!:   OWMinimap;
   private readonly _npcs: NPCEntity[] = [];
@@ -260,6 +264,11 @@ export class OverworldScene {
     for (const rk of this._rocks) {
       this._addStaticBody(rk.px, rk.py, rk.pz, RAPIER.ColliderDesc.ball(rk.r * 0.85));
     }
+
+    // Building colliders — must be recreated every enter() since exit() clears all
+    // _staticBodies (buildings are placed once at construction time but their physics
+    // bodies get destroyed on every scene exit).
+    this._createBuildingColliders();
 
     // Add visuals
     this.scene.add(this._terrain, this._tower);
@@ -425,6 +434,18 @@ export class OverworldScene {
     return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
   }
 
+  /** Number of active static physics bodies (terrain, tower, trees, rocks, buildings).
+   *  Used by tests to verify building colliders survive exit()/enter() cycles. */
+  getStaticBodyCount(): number {
+    return this._staticBodies.length;
+  }
+
+  /** Number of registered building collider specs (persists across exit()/enter(), unlike
+   *  the physics bodies themselves). Used by tests. */
+  getBuildingColliderSpecCount(): number {
+    return this._buildingColliderSpecs.length;
+  }
+
   /** Returns the nearest building entrance if the player is within range. */
   nearBuilding(pos: THREE.Vector3): BuildingEntrance | null {
     for (const b of this.buildingEntrances) {
@@ -548,6 +569,15 @@ export class OverworldScene {
    * origin with the door facing local +Z).
    */
   registerBuildingCollider(dna: BuildingDNA, pos: THREE.Vector3, rotationY: number): void {
+    this._buildingColliderSpecs.push({ dna, pos: pos.clone(), rotationY });
+    // If the scene is currently active, create the physics body immediately (matches prior
+    // behavior for callers invoked after enter(), e.g. dev spawnBuildingNearPlayer()).
+    // Otherwise it will be created on the next enter() via _createBuildingColliders().
+    if (this._isInScene) this._createOneBuildingCollider(dna, pos, rotationY);
+  }
+
+  /** Create a single static box collider matching a building's footprint/position/rotation/floors. */
+  private _createOneBuildingCollider(dna: BuildingDNA, pos: THREE.Vector3, rotationY: number): void {
     const fp = getFootprint(dna.buildingKind, dna.size);
     const halfH = (dna.floors * FLOOR_HEIGHT) / 2;
     const rotQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationY);
@@ -558,6 +588,14 @@ export class OverworldScene {
         new THREE.Vector3(fp.w / 2, halfH, fp.d / 2),
       ),
     );
+  }
+
+  /** Recreate physics colliders for every registered building. Called on enter() since exit()
+   *  destroys all rigid bodies in `_staticBodies` (buildings included). */
+  private _createBuildingColliders(): void {
+    for (const spec of this._buildingColliderSpecs) {
+      this._createOneBuildingCollider(spec.dna, spec.pos, spec.rotationY);
+    }
   }
 
   /** Convert a world-space (x, z) position to the nearest grid (col, row). */
