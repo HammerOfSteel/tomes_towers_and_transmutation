@@ -35,6 +35,7 @@ import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { WorldGrid }              from '@/world/WorldGrid';
+import { isInWaterAt }                 from '@/world/WaterDetection';
 import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
@@ -112,6 +113,8 @@ export class OverworldScene {
   private readonly _terrain:   THREE.Mesh;
   private readonly _tower:     THREE.Group;
   private readonly _waterMesh: THREE.Mesh | null;
+  /** Shared shader material driving the animated water surface (null when no water tiles exist). */
+  private readonly _waterMaterial: THREE.ShaderMaterial | null;
   private readonly _trees:     TreeEntry[] = [];
   private readonly _rocks:     RockEntry[] = [];
   private readonly _ruins:          THREE.Group[] = [];
@@ -218,7 +221,8 @@ export class OverworldScene {
     console.log('[OverworldScene] _buildTerrain...');
     this._terrain   = this._buildTerrain();
     console.log('[OverworldScene] _buildWaterMesh...');
-    this._waterMesh = this._buildWaterMesh();
+    this._waterMesh     = this._buildWaterMesh();
+    this._waterMaterial = (this._waterMesh?.material as THREE.ShaderMaterial | undefined) ?? null;
     console.log('[OverworldScene] _buildTower...');
     this._tower     = this._buildTower();
     console.log('[OverworldScene] _plantTrees...');
@@ -352,9 +356,13 @@ export class OverworldScene {
     if (this._skybox && camera) {
       this._skybox.update(this._skyT, camera);
     }
+    if (this._waterMaterial) this._waterMaterial.uniforms.uTime.value += dt;
     const pos = this.player.group.position;
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
+
+    const inWater = isInWaterAt(this._wg, pos.x, pos.z);
+    this.player.setSubmersion(inWater ? 0.4 : 0);
 
     // ── Phase 7h: rebuild hostile-enemy spatial hash once per frame ─────────
     this._hostileHash.clear();
@@ -861,15 +869,61 @@ export class OverworldScene {
     geo.setIndex(idx);
     geo.computeVertexNormals();
 
-    return new THREE.Mesh(
-      geo,
-      new THREE.MeshLambertMaterial({
-        color:      0x3a6aaa,
-        transparent: true,
-        opacity:     0.78,
-        depthWrite:  false,
-      }),
-    );
+    return new THREE.Mesh(geo, this._makeWaterMaterial());
+  }
+
+  /**
+   * Animated, stylized water shader (Link's Awakening-remake-inspired look):
+   * gentle sine-wave vertex displacement (two overlapping directional waves)
+   * plus a two-tone deep/shimmer color blend and a cheap fresnel-ish edge
+   * highlight in the fragment shader. No texture lookups — fully procedural,
+   * consistent with the project's zero-external-asset policy.
+   */
+  private _makeWaterMaterial(): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite:  false,
+      uniforms: {
+        uTime: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        uniform float uTime;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        void main() {
+          vec3 pos = position;
+          float wave1 = sin(pos.x * 0.35 + uTime * 1.1) * 0.06;
+          float wave2 = sin(pos.z * 0.5  - uTime * 0.7) * 0.045;
+          pos.y += wave1 + wave2;
+          vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+          vWorldPosition = worldPos.xyz;
+          vNormal = normalMatrix * normal;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+
+        void main() {
+          vec3 deep    = vec3(0.145, 0.310, 0.520);
+          vec3 shimmer = vec3(0.420, 0.690, 0.780);
+
+          float shimmerPattern =
+            sin(vWorldPosition.x * 0.6 + uTime * 1.6) *
+            sin(vWorldPosition.z * 0.6 - uTime * 1.3);
+          float t = smoothstep(-1.0, 1.0, shimmerPattern);
+          vec3 color = mix(deep, shimmer, t * 0.5 + 0.15);
+
+          vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+          float rim = 1.0 - clamp(dot(normalize(vNormal), viewDir), 0.0, 1.0);
+          color += vec3(0.55, 0.75, 0.85) * pow(rim, 3.0) * 0.35;
+
+          gl_FragColor = vec4(color, 0.78);
+        }
+      `,
+    });
   }
 
   private _buildTower(): THREE.Group {

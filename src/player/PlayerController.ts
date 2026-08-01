@@ -246,6 +246,39 @@ export class PlayerController {
    *  base-state updates from clearing the one-shot before it finishes. */
   private _princessOneShotTimer = 0;
 
+  /** Tracks the active visual rig root + its un-submerged base Y, so
+   *  setSubmersion() can be called every frame without cumulative drift. */
+  private _submersionRoot: THREE.Object3D | null = null;
+  private _submersionBaseY = 0;
+
+  /** Amount (world units) the visual rig sinks below its resting foot
+   *  position at full (1.0) submersion depth. */
+  private static readonly SUBMERSION_MAX_OFFSET = (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) * 2 * 0.4;
+
+  /**
+   * Shift the active visual rig (creature / asset-model / princess) down by
+   * `depthFraction` (0 = dry, 1 = fully submerged) to give a simple Mario
+   * 64/Zelda-style "wading" look when standing in water. Does not touch
+   * `this.group.position` (the authoritative physics/gameplay position) —
+   * only the child visual root is offset, mirroring the existing
+   * squash/stretch pattern applied to bodyMesh elsewhere in this class.
+   * Safe to call every frame; recomputes from the stored base each time so
+   * repeated calls never compound.
+   */
+  setSubmersion(depthFraction: number): void {
+    const active: THREE.Object3D | null =
+      this._creatureRig?.root ?? this._charController?.scene ?? this._princessInstance?.root ?? null;
+    if (!active) return;
+
+    // Rig swapped since last call (or first call) — capture its resting Y.
+    if (active !== this._submersionRoot) {
+      this._submersionRoot = active;
+      this._submersionBaseY = active.position.y;
+    }
+
+    active.position.y = this._submersionBaseY - depthFraction * PlayerController.SUBMERSION_MAX_OFFSET;
+  }
+
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
   get facingAngleRad(): number { return this.facingAngle; }
 
