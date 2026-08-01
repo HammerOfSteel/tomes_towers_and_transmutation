@@ -1628,6 +1628,12 @@ async function main() {
       triggerExit: () => { console.log('[__game] triggerExit called'); sceneManager.onExitTrigger?.(); },
       /** All settlements with world-space position + name (exterior mode only). For tests. */
       getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
+      /** First river/water-tile world position (exterior mode only). For tests. */
+      findWaterTile: () => gameMode === 'exterior' ? (overworld?.findFirstWaterTile() ?? null) : null,
+      /** Water mesh debug info (exterior mode only). For tests. */
+      getWaterMeshDebugInfo: () => gameMode === 'exterior' ? (overworld?.getWaterMeshDebugInfo() ?? null) : null,
+      /** Raw cell data at a world position (exterior mode only). For tests. */
+      debugCellAt: (x: number, z: number) => gameMode === 'exterior' ? (overworld?.debugCellAt(x, z) ?? null) : null,
       /** Name + species of the active princess rig (null if none). For tests. */
       getPrincessInfo: () => {
         const inst = (player as any)._princessInstance;

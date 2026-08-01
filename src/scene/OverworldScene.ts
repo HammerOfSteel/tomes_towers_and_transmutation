@@ -544,6 +544,63 @@ export class OverworldScene {
     }));
   }
 
+  /** First river/water-tile world position found by scanning the grid (or null).
+   *  For tests/dev-tooling only — used to locate a water tile deterministically
+   *  for visual verification without hardcoding seed-dependent coordinates. */
+  findFirstWaterTile(): { x: number; z: number } | null {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    const centerCol = Math.round(GHW);
+    const centerRow = Math.round(GHH);
+    const settlements = this._settlementPositions;
+    // Scan outward from the map center (spawn area) so we land on a genuine
+    // river/lake tile rather than a default-initialized edge cell. Skip
+    // candidates too close to a settlement or the tower's entrance courtyard
+    // (both can visually override a river cell's ground look even though the
+    // grid flag remains set underneath).
+    const maxRadius = Math.max(GW, GH);
+    for (let r = 0; r < maxRadius; r++) {
+      for (let dRow = -r; dRow <= r; dRow++) {
+        for (let dCol = -r; dCol <= r; dCol++) {
+          if (Math.max(Math.abs(dRow), Math.abs(dCol)) !== r) continue; // ring only
+          const col = centerCol + dCol;
+          const row = centerRow + dRow;
+          if (col < 0 || col >= GW || row < 0 || row >= GH) continue;
+          const cell = this._wg.get(col, row);
+          if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+          const wx = (col - GHW) * T;
+          const wz = (row - GHH) * T;
+          if (Math.sqrt(wx * wx + wz * wz) < 60) continue; // too close to tower courtyard
+          const tooClose = settlements.some(s => {
+            const dx = s.worldPos.x - wx, dz = s.worldPos.z - wz;
+            return Math.sqrt(dx * dx + dz * dz) < 80;
+          });
+          if (tooClose) continue;
+          return { x: wx, z: wz };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Debug/dev-tooling only: water-mesh vertex count + visibility (for verification scripts). */
+  getWaterMeshDebugInfo(): { exists: boolean; visible: boolean; vertexCount: number; inScene: boolean } {
+    if (!this._waterMesh) return { exists: false, visible: false, vertexCount: 0, inScene: false };
+    const posAttr = this._waterMesh.geometry.getAttribute('position');
+    return {
+      exists: true,
+      visible: this._waterMesh.visible,
+      vertexCount: posAttr ? posAttr.count : 0,
+      inScene: this.scene.children.includes(this._waterMesh),
+    };
+  }
+
+  /** Debug/dev-tooling only: raw cell data at a world position (for verification scripts). */
+  debugCellAt(wx: number, wz: number): { feature: string; biome: string; elevation: number } {
+    const { col, row } = this._wg.worldToGrid(wx, wz);
+    const cell = this._wg.get(col, row);
+    return { feature: cell.feature, biome: cell.biome, elevation: cell.elevation };
+  }
+
   /**
    * SI-4 — call once per frame with the player's current position. Detects
    * crossing a settlement boundary (2D distance vs. each settlement's cached
@@ -858,7 +915,12 @@ export class OverworldScene {
           wx + T, wy, wz + T,
           wx,     wy, wz + T,
         );
-        idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+        // Wound so the cross product (v1-v0)x(v3-v0) yields +Y — i.e. the quad's
+        // front face (and computed normal) points up, visible from the default
+        // above-terrain camera angle. The naive (0,1,2 / 0,2,3) winding produces
+        // a downward-facing normal here, which silently back-face-culled the
+        // entire water surface from every normal gameplay camera angle.
+        idx.push(base, base + 3, base + 2,  base, base + 2, base + 1);
       }
     }
 
@@ -907,8 +969,8 @@ export class OverworldScene {
         varying vec3 vNormal;
 
         void main() {
-          vec3 deep    = vec3(0.145, 0.310, 0.520);
-          vec3 shimmer = vec3(0.420, 0.690, 0.780);
+          vec3 deep    = vec3(0.075, 0.190, 0.360);
+          vec3 shimmer = vec3(0.220, 0.440, 0.560);
 
           float shimmerPattern =
             sin(vWorldPosition.x * 0.6 + uTime * 1.6) *
@@ -918,7 +980,7 @@ export class OverworldScene {
 
           vec3 viewDir = normalize(cameraPosition - vWorldPosition);
           float rim = 1.0 - clamp(dot(normalize(vNormal), viewDir), 0.0, 1.0);
-          color += vec3(0.55, 0.75, 0.85) * pow(rim, 3.0) * 0.35;
+          color += vec3(0.35, 0.50, 0.60) * pow(rim, 3.0) * 0.20;
 
           gl_FragColor = vec4(color, 0.78);
         }
