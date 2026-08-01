@@ -11,7 +11,9 @@
  */
 import type { WorldGrid } from './WorldGrid';
 
-/** Biome vertex colours [r, g, b] for height levels 0–4. */
+/** Biome vertex colours [r, g, b] for height levels 0–4 — kept for backward-compat callers
+ * that only need the "primary" look; internally buildTerrainGeometryData now picks from
+ * BIOME_VARIANTS for patchiness, this array is variant index 0 of each level. */
 export const BIOME: readonly [number, number, number][] = [
   [0.20, 0.26, 0.11],   // 0  bog / muddy path
   [0.26, 0.44, 0.16],   // 1  grass
@@ -20,8 +22,61 @@ export const BIOME: readonly [number, number, number][] = [
   [0.44, 0.41, 0.30],   // 4  rocky upland
 ];
 
+/**
+ * 3 color-look variants per elevation level, giving each level visible patchiness
+ * instead of one flat repeated color. Variant 0 always equals the corresponding
+ * BIOME[] entry for backward compatibility. Names loosely mirror TileDNA.ts's
+ * TILE_VARIANTS vocabulary (e.g. grassland: short/lush/patchy) for cross-system
+ * naming consistency, without importing TileDNA.ts (terrain rendering intentionally
+ * stays decoupled from the Studio-only Tile Designer system — see design doc).
+ */
+export const BIOME_VARIANTS: readonly (readonly [number, number, number])[][] = [
+  // 0  bog / muddy path — variants: base, drier, wetter
+  [[0.20, 0.26, 0.11], [0.24, 0.28, 0.14], [0.17, 0.23, 0.10]],
+  // 1  grass — variants: base(short), lush, patchy
+  [[0.26, 0.44, 0.16], [0.22, 0.40, 0.15], [0.30, 0.46, 0.20]],
+  // 2  forest floor — variants: base(leaf litter), moss, roots
+  [[0.20, 0.36, 0.13], [0.18, 0.34, 0.20], [0.24, 0.32, 0.16]],
+  // 3  highland — variants: base, mossy, pebbly
+  [[0.35, 0.41, 0.26], [0.32, 0.40, 0.24], [0.39, 0.38, 0.30]],
+  // 4  rocky upland — variants: base, dry, pebbly
+  [[0.44, 0.41, 0.30], [0.46, 0.40, 0.28], [0.41, 0.39, 0.34]],
+];
+
 export const BIOME_RIVER: [number, number, number] = [0.18, 0.38, 0.62]; // blue channel
 export const BIOME_WATER: [number, number, number] = [0.14, 0.26, 0.48]; // deep water
+
+/**
+ * Deterministic per-cell hash → integer variant index in [0, variantCount).
+ * Same (col, row, variantCount) always yields the same result. Uses a cheap
+ * integer mix (not mulberry32/PRNG-stream — no state, single call per cell,
+ * so a direct hash is simpler and equally deterministic).
+ */
+export function cellVariantIndex(col: number, row: number, variantCount: number): number {
+  let h = (col * 374761393 + row * 668265263) | 0; // large odd primes, standard integer hash mix
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  h = h ^ (h >>> 16);
+  const unsigned = h >>> 0;
+  return unsigned % variantCount;
+}
+
+/** Max Y-offset (world units) applied to a single grid corner by cornerHeightJitter. */
+const CORNER_JITTER_MAX = 0.03;
+
+/**
+ * Deterministic per-GRID-CORNER (not per-cell) small Y jitter, in world units,
+ * within [-CORNER_JITTER_MAX, +CORNER_JITTER_MAX]. Keying by corner lattice
+ * coordinates (rather than cell coordinates) guarantees that every tile
+ * sharing a given corner computes the identical jitter value for it — so
+ * adjacent tiles' top faces never separate at their shared edge/corner.
+ */
+export function cornerHeightJitter(cornerCol: number, cornerRow: number): number {
+  let h = (cornerCol * 1274126177 + cornerRow * 2654435761) | 0;
+  h = (h ^ (h >>> 15)) * 2246822519 | 0;
+  h = h ^ (h >>> 13);
+  const unit = (h >>> 0) / 4294967296; // → [0, 1)
+  return (unit * 2 - 1) * CORNER_JITTER_MAX; // → [-max, +max]
+}
 
 export interface TerrainGeometryData {
   positions: number[];
@@ -88,7 +143,7 @@ export function buildTerrainGeometryData(
 
       // Biome/feature-aware colour selection
       const cell = wg.get(col, row);
-      let biomeRgb: [number, number, number];
+      let biomeRgb: readonly [number, number, number];
       if (cell.biome === 'water') {
         biomeRgb = BIOME_WATER;
       } else if (cell.feature === 'river') {
@@ -97,14 +152,24 @@ export function buildTerrainGeometryData(
         const b = BIOME[H]!;
         biomeRgb = [b[0] * 0.88, b[1] * 0.80, b[2] * 0.68];
       } else {
-        biomeRgb = BIOME[H]!;
+        const variants = BIOME_VARIANTS[H] ?? [BIOME[H]!];
+        const vi = cellVariantIndex(col, row, variants.length);
+        biomeRgb = variants[vi]!;
       }
       const [rb, gb, bb] = biomeRgb;
       const tr = rb * v, tg = gb * v, tb = bb * v;
 
       // ── TOP face (normal +Y) ─────────────────────────────────────────
+      // Small per-corner jitter added on top of the flat elevation height gives the
+      // ground an organic, non-uniform look while keeping wall faces (collision-critical)
+      // perfectly flat. Corner coordinates are grid-lattice points shared by neighbouring
+      // tiles, so adjacent tiles' shared edges/corners always agree (no seams).
+      const jSW = cornerHeightJitter(col,     row);
+      const jNW = cornerHeightJitter(col,     row + 1);
+      const jNE = cornerHeightJitter(col + 1, row + 1);
+      const jSE = cornerHeightJitter(col + 1, row);
       addFace(
-        [wx, wy, wz], [wx, wy, wz1], [wx1, wy, wz1], [wx1, wy, wz],
+        [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
         0, 1, 0,  tr, tg, tb,
       );
 

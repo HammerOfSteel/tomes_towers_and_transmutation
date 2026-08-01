@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
-import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
 
 describe('buildTerrainGeometryData', () => {
   it('emits only top faces when all tiles are flat (no elevation steps)', () => {
@@ -54,5 +54,119 @@ describe('buildTerrainGeometryData', () => {
     const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
     expect(g / b).toBeCloseTo(0.26 / 0.48, 5);
+  });
+});
+
+describe('cellVariantIndex', () => {
+  it('is deterministic for the same inputs', () => {
+    expect(cellVariantIndex(5, 7, 3)).toBe(cellVariantIndex(5, 7, 3));
+  });
+
+  it('stays within [0, variantCount)', () => {
+    for (let col = 0; col < 20; col++) {
+      for (let row = 0; row < 20; row++) {
+        const v = cellVariantIndex(col, row, 3);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(3);
+        expect(Number.isInteger(v)).toBe(true);
+      }
+    }
+  });
+
+  it('produces more than one distinct value across many cells (not a constant)', () => {
+    const values = new Set<number>();
+    for (let col = 0; col < 20; col++) {
+      for (let row = 0; row < 20; row++) {
+        values.add(cellVariantIndex(col, row, 3));
+      }
+    }
+    expect(values.size).toBeGreaterThan(1);
+  });
+});
+
+describe('cornerHeightJitter', () => {
+  it('is deterministic for the same corner coordinates', () => {
+    expect(cornerHeightJitter(3, 4)).toBe(cornerHeightJitter(3, 4));
+  });
+
+  it('stays within a small bounded range', () => {
+    for (let c = 0; c < 15; c++) {
+      for (let r = 0; r < 15; r++) {
+        const j = cornerHeightJitter(c, r);
+        expect(j).toBeGreaterThanOrEqual(-0.03);
+        expect(j).toBeLessThanOrEqual(0.03);
+      }
+    }
+  });
+
+  it('gives adjacent tiles sharing a corner the same jitter for that corner', () => {
+    // Tile (col=2,row=2)'s "south-east" corner is grid corner (3,3).
+    // Tile (col=3,row=2)'s "south-west" corner is the SAME grid corner (3,3).
+    const sharedCornerFromTileA = cornerHeightJitter(3, 3);
+    const sharedCornerFromTileB = cornerHeightJitter(3, 3);
+    expect(sharedCornerFromTileA).toBe(sharedCornerFromTileB);
+  });
+});
+
+describe('buildTerrainGeometryData — variant color and corner jitter', () => {
+  it('gives different plain land cells at the same elevation level visibly different colors sometimes', () => {
+    // A 6x6 flat grid at elevation 1 (grass level) — with only single-level BIOME colors
+    // every cell would render byte-identical color. With per-cell variants, at least
+    // one pair of cells should differ.
+    const wg = new WorldGrid(6, 6);
+    for (let col = 0; col < 6; col++) {
+      for (let row = 0; row < 6; row++) wg.set(col, row, { elevation: 1 });
+    }
+    const data = buildTerrainGeometryData(wg, 6, 6, 3, 3, 1, 1);
+
+    // Each cell contributes exactly one top face (flat grid) = 4 verts = 12 color floats.
+    const cellColors: Array<[number, number, number]> = [];
+    for (let i = 0; i < data.colors.length; i += 12) {
+      cellColors.push([data.colors[i]!, data.colors[i + 1]!, data.colors[i + 2]!]);
+    }
+    const distinct = new Set(cellColors.map(c => c.join(',')));
+    expect(distinct.size).toBeGreaterThan(1);
+  });
+
+  it('keeps water-biome tile color ratio unchanged by variant noise', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'water' });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+    const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
+    expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
+    expect(g / b).toBeCloseTo(0.26 / 0.48, 5);
+  });
+
+  it('jitters top-face corner Y coordinates within the documented bound around the tile base height', () => {
+    const wg = new WorldGrid(2, 2);
+    // All default elevation 0 -> base wy = 0.
+    const data = buildTerrainGeometryData(wg, 2, 2, 1, 1, 2, 1);
+    // Every top-face vertex Y (index 1, 4, 7, 10 within each 4-vert face, but since flat grid
+    // has ONLY top faces, every 3rd float starting at offset 1 is a Y value).
+    for (let i = 1; i < data.positions.length; i += 3) {
+      const y = data.positions[i]!;
+      expect(Math.abs(y)).toBeLessThanOrEqual(0.03 + 1e-9);
+    }
+  });
+
+  it('gives two adjacent flat cells identical Y at their shared corner (no seam)', () => {
+    const wg = new WorldGrid(2, 1);
+    const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 1, 1);
+    // Tile 0 (col=0): verts at local (wx,wy,wz),(wx,wy,wz1),(wx1,wy,wz1),(wx1,wy,wz) → indices 0..3
+    // Tile 1 (col=1): same layout, base index 4..7.
+    // Tile 0's east edge (v2,v3 = wx1 corner) must match tile 1's west edge (v0,v1 = wx corner)
+    // since tile0's wx1 === tile1's wx (adjacent tiles, T=1).
+    const face0 = [0, 1, 2, 3].map(v => ({
+      x: data.positions[v * 3]!, y: data.positions[v * 3 + 1]!, z: data.positions[v * 3 + 2]!,
+    }));
+    const face1 = [4, 5, 6, 7].map(v => ({
+      x: data.positions[v * 3]!, y: data.positions[v * 3 + 1]!, z: data.positions[v * 3 + 2]!,
+    }));
+    // face0 v2 (wx1,wz1) should match face1 v1 (wx,wz1) in both x and y (same world point).
+    expect(face0[2]!.x).toBeCloseTo(face1[1]!.x, 9);
+    expect(face0[2]!.y).toBeCloseTo(face1[1]!.y, 9);
+    // face0 v3 (wx1,wz) should match face1 v0 (wx,wz) in both x and y.
+    expect(face0[3]!.x).toBeCloseTo(face1[0]!.x, 9);
+    expect(face0[3]!.y).toBeCloseTo(face1[0]!.y, 9);
   });
 });
