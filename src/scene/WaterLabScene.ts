@@ -78,7 +78,8 @@ export class WaterLabScene {
     }
 
     // ── Water mesh (covers the shallow+deep footprint, sits at bank height) ──
-    const poolHalfExtent = this._tiers[1]!.halfExtent; // shallow tier footprint
+    // shallow tier footprint (deep tier is nested inside it, so this fully covers both)
+    const poolHalfExtent = this._tiers[1]!.halfExtent;
     const waterGeo = new THREE.PlaneGeometry(poolHalfExtent * 2, poolHalfExtent * 2, 1, 1);
     waterGeo.rotateX(-Math.PI / 2);
     this._waterMaterial = createWaterMaterial();
@@ -112,13 +113,15 @@ export class WaterLabScene {
     this._entered = false;
     for (const m of this._tierMeshes) this._scene.remove(m);
     if (this._waterMesh) this._scene.remove(this._waterMesh);
-    if (this._ambientLight) this._scene.remove(this._ambientLight);
-    if (this._dirLight) this._scene.remove(this._dirLight);
-    // Note: Rapier RigidBody removal API is intentionally not called here —
-    // matches OverworldScene's documented exit()/enter() contract where
-    // static bodies are recreated fresh each enter(). If body leakage across
-    // repeated enter()/exit() cycles becomes an issue, add
-    // physics.world.removeRigidBody(body) per _tierBodies entry here.
+    if (this._ambientLight) {
+      this._scene.remove(this._ambientLight);
+      this._ambientLight = null;
+    }
+    if (this._dirLight) {
+      this._scene.remove(this._dirLight);
+      this._dirLight = null;
+    }
+    for (const b of this._tierBodies) this._physics.removeBody(b);
     this._tierBodies.length = 0;
   }
 
@@ -143,6 +146,7 @@ export class WaterLabScene {
   }
 
   dispose(): void {
+    if (this._tierMeshes.length === 0 && !this._waterMesh) return;
     this.exit();
     for (const m of this._tierMeshes) {
       m.geometry.dispose();
