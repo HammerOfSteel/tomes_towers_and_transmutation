@@ -1210,8 +1210,7 @@ async function main() {
         if (gameMode === 'exterior') {
           overworld?.exit();
           gameMode = 'interior';
-        }
-        if (gameMode === 'waterlab') {
+        } else if (gameMode === 'waterlab') {
           waterLab?.exit();
           gameMode = 'interior';
         }
@@ -1239,6 +1238,7 @@ async function main() {
         _sandboxUi?.setLocation('overworld');
       },
       onEnterWaterLab: () => {
+        if (gameMode === 'waterlab') return; // already there — no-op
         // Tear down whatever's currently active (overworld or dungeon room)
         if (gameMode === 'exterior') {
           overworld?.exit();
