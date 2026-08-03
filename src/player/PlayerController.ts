@@ -46,6 +46,10 @@ const MAX_FALL_SPEED = 25;
 /** Tiny downward push every grounded frame keeps KCC contact detection happy. */
 const GROUND_PUSH = -2;
 
+const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (5)
+const SWIM_FLOAT_DEPTH = 0.35;   // WU below water surface the player floats toward while swimming
+const SWIM_VERTICAL_EASE = 6;    // per-second lerp factor toward the float target
+
 /** Frames after walking off a ledge where jump is still accepted. */
 const COYOTE_TIME = 0.1;
 /** Frames before landing where a pre-pressed jump fires on contact. */
@@ -181,6 +185,11 @@ export class PlayerController {
    *  spins down smoothly instead of snapping to a fixed rate, matching
    *  isometric mode's eased facing feel. */
   private wowTurnVelocity = 0;
+  private _swimming = false;
+  /** World Y of the water surface the player is currently swimming under.
+   *  Set by setSwimming(); used by update()'s gravity override each frame. */
+  private _swimSurfaceY = 0;
+
   private isGrounded = false;
 
   // Jump state
@@ -277,6 +286,27 @@ export class PlayerController {
     }
 
     active.position.y = this._submersionBaseY - depthFraction * PlayerController.SUBMERSION_MAX_OFFSET;
+  }
+
+  /**
+   * Enables/disables swim movement mode. While swimming:
+   *  - Gravity is overridden: velocity.y eases toward a float target
+   *    (SWIM_FLOAT_DEPTH below the water surface) instead of falling.
+   *  - Horizontal speed is capped to SWIM_SPEED regardless of run input.
+   *  - Jump input is ignored (no jump impulse is applied).
+   * Safe to call every frame (idempotent) — matches setSubmersion()'s idiom.
+   *
+   * @param isSwimming Whether the player should be in swim mode this frame.
+   * @param waterSurfaceY World Y of the local water surface (only meaningful
+   *   when isSwimming is true; ignored otherwise). Defaults to 0.
+   */
+  setSwimming(isSwimming: boolean, waterSurfaceY = 0): void {
+    this._swimming = isSwimming;
+    this._swimSurfaceY = waterSurfaceY;
+  }
+
+  get isSwimming(): boolean {
+    return this._swimming;
   }
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
@@ -817,7 +847,7 @@ export class PlayerController {
     const canJump = wasGrounded || this.coyoteTimer > 0;
     let justJumped = false;
 
-    if (this.jumpBufferTimer > 0 && canJump) {
+    if (this.jumpBufferTimer > 0 && canJump && !this._swimming) {
       this.velocity.y = JUMP_VELOCITY;
       this.coyoteTimer = 0;
       this.jumpBufferTimer = 0;
@@ -827,7 +857,13 @@ export class PlayerController {
     }
 
     // ── 4. GRAVITY ─────────────────────────────────────────────────────────
-    if (!wasGrounded || justJumped) {
+    if (this._swimming) {
+      // Buoyant float: ease velocity.y so _pos.y approaches a fixed depth
+      // below the water surface, instead of falling under normal gravity.
+      const targetY = this._swimSurfaceY - SWIM_FLOAT_DEPTH;
+      const yDelta = targetY - this._pos.y;
+      this.velocity.y = lerp(this.velocity.y, yDelta * SWIM_VERTICAL_EASE, SWIM_VERTICAL_EASE * dt);
+    } else if (!wasGrounded || justJumped) {
       let g: number;
       if (this.velocity.y > 0) {
         g = this.jumpHeld ? GRAVITY_RISE : GRAVITY_RELEASE;
@@ -875,7 +911,7 @@ export class PlayerController {
     // ── 5. HORIZONTAL MOVEMENT ─────────────────────────────────────────────
     // Skip normal acceleration when dodge is active (dodge overrides velocity)
     if (this.dodgeTimer <= 0) {
-      const topSpeed = input.run ? RUN_SPEED : WALK_SPEED;
+      const topSpeed = this._swimming ? SWIM_SPEED : (input.run ? RUN_SPEED : WALK_SPEED);
       const moveDir = cameraMode === 'wow'
         ? calculateWoWMoveDirection(input, this.facingAngle, input.turnDragHeld)
         : calculateMoveDirection(input);
