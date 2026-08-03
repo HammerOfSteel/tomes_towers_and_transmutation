@@ -363,6 +363,13 @@ export class SceneManager {
     this.currentRoom.dispose();
     this.currentRoom = null;
     this.currentBpId  = null;
+
+    // Remove any props placed by decorateRoom for the previous room (mirrors
+    // the cleanup executeRoomSwap performs during a normal room transition).
+    for (const root of this._decoratedPropRoots) {
+      this.scene.remove(root);
+    }
+    this._decoratedPropRoots.length = 0;
   }
 
   /** Called once per frame by the game loop.

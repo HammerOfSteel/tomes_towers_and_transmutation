@@ -1628,6 +1628,8 @@ async function main() {
       toggleCameraMode: () => cameraRig.toggleMode(player.facingAngleRad),
       /** Whether the player group is marked visible. */
       isPlayerVisible: () => player.group.visible,
+      /** Whether the player is currently in swim mode (Water Lab / future deep-water use). */
+      isPlayerSwimming: () => player.isSwimming,
       /** Teleport player to a specific world position (for tests). */
       teleportPlayer: (x: number, y: number, z: number) => {
         player.teleport(new THREE.Vector3(x, y, z));
