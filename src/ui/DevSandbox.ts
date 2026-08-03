@@ -33,6 +33,8 @@ export interface DevSandboxOptions {
   onReturnToArena: () => void;
   /** Teleport into a live overworld scene with the given seed. */
   onEnterOverworld: (seed: number) => void;
+  /** Teleport into the Water Lab scene. */
+  onEnterWaterLab: () => void;
   /** Spawn a creature (built from DNA) in the arena. */
   onSpawnCreature: (dna: CreatureDNA) => void;
   onClose: () => void;
@@ -296,12 +298,18 @@ export class DevSandbox {
     this._panel.remove();
   }
 
-  /** Update the location strip in the header. Pass 'arena' or a room ID. */
+  /** Update the location strip in the header. Pass 'arena', a room ID, or 'lab'. */
   setLocation(loc: string): void {
     const bar = this._locationBarEl;
     if (!bar) return;
     if (loc === 'arena') {
       bar.innerHTML = '<span style="color:#5a4880">📍 Sandbox Arena</span>';
+    } else if (loc === 'lab') {
+      bar.innerHTML =
+        '<span style="color:#3a7090">📍 Water Lab</span>' +
+        '<button class="ds-btn ds-loc-back">↩ Arena</button>';
+      bar.querySelector<HTMLButtonElement>('.ds-loc-back')!.onclick =
+        () => this._opts.onReturnToArena();
     } else {
       bar.innerHTML =
         '<span style="color:#8070a0">📍 ' + loc + '</span>' +
@@ -603,6 +611,14 @@ export class DevSandbox {
     overworldBtn.style.cssText = 'margin-top:4px;display:none;';
     overworldBtn.onclick = () => this._opts.onEnterOverworld(this._procSeed);
 
+    // "Water Lab" button — always visible, independent of the proc-gen type
+    // selector, since it's a fixed hand-built room (not a generated dungeon).
+    const waterLabBtn = document.createElement('button');
+    waterLabBtn.className = 'ds-btn ds-btn--accent';
+    waterLabBtn.textContent = '🌊 Water Lab';
+    waterLabBtn.style.marginTop = '4px';
+    waterLabBtn.onclick = () => this._opts.onEnterWaterLab();
+
     typeSelect.onchange = () => {
       this._procType = typeSelect.value as typeof this._procType;
       runBtn.style.display = this._procType === 'overworld' ? 'none' : '';
@@ -622,7 +638,7 @@ export class DevSandbox {
       }, 0);
     };
 
-    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn);
+    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn, waterLabBtn);
 
     // Output area
     const outSec = document.createElement('div');

@@ -38,6 +38,7 @@ import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
 import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { WaterLabScene } from '@/scene/WaterLabScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
@@ -283,8 +284,9 @@ async function main() {
   sceneManager.loadDungeon(_initialPlan);
 
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
-  let gameMode: 'interior' | 'exterior' | 'telescope' = 'interior';
+  let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' = 'interior';
   let overworld: OverworldScene | null = null;
+  let waterLab: WaterLabScene | null = null;
   let minimap:   OWMinimap | null = null;
 
   // Always-on occlusion manager — switches between scene-wide and mesh-list modes
@@ -1204,9 +1206,13 @@ async function main() {
         _sandboxUi?.setLocation(roomId);
       },
       onReturnToArena: () => {
-        // Exit overworld if we were in it
+        // Exit overworld / water lab if we were in either
         if (gameMode === 'exterior') {
           overworld?.exit();
+          gameMode = 'interior';
+        }
+        if (gameMode === 'waterlab') {
+          waterLab?.exit();
           gameMode = 'interior';
         }
         // Clear spawned sandbox rigs
@@ -1231,6 +1237,20 @@ async function main() {
         player.teleport(new THREE.Vector3(0, 1.5, 8));
         scene.fog = new THREE.Fog(0x0a1408, 60, 180);
         _sandboxUi?.setLocation('overworld');
+      },
+      onEnterWaterLab: () => {
+        // Tear down whatever's currently active (overworld or dungeon room)
+        if (gameMode === 'exterior') {
+          overworld?.exit();
+          gameMode = 'interior';
+        }
+        sceneManager.unloadCurrentRoom();
+        if (!waterLab) waterLab = new WaterLabScene(scene, physics, player);
+        waterLab.enter();
+        gameMode = 'waterlab';
+        player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank
+        scene.fog = null;
+        _sandboxUi?.setLocation('lab');
       },
       onSpawnCreature: (dna) => {
         const rig = buildCreature(dna);
@@ -2348,8 +2368,11 @@ async function main() {
       const _previewLoaded = (window as unknown as Record<string, unknown>)['__previewLoaded'] as import('@/characters/CharacterLoader').LoadedChar | undefined;
       _previewLoaded?.mixer?.update(dt);
 
-      // 5. Room manager / overworld — enemy AI + door trigger checks
-      if (gameMode === 'interior') {
+      // 5. Room manager / overworld / water lab — enemy AI + door trigger checks
+      if (gameMode === 'waterlab') {
+        hud.setTime(null);
+        waterLab?.update(dt);
+      } else if (gameMode === 'interior') {
         hud.setTime(null);
         sceneManager.update(dt, player.group.position);
         // occlusion handled globally before render
