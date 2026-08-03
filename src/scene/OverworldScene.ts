@@ -936,13 +936,6 @@ export class OverworldScene {
   }
 
   /**
-   * Animated, stylized water shader (Link's Awakening-remake-inspired look):
-   * gentle sine-wave vertex displacement (two overlapping directional waves)
-   * plus a two-tone deep/shimmer color blend and a cheap fresnel-ish edge
-   * highlight in the fragment shader. No texture lookups — fully procedural,
-   * consistent with the project's zero-external-asset policy.
-   */
-  /**
    * Animated, stylized water shader (Link's Awakening-remake-inspired look).
    * Delegates to the shared factory in `@/world/WaterMaterial` so
    * OverworldScene and WaterLabScene use the identical material without
