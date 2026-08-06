@@ -9,7 +9,7 @@
   <header>
     <h1>⬡ OVERWORLD STUDIO</h1>
     <span class="sep">|</span>
-    <span style="color:var(--muted);font-size:11px">TT&T Settlement Generator</span>
+    <span class="text-base-content/40" style="font-size:11px">TT&T Settlement Generator</span>
     <div class="seed-row">
       <label>SEED</label>
       <input id="seed-input" type="text" value="445176186" />
@@ -166,7 +166,7 @@
 
         <div class="section">
           <div class="section-title">Legend</div>
-          <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)">
+          <div class="text-base-content/40" style="display:flex;flex-direction:column;gap:4px;font-size:10px">
             <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#3a3028;border-radius:1px"></span> Wall</div>
             <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#c4b898;border-radius:1px"></span> Floor</div>
             <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#a06828;border-radius:1px"></span> Door</div>
@@ -333,7 +333,7 @@
               <input type="checkbox" id="planet-auto-rotate" checked /> 🔄 Auto Rotate
             </label>
           </div>
-          <div id="hex-subdivision-row" style="display:none;margin-top:8px;font-size:10px;color:var(--muted)">
+          <div id="hex-subdivision-row" class="text-base-content/40" style="display:none;margin-top:8px;font-size:10px">
             ⬡ <span id="hex-sub-val">5762 tiles (sub 24)</span> — Size controls realm detail ↑
           </div>
         </div>
@@ -344,16 +344,16 @@
       <div id="solar-controls" style="display:none">
         <div class="section">
           <div class="section-title">Star System</div>
-          <div id="solar-star-info" style="font-size:11px;color:var(--muted);margin-bottom:8px">—</div>
+          <div id="solar-star-info" class="text-base-content/40" style="font-size:11px;margin-bottom:8px">—</div>
           <button class="btn" id="btn-solar-generate" style="width:100%">✦ Generate</button>
         </div>
         <div class="section">
           <div class="section-title">Planets</div>
-          <div id="solar-planet-list" style="font-size:10px;color:var(--muted);line-height:1.8">—</div>
+          <div id="solar-planet-list" class="text-base-content/40" style="font-size:10px;line-height:1.8">—</div>
         </div>
         <div class="section">
           <div class="section-title">Hover</div>
-          <div id="solar-hover-info" style="font-size:10px;color:var(--muted);min-height:28px">—</div>
+          <div id="solar-hover-info" class="text-base-content/40" style="font-size:10px;min-height:28px">—</div>
         </div>
         <div class="section">
           <div class="section-title">Export</div>
@@ -390,8 +390,8 @@
             style="width:100%;margin:4px 0;padding:4px 6px;background:#1a1610;border:1px solid #3a3028;color:#c8a96e;border-radius:3px;font-size:11px;box-sizing:border-box"/>
           <div id="library-grid"
             style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:300px;overflow-y:auto;margin-top:4px"></div>
-          <div id="library-empty"
-            style="color:var(--muted);font-size:11px;text-align:center;padding:16px 0;display:none">
+          <div id="library-empty" class="text-base-content/40"
+            style="font-size:11px;text-align:center;padding:16px 0;display:none">
             No saved assets yet.<br>Use 💾 on any generated view.
           </div>
         </div>
@@ -423,7 +423,7 @@
             />
             <button class="btn" id="btn-library-pin" title="Pin to location" style="padding:2px 6px">📌</button>
           </div>
-          <div id="library-pin-tags" style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5"></div>
+          <div id="library-pin-tags" class="text-base-content/40" style="font-size:10px;margin-top:4px;line-height:1.5"></div>
           <div id="library-dna-editor" style="display:none;margin-top:6px">
             <textarea
               id="library-dna-textarea"
