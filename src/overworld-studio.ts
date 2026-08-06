@@ -45,6 +45,8 @@ import {
 
 import * as THREE from 'three';
 
+import './overworld-studio.css';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Vec2 { x: number; y: number; }
