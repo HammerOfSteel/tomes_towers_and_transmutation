@@ -42,6 +42,7 @@ import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
   type OverworldSettlementPreviewPayload,
 } from './overworld-studio/SettlementPreviewPayload';
+import { DEV_ROOM_LAUNCH_KEY, type DevRoomId } from './overworld-studio/DevRoomHandoff';
 
 import * as THREE from 'three';
 
@@ -4412,6 +4413,12 @@ document.getElementById('btn-preview-overworld')?.addEventListener('click', () =
     wardCount: payload.model.wards.length,
   };
   _showToast(`✓ Opening overworld preview for "${payload.name}"`);
+  window.open('/index.html', '_blank');
+});
+
+document.getElementById('btn-devroom-water-lab')?.addEventListener('click', () => {
+  localStorage.setItem(DEV_ROOM_LAUNCH_KEY, 'water-lab' satisfies DevRoomId);
+  _showToast('✓ Opening Water Lab');
   window.open('/index.html', '_blank');
 });
 
