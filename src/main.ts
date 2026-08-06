@@ -83,6 +83,7 @@ import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
+import { DEV_ROOM_LAUNCH_KEY, type DevRoomId } from '@/overworld-studio/DevRoomHandoff';
 
 async function main() {
   injectHudTheme();
@@ -974,6 +975,27 @@ async function main() {
   // here is preserved and now opened with the Insert key while in dev mode
   // (see the keydown handler below), so no functionality is lost.
 
+  /**
+   * Enters the Water Lab test room. Used both as the Dev Sandbox's
+   * "🌊 Water Lab" button callback and by the Overworld Studio dev-room
+   * boot handoff (see the deferred handoff block near the end of main()).
+   */
+  function enterWaterLab(): void {
+    if (gameMode === 'waterlab') return; // already there — no-op
+    // Tear down whatever's currently active (overworld or dungeon room)
+    if (gameMode === 'exterior') {
+      overworld?.exit();
+      gameMode = 'interior';
+    }
+    sceneManager.unloadCurrentRoom();
+    if (!waterLab) waterLab = new WaterLabScene(scene, physics, player);
+    waterLab.enter();
+    gameMode = 'waterlab';
+    player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank
+    scene.fog = null;
+    _sandboxUi?.setLocation('lab');
+  }
+
   function _startDevPanelInGame(): void {
     mainMenu.hide();
     gameMode = 'interior';
@@ -1237,21 +1259,7 @@ async function main() {
         scene.fog = new THREE.Fog(0x0a1408, 60, 180);
         _sandboxUi?.setLocation('overworld');
       },
-      onEnterWaterLab: () => {
-        if (gameMode === 'waterlab') return; // already there — no-op
-        // Tear down whatever's currently active (overworld or dungeon room)
-        if (gameMode === 'exterior') {
-          overworld?.exit();
-          gameMode = 'interior';
-        }
-        sceneManager.unloadCurrentRoom();
-        if (!waterLab) waterLab = new WaterLabScene(scene, physics, player);
-        waterLab.enter();
-        gameMode = 'waterlab';
-        player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank
-        scene.fog = null;
-        _sandboxUi?.setLocation('lab');
-      },
+      onEnterWaterLab: enterWaterLab,
       onSpawnCreature: (dna) => {
         const rig = buildCreature(dna);
         const pp  = player.group.position;
@@ -1554,6 +1562,7 @@ async function main() {
   });
 
   const _pendingOverworldPreview = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
+  const _pendingDevRoom = localStorage.getItem(DEV_ROOM_LAUNCH_KEY) as DevRoomId | null;
   mainMenu.show();
 
   // ── Princess Atelier quick-play handoff ───────────────────────────────────
@@ -3050,6 +3059,29 @@ async function main() {
       (window as any).__tttOverworldPreviewStage = 'error';
       (window as any).__tttOverworldPreviewError = String(e);
       console.error('[overworld-preview] boot failed:', e);
+    }
+  }
+
+  // ── Deferred Overworld Studio dev-room boot handoff ───────────────────────
+  // Set by the "🧪 Dev Rooms" section in Overworld Studio (see
+  // src/overworld-studio/DevRoomHandoff.ts) — opens this page in a new tab
+  // and asks it to boot straight into a specific dev/test room, skipping
+  // the main menu and character creation entirely.
+  if (_pendingDevRoom === 'water-lab') {
+    try {
+      (window as any).__tttDevRoomStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttDevRoomStage = 'starting-game';
+      _startDevPanelInGame();
+      (window as any).__tttDevRoomStage = 'entering-water-lab';
+      enterWaterLab();
+      (window as any).__tttDevRoomStage = 'booted';
+      (window as any).__tttDevRoomBooted = true;
+      localStorage.removeItem(DEV_ROOM_LAUNCH_KEY);
+    } catch (e) {
+      (window as any).__tttDevRoomStage = 'error';
+      (window as any).__tttDevRoomError = String(e);
+      console.error('[dev-room] boot failed:', e);
     }
   }
 }
