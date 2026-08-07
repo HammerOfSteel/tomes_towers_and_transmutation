@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { EffectComposer, EffectPass, RenderPass, BloomEffect, KernelSize } from 'postprocessing';
+import { UnderwaterEffect } from '@/rendering/UnderwaterEffect';
 import { GameLoop } from '@/core/GameLoop';
 import { InputManager } from '@/core/InputManager';
 import { CameraRig } from '@/core/CameraRig';
@@ -112,10 +113,22 @@ async function main() {
   // ── Post-processing — bloom/glow for all emissive + additive VFX ──────────────
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, cameraRig.camera));
+  const underwaterEffect = new UnderwaterEffect();
+  underwaterEffect.blendMode.opacity.value = 0; // dry by default; driven each frame below
   composer.addPass(new EffectPass(
     cameraRig.camera,
     new BloomEffect({ intensity: 2.2, luminanceThreshold: 0.12, kernelSize: KernelSize.MEDIUM }),
+    underwaterEffect,
   ));
+
+  // ── Underwater fog targets — lerped toward by fraction each frame below ──
+  const BASE_FOG_COLOR = new THREE.Color(0x0a0a0f);
+  const UNDERWATER_FOG_COLOR = new THREE.Color(0x0a2a3a);
+  const BASE_FOG_NEAR = 30;
+  const BASE_FOG_FAR = 60;
+  const UNDERWATER_FOG_NEAR = 2;
+  const UNDERWATER_FOG_FAR = 14;
+
   // ── Physics ────────────────────────────────────────────────────────────────
   const physics = new PhysicsWorld();
   await physics.init();
@@ -992,7 +1005,10 @@ async function main() {
     waterLab.enter();
     gameMode = 'waterlab';
     player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank
-    scene.fog = null;
+    // A real (dry-default) Fog object, not null, so the per-frame underwater
+    // fog lerp below (driven by player.underwaterDepthFraction) has
+    // something to lerp — the Lab previously disabled fog entirely here.
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     _sandboxUi?.setLocation('lab');
   }
 
@@ -3034,6 +3050,19 @@ async function main() {
         maxHp: m.maxHp,
       })),
     );
+
+    // 9b. Underwater screen effect + fog — driven by the player's own dive
+    // depth (not camera position, since the fixed iso/orbit camera rarely
+    // dips below the water surface). Runs every mode; underwaterDepthFraction
+    // is always 0 outside the Water Lab today (Phase 2B ports this to the
+    // Overworld later), so this is a no-op elsewhere.
+    const _underwaterFrac = player.underwaterDepthFraction;
+    underwaterEffect.blendMode.opacity.value = _underwaterFrac;
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(BASE_FOG_COLOR).lerp(UNDERWATER_FOG_COLOR, _underwaterFrac);
+      scene.fog.near = THREE.MathUtils.lerp(BASE_FOG_NEAR, UNDERWATER_FOG_NEAR, _underwaterFrac);
+      scene.fog.far = THREE.MathUtils.lerp(BASE_FOG_FAR, UNDERWATER_FOG_FAR, _underwaterFrac);
+    }
 
     // 10. Render  (occlusion update runs here — single call, all modes)
     _occlusionMgr?.update(cameraRig.camera, player.group.position, dt);

@@ -49,6 +49,11 @@ vi.mock('postprocessing', () => ({
   RenderPass:     vi.fn(),
   BloomEffect:    vi.fn(() => ({})),
   KernelSize:     { MEDIUM: 2 },
+  Effect:         class MockEffect {
+    blendMode = { opacity: { value: 0 } };
+    constructor(_name?: string, _shader?: string, _options?: any) {}
+  },
+  BlendFunction:  { NORMAL: 0, SCREEN: 1 },
 }));
 
 // ── OrbitControls ─────────────────────────────────────────────────────────────
