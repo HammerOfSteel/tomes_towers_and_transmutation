@@ -36,6 +36,7 @@ const TIER_COLORS: Record<WaterLabTier['name'], number> = {
   bank:    0x6b5a3c,
   shallow: 0x4a6b4a,
   deep:    0x2f4a52,
+  abyss:   0x15242b,
 };
 
 export class WaterLabScene {
