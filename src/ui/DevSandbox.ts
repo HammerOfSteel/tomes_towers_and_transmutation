@@ -35,6 +35,9 @@ export interface DevSandboxOptions {
   onEnterOverworld: (seed: number) => void;
   /** Teleport into the Water Lab scene. */
   onEnterWaterLab: () => void;
+  /** Switch the Water Lab's water-surface visual ('reflective' = Water.js
+   *  planar reflection, 'flow-refractive' = Water2.js flow-map refraction). */
+  onSetWaterVariant: (kind: 'reflective' | 'flow-refractive') => void;
   /** Spawn a creature (built from DNA) in the arena. */
   onSpawnCreature: (dna: CreatureDNA) => void;
   onClose: () => void;
@@ -619,6 +622,31 @@ export class DevSandbox {
     waterLabBtn.style.marginTop = '4px';
     waterLabBtn.onclick = () => this._opts.onEnterWaterLab();
 
+    // Water Lab visual A/B toggle — 'reflective' (Water.js) starts active,
+    // matching WaterLabScene's default _waterVariant.
+    const waterVariantReflectiveBtn = document.createElement('button');
+    waterVariantReflectiveBtn.className = 'ds-btn ds-btn--accent';
+    waterVariantReflectiveBtn.textContent = '🪞 Reflective';
+    waterVariantReflectiveBtn.style.marginTop = '4px';
+
+    const waterVariantFlowBtn = document.createElement('button');
+    waterVariantFlowBtn.className = 'ds-btn';
+    waterVariantFlowBtn.textContent = '🌊 Flow';
+    waterVariantFlowBtn.style.marginTop = '4px';
+
+    const setActiveWaterVariantBtn = (kind: 'reflective' | 'flow-refractive') => {
+      waterVariantReflectiveBtn.classList.toggle('ds-btn--accent', kind === 'reflective');
+      waterVariantFlowBtn.classList.toggle('ds-btn--accent', kind === 'flow-refractive');
+    };
+    waterVariantReflectiveBtn.onclick = () => {
+      this._opts.onSetWaterVariant('reflective');
+      setActiveWaterVariantBtn('reflective');
+    };
+    waterVariantFlowBtn.onclick = () => {
+      this._opts.onSetWaterVariant('flow-refractive');
+      setActiveWaterVariantBtn('flow-refractive');
+    };
+
     typeSelect.onchange = () => {
       this._procType = typeSelect.value as typeof this._procType;
       runBtn.style.display = this._procType === 'overworld' ? 'none' : '';
@@ -638,7 +666,7 @@ export class DevSandbox {
       }, 0);
     };
 
-    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn, waterLabBtn);
+    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn, waterLabBtn, waterVariantReflectiveBtn, waterVariantFlowBtn);
 
     // Output area
     const outSec = document.createElement('div');

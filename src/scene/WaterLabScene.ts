@@ -26,7 +26,12 @@ import {
   WATER_LAB_SURFACE_Y,
   type WaterLabTier,
 } from '@/levels/WaterLab';
-import { createWaterMaterial } from '@/world/WaterMaterial';
+import {
+  createReflectiveWater,
+  createFlowRefractiveWater,
+  type WaterVariantKind,
+} from '@/world/WaterVariants';
+import type { Water } from 'three/examples/jsm/objects/Water.js';
 
 /** WU below the water surface at which wading becomes full swimming.
  *  Chosen so the lab's shallow shelf (0.3 WU below surface) reads as
@@ -44,8 +49,8 @@ export class WaterLabScene {
   private readonly _tiers = buildWaterLabTiers();
   private readonly _tierMeshes: THREE.Mesh[] = [];
   private readonly _tierBodies: RAPIER.RigidBody[] = [];
-  private _waterMesh: THREE.Mesh | null = null;
-  private _waterMaterial: THREE.ShaderMaterial | null = null;
+  private _waterVariant: WaterVariantKind = 'reflective';
+  private _waterObject: THREE.Object3D | null = null; // Water | Water2 instance
   private _ambientLight: THREE.AmbientLight | null = null;
   private _dirLight: THREE.DirectionalLight | null = null;
   private _entered = false;
@@ -61,6 +66,37 @@ export class WaterLabScene {
     private readonly _player: PlayerController,
     private readonly _particles: ParticleSystem,
   ) {}
+
+  /** (Re)builds the water surface object for the current `_waterVariant`,
+   *  disposing whichever one was there before. Sized to the `shallow` tier's
+   *  footprint (deep/abyss tiers nest inside it, so this fully covers all
+   *  of them). */
+  private _buildWater(): void {
+    if (this._waterObject) {
+      this._scene.remove(this._waterObject);
+      const obj = this._waterObject as unknown as { geometry: THREE.BufferGeometry; material: THREE.Material };
+      obj.geometry.dispose();
+      obj.material.dispose();
+    }
+    const poolHalfExtent = this._tiers[1]!.halfExtent;
+    const size = poolHalfExtent * 2;
+    this._waterObject = this._waterVariant === 'reflective'
+      ? createReflectiveWater(size)
+      : createFlowRefractiveWater(size);
+    this._waterObject.position.set(0, WATER_LAB_SURFACE_Y + 0.05, 0);
+    this._waterObject.rotation.x = -Math.PI / 2;
+    this._scene.add(this._waterObject);
+  }
+
+  /** Switches the water-surface visual between 'reflective' (Water.js) and
+   *  'flow-refractive' (Water2.js). No-op if already on the requested kind.
+   *  If the room isn't currently entered, just remembers the preference for
+   *  the next enter() call. */
+  setWaterVariant(kind: WaterVariantKind): void {
+    if (kind === this._waterVariant) return;
+    this._waterVariant = kind;
+    if (this._entered) this._buildWater();
+  }
 
   enter(): void {
     if (this._entered) return;
@@ -85,15 +121,8 @@ export class WaterLabScene {
       this._tierBodies.push(body);
     }
 
-    // ── Water mesh (covers the shallow+deep footprint, sits at bank height) ──
-    // shallow tier footprint (deep tier is nested inside it, so this fully covers both)
-    const poolHalfExtent = this._tiers[1]!.halfExtent;
-    const waterGeo = new THREE.PlaneGeometry(poolHalfExtent * 2, poolHalfExtent * 2, 1, 1);
-    waterGeo.rotateX(-Math.PI / 2);
-    this._waterMaterial = createWaterMaterial();
-    this._waterMesh = new THREE.Mesh(waterGeo, this._waterMaterial);
-    this._waterMesh.position.set(0, WATER_LAB_SURFACE_Y + 0.05, 0);
-    this._scene.add(this._waterMesh);
+    // ── Water surface (covers the shallow+deep+abyss footprint, at bank height) ──
+    this._buildWater();
 
     // ── Lighting (minimal — no skybox/fog, matches sandbox_arena cheapness) ──
     this._ambientLight = new THREE.AmbientLight(0x8090a0, 0.6);
@@ -120,7 +149,7 @@ export class WaterLabScene {
     if (!this._entered) return;
     this._entered = false;
     for (const m of this._tierMeshes) this._scene.remove(m);
-    if (this._waterMesh) this._scene.remove(this._waterMesh);
+    if (this._waterObject) this._scene.remove(this._waterObject);
     if (this._ambientLight) {
       this._scene.remove(this._ambientLight);
       this._ambientLight = null;
@@ -138,7 +167,12 @@ export class WaterLabScene {
    *  detects the player crossing the water surface (either direction) to
    *  trigger a one-shot splash VFX burst. */
   update(dt: number): void {
-    if (this._waterMaterial) this._waterMaterial.uniforms.uTime.value += dt;
+    // Water2's flow animation self-advances via its own internal clock in
+    // onBeforeRender (called automatically by the renderer each frame it's
+    // in the scene) — only Water.js's `time` uniform needs manual ticking.
+    if (this._waterObject && this._waterVariant === 'reflective') {
+      (this._waterObject as Water).material.uniforms.time!.value += dt;
+    }
 
     const playerY = this._player.group.position.y;
     const depthBelowSurface = WATER_LAB_SURFACE_Y - playerY;
@@ -182,18 +216,18 @@ export class WaterLabScene {
   }
 
   dispose(): void {
-    if (this._tierMeshes.length === 0 && !this._waterMesh) return;
+    if (this._tierMeshes.length === 0 && !this._waterObject) return;
     this.exit();
     for (const m of this._tierMeshes) {
       m.geometry.dispose();
       (m.material as THREE.Material).dispose();
     }
     this._tierMeshes.length = 0;
-    if (this._waterMesh) {
-      this._waterMesh.geometry.dispose();
-      (this._waterMesh.material as THREE.Material).dispose();
-      this._waterMesh = null;
+    if (this._waterObject) {
+      const obj = this._waterObject as unknown as { geometry: THREE.BufferGeometry; material: THREE.Material };
+      obj.geometry.dispose();
+      obj.material.dispose();
+      this._waterObject = null;
     }
-    this._waterMaterial = null;
   }
 }

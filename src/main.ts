@@ -1260,6 +1260,7 @@ async function main() {
         _sandboxUi?.setLocation('overworld');
       },
       onEnterWaterLab: enterWaterLab,
+      onSetWaterVariant: (kind) => waterLab?.setWaterVariant(kind),
       onSpawnCreature: (dna) => {
         const rig = buildCreature(dna);
         const pp  = player.group.position;
