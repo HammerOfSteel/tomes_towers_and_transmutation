@@ -988,7 +988,7 @@ async function main() {
       gameMode = 'interior';
     }
     sceneManager.unloadCurrentRoom();
-    if (!waterLab) waterLab = new WaterLabScene(scene, physics, player);
+    if (!waterLab) waterLab = new WaterLabScene(scene, physics, player, particles);
     waterLab.enter();
     gameMode = 'waterlab';
     player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank

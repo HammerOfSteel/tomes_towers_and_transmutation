@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
+import type { ParticleSystem } from '@/rendering/ParticleSystem';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {
   buildWaterLabTiers,
@@ -49,10 +50,16 @@ export class WaterLabScene {
   private _dirLight: THREE.DirectionalLight | null = null;
   private _entered = false;
 
+  /** Previous frame's depthBelowSurface, used to detect entry/exit crossings
+   *  for splash VFX. -Infinity so the very first frame never counts as a
+   *  crossing (nothing to compare against yet). */
+  private _prevDepthBelowSurface = -Infinity;
+
   constructor(
     private readonly _scene: THREE.Scene,
     private readonly _physics: PhysicsWorld,
     private readonly _player: PlayerController,
+    private readonly _particles: ParticleSystem,
   ) {}
 
   enter(): void {
@@ -127,12 +134,22 @@ export class WaterLabScene {
   }
 
   /** Advances the water shader animation and applies swim/wading state to
-   *  the player based on their live depth below the water surface. */
+   *  the player based on their live depth below the water surface. Also
+   *  detects the player crossing the water surface (either direction) to
+   *  trigger a one-shot splash VFX burst. */
   update(dt: number): void {
     if (this._waterMaterial) this._waterMaterial.uniforms.uTime.value += dt;
 
     const playerY = this._player.group.position.y;
     const depthBelowSurface = WATER_LAB_SURFACE_Y - playerY;
+
+    const enteredWater = this._prevDepthBelowSurface <= 0 && depthBelowSurface > 0;
+    const exitedWater  = this._prevDepthBelowSurface > 0 && depthBelowSurface <= 0;
+    if (enteredWater || exitedWater) {
+      const pos = this._player.group.position;
+      this._spawnSplash(pos.x, pos.z, enteredWater);
+    }
+    this._prevDepthBelowSurface = depthBelowSurface;
 
     if (depthBelowSurface >= SWIM_DEPTH_THRESHOLD) {
       this._player.setSubmersion(1.0);
@@ -143,6 +160,24 @@ export class WaterLabScene {
     } else {
       this._player.setSubmersion(0);
       this._player.setSwimming(false);
+    }
+  }
+
+  /** Fires a one-shot radial burst of pale-blue/white particles at
+   *  (x, WATER_LAB_SURFACE_Y, z) — a bigger, more energetic burst on entry
+   *  than on exit, matching how a body displaces more water diving in than
+   *  climbing out. */
+  private _spawnSplash(x: number, z: number, isEntry: boolean): void {
+    const count = isEntry ? 12 : 8;
+    const origin = new THREE.Vector3(x, WATER_LAB_SURFACE_Y, z);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const radialSpeed = (isEntry ? 2.5 : 1.6) * (0.6 + Math.random() * 0.6);
+      const vx = Math.cos(angle) * radialSpeed;
+      const vz = Math.sin(angle) * radialSpeed;
+      const vy = (isEntry ? 3.0 : 2.0) * (0.7 + Math.random() * 0.5);
+      const lifetime = 0.4 + Math.random() * 0.25;
+      this._particles.emit(origin, 0xdff3ff, vx, vy, vz, lifetime, true);
     }
   }
 
