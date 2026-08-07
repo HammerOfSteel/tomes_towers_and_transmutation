@@ -49,6 +49,8 @@ const GROUND_PUSH = -2;
 const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (5)
 const SWIM_FLOAT_DEPTH = 0.35;   // WU below water surface the player floats toward while swimming
 const SWIM_VERTICAL_EASE = 6;    // per-second lerp factor toward the float target
+const DIVE_TARGET_DEPTH = 3.0;   // WU below surface the player eases toward while diving
+const DIVE_VERTICAL_EASE = 4;    // per-second lerp factor toward the dive target (slower than surfacing)
 
 /** Frames after walking off a ledge where jump is still accepted. */
 const COYOTE_TIME = 0.1;
@@ -307,6 +309,15 @@ export class PlayerController {
 
   get isSwimming(): boolean {
     return this._swimming;
+  }
+
+  /** 0 when swimming at/near the surface, ramping to 1 as the player dives
+   *  toward DIVE_TARGET_DEPTH. Used by the underwater screen effect; 0 when
+   *  not swimming at all. */
+  get underwaterDepthFraction(): number {
+    if (!this._swimming) return 0;
+    const depth = this._swimSurfaceY - this._pos.y;
+    return Math.max(0, Math.min(1, depth / DIVE_TARGET_DEPTH));
   }
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
@@ -858,11 +869,17 @@ export class PlayerController {
 
     // ── 4. GRAVITY ─────────────────────────────────────────────────────────
     if (this._swimming) {
-      // Buoyant float: ease velocity.y so _pos.y approaches a fixed depth
-      // below the water surface, instead of falling under normal gravity.
-      const targetY = this._swimSurfaceY - SWIM_FLOAT_DEPTH;
+      // Buoyant float / dive: ease velocity.y so _pos.y approaches a target
+      // depth below the water surface, instead of falling under normal
+      // gravity. Holding jump (input.jump) is repurposed as "dive" — jump's
+      // on-land execution branch already excludes swim mode (see the
+      // `!this._swimming` guard above), so this is conflict-free.
+      const targetY = input.jump
+        ? this._swimSurfaceY - DIVE_TARGET_DEPTH   // holding jump: ease down toward dive depth
+        : this._swimSurfaceY - SWIM_FLOAT_DEPTH;   // released: ease up toward surface float depth
+      const ease = input.jump ? DIVE_VERTICAL_EASE : SWIM_VERTICAL_EASE;
       const yDelta = targetY - this._pos.y;
-      this.velocity.y = lerp(this.velocity.y, yDelta * SWIM_VERTICAL_EASE, SWIM_VERTICAL_EASE * dt);
+      this.velocity.y = lerp(this.velocity.y, yDelta * ease, ease * dt);
     } else if (!wasGrounded || justJumped) {
       let g: number;
       if (this.velocity.y > 0) {
