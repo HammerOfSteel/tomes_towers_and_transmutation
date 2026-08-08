@@ -31,6 +31,7 @@ import {
   createFlowRefractiveWater,
   type WaterVariantKind,
 } from '@/world/WaterVariants';
+import { createWaterMaterial } from '@/world/WaterMaterial';
 import type { Water } from 'three/examples/jsm/objects/Water.js';
 
 /** WU below the water surface at which wading becomes full swimming.
@@ -49,7 +50,7 @@ export class WaterLabScene {
   private readonly _tiers = buildWaterLabTiers();
   private readonly _tierMeshes: THREE.Mesh[] = [];
   private readonly _tierBodies: RAPIER.RigidBody[] = [];
-  private _waterVariant: WaterVariantKind = 'reflective';
+  private _waterVariant: WaterVariantKind = 'stylized';
   private _waterObject: THREE.Object3D | null = null; // Water | Water2 instance
   private _ambientLight: THREE.AmbientLight | null = null;
   private _dirLight: THREE.DirectionalLight | null = null;
@@ -80,18 +81,23 @@ export class WaterLabScene {
     }
     const poolHalfExtent = this._tiers[1]!.halfExtent;
     const size = poolHalfExtent * 2;
-    this._waterObject = this._waterVariant === 'reflective'
-      ? createReflectiveWater(size)
-      : createFlowRefractiveWater(size);
+    if (this._waterVariant === 'stylized') {
+      const geo = new THREE.PlaneGeometry(size, size);
+      this._waterObject = new THREE.Mesh(geo, createWaterMaterial());
+    } else {
+      this._waterObject = this._waterVariant === 'reflective'
+        ? createReflectiveWater(size)
+        : createFlowRefractiveWater(size);
+    }
     this._waterObject.position.set(0, WATER_LAB_SURFACE_Y + 0.05, 0);
     this._waterObject.rotation.x = -Math.PI / 2;
     this._scene.add(this._waterObject);
   }
 
-  /** Switches the water-surface visual between 'reflective' (Water.js) and
-   *  'flow-refractive' (Water2.js). No-op if already on the requested kind.
-   *  If the room isn't currently entered, just remembers the preference for
-   *  the next enter() call. */
+  /** Switches the water-surface visual between 'stylized' (see-through),
+   *  'reflective' (Water.js), and 'flow-refractive' (Water2.js). No-op if
+   *  already on the requested kind. If the room isn't currently entered,
+   *  just remembers the preference for the next enter() call. */
   setWaterVariant(kind: WaterVariantKind): void {
     if (kind === this._waterVariant) return;
     this._waterVariant = kind;
@@ -210,6 +216,8 @@ export class WaterLabScene {
     // in the scene) — only Water.js's `time` uniform needs manual ticking.
     if (this._waterObject && this._waterVariant === 'reflective') {
       (this._waterObject as Water).material.uniforms.time!.value += dt;
+    } else if (this._waterObject && this._waterVariant === 'stylized') {
+      ((this._waterObject as THREE.Mesh).material as THREE.ShaderMaterial).uniforms.uTime!.value += dt;
     }
 
     const playerY = this._player.group.position.y;

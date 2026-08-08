@@ -22,7 +22,7 @@ import { Water as Water2 } from 'three/examples/jsm/objects/Water2.js';
 
 const NORMAL_MAP_URL = '/assets/textures/water/waternormals.jpg';
 
-export type WaterVariantKind = 'reflective' | 'flow-refractive';
+export type WaterVariantKind = 'stylized' | 'reflective' | 'flow-refractive';
 
 let _loader: THREE.TextureLoader | null = null;
 let _normalMapCache: THREE.Texture | null = null;
