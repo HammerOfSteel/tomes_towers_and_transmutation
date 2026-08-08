@@ -106,4 +106,50 @@ describe('DevSandbox modern DNA labs', () => {
     expect(spawnedDamage).toBe(9);
     expect(spawnedCount).toBe(2);
   });
+
+  it('offers a 3-way water variant selector defaulting to stylized', async () => {
+    const onSetWaterVariant = vi.fn();
+    const { DevSandbox } = await import('@/ui/DevSandbox');
+    const sandbox = new DevSandbox({
+      onGrantSpell: () => {},
+      onSetActiveSpell: () => {},
+      onSpawnEnemies: () => {},
+      onKillAllEnemies: () => {},
+      onGrantAllSpells: () => {},
+      getProcGenStats: () => ({ text: '', roomIds: [] }),
+      onEnterRoom: () => {},
+      onReturnToArena: () => {},
+      onEnterOverworld: () => {},
+      onEnterWaterLab: () => {},
+      onSetWaterVariant,
+      onSpawnCreature: () => {},
+      onSpawnNPC: () => {},
+      onClose: () => {},
+    }) as any;
+    sandbox._switchTab('procgen');
+
+    const stylizedBtn = document.querySelector<HTMLButtonElement>('[data-ds-action="water-variant-stylized"]')!;
+    const reflectiveBtn = document.querySelector<HTMLButtonElement>('[data-ds-action="water-variant-reflective"]')!;
+    const flowBtn = document.querySelector<HTMLButtonElement>('[data-ds-action="water-variant-flow"]')!;
+    expect(stylizedBtn).toBeTruthy();
+    expect(reflectiveBtn).toBeTruthy();
+    expect(flowBtn).toBeTruthy();
+    // Stylized starts active (matches WaterLabScene's new default), no
+    // click needed to select it, but clicking the others should call
+    // through with the right variant name.
+    expect(stylizedBtn.classList.contains('ds-btn--accent')).toBe(true);
+
+    reflectiveBtn.click();
+    expect(onSetWaterVariant).toHaveBeenCalledWith('reflective');
+    expect(reflectiveBtn.classList.contains('ds-btn--accent')).toBe(true);
+    expect(stylizedBtn.classList.contains('ds-btn--accent')).toBe(false);
+
+    flowBtn.click();
+    expect(onSetWaterVariant).toHaveBeenCalledWith('flow-refractive');
+    expect(flowBtn.classList.contains('ds-btn--accent')).toBe(true);
+
+    stylizedBtn.click();
+    expect(onSetWaterVariant).toHaveBeenCalledWith('stylized');
+    expect(stylizedBtn.classList.contains('ds-btn--accent')).toBe(true);
+  });
 });

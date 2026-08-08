@@ -63,9 +63,10 @@ export interface DevSandboxOptions {
   onEnterOverworld: (seed: number) => void;
   /** Teleport into the Water Lab scene. */
   onEnterWaterLab: () => void;
-  /** Switch the Water Lab's water-surface visual ('reflective' = Water.js
-   *  planar reflection, 'flow-refractive' = Water2.js flow-map refraction). */
-  onSetWaterVariant: (kind: 'reflective' | 'flow-refractive') => void;
+  /** Switch the Water Lab's water-surface visual ('stylized' = translucent
+   *  custom shader, player visible underwater; 'reflective' = Water.js
+   *  planar reflection; 'flow-refractive' = Water2.js flow-map refraction). */
+  onSetWaterVariant: (kind: import('@/world/WaterVariants').WaterVariantKind) => void;
   /** Spawn an enemy (built from EnemyDNA) in the arena. */
   onSpawnCreature: (dna: EnemyDNA) => void;
   onClose: () => void;
@@ -681,21 +682,36 @@ export class DevSandbox {
     waterLabBtn.style.marginTop = '4px';
     waterLabBtn.onclick = () => this._opts.onEnterWaterLab();
 
-    // Water Lab visual A/B toggle — 'reflective' (Water.js) starts active,
-    // matching WaterLabScene's default _waterVariant.
+    // Water Lab visual selector — 'stylized' (translucent custom shader)
+    // starts active, matching WaterLabScene's default _waterVariant. Lets
+    // 'reflective' (Water.js) and 'flow-refractive' (Water2.js) remain
+    // selectable for comparison even though they hide the player underwater.
+    const waterVariantStylizedBtn = document.createElement('button');
+    waterVariantStylizedBtn.className = 'ds-btn ds-btn--accent';
+    waterVariantStylizedBtn.textContent = '💧 Stylized';
+    waterVariantStylizedBtn.style.marginTop = '4px';
+    waterVariantStylizedBtn.dataset.dsAction = 'water-variant-stylized';
+
     const waterVariantReflectiveBtn = document.createElement('button');
-    waterVariantReflectiveBtn.className = 'ds-btn ds-btn--accent';
+    waterVariantReflectiveBtn.className = 'ds-btn';
     waterVariantReflectiveBtn.textContent = '🪞 Reflective';
     waterVariantReflectiveBtn.style.marginTop = '4px';
+    waterVariantReflectiveBtn.dataset.dsAction = 'water-variant-reflective';
 
     const waterVariantFlowBtn = document.createElement('button');
     waterVariantFlowBtn.className = 'ds-btn';
     waterVariantFlowBtn.textContent = '🌊 Flow';
     waterVariantFlowBtn.style.marginTop = '4px';
+    waterVariantFlowBtn.dataset.dsAction = 'water-variant-flow';
 
-    const setActiveWaterVariantBtn = (kind: 'reflective' | 'flow-refractive') => {
+    const setActiveWaterVariantBtn = (kind: import('@/world/WaterVariants').WaterVariantKind) => {
+      waterVariantStylizedBtn.classList.toggle('ds-btn--accent', kind === 'stylized');
       waterVariantReflectiveBtn.classList.toggle('ds-btn--accent', kind === 'reflective');
       waterVariantFlowBtn.classList.toggle('ds-btn--accent', kind === 'flow-refractive');
+    };
+    waterVariantStylizedBtn.onclick = () => {
+      this._opts.onSetWaterVariant('stylized');
+      setActiveWaterVariantBtn('stylized');
     };
     waterVariantReflectiveBtn.onclick = () => {
       this._opts.onSetWaterVariant('reflective');
@@ -725,7 +741,7 @@ export class DevSandbox {
       }, 0);
     };
 
-    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn, waterLabBtn, waterVariantReflectiveBtn, waterVariantFlowBtn);
+    genSec.append(genTitle, typeRow, seedRow, runBtn, overworldBtn, waterLabBtn, waterVariantStylizedBtn, waterVariantReflectiveBtn, waterVariantFlowBtn);
 
     // Output area
     const outSec = document.createElement('div');
