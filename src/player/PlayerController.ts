@@ -47,10 +47,37 @@ const MAX_FALL_SPEED = 25;
 const GROUND_PUSH = -2;
 
 const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (5)
-const SWIM_FLOAT_DEPTH = 0.35;   // WU below water surface the player floats toward while swimming
-const SWIM_VERTICAL_EASE = 6;    // per-second lerp factor toward the float target
+/** WU below water surface the player floats toward while swimming. Must
+ *  stay comfortably deeper than WaterLabScene's SWIM_EXIT_DEPTH_THRESHOLD
+ *  (currently 0.5) — otherwise the buoyant equilibrium point sits outside
+ *  the zone that keeps swim mode active, and the caller's depth-based state
+ *  machine "hunts": buoyancy floats the player up past the exit threshold,
+ *  swim mode (and its buoyancy) turns off, gravity drags them back down
+ *  past the enter threshold, swim mode turns back on, repeat — a visible
+ *  bobbing loop, not the intended calm float. See WaterLabScene.ts's
+ *  SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD for the paired
+ *  values this must stay compatible with. */
+const SWIM_FLOAT_DEPTH = 0.75;
+/** Position-error gain (rad/s) for the swim/dive vertical spring — see the
+ *  VERTICAL_SPRING_DAMPING_MULTIPLIER comment below for why this alone
+ *  isn't the damping rate. */
+const SWIM_VERTICAL_EASE = 6;
 const DIVE_TARGET_DEPTH = 3.0;   // WU below surface the player eases toward while diving
-const DIVE_VERTICAL_EASE = 4;    // per-second lerp factor toward the dive target (slower than surfacing)
+/** Position-error gain (rad/s) for diving — slower than surfacing. */
+const DIVE_VERTICAL_EASE = 4;
+/** Damping-rate multiplier applied on top of the position-error gain
+ *  (SWIM_VERTICAL_EASE / DIVE_VERTICAL_EASE) when blending velocity.y
+ *  toward its target each frame (see the swim/dive gravity override in
+ *  update()). Modeling the vertical float as a spring-damper (stiffness K =
+ *  gain, damping C = blend-rate), using the SAME value for both — as this
+ *  code used to — gives a damping ratio of only 0.5 (underdamped: C =
+ *  2*sqrt(K*0.5) instead of the critical C = 2*sqrt(K)), which oscillates
+ *  indefinitely and never settles — the "bobbing in place" bug. Using
+ *  4x the gain as the blend-rate makes C = 2*sqrt(K) exactly (critically
+ *  damped, ζ=1); this constant adds a bit of margin (ζ≈1.1, slightly
+ *  overdamped) so discrete per-frame stepping at low frame rates can't tip
+ *  it back into oscillation. */
+const VERTICAL_SPRING_DAMPING_MULTIPLIER = 4.5;
 
 /** Frames after walking off a ledge where jump is still accepted. */
 const COYOTE_TIME = 0.1;
@@ -898,9 +925,11 @@ export class PlayerController {
       const targetY = input.jump
         ? this._swimSurfaceY - DIVE_TARGET_DEPTH   // holding jump: ease down toward dive depth
         : this._swimSurfaceY - SWIM_FLOAT_DEPTH;   // released: ease up toward surface float depth
-      const ease = input.jump ? DIVE_VERTICAL_EASE : SWIM_VERTICAL_EASE;
+      const gain = input.jump ? DIVE_VERTICAL_EASE : SWIM_VERTICAL_EASE;
       const yDelta = targetY - this._pos.y;
-      this.velocity.y = lerp(this.velocity.y, yDelta * ease, ease * dt);
+      const targetVel = yDelta * gain;
+      const dampingRate = gain * VERTICAL_SPRING_DAMPING_MULTIPLIER;
+      this.velocity.y = lerp(this.velocity.y, targetVel, dampingRate * dt);
     } else if (!wasGrounded || justJumped) {
       let g: number;
       if (this.velocity.y > 0) {

@@ -68,4 +68,37 @@ describe('PlayerController.setSwimming', () => {
     // faster than the gentle swim-float ease did.
     expect((player as any).velocity.y).toBeLessThan(before);
   });
+
+  it('settles toward the float depth without oscillating (critically damped, not bobbing)', () => {
+    // Start well below the float target (e.g. just off the deep floor) so
+    // there's a real distance for the buoyancy spring to settle over.
+    player.teleport(new THREE.Vector3(0, -3, 0));
+    player.setSwimming(true, 0);
+    let significantSignFlips = 0;
+    let lastSign = 0;
+    for (let i = 0; i < 300; i++) {
+      physics.step(1 / 60);
+      player.update(neutralInput(), 1 / 60, 'isometric');
+      const v = (player as any).velocity.y;
+      const s = Math.sign(v);
+      // Ignore reversals at negligible velocity — that's just the final
+      // asymptotic settle crossing exactly zero once, not visible bobbing.
+      // A real (previously-underdamped) bob reverses direction repeatedly
+      // at velocities an order of magnitude larger than this.
+      if (lastSign !== 0 && s !== 0 && s !== lastSign && Math.abs(v) > 0.01) {
+        significantSignFlips++;
+      }
+      lastSign = s || lastSign;
+    }
+    // A critically/over-damped approach to the target should not visibly
+    // reverse direction — velocity.y should only ever go from
+    // negative-or-zero (rising toward target) to positive-or-zero and
+    // settle, never flip sign repeatedly at meaningful magnitude the way
+    // the old underdamped spring bobbed back and forth.
+    expect(significantSignFlips).toBe(0);
+    // And it should actually converge near the target, not park somewhere
+    // else entirely.
+    const finalY = (player as any)._pos.y;
+    expect(finalY).toBeCloseTo(-0.75, 1); // SWIM_FLOAT_DEPTH below surface (0)
+  });
 });

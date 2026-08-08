@@ -9,8 +9,8 @@
  * src/levels/WaterLab.ts), covered by one animated water quad at the
  * bank's height. Walking from the bank onto the shallow shelf triggers
  * the existing shallow "wading" visual (setSubmersion); walking down onto
- * the deep floor crosses SWIM_DEPTH_THRESHOLD and triggers full swim mode
- * (setSwimming) — buoyant float, capped speed, no jump.
+ * the deep floor crosses SWIM_ENTER_DEPTH_THRESHOLD and triggers full swim
+ * mode (setSwimming) — buoyant float, capped speed, no jump.
  *
  * No settlements/NPCs/trees/skybox/fog — kept as cheap as the existing
  * sandbox_arena interior so it loads and runs at full FPS for testing.
@@ -34,10 +34,28 @@ import {
 import { createWaterMaterial } from '@/world/WaterMaterial';
 import type { Water } from 'three/examples/jsm/objects/Water.js';
 
-/** WU below the water surface at which wading becomes full swimming.
- *  Chosen so the lab's shallow shelf (0.3 WU below surface) reads as
- *  wading and the deep floor (1.2 WU below surface) reads as swimming. */
-const SWIM_DEPTH_THRESHOLD = 0.9;
+/** WU below the water surface at which wading becomes full swimming — the
+ *  depth the player must sink to (e.g. stepping off the deep floor, 1.2 WU
+ *  down) before swim mode engages.
+ *
+ *  Swim/wade uses a hysteresis band (this constant + SWIM_EXIT_DEPTH_
+ *  THRESHOLD below) rather than one threshold checked fresh every frame.
+ *  A single threshold doesn't work here: PlayerController's buoyant float
+ *  equilibrium (SWIM_FLOAT_DEPTH, 0.75) sits between the two, comfortably
+ *  inside the "still swimming" band once entered — but a bare single
+ *  threshold at 0.9 with no memory would flicker every frame the player's
+ *  buoyancy-driven Y oscillates near it, repeatedly toggling swim mode (and
+ *  the jump-input remapping/gravity override that comes with it) on and
+ *  off — visible as bobbing and as jump/dive input unexpectedly not
+ *  responding right at the moment a player tries to climb out. */
+const SWIM_ENTER_DEPTH_THRESHOLD = 0.9;
+/** Depth below which swim mode releases back to wading/dry. Kept below the
+ *  shallow shelf's resting depth (0.3 WU) so standing on the shelf always
+ *  reads as wading (jump enabled), and below SWIM_FLOAT_DEPTH (0.75) so the
+ *  buoyant equilibrium stays inside the "still swimming" band — see
+ *  SWIM_ENTER_DEPTH_THRESHOLD's comment for why this needs to be a
+ *  separate, lower value rather than reusing the enter threshold. */
+const SWIM_EXIT_DEPTH_THRESHOLD = 0.5;
 
 const TIER_COLORS: Record<WaterLabTier['name'], number> = {
   bank:    0x6b5a3c,
@@ -60,6 +78,13 @@ export class WaterLabScene {
    *  for splash VFX. -Infinity so the very first frame never counts as a
    *  crossing (nothing to compare against yet). */
   private _prevDepthBelowSurface = -Infinity;
+
+  /** Hysteresis memory for the swim/wade state machine (see
+   *  SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD below) — whether
+   *  the player is currently considered "swimming" persists across frames
+   *  instead of being recomputed from a single depth threshold every frame,
+   *  so it can't flicker at the boundary. */
+  private _playerIsSwimming = false;
 
   constructor(
     private readonly _scene: THREE.Scene,
@@ -247,7 +272,16 @@ export class WaterLabScene {
     }
     this._prevDepthBelowSurface = depthBelowSurface;
 
-    if (depthBelowSurface >= SWIM_DEPTH_THRESHOLD) {
+    // Hysteresis: only *enter* swim mode crossing the (higher) enter
+    // threshold, and only *leave* it crossing the (lower) exit threshold —
+    // see the constants' doc comments for why a single threshold flickers.
+    if (!this._playerIsSwimming && depthBelowSurface >= SWIM_ENTER_DEPTH_THRESHOLD) {
+      this._playerIsSwimming = true;
+    } else if (this._playerIsSwimming && depthBelowSurface < SWIM_EXIT_DEPTH_THRESHOLD) {
+      this._playerIsSwimming = false;
+    }
+
+    if (this._playerIsSwimming) {
       this._player.setSubmersion(1.0);
       this._player.setSwimming(true, WATER_LAB_SURFACE_Y);
     } else if (depthBelowSurface > 0) {

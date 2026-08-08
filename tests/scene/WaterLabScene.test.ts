@@ -39,3 +39,49 @@ describe('WaterLabScene water variant', () => {
     lab.exit();
   });
 });
+
+describe('WaterLabScene swim/wade hysteresis', () => {
+  let scene: THREE.Scene;
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+  let particles: ParticleSystem;
+  let lab: WaterLabScene;
+
+  beforeAll(async () => {
+    scene = new THREE.Scene();
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+    particles = new ParticleSystem(scene);
+    lab = new WaterLabScene(scene, physics, player, particles);
+    lab.enter();
+  });
+
+  it('does not flicker swim state once the buoyancy float settles (regression: previous underdamped spring + single-threshold check caused a hunting loop)', () => {
+    // Teleport onto the deep floor (well past the enter threshold) so swim
+    // mode engages, then let buoyancy settle toward its float depth.
+    player.teleport(new THREE.Vector3(0, -1.2, 0));
+    let sawSwim = false;
+    let flickerCount = 0;
+    let lastSwimming: boolean | null = null;
+    for (let i = 0; i < 300; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(
+        { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any,
+        1 / 60,
+        'isometric',
+      );
+      const swimming = player.isSwimming;
+      if (swimming) sawSwim = true;
+      // Only count transitions after the first ~30 frames (allow the
+      // initial dive-in transient to settle) — a hunting loop would keep
+      // flickering indefinitely, while a one-time settle transition is fine.
+      if (i > 30 && lastSwimming !== null && swimming !== lastSwimming) flickerCount++;
+      lastSwimming = swimming;
+    }
+    expect(sawSwim).toBe(true);
+    expect(flickerCount).toBe(0);
+  });
+});
