@@ -296,6 +296,7 @@ export class PlayerController {
     // Rig swapped since last call (or first call) — capture its resting Y
     // and (re)create the submerged glow light as a child of the new rig.
     if (active !== this._submersionRoot) {
+      this._submergedGlow?.dispose(); // free GPU shadow resources before replacing
       this._submersionRoot = active;
       this._submersionBaseY = active.position.y;
       this._submergedGlow = new THREE.PointLight(0xfff2e0, 0, 2.2, 2);
