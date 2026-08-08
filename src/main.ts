@@ -86,7 +86,7 @@ import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
-import { DEV_ROOM_LAUNCH_KEY, type DevRoomId } from '@/overworld-studio/DevRoomHandoff';
+import { readPendingDevRoom, clearPendingDevRoom } from '@/overworld-studio/DevRoomHandoff';
 
 async function main() {
   injectHudTheme();
@@ -1760,7 +1760,7 @@ async function main() {
   });
 
   const _pendingOverworldPreview = localStorage.getItem(OVERWORLD_SETTLEMENT_PREVIEW_KEY);
-  const _pendingDevRoom = localStorage.getItem(DEV_ROOM_LAUNCH_KEY) as DevRoomId | null;
+  const _pendingDevRoom = readPendingDevRoom();
   mainMenu.show();
 
   // ── Princess Atelier quick-play handoff ───────────────────────────────────
@@ -3292,7 +3292,7 @@ async function main() {
       enterWaterLab();
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
-      localStorage.removeItem(DEV_ROOM_LAUNCH_KEY);
+      clearPendingDevRoom();
     } catch (e) {
       (window as any).__tttDevRoomStage = 'error';
       (window as any).__tttDevRoomError = String(e);
