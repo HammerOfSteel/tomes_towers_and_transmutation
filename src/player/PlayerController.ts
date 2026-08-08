@@ -262,6 +262,18 @@ export class PlayerController {
   private _submersionRoot: THREE.Object3D | null = null;
   private _submersionBaseY = 0;
 
+  /** Small warm/white point light parented to the active visual rig,
+   *  visible only while submerged (intensity driven by depthFraction in
+   *  setSubmersion()). Keeps the player legible against dark/busy water
+   *  in any camera angle, independent of the water shader's own alpha.
+   *  Recreated whenever the active rig changes (old rig + its children,
+   *  including any previous glow light, are removed/disposed by the
+   *  relevant applyDNA/applyAssetModel/applyPrincess call). */
+  private _submergedGlow: THREE.PointLight | null = null;
+
+  /** Max intensity of `_submergedGlow` at full (1.0) depthFraction. */
+  private static readonly SUBMERGED_GLOW_MAX_INTENSITY = 0.6;
+
   /** Amount (world units) the visual rig sinks below its resting foot
    *  position at full (1.0) submersion depth. */
   private static readonly SUBMERSION_MAX_OFFSET = (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) * 2 * 0.4;
@@ -281,13 +293,20 @@ export class PlayerController {
       this._creatureRig?.root ?? this._charController?.scene ?? this._princessInstance?.root ?? null;
     if (!active) return;
 
-    // Rig swapped since last call (or first call) — capture its resting Y.
+    // Rig swapped since last call (or first call) — capture its resting Y
+    // and (re)create the submerged glow light as a child of the new rig.
     if (active !== this._submersionRoot) {
       this._submersionRoot = active;
       this._submersionBaseY = active.position.y;
+      this._submergedGlow = new THREE.PointLight(0xfff2e0, 0, 2.2, 2);
+      active.add(this._submergedGlow);
     }
 
     active.position.y = this._submersionBaseY - depthFraction * PlayerController.SUBMERSION_MAX_OFFSET;
+    if (this._submergedGlow) {
+      this._submergedGlow.intensity =
+        Math.max(0, Math.min(1, depthFraction)) * PlayerController.SUBMERGED_GLOW_MAX_INTENSITY;
+    }
   }
 
   /**

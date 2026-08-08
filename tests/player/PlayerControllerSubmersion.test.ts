@@ -36,4 +36,19 @@ describe('PlayerController.setSubmersion', () => {
     expect(second).toBeCloseTo(first, 5);
     player.setSubmersion(0); // reset for other tests
   });
+
+  it('adds a submerged-only PointLight as a child of the active rig, fading in with depth', () => {
+    player.setSubmersion(0);
+    const rigRoot = (player as any)._creatureRig.root as THREE.Object3D;
+    const glow = (player as any)._submergedGlow as THREE.PointLight;
+    expect(glow).toBeInstanceOf(THREE.PointLight);
+    expect(rigRoot.children).toContain(glow);
+    expect(glow.intensity).toBe(0); // dry — no glow
+
+    player.setSubmersion(1.0);
+    expect(glow.intensity).toBeGreaterThan(0);
+
+    player.setSubmersion(0); // reset for other tests
+    expect(glow.intensity).toBe(0);
+  });
 });
