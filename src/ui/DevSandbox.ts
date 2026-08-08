@@ -10,11 +10,39 @@
 //    Creature Lab  — build a creature from DNA and spawn it.
 
 import * as THREE from 'three';
-import { Pane } from 'tweakpane';
-import type { CreatureDNA, Archetype, FaceType, MouthType } from '@/creatures/CreatureDNA';
-import { dnaForArchetype, cloneDNA, numToHex, hexToNum, dnaToBase64, DOG_DNA, CAT_DNA } from '@/creatures/CreatureDNA';
-import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
-import { animateCreature } from '@/creatures/CreatureAnimator';
+import { buildEnemy, type EnemyBuildResult } from '@/enemy-creator/builder';
+import type { EnemyDNA, EnemyTierLevel } from '@/enemy-creator/types';
+import {
+  ENEMY_CREATOR_MOVEMENTS,
+  ENEMY_CREATOR_ROLES,
+  ENEMY_CREATOR_SPECIES,
+  ENEMY_CREATOR_TIERS,
+  createInitialEnemyState,
+  setAggroRange,
+  setAttackRange,
+  setBaseDmg,
+  setBaseHp,
+  setColor as setEnemyColor,
+  setCombatRole,
+  setIsBoss,
+  setMovement,
+  setName as setEnemyName,
+  setSpecies as setEnemySpecies,
+  setTier,
+} from '@/enemy-creator/creatorState';
+import { buildNpc, type NpcInstance } from '@/npc-creator/builder';
+import type { NpcDNA, NpcPersonality } from '@/npc-creator/types';
+import {
+  NPC_CREATOR_ROLES,
+  NPC_CREATOR_SPECIES,
+  createInitialState as createInitialNpcState,
+  setBodyPreset,
+  setColor as setNpcColor,
+  setName as setNpcName,
+  setPersonality,
+  setRole,
+  setSpecies as setNpcSpecies,
+} from '@/npc-creator/creatorState';
 import { CHAR_MODELS, CHAR_PACKS } from '@/characters/charManifest';
 
 export interface DevSandboxOptions {
@@ -38,8 +66,8 @@ export interface DevSandboxOptions {
   /** Switch the Water Lab's water-surface visual ('reflective' = Water.js
    *  planar reflection, 'flow-refractive' = Water2.js flow-map refraction). */
   onSetWaterVariant: (kind: 'reflective' | 'flow-refractive') => void;
-  /** Spawn a creature (built from DNA) in the arena. */
-  onSpawnCreature: (dna: CreatureDNA) => void;
+  /** Spawn an enemy (built from EnemyDNA) in the arena. */
+  onSpawnCreature: (dna: EnemyDNA) => void;
   onClose: () => void;
 
   // ── Cheats tab (mirrors DevPanel) ─────────────────────────────────────────
@@ -59,8 +87,8 @@ export interface DevSandboxOptions {
   onFastTravel?: (pos: { x: number; y: number; z: number }) => void;
 
   // ── NPC Generator tab ─────────────────────────────────────────────────────
-  /** Spawn a hostile enemy whose visual is driven by the given DNA. hp/damage override defaults. */
-  onSpawnNPC?: (dna: CreatureDNA, name: string, hp: number, damage: number, count: number) => void;
+  /** Spawn a hostile sandbox stand-in whose visual is driven by NpcDNA. hp/damage override defaults. */
+  onSpawnNPC?: (dna: NpcDNA, hp: number, damage: number, count: number) => void;
 
   // ── Wave Spawner tab ──────────────────────────────────────────────────────
   /** Run a wave: spawn `count` slime enemies over `intervalSec` seconds. */
@@ -83,10 +111,25 @@ export interface DevSandboxOptions {
 
 /** A saved NPC preset (stored in DevSandbox instance memory). */
 export interface NPCPreset {
-  name: string;
-  dna: CreatureDNA;
+  dna: NpcDNA;
   hp: number;
   damage: number;
+}
+
+const NPC_PERSONALITIES: readonly NpcPersonality[] = ['friendly', 'wary', 'eccentric', 'formal', 'cheerful'];
+
+function cloneEnemyDna(dna: EnemyDNA): EnemyDNA {
+  return {
+    ...dna,
+    colors: { ...dna.colors },
+  };
+}
+
+function cloneNpcDna(dna: NpcDNA): NpcDNA {
+  return {
+    ...dna,
+    colors: { ...dna.colors },
+  };
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -236,17 +279,21 @@ export class DevSandbox {
   private _locationBarEl: HTMLElement | null = null;
   private _activeTab: TabId = 'spells';
   private _npcPresets: NPCPreset[] = [];
-  private _npcDna: CreatureDNA = dnaForArchetype('biped');
-  private _npcName = 'Enemy';
+  private _npcDna: NpcDNA = {
+    ...createInitialNpcState('human', 'merchant', Date.now() >>> 0).dna,
+    name: 'Test NPC',
+  };
   private _npcHp = 40;
   private _npcDamage = 8;
   private _npcCount = 1;
   private _npcLabRenderer: THREE.WebGLRenderer | null = null;
-  private _npcLabRig: CreatureRig | null = null;
+  private _npcLabRig: NpcInstance | null = null;
   private _npcLabScene: THREE.Scene | null = null;
   private _npcLabCamera: THREE.PerspectiveCamera | null = null;
   private _npcLabRafId: number | null = null;
   private _npcLabRotY = 0;
+  private _npcLabLastTick = 0;
+  private _npcLabBuildToken = 0;
   private _npcPresetListEl: HTMLElement | null = null;
   // Wave spawner
   private _waveCount = 10;
@@ -271,14 +318,15 @@ export class DevSandbox {
   private _roomListEl: HTMLElement | null = null;
   private _lastProcResult: { text: string; roomIds: string[] } | null = null;
   // Creature Lab
-  private _creatureDna: CreatureDNA = dnaForArchetype('biped');
+  private _creatureDna: EnemyDNA = createInitialEnemyState('human', 'melee', 1, Date.now() >>> 0).dna;
   private _labRenderer: THREE.WebGLRenderer | null = null;
-  private _labRig: CreatureRig | null = null;
+  private _labRig: EnemyBuildResult | null = null;
   private _labScene: THREE.Scene | null = null;
   private _labCamera: THREE.PerspectiveCamera | null = null;
   private _labRafId: number | null = null;
   private _labRotY = 0;
-  private _labPane: Pane | null = null;
+  private _labLastTick = 0;
+  private _labBuildToken = 0;
 
   constructor(private readonly _opts: DevSandboxOptions) {
     this._ensureStyles();
@@ -293,11 +341,20 @@ export class DevSandbox {
     this._stopWave();
     this._stopLabLoop();
     this._stopNpcLabLoop();
-    this._labPane?.dispose();
+    this._labBuildToken++;
+    this._npcLabBuildToken++;
     this._labRenderer?.dispose();
+    this._labRenderer = null;
     this._labRig?.dispose();
+    this._labRig = null;
+    this._labScene = null;
+    this._labCamera = null;
     this._npcLabRenderer?.dispose();
+    this._npcLabRenderer = null;
     this._npcLabRig?.dispose();
+    this._npcLabRig = null;
+    this._npcLabScene = null;
+    this._npcLabCamera = null;
     this._panel.remove();
   }
 
@@ -392,6 +449,8 @@ export class DevSandbox {
   }
 
   private _switchTab(id: TabId): void {
+    if (this._activeTab === 'creature' && id !== 'creature') this._stopLabLoop();
+    if (this._activeTab === 'npcgen' && id !== 'npcgen') this._stopNpcLabLoop();
     this._activeTab = id;
     // Update tab highlight
     this._panel.querySelectorAll<HTMLElement>('.ds-tab').forEach(el => {
@@ -739,69 +798,6 @@ export class DevSandbox {
 
   private _buildCreatureLabTab(): HTMLElement {
     const wrap = document.createElement('div');
-
-    // ── Archetype chips ────────────────────────────────────────────────────
-    const archSec = document.createElement('div');
-    archSec.className = 'ds-section';
-    const archTitle = document.createElement('div');
-    archTitle.className = 'ds-section-title';
-    archTitle.textContent = 'Archetype';
-    const archRow = document.createElement('div');
-    archRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;';
-
-    const archetypes: Array<{ id: Archetype; icon: string }> = [
-      { id: 'biped',     icon: '🧙' },
-      { id: 'quadruped', icon: '🐺' },
-      { id: 'amoeba',    icon: '🫧' },
-      { id: 'avian',     icon: '🦅' },
-      { id: 'serpent',   icon: '🐍' },
-    ];
-    for (const a of archetypes) {
-      const btn = document.createElement('button');
-      btn.className = 'ds-btn' + (this._creatureDna.archetype === a.id ? ' ds-btn--accent' : '');
-      btn.textContent = a.icon + ' ' + a.id;
-      btn.dataset.archId = a.id;
-      btn.onclick = () => {
-        this._creatureDna = dnaForArchetype(a.id);
-        archRow.querySelectorAll<HTMLButtonElement>('.ds-btn').forEach(b => {
-          b.classList.toggle('ds-btn--accent', b.dataset.archId === a.id);
-        });
-        this._rebuildLabRig();
-        this._syncLabPane();
-      };
-      archRow.appendChild(btn);
-    }
-    archSec.append(archTitle, archRow);
-
-    // ── Quick presets ──────────────────────────────────────────────────────
-    const presetSec = document.createElement('div');
-    presetSec.className = 'ds-section';
-    const presetTitle = document.createElement('div');
-    presetTitle.className = 'ds-section-title';
-    presetTitle.textContent = 'Quick Presets';
-    const presetRow = document.createElement('div');
-    presetRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;';
-
-    const presets: Array<{ label: string; dna: () => typeof DOG_DNA }> = [
-      { label: '🐕 Dog', dna: () => cloneDNA(DOG_DNA) },
-      { label: '🐈 Cat', dna: () => cloneDNA(CAT_DNA) },
-    ];
-    for (const p of presets) {
-      const btn = document.createElement('button');
-      btn.className = 'ds-btn';
-      btn.textContent = p.label;
-      btn.onclick = () => {
-        this._creatureDna = p.dna();
-        // Sync archetype highlight
-        archRow.querySelectorAll<HTMLButtonElement>('.ds-btn').forEach(b => {
-          b.classList.toggle('ds-btn--accent', b.dataset.archId === this._creatureDna.archetype);
-        });
-        this._rebuildLabRig();
-        this._syncLabPane();
-      };
-      presetRow.appendChild(btn);
-    }
-    presetSec.append(presetTitle, presetRow);
     const prevSec = document.createElement('div');
     prevSec.className = 'ds-section';
     const cv = document.createElement('canvas');
@@ -811,49 +807,170 @@ export class DevSandbox {
 
     // Init renderer once canvas is in DOM
     requestAnimationFrame(() => {
+      if (this._activeTab !== 'creature' || !cv.isConnected) return;
       this._initLabRenderer(cv);
-      this._rebuildLabRig();
+      void this._rebuildLabRig();
       this._startLabLoop();
     });
 
-    // ── Tweakpane controls ─────────────────────────────────────────────────
-    const paneSec = document.createElement('div');
-    paneSec.className = 'ds-section';
-    const paneContainer = document.createElement('div');
-    paneContainer.style.cssText = 'max-height:200px;overflow-y:auto;';
-    paneSec.appendChild(paneContainer);
+    const profileSec = document.createElement('div');
+    profileSec.className = 'ds-section';
+    const profileTitle = document.createElement('div');
+    profileTitle.className = 'ds-section-title';
+    profileTitle.textContent = 'Enemy Profile';
+    profileSec.appendChild(profileTitle);
 
-    // Build pane after element is mounted
-    requestAnimationFrame(() => {
-      this._labPane?.dispose();
-      const params = this._dnaToParams(this._creatureDna);
-      const pane = new Pane({ container: paneContainer, title: 'DNA Editor' });
-      this._labPane = pane;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const p: any = pane;
+    const mkSelectRow = (
+      label: string,
+      value: string,
+      values: readonly (string | number)[],
+      dataField: string,
+      onChange: (next: string) => void,
+    ) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = `${label}:`;
+      lbl.style.minWidth = '70px';
+      const select = document.createElement('select');
+      select.className = 'ds-select';
+      select.dataset.dsField = dataField;
+      for (const entry of values) {
+        const opt = document.createElement('option');
+        opt.value = String(entry);
+        opt.textContent = String(entry).replace(/_/g, ' ');
+        select.appendChild(opt);
+      }
+      select.value = value;
+      select.onchange = () => onChange(select.value);
+      row.append(lbl, select);
+      return row;
+    };
 
-      const colFolder = p.addFolder({ title: 'Colors', expanded: true });
-      colFolder.addBinding(params, 'primary',   { view: 'color', label: 'Body' });
-      colFolder.addBinding(params, 'secondary', { view: 'color', label: 'Accent' });
-      colFolder.addBinding(params, 'emissive',  { view: 'color', label: 'Glow' });
-      colFolder.addBinding(params, 'emissiveIntensity', { min: 0, max: 0.5, step: 0.01, label: 'Glow amt' });
+    const mkNumberRow = (
+      label: string,
+      value: number,
+      min: number,
+      max: number,
+      dataField: string,
+      onChange: (next: number) => void,
+    ) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = `${label}:`;
+      lbl.style.minWidth = '70px';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'ds-input';
+      input.dataset.dsField = dataField;
+      input.min = String(min);
+      input.max = String(max);
+      input.value = String(value);
+      input.onchange = () => {
+        const next = Math.min(max, Math.max(min, +input.value || min));
+        input.value = String(next);
+        onChange(next);
+      };
+      row.append(lbl, input);
+      return row;
+    };
 
-      const propFolder = p.addFolder({ title: 'Proportions', expanded: false });
-      propFolder.addBinding(params, 'global',     { min: 0.5, max: 2,   step: 0.05, label: 'Scale' });
-      propFolder.addBinding(params, 'headSize',   { min: 0.4, max: 2,   step: 0.05, label: 'Head' });
-      propFolder.addBinding(params, 'limbLength', { min: 0.3, max: 2,   step: 0.05, label: 'Limb L' });
-      propFolder.addBinding(params, 'limbWidth',  { min: 0.3, max: 1.8, step: 0.05, label: 'Limb W' });
+    const nameRow = document.createElement('div');
+    nameRow.className = 'ds-row';
+    const nameLbl = document.createElement('span');
+    nameLbl.className = 'ds-label';
+    nameLbl.textContent = 'Name:';
+    nameLbl.style.minWidth = '70px';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'ds-input ds-input--wide';
+    nameInput.value = this._creatureDna.name;
+    nameInput.oninput = () => {
+      this._creatureDna = setEnemyName({ dna: this._creatureDna }, nameInput.value || this._creatureDna.name).dna;
+    };
+    nameRow.append(nameLbl, nameInput);
 
-      const faceFolder = p.addFolder({ title: 'Face', expanded: false });
-      faceFolder.addBinding(params, 'faceType',  { options: { cute: 'cute', angry: 'angry', cyclops: 'cyclops', skull: 'skull', compound: 'compound', blank: 'blank' }, label: 'Type' });
-      faceFolder.addBinding(params, 'mouthType', { options: { smile: 'smile', frown: 'frown', beak: 'beak', fangs: 'fangs', none: 'none' }, label: 'Mouth' });
-      faceFolder.addBinding(params, 'eyeColor', { view: 'color', label: 'Eye' });
+    profileSec.append(
+      nameRow,
+      mkSelectRow('Species', this._creatureDna.species, ENEMY_CREATOR_SPECIES, 'enemy-species', (next) => {
+        this._creatureDna = setEnemySpecies({ dna: this._creatureDna }, next as EnemyDNA['species']).dna;
+        refreshCreatureFields();
+        void this._rebuildLabRig();
+      }),
+      mkSelectRow('Role', this._creatureDna.combatRole, ENEMY_CREATOR_ROLES, 'enemy-role', (next) => {
+        this._creatureDna = setCombatRole({ dna: this._creatureDna }, next as EnemyDNA['combatRole']).dna;
+        refreshCreatureFields();
+        void this._rebuildLabRig();
+      }),
+      mkSelectRow('Tier', String(this._creatureDna.tier), ENEMY_CREATOR_TIERS, 'enemy-tier', (next) => {
+        this._creatureDna = setTier({ dna: this._creatureDna }, Number(next) as EnemyTierLevel).dna;
+        refreshCreatureFields();
+        void this._rebuildLabRig();
+      }),
+      mkSelectRow('Move', this._creatureDna.movement, ENEMY_CREATOR_MOVEMENTS, 'enemy-movement', (next) => {
+        this._creatureDna = setMovement({ dna: this._creatureDna }, next as EnemyDNA['movement']).dna;
+      }),
+      mkSelectRow('Form', this._creatureDna.isBoss ? 'boss' : 'normal', ['normal', 'boss'], 'enemy-form', (next) => {
+        this._creatureDna = setIsBoss({ dna: this._creatureDna }, next === 'boss').dna;
+        refreshCreatureFields();
+        void this._rebuildLabRig();
+      }),
+    );
 
-      p.on('change', () => {
-        this._paramsToCreatureDna(params, this._creatureDna);
-        this._rebuildLabRig();
-      });
-    });
+    const combatSec = document.createElement('div');
+    combatSec.className = 'ds-section';
+    const combatTitle = document.createElement('div');
+    combatTitle.className = 'ds-section-title';
+    combatTitle.textContent = 'Combat';
+    combatSec.append(
+      combatTitle,
+      mkNumberRow('HP', this._creatureDna.baseHp, 1, 999, 'enemy-hp', (next) => {
+        this._creatureDna = setBaseHp({ dna: this._creatureDna }, next).dna;
+      }),
+      mkNumberRow('Damage', this._creatureDna.baseDmg, 1, 250, 'enemy-damage', (next) => {
+        this._creatureDna = setBaseDmg({ dna: this._creatureDna }, next).dna;
+      }),
+      mkNumberRow('Atk rng', this._creatureDna.attackRange, 1, 30, 'enemy-attack-range', (next) => {
+        this._creatureDna = setAttackRange({ dna: this._creatureDna }, next).dna;
+      }),
+      mkNumberRow('Aggro', this._creatureDna.aggroRange, 1, 40, 'enemy-aggro-range', (next) => {
+        this._creatureDna = setAggroRange({ dna: this._creatureDna }, next).dna;
+      }),
+    );
+
+    const colorsSec = document.createElement('div');
+    colorsSec.className = 'ds-section';
+    const colorsTitle = document.createElement('div');
+    colorsTitle.className = 'ds-section-title';
+    colorsTitle.textContent = 'Colors';
+    const mkColorRow = (label: string, slot: keyof EnemyDNA['colors'], value: string, dataField: string) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = `${label}:`;
+      lbl.style.minWidth = '70px';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.className = 'ds-input';
+      input.dataset.dsField = dataField;
+      input.value = value;
+      input.oninput = () => {
+        this._creatureDna = setEnemyColor({ dna: this._creatureDna }, slot, input.value).dna;
+        void this._rebuildLabRig();
+      };
+      row.append(lbl, input);
+      return row;
+    };
+    colorsSec.append(
+      colorsTitle,
+      mkColorRow('Body', 'body', this._creatureDna.colors.body, 'enemy-color-body'),
+      mkColorRow('Accent', 'accent', this._creatureDna.colors.accent, 'enemy-color-accent'),
+      mkColorRow('Outline', 'outline', this._creatureDna.colors.outline, 'enemy-color-outline'),
+    );
 
     // ── Actions ────────────────────────────────────────────────────────────
     const actSec = document.createElement('div');
@@ -863,14 +980,15 @@ export class DevSandbox {
 
     const spawnBtn = document.createElement('button');
     spawnBtn.className = 'ds-btn ds-btn--accent';
-    spawnBtn.textContent = '⚡ Spawn in Arena';
-    spawnBtn.onclick = () => this._opts.onSpawnCreature(cloneDNA(this._creatureDna));
+    spawnBtn.textContent = '⚔ Spawn Enemy';
+    spawnBtn.dataset.dsAction = 'spawn-creature';
+    spawnBtn.onclick = () => this._opts.onSpawnCreature(cloneEnemyDna(this._creatureDna));
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'ds-btn';
     copyBtn.textContent = '📋 Copy DNA';
     copyBtn.onclick = () => {
-      navigator.clipboard?.writeText(dnaToBase64(this._creatureDna)).catch(() => {});
+      navigator.clipboard?.writeText(JSON.stringify(this._creatureDna, null, 2)).catch(() => {});
       copyBtn.textContent = '✓ Copied';
       setTimeout(() => { copyBtn.textContent = '📋 Copy DNA'; }, 1500);
     };
@@ -878,12 +996,37 @@ export class DevSandbox {
     actRow.append(spawnBtn, copyBtn);
     actSec.appendChild(actRow);
 
-    wrap.append(archSec, presetSec, prevSec, paneSec, actSec);
+    const hint = document.createElement('div');
+    hint.className = 'ds-hint';
+    hint.textContent = 'Creature Lab now previews and spawns the same EnemyDNA rigs used by the real enemy creator and runtime enemy loader.';
+
+    const refreshCreatureFields = () => {
+      const setValue = (field: string, value: string) => {
+        const input = wrap.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-ds-field="${field}"]`);
+        if (input) input.value = value;
+      };
+      setValue('enemy-species', this._creatureDna.species);
+      setValue('enemy-role', this._creatureDna.combatRole);
+      setValue('enemy-tier', String(this._creatureDna.tier));
+      setValue('enemy-movement', this._creatureDna.movement);
+      setValue('enemy-form', this._creatureDna.isBoss ? 'boss' : 'normal');
+      setValue('enemy-hp', String(this._creatureDna.baseHp));
+      setValue('enemy-damage', String(this._creatureDna.baseDmg));
+      setValue('enemy-attack-range', String(this._creatureDna.attackRange));
+      setValue('enemy-aggro-range', String(this._creatureDna.aggroRange));
+      setValue('enemy-color-body', this._creatureDna.colors.body);
+      setValue('enemy-color-accent', this._creatureDna.colors.accent);
+      setValue('enemy-color-outline', this._creatureDna.colors.outline);
+      nameInput.value = this._creatureDna.name;
+    };
+
+    wrap.append(prevSec, profileSec, combatSec, colorsSec, actSec, hint);
     return wrap;
   }
 
   private _initLabRenderer(cv: HTMLCanvasElement): void {
-    if (this._labRenderer) return;
+    if (this._labRenderer?.domElement === cv) return;
+    this._labRenderer?.dispose();
     this._labRenderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
     this._labRenderer.setSize(280, 220);
     this._labRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -901,23 +1044,39 @@ export class DevSandbox {
     this._labScene.add(rim);
   }
 
-  private _rebuildLabRig(): void {
+  private async _rebuildLabRig(): Promise<void> {
     if (!this._labScene) return;
-    if (this._labRig) { this._labScene.remove(this._labRig.root); this._labRig.dispose(); }
-    this._labRig = buildCreature(this._creatureDna);
-    this._labScene.add(this._labRig.root);
+    const token = ++this._labBuildToken;
+    try {
+      const inst = await buildEnemy(cloneEnemyDna(this._creatureDna));
+      if (token !== this._labBuildToken) {
+        inst.dispose();
+        return;
+      }
+      if (this._labRig) {
+        this._labScene.remove(this._labRig.rig.group);
+        this._labRig.dispose();
+      }
+      this._labRig = inst;
+      this._labRig.rig.clips.idle?.play();
+      this._labScene.add(this._labRig.rig.group);
+    } catch (err) {
+      console.warn('[DevSandbox] enemy lab preview rebuild failed:', err);
+    }
   }
 
   private _startLabLoop(): void {
     if (this._labRafId !== null) return;
     const tick = () => {
       this._labRafId = requestAnimationFrame(tick);
+      const now = performance.now() * 0.001;
+      const dt = this._labLastTick > 0 ? Math.min(0.1, now - this._labLastTick) : 1 / 60;
+      this._labLastTick = now;
       this._labRotY += 0.008;
       if (this._labRig) {
-        this._labRig.root.rotation.y = this._labRotY;
-        const t = performance.now() * 0.001;
-        this._labRig.root.position.y = Math.sin(t * 1.2) * 0.016;
-        animateCreature(this._labRig, { state: 'idle', time: t });
+        this._labRig.rig.group.rotation.y = this._labRotY;
+        this._labRig.rig.group.position.y = Math.sin(now * 1.2) * 0.016;
+        this._labRig.update(now, dt);
       }
       if (this._labRenderer && this._labScene && this._labCamera) {
         this._labRenderer.render(this._labScene, this._labCamera);
@@ -928,43 +1087,7 @@ export class DevSandbox {
 
   private _stopLabLoop(): void {
     if (this._labRafId !== null) { cancelAnimationFrame(this._labRafId); this._labRafId = null; }
-  }
-
-  // ── Tweakpane param conversion ─────────────────────────────────────────────
-
-  private _dnaToParams(dna: CreatureDNA): Record<string, unknown> {
-    return {
-      primary:   numToHex(dna.colors.primary),
-      secondary: numToHex(dna.colors.secondary),
-      emissive:  numToHex(dna.colors.emissive),
-      emissiveIntensity: dna.colors.emissiveIntensity,
-      global:     dna.proportions.global,
-      headSize:   dna.proportions.headSize,
-      limbLength: dna.proportions.limbLength,
-      limbWidth:  dna.proportions.limbWidth,
-      faceType:   dna.face.type as string,
-      mouthType:  dna.face.mouthType as string,
-      eyeColor:   numToHex(dna.face.eyeColor),
-    };
-  }
-
-  private _paramsToCreatureDna(p: Record<string, unknown>, dna: CreatureDNA): void {
-    dna.colors.primary           = hexToNum(p.primary   as string);
-    dna.colors.secondary         = hexToNum(p.secondary as string);
-    dna.colors.emissive          = hexToNum(p.emissive  as string);
-    dna.colors.emissiveIntensity = p.emissiveIntensity as number;
-    dna.proportions.global       = p.global     as number;
-    dna.proportions.headSize     = p.headSize   as number;
-    dna.proportions.limbLength   = p.limbLength as number;
-    dna.proportions.limbWidth    = p.limbWidth  as number;
-    dna.face.type                = p.faceType   as FaceType;
-    dna.face.mouthType           = p.mouthType  as MouthType;
-    dna.face.eyeColor            = hexToNum(p.eyeColor as string);
-  }
-
-  private _syncLabPane(): void {
-    // Rebuild pane when archetype changes (easier than updating individual bindings)
-    if (this._labPane) { this._labPane.dispose(); this._labPane = null; }
+    this._labLastTick = 0;
   }
 
   // ── Styles ────────────────────────────────────────────────────────────────
@@ -973,51 +1096,49 @@ export class DevSandbox {
 
   private _buildNPCGenTab(): HTMLElement {
     const wrap = document.createElement('div');
-
-    // ── Archetype row ────────────────────────────────────────────────────
-    const archSec = document.createElement('div');
-    archSec.className = 'ds-section';
-    const archTitle = document.createElement('div');
-    archTitle.className = 'ds-section-title';
-    archTitle.textContent = 'Archetype & Appearance';
-    const archRow = document.createElement('div');
-    archRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;';
-    const archetypes: Array<{ id: Archetype; icon: string }> = [
-      { id: 'biped', icon: '🧙' }, { id: 'quadruped', icon: '🐺' },
-      { id: 'amoeba', icon: '🫧' }, { id: 'avian', icon: '🦅' }, { id: 'serpent', icon: '🐍' },
-    ];
-    for (const a of archetypes) {
-      const btn = document.createElement('button');
-      btn.className = 'ds-btn' + (this._npcDna.archetype === a.id ? ' ds-btn--accent' : '');
-      btn.textContent = a.icon + ' ' + a.id;
-      btn.dataset.npcArchId = a.id;
-      btn.onclick = () => {
-        this._npcDna = dnaForArchetype(a.id);
-        archRow.querySelectorAll<HTMLButtonElement>('[data-npc-arch-id]').forEach(b => {
-          b.classList.toggle('ds-btn--accent', b.dataset.npcArchId === a.id);
-        });
-        this._rebuildNpcLabRig();
-      };
-      archRow.appendChild(btn);
-    }
-    archSec.append(archTitle, archRow);
-
-    // Mini preview canvas
+    const previewSec = document.createElement('div');
+    previewSec.className = 'ds-section';
     const cv = document.createElement('canvas');
     cv.width = 280; cv.height = 160;
     cv.style.cssText = 'display:block;width:280px;height:160px;border:1px solid #2a1850;border-radius:3px;background:#0d0b18;margin-bottom:6px;';
-    archSec.appendChild(cv);
-    requestAnimationFrame(() => { this._initNpcLabRenderer(cv); this._rebuildNpcLabRig(); this._startNpcLabLoop(); });
-    wrap.appendChild(archSec);
+    previewSec.appendChild(cv);
+    requestAnimationFrame(() => {
+      if (this._activeTab !== 'npcgen' || !cv.isConnected) return;
+      this._initNpcLabRenderer(cv);
+      void this._rebuildNpcLabRig();
+      this._startNpcLabLoop();
+    });
+    wrap.appendChild(previewSec);
 
-    // ── Name + Stats ─────────────────────────────────────────────────────
-    const statSec = document.createElement('div');
-    statSec.className = 'ds-section';
-    const statTitle = document.createElement('div');
-    statTitle.className = 'ds-section-title';
-    statTitle.textContent = 'Name & Stats';
+    const mkSelectRow = (
+      label: string,
+      value: string,
+      values: readonly (string | number)[],
+      dataField: string,
+      onChange: (next: string) => void,
+    ) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = label + ':';
+      lbl.style.minWidth = '60px';
+      const select = document.createElement('select');
+      select.className = 'ds-select';
+      select.dataset.dsField = dataField;
+      for (const entry of values) {
+        const opt = document.createElement('option');
+        opt.value = String(entry);
+        opt.textContent = String(entry).replace(/_/g, ' ');
+        select.appendChild(opt);
+      }
+      select.value = value;
+      select.onchange = () => onChange(select.value);
+      row.append(lbl, select);
+      return row;
+    };
 
-    const mkStatRow = (label: string, val: number, min: number, max: number, onChange: (v: number) => void) => {
+    const mkNumberRow = (label: string, val: number, min: number, max: number, dataField: string, onChange: (v: number) => void) => {
       const row = document.createElement('div');
       row.className = 'ds-row';
       const lbl = document.createElement('span');
@@ -1027,13 +1148,25 @@ export class DevSandbox {
       const inp = document.createElement('input');
       inp.type = 'number';
       inp.className = 'ds-input';
-      inp.min = String(min); inp.max = String(max); inp.value = String(val);
-      inp.onchange = () => { onChange(Math.min(max, Math.max(min, +inp.value || min))); inp.value = String(Math.min(max, Math.max(min, +inp.value || min))); };
+      inp.dataset.dsField = dataField;
+      inp.min = String(min);
+      inp.max = String(max);
+      inp.value = String(val);
+      inp.onchange = () => {
+        const next = Math.min(max, Math.max(min, +inp.value || min));
+        inp.value = String(next);
+        onChange(next);
+      };
       row.append(lbl, inp);
       return row;
     };
 
-    // Name field
+    const identitySec = document.createElement('div');
+    identitySec.className = 'ds-section';
+    const identityTitle = document.createElement('div');
+    identityTitle.className = 'ds-section-title';
+    identityTitle.textContent = 'Identity';
+
     const nameRow = document.createElement('div');
     nameRow.className = 'ds-row';
     const nameLbl = document.createElement('span');
@@ -1043,14 +1176,79 @@ export class DevSandbox {
     const nameInp = document.createElement('input');
     nameInp.type = 'text';
     nameInp.className = 'ds-input ds-input--wide';
-    nameInp.value = this._npcName;
-    nameInp.oninput = () => { this._npcName = nameInp.value || 'Enemy'; };
+    nameInp.dataset.dsField = 'npc-name';
+    nameInp.value = this._npcDna.name;
+    nameInp.oninput = () => { this._npcDna = setNpcName({ dna: this._npcDna }, nameInp.value || 'Test NPC').dna; };
     nameRow.append(nameLbl, nameInp);
 
-    statSec.append(statTitle, nameRow,
-      mkStatRow('HP',     this._npcHp,     1, 500, v => { this._npcHp = v; }),
-      mkStatRow('Damage', this._npcDamage, 1, 100, v => { this._npcDamage = v; }),
-      mkStatRow('Count',  this._npcCount,  1,  20, v => { this._npcCount = v; }),
+    identitySec.append(
+      identityTitle,
+      nameRow,
+      mkSelectRow('Species', this._npcDna.species, NPC_CREATOR_SPECIES, 'npc-species', (next) => {
+        this._npcDna = setNpcSpecies({ dna: this._npcDna }, next as NpcDNA['species']).dna;
+        refreshNpcFields();
+        void this._rebuildNpcLabRig();
+      }),
+      mkSelectRow('Role', this._npcDna.role, NPC_CREATOR_ROLES, 'npc-role', (next) => {
+        this._npcDna = setRole({ dna: this._npcDna }, next as NpcDNA['role']).dna;
+        refreshNpcFields();
+        void this._rebuildNpcLabRig();
+      }),
+      mkSelectRow('Mood', this._npcDna.personality, NPC_PERSONALITIES, 'npc-personality', (next) => {
+        this._npcDna = setPersonality({ dna: this._npcDna }, next as NpcPersonality).dna;
+        void this._rebuildNpcLabRig();
+      }),
+      mkSelectRow('Build', String(this._npcDna.bodyPreset), ['0', '1', '2'], 'npc-body-preset', (next) => {
+        this._npcDna = setBodyPreset({ dna: this._npcDna }, Number(next) as 0 | 1 | 2).dna;
+        void this._rebuildNpcLabRig();
+      }),
+    );
+    wrap.appendChild(identitySec);
+
+    const colorsSec = document.createElement('div');
+    colorsSec.className = 'ds-section';
+    const colorsTitle = document.createElement('div');
+    colorsTitle.className = 'ds-section-title';
+    colorsTitle.textContent = 'Colors';
+    const mkColorRow = (label: string, slot: keyof NpcDNA['colors'], value: string, dataField: string) => {
+      const row = document.createElement('div');
+      row.className = 'ds-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = `${label}:`;
+      lbl.style.minWidth = '60px';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.className = 'ds-input';
+      input.dataset.dsField = dataField;
+      input.value = value;
+      input.oninput = () => {
+        this._npcDna = setNpcColor({ dna: this._npcDna }, slot, input.value).dna;
+        void this._rebuildNpcLabRig();
+      };
+      row.append(lbl, input);
+      return row;
+    };
+    colorsSec.append(
+      colorsTitle,
+      mkColorRow('Primary', 'primary', this._npcDna.colors.primary, 'npc-color-primary'),
+      mkColorRow('Accent', 'secondary', this._npcDna.colors.secondary, 'npc-color-secondary'),
+      mkColorRow('Skin', 'skin', this._npcDna.colors.skin, 'npc-color-skin'),
+      mkColorRow('Hair', 'hair', this._npcDna.colors.hair, 'npc-color-hair'),
+      mkColorRow('Eyes', 'eyes', this._npcDna.colors.eyes, 'npc-color-eyes'),
+    );
+    wrap.appendChild(colorsSec);
+
+    const statSec = document.createElement('div');
+    statSec.className = 'ds-section';
+    const statTitle = document.createElement('div');
+    statTitle.className = 'ds-section-title';
+    statTitle.textContent = 'Sandbox Combat';
+    statSec.append(
+      statTitle,
+      mkNumberRow('HP', this._npcHp, 1, 500, 'npc-hp', v => { this._npcHp = v; }),
+      mkNumberRow('Damage', this._npcDamage, 1, 100, 'npc-damage', v => { this._npcDamage = v; }),
+      mkNumberRow('Count', this._npcCount, 1, 20, 'npc-count', v => { this._npcCount = v; }),
     );
     wrap.appendChild(statSec);
 
@@ -1062,10 +1260,11 @@ export class DevSandbox {
 
     const spawnBtn = document.createElement('button');
     spawnBtn.className = 'ds-btn ds-btn--accent';
-    spawnBtn.textContent = '⚔ Spawn as Enemy';
+    spawnBtn.textContent = '⚔ Spawn NPC Stand-In';
+    spawnBtn.dataset.dsAction = 'spawn-npc';
     spawnBtn.onclick = () => {
       if (this._opts.onSpawnNPC) {
-        this._opts.onSpawnNPC(cloneDNA(this._npcDna), this._npcName, this._npcHp, this._npcDamage, this._npcCount);
+        this._opts.onSpawnNPC(cloneNpcDna(this._npcDna), this._npcHp, this._npcDamage, this._npcCount);
       }
     };
 
@@ -1073,9 +1272,8 @@ export class DevSandbox {
     saveBtn.className = 'ds-btn';
     saveBtn.textContent = '💾 Save Preset';
     saveBtn.onclick = () => {
-      const preset: NPCPreset = { name: this._npcName, dna: cloneDNA(this._npcDna), hp: this._npcHp, damage: this._npcDamage };
-      // Replace existing preset with same name
-      const idx = this._npcPresets.findIndex(p => p.name === preset.name);
+      const preset: NPCPreset = { dna: cloneNpcDna(this._npcDna), hp: this._npcHp, damage: this._npcDamage };
+      const idx = this._npcPresets.findIndex(p => p.dna.name === preset.dna.name);
       if (idx >= 0) this._npcPresets[idx] = preset;
       else this._npcPresets.push(preset);
       this._renderNpcPresetList();
@@ -1102,8 +1300,25 @@ export class DevSandbox {
 
     const hint = document.createElement('div');
     hint.className = 'ds-hint';
-    hint.textContent = 'Spawned enemies use standard slime AI (chase + attack) with custom HP/damage and DNA visual.';
+    hint.textContent = 'Sandbox NPCs use the real NpcDNA visual builder, then ride the existing SlimeEnemy combat wrapper so HP / damage / count controls still work in the arena.';
     wrap.appendChild(hint);
+
+    const refreshNpcFields = () => {
+      const setValue = (field: string, value: string) => {
+        const input = wrap.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-ds-field="${field}"]`);
+        if (input) input.value = value;
+      };
+      setValue('npc-name', this._npcDna.name);
+      setValue('npc-species', this._npcDna.species);
+      setValue('npc-role', this._npcDna.role);
+      setValue('npc-personality', this._npcDna.personality);
+      setValue('npc-body-preset', String(this._npcDna.bodyPreset));
+      setValue('npc-color-primary', this._npcDna.colors.primary);
+      setValue('npc-color-secondary', this._npcDna.colors.secondary);
+      setValue('npc-color-skin', this._npcDna.colors.skin);
+      setValue('npc-color-hair', this._npcDna.colors.hair);
+      setValue('npc-color-eyes', this._npcDna.colors.eyes);
+    };
 
     return wrap;
   }
@@ -1127,11 +1342,10 @@ export class DevSandbox {
       loadBtn.style.fontSize = '.72rem';
       loadBtn.textContent = '↳ Load';
       loadBtn.onclick = () => {
-        this._npcDna = cloneDNA(preset.dna);
-        this._npcName = preset.name;
+        this._npcDna = cloneNpcDna(preset.dna);
         this._npcHp = preset.hp;
         this._npcDamage = preset.damage;
-        this._rebuildNpcLabRig();
+        void this._rebuildNpcLabRig();
         // Re-render tab to sync inputs
         this._switchTab('npcgen');
       };
@@ -1142,19 +1356,20 @@ export class DevSandbox {
       spawnBtn.title = 'Spawn this preset';
       spawnBtn.onclick = () => {
         if (this._opts.onSpawnNPC) {
-          this._opts.onSpawnNPC(cloneDNA(preset.dna), preset.name, preset.hp, preset.damage, this._npcCount);
+          this._opts.onSpawnNPC(cloneNpcDna(preset.dna), preset.hp, preset.damage, this._npcCount);
         }
       };
       const lbl = document.createElement('span');
       lbl.style.cssText = 'font-size:.74rem;color:#c0a0f0;flex:1;';
-      lbl.textContent = `${preset.name}  HP:${preset.hp}  DMG:${preset.damage}`;
+      lbl.textContent = `${preset.dna.name || 'Unnamed'}  HP:${preset.hp}  DMG:${preset.damage}`;
       row.append(loadBtn, spawnBtn, lbl);
       list.appendChild(row);
     }
   }
 
   private _initNpcLabRenderer(cv: HTMLCanvasElement): void {
-    if (this._npcLabRenderer) return;
+    if (this._npcLabRenderer?.domElement === cv) return;
+    this._npcLabRenderer?.dispose();
     this._npcLabRenderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
     this._npcLabRenderer.setSize(280, 160);
     this._npcLabRenderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -1170,22 +1385,38 @@ export class DevSandbox {
     this._npcLabScene.add(rim);
   }
 
-  private _rebuildNpcLabRig(): void {
+  private async _rebuildNpcLabRig(): Promise<void> {
     if (!this._npcLabScene) return;
-    if (this._npcLabRig) { this._npcLabScene.remove(this._npcLabRig.root); this._npcLabRig.dispose(); }
-    this._npcLabRig = buildCreature(this._npcDna);
-    this._npcLabScene.add(this._npcLabRig.root);
+    const token = ++this._npcLabBuildToken;
+    try {
+      const inst = await buildNpc(cloneNpcDna(this._npcDna));
+      if (token !== this._npcLabBuildToken) {
+        inst.dispose();
+        return;
+      }
+      if (this._npcLabRig) {
+        this._npcLabScene.remove(this._npcLabRig.root);
+        this._npcLabRig.dispose();
+      }
+      this._npcLabRig = inst;
+      this._npcLabRig.setAnimState('idle');
+      this._npcLabScene.add(this._npcLabRig.root);
+    } catch (err) {
+      console.warn('[DevSandbox] npc lab preview rebuild failed:', err);
+    }
   }
 
   private _startNpcLabLoop(): void {
     if (this._npcLabRafId !== null) return;
     const tick = () => {
       this._npcLabRafId = requestAnimationFrame(tick);
+      const now = performance.now() * 0.001;
+      const dt = this._npcLabLastTick > 0 ? Math.min(0.1, now - this._npcLabLastTick) : 1 / 60;
+      this._npcLabLastTick = now;
       this._npcLabRotY += 0.012;
       if (this._npcLabRig) {
         this._npcLabRig.root.rotation.y = this._npcLabRotY;
-        const t = performance.now() * 0.001;
-        animateCreature(this._npcLabRig, { state: 'idle', time: t });
+        this._npcLabRig.update(now, dt);
       }
       if (this._npcLabRenderer && this._npcLabScene && this._npcLabCamera) {
         this._npcLabRenderer.render(this._npcLabScene, this._npcLabCamera);
@@ -1196,6 +1427,7 @@ export class DevSandbox {
 
   private _stopNpcLabLoop(): void {
     if (this._npcLabRafId !== null) { cancelAnimationFrame(this._npcLabRafId); this._npcLabRafId = null; }
+    this._npcLabLastTick = 0;
   }
 
   // ── Wave Spawner tab ──────────────────────────────────────────────────────

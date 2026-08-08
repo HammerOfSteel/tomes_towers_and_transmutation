@@ -48,8 +48,10 @@ import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
+import type { EnemyRig } from '@/enemy/EnemyLoader';
+import type { NpcInstance } from '@/npc-creator/builder';
 import { TalentSystem } from '@/progression/TalentSystem';
-import { buildCreature, type CreatureRig } from '@/creatures/CreatureBuilder';
+import type { CreatureRig } from '@/creatures/CreatureBuilder';
 import { animateCreature } from '@/creatures/CreatureAnimator';
 import { TalentTree } from '@/ui/TalentTree';
 import { StatPanel } from '@/ui/StatPanel';
@@ -970,6 +972,7 @@ async function main() {
 
   // ── Character creation screen ─────────────────────────────────────────────
   let _sandboxUi: DevSandbox | null = null;
+  let _sandboxLocation: 'arena' | 'room' | 'overworld' | 'lab' = 'arena';
 
   const charCreation = new CharacterCreationV2();
   charCreation.onComplete = (cfg) => {
@@ -993,17 +996,34 @@ async function main() {
    * "🌊 Water Lab" button callback and by the Overworld Studio dev-room
    * boot handoff (see the deferred handoff block near the end of main()).
    */
-  function enterWaterLab(): void {
-    if (gameMode === 'waterlab') return; // already there — no-op
-    // Tear down whatever's currently active (overworld or dungeon room)
+  /**
+   * Tears down whichever non-dungeon "special" mode is currently active
+   * (overworld terrain or the Water Lab basin) and resets gameMode back to
+   * 'interior'. Every Proc-Gen/Dev-Sandbox transition that loads a new
+   * tower/dungeon/overworld/room MUST call this first — otherwise the
+   * previous mode's meshes/colliders (overworld heightfield, water lab tier
+   * boxes) are left in the scene, stacked on top of the newly generated
+   * content. No-op if already in 'interior'/'telescope'/other dungeon modes.
+   */
+  function _exitCurrentSpecialMode(): void {
     if (gameMode === 'exterior') {
       overworld?.exit();
       gameMode = 'interior';
+    } else if (gameMode === 'waterlab') {
+      waterLab?.exit();
+      gameMode = 'interior';
     }
+  }
+
+  function enterWaterLab(): void {
+    if (gameMode === 'waterlab') return; // already there — no-op
+    // Tear down whatever's currently active (overworld or dungeon room)
+    _exitCurrentSpecialMode();
     sceneManager.unloadCurrentRoom();
     if (!waterLab) waterLab = new WaterLabScene(scene, physics, player, particles);
     waterLab.enter();
     gameMode = 'waterlab';
+    _sandboxLocation = 'lab';
     player.teleport(new THREE.Vector3(-9, 1.5, 0)); // spawn on the dry bank
     // A real (dry-default) Fog object, not null, so the per-frame underwater
     // fog lerp below (driven by player.underwaterDepthFraction) has
@@ -1020,8 +1040,136 @@ async function main() {
     sceneManager.loadDungeon(plan);
     gameLoop.start();
 
+    // Dev Sandbox always boots straight past character creation, so the
+    // player would otherwise be left on the legacy capsule bodyMesh/headMesh
+    // fallback (applyPrincess is normally called from startGame()'s
+    // character-appearance step). Apply the default human blueprint so
+    // testing in the sandbox/Water Lab uses the real princess rig.
+    import('@/princess-creator/defaults/PrincessDefaults').then(({ getDefaultPrincessForCharId }) => {
+      const defaultDna = getDefaultPrincessForCharId(undefined);
+      player.applyPrincess(defaultDna).catch((e) =>
+        console.error('[main] ❌ applyPrincess (dev sandbox default) failed:', e));
+    });
+
     // Track the last generated plan so room-teleport can load it
     let _lastGeneratedPlan: DungeonPlan | null = null;
+
+    const hideDefaultEnemyMesh = (enemy: SlimeEnemy) => {
+      enemy.group.traverse(child => {
+        if (child !== enemy.group && (child as THREE.Mesh).isMesh) {
+          child.visible = false;
+        }
+      });
+    };
+
+    const makeSandboxActionBridge = (playState: () => void): THREE.AnimationAction => {
+      const action = {
+        play: () => { playState(); return action as unknown as THREE.AnimationAction; },
+        stop: () => action as unknown as THREE.AnimationAction,
+        fadeIn: () => { playState(); return action as unknown as THREE.AnimationAction; },
+        fadeOut: () => action as unknown as THREE.AnimationAction,
+        reset: () => action as unknown as THREE.AnimationAction,
+        setLoop: () => action as unknown as THREE.AnimationAction,
+        isRunning: () => true,
+      };
+      return action as unknown as THREE.AnimationAction;
+    };
+
+    const adaptEnemyRigForSceneManager = (rig: EnemyRig): EnemyRig => {
+      const wrap = (action: THREE.AnimationAction | null): THREE.AnimationAction | null => {
+        if (!action) return null;
+        return makeSandboxActionBridge(() => { action.play(); });
+      };
+      rig.clips = {
+        idle: wrap(rig.clips.idle),
+        walk: wrap(rig.clips.walk),
+        run: wrap(rig.clips.run),
+        attack: wrap(rig.clips.attack),
+        death: wrap(rig.clips.death),
+        hurt: wrap(rig.clips.hurt),
+      };
+      return rig;
+    };
+
+    const createNpcEnemyRig = (inst: NpcInstance): EnemyRig => {
+      let t = 0;
+      const mixer = {
+        update: (dt: number) => { t += dt; inst.update(t, dt); },
+        stopAllAction: () => {},
+        uncacheRoot: () => {},
+      } as unknown as THREE.AnimationMixer;
+      return {
+        group: inst.root,
+        mixer,
+        allClips: [],
+        clips: {
+          idle: makeSandboxActionBridge(() => inst.setAnimState('idle')),
+          walk: makeSandboxActionBridge(() => inst.setAnimState('walk')),
+          run: makeSandboxActionBridge(() => inst.setAnimState('run')),
+          attack: makeSandboxActionBridge(() => inst.setAnimState('attack_1')),
+          death: makeSandboxActionBridge(() => inst.setAnimState('die_1')),
+          hurt: makeSandboxActionBridge(() => inst.setAnimState('get_hit_1')),
+        },
+        normScale: 1,
+        def: undefined as any,
+      };
+    };
+
+    const bindSandboxVisualLifecycle = (enemy: SlimeEnemy) => {
+      let cleanup: (() => void) | null = null;
+      const clearVisual = () => {
+        const rig = enemy.group.userData['enemyRig'] as EnemyRig | undefined;
+        if (rig) {
+          enemy.group.remove(rig.group);
+          delete enemy.group.userData['enemyRig'];
+        }
+        enemy.group.traverse(child => {
+          if (child !== enemy.group && (child as THREE.Mesh).isMesh) {
+            child.visible = true;
+          }
+        });
+        cleanup?.();
+        cleanup = null;
+      };
+      const originalDispose = enemy.dispose.bind(enemy);
+      const originalRevive = enemy.revive.bind(enemy);
+      const originalTakeDamage = enemy.health.takeDamage.bind(enemy.health);
+      enemy.dispose = ((world) => {
+        clearVisual();
+        enemy.dispose = originalDispose as typeof enemy.dispose;
+        enemy.revive = originalRevive as typeof enemy.revive;
+        enemy.health.takeDamage = originalTakeDamage as typeof enemy.health.takeDamage;
+        originalDispose(world);
+      }) as typeof enemy.dispose;
+      enemy.revive = ((newPos) => {
+        clearVisual();
+        enemy.dispose = originalDispose as typeof enemy.dispose;
+        enemy.revive = originalRevive as typeof enemy.revive;
+        enemy.health.takeDamage = originalTakeDamage as typeof enemy.health.takeDamage;
+        originalRevive(newPos);
+      }) as typeof enemy.revive;
+      enemy.health.takeDamage = ((amount: number) => {
+        const actual = originalTakeDamage(amount);
+        if (enemy.health.isDead) clearVisual();
+        return actual;
+      }) as typeof enemy.health.takeDamage;
+      return {
+        clearVisual,
+        canAttach: () => enemy.group.parent === scene && sceneManager.getActiveEnemies().includes(enemy),
+        attach: (rig: EnemyRig, onDispose: () => void) => {
+          if (!enemy.group.parent || !sceneManager.getActiveEnemies().includes(enemy)) {
+            onDispose();
+            return false;
+          }
+          clearVisual();
+          hideDefaultEnemyMesh(enemy);
+          cleanup = onDispose;
+          enemy.group.userData['enemyRig'] = rig;
+          enemy.group.add(rig.group);
+          return true;
+        },
+      };
+    };
 
     // Build sandbox UI
     _sandboxUi?.dispose();
@@ -1137,7 +1285,11 @@ async function main() {
         const clip = loaded.clips.find(c => c.name === clipName);
         if (clip) loaded.mixer.clipAction(clip).play();
       },
-      onSpawnNPC: (dna, _name, hp, damage, count) => {
+      onSpawnNPC: (dna, hp, damage, count) => {
+        if (gameMode !== 'interior' || _sandboxLocation !== 'arena') {
+          console.warn('[sandbox] NPC stand-ins can only be spawned in the interior arena');
+          return;
+        }
         const playerPos = player.group.position;
         const angle0 = Math.random() * Math.PI * 2;
         for (let i = 0; i < count; i++) {
@@ -1147,18 +1299,39 @@ async function main() {
             playerPos.x + Math.cos(angle) * r, 1.5,
             playerPos.z + Math.sin(angle) * r,
           );
-          const en = new SlimeEnemy(pos, physics, (dmg: number) => { player.health.takeDamage(dmg); if (dmg > 0) { cameraRig.shake(0.12, 0.22); hud.flashHit(); gameLoop.freeze(2); dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), dmg, "damage"); } });
+          const en = new SlimeEnemy(pos, physics, () => {
+            player.health.takeDamage(damage);
+            if (damage > 0) {
+              cameraRig.shake(0.12, 0.22);
+              hud.flashHit();
+              gameLoop.freeze(2);
+              dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), damage, "damage");
+            }
+          });
+          const visualLifecycle = bindSandboxVisualLifecycle(en);
           // Override HP and damage
+          (en.health as unknown as { _maxHp: number })._maxHp = hp;
           en.health.forceSetHp(hp);
-          (en as unknown as { _maxHp?: number })._maxHp = hp;
-          (en as unknown as { _baseDamage?: number })._baseDamage = damage;
-          // Replace slime body with DNA creature rig
-          const rig = buildCreature(dna);
-          // Hide the default slime sphere mesh; add DNA rig to the enemy group
-          en.group.children.slice().forEach(c => { c.visible = false; });
-          en.group.add(rig.root);
           scene.add(en.group);
           sceneManager.addEnemy(en);
+          // The sandbox has no TimeSystem/dialogue/world context handy, so using a
+          // full NPCEntity would be awkward here. Instead we keep the existing
+          // SlimeEnemy combat wrapper and attach the real NpcDNA-built visual as an
+          // EnemyRig-compatible bridge so HP/damage/count controls still work.
+          void import('@/npc-creator/builder').then(({ buildNpc }) => {
+            buildNpc(dna).then(inst => {
+              if (!visualLifecycle.canAttach()) {
+                inst.dispose();
+                return;
+              }
+              const rig = createNpcEnemyRig(inst);
+              rig.group.position.set(0, 0, 0);
+              rig.clips.idle?.play();
+              visualLifecycle.attach(rig, () => inst.dispose());
+            }).catch(err => {
+              console.warn('[sandbox] NPC visual build failed:', err);
+            });
+          });
         }
       },
       onSpawnEnemies: (n) => {
@@ -1239,19 +1412,19 @@ async function main() {
       },
       onEnterRoom: (roomId) => {
         if (!_lastGeneratedPlan) return;
+        // Tear down whatever special mode is currently active (overworld
+        // terrain / water lab tiers) before loading the generated room —
+        // otherwise their meshes/colliders are left stacked on top of the
+        // new dungeon geometry.
+        _exitCurrentSpecialMode();
         sceneManager.loadDungeon(_lastGeneratedPlan);
         sceneManager.loadRoomImmediate(roomId);
+        _sandboxLocation = 'room';
         _sandboxUi?.setLocation(roomId);
       },
       onReturnToArena: () => {
         // Exit overworld / water lab if we were in either
-        if (gameMode === 'exterior') {
-          overworld?.exit();
-          gameMode = 'interior';
-        } else if (gameMode === 'waterlab') {
-          waterLab?.exit();
-          gameMode = 'interior';
-        }
+        _exitCurrentSpecialMode();
         // Clear spawned sandbox rigs
         for (const { rig } of _spawnedRigs) { scene.remove(rig.root); rig.dispose(); }
         _spawnedRigs.length = 0;
@@ -1261,9 +1434,14 @@ async function main() {
         sceneManager.loadDungeon(arenaPlan);
         sceneManager.loadRoomImmediate('sandbox_arena');
         scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+        _sandboxLocation = 'arena';
         _sandboxUi?.setLocation('arena');
       },
       onEnterOverworld: (seed) => {
+        // Tear down whatever special mode is currently active (water lab
+        // tiers) before generating a new overworld — otherwise its
+        // meshes/colliders are left stacked on top of the overworld terrain.
+        _exitCurrentSpecialMode();
         // Tear down any existing interior room
         sceneManager.unloadCurrentRoom();
         // Always recreate so the specified seed is honoured
@@ -1273,42 +1451,45 @@ async function main() {
         gameMode = 'exterior';
         player.teleport(new THREE.Vector3(0, 1.5, 8));
         scene.fog = new THREE.Fog(0x0a1408, 60, 180);
+        _sandboxLocation = 'overworld';
         _sandboxUi?.setLocation('overworld');
       },
       onEnterWaterLab: enterWaterLab,
       onSetWaterVariant: (kind) => waterLab?.setWaterVariant(kind),
       onSpawnCreature: (dna) => {
-        const rig = buildCreature(dna);
-        const pp  = player.group.position;
-        rig.root.position.set(pp.x + 2.5, 0, pp.z + 2.5);
-        // Build walk controller first (geometry-only, no world matrices needed).
-        // Use its naturalFootY to ground the rig so foot targets land at y=0.
-        let walkCtrl: ProceduralWalkController | ProceduralBipedWalkController | null = null;
-        if (dna.archetype === 'biped') {
-          const bwc = new ProceduralBipedWalkController(rig);
-          if (bwc.isApplicable) {
-            walkCtrl = bwc;
-            rig.root.position.y = -bwc.naturalFootY;
-          }
-        } else {
-          const qwc = new ProceduralWalkController(rig);
-          if (qwc.isApplicable) {
-            walkCtrl = qwc;
-            rig.root.position.y = -qwc.naturalFootY;
-          } else {
-            // Fallback: bounding-box grounding for non-walking non-bipeds
-            rig.root.updateWorldMatrix(true, true);
-            const box = new THREE.Box3();
-            rig.root.traverse(obj => { if (obj instanceof THREE.Mesh) box.union(new THREE.Box3().setFromObject(obj)); });
-            if (!box.isEmpty() && isFinite(box.min.y) && box.min.y > 0.01) rig.root.position.y -= box.min.y;
-          }
+        if (gameMode !== 'interior' || _sandboxLocation !== 'arena') {
+          console.warn('[sandbox] Enemy stand-ins can only be spawned in the interior arena');
+          return;
         }
-        scene.add(rig.root);
-        _spawnedRigs.push({
-          rig,
-          born: performance.now() * 0.001,
-          walkCtrl,
-          wander: { angle: Math.random() * Math.PI * 2, timer: 1.5 + Math.random() * 2, speed: 1.8 + Math.random() * 1.2 },
+        const pp = player.group.position;
+        const pos = new THREE.Vector3(pp.x + 2.5, 1.5, pp.z + 2.5);
+        const en = new SlimeEnemy(pos, physics, () => {
+          player.health.takeDamage(dna.baseDmg);
+          if (dna.baseDmg > 0) {
+            cameraRig.shake(0.12, 0.22);
+            hud.flashHit();
+            gameLoop.freeze(2);
+            dmgNumbers.spawn(player.group.position.clone().setY(player.group.position.y + 1.5), dna.baseDmg, "damage");
+          }
+        });
+        const visualLifecycle = bindSandboxVisualLifecycle(en);
+        (en.health as unknown as { _maxHp: number })._maxHp = dna.baseHp;
+        en.health.forceSetHp(dna.baseHp);
+        scene.add(en.group);
+        sceneManager.addEnemy(en);
+        void import('@/enemy-creator/builder').then(({ buildEnemy }) => {
+          buildEnemy(dna).then(result => {
+            if (!visualLifecycle.canAttach()) {
+              result.dispose();
+              return;
+            }
+            const rig = adaptEnemyRigForSceneManager(result.rig);
+            rig.group.position.set(0, 0, 0);
+            rig.clips.idle?.play();
+            visualLifecycle.attach(rig, () => result.dispose());
+          }).catch(err => {
+            console.warn('[sandbox] enemy visual build failed:', err);
+          });
         });
       },
       onClose: () => {
@@ -3178,6 +3359,3 @@ function _updateHealOrbs(
     }
   }
 }
-
-
-
