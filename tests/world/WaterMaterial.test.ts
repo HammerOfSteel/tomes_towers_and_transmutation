@@ -19,4 +19,16 @@ describe('createWaterMaterial', () => {
     a.uniforms.uTime.value = 5;
     expect(b.uniforms.uTime.value).toBe(0);
   });
+
+  it('uses a fragment shader alpha low enough for underwater visibility (<= 0.55)', () => {
+    const mat = createWaterMaterial();
+    // The fragment shader writes gl_FragColor's alpha as a literal float
+    // (e.g. "gl_FragColor = vec4(color, 0.45);"). Extract that literal and
+    // assert it's been tuned down from the old opaque-ish 0.78.
+    const match = mat.fragmentShader.match(/gl_FragColor\s*=\s*vec4\([^,]+,\s*([\d.]+)\s*\)/);
+    expect(match).not.toBeNull();
+    const alpha = parseFloat(match![1]!);
+    expect(alpha).toBeLessThanOrEqual(0.55);
+    expect(alpha).toBeGreaterThan(0); // still visible as water, not fully invisible
+  });
 });
