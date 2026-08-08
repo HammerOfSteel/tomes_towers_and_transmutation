@@ -103,23 +103,40 @@ export class WaterLabScene {
     this._entered = true;
 
     // ── Tier meshes + colliders ──────────────────────────────────────────
-    for (const tier of this._tiers) {
-      const size = tier.halfExtent * 2;
-      const geo = new THREE.PlaneGeometry(size, size, 1, 1);
-      geo.rotateX(-Math.PI / 2);
-      const mat = new THREE.MeshLambertMaterial({ color: TIER_COLORS[tier.name] });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(tier.centerX, tier.y, tier.centerZ);
-      mesh.receiveShadow = true;
-      this._scene.add(mesh);
-      this._tierMeshes.push(mesh);
+    // Each tier (except the innermost) is built as a "picture frame" — 4
+    // rectangular pieces covering the ring between its own footprint and
+    // the next (deeper) tier's footprint — instead of one full solid
+    // square. A full square would form an unbroken ceiling directly above
+    // the nested deeper tier (they're all centered at the same XZ point),
+    // trapping the player's capsule between the deep floor and the
+    // shallower slab above it, and preventing normal walking from ever
+    // actually descending into the basin. Only the deepest tier (no tier
+    // nested inside it) gets a full solid floor piece.
+    this._tiers.forEach((tier, i) => {
+      const holeHalfExtent = this._tiers[i + 1]?.halfExtent ?? 0;
+      const pieces = holeHalfExtent > 0
+        ? this._frameRectPieces(tier.halfExtent, holeHalfExtent)
+        : [{ cx: 0, cz: 0, hx: tier.halfExtent, hz: tier.halfExtent }];
 
-      const body = this._physics.createStaticBox(
-        new THREE.Vector3(tier.centerX, tier.y - 0.025, tier.centerZ),
-        new THREE.Vector3(tier.halfExtent, 0.025, tier.halfExtent),
-      );
-      this._tierBodies.push(body);
-    }
+      for (const piece of pieces) {
+        const sizeX = piece.hx * 2;
+        const sizeZ = piece.hz * 2;
+        const geo = new THREE.PlaneGeometry(sizeX, sizeZ, 1, 1);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshLambertMaterial({ color: TIER_COLORS[tier.name] });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(tier.centerX + piece.cx, tier.y, tier.centerZ + piece.cz);
+        mesh.receiveShadow = true;
+        this._scene.add(mesh);
+        this._tierMeshes.push(mesh);
+
+        const body = this._physics.createStaticBox(
+          new THREE.Vector3(tier.centerX + piece.cx, tier.y - 0.025, tier.centerZ + piece.cz),
+          new THREE.Vector3(piece.hx, 0.025, piece.hz),
+        );
+        this._tierBodies.push(body);
+      }
+    });
 
     // ── Water surface (covers the shallow+deep+abyss footprint, at bank height) ──
     this._buildWater();
@@ -143,6 +160,27 @@ export class WaterLabScene {
     for (const [pos, half3] of wallSpecs) {
       this._tierBodies.push(this._physics.createStaticBox(pos, half3));
     }
+  }
+
+  /**
+   * Splits a `outerHalfExtent`-square footprint into 4 axis-aligned
+   * rectangles forming a "picture frame" ring around a centered
+   * `innerHalfExtent`-square hole (the next tier down's footprint). Both
+   * tiers are assumed centered at the same local (0,0) — callers offset the
+   * returned rects by the tier's actual centerX/centerZ.
+   */
+  private _frameRectPieces(
+    outerHalfExtent: number,
+    innerHalfExtent: number,
+  ): Array<{ cx: number; cz: number; hx: number; hz: number }> {
+    const edge = (outerHalfExtent - innerHalfExtent) / 2;
+    const mid = (outerHalfExtent + innerHalfExtent) / 2;
+    return [
+      { cx: 0,    cz:  mid, hx: outerHalfExtent, hz: edge },           // north
+      { cx: 0,    cz: -mid, hx: outerHalfExtent, hz: edge },           // south
+      { cx:  mid, cz: 0,    hx: edge,             hz: innerHalfExtent }, // east
+      { cx: -mid, cz: 0,    hx: edge,             hz: innerHalfExtent }, // west
+    ];
   }
 
   exit(): void {
