@@ -266,9 +266,10 @@ export class PlayerController {
    *  visible only while submerged (intensity driven by depthFraction in
    *  setSubmersion()). Keeps the player legible against dark/busy water
    *  in any camera angle, independent of the water shader's own alpha.
-   *  Recreated whenever the active rig changes (old rig + its children,
-   *  including any previous glow light, are removed/disposed by the
-   *  relevant applyDNA/applyAssetModel/applyPrincess call). */
+   *  Recreated whenever the active rig changes; the outgoing light is
+   *  explicitly disposed via `this._submergedGlow?.dispose()` in
+   *  `setSubmersion()` before the new rig is assigned — not implicitly
+   *  by the applyDNA/applyAssetModel/applyPrincess call. */
   private _submergedGlow: THREE.PointLight | null = null;
 
   /** Max intensity of `_submergedGlow` at full (1.0) depthFraction. */

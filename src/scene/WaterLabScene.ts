@@ -75,7 +75,23 @@ export class WaterLabScene {
   private _buildWater(): void {
     if (this._waterObject) {
       this._scene.remove(this._waterObject);
-      const obj = this._waterObject as unknown as { geometry: THREE.BufferGeometry; material: THREE.Material };
+      const obj = this._waterObject as unknown as {
+        geometry: THREE.BufferGeometry;
+        material: THREE.ShaderMaterial;
+      };
+      // Water.js/Water2.js keep their WebGLRenderTarget(s) fully closure-private
+      // with no exposed reference or dispose() method (verified by reading
+      // three/examples/jsm/objects/Water.js and Water2.js) — there is no
+      // supported way to free those render targets without patching the
+      // vendored module. Dispose what IS reachable (their output textures) as
+      // a partial mitigation; the render-target framebuffers themselves leak
+      // on every reflective/flow-refractive -> other variant switch. Low
+      // impact: only reachable via manual Dev Sandbox toggling, never in the
+      // shipping game (default variant is 'stylized').
+      const uniforms = obj.material.uniforms as Record<string, { value?: THREE.Texture } | undefined> | undefined;
+      uniforms?.mirrorSampler?.value?.dispose();
+      uniforms?.tReflectionMap?.value?.dispose();
+      uniforms?.tRefractionMap?.value?.dispose();
       obj.geometry.dispose();
       obj.material.dispose();
     }
