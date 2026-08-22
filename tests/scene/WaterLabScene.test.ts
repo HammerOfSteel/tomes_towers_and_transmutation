@@ -157,4 +157,42 @@ describe('WaterLabScene swim/wade hysteresis', () => {
     expect(player.isSwimming).toBe(false);
     expect(player.group.position.y).toBeGreaterThan(0.5);
   });
+
+  it('does not let the player swim laterally under the shallower tier floors into an unbounded void (regression: the dive/swim vertical spring always eased toward a single fixed depth below the water surface — DIVE_TARGET_DEPTH below WATER_LAB_SURFACE_Y — with no idea what floor is actually beneath the player\'s current X/Z; diving in at the abyss center, the only footprint deep enough to trigger real swim state from a vertical fall, then holding a lateral direction while still diving carried the player at that dive depth clean underneath the much-shallower deep/shallow/bank floor slabs and out to the perimeter wall, since only the floor slabs themselves and the outer wall had any collision — nothing stopped lateral movement at the tier step boundaries for someone already positioned below them)', () => {
+    // Dive in at the abyss center (radius < 2) from height so real swim
+    // state engages and the dive spring settles the player down near
+    // WATER_LAB_SURFACE_Y - DIVE_TARGET_DEPTH (-3).
+    player.teleport(new THREE.Vector3(0, 3, 0));
+    const diveInPlace = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, jump: true, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 90; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(diveInPlace, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+    expect(player.group.position.y).toBeLessThan(-2); // genuinely down at dive depth
+
+    // Now hold a lateral direction (iso "forward", -x/-z) while still
+    // diving, swimming out past the abyss (radius 2), deep (radius 4), and
+    // shallow (radius 7) tier boundaries toward the perimeter wall.
+    const diveAndSwim = { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false, jump: true, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 600; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(diveAndSwim, 1 / 60, 'isometric');
+    }
+    // By now the player has long since crossed every tier boundary and
+    // reached the perimeter wall (radius clamps around ~11.4, well past
+    // the shallow tier's own edge at 7) — with the bug present, Y stayed
+    // pinned at the dive depth (~-3) the *entire* way regardless of how
+    // far the player traveled, since the spring never knew about the
+    // shallower floors it was passing under. With the fix, Y should have
+    // risen to track the (much shallower) floor near the wall — nowhere
+    // close to the abyss/deep tier's depth anymore.
+    const finalPos = player.group.position;
+    const finalRadius = Math.max(Math.abs(finalPos.x), Math.abs(finalPos.z));
+    expect(finalRadius).toBeGreaterThan(9); // actually traveled out, not frozen in place
+    expect(finalPos.y).toBeGreaterThan(-1.2); // shallower than the deep tier's own floor
+  });
 });
+

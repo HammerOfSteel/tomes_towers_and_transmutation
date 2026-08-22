@@ -223,6 +223,15 @@ export class PlayerController {
   /** World Y of the water surface the player is currently swimming under.
    *  Set by setSwimming(); used by update()'s gravity override each frame. */
   private _swimSurfaceY = 0;
+  /** Lowest Y the dive/swim vertical spring is allowed to ease toward, set
+   *  by setSwimming()'s optional floorY argument. The spring otherwise
+   *  always targets a fixed depth below the water surface with no idea
+   *  what's actually beneath the player's current X/Z — over any tier
+   *  shallower than the deepest "abyss" footprint that's a lie, and lets
+   *  the player swim laterally underneath that tier's floor into open
+   *  space. Defaults to -Infinity (no clamp) for callers that don't pass
+   *  a floor (e.g. any other swimmable area with a uniform depth). */
+  private _swimMinY = -Infinity;
 
   private isGrounded = false;
 
@@ -365,10 +374,15 @@ export class PlayerController {
    * @param isSwimming Whether the player should be in swim mode this frame.
    * @param waterSurfaceY World Y of the local water surface (only meaningful
    *   when isSwimming is true; ignored otherwise). Defaults to 0.
+   * @param floorY Lowest Y the dive/swim vertical spring may ease toward —
+   *   the actual floor height beneath the player's current X/Z, if the
+   *   caller knows it (e.g. WaterLabScene's tiered basin). Defaults to
+   *   -Infinity (no clamp), matching prior unclamped behavior.
    */
-  setSwimming(isSwimming: boolean, waterSurfaceY = 0): void {
+  setSwimming(isSwimming: boolean, waterSurfaceY = 0, floorY = -Infinity): void {
     this._swimming = isSwimming;
     this._swimSurfaceY = waterSurfaceY;
+    this._swimMinY = floorY;
   }
 
   get isSwimming(): boolean {
@@ -944,9 +958,16 @@ export class PlayerController {
       // gravity. Holding jump (input.jump) is repurposed as "dive" — jump's
       // on-land execution branch already excludes swim mode (see the
       // `!this._swimming` guard above), so this is conflict-free.
-      const targetY = input.jump
+      const rawTargetY = input.jump
         ? this._swimSurfaceY - DIVE_TARGET_DEPTH   // holding jump: ease down toward dive depth
         : this._swimSurfaceY - SWIM_FLOAT_DEPTH;   // released: ease up toward surface float depth
+      // Never ease toward a target below the actual floor beneath the
+      // player's current X/Z (see _swimMinY doc comment) — otherwise
+      // diving over a deep spot then swimming sideways over a shallower
+      // one keeps demanding downward velocity that fights (and can defeat)
+      // the KCC's collision response every frame instead of just resting
+      // on that shallower floor like solid ground normally would.
+      const targetY = Math.max(rawTargetY, this._swimMinY);
       const gain = input.jump ? DIVE_VERTICAL_EASE : SWIM_VERTICAL_EASE;
       const yDelta = targetY - this._pos.y;
       const targetVel = yDelta * gain;

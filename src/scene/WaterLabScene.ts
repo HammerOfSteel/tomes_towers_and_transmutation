@@ -256,6 +256,22 @@ export class WaterLabScene {
     ];
   }
 
+  /** Finds which tier's own footprint (each a concentric square, per
+   *  `_tiers`) actually contains the given world (x,z) — i.e. the smallest
+   *  (innermost) tier whose square half-extent contains the point, since
+   *  inner tiers' footprints are "holes" cut into the outer tiers' rings.
+   *  Used to look up the real floor height beneath an arbitrary point,
+   *  which the fixed-depth dive/swim vertical spring has no way to know. */
+  private _tierAt(x: number, z: number): WaterLabTier {
+    let result = this._tiers[0]!;
+    for (const tier of this._tiers) {
+      if (Math.abs(x - tier.centerX) <= tier.halfExtent && Math.abs(z - tier.centerZ) <= tier.halfExtent) {
+        result = tier; // tiers are listed outer→inner, so keep narrowing
+      }
+    }
+    return result;
+  }
+
   exit(): void {
     if (!this._entered) return;
     this._entered = false;
@@ -308,6 +324,24 @@ export class WaterLabScene {
     }
 
     if (this._playerIsSwimming) {
+      // The dive vertical spring (PlayerController) eases toward a single
+      // fixed depth relative to the water surface, with no idea what's
+      // actually beneath the player's current X/Z — so diving in the abyss
+      // (the only footprint deep enough to trigger real swim state from a
+      // vertical fall) and then holding a direction to swim sideways
+      // carried the player, still near that dive depth, straight under the
+      // much-shallower deep/shallow/bank floor slabs and out to the
+      // perimeter wall with nothing solid ever stopping them — exactly the
+      // "swim out of bounds while diving" bug reported repeatedly.
+      // Confirmed via a repro test: dive at the abyss center, hold a
+      // lateral direction, and the player glided at y≈-3 clear across
+      // every tier boundary (radius 2, 4, 7) to the outer wall.
+      // Passing the actual local floor height as setSwimming()'s floorY
+      // clamps the spring's target so it eases toward (and rests on) that
+      // floor once the player crosses under a shallower tier, instead of
+      // continually demanding downward velocity that fights the KCC's
+      // collision response every frame.
+      const tier = this._tierAt(this._player.group.position.x, this._player.group.position.z);
       // setSubmersion() also accepts negative fractions to LIFT the rig
       // above its resting Y (see PlayerController.setSubmersion doc) — this
       // is deliberately used here, not just "a small positive fraction",
@@ -324,7 +358,7 @@ export class WaterLabScene {
       // Zelda OOT / SM64 keep the whole head out of the water while
       // swimming (you don't drown at the neck) — this matches that.
       this._player.setSubmersion(-0.6);
-      this._player.setSwimming(true, WATER_LAB_SURFACE_Y);
+      this._player.setSwimming(true, WATER_LAB_SURFACE_Y, tier.y);
     } else if (depthBelowSurface > 0) {
       this._player.setSubmersion(0.4);
       this._player.setSwimming(false);
