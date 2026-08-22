@@ -644,9 +644,15 @@ export class PlayerController {
     this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
     this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
     // Allow the KCC to step up tile edges (heightfield transitions and box edges).
-    // maxHeight = 0.7 clears one full tile level (SH=0.55) plus margin.
+    // maxHeight = 1.0 clears one full tile level (SH=0.55) plus margin, and
+    // also the Water Lab's 0.9-unit deep->shallow tier floor step (see
+    // WaterLabScene's stepped "picture frame" tier floors) — without this,
+    // a swimmer who'd just been corrected up onto a shallower tier's floor
+    // (see the swim/dive "trapped under solid floor" correction below)
+    // could get physically walled off at that tier's edge while walking
+    // the rest of the way to shore, unable to climb the ~0.9 WU ledge.
     // minWidth  = 0.3 avoids stepping over narrow slivers / geometry artefacts.
-    this.kcc.enableAutostep(0.7, 0.3, false);
+    this.kcc.enableAutostep(1.0, 0.3, false);
     // Snap the character back down to the floor when descending steps/tiles.
     // Without this the player floats momentarily after walking off an elevated tile.
     // Distance 0.7 is just above one tile-level height (SH=0.55) so any single-step
@@ -1051,6 +1057,26 @@ export class PlayerController {
 
     if (this.velocity.y > 0 && actual.y < desired.y * 0.5) {
       this.velocity.y = 0; // hit ceiling
+    }
+
+    // Swimming, and still below the local floor after the KCC step (i.e. a
+    // solid tier floor slab sits directly above us): a velocity spring can
+    // never rise THROUGH solid floor — the KCC always blocks the upward
+    // delta (that's the "hit ceiling" case just above), so without this the
+    // player is physically trapped in the thin gap under that slab and
+    // slides along underneath it indefinitely (confirmed live: dove at the
+    // abyss, swam sideways, and got stuck skimming along just below each
+    // shallower tier's floor — y frozen at -0.91 near the bank tier's own
+    // y=0 floor — all the way out to the perimeter wall). This is the
+    // one case where a direct position correction (not a physics response)
+    // is correct: game logic already knows _swimMinY is solid ground the
+    // player should be resting ON TOP of, so surface her there directly
+    // instead of endlessly failing to spring up through it. Only the Y
+    // component is touched — X/Z stay exactly as the KCC already resolved
+    // them, so horizontal movement is never frozen by this.
+    if (this._swimming && this._pos.y + actual.y < this._swimMinY) {
+      actual.y = this._swimMinY - this._pos.y;
+      this.velocity.y = 0;
     }
 
     const cur = this.body.translation();
