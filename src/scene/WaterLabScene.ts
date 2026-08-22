@@ -199,14 +199,24 @@ export class WaterLabScene {
     this._scene.add(this._ambientLight);
     this._scene.add(this._dirLight);
 
-    // ── Perimeter walls so the player can't walk off the 24×24 room ──────
+    // ── Perimeter walls so the player can't walk (or swim) off the 24×24
+    // room. Must reach down to below the abyss floor (-5.0, see
+    // src/levels/WaterLab.ts) — a swimming player's capsule floats around
+    // y ≈ -0.5 to -1 (SWIM_FLOAT_DEPTH below the surface), well below where
+    // a wall centered on the dry-bank floor (y=0..4) would reach, so a wall
+    // that only covers y=0..4 lets swimmers pass clean underneath it at the
+    // room edge (confirmed: player could swim out past the pool boundary).
+    // Extending the bottom to -6 (below the abyss floor) closes that gap.
     const half = WATER_LAB_ROOM_SIZE / 2;
-    const wallHeight = 4;
+    const wallTop = 4;
+    const wallBottom = -6;
+    const wallCenterY = (wallTop + wallBottom) / 2;
+    const wallHalfHeight = (wallTop - wallBottom) / 2;
     const wallSpecs: Array<[THREE.Vector3, THREE.Vector3]> = [
-      [new THREE.Vector3(0, wallHeight / 2, -half), new THREE.Vector3(half, wallHeight / 2, 0.25)],
-      [new THREE.Vector3(0, wallHeight / 2, half),  new THREE.Vector3(half, wallHeight / 2, 0.25)],
-      [new THREE.Vector3(-half, wallHeight / 2, 0), new THREE.Vector3(0.25, wallHeight / 2, half)],
-      [new THREE.Vector3(half, wallHeight / 2, 0),  new THREE.Vector3(0.25, wallHeight / 2, half)],
+      [new THREE.Vector3(0, wallCenterY, -half), new THREE.Vector3(half, wallHalfHeight, 0.25)],
+      [new THREE.Vector3(0, wallCenterY, half),  new THREE.Vector3(half, wallHalfHeight, 0.25)],
+      [new THREE.Vector3(-half, wallCenterY, 0), new THREE.Vector3(0.25, wallHalfHeight, half)],
+      [new THREE.Vector3(half, wallCenterY, 0),  new THREE.Vector3(0.25, wallHalfHeight, half)],
     ];
     for (const [pos, half3] of wallSpecs) {
       this._tierBodies.push(this._physics.createStaticBox(pos, half3));

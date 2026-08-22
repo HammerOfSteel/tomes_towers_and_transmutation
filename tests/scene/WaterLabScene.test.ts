@@ -107,4 +107,38 @@ describe('WaterLabScene swim/wade hysteresis', () => {
     // neck, from isometric/WoW camera angles (OOT/SM64-style readability).
     expect(box.max.y).toBeGreaterThan(0.5);
   });
+
+  it('blocks swimming past the room perimeter (regression: the boundary wall colliders only spanned y=0..4, but a swimming player floats around y≈-0.5..-1, so they passed clean underneath the wall and could swim out of the room entirely)', () => {
+    // Start mid-pool, already swimming, then hold a constant iso "forward"
+    // input (ISO_FORWARD = (-1,0,-1) normalized — moves toward -x/-z) for
+    // far longer than needed to cross the full 24×24 room (half-extent 12)
+    // at SWIM_SPEED. If the perimeter wall doesn't reach swim depth, the
+    // player sails straight through it; if it does, position clamps near
+    // the boundary.
+    player.teleport(new THREE.Vector3(0, -1.2, 0));
+    // Hold jump (repurposed as "dive" while swimming, see PlayerController's
+    // swim/dive gravity override) together with forward, so vertical depth
+    // stays well past SWIM_EXIT_DEPTH_THRESHOLD the whole time — otherwise
+    // horizontal travel alone would cross back onto the dry bank tier and
+    // exit swim mode long before reaching the outer wall, which doesn't
+    // exercise the boundary this test is actually checking.
+    const input = { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false, jump: true, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 1200; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(input, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+    const pos = player.group.position;
+    // Room half-extent is 12; the capsule radius (0.35) plus wall half-
+    // thickness (0.25) means the center should rest a bit inside that, but
+    // must not have tunneled past it.
+    expect(pos.x).toBeGreaterThan(-12.5);
+    expect(pos.z).toBeGreaterThan(-12.5);
+    // Confirm it actually traveled a large distance toward the boundary
+    // (i.e. the test is exercising the wall, not just failing to move at
+    // all for an unrelated reason).
+    expect(pos.x).toBeLessThan(-8);
+    expect(pos.z).toBeLessThan(-8);
+  });
 });

@@ -581,7 +581,9 @@ export class PlayerController {
       // Bridge player movement state to princess animation states.
       // Only call setState when state changes — calling every frame resets the clip.
       const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-      const nextState = !this.isGrounded
+      const nextState = this._swimming
+        ? (hSpeed > 0.3 ? 'swim' : 'swim_idle')
+        : !this.isGrounded
         ? 'jump_idle'
         : hSpeed > RUN_SPEED * 0.5 ? 'run'
         : hSpeed > 0.3             ? 'walk'
