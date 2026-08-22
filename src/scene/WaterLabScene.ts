@@ -41,7 +41,7 @@ import type { Water } from 'three/examples/jsm/objects/Water.js';
  *  Swim/wade uses a hysteresis band (this constant + SWIM_EXIT_DEPTH_
  *  THRESHOLD below) rather than one threshold checked fresh every frame.
  *  A single threshold doesn't work here: PlayerController's buoyant float
- *  equilibrium (SWIM_FLOAT_DEPTH, 0.75) sits between the two, comfortably
+ *  equilibrium (SWIM_FLOAT_DEPTH, 0.55) sits between the two, comfortably
  *  inside the "still swimming" band once entered — but a bare single
  *  threshold at 0.9 with no memory would flicker every frame the player's
  *  buoyancy-driven Y oscillates near it, repeatedly toggling swim mode (and
@@ -49,13 +49,17 @@ import type { Water } from 'three/examples/jsm/objects/Water.js';
  *  off — visible as bobbing and as jump/dive input unexpectedly not
  *  responding right at the moment a player tries to climb out. */
 const SWIM_ENTER_DEPTH_THRESHOLD = 0.9;
-/** Depth below which swim mode releases back to wading/dry. Kept below the
- *  shallow shelf's resting depth (0.3 WU) so standing on the shelf always
- *  reads as wading (jump enabled), and below SWIM_FLOAT_DEPTH (0.75) so the
- *  buoyant equilibrium stays inside the "still swimming" band — see
- *  SWIM_ENTER_DEPTH_THRESHOLD's comment for why this needs to be a
- *  separate, lower value rather than reusing the enter threshold. */
-const SWIM_EXIT_DEPTH_THRESHOLD = 0.5;
+/** Depth below which swim mode releases back to wading/dry. Kept above the
+ *  depth a player's body-center sits at while merely standing on the deep
+ *  tier's floor (~0.35 WU below the surface — the deep floor is 1.2 WU
+ *  down, but the depth check uses capsule-center height, not feet, so
+ *  standing upright there reads as ~0.35), so just walking into deep water
+ *  still reads as wading (jump enabled) rather than swimming — and below
+ *  SWIM_FLOAT_DEPTH (0.55) so the buoyant equilibrium stays inside the
+ *  "still swimming" band. See SWIM_ENTER_DEPTH_THRESHOLD's comment for why
+ *  this needs to be a separate, lower value rather than reusing the enter
+ *  threshold. */
+const SWIM_EXIT_DEPTH_THRESHOLD = 0.45;
 
 const TIER_COLORS: Record<WaterLabTier['name'], number> = {
   bank:    0x6b5a3c,

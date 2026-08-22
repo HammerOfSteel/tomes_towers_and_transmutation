@@ -1250,24 +1250,9 @@ export class MainMenu {
     audio.addEventListener('pause', () => this._updatePlayerUI());
     audio.addEventListener('play',  () => this._updatePlayerUI());
 
-    // Set first track src without auto-starting
+    // Set first track src without auto-starting — music stays paused until the
+    // player explicitly presses play, instead of auto-starting on menu load.
     this._playTrack(0, false);
-
-    // Muted autoplay is universally permitted by browser policy; unmute once playing
-    audio.muted = true;
-    audio.play()
-      .then(() => { audio.muted = false; })
-      .catch(() => {
-        // Very restrictive config: fall back to first user gesture
-        audio.muted = false;
-        const startOnGesture = () => {
-          audio.play().catch(() => {});
-          document.removeEventListener('click',   startOnGesture, true);
-          document.removeEventListener('keydown', startOnGesture, true);
-        };
-        document.addEventListener('click',   startOnGesture, { capture: true, once: true });
-        document.addEventListener('keydown', startOnGesture, { capture: true, once: true });
-      });
   }
 
   private _playTrack(idx: number, autoStart = false): void {

@@ -99,6 +99,6 @@ describe('PlayerController.setSwimming', () => {
     // And it should actually converge near the target, not park somewhere
     // else entirely.
     const finalY = (player as any)._pos.y;
-    expect(finalY).toBeCloseTo(-0.75, 1); // SWIM_FLOAT_DEPTH below surface (0)
+    expect(finalY).toBeCloseTo(-0.55, 1); // SWIM_FLOAT_DEPTH below surface (0)
   });
 });

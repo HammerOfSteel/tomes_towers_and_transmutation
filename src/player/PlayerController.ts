@@ -49,15 +49,19 @@ const GROUND_PUSH = -2;
 const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (5)
 /** WU below water surface the player floats toward while swimming. Must
  *  stay comfortably deeper than WaterLabScene's SWIM_EXIT_DEPTH_THRESHOLD
- *  (currently 0.5) — otherwise the buoyant equilibrium point sits outside
+ *  (currently 0.45) — otherwise the buoyant equilibrium point sits outside
  *  the zone that keeps swim mode active, and the caller's depth-based state
  *  machine "hunts": buoyancy floats the player up past the exit threshold,
  *  swim mode (and its buoyancy) turns off, gravity drags them back down
  *  past the enter threshold, swim mode turns back on, repeat — a visible
  *  bobbing loop, not the intended calm float. See WaterLabScene.ts's
  *  SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD for the paired
- *  values this must stay compatible with. */
-const SWIM_FLOAT_DEPTH = 0.75;
+ *  values this must stay compatible with. Kept as shallow as that
+ *  constraint allows (only 0.1 above the exit threshold) so the player's
+ *  head/shoulders read clearly above the water surface while floating,
+ *  matching OOT/SM64-style visible-swimmer readability rather than
+ *  appearing to sink under the drawn surface. */
+const SWIM_FLOAT_DEPTH = 0.55;
 /** Position-error gain (rad/s) for the swim/dive vertical spring — see the
  *  VERTICAL_SPRING_DAMPING_MULTIPLIER comment below for why this alone
  *  isn't the damping rate. */
@@ -268,6 +272,17 @@ export class PlayerController {
   // Direct sub-mesh references (squash/stretch applied here, NOT on group)
   private readonly bodyMesh: THREE.Mesh;
   private readonly headMesh: THREE.Mesh;
+
+  /** Local point light that brightens while swimming, so the player reads
+   *  clearly against the water surface's flat-shaded (unlit) color from any
+   *  camera angle — see-through water alone isn't enough contrast once the
+   *  player is submerged, especially top-down/isometric views (OOT/SM64
+   *  keep the swimmer readable underwater the same way: extra local light/
+   *  rim brightness on the character, not just transparent water). Attached
+   *  to the group so it moves with the player automatically; model-agnostic
+   *  (works whether the capsule fallback or the princess rig is visible).
+   *  Intensity is 0 (no cost, no visible effect) whenever not swimming. */
+  private readonly _swimGlowLight = new THREE.PointLight(PALETTE.PLAYER_GLOW, 0, 4, 2);
 
   // DNA-based creature rig (replaces bodyMesh/headMesh visually when applied)
   private _creatureRig: CreatureRig | null = null;
@@ -629,6 +644,10 @@ export class PlayerController {
 
     // Attach cloud-puff levitate effect (hidden until buff is active)
     this.group.add(this._levitateEffect.group);
+
+    // Swim glow light — parented near chest height, off by default (see field doc).
+    this._swimGlowLight.position.set(0, CAPSULE_HALF_HEIGHT, 0);
+    this.group.add(this._swimGlowLight);
 
     this.shadow = PlayerController.buildShadow();
 
@@ -1061,6 +1080,10 @@ export class PlayerController {
     const headMat = this.headMesh.material as THREE.MeshLambertMaterial;
     const glowTarget = input.run && hSpeed > 1 ? 1.2 : 0.4;
     headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, glowTarget, 0.08);
+
+    // Swim visibility glow — see _swimGlowLight's field doc.
+    const swimGlowTarget = this._swimming ? 1.4 : 0;
+    this._swimGlowLight.intensity = lerp(this._swimGlowLight.intensity, swimGlowTarget, 0.1);
 
     // i-frame / hit flash: blink the body between white and normal colour
     const bodyMat = this.bodyMesh.material as THREE.MeshLambertMaterial;
