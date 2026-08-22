@@ -44,6 +44,15 @@ export class SceneManager {
   private _lastLoadedRoomIds: Set<string> = new Set();
   /** THREE.Object3D roots placed by decorateRoom — cleared on every room swap. */
   private readonly _decoratedPropRoots: THREE.Object3D[] = [];
+  /** Bumped every time a room swap/unload starts. decorateRoom() runs via a
+   *  dynamic import and resolves asynchronously (at least one microtask
+   *  later) — if the room (or the whole scene, e.g. a dev-room boot handoff
+   *  jumping straight to another scene like the Water Lab) has already been
+   *  torn down/replaced by the time it resolves, its props must be dropped
+   *  on arrival instead of added to whatever loaded next. Each pending
+   *  decorateRoom() call captures the generation it was scheduled under and
+   *  compares against this field when it resolves. */
+  private _roomGeneration = 0;
   private activeEnemies: SlimeEnemy[] = [];
   private _currentFloor = 0;
   private _startRoomId: string | null = null;
@@ -340,7 +349,23 @@ export class SceneManager {
    * loadRoomImmediate / loadDungeon.
    */
   unloadCurrentRoom(): void {
-    if (!this.currentRoom) return;
+    // Invalidate any decorateRoom() call still in flight (dynamic import +
+    // async resolution) from whatever room was active before this call —
+    // see _roomGeneration's doc comment. Must happen even when
+    // this.currentRoom is already null (see below).
+    this._roomGeneration++;
+    if (!this.currentRoom) {
+      // No dungeon room active (e.g. coming from the overworld or a
+      // dev-sandbox scene) — but decorateRoom's props may still be lingering
+      // in the scene from before that (this guard used to skip the cleanup
+      // below entirely, leaving pillars/statues/chests/barrels/torches
+      // visible in whatever loads next, e.g. the Water Lab).
+      for (const root of this._decoratedPropRoots) {
+        this.scene.remove(root);
+      }
+      this._decoratedPropRoots.length = 0;
+      return;
+    }
     this.accumulatedKills += this.activeEnemies.filter(e => e.isDead).length;
     for (const enemy of this.activeEnemies) {
       const rig = enemy.group.userData['enemyRig'] as EnemyRig | undefined;
@@ -832,6 +857,9 @@ export class SceneManager {
 
   /** Unload current room, load `newId`, reposition player, spawn enemies. */
   private executeRoomSwap(newId: string, fromId: string | null): void {
+    // Invalidate any decorateRoom() call still in flight from the room being
+    // replaced here — see _roomGeneration's doc comment.
+    this._roomGeneration++;
     // ── Teardown current room ─────────────────────────────────────────────
     if (this.currentRoom) {
       this.accumulatedKills += this.activeEnemies.filter((e) => e.isDead).length;
@@ -873,7 +901,15 @@ export class SceneManager {
     // the random tower/dungeon props on top.
     const isBuildingRoom = /^[a-z]+_f\d+_r\d+$/.test(newId);
     if (!isBuildingRoom) {
+      const generationAtSchedule = this._roomGeneration;
       import('@/levels/PropPlacer').then(({ decorateRoom }) => {
+        // The room (or the whole scene — e.g. a dev-room boot handoff
+        // jumping straight from this dungeon room into the Water Lab) may
+        // already have moved on by the time this dynamic import resolves.
+        // Adding these props now would leave them stranded in whatever
+        // loaded next, with nothing left to clean them up. Bail out if a
+        // newer room swap/unload has since started.
+        if (generationAtSchedule !== this._roomGeneration) return;
         const placed = decorateRoom({
           floorIndex: bp.floor,
           halfWidth:  ((bp.width  - 1) * bp.cellSize) / 2 - 0.8,

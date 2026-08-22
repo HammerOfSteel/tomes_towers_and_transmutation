@@ -2536,7 +2536,7 @@ async function main() {
   // same wheel event (this listener + WoWCameraController's would otherwise
   // both fire and double the zoom rate).
   window.addEventListener('wheel', (e) => {
-    if ((gameMode === 'exterior' || gameMode === 'interior') && cameraRig.mode !== 'wow') {
+    if ((gameMode === 'exterior' || gameMode === 'interior' || gameMode === 'waterlab') && cameraRig.mode !== 'wow') {
       e.preventDefault();
       cameraRig.applyScroll(e.deltaY);
     }
