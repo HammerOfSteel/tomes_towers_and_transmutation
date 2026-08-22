@@ -2418,6 +2418,28 @@ async function main() {
   const partyStrip = new PartyStrip();
   const objTracker = new ObjectiveTracker();
   const questModal = new QuestAcceptModal();
+
+  // Water Lab-only live debug readout — position, swim state, and depth
+  // below the water surface, visible only while gameMode === 'waterlab'.
+  // Added so out-of-bounds/collision reports can be diagnosed from exact
+  // numbers the player reads off-screen in the moment, instead of guessing
+  // from camera-angle-dependent screenshots after the fact.
+  const waterLabDebugEl = document.createElement('div');
+  Object.assign(waterLabDebugEl.style, {
+    position: 'fixed',
+    top: '8px',
+    left: '8px',
+    padding: '6px 10px',
+    background: 'rgba(0,0,0,0.6)',
+    color: '#baf0ff',
+    font: '12px/1.4 monospace',
+    whiteSpace: 'pre',
+    zIndex: '600',
+    pointerEvents: 'none',
+    display: 'none',
+    borderRadius: '4px',
+  });
+  document.body.appendChild(waterLabDebugEl);
   const controlsOverlay = new ControlsOverlay();
 
   // ── Exterior interaction prompt ───────────────────────────────────────────
@@ -2612,7 +2634,18 @@ async function main() {
       if (gameMode === 'waterlab') {
         hud.setTime(null);
         waterLab?.update(dt);
-      } else if (gameMode === 'interior') {
+        // Live debug readout (see waterLabDebugEl doc comment above).
+        waterLabDebugEl.style.display = 'block';
+        const _wlp = player.group.position;
+        const _wlDepth = -_wlp.y; // WATER_LAB_SURFACE_Y is 0
+        waterLabDebugEl.textContent =
+          `x: ${_wlp.x.toFixed(2)}  y: ${_wlp.y.toFixed(2)}  z: ${_wlp.z.toFixed(2)}\n` +
+          `swimming: ${player.isSwimming}  depthBelowSurface: ${_wlDepth.toFixed(2)}\n` +
+          `radius: ${Math.hypot(_wlp.x, _wlp.z).toFixed(2)}  camera: ${cameraRig.mode}`;
+      } else {
+        waterLabDebugEl.style.display = 'none';
+      }
+      if (gameMode === 'interior') {
         hud.setTime(null);
         sceneManager.update(dt, player.group.position);
         // occlusion handled globally before render
@@ -2636,7 +2669,7 @@ async function main() {
             eliteEnemiesKilled: _eliteEnemiesKilled,
           });
         }
-      } else if (overworld) {
+      } else if (gameMode === 'exterior' && overworld) {
         owEditor?.update();
         TimeSystem.instance.update(dt);
         _dayNight.update(TimeSystem.instance.hour);
