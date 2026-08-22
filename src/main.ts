@@ -1849,6 +1849,14 @@ async function main() {
       getBuildingColliderSpecCount: () => overworld?.getBuildingColliderSpecCount() ?? 0,
       /** Whether the game loop is actively running (true only after startGame completes). */
       isGameRunning: () => (gameLoop as any).running === true,
+      /** Manually pump N game-loop ticks (physics update + render), bypassing
+       *  requestAnimationFrame. Backgrounded/hidden browser tabs (e.g. an
+       *  automated test/preview tab that never gains OS focus) get their rAF
+       *  throttled to near-zero by the browser, freezing gameplay — this lets
+       *  test tooling force real frames through regardless (for tests only). */
+      forceTick: (steps = 1) => {
+        for (let i = 0; i < steps; i++) (gameLoop as any).tick(performance.now());
+      },
       /** Force-give the master key (for tests). */
       giveMasterKey: () => { _hasMasterKey = true; console.log('[__game] master key granted'); },
       /** Whether master key is held. */
