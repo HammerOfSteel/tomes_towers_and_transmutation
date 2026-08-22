@@ -141,4 +141,20 @@ describe('WaterLabScene swim/wade hysteresis', () => {
     expect(pos.x).toBeLessThan(-8);
     expect(pos.z).toBeLessThan(-8);
   });
+
+  it('has solid floor all the way out to the perimeter wall, not just the bank tier\'s own halfExtent (regression: the bank tier\'s floor frame only spanned radius 7..11, one unit short of the room\'s actual half-extent of 12 where the walls sit, leaving an unfloored ring the player fell through into "swimming" with no floor and no water mesh underneath — read by the player as floating below the terrain, out past the pool)', () => {
+    // Drop the player from above into that gap (radius 11.5, between the
+    // bank tier's own edge at 11 and the room/wall boundary at 12).
+    player.teleport(new THREE.Vector3(11.5, 2, 0));
+    const input = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 120; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(input, 1 / 60, 'isometric');
+    }
+    // Should settle standing on the bank floor (y just above 0, roughly the
+    // capsule's resting height), not fall into swim mode at negative y.
+    expect(player.isSwimming).toBe(false);
+    expect(player.group.position.y).toBeGreaterThan(0.5);
+  });
 });

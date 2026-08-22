@@ -163,11 +163,23 @@ export class WaterLabScene {
     // shallower slab above it, and preventing normal walking from ever
     // actually descending into the basin. Only the deepest tier (no tier
     // nested inside it) gets a full solid floor piece.
+    // The outermost tier's floor must reach all the way to the room's own
+    // half-extent (12), not just its own `halfExtent` (11, chosen only for
+    // visual bank-width proportions) — otherwise a 1-unit-wide ring right
+    // next to the perimeter walls (11..12) has no floor at all. Since the
+    // player's swim/wade state is driven purely by Y vs. WATER_LAB_SURFACE_Y
+    // (not by which tier mesh is underneath), falling into that gap dropped
+    // the player into "swimming" with no floor and no visible water mesh
+    // there — exactly the "floating below the terrain, out past the pool"
+    // bug reported (confirmed via teleporting into that gap: player fell
+    // from y=2 to swim-float depth with nothing solid beneath them).
+    const roomHalf = WATER_LAB_ROOM_SIZE / 2;
     this._tiers.forEach((tier, i) => {
       const holeHalfExtent = this._tiers[i + 1]?.halfExtent ?? 0;
+      const outerHalfExtent = i === 0 ? roomHalf : tier.halfExtent;
       const pieces = holeHalfExtent > 0
-        ? this._frameRectPieces(tier.halfExtent, holeHalfExtent)
-        : [{ cx: 0, cz: 0, hx: tier.halfExtent, hz: tier.halfExtent }];
+        ? this._frameRectPieces(outerHalfExtent, holeHalfExtent)
+        : [{ cx: 0, cz: 0, hx: outerHalfExtent, hz: outerHalfExtent }];
 
       for (const piece of pieces) {
         const sizeX = piece.hx * 2;
@@ -207,7 +219,7 @@ export class WaterLabScene {
     // that only covers y=0..4 lets swimmers pass clean underneath it at the
     // room edge (confirmed: player could swim out past the pool boundary).
     // Extending the bottom to -6 (below the abyss floor) closes that gap.
-    const half = WATER_LAB_ROOM_SIZE / 2;
+    const half = roomHalf;
     const wallTop = 4;
     const wallBottom = -6;
     const wallCenterY = (wallTop + wallBottom) / 2;
