@@ -286,7 +286,22 @@ export class WaterLabScene {
     }
 
     if (this._playerIsSwimming) {
-      this._player.setSubmersion(1.0);
+      // setSubmersion() also accepts negative fractions to LIFT the rig
+      // above its resting Y (see PlayerController.setSubmersion doc) — this
+      // is deliberately used here, not just "a small positive fraction",
+      // because measurement showed a small positive value still only broke
+      // the *hair-tip* through the surface, not the whole head:
+      //   1.0  (original bug)   -> head-top  0.26 WU *below*  surface
+      //   0.15 (first attempt)  -> head-top  0.31 WU above surface (only
+      //                            hair visible — the "just the very top of
+      //                            her head" complaint)
+      //  -0.6  (this value)     -> head-top  0.82 WU above surface, clearing
+      //                            the whole head/ears/neck (verified via
+      //                            getPlayerVisualBounds() + close-up
+      //                            screenshots, not eyeballed at a glance)
+      // Zelda OOT / SM64 keep the whole head out of the water while
+      // swimming (you don't drown at the neck) — this matches that.
+      this._player.setSubmersion(-0.6);
       this._player.setSwimming(true, WATER_LAB_SURFACE_Y);
     } else if (depthBelowSurface > 0) {
       this._player.setSubmersion(0.4);

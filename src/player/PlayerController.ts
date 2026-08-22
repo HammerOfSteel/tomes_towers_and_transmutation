@@ -62,6 +62,7 @@ const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (
  *  matching OOT/SM64-style visible-swimmer readability rather than
  *  appearing to sink under the drawn surface. */
 const SWIM_FLOAT_DEPTH = 0.55;
+
 /** Position-error gain (rad/s) for the swim/dive vertical spring — see the
  *  VERTICAL_SPRING_DAMPING_MULTIPLIER comment below for why this alone
  *  isn't the damping rate. */

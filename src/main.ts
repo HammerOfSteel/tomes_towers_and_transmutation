@@ -1877,6 +1877,29 @@ async function main() {
         if (!inst) return null;
         return { name: inst.dna?.name ?? '?', species: inst.dna?.species ?? '?' };
       },
+      /**
+       * Ground-truth world-space bounding box of whichever visual rig is
+       * currently active (princess / asset model / creature rig / capsule
+       * fallback), diffed against the given water surface Y. Use this
+       * instead of eyeballing screenshots to check swim float depth —
+       * `topAboveSurface > 0` means the rig's highest point is genuinely
+       * above the water plane, `topAboveSurface < 0` means it's still fully
+       * submerged. For tests/manual verification only.
+       */
+      getPlayerVisualBounds: (surfaceY = 0) => {
+        const p = player as any;
+        const root: THREE.Object3D | null =
+          p._princessInstance?.root ?? p._charController?.scene ?? p._creatureRig?.root ?? p.bodyMesh ?? null;
+        if (!root) return null;
+        const box = new THREE.Box3().setFromObject(root);
+        return {
+          minY: +box.min.y.toFixed(4),
+          maxY: +box.max.y.toFixed(4),
+          groupY: +player.group.position.y.toFixed(4),
+          surfaceY,
+          topAboveSurface: +(box.max.y - surfaceY).toFixed(4),
+        };
+      },
       /** First settlement NPC's visual/gameplay info (null if none spawned). For tests. */
       getNpcSample: () => {
         const npc = (overworld as any)?._npcs?.[0];
