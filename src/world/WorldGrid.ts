@@ -12,7 +12,7 @@ export type BiomeId = 'bog' | 'grass' | 'forest' | 'highland' | 'rocky' | 'water
  * Feature = a geographic/man-made overlay on the tile (roads, rivers).
  * Populated by OW-2 (hydrology) and OW-5 (settlements).
  */
-export type TileFeature = 'none' | 'river' | 'river_bank' | 'road' | 'road_dirt';
+export type TileFeature = 'none' | 'river' | 'river_bank' | 'river_ford' | 'road' | 'road_dirt';
 
 /**
  * Content = an object that occupies the tile.
@@ -41,6 +41,13 @@ export interface WorldCell {
   /** 0 = no settlement; set by OW-5. */
   settlementId: number;
   walkable:     boolean;
+  /** World units of carved physical depth below `elevation × LEVEL_HEIGHT`
+   *  (see `WaterDepthConfig.ts`). 0 = dry land or a ford — the tile's
+   *  physical height equals its logical elevation with no carving.
+   *  Populated by `HydrologyGenerator` (rivers) and `RealmToWorldGrid`
+   *  (ocean-rim water); consumed by `TerrainGeometryBuilder` (carves the
+   *  mesh/collider) and `WaterDetection` (swim surface/floor query). */
+  waterDepth:   number;
 }
 
 function _defaultCell(): WorldCell {
@@ -53,6 +60,7 @@ function _defaultCell(): WorldCell {
     buildingId:   0,
     settlementId: 0,
     walkable:     true,
+    waterDepth:   0,
   };
 }
 

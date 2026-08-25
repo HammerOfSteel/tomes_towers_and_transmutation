@@ -35,7 +35,6 @@ import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { WorldGrid }              from '@/world/WorldGrid';
-import { isInWaterAt }                 from '@/world/WaterDetection';
 import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
@@ -69,11 +68,20 @@ import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from
 import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
+import { getWaterInfoAt } from '@/world/WaterDetection';
+import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
+import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
 const T   = 2;                // tile side length in world units (= interior cell)
-const SH  = 0.55;             // world-unit height increment per level
+// Shares the single depth-carving source of truth with TerrainGeometryBuilder
+// and WaterDetection.getWaterInfoAt() (see WaterDepthConfig.ts) — keeping the
+// name `SH` since it's used pervasively below, but it must always equal
+// LEVEL_HEIGHT or the terrain mesh/collider and the swim water query would
+// silently disagree about tile heights.
+const SH  = LEVEL_HEIGHT;      // world-unit height increment per level
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -155,6 +163,13 @@ export class OverworldScene {
   private _isInScene = false;
   private _skybox: ProceduralSkybox | null = null;
   private _skyT    = 0;
+  /** Hysteresis state for the live river/lake swim transition — mirrors
+   *  WaterLabScene.ts's `_playerIsSwimming` pattern so entering/exiting real
+   *  swim mode doesn't flicker at the depth boundary (see
+   *  SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD in
+   *  PlayerController.ts). */
+  private _playerIsSwimming = false;
+
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
   private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3; radius: number }> = [];
@@ -362,8 +377,36 @@ export class OverworldScene {
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
 
-    const inWater = isInWaterAt(this._wg, pos.x, pos.z);
-    this.player.setSubmersion(inWater ? 0.4 : 0);
+    // RI-3: real per-tile swim collision for live overworld rivers/ocean
+    // water, reusing the same hysteresis + setSwimming()/setSubmersion()
+    // machinery proven in WaterLabScene.ts (see PlayerController.ts's
+    // SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD doc comments for
+    // why a single threshold isn't used). river_ford tiles report no water
+    // info (waterDepth 0) so crossing one always reads as dry.
+    const waterInfo = getWaterInfoAt(this._wg, pos.x, pos.z);
+    if (waterInfo === null) {
+      this._playerIsSwimming = false;
+      this.player.setSubmersion(0);
+      this.player.setSwimming(false);
+    } else {
+      const depthBelowSurface = waterInfo.surfaceY - pos.y;
+      if (!this._playerIsSwimming && depthBelowSurface >= SWIM_ENTER_DEPTH_THRESHOLD) {
+        this._playerIsSwimming = true;
+      } else if (this._playerIsSwimming && depthBelowSurface < SWIM_EXIT_DEPTH_THRESHOLD) {
+        this._playerIsSwimming = false;
+      }
+
+      if (this._playerIsSwimming) {
+        this.player.setSubmersion(-0.6);
+        this.player.setSwimming(true, waterInfo.surfaceY, waterInfo.floorY);
+      } else if (depthBelowSurface > 0) {
+        this.player.setSubmersion(0.4);
+        this.player.setSwimming(false);
+      } else {
+        this.player.setSubmersion(0);
+        this.player.setSwimming(false);
+      }
+    }
 
     // ── Phase 7h: rebuild hostile-enemy spatial hash once per frame ─────────
     this._hostileHash.clear();
@@ -583,6 +626,21 @@ export class OverworldScene {
     return null;
   }
 
+  /** First river_ford-tile world position found by scanning the grid (or
+   *  null if the generated world has no road-crossing fords). Mirrors
+   *  `findFirstWaterTile()` — for tests/dev-tooling verification that fords
+   *  stay walkable (no swim trigger) even though they sit on a river path. */
+  findFirstFordTile(): { x: number; z: number } | null {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    for (let row = 0; row < GH; row++) {
+      for (let col = 0; col < GW; col++) {
+        if (this._wg.get(col, row).feature !== 'river_ford') continue;
+        return { x: (col - GHW) * T, z: (row - GHH) * T };
+      }
+    }
+    return null;
+  }
+
   /** Debug/dev-tooling only: water-mesh vertex count + visibility (for verification scripts). */
   getWaterMeshDebugInfo(): { exists: boolean; visible: boolean; vertexCount: number; inScene: boolean } {
     if (!this._waterMesh) return { exists: false, visible: false, vertexCount: 0, inScene: false };
@@ -596,10 +654,10 @@ export class OverworldScene {
   }
 
   /** Debug/dev-tooling only: raw cell data at a world position (for verification scripts). */
-  debugCellAt(wx: number, wz: number): { feature: string; biome: string; elevation: number } {
+  debugCellAt(wx: number, wz: number): { feature: string; biome: string; elevation: number; waterDepth: number } {
     const { col, row } = this._wg.worldToGrid(wx, wz);
     const cell = this._wg.get(col, row);
-    return { feature: cell.feature, biome: cell.biome, elevation: cell.elevation };
+    return { feature: cell.feature, biome: cell.biome, elevation: cell.elevation, waterDepth: cell.waterDepth };
   }
 
   /**

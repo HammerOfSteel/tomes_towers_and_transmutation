@@ -10,6 +10,7 @@
  * that smoothly interpolated between samples instead of stepping).
  */
 import type { WorldGrid } from './WorldGrid';
+import { physicalHeightWU } from './WaterDepthConfig';
 
 /** Biome vertex colours [r, g, b] for height levels 0–4 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
@@ -45,6 +46,10 @@ export const BIOME_VARIANTS: readonly (readonly [number, number, number])[][] = 
 
 export const BIOME_RIVER: [number, number, number] = [0.18, 0.38, 0.62]; // blue channel
 export const BIOME_WATER: [number, number, number] = [0.14, 0.26, 0.48]; // deep water
+/** Shallow, walkable ford crossing — a pale wet-stone/sand tint distinct
+ *  from both deep river blue and dry land, per RI-3's fords-are-visually-
+ *  distinct requirement. */
+export const BIOME_FORD:  [number, number, number] = [0.52, 0.48, 0.38];
 
 /**
  * Deterministic per-cell hash → integer variant index in [0, variantCount).
@@ -109,8 +114,18 @@ export function buildTerrainGeometryData(
   const clr: number[] = [];
   const idx: number[] = [];
 
-  /** Height level of a (possibly out-of-bounds) tile. */
+  /** Elevation *level* of a (possibly out-of-bounds) tile — used only for
+   *  colour/variant lookups, which are keyed by the logical land level. */
   const lvl = (c: number, r: number): number => wg.get(c, r).elevation;
+
+  /** Physical (carved) height in world units of a (possibly out-of-bounds)
+   *  tile — used for actual geometry (top-face Y, wall placement). Equals
+   *  `elevation × SH` for dry tiles, or less for river/ocean tiles carrying
+   *  `waterDepth` (see WaterDepthConfig.ts). This is the single source of
+   *  truth shared with the Rapier collider (same buffers) and with
+   *  `WaterDetection.getWaterInfoAt()`'s floor query — both pass this same
+   *  `SH` parameter through so they can never disagree. */
+  const physH = (c: number, r: number): number => physicalHeightWU(wg.get(c, r), SH);
 
   /**
    * Append a quad face to the buffers.
@@ -132,7 +147,7 @@ export function buildTerrainGeometryData(
   for (let row = 0; row < GH; row++) {
     for (let col = 0; col < GW; col++) {
       const H   = lvl(col, row);
-      const wy  = H * SH;
+      const wy  = physH(col, row);
       const wx  = (col - GHW) * T;
       const wz  = (row - GHH) * T;
       const wx1 = wx + T;
@@ -148,6 +163,8 @@ export function buildTerrainGeometryData(
         biomeRgb = BIOME_WATER;
       } else if (cell.feature === 'river') {
         biomeRgb = BIOME_RIVER;
+      } else if (cell.feature === 'river_ford') {
+        biomeRgb = BIOME_FORD;
       } else if (cell.feature === 'river_bank') {
         const b = BIOME[H]!;
         biomeRgb = [b[0] * 0.88, b[1] * 0.80, b[2] * 0.68];
@@ -174,47 +191,49 @@ export function buildTerrainGeometryData(
       );
 
       // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────
-      const Hs = lvl(col, row + 1);
-      if (Hs < H) {
-        const wy2 = Hs * SH;
+      // Wall faces compare *physical* (carved) height, not raw elevation
+      // level, so a land tile next to a carved river/ocean tile grows a
+      // wall down into the basin — a real riverbank/shore lip — with no
+      // extra logic: this is the same "draw a wall wherever my neighbour is
+      // lower" rule as before, just fed carved heights instead of levels.
+      const wyS = physH(col, row + 1);
+      if (wyS < wy) {
         const d = 0.76;
         addFace(
-          [wx1, wy, wz1], [wx, wy, wz1], [wx, wy2, wz1], [wx1, wy2, wz1],
+          [wx1, wy, wz1], [wx, wy, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
           0, 0, 1,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
-      const Hn = lvl(col, row - 1);
-      if (Hn < H) {
-        const wy2 = Hn * SH;
+      const wyN = physH(col, row - 1);
+      if (wyN < wy) {
         const d = 0.50;
         addFace(
-          [wx, wy, wz], [wx1, wy, wz], [wx1, wy2, wz], [wx, wy2, wz],
+          [wx, wy, wz], [wx1, wy, wz], [wx1, wyN, wz], [wx, wyN, wz],
           0, 0, -1,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── EAST wall (+X face, at wx1) ──────────────────────────────────
-      const He = lvl(col + 1, row);
-      if (He < H) {
-        const wy2 = He * SH;
+      const wyE = physH(col + 1, row);
+      if (wyE < wy) {
         const d = 0.63;
         addFace(
-          [wx1, wy, wz], [wx1, wy, wz1], [wx1, wy2, wz1], [wx1, wy2, wz],
+          [wx1, wy, wz], [wx1, wy, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
           1, 0, 0,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── WEST wall (−X face, at wx) ───────────────────────────────────
-      const Hw = lvl(col - 1, row);
-      if (Hw < H) {
-        const wy2 = Hw * SH;
+      const wyW = physH(col - 1, row);
+      if (wyW < wy) {
         const d = 0.55;
         addFace(
-          [wx, wy, wz1], [wx, wy, wz], [wx, wy2, wz], [wx, wy2, wz1],
+          [wx, wy, wz1], [wx, wy, wz], [wx, wyW, wz], [wx, wyW, wz1],
           -1, 0, 0,  tr * d, tg * d, tb * d,
         );
+
       }
     }
   }

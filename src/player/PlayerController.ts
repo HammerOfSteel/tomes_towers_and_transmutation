@@ -70,6 +70,37 @@ const SWIM_VERTICAL_EASE = 6;
 const DIVE_TARGET_DEPTH = 3.0;   // WU below surface the player eases toward while diving
 /** Position-error gain (rad/s) for diving — slower than surfacing. */
 const DIVE_VERTICAL_EASE = 4;
+
+/** WU below the water surface at which wading becomes full swimming — the
+ *  depth the player must sink to (e.g. stepping off the deep floor, 1.2 WU
+ *  down) before swim mode engages.
+ *
+ *  Swim/wade uses a hysteresis band (this constant + SWIM_EXIT_DEPTH_
+ *  THRESHOLD below) rather than one threshold checked fresh every frame.
+ *  A single threshold doesn't work here: this file's buoyant float
+ *  equilibrium (SWIM_FLOAT_DEPTH, 0.55) sits between the two, comfortably
+ *  inside the "still swimming" band once entered — but a bare single
+ *  threshold at 0.9 with no memory would flicker every frame the player's
+ *  buoyancy-driven Y oscillates near it, repeatedly toggling swim mode (and
+ *  the jump-input remapping/gravity override that comes with it) on and
+ *  off — visible as bobbing and as jump/dive input unexpectedly not
+ *  responding right at the moment a player tries to climb out.
+ *
+ *  Exported (not module-private) because both `WaterLabScene.ts` and
+ *  `OverworldScene.ts` need the identical pair of thresholds to drive their
+ *  own per-frame hysteresis state machines — keeping a single definition
+ *  here prevents the two call sites from silently drifting apart. */
+export const SWIM_ENTER_DEPTH_THRESHOLD = 0.9;
+/** Depth below which swim mode releases back to wading/dry. Kept above the
+ *  depth a player's body-center sits at while merely standing on a shallow
+ *  floor (so just walking into water still reads as wading, jump enabled,
+ *  rather than swimming), and below SWIM_FLOAT_DEPTH (0.55) so the buoyant
+ *  equilibrium stays inside the "still swimming" band. See
+ *  SWIM_ENTER_DEPTH_THRESHOLD's comment for why this needs to be a
+ *  separate, lower value rather than reusing the enter threshold, and for
+ *  why it's exported. */
+export const SWIM_EXIT_DEPTH_THRESHOLD = 0.45;
+
 /** Damping-rate multiplier applied on top of the position-error gain
  *  (SWIM_VERTICAL_EASE / DIVE_VERTICAL_EASE) when blending velocity.y
  *  toward its target each frame (see the swim/dive gravity override in

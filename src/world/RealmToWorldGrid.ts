@@ -19,6 +19,7 @@
 import { WorldGrid, type BiomeId } from './WorldGrid';
 import type { WorldSize } from './WorldGenConfig';
 import type { RealmData, RealmBiome } from '@/overworld-studio';
+import { OCEAN_DEPTH_WU } from './WaterDepthConfig';
 
 /**
  * Realm's 10-value biome taxonomy collapsed onto WorldGrid's 6-value
@@ -62,9 +63,16 @@ export function realmToWorldGrid(realm: RealmData, worldSize: number): WorldGrid
   for (let row = 0; row < worldSize; row++) {
     for (let col = 0; col < worldSize; col++) {
       const cell = sampleRealmCell(realm, col, row, worldSize);
+      const biome = REALM_BIOME_TO_WORLD_BIOME[cell.biome];
+      // Ocean-rim water tiles get a real carved depth (RI-3) so they're
+      // physically swimmable, not just cosmetically tinted — matching
+      // river tiles' HydrologyGenerator.ts treatment.
+      const isWater = biome === 'water';
       grid.set(col, row, {
-        elevation: quantizeElevation(cell.elevation),
-        biome:     REALM_BIOME_TO_WORLD_BIOME[cell.biome],
+        elevation:  quantizeElevation(cell.elevation),
+        biome,
+        waterDepth: isWater ? OCEAN_DEPTH_WU : 0,
+        walkable:   !isWater,
       });
     }
   }

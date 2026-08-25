@@ -12,13 +12,20 @@
  *   4. Mark walked tiles as feature='river', walkable=false.
  *      Orthogonal neighbours of river tiles get feature='river_bank'.
  *
- * Rivers do NOT block the player physically in OW-2 (no extra Rapier colliders).
- * `walkable=false` is a data flag for future AI pathfinding and bridge placement.
+ * Rivers physically block the player (RI-3): each river tile gets
+ * `waterDepth = RIVER_DEPTH_WU`, which `TerrainGeometryBuilder` carves into
+ * both the visual mesh and the Rapier collider as a real basin — walking in
+ * drops the player into real swim state (see `WaterDetection.getWaterInfoAt`
+ * and `OverworldScene.update()`). `walkable=false` remains a data flag for
+ * AI pathfinding; fords (tiles where a generated road crosses a river) are
+ * re-tagged `feature='river_ford'`, `waterDepth=0`, `walkable=true` by
+ * `WorldGenerator.buildWorldData()` after roads are built.
  */
 
 import { WorldGrid } from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import { mulberry32 } from '@/core/prng';
+import { RIVER_DEPTH_WU } from './WaterDepthConfig';
 
 // Terminate river before it enters the flat tower zone
 const FLAT_MARGIN     = 1.8;
@@ -156,8 +163,10 @@ function _markRiverPath(
   const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
 
   for (const { col, row } of path) {
-    // Mark tile as river
-    grid.set(col, row, { feature: 'river', walkable: false });
+    // Mark tile as river — waterDepth carves a real physical basin (see
+    // WaterDepthConfig.ts) so the terrain collider actually has a hole here,
+    // not just a cosmetic surface tint.
+    grid.set(col, row, { feature: 'river', walkable: false, waterDepth: RIVER_DEPTH_WU });
 
     // Mark orthogonal neighbours as river_bank (if not already water/river)
     for (const [dc, dr] of DIRS) {

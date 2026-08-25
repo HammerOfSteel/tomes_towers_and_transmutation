@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import { buildTerrainGeometryData, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
+import { RIVER_DEPTH_WU } from '@/world/WaterDepthConfig';
 
 describe('buildTerrainGeometryData', () => {
   it('emits only top faces when all tiles are flat (no elevation steps)', () => {
@@ -54,6 +55,57 @@ describe('buildTerrainGeometryData', () => {
     const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
     expect(g / b).toBeCloseTo(0.26 / 0.48, 5);
+  });
+});
+
+describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
+  it('carves a river tile between two land tiles down by RIVER_DEPTH_WU and walls the banks', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
+    // Use SH=1 so physical height in WU is directly comparable to depth.
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Tile 0: top + east wall (2 faces). Tile 1 (river): top only (1 face).
+    // Tile 2: top + west wall (2 faces). Total 5 faces.
+    expect(data.positions).toHaveLength(5 * 4 * 3);
+    expect(data.indices).toHaveLength(5 * 6);
+
+    // The river tile's top face sits at y = -RIVER_DEPTH_WU (elevation 0 - depth).
+    // Face order: tile0 (top, east-wall), tile1 (top), tile2 (top, west-wall).
+    // Tile0's top face is the first 4 verts (indices 0-3); tile1's top face
+    // starts after tile0's 2 faces (8 verts in), i.e. position index 8*3=24.
+    const tile1TopY = data.positions[8 * 3 + 1]!;
+    // Top faces get a small deterministic corner jitter (± up to 0.03 WU)
+    // layered on top of the carved base height for visual variety — assert
+    // against that documented bound rather than an exact value.
+    expect(tile1TopY).toBeCloseTo(-RIVER_DEPTH_WU, 1);
+  });
+
+  it('does not carve a river_ford tile (waterDepth 0) — sits flush with neighbours', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { feature: 'river_ford', waterDepth: 0 });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // All 3 tiles flat and flush -> only top faces, no walls (3 faces total).
+    expect(data.positions).toHaveLength(3 * 4 * 3);
+    expect(data.indices).toHaveLength(3 * 6);
+    for (let i = 0; i < data.normals.length; i += 3) {
+      expect([data.normals[i], data.normals[i + 1], data.normals[i + 2]]).toEqual([0, 1, 0]);
+    }
+  });
+
+  it('colors a river_ford tile distinctly from a plain river tile', () => {
+    const riverGrid = new WorldGrid(1, 1);
+    riverGrid.set(0, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
+    const riverData = buildTerrainGeometryData(riverGrid, 1, 1, 0, 0, 1, 1);
+
+    const fordGrid = new WorldGrid(1, 1);
+    fordGrid.set(0, 0, { feature: 'river_ford', waterDepth: 0 });
+    const fordData = buildTerrainGeometryData(fordGrid, 1, 1, 0, 0, 1, 1);
+
+    const riverColor = [riverData.colors[0], riverData.colors[1], riverData.colors[2]];
+    const fordColor  = [fordData.colors[0], fordData.colors[1], fordData.colors[2]];
+    expect(fordColor).not.toEqual(riverColor);
   });
 });
 

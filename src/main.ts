@@ -1867,6 +1867,8 @@ async function main() {
       getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
       /** First river/water-tile world position (exterior mode only). For tests. */
       findWaterTile: () => gameMode === 'exterior' ? (overworld?.findFirstWaterTile() ?? null) : null,
+      /** First river_ford-tile world position (exterior mode only). For tests. */
+      findFordTile: () => gameMode === 'exterior' ? (overworld?.findFirstFordTile() ?? null) : null,
       /** Water mesh debug info (exterior mode only). For tests. */
       getWaterMeshDebugInfo: () => gameMode === 'exterior' ? (overworld?.getWaterMeshDebugInfo() ?? null) : null,
       /** Raw cell data at a world position (exterior mode only). For tests. */

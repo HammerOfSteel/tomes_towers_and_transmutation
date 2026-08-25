@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { realmToWorldGrid } from '@/world/RealmToWorldGrid';
 import { generateRealmData } from '@/world/RealmGenerator';
+import { OCEAN_DEPTH_WU } from '@/world/WaterDepthConfig';
 import type { RealmData, RealmCell } from '@/overworld-studio';
 
 function fakeRealm(cells: RealmCell[][]): RealmData {
@@ -35,6 +36,20 @@ describe('realmToWorldGrid', () => {
     const grid = realmToWorldGrid(realm, 128);
     expect(grid.get(0, 0).biome).toBe('water');
     expect(grid.get(64, 0).biome).toBe('water');
+  });
+
+  it('carves waterDepth = OCEAN_DEPTH_WU and marks ocean/water tiles unwalkable', () => {
+    const cells = [[
+      { elevation: 0.1, moisture: 0.5, biome: 'deep_ocean' as const },
+      { elevation: 0.5, moisture: 0.5, biome: 'grassland' as const },
+    ]];
+    const realm = fakeRealm(cells);
+    const grid = realmToWorldGrid(realm, 128);
+    expect(grid.get(0, 0).waterDepth).toBe(OCEAN_DEPTH_WU);
+    expect(grid.get(0, 0).walkable).toBe(false);
+    // Non-water tile stays dry and walkable.
+    expect(grid.get(127, 0).waterDepth).toBe(0);
+    expect(grid.get(127, 0).walkable).toBe(true);
   });
 
   it('maps forest and taiga to forest', () => {

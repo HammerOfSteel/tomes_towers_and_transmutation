@@ -83,6 +83,30 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
 }
 
 /**
+ * Mark tiles as road (or, for river tiles, as a ford) after
+ * `buildInterSettlementRoads()` has produced a flat tile list.
+ *
+ * A road tile landing on a river cell becomes a `'river_ford'` — a shallow,
+ * walkable crossing (`waterDepth: 0, walkable: true`) instead of deep water
+ * — reusing the A* road-crossing data rather than a separate ford-siting
+ * algorithm (RI-3). Plain `'none'`/`'road_dirt'` tiles are simply marked
+ * `'road'`, unchanged from before.
+ */
+export function applyRoadFords(
+  grid: WorldGrid,
+  roadTiles: readonly { col: number; row: number }[],
+): void {
+  for (const r of roadTiles) {
+    const cell = grid.get(r.col, r.row);
+    if (cell.feature === 'none' || cell.feature === 'road_dirt') {
+      grid.set(r.col, r.row, { feature: 'road' });
+    } else if (cell.feature === 'river') {
+      grid.set(r.col, r.row, { feature: 'river_ford', waterDepth: 0, walkable: true });
+    }
+  }
+}
+
+/**
  * Build a complete WorldData (grid + all entity placements) from a seed and
  * config.  main.ts and tests should call this instead of buildWorldGrid.
  */
@@ -101,13 +125,10 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   // Build terrain-aware inter-settlement roads (MST + A* + DP simplification).
   const { tiles: interRoads } = buildInterSettlementRoads(settlements, grid);
 
-  // Mark inter-settlement road tiles on the grid so the overworld mesh picks them up.
-  for (const r of interRoads) {
-    const cell = grid.get(r.col, r.row);
-    if (cell.feature === 'none' || cell.feature === 'road_dirt') {
-      grid.set(r.col, r.row, { feature: 'road' });
-    }
-  }
+  // Mark inter-settlement road tiles on the grid so the overworld mesh picks
+  // them up (river crossings become fords instead of plain road — RI-3).
+  applyRoadFords(grid, interRoads);
+
 
   const partial = { config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
                     resourceNodes: [] as import('./ResourceNodePlacer').ResourceNodeRecord[],

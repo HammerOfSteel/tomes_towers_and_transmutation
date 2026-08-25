@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { buildWorldGrid, buildWorldData } from '@/world/WorldGenerator';
+import { buildWorldGrid, buildWorldData, applyRoadFords } from '@/world/WorldGenerator';
 import { DEFAULT_WORLD_GEN_CONFIG } from '@/world/WorldGenConfig';
+import { WorldGrid } from '@/world/WorldGrid';
+
+describe('applyRoadFords', () => {
+  it('turns a river tile crossed by a road into a walkable, dry ford', () => {
+    const grid = new WorldGrid(3, 1);
+    grid.set(1, 0, { feature: 'river', walkable: false, waterDepth: 1.0 });
+
+    applyRoadFords(grid, [{ col: 1, row: 0 }]);
+
+    const cell = grid.get(1, 0);
+    expect(cell.feature).toBe('river_ford');
+    expect(cell.waterDepth).toBe(0);
+    expect(cell.walkable).toBe(true);
+  });
+
+  it('marks plain none/road_dirt tiles as road (existing behavior, unaffected by ford logic)', () => {
+    const grid = new WorldGrid(2, 1);
+    // col 0 defaults to feature 'none'.
+    applyRoadFords(grid, [{ col: 0, row: 0 }]);
+    expect(grid.get(0, 0).feature).toBe('road');
+    expect(grid.get(0, 0).waterDepth).toBe(0);
+  });
+
+  it('does not touch tiles not in the road list', () => {
+    const grid = new WorldGrid(2, 1);
+    grid.set(1, 0, { feature: 'river', walkable: false, waterDepth: 1.0 });
+    applyRoadFords(grid, [{ col: 0, row: 0 }]);
+    expect(grid.get(1, 0).feature).toBe('river');
+    expect(grid.get(1, 0).waterDepth).toBe(1.0);
+  });
+});
 
 describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
   it('is deterministic for the same seed', () => {
