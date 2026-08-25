@@ -71,7 +71,7 @@ export function realmToWorldGrid(realm: RealmData, worldSize: number): WorldGrid
       grid.set(col, row, {
         elevation:  quantizeElevation(cell.elevation),
         biome,
-        waterDepth: isWater ? OCEAN_DEPTH_WU : 0,
+        waterDepth: isWater ? OCEAN_DEEP_DEPTH_WU : 0,
         walkable:   !isWater,
       });
     }
