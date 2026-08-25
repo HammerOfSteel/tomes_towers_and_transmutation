@@ -36,3 +36,11 @@ describe('WorldGrid — river_ford feature', () => {
     expect(cell.walkable).toBe(true);
   });
 });
+
+describe('WorldGrid — sand biome', () => {
+  it('accepts sand as a valid BiomeId via set()', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'sand' });
+    expect(wg.get(0, 0).biome).toBe('sand');
+  });
+});
