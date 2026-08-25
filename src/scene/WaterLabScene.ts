@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
-import type { ParticleSystem } from '@/rendering/ParticleSystem';
+import type { ParticleSystem, EmitterHandle } from '@/rendering/ParticleSystem';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {
   buildWaterLabTiers,
@@ -60,6 +60,20 @@ const SWIM_ENTER_DEPTH_THRESHOLD = 0.9;
  *  this needs to be a separate, lower value rather than reusing the enter
  *  threshold. */
 const SWIM_EXIT_DEPTH_THRESHOLD = 0.45;
+/** Fraction of underwaterDepthFraction (0=surface, 1=full dive depth) below
+ *  which the player counts as "near the surface" for the wake-trail VFX.
+ *  0.3 of DIVE_TARGET_DEPTH (3.0 WU) is 0.9 WU, matching
+ *  SWIM_ENTER_DEPTH_THRESHOLD's own depth — so the wake persists through
+ *  the normal SWIM_FLOAT_DEPTH (0.55) float-idle bobbing but cuts off once
+ *  she's genuinely diving down, not just swimming at the surface. */
+const WAKE_NEAR_SURFACE_DEPTH_FRACTION = 0.3;
+
+/** Minimum horizontal speed (world units/second) — measured directly from
+ *  frame-to-frame player XZ displacement, since PlayerController doesn't
+ *  expose its internal velocity — below which the player counts as "not
+ *  really moving" for the wake VFX (treading water in place shouldn't
+ *  leave a trail). */
+const WAKE_MIN_SPEED = 0.3;
 
 const TIER_COLORS: Record<WaterLabTier['name'], number> = {
   bank:    0x6b5a3c,
@@ -89,6 +103,20 @@ export class WaterLabScene {
    *  instead of being recomputed from a single depth threshold every frame,
    *  so it can't flicker at the boundary. */
   private _playerIsSwimming = false;
+
+  /** Continuous wake-trail emitter handle while swimming+moving near the
+   *  surface — see _updateWake(). null when no wake is currently active
+   *  (or before the room has ever been entered). A stopped EmitterHandle
+   *  can never be restarted (see ParticleSystem.EmitterHandle.stop()'s
+   *  doc), so re-activating the wake always creates a fresh handle. */
+  private _wakeEmitter: EmitterHandle | null = null;
+
+  /** Previous frame's player X/Z, used by _updateWake() to measure
+   *  horizontal speed directly. Seeded from the player's actual position
+   *  in enter() so the very first frame after entering never reads as a
+   *  spurious large jump. */
+  private _prevWakeX = 0;
+  private _prevWakeZ = 0;
 
   constructor(
     private readonly _scene: THREE.Scene,
@@ -233,6 +261,13 @@ export class WaterLabScene {
     for (const [pos, half3] of wallSpecs) {
       this._tierBodies.push(this._physics.createStaticBox(pos, half3));
     }
+
+    // Wake-trail VFX bookkeeping (see _updateWake()) — seed with the
+    // player's actual current position so the very first frame after
+    // entering doesn't read as a spurious large jump.
+    const startPos = this._player.group.position;
+    this._prevWakeX = startPos.x;
+    this._prevWakeZ = startPos.z;
   }
 
   /**
@@ -287,6 +322,10 @@ export class WaterLabScene {
     }
     for (const b of this._tierBodies) this._physics.removeBody(b);
     this._tierBodies.length = 0;
+    if (this._wakeEmitter) {
+      this._wakeEmitter.stop();
+      this._wakeEmitter = null;
+    }
   }
 
   /** Advances the water shader animation and applies swim/wading state to
@@ -365,6 +404,47 @@ export class WaterLabScene {
     } else {
       this._player.setSubmersion(0);
       this._player.setSwimming(false);
+    }
+
+    this._updateWake(dt);
+  }
+
+  /** Starts/updates/stops a continuous wake-trail particle emitter that
+   *  follows the player while she's swimming, near the surface (not
+   *  diving deep), and actually moving (not treading water in place) — a
+   *  subtle continuous trail behind a surface swimmer, distinct from the
+   *  one-shot splash burst in _spawnSplash(). Turns off automatically the
+   *  instant any of the three conditions stops holding. */
+  private _updateWake(dt: number): void {
+    const pos = this._player.group.position;
+    const horizSpeed = dt > 0
+      ? Math.hypot(pos.x - this._prevWakeX, pos.z - this._prevWakeZ) / dt
+      : 0;
+    this._prevWakeX = pos.x;
+    this._prevWakeZ = pos.z;
+
+    const nearSurface = this._player.underwaterDepthFraction < WAKE_NEAR_SURFACE_DEPTH_FRACTION;
+    const shouldWake = this._player.isSwimming && nearSurface && horizSpeed > WAKE_MIN_SPEED;
+
+    if (shouldWake) {
+      if (this._wakeEmitter && this._wakeEmitter.active) {
+        this._wakeEmitter.setPos(pos.x, WATER_LAB_SURFACE_Y, pos.z);
+      } else {
+        this._wakeEmitter = this._particles.addEmitter(
+          new THREE.Vector3(pos.x, WATER_LAB_SURFACE_Y, pos.z),
+          {
+            color:    0xdff3ff, // same pale blue/white as the splash burst
+            rate:     10,
+            speed:    0.4,
+            lifetime: 0.5,
+            upBias:   0,
+            spread:   Math.PI,
+            gravity:  false,
+          },
+        );
+      }
+    } else if (this._wakeEmitter && this._wakeEmitter.active) {
+      this._wakeEmitter.stop();
     }
   }
 

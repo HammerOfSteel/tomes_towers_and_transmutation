@@ -266,5 +266,38 @@ describe('WaterLabScene swim/wade hysteresis', () => {
     }
     expect(worstStreak).toBeLessThanOrEqual(MAX_ALLOWED_STREAK);
   });
+
+  it('starts a wake-trail emitter while swimming and moving near the surface, and stops it once she comes to a stop', () => {
+    player.teleport(new THREE.Vector3(0, -1.2, 0));
+    const stationaryInput = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+
+    // Let her settle into a stable swim float, not moving — no wake yet.
+    for (let i = 0; i < 60; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(stationaryInput, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+    expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active ?? false).toBe(false);
+
+    // Swim forward with no dive input, so she stays near SWIM_FLOAT_DEPTH
+    // (near the surface) — the wake trail should start.
+    const forwardInput = { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 30; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(forwardInput, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+    expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active).toBe(true);
+
+    // Stop moving again — the wake should turn back off.
+    for (let i = 0; i < 90; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(stationaryInput, 1 / 60, 'isometric');
+    }
+    expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active ?? false).toBe(false);
+  });
 });
 
