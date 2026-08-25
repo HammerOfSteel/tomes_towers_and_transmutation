@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   RIVER_DEPTH_WU,
-  OCEAN_DEPTH_WU,
+  OCEAN_SHALLOW_DEPTH_WU,
+  OCEAN_DEEP_DEPTH_WU,
   LEVEL_HEIGHT,
   physicalHeightWU,
 } from '@/world/WaterDepthConfig';
@@ -16,17 +17,24 @@ describe('WaterDepthConfig — physicalHeightWU', () => {
     expect(h).toBeCloseTo(3 * LEVEL_HEIGHT - RIVER_DEPTH_WU, 9);
   });
 
-  it('subtracts the ocean depth for an ocean tile', () => {
-    const h = physicalHeightWU({ elevation: 0, waterDepth: OCEAN_DEPTH_WU });
-    expect(h).toBeCloseTo(0 * LEVEL_HEIGHT - OCEAN_DEPTH_WU, 9);
+  it('subtracts the shallow ocean depth for a shallow-band ocean tile', () => {
+    const h = physicalHeightWU({ elevation: 0, waterDepth: OCEAN_SHALLOW_DEPTH_WU });
+    expect(h).toBeCloseTo(0 * LEVEL_HEIGHT - OCEAN_SHALLOW_DEPTH_WU, 9);
   });
 
-  it('ocean depth is deeper than river depth', () => {
-    expect(OCEAN_DEPTH_WU).toBeGreaterThan(RIVER_DEPTH_WU);
+  it('subtracts the deep ocean depth for a deep-band ocean tile', () => {
+    const h = physicalHeightWU({ elevation: 0, waterDepth: OCEAN_DEEP_DEPTH_WU });
+    expect(h).toBeCloseTo(0 * LEVEL_HEIGHT - OCEAN_DEEP_DEPTH_WU, 9);
   });
 
-  it('both depth constants are positive', () => {
+  it('deep ocean depth is deeper than shallow ocean depth, which is deeper than river depth', () => {
+    expect(OCEAN_DEEP_DEPTH_WU).toBeGreaterThan(OCEAN_SHALLOW_DEPTH_WU);
+    expect(OCEAN_SHALLOW_DEPTH_WU).toBeGreaterThan(0);
+  });
+
+  it('all depth constants are positive', () => {
     expect(RIVER_DEPTH_WU).toBeGreaterThan(0);
-    expect(OCEAN_DEPTH_WU).toBeGreaterThan(0);
+    expect(OCEAN_SHALLOW_DEPTH_WU).toBeGreaterThan(0);
+    expect(OCEAN_DEEP_DEPTH_WU).toBeGreaterThan(0);
   });
 });

@@ -19,7 +19,7 @@
 import { WorldGrid, type BiomeId } from './WorldGrid';
 import type { WorldSize } from './WorldGenConfig';
 import type { RealmData, RealmBiome } from '@/overworld-studio';
-import { OCEAN_DEPTH_WU } from './WaterDepthConfig';
+import { OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from './WaterDepthConfig';
 
 /**
  * Realm's 10-value biome taxonomy collapsed onto WorldGrid's 6-value

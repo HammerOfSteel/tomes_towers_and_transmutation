@@ -32,11 +32,22 @@ export const LEVEL_HEIGHT = 0.55;
  *  a standing depth of 1.15, comfortably past the enter threshold. */
 export const RIVER_DEPTH_WU = 2.0;
 
-/** Carved depth (world units) for ocean-rim water-biome tiles — deeper than
- *  rivers since the ocean is the world's deepest water body. Same tuning
- *  rationale as RIVER_DEPTH_WU above; 2.5 WU keeps a visible margin over the
- *  river depth so the ocean still reads as the deeper body. */
-export const OCEAN_DEPTH_WU = 2.5;
+/** Carved depth (world units) for the shallow ocean band — the ring of
+ *  water nearest the coastline (realm's `ocean` biome, as opposed to
+ *  `deep_ocean`). Intentionally shallow enough that a standing player only
+ *  ever reaches "wading" (`setSubmersion`), never real swim mode: per the
+ *  RIVER_DEPTH_WU comment above, the standing depth-below-surface is
+ *  `waterDepth - 0.85`, and needs to clear ~1.75 WU to cross
+ *  SWIM_ENTER_DEPTH_THRESHOLD. 1.0 WU gives a standing depth of 0.15 —
+ *  clearly wet, clearly not swimmable — matching a real beach's shallows. */
+export const OCEAN_SHALLOW_DEPTH_WU = 1.0;
+
+/** Carved depth (world units) for the deep ocean band (realm's
+ *  `deep_ocean` biome) — the real swim-triggering depth. Renamed from the
+ *  original `OCEAN_DEPTH_WU` (same 2.5 WU value, proven via manual
+ *  playtest in RI-3) now that ocean water has two depth tiers instead of
+ *  one flat value. */
+export const OCEAN_DEEP_DEPTH_WU = 2.5;
 
 /**
  * Physical (carved) height of a tile in world units: the logical elevation
