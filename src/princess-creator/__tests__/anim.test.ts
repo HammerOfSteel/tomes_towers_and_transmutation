@@ -378,6 +378,21 @@ describe('swim clip (breaststroke)', () => {
     expect(CLIPS.swim.id).toBe('swim');
     expect(CLIPS.swim.duration).toBe(0.9);
     expect(CLIPS.swim.loop).toBe(true);
-    expect(CLIPS.swim.events?.filter((e) => e.id === 'stroke').length).toBe(2);
+    const strokeEvents = CLIPS.swim.events?.filter((e) => e.id === 'stroke') ?? [];
+    expect(strokeEvents.length).toBe(2);
+    expect(strokeEvents[0]?.t).toBeCloseTo(0.15, 5);
+    expect(strokeEvents[1]?.t).toBeCloseTo(0.55, 5);
+  });
+
+  it('loops cleanly (first and last keyframe produce identical baked poses)', () => {
+    const baked = bakeClip(CLIPS.swim);
+    const first = baked.keys[0]!;
+    const last = baked.keys[baked.keys.length - 1]!;
+    expect(last.rootY).toBeCloseTo(first.rootY, 5);
+    for (const joint of Object.keys(first.joints) as (keyof typeof first.joints)[]) {
+      expect(last.joints[joint][0]).toBeCloseTo(first.joints[joint][0], 5);
+      expect(last.joints[joint][1]).toBeCloseTo(first.joints[joint][1], 5);
+      expect(last.joints[joint][2]).toBeCloseTo(first.joints[joint][2], 5);
+    }
   });
 });
