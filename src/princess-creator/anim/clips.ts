@@ -174,51 +174,62 @@ export const CLIPS: Record<AnimId, ClipDef> = {
     ],
   },
 
-  // Active swimming (moving through water) — an alternating freestyle-style
-  // stroke: one arm reaches forward and pulls through while the other
-  // recovers, with a matching torso roll and a steady flutter-kick, faster
-  // and bigger than swim_idle's gentle tread.
+  // Active swimming (moving through water) — a symmetric breaststroke
+  // cycle: both arms sweep out and pull in together (catch → recovery),
+  // legs perform a synchronized frog/whip-kick, and the torso undulates
+  // forward/back (not side-to-side), faster and bigger than swim_idle's
+  // gentle tread.
   swim: {
     id: 'swim', label: 'Swim (stroke)', group: 'locomotion', duration: 0.9, loop: true,
-    events: [{ t: 0.05, id: 'stroke' }, { t: 0.55, id: 'stroke' }],
+    events: [{ t: 0.15, id: 'stroke' }, { t: 0.55, id: 'stroke' }],
     keys: [
-      // Left arm mid-pull (elbow bent, pulling back under the body), right
-      // arm reaching forward out of the water for the next catch.
+      // GLIDE — arms extended forward together, legs together and
+      // streamlined. The longest-held pose in the cycle (0.55 → 1.0 → 0),
+      // matching how a real breaststroke spends most of its time gliding.
       k(0, { rootY: -0.05, joints: {
-        shoulderL: [-1.7, 0.1, 0.35], shoulderR: [-2.7, -0.15, -0.55],
-        elbowL: [-1.4, 0, -0.2], elbowR: [-0.25, 0, 0.15],
-        hipL: [0.4, 0.08, 0.03], hipR: [-0.55, -0.08, -0.03],
-        kneeL: [0.5, 0, 0], kneeR: [0.15, 0, 0],
-        torso: [0.06, 0.16, 0.04], neck: [0.04, -0.06, -0.02],
+        shoulderL: [-2.6, 0, 0.15], shoulderR: [-2.6, 0, -0.15],
+        elbowL: [-0.15, 0, -0.05], elbowR: [-0.15, 0, 0.05],
+        hipL: [0.1, 0.05, 0.02], hipR: [0.1, -0.05, -0.02],
+        kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0],
+        torso: [0.02, 0, 0.01], neck: [0.02, 0, 0],
       } }),
-      k(0.25, { rootY: 0.12, joints: {
-        shoulderL: [-0.6, 0.05, 0.55], shoulderR: [-2.2, -0.1, -0.4],
-        elbowL: [-0.4, 0, -0.1], elbowR: [-0.9, 0, 0.2],
-        hipL: [0, 0.08, 0.03], hipR: [-0.15, -0.08, -0.03],
-        kneeL: [0.15, 0, 0], kneeR: [0.4, 0, 0],
-        torso: [0.05, 0, 0], neck: [0.04, 0, 0],
+      // CATCH / OUT-SWEEP — both arms sweep outward together into a
+      // wide "Y", legs start drawing up. Head lifts slightly (a
+      // breaststroke breath happens during the pull).
+      k(0.15, { rootY: 0.05, joints: {
+        shoulderL: [-1.3, 0, 0.9], shoulderR: [-1.3, 0, -0.9],
+        elbowL: [-0.5, 0, -0.2], elbowR: [-0.5, 0, 0.2],
+        hipL: [0.3, 0.08, 0.03], hipR: [0.3, -0.08, -0.03],
+        kneeL: [0.35, 0, 0], kneeR: [0.35, 0, 0],
+        torso: [0.08, 0, 0.02], neck: [0.05, 0, -0.02],
       } }),
-      // Right arm now mid-pull, left arm reaching forward — mirror of t=0.
-      k(0.5, { rootY: -0.05, joints: {
-        shoulderL: [-2.7, -0.15, 0.55], shoulderR: [-1.7, 0.1, -0.35],
-        elbowL: [-0.25, 0, -0.15], elbowR: [-1.4, 0, 0.2],
-        hipL: [-0.55, 0.08, 0.03], hipR: [0.4, -0.08, -0.03],
-        kneeL: [0.15, 0, 0], kneeR: [0.5, 0, 0],
-        torso: [0.06, -0.16, -0.04], neck: [0.04, 0.06, 0.02],
-      } }),
-      k(0.75, { rootY: 0.12, joints: {
-        shoulderL: [-2.2, -0.1, 0.4], shoulderR: [-0.6, 0.05, -0.55],
-        elbowL: [-0.9, 0, -0.2], elbowR: [-0.4, 0, 0.1],
-        hipL: [-0.15, 0.08, 0.03], hipR: [0, -0.08, -0.03],
-        kneeL: [0.4, 0, 0], kneeR: [0.15, 0, 0],
-        torso: [0.05, 0, 0], neck: [0.04, 0, 0],
-      } }),
+      // IN-SWEEP / RECOVERY — hands drawn together under the chin,
+      // knees pulled up and splayed wide (the coiled "whip kick" setup
+      // pose). Most compressed point of the cycle.
+      k(0.35, { rootY: -0.02, joints: {
+        shoulderL: [-2.0, 0, 0.3], shoulderR: [-2.0, 0, -0.3],
+        elbowL: [-1.6, 0, -0.3], elbowR: [-1.6, 0, 0.3],
+        hipL: [0.7, 0.18, 0.05], hipR: [0.7, -0.18, -0.05],
+        kneeL: [1.5, 0, 0], kneeR: [1.5, 0, 0],
+        torso: [0.1, 0, 0.03], neck: [-0.05, 0, 0],
+      }, torsoScale: 0.97 }),
+      // KICK + REACH — legs snap back together and extend (the whip
+      // kick's power stroke) while the arms shoot forward into the next
+      // glide. Snappier arrival than the surrounding keys.
+      k(0.55, { ease: 'snap', rootY: 0.1, joints: {
+        shoulderL: [-2.4, 0, 0.2], shoulderR: [-2.4, 0, -0.2],
+        elbowL: [-0.4, 0, -0.1], elbowR: [-0.4, 0, 0.1],
+        hipL: [0.15, 0.05, 0.02], hipR: [0.15, -0.05, -0.02],
+        kneeL: [0.1, 0, 0], kneeR: [0.1, 0, 0],
+        torso: [0.04, 0, 0.01], neck: [0.02, 0, 0],
+      }, torsoScale: 1.02 }),
+      // Back to GLIDE — identical to t=0 so the loop closes cleanly.
       k(1, { rootY: -0.05, joints: {
-        shoulderL: [-1.7, 0.1, 0.35], shoulderR: [-2.7, -0.15, -0.55],
-        elbowL: [-1.4, 0, -0.2], elbowR: [-0.25, 0, 0.15],
-        hipL: [0.4, 0.08, 0.03], hipR: [-0.55, -0.08, -0.03],
-        kneeL: [0.5, 0, 0], kneeR: [0.15, 0, 0],
-        torso: [0.06, 0.16, 0.04], neck: [0.04, -0.06, -0.02],
+        shoulderL: [-2.6, 0, 0.15], shoulderR: [-2.6, 0, -0.15],
+        elbowL: [-0.15, 0, -0.05], elbowR: [-0.15, 0, 0.05],
+        hipL: [0.1, 0.05, 0.02], hipR: [0.1, -0.05, -0.02],
+        kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0],
+        torso: [0.02, 0, 0.01], neck: [0.02, 0, 0],
       } }),
     ],
   },

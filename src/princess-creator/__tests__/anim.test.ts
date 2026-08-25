@@ -351,3 +351,33 @@ describe('animation export', () => {
     localStorage.clear();
   });
 });
+
+// ── Breaststroke swim clip ───────────────────────────────────────────────────
+
+describe('swim clip (breaststroke)', () => {
+  it('moves both arms as a mirrored pair, not alternating (regression guard: the old freestyle stroke had each arm on an opposite phase, with very different rotation values between shoulderL/shoulderR at any given key)', () => {
+    const baked = bakeClip(CLIPS.swim);
+    for (const key of baked.keys) {
+      expect(key.joints.shoulderL[0]).toBeCloseTo(key.joints.shoulderR[0], 5);
+      expect(key.joints.shoulderL[2]).toBeCloseTo(-key.joints.shoulderR[2], 5);
+      expect(key.joints.elbowL[0]).toBeCloseTo(key.joints.elbowR[0], 5);
+      expect(key.joints.elbowL[2]).toBeCloseTo(-key.joints.elbowR[2], 5);
+    }
+  });
+
+  it('kicks both legs together (frog-kick), not alternating', () => {
+    const baked = bakeClip(CLIPS.swim);
+    for (const key of baked.keys) {
+      expect(key.joints.hipL[0]).toBeCloseTo(key.joints.hipR[0], 5);
+      expect(key.joints.hipL[1]).toBeCloseTo(-key.joints.hipR[1], 5);
+      expect(key.joints.kneeL[0]).toBeCloseTo(key.joints.kneeR[0], 5);
+    }
+  });
+
+  it('still loops and keeps its id, duration, and the two stroke events', () => {
+    expect(CLIPS.swim.id).toBe('swim');
+    expect(CLIPS.swim.duration).toBe(0.9);
+    expect(CLIPS.swim.loop).toBe(true);
+    expect(CLIPS.swim.events?.filter((e) => e.id === 'stroke').length).toBe(2);
+  });
+});
