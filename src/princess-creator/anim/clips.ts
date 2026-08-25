@@ -51,6 +51,7 @@ export interface ClipDef {
 
 export const ANIM_IDS = [
   'idle', 'idle_alt', 'walk', 'run',
+  'swim_idle', 'swim',
   'attack_1', 'attack_2', 'cast_spell_1', 'cast_spell_2',
   'get_hit_1', 'get_hit_2', 'block_1', 'block_2',
   'jump_begin', 'jump_idle', 'jump_land',
@@ -62,7 +63,7 @@ export type AnimId = (typeof ANIM_IDS)[number];
 
 /** Base states the game loops; everything else is a one-shot. */
 export const STATE_IDS: readonly AnimId[] = [
-  'idle', 'idle_alt', 'walk', 'run', 'jump_idle', 'block_1', 'stunned', 'read',
+  'idle', 'idle_alt', 'walk', 'run', 'swim_idle', 'swim', 'jump_idle', 'block_1', 'stunned', 'read',
 ];
 
 export const NEUTRAL: Required<Pick<ClipKey, 'joints' | 'rootY' | 'rootRot' | 'torsoScale'>> = {
@@ -138,6 +139,98 @@ export const CLIPS: Record<AnimId, ClipDef> = {
       k(0.5, { joints: { torso: [0.32, -0.12, -0.05], hipL: [-0.75, 0.05, 0], hipR: [0.95, -0.05, 0], kneeL: [1.35, 0, 0], shoulderL: [0.85, 0, 0.3], shoulderR: [-0.9, 0, -0.3], elbowL: [-1.1, 0, -0.1], elbowR: [-1.1, 0, 0.1], neck: [-0.1, 0, 0] } }),
       k(0.75, { rootY: 0.55, joints: { torso: [0.3, 0, 0], hipL: [0.1, 0, 0], hipR: [0.2, 0, 0], kneeL: [0.6, 0, 0], kneeR: [0.4, 0, 0] } }),
       k(1, { joints: { torso: [0.32, 0.12, 0.05], hipL: [0.95, 0.05, 0], hipR: [-0.75, -0.05, 0], kneeR: [1.35, 0, 0], shoulderL: [-0.9, 0, 0.3], shoulderR: [0.85, 0, -0.3], elbowL: [-1.1, 0, -0.1], elbowR: [-1.1, 0, 0.1], neck: [-0.1, 0, 0] } }),
+    ],
+  },
+
+  // Treading water in place (no horizontal input while swimming) — gentle
+  // alternating scull of the forearms/hands to stay afloat, plus a slow
+  // torso/neck sway and a soft flutter-kick, all subtler and slower than the
+  // active `swim` stroke below. This is what the player sees while floating
+  // still in deep water.
+  swim_idle: {
+    id: 'swim_idle', label: 'Swim (idle/tread)', group: 'locomotion', duration: 2.4, loop: true,
+    keys: [
+      k(0, { joints: {
+        shoulderL: [-0.55, 0.1, 0.75], shoulderR: [-0.4, -0.15, -0.65],
+        elbowL: [-0.9, 0, -0.35], elbowR: [-0.7, 0, 0.3],
+        hipL: [0.15, 0.1, 0.03], hipR: [-0.1, -0.12, -0.03],
+        kneeL: [0.25, 0, 0], kneeR: [0.15, 0, 0],
+        torso: [0.02, 0.03, 0.02], neck: [0.03, 0.02, -0.01],
+      } }),
+      k(0.5, { rootY: 0.08, joints: {
+        shoulderL: [-0.4, -0.15, 0.65], shoulderR: [-0.55, 0.1, -0.75],
+        elbowL: [-0.7, 0, -0.3], elbowR: [-0.9, 0, 0.35],
+        hipL: [-0.1, 0.12, 0.03], hipR: [0.15, -0.1, -0.03],
+        kneeL: [0.15, 0, 0], kneeR: [0.25, 0, 0],
+        torso: [0.02, -0.03, -0.02], neck: [0.03, -0.02, 0.01],
+      } }),
+      k(1, { joints: {
+        shoulderL: [-0.55, 0.1, 0.75], shoulderR: [-0.4, -0.15, -0.65],
+        elbowL: [-0.9, 0, -0.35], elbowR: [-0.7, 0, 0.3],
+        hipL: [0.15, 0.1, 0.03], hipR: [-0.1, -0.12, -0.03],
+        kneeL: [0.25, 0, 0], kneeR: [0.15, 0, 0],
+        torso: [0.02, 0.03, 0.02], neck: [0.03, 0.02, -0.01],
+      } }),
+    ],
+  },
+
+  // Active swimming (moving through water) — a symmetric breaststroke
+  // cycle: both arms sweep out and pull in together (catch → recovery),
+  // legs perform a synchronized frog/whip-kick, and the torso undulates
+  // forward/back (not side-to-side), faster and bigger than swim_idle's
+  // gentle tread.
+  swim: {
+    id: 'swim', label: 'Swim (stroke)', group: 'locomotion', duration: 0.9, loop: true,
+    events: [{ t: 0.15, id: 'stroke' }, { t: 0.55, id: 'stroke' }],
+    keys: [
+      // GLIDE — arms extended forward together, legs together and
+      // streamlined. The longest-held pose in the cycle (0.55 → 1.0 → 0),
+      // matching how a real breaststroke spends most of its time gliding.
+      k(0, { rootY: -0.05, joints: {
+        shoulderL: [-2.6, 0, 0.15], shoulderR: [-2.6, 0, -0.15],
+        elbowL: [-0.15, 0, -0.05], elbowR: [-0.15, 0, 0.05],
+        hipL: [0.1, 0.05, 0.02], hipR: [0.1, -0.05, -0.02],
+        kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0],
+        torso: [0.02, 0, 0.01], neck: [0.02, 0, 0],
+      } }),
+      // CATCH / OUT-SWEEP — both arms sweep outward together into a
+      // wide "Y", legs start drawing up. Head lifts slightly (a
+      // breaststroke breath happens during the pull).
+      k(0.15, { rootY: 0.05, joints: {
+        shoulderL: [-1.3, 0, 0.9], shoulderR: [-1.3, 0, -0.9],
+        elbowL: [-0.5, 0, -0.2], elbowR: [-0.5, 0, 0.2],
+        hipL: [0.3, 0.08, 0.03], hipR: [0.3, -0.08, -0.03],
+        kneeL: [0.35, 0, 0], kneeR: [0.35, 0, 0],
+        torso: [0.08, 0, 0.02], neck: [0.05, 0, -0.02],
+      } }),
+      // IN-SWEEP / RECOVERY — hands drawn together under the chin,
+      // knees pulled up and splayed wide (the coiled "whip kick" setup
+      // pose). Most compressed point of the cycle.
+      k(0.35, { rootY: -0.02, joints: {
+        shoulderL: [-2.0, 0, 0.3], shoulderR: [-2.0, 0, -0.3],
+        elbowL: [-1.6, 0, -0.3], elbowR: [-1.6, 0, 0.3],
+        hipL: [0.7, 0.18, 0.05], hipR: [0.7, -0.18, -0.05],
+        kneeL: [1.5, 0, 0], kneeR: [1.5, 0, 0],
+        torso: [0.1, 0, 0.03], neck: [-0.05, 0, 0],
+      }, torsoScale: 0.97 }),
+      // KICK + REACH — legs snap back together and extend (the whip
+      // kick's power stroke) while the arms shoot forward into the next
+      // glide. Snappier arrival than the surrounding keys.
+      k(0.55, { ease: 'snap', rootY: 0.1, joints: {
+        shoulderL: [-2.4, 0, 0.2], shoulderR: [-2.4, 0, -0.2],
+        elbowL: [-0.4, 0, -0.1], elbowR: [-0.4, 0, 0.1],
+        hipL: [0.15, 0.05, 0.02], hipR: [0.15, -0.05, -0.02],
+        kneeL: [0.1, 0, 0], kneeR: [0.1, 0, 0],
+        torso: [0.04, 0, 0.01], neck: [0.02, 0, 0],
+      }, torsoScale: 1.02 }),
+      // Back to GLIDE — identical to t=0 so the loop closes cleanly.
+      k(1, { rootY: -0.05, joints: {
+        shoulderL: [-2.6, 0, 0.15], shoulderR: [-2.6, 0, -0.15],
+        elbowL: [-0.15, 0, -0.05], elbowR: [-0.15, 0, 0.05],
+        hipL: [0.1, 0.05, 0.02], hipR: [0.1, -0.05, -0.02],
+        kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0],
+        torso: [0.02, 0, 0.01], neck: [0.02, 0, 0],
+      } }),
     ],
   },
 

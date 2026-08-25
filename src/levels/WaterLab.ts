@@ -1,10 +1,10 @@
 // ── WaterLab ────────────────────────────────────────────────────────────────
 //
 //  Pure tier-data for the "Water Lab" dev-sandbox scene: a 24×24 world-unit
-//  basin with 3 stepped elevations (dry bank → shallow shelf → deep floor)
-//  cut into one side of a flat room, so a player can walk from dry land
-//  into progressively deeper water and test wading vs. swimming without
-//  needing the full overworld.
+//  basin with 4 stepped elevations (dry bank → shallow shelf → deep floor →
+//  abyss) cut into one side of a flat room, so a player can walk from dry
+//  land into progressively deeper water and test wading vs. swimming vs.
+//  diving without needing the full overworld.
 //
 //  This is intentionally NOT a Blueprint/DungeonPlan — the existing
 //  blueprint schema (see src/levels/blueprint.ts) only supports 'wall' and
@@ -16,7 +16,7 @@
 /** One walkable elevation tier in the basin. */
 export interface WaterLabTier {
   /** Human-readable tier name for debug/UI labeling. */
-  name: 'bank' | 'shallow' | 'deep';
+  name: 'bank' | 'shallow' | 'deep' | 'abyss';
   /** World Y of this tier's walkable top surface. */
   y: number;
   /** Half-width/half-depth of this tier's square footprint (world units). */
@@ -34,15 +34,18 @@ export const WATER_LAB_ROOM_SIZE = 24;
 export const WATER_LAB_SURFACE_Y = 0;
 
 /**
- * Returns the 3 stepped tiers of the basin, ordered from shallowest
- * (dry bank) to deepest (fully submerged floor). Each successively deeper
- * tier is nested (smaller footprint, centered the same) inside the
- * previous one, like a stepped pyramid dug into the ground.
+ * Returns the 4 stepped tiers of the basin, ordered from shallowest
+ * (dry bank) to deepest (abyss floor). Each successively deeper tier is
+ * nested (smaller footprint, centered the same) inside the previous one,
+ * like a stepped pyramid dug into the ground. The abyss tier gives real
+ * vertical room (3.8 WU below the deep floor, 5.0 WU below the surface) for
+ * the dive mechanic (DIVE_TARGET_DEPTH = 3.0 WU, see PlayerController.ts).
  */
 export function buildWaterLabTiers(): WaterLabTier[] {
   return [
-    { name: 'bank',    y: 0,    halfExtent: 11, centerX: 0, centerZ: 0 },
-    { name: 'shallow', y: -0.3, halfExtent: 7,  centerX: 0, centerZ: 0 },
-    { name: 'deep',    y: -1.2, halfExtent: 3,  centerX: 0, centerZ: 0 },
+    { name: 'bank',    y: 0,     halfExtent: 11, centerX: 0, centerZ: 0 },
+    { name: 'shallow', y: -0.3,  halfExtent: 7,  centerX: 0, centerZ: 0 },
+    { name: 'deep',    y: -1.2,  halfExtent: 4,  centerX: 0, centerZ: 0 },
+    { name: 'abyss',   y: -5.0,  halfExtent: 2,  centerX: 0, centerZ: 0 },
   ];
 }

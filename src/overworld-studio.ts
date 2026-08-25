@@ -42,8 +42,11 @@ import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
   type OverworldSettlementPreviewPayload,
 } from './overworld-studio/SettlementPreviewPayload';
+import { DEV_ROOM_LAUNCH_KEY, buildDevRoomLaunchUrl, type DevRoomId } from './overworld-studio/DevRoomHandoff';
 
 import * as THREE from 'three';
+
+import './overworld-studio.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -4411,6 +4414,17 @@ document.getElementById('btn-preview-overworld')?.addEventListener('click', () =
   };
   _showToast(`✓ Opening overworld preview for "${payload.name}"`);
   window.open('/index.html', '_blank');
+});
+
+document.getElementById('btn-devroom-water-lab')?.addEventListener('click', () => {
+  const room: DevRoomId = 'water-lab';
+  // Still set localStorage as a legacy fallback, but the query param on
+  // the URL itself is the primary handoff — it survives even when the
+  // new tab's browsing context doesn't share localStorage with this one
+  // (observed in some embedded/desktop-app webviews).
+  localStorage.setItem(DEV_ROOM_LAUNCH_KEY, room);
+  _showToast('✓ Opening Water Lab');
+  window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
 });
 
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────

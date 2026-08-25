@@ -47,8 +47,42 @@ const MAX_FALL_SPEED = 25;
 const GROUND_PUSH = -2;
 
 const SWIM_SPEED = 3.5;          // world units/sec — slower than WALK_SPEED (5)
-const SWIM_FLOAT_DEPTH = 0.35;   // WU below water surface the player floats toward while swimming
-const SWIM_VERTICAL_EASE = 6;    // per-second lerp factor toward the float target
+/** WU below water surface the player floats toward while swimming. Must
+ *  stay comfortably deeper than WaterLabScene's SWIM_EXIT_DEPTH_THRESHOLD
+ *  (currently 0.45) — otherwise the buoyant equilibrium point sits outside
+ *  the zone that keeps swim mode active, and the caller's depth-based state
+ *  machine "hunts": buoyancy floats the player up past the exit threshold,
+ *  swim mode (and its buoyancy) turns off, gravity drags them back down
+ *  past the enter threshold, swim mode turns back on, repeat — a visible
+ *  bobbing loop, not the intended calm float. See WaterLabScene.ts's
+ *  SWIM_ENTER_DEPTH_THRESHOLD/SWIM_EXIT_DEPTH_THRESHOLD for the paired
+ *  values this must stay compatible with. Kept as shallow as that
+ *  constraint allows (only 0.1 above the exit threshold) so the player's
+ *  head/shoulders read clearly above the water surface while floating,
+ *  matching OOT/SM64-style visible-swimmer readability rather than
+ *  appearing to sink under the drawn surface. */
+const SWIM_FLOAT_DEPTH = 0.55;
+
+/** Position-error gain (rad/s) for the swim/dive vertical spring — see the
+ *  VERTICAL_SPRING_DAMPING_MULTIPLIER comment below for why this alone
+ *  isn't the damping rate. */
+const SWIM_VERTICAL_EASE = 6;
+const DIVE_TARGET_DEPTH = 3.0;   // WU below surface the player eases toward while diving
+/** Position-error gain (rad/s) for diving — slower than surfacing. */
+const DIVE_VERTICAL_EASE = 4;
+/** Damping-rate multiplier applied on top of the position-error gain
+ *  (SWIM_VERTICAL_EASE / DIVE_VERTICAL_EASE) when blending velocity.y
+ *  toward its target each frame (see the swim/dive gravity override in
+ *  update()). Modeling the vertical float as a spring-damper (stiffness K =
+ *  gain, damping C = blend-rate), using the SAME value for both — as this
+ *  code used to — gives a damping ratio of only 0.5 (underdamped: C =
+ *  2*sqrt(K*0.5) instead of the critical C = 2*sqrt(K)), which oscillates
+ *  indefinitely and never settles — the "bobbing in place" bug. Using
+ *  4x the gain as the blend-rate makes C = 2*sqrt(K) exactly (critically
+ *  damped, ζ=1); this constant adds a bit of margin (ζ≈1.1, slightly
+ *  overdamped) so discrete per-frame stepping at low frame rates can't tip
+ *  it back into oscillation. */
+const VERTICAL_SPRING_DAMPING_MULTIPLIER = 4.5;
 
 /** Frames after walking off a ledge where jump is still accepted. */
 const COYOTE_TIME = 0.1;
@@ -189,6 +223,15 @@ export class PlayerController {
   /** World Y of the water surface the player is currently swimming under.
    *  Set by setSwimming(); used by update()'s gravity override each frame. */
   private _swimSurfaceY = 0;
+  /** Lowest Y the dive/swim vertical spring is allowed to ease toward, set
+   *  by setSwimming()'s optional floorY argument. The spring otherwise
+   *  always targets a fixed depth below the water surface with no idea
+   *  what's actually beneath the player's current X/Z — over any tier
+   *  shallower than the deepest "abyss" footprint that's a lie, and lets
+   *  the player swim laterally underneath that tier's floor into open
+   *  space. Defaults to -Infinity (no clamp) for callers that don't pass
+   *  a floor (e.g. any other swimmable area with a uniform depth). */
+  private _swimMinY = -Infinity;
 
   private isGrounded = false;
 
@@ -240,6 +283,17 @@ export class PlayerController {
   private readonly bodyMesh: THREE.Mesh;
   private readonly headMesh: THREE.Mesh;
 
+  /** Local point light that brightens while swimming, so the player reads
+   *  clearly against the water surface's flat-shaded (unlit) color from any
+   *  camera angle — see-through water alone isn't enough contrast once the
+   *  player is submerged, especially top-down/isometric views (OOT/SM64
+   *  keep the swimmer readable underwater the same way: extra local light/
+   *  rim brightness on the character, not just transparent water). Attached
+   *  to the group so it moves with the player automatically; model-agnostic
+   *  (works whether the capsule fallback or the princess rig is visible).
+   *  Intensity is 0 (no cost, no visible effect) whenever not swimming. */
+  private readonly _swimGlowLight = new THREE.PointLight(PALETTE.PLAYER_GLOW, 0, 4, 2);
+
   // DNA-based creature rig (replaces bodyMesh/headMesh visually when applied)
   private _creatureRig: CreatureRig | null = null;
   private _walkCtrl: ProceduralWalkController | null = null;
@@ -260,6 +314,19 @@ export class PlayerController {
   private _submersionRoot: THREE.Object3D | null = null;
   private _submersionBaseY = 0;
 
+  /** Small warm/white point light parented to the active visual rig,
+   *  visible only while submerged (intensity driven by depthFraction in
+   *  setSubmersion()). Keeps the player legible against dark/busy water
+   *  in any camera angle, independent of the water shader's own alpha.
+   *  Recreated whenever the active rig changes; the outgoing light is
+   *  explicitly disposed via `this._submergedGlow?.dispose()` in
+   *  `setSubmersion()` before the new rig is assigned — not implicitly
+   *  by the applyDNA/applyAssetModel/applyPrincess call. */
+  private _submergedGlow: THREE.PointLight | null = null;
+
+  /** Max intensity of `_submergedGlow` at full (1.0) depthFraction. */
+  private static readonly SUBMERGED_GLOW_MAX_INTENSITY = 0.6;
+
   /** Amount (world units) the visual rig sinks below its resting foot
    *  position at full (1.0) submersion depth. */
   private static readonly SUBMERSION_MAX_OFFSET = (CAPSULE_HALF_HEIGHT + CAPSULE_RADIUS) * 2 * 0.4;
@@ -279,13 +346,21 @@ export class PlayerController {
       this._creatureRig?.root ?? this._charController?.scene ?? this._princessInstance?.root ?? null;
     if (!active) return;
 
-    // Rig swapped since last call (or first call) — capture its resting Y.
+    // Rig swapped since last call (or first call) — capture its resting Y
+    // and (re)create the submerged glow light as a child of the new rig.
     if (active !== this._submersionRoot) {
+      this._submergedGlow?.dispose(); // free GPU shadow resources before replacing
       this._submersionRoot = active;
       this._submersionBaseY = active.position.y;
+      this._submergedGlow = new THREE.PointLight(0xfff2e0, 0, 2.2, 2);
+      active.add(this._submergedGlow);
     }
 
     active.position.y = this._submersionBaseY - depthFraction * PlayerController.SUBMERSION_MAX_OFFSET;
+    if (this._submergedGlow) {
+      this._submergedGlow.intensity =
+        Math.max(0, Math.min(1, depthFraction)) * PlayerController.SUBMERGED_GLOW_MAX_INTENSITY;
+    }
   }
 
   /**
@@ -299,14 +374,28 @@ export class PlayerController {
    * @param isSwimming Whether the player should be in swim mode this frame.
    * @param waterSurfaceY World Y of the local water surface (only meaningful
    *   when isSwimming is true; ignored otherwise). Defaults to 0.
+   * @param floorY Lowest Y the dive/swim vertical spring may ease toward —
+   *   the actual floor height beneath the player's current X/Z, if the
+   *   caller knows it (e.g. WaterLabScene's tiered basin). Defaults to
+   *   -Infinity (no clamp), matching prior unclamped behavior.
    */
-  setSwimming(isSwimming: boolean, waterSurfaceY = 0): void {
+  setSwimming(isSwimming: boolean, waterSurfaceY = 0, floorY = -Infinity): void {
     this._swimming = isSwimming;
     this._swimSurfaceY = waterSurfaceY;
+    this._swimMinY = floorY;
   }
 
   get isSwimming(): boolean {
     return this._swimming;
+  }
+
+  /** 0 when swimming at/near the surface, ramping to 1 as the player dives
+   *  toward DIVE_TARGET_DEPTH. Used by the underwater screen effect; 0 when
+   *  not swimming at all. */
+  get underwaterDepthFraction(): number {
+    if (!this._swimming) return 0;
+    const depth = this._swimSurfaceY - this._pos.y;
+    return Math.max(0, Math.min(1, depth / DIVE_TARGET_DEPTH));
   }
 
   /** Current facing angle in radians — read by CombatSystem for melee arc aim. */
@@ -506,7 +595,9 @@ export class PlayerController {
       // Bridge player movement state to princess animation states.
       // Only call setState when state changes — calling every frame resets the clip.
       const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-      const nextState = !this.isGrounded
+      const nextState = this._swimming
+        ? (hSpeed > 0.3 ? 'swim' : 'swim_idle')
+        : !this.isGrounded
         ? 'jump_idle'
         : hSpeed > RUN_SPEED * 0.5 ? 'run'
         : hSpeed > 0.3             ? 'walk'
@@ -553,9 +644,15 @@ export class PlayerController {
     this.kcc.setMaxSlopeClimbAngle((45 * Math.PI) / 180);
     this.kcc.setMinSlopeSlideAngle((30 * Math.PI) / 180);
     // Allow the KCC to step up tile edges (heightfield transitions and box edges).
-    // maxHeight = 0.7 clears one full tile level (SH=0.55) plus margin.
+    // maxHeight = 1.0 clears one full tile level (SH=0.55) plus margin, and
+    // also the Water Lab's 0.9-unit deep->shallow tier floor step (see
+    // WaterLabScene's stepped "picture frame" tier floors) — without this,
+    // a swimmer who'd just been corrected up onto a shallower tier's floor
+    // (see the swim/dive "trapped under solid floor" correction below)
+    // could get physically walled off at that tier's edge while walking
+    // the rest of the way to shore, unable to climb the ~0.9 WU ledge.
     // minWidth  = 0.3 avoids stepping over narrow slivers / geometry artefacts.
-    this.kcc.enableAutostep(0.7, 0.3, false);
+    this.kcc.enableAutostep(1.0, 0.3, false);
     // Snap the character back down to the floor when descending steps/tiles.
     // Without this the player floats momentarily after walking off an elevated tile.
     // Distance 0.7 is just above one tile-level height (SH=0.55) so any single-step
@@ -570,6 +667,10 @@ export class PlayerController {
 
     // Attach cloud-puff levitate effect (hidden until buff is active)
     this.group.add(this._levitateEffect.group);
+
+    // Swim glow light — parented near chest height, off by default (see field doc).
+    this._swimGlowLight.position.set(0, CAPSULE_HALF_HEIGHT, 0);
+    this.group.add(this._swimGlowLight);
 
     this.shadow = PlayerController.buildShadow();
 
@@ -858,11 +959,26 @@ export class PlayerController {
 
     // ── 4. GRAVITY ─────────────────────────────────────────────────────────
     if (this._swimming) {
-      // Buoyant float: ease velocity.y so _pos.y approaches a fixed depth
-      // below the water surface, instead of falling under normal gravity.
-      const targetY = this._swimSurfaceY - SWIM_FLOAT_DEPTH;
+      // Buoyant float / dive: ease velocity.y so _pos.y approaches a target
+      // depth below the water surface, instead of falling under normal
+      // gravity. Holding jump (input.jump) is repurposed as "dive" — jump's
+      // on-land execution branch already excludes swim mode (see the
+      // `!this._swimming` guard above), so this is conflict-free.
+      const rawTargetY = input.jump
+        ? this._swimSurfaceY - DIVE_TARGET_DEPTH   // holding jump: ease down toward dive depth
+        : this._swimSurfaceY - SWIM_FLOAT_DEPTH;   // released: ease up toward surface float depth
+      // Never ease toward a target below the actual floor beneath the
+      // player's current X/Z (see _swimMinY doc comment) — otherwise
+      // diving over a deep spot then swimming sideways over a shallower
+      // one keeps demanding downward velocity that fights (and can defeat)
+      // the KCC's collision response every frame instead of just resting
+      // on that shallower floor like solid ground normally would.
+      const targetY = Math.max(rawTargetY, this._swimMinY);
+      const gain = input.jump ? DIVE_VERTICAL_EASE : SWIM_VERTICAL_EASE;
       const yDelta = targetY - this._pos.y;
-      this.velocity.y = lerp(this.velocity.y, yDelta * SWIM_VERTICAL_EASE, SWIM_VERTICAL_EASE * dt);
+      const targetVel = yDelta * gain;
+      const dampingRate = gain * VERTICAL_SPRING_DAMPING_MULTIPLIER;
+      this.velocity.y = lerp(this.velocity.y, targetVel, dampingRate * dt);
     } else if (!wasGrounded || justJumped) {
       let g: number;
       if (this.velocity.y > 0) {
@@ -943,6 +1059,26 @@ export class PlayerController {
       this.velocity.y = 0; // hit ceiling
     }
 
+    // Swimming, and still below the local floor after the KCC step (i.e. a
+    // solid tier floor slab sits directly above us): a velocity spring can
+    // never rise THROUGH solid floor — the KCC always blocks the upward
+    // delta (that's the "hit ceiling" case just above), so without this the
+    // player is physically trapped in the thin gap under that slab and
+    // slides along underneath it indefinitely (confirmed live: dove at the
+    // abyss, swam sideways, and got stuck skimming along just below each
+    // shallower tier's floor — y frozen at -0.91 near the bank tier's own
+    // y=0 floor — all the way out to the perimeter wall). This is the
+    // one case where a direct position correction (not a physics response)
+    // is correct: game logic already knows _swimMinY is solid ground the
+    // player should be resting ON TOP of, so surface her there directly
+    // instead of endlessly failing to spring up through it. Only the Y
+    // component is touched — X/Z stay exactly as the KCC already resolved
+    // them, so horizontal movement is never frozen by this.
+    if (this._swimming && this._pos.y + actual.y < this._swimMinY) {
+      actual.y = this._swimMinY - this._pos.y;
+      this.velocity.y = 0;
+    }
+
     const cur = this.body.translation();
     this.body.setNextKinematicTranslation({
       x: cur.x + actual.x,
@@ -994,6 +1130,10 @@ export class PlayerController {
     const headMat = this.headMesh.material as THREE.MeshLambertMaterial;
     const glowTarget = input.run && hSpeed > 1 ? 1.2 : 0.4;
     headMat.emissiveIntensity = lerp(headMat.emissiveIntensity, glowTarget, 0.08);
+
+    // Swim visibility glow — see _swimGlowLight's field doc.
+    const swimGlowTarget = this._swimming ? 1.4 : 0;
+    this._swimGlowLight.intensity = lerp(this._swimGlowLight.intensity, swimGlowTarget, 0.1);
 
     // i-frame / hit flash: blink the body between white and normal colour
     const bodyMat = this.bodyMesh.material as THREE.MeshLambertMaterial;
