@@ -299,5 +299,49 @@ describe('WaterLabScene swim/wade hysteresis', () => {
     }
     expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active ?? false).toBe(false);
   });
+
+  it('stops the wake-trail when diving deep even while still moving forward', () => {
+    player.teleport(new THREE.Vector3(0, -1.2, 0));
+    const stationaryInput = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+
+    // Let her settle into a stable swim float, not moving — no wake yet.
+    for (let i = 0; i < 60; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(stationaryInput, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+
+    // Swim forward with no dive input, so she stays near SWIM_FLOAT_DEPTH
+    // (near the surface) — the wake trail should start.
+    const forwardInput = { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false, jump: false, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    for (let i = 0; i < 30; i++) {
+      physics.step(1 / 60);
+      lab.update(1 / 60);
+      player.update(forwardInput, 1 / 60, 'isometric');
+    }
+    expect(player.isSwimming).toBe(true);
+    expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active).toBe(true);
+
+    // Dive deep while still moving forward — the wake should turn off even
+    // though speed alone wouldn't explain it stopping (depth must be the
+    // reason). Hold dive+forward until underwaterDepthFraction crosses above
+    // WAKE_NEAR_SURFACE_DEPTH_FRACTION (0.3).
+    const diveAndSwim = { moveForward: true, moveBackward: false, moveLeft: false, moveRight: false, jump: true, run: false, dodge: false, interact: false, turnDragHeld: false } as any;
+    let reachedDeep = false;
+    for (let i = 0; i < 120; i++) {
+      physics.step(1 / 60);
+      player.update(diveAndSwim, 1 / 60, 'isometric');
+      lab.update(1 / 60);  // lab.update after player so depth is current
+      // Once we're deep enough, confirm the wake is off
+      if (player.underwaterDepthFraction > 0.3) {
+        expect((lab as unknown as { _wakeEmitter: { active: boolean } | null })._wakeEmitter?.active ?? false).toBe(false);
+        reachedDeep = true;
+        break;
+      }
+    }
+    // If we never got deep enough, the test setup was wrong
+    expect(reachedDeep).toBe(true);
+  });
 });
 

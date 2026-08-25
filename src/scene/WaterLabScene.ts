@@ -70,10 +70,14 @@ const WAKE_NEAR_SURFACE_DEPTH_FRACTION = 0.3;
 
 /** Minimum horizontal speed (world units/second) — measured directly from
  *  frame-to-frame player XZ displacement, since PlayerController doesn't
- *  expose its internal velocity — below which the player counts as "not
- *  really moving" for the wake VFX (treading water in place shouldn't
- *  leave a trail). */
-const WAKE_MIN_SPEED = 0.3;
+ *  expose its internal velocity — to start the wake VFX (treading water in
+ *  place shouldn't leave a trail). Split into separate start/stop thresholds
+ *  to prevent emitter churn when speed oscillates near the boundary. */
+const WAKE_START_SPEED = 0.3;
+/** Lower threshold for stopping the wake once active — creating a hysteresis
+ *  band between 0.2 and 0.3 so gentle oscillations don't repeatedly stop and
+ *  recreate the emitter before its first particle even emits. */
+const WAKE_STOP_SPEED = 0.2;
 
 const TIER_COLORS: Record<WaterLabTier['name'], number> = {
   bank:    0x6b5a3c,
@@ -112,11 +116,11 @@ export class WaterLabScene {
   private _wakeEmitter: EmitterHandle | null = null;
 
   /** Previous frame's player X/Z, used by _updateWake() to measure
-   *  horizontal speed directly. Seeded from the player's actual position
-   *  in enter() so the very first frame after entering never reads as a
-   *  spurious large jump. */
-  private _prevWakeX = 0;
-  private _prevWakeZ = 0;
+   *  horizontal speed directly. null when tracking hasn't started yet
+   *  (before enter() or after exit(), or immediately after a teleport-sized
+   *  single-frame jump) — the first tracked frame after a null simply
+   *  records the position and treats speed as zero for that frame. */
+  private _prevWakePos: { x: number; z: number } | null = null;
 
   constructor(
     private readonly _scene: THREE.Scene,
@@ -262,12 +266,10 @@ export class WaterLabScene {
       this._tierBodies.push(this._physics.createStaticBox(pos, half3));
     }
 
-    // Wake-trail VFX bookkeeping (see _updateWake()) — seed with the
-    // player's actual current position so the very first frame after
-    // entering doesn't read as a spurious large jump.
-    const startPos = this._player.group.position;
-    this._prevWakeX = startPos.x;
-    this._prevWakeZ = startPos.z;
+    // Reset wake-trail tracking — see _updateWake(). Set to null instead of
+    // seeding from current position since enter() runs before the real
+    // post-room-switch teleport (see src/main.ts enterWaterLab()).
+    this._prevWakePos = null;
   }
 
   /**
@@ -326,6 +328,7 @@ export class WaterLabScene {
       this._wakeEmitter.stop();
       this._wakeEmitter = null;
     }
+    this._prevWakePos = null;
   }
 
   /** Advances the water shader animation and applies swim/wading state to
@@ -417,14 +420,36 @@ export class WaterLabScene {
    *  instant any of the three conditions stops holding. */
   private _updateWake(dt: number): void {
     const pos = this._player.group.position;
-    const horizSpeed = dt > 0
-      ? Math.hypot(pos.x - this._prevWakeX, pos.z - this._prevWakeZ) / dt
-      : 0;
-    this._prevWakeX = pos.x;
-    this._prevWakeZ = pos.z;
+    
+    // If we haven't started tracking yet (first frame, or post-teleport),
+    // just record the current position and treat speed as zero this frame.
+    if (this._prevWakePos === null) {
+      this._prevWakePos = { x: pos.x, z: pos.z };
+      return;
+    }
+
+    const dx = pos.x - this._prevWakePos.x;
+    const dz = pos.z - this._prevWakePos.z;
+    const distance = Math.hypot(dx, dz);
+    
+    // Treat implausibly large single-frame jumps as teleports rather than
+    // real movement — cap at 7 WU/frame (generous overage beyond real swim
+    // motion, since SWIM_SPEED is 3.5 WU/s → ~0.058 WU/frame at 60Hz).
+    const TELEPORT_THRESHOLD = 7;
+    let horizSpeed = 0;
+    if (dt > 0 && distance < TELEPORT_THRESHOLD) {
+      horizSpeed = distance / dt;
+    }
+    
+    this._prevWakePos.x = pos.x;
+    this._prevWakePos.z = pos.z;
 
     const nearSurface = this._player.underwaterDepthFraction < WAKE_NEAR_SURFACE_DEPTH_FRACTION;
-    const shouldWake = this._player.isSwimming && nearSurface && horizSpeed > WAKE_MIN_SPEED;
+    // Use hysteresis: start at WAKE_START_SPEED, stop at WAKE_STOP_SPEED.
+    const speedThreshold = (this._wakeEmitter && this._wakeEmitter.active)
+      ? WAKE_STOP_SPEED
+      : WAKE_START_SPEED;
+    const shouldWake = this._player.isSwimming && nearSurface && horizSpeed > speedThreshold;
 
     if (shouldWake) {
       if (this._wakeEmitter && this._wakeEmitter.active) {
