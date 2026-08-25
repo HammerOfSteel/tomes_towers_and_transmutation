@@ -34,7 +34,7 @@ import { OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from './WaterDepthConfig'
 const REALM_BIOME_TO_WORLD_BIOME: Record<RealmBiome, BiomeId> = {
   deep_ocean: 'water',
   ocean:      'water',
-  beach:      'grass',
+  beach:      'sand',
   desert:     'grass',
   savanna:    'grass',
   grassland:  'grass',
@@ -66,12 +66,19 @@ export function realmToWorldGrid(realm: RealmData, worldSize: number): WorldGrid
       const biome = REALM_BIOME_TO_WORLD_BIOME[cell.biome];
       // Ocean-rim water tiles get a real carved depth (RI-3) so they're
       // physically swimmable, not just cosmetically tinted — matching
-      // river tiles' HydrologyGenerator.ts treatment.
+      // river tiles' HydrologyGenerator.ts treatment. Two depth tiers
+      // (not one flat value): the realm's own `ocean` (shallow, coastal
+      // ring) vs `deep_ocean` (open water) classification drives a real
+      // shallow-near-shore / deep-further-out gradient instead of
+      // discarding that distinction as before.
       const isWater = biome === 'water';
+      const waterDepth = cell.biome === 'deep_ocean' ? OCEAN_DEEP_DEPTH_WU
+                         : cell.biome === 'ocean'      ? OCEAN_SHALLOW_DEPTH_WU
+                         : 0;
       grid.set(col, row, {
         elevation:  quantizeElevation(cell.elevation),
         biome,
-        waterDepth: isWater ? OCEAN_DEEP_DEPTH_WU : 0,
+        waterDepth,
         walkable:   !isWater,
       });
     }

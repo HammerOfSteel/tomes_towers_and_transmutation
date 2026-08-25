@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { realmToWorldGrid } from '@/world/RealmToWorldGrid';
 import { generateRealmData } from '@/world/RealmGenerator';
-import { OCEAN_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import type { RealmData, RealmCell } from '@/overworld-studio';
 
 function fakeRealm(cells: RealmCell[][]): RealmData {
@@ -18,7 +18,7 @@ describe('realmToWorldGrid', () => {
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
       'grassland', 'forest', 'taiga', 'tundra', 'snow',
     ];
-    const validWorldBiomes = new Set(['bog', 'grass', 'forest', 'highland', 'rocky', 'water']);
+    const validWorldBiomes = new Set(['bog', 'grass', 'forest', 'highland', 'rocky', 'water', 'sand']);
     const cells = [biomes.map(biome => ({ elevation: 0.5, moisture: 0.5, biome }))];
     const realm = fakeRealm(cells);
     const grid = realmToWorldGrid(realm, 128);
@@ -38,18 +38,47 @@ describe('realmToWorldGrid', () => {
     expect(grid.get(64, 0).biome).toBe('water');
   });
 
-  it('carves waterDepth = OCEAN_DEPTH_WU and marks ocean/water tiles unwalkable', () => {
+  it('carves waterDepth = OCEAN_DEEP_DEPTH_WU for deep_ocean and marks it unwalkable', () => {
     const cells = [[
       { elevation: 0.1, moisture: 0.5, biome: 'deep_ocean' as const },
       { elevation: 0.5, moisture: 0.5, biome: 'grassland' as const },
     ]];
     const realm = fakeRealm(cells);
     const grid = realmToWorldGrid(realm, 128);
-    expect(grid.get(0, 0).waterDepth).toBe(OCEAN_DEPTH_WU);
+    expect(grid.get(0, 0).biome).toBe('water');
+    expect(grid.get(0, 0).waterDepth).toBe(OCEAN_DEEP_DEPTH_WU);
     expect(grid.get(0, 0).walkable).toBe(false);
     // Non-water tile stays dry and walkable.
     expect(grid.get(127, 0).waterDepth).toBe(0);
     expect(grid.get(127, 0).walkable).toBe(true);
+  });
+
+  it('carves waterDepth = OCEAN_SHALLOW_DEPTH_WU for the ocean (shallow) band', () => {
+    const cells = [[
+      { elevation: 0.32, moisture: 0.5, biome: 'ocean' as const },
+    ]];
+    const realm = fakeRealm(cells);
+    const grid = realmToWorldGrid(realm, 128);
+    expect(grid.get(0, 0).biome).toBe('water');
+    expect(grid.get(0, 0).waterDepth).toBe(OCEAN_SHALLOW_DEPTH_WU);
+    expect(grid.get(0, 0).walkable).toBe(false);
+  });
+
+  it('shallow ocean depth is less than deep ocean depth', () => {
+    expect(OCEAN_SHALLOW_DEPTH_WU).toBeLessThan(OCEAN_DEEP_DEPTH_WU);
+  });
+
+  it('maps beach to a distinct sand biome, not grass', () => {
+    const cells = [[
+      { elevation: 0.36, moisture: 0.5, biome: 'beach' as const },
+      { elevation: 0.5,  moisture: 0.5, biome: 'grassland' as const },
+    ]];
+    const realm = fakeRealm(cells);
+    const grid = realmToWorldGrid(realm, 128);
+    expect(grid.get(0, 0).biome).toBe('sand');
+    expect(grid.get(0, 0).waterDepth).toBe(0);
+    expect(grid.get(0, 0).walkable).toBe(true);
+    expect(grid.get(127, 0).biome).toBe('grass');
   });
 
   it('maps forest and taiga to forest', () => {
