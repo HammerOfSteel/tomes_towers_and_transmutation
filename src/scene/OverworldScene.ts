@@ -248,6 +248,8 @@ export class OverworldScene {
     this._placeRocks(rand);
     console.log('[OverworldScene] _plantBushes...');
     this._plantBushes(rand);
+    console.log('[OverworldScene] _scatterBeachDecor...');
+    this._scatterBeachDecor(rand);
     console.log('[OverworldScene] _spawnCamps...');
     this._spawnCamps(rand, config.enemyCampCount);
     console.log('[OverworldScene] _addRuins...');
@@ -1451,6 +1453,97 @@ export class OverworldScene {
       g.add(blob);
     }
 
+    return g;
+  }
+
+  // ── Beach decor (sand-only ground clutter — no physics collider) ──────────
+
+  private _scatterBeachDecor(rand: () => number): void {
+    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    const W = GW * T;
+    const H = GH * T;
+    // Denser than bushes (3.2) since beach strips are typically narrow —
+    // a wider spacing would mean most candidate points land off the sand.
+    const pts = poissonDisk(W, H, 2.4, rand);
+
+    for (const [px, pz] of pts) {
+      const wx = px - W / 2;
+      const wz = pz - H / 2;
+
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+      if (cell.biome !== 'sand') continue;
+      if (cell.feature === 'road' || cell.feature === 'road_dirt') continue;
+      if (cell.content !== 'empty') continue;
+      if (cell.settlementId > 0) continue;
+
+      const level = cell.elevation;
+      const roll = rand();
+      const decor = roll < 0.34 ? this._makeDriftwood(rand)
+                  : roll < 0.67 ? this._makeDuneGrassTuft(rand)
+                  : this._makeBeachPebbles(rand);
+      decor.position.set(wx, level * SH, wz);
+      decor.rotation.y = rand() * Math.PI * 2;
+      this._clutter.push(decor);
+    }
+  }
+
+  private _makeDriftwood(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const len = 1.1 + rand() * 0.9;
+    const r0 = 0.06 + rand() * 0.03;
+    const grey = 0x6a5a48 + Math.floor(rand() * 4) * 0x040302;
+    const mat = new THREE.MeshLambertMaterial({
+      color: grey,
+      map: makeMottledCanvasTexture(grey, 0.16, Math.floor(rand() * 1e6)),
+    });
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(r0 * 0.8, r0, len, 6), mat);
+    log.rotation.z = Math.PI / 2; // lying flat
+    log.rotation.y = rand() * Math.PI;
+    log.position.y = r0;
+    g.add(log);
+    return g;
+  }
+
+  private _makeDuneGrassTuft(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const tan = 0x9a9660 + Math.floor(rand() * 4) * 0x030200;
+    const mat = new THREE.MeshLambertMaterial({
+      color: tan,
+      map: makeMottledCanvasTexture(tan, 0.22, Math.floor(rand() * 1e6)),
+    });
+    const bladeCount = 3 + Math.floor(rand() * 3); // 3..5 blades
+    for (let i = 0; i < bladeCount; i++) {
+      const h = 0.35 + rand() * 0.3;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.035, h, 4), mat);
+      const angle = (i / bladeCount) * Math.PI * 2 + rand() * 0.4;
+      const spread = 0.05 + rand() * 0.06;
+      blade.position.set(Math.cos(angle) * spread, h / 2, Math.sin(angle) * spread);
+      blade.rotation.z = (rand() - 0.5) * 0.3;
+      g.add(blade);
+    }
+    return g;
+  }
+
+  private _makeBeachPebbles(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const pale = 0x8a8478 + Math.floor(rand() * 5) * 0x020202;
+    const mat = new THREE.MeshLambertMaterial({
+      color: pale,
+      map: makeMottledCanvasTexture(pale, 0.10, Math.floor(rand() * 1e6)),
+    });
+    const pieceCount = 2 + Math.floor(rand() * 3); // 2..4 pebbles
+    for (let i = 0; i < pieceCount; i++) {
+      const pr = 0.08 + rand() * 0.1;
+      const piece = new THREE.Mesh(new THREE.DodecahedronGeometry(pr, 0), mat);
+      const angle = rand() * Math.PI * 2;
+      const spread = rand() * 0.18;
+      piece.position.set(Math.cos(angle) * spread, pr * 0.5, Math.sin(angle) * spread);
+      piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+      piece.scale.set(1, 0.5 + rand() * 0.3, 0.8 + rand() * 0.3);
+      g.add(piece);
+    }
     return g;
   }
 
