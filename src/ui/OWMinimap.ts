@@ -24,6 +24,7 @@ const BIOME_COLOUR: Record<string, string> = {
   forest:   '#1a3d12',
   highland: '#6e5f48',
   rocky:    '#524d4a',
+  sand:     '#c2ad80', // matches BIOME_SAND in TerrainGeometryBuilder.ts
 };
 
 // ── OWMinimap ─────────────────────────────────────────────────────────────────
