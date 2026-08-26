@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import { buildTerrainGeometryData, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
-import { RIVER_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 
 describe('buildTerrainGeometryData', () => {
   it('emits only top faces when all tiles are flat (no elevation steps)', () => {
@@ -44,7 +44,7 @@ describe('buildTerrainGeometryData', () => {
 
   it('colors water-biome tiles using the water palette', () => {
     const wg = new WorldGrid(1, 1);
-    wg.set(0, 0, { biome: 'water' });
+    wg.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
 
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
 
@@ -182,7 +182,7 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
 
   it('keeps water-biome tile color ratio unchanged by variant noise', () => {
     const wg = new WorldGrid(1, 1);
-    wg.set(0, 0, { biome: 'water' });
+    wg.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
     const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
@@ -220,5 +220,39 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
     // face0 v3 (wx1,wz) should match face1 v0 (wx,wz) in both x and y.
     expect(face0[3]!.x).toBeCloseTo(face1[0]!.x, 9);
     expect(face0[3]!.y).toBeCloseTo(face1[0]!.y, 9);
+  });
+});
+
+describe('buildTerrainGeometryData — sand biome', () => {
+  it('colors sand-biome tiles using the sand palette, distinct from grass', () => {
+    const sandGrid = new WorldGrid(1, 1);
+    sandGrid.set(0, 0, { biome: 'sand', elevation: 1 });
+    const sandData = buildTerrainGeometryData(sandGrid, 1, 1, 0, 0, 1, 1);
+
+    const grassGrid = new WorldGrid(1, 1);
+    grassGrid.set(0, 0, { biome: 'grass', elevation: 1 });
+    const grassData = buildTerrainGeometryData(grassGrid, 1, 1, 0, 0, 1, 1);
+
+    const sandColor  = [sandData.colors[0]!, sandData.colors[1]!, sandData.colors[2]!];
+    const grassColor = [grassData.colors[0]!, grassData.colors[1]!, grassData.colors[2]!];
+    expect(sandColor).not.toEqual(grassColor);
+  });
+});
+
+describe('buildTerrainGeometryData — shallow vs deep water tint (RI-3 shoreline)', () => {
+  it('tints a shallow-depth water tile lighter than a deep-depth water tile', () => {
+    const shallowGrid = new WorldGrid(1, 1);
+    shallowGrid.set(0, 0, { biome: 'water', waterDepth: OCEAN_SHALLOW_DEPTH_WU });
+    const shallowData = buildTerrainGeometryData(shallowGrid, 1, 1, 0, 0, 1, 1);
+
+    const deepGrid = new WorldGrid(1, 1);
+    deepGrid.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
+    const deepData = buildTerrainGeometryData(deepGrid, 1, 1, 0, 0, 1, 1);
+
+    // Sum of RGB channels as a simple brightness proxy — shallow should
+    // read visibly lighter than deep.
+    const shallowBrightness = shallowData.colors[0]! + shallowData.colors[1]! + shallowData.colors[2]!;
+    const deepBrightness    = deepData.colors[0]!    + deepData.colors[1]!    + deepData.colors[2]!;
+    expect(shallowBrightness).toBeGreaterThan(deepBrightness);
   });
 });

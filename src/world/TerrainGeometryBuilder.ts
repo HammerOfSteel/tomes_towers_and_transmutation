@@ -51,6 +51,25 @@ export const BIOME_WATER: [number, number, number] = [0.14, 0.26, 0.48]; // deep
  *  distinct requirement. */
 export const BIOME_FORD:  [number, number, number] = [0.52, 0.48, 0.38];
 
+/** Sand/beach biome tint — pale warm tan, distinct from grass/rock. */
+export const BIOME_SAND: readonly [number, number, number] = [0.76, 0.68, 0.50];
+/** Per-cell colour-look variants for sand, following the same 3-variant
+ *  pattern as BIOME_VARIANTS (base, lighter/drier, darker/wetter near the
+ *  waterline). */
+export const BIOME_SAND_VARIANTS: readonly (readonly [number, number, number])[] =
+  [[0.76, 0.68, 0.50], [0.80, 0.73, 0.56], [0.70, 0.62, 0.44]];
+
+/** Water tiles carved shallower than this (world units) render with the
+ *  lighter shallow-water tint; deeper tiles render with the existing
+ *  darker BIOME_WATER tint. Sits at the midpoint between
+ *  OCEAN_SHALLOW_DEPTH_WU and OCEAN_DEEP_DEPTH_WU (1.0 and 2.5) so the
+ *  threshold tracks those constants' intent without importing them
+ *  directly — this module stays a pure function of `cell.waterDepth`,
+ *  matching physicalHeightWU()'s existing depth-value-agnostic design. */
+export const SHALLOW_WATER_TINT_THRESHOLD_WU = 1.75;
+/** Lighter, more turquoise tint for shallow (wading-depth) water. */
+export const BIOME_WATER_SHALLOW: readonly [number, number, number] = [0.24, 0.46, 0.58];
+
 /**
  * Deterministic per-cell hash → integer variant index in [0, variantCount).
  * Same (col, row, variantCount) always yields the same result. Uses a cheap
@@ -160,7 +179,10 @@ export function buildTerrainGeometryData(
       const cell = wg.get(col, row);
       let biomeRgb: readonly [number, number, number];
       if (cell.biome === 'water') {
-        biomeRgb = BIOME_WATER;
+        biomeRgb = cell.waterDepth < SHALLOW_WATER_TINT_THRESHOLD_WU ? BIOME_WATER_SHALLOW : BIOME_WATER;
+      } else if (cell.biome === 'sand') {
+        const vi = cellVariantIndex(col, row, BIOME_SAND_VARIANTS.length);
+        biomeRgb = BIOME_SAND_VARIANTS[vi]!;
       } else if (cell.feature === 'river') {
         biomeRgb = BIOME_RIVER;
       } else if (cell.feature === 'river_ford') {
