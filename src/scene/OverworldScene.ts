@@ -69,7 +69,7 @@ import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
-import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
+import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
@@ -276,8 +276,16 @@ export class OverworldScene {
     if (!this._skybox) {
       this._skybox = new ProceduralSkybox(this.scene, 0x5a7c_f001);
     }
-    // Flat base plane covers level-0 tiles and acts as the underfloor.
-    this._groundBody = this.physics.createGroundPlane(0);
+    // Underfloor safety net — catches the player if they ever fall through
+    // a gap in the terrain trimesh. Must sit BELOW the deepest possible
+    // carved water floor (physicalHeightWU() can reach roughly
+    // -OCEAN_DEEP_DEPTH_WU for a deep-ocean tile at elevation 0), or this
+    // "safety" plane silently becomes the real collision floor for every
+    // carved water tile and swim mode can never trigger (see design spec
+    // section A — this was the actual root cause of "the sea is too
+    // shallow to swim in"). -5 WU of margin below the deepest carve is
+    // comfortably clear of any real terrain.
+    this._groundBody = this.physics.createGroundPlane(-(OCEAN_DEEP_DEPTH_WU + 5));
     // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
     this._staticBodies.push(this._createTerrainCollider());
 
