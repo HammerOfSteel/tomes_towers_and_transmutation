@@ -71,6 +71,7 @@ import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
 import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
+import { isScatterAllowed } from '@/world/ScatterRules';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -1202,11 +1203,7 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
 
       const cell = this._wg.get(c, r);
-      if (cell.elevation < 1)           continue;   // no trees on bog/water
-      if (cell.feature === 'road')      continue;   // no trees on roads
-      if (cell.feature === 'road_dirt') continue;
-      if (cell.content  !== 'empty')    continue;   // no trees on buildings/entrances
-      if (cell.settlementId > 0)        continue;   // no trees inside settlement zones
+      if (!isScatterAllowed(cell, 'tree')) continue;
       const level = cell.elevation;
 
       const tree = this._makeTree(rand, wx, wz);
@@ -1357,10 +1354,7 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
 
       const cell = this._wg.get(c, r);
-      if (cell.feature === 'road')      continue;   // no rocks on roads
-      if (cell.feature === 'road_dirt') continue;
-      if (cell.content  !== 'empty')    continue;   // no rocks on buildings
-      if (cell.settlementId > 0)        continue;   // no rocks inside settlement zones
+      if (!isScatterAllowed(cell, 'rock')) continue;
       const level  = cell.elevation;
       const wy     = level * SH;
       const radius = 0.48 + rand() * 0.84;
@@ -1424,11 +1418,7 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
 
       const cell = this._wg.get(c, r);
-      if (cell.elevation < 1)           continue;   // no bushes on bog/water
-      if (cell.feature === 'road')      continue;
-      if (cell.feature === 'road_dirt') continue;
-      if (cell.content  !== 'empty')    continue;
-      if (cell.settlementId > 0)        continue;
+      if (!isScatterAllowed(cell, 'bush')) continue;
       // Only plant a bush on roughly 1 in 3 valid candidates — trees already use a
       // similar Poisson pass at a different spacing; without this thinning, bushes
       // would be too dense given the tighter 3.2 spacing above.
@@ -1506,7 +1496,9 @@ export class OverworldScene {
 
         const c = Math.floor(ex / T + GHW);
         const r = Math.floor(ez / T + GHH);
-        const level = this._wg.get(c, r).elevation;
+        const cell = this._wg.get(c, r);
+        if (!isScatterAllowed(cell, 'camp')) continue;
+        const level = cell.elevation;
 
         this._enemies.push(new SlimeEnemy(
           new THREE.Vector3(ex, level * SH + 0.9, ez),
@@ -1584,7 +1576,9 @@ export class OverworldScene {
 
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
-      const level = this._wg.get(c, r).elevation;
+      const cell = this._wg.get(c, r);
+      if (!isScatterAllowed(cell, 'ruin')) continue;
+      const level = cell.elevation;
       const wy = level * SH;
       console.log(`[_addRuins] making ruin ${i} at (${wx.toFixed(1)}, ${wz.toFixed(1)})...`);
 
