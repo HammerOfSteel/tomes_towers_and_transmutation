@@ -65,12 +65,22 @@ Poisson-disk placement. `WorldGenConfig`'s `villageCount`/`townCount`/
 the realm algorithm). Building layout (`SettlementGenerator.ts`'s
 plan/apply functions) and NPC population are untouched by this slice.
 
-**(2) Building layout — not started.** Reconciling Studio's Voronoi-ward
-zone-label system, the live game's current cross/street/boulevard
-patterns, and the unused concentric-ring algorithm in
-`SettlementSpawner.ts`. Genuinely unresolved architecture question (Studio
-produces ward *labels*, not building instances) — needs its own design
-cycle.
+**(2) Building layout — substantially further along than previously
+recorded.** The live `SettlementGenerator.ts` already calls
+`SettlementModelGenerator.ts`'s ward/Voronoi model (`d3-delaunay` +
+Chaikin-smoothed roads) via `planSettlement()` — the same class of
+algorithm as Studio's, not an independent concentric-ring model.
+(`SettlementSpawner.ts`, which does use a concentric-ring/spoke-road
+model, is confirmed unused by `OverworldScene.ts` — it only backs the
+Studio-preview dev feature `_buildStudioSettlementPreview()`.) The "ward
+*labels*, not building instances" question is resolved in the live path:
+`fillWard()` produces placeable building rects per ward, which
+`planSettlement()` snaps onto `WorldGrid` tiles. Remaining known issues
+(anchor-building overlap padding, road width) were fixed in the
+2026-08-27-settlement-and-building-interior-polish branch. If settlements
+still look meaningfully different from Studio's preview after those
+fixes, that would indicate this item needs a fuller design cycle after
+all — not that the ward-model integration itself is missing.
 
 **(3) NPC population — not started.** Wire up the unused
 `SettlementPopulator.ts` to retire `OverworldScene.ts`'s independently
