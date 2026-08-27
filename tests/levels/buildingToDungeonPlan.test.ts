@@ -140,6 +140,13 @@ describe('buildingToDungeonPlan — core contract', () => {
     }
   });
 
+  it('rooms use the same cellSize convention as other interior scenes (2 world units/tile)', () => {
+    const plan = buildingToDungeonPlan('house', 'human_town', 1);
+    for (const [id, bp] of plan.rooms) {
+      expect(bp.cellSize, `${id}.cellSize`).toBe(2);
+    }
+  });
+
   it('produces a DungeonPlan with a valid startRoomId and no enemy spawns', () => {
     const plan = buildingToDungeonPlan('cottage', 'human_rural', 12345, 'tiny', 1);
     expect(plan.startRoomId).toBeTruthy();
@@ -157,6 +164,18 @@ describe('buildingToDungeonPlan — core contract', () => {
     // Exactly one exterior door (targetId: null) across the whole plan
     const exteriorDoors = [...plan.rooms.values()].flatMap(bp => bp.doors).filter(d => d.targetId === null);
     expect(exteriorDoors.length).toBe(1);
+  });
+
+  it('rooms have at least 4 furniture items where furniture is defined for the purpose', () => {
+    const plan = buildingToDungeonPlan('inn', 'human_town', 1, 'large', 2);
+    const purposesSeen = new Set<string>();
+    for (const bp of plan.rooms.values()) {
+      if (bp.interactables.length > 0) {
+        purposesSeen.add('has-furniture');
+        expect(bp.interactables.length).toBeGreaterThanOrEqual(4);
+      }
+    }
+    expect(purposesSeen.size).toBeGreaterThan(0); // sanity: this building actually has furnished rooms
   });
 
   it('multi-floor buildings register rooms across all requested floors', () => {

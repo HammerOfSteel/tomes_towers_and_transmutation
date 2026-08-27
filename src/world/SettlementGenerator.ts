@@ -18,7 +18,7 @@ import type { SettlementFaction } from '@/overworld-studio';
 import { generateSettlementName } from './SettlementNameGenerator';
 import type { WorldGrid } from './WorldGrid';
 import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type Road, type SettlementType as ModelSettlementType, type WardType } from './SettlementModelGenerator';
-import { WARD_TO_KIND } from '@/buildingToDungeonPlan';
+import { WARD_TO_KIND, WARD_TO_SIZE } from '@/buildingToDungeonPlan';
 import { getFootprint } from './buildings/BuildingDNA';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -199,9 +199,8 @@ function _valid(grid: WorldGrid, col: number, row: number): boolean {
 
 function buildingHalfExtents(b: Pick<PlacedBuilding, 'wardType' | 'isAnchor'>): { hw: number; hd: number } {
   const kind = WARD_TO_KIND[b.wardType]!;
-  const size = b.isAnchor ? (b.wardType in { park:1 } ? 'medium' : undefined) : 'tiny';
-  const resolvedSize = size ?? (b.wardType === 'patriciate' ? 'large' : b.wardType === 'church' ? 'medium' : 'medium');
-  const fp = getFootprint(kind, resolvedSize as any);
+  const resolvedSize = b.isAnchor ? (WARD_TO_SIZE[b.wardType] ?? 'medium') : 'tiny';
+  const fp = getFootprint(kind, resolvedSize);
   return { hw: Math.ceil(fp.w / 4), hd: Math.ceil(fp.d / 4) };
 }
 
@@ -258,6 +257,17 @@ function rasterizeRoads(roads: Road[], centerCol: number, centerRow: number, cx:
       bresenham(prev.col, prev.row, cur.col, cur.row);
       prev = cur;
     }
+  }
+  // Widen the rasterized center-line into a real street: dilate every
+  // center-line tile by its 4 orthogonal neighbours. model.roads[] are all
+  // primary gate->hub arterials (no separate alley network exists in the
+  // generator), so a uniform width for every road is the honest fix here.
+  const centerLineTiles = [...out.values()];
+  for (const { col, row } of centerLineTiles) {
+    addTile(col + 1, row);
+    addTile(col - 1, row);
+    addTile(col, row + 1);
+    addTile(col, row - 1);
   }
   return [...out.values()];
 }

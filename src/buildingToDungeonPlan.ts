@@ -49,14 +49,14 @@ function resolveFloorType(style: string, kind: BuildingKind): FloorType {
 // ── Furniture per room purpose ────────────────────────────────────────────────
 
 const PURPOSE_FURNITURE: Partial<Record<RoomPurpose, InteractableEntry['type'][]>> = {
-  living:      ['bookshelf', 'candelabra', 'reading_table'],
-  kitchen:     ['cauldron', 'barrel', 'barrel'],
-  bedroom:     ['bed', 'chest', 'candelabra'],
-  hall:        ['candelabra', 'candelabra'],
-  bar:         ['barrel', 'barrel', 'mess_table'],
-  storage:     ['crate', 'chest', 'barrel'],
-  workshop:    ['anvil', 'weapon_stand', 'candelabra'],
-  chapel_nave: ['candelabra', 'containment_ring', 'candelabra'],
+  living:      ['bookshelf', 'candelabra', 'reading_table', 'bookshelf'],
+  kitchen:     ['cauldron', 'barrel', 'barrel', 'crate'],
+  bedroom:     ['bed', 'chest', 'candelabra', 'candelabra'],
+  hall:        ['candelabra', 'candelabra', 'bookshelf', 'candelabra'],
+  bar:         ['barrel', 'barrel', 'mess_table', 'barrel'],
+  storage:     ['crate', 'chest', 'barrel', 'crate'],
+  workshop:    ['anvil', 'weapon_stand', 'candelabra', 'crate'],
+  chapel_nave: ['candelabra', 'containment_ring', 'candelabra', 'candelabra'],
 };
 
 // ── Tile constants ────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ export function buildingToDungeonPlan(
         version:      1 as const,
         width:        bw,
         depth:        bd,
-        cellSize:     1.0,
+        cellSize:     2,
         wallHeight:   FLOOR_HEIGHT,
         tiles:        buildPerimeterWalls(bw, bd),
         doors:        [],

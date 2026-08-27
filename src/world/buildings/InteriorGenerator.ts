@@ -140,11 +140,11 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
   switch (dna.buildingKind) {
     case 'house': case 'cottage': case 'terraced': {
       // living room (front), kitchen (back-left), bedroom (back-right)
-      const ld = Math.ceil(kd * 0.55);
+      const ld = Math.ceil(kd * 0.5);
       fillRoom(1, 1, kw, ld, 'living');
       const bw = Math.floor(kw / 2);
       const backD = kd - ld - 1;
-      if (backD > 1) {
+      if (backD >= 1) {
         fillRoom(1,        1 + ld + 1, bw,       backD, 'kitchen');
         fillRoom(1 + bw + 1, 1 + ld + 1, kw - bw - 1, backD, 'bedroom');
         // 2-tile wide passage: living → kitchen + bedroom
@@ -246,7 +246,10 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
 }
 
 function getBuildingFootprint(dna: BuildingDNA): { w: number; d: number } {
-  // Use the same footprint logic as BuildingBuilder
+  // Deliberately larger than BuildingDNA's exterior SIZE_FOOTPRINT/KIND_FOOTPRINT
+  // tables — interiors are intentionally more spacious than the compact
+  // exterior silhouette, since they render as a fully separate scene
+  // (see SceneManager.loadDungeon()), not a literal inside-the-mesh space.
   const BASE: Record<string, { w: number; d: number }> = {
     tiny: { w: 6, d: 6 }, small: { w: 9, d: 7 }, medium: { w: 11, d: 9 }, large: { w: 15, d: 12 },
   };

@@ -5,7 +5,7 @@ import { planSettlement, applySettlementToGrid, type PlacedBuilding } from '@/wo
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
 import { generateRealmData } from '@/world/RealmGenerator';
-import { buildSettlement, type SettlementModel, type WardType } from '@/world/SettlementModelGenerator';
+import { buildSettlement, fillWard, OccupancyGrid, type SettlementModel, type WardType } from '@/world/SettlementModelGenerator';
 import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
 import { factionBuildingDna, getFootprint } from '@/world/buildings/BuildingDNA';
 
@@ -127,11 +127,68 @@ describe('planSettlement', () => {
     expect(plan.buildings.length).toBe(0);
   });
 
+  it('drops zero requested buildings on flat, fully buildable terrain (village/town/city, 20 seeds each)', () => {
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const grid = flatGrid(256);
+        const plan = planSettlement(type, 128, 128, seed, grid);
+        const model = buildModelFor(type, seed);
+        const occ = new OccupancyGrid(
+          type === 'village' ? 320 : type === 'town' ? 360 : 420,
+          type === 'village' ? 240 : type === 'town' ? 280 : 320,
+        );
+        let requested = 0;
+        for (const ward of model.wards) {
+          if (!ward.withinCity || !WARD_TO_KIND[ward.type]) continue;
+          requested += fillWard(ward, occ, model.roads).length;
+        }
+        expect(plan.buildings.length, `${type} seed=${seed}`).toBe(requested);
+      }
+    }
+  });
+
   it('accepts explicit name and faction override', () => {
     const grid = flatGrid(64);
     const plan = planSettlement('town', 32, 32, 0x2222, grid, 'Custom Falls', 'elven');
     expect(plan.name).toBe('Custom Falls');
     expect(plan.faction).toBe('elven');
+  });
+
+  it('roads are wider than a single tile (each road tile has an orthogonal road neighbor)', () => {
+    const grid = flatGrid(128);
+    const plan = planSettlement('town', 64, 64, 555, grid, 'WideRoads', 'human');
+    const roadSet = new Set(plan.roads.map(r => `${r.col},${r.row}`));
+    expect(plan.roads.length).toBeGreaterThan(0);
+    let tilesWithOrthogonalNeighbor = 0;
+    for (const r of plan.roads) {
+      const hasNeighbor =
+        roadSet.has(`${r.col + 1},${r.row}`) || roadSet.has(`${r.col - 1},${r.row}`) ||
+        roadSet.has(`${r.col},${r.row + 1}`) || roadSet.has(`${r.col},${r.row - 1}`);
+      if (hasNeighbor) tilesWithOrthogonalNeighbor++;
+    }
+    // Every original center-line tile now has all 4 neighbours added, so
+    // essentially every tile should have at least one orthogonal road
+    // neighbour (a genuinely 1-tile-wide road would have none, since
+    // Bresenham lines only touch diagonally at direction changes).
+    expect(tilesWithOrthogonalNeighbor).toBe(plan.roads.length);
+  });
+});
+
+describe('buildingHalfExtents (via overlap padding)', () => {
+  it('pads inn/patriciate-sized anchors using their real WARD_TO_SIZE, not an ad-hoc guess', () => {
+    // Build two adjacent inn anchors close enough to violate correct
+    // (WARD_TO_SIZE-based) padding but not violate the current buggy
+    // ad-hoc 'medium' estimate — this is only reachable if the source
+    // under-pads relative to the real footprint.
+    const innFootprint = getFootprint(WARD_TO_KIND['inn']!, WARD_TO_SIZE['inn'] ?? 'medium');
+    const innHw = Math.ceil(innFootprint.w / 4);
+    const innHd = Math.ceil(innFootprint.d / 4);
+    const a: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: 0, row: 0, rotation: 0, seed: 1 };
+    const b: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: innHw * 2 - 1, row: 0, rotation: 0, seed: 2 };
+    // At this exact spacing (2x the correct half-width apart - 1), correctly
+    // sized anchors must be flagged as overlapping by the real padding
+    // logic used elsewhere in this file's tests.
+    expect(overlaps(a, b)).toBe(true);
   });
 });
 
