@@ -166,6 +166,18 @@ describe('buildingToDungeonPlan — core contract', () => {
     expect(exteriorDoors.length).toBe(1);
   });
 
+  it('rooms have at least 4 furniture items where furniture is defined for the purpose', () => {
+    const plan = buildingToDungeonPlan('inn', 'human_town', 1, 'large', 2);
+    const purposesSeen = new Set<string>();
+    for (const bp of plan.rooms.values()) {
+      if (bp.interactables.length > 0) {
+        purposesSeen.add('has-furniture');
+        expect(bp.interactables.length).toBeGreaterThanOrEqual(4);
+      }
+    }
+    expect(purposesSeen.size).toBeGreaterThan(0); // sanity: this building actually has furnished rooms
+  });
+
   it('multi-floor buildings register rooms across all requested floors', () => {
     const plan = buildingToDungeonPlan('inn', 'human_town', 999, 'small', 2);
     const floors = new Set([...plan.rooms.values()].map(bp => bp.floor));
