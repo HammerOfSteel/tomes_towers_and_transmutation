@@ -64,27 +64,64 @@ model — the same class of algorithm Overworld Studio uses, not the
 description applies to `SettlementSpawner.ts`, which is confirmed unused by
 `OverworldScene.ts` — a Studio-preview-only pure module).
 
-What's actually live and causing the "odd" look:
-1. **`snapBuildingTile()` in `SettlementGenerator.ts`** maps each ward
-   building to a `WorldGrid` tile, and on a collision (water/overlap/OOB)
-   searches outward up to `MAX_BUILDING_SNAP_RADIUS = 12` tiles; if nothing
-   opens up, **the building is silently dropped** (`return null`, caller
-   `continue`s). No telemetry on how often this happens — first task is to
-   measure it. If drop rates are high, the ward model's intended density
-   never reaches the ground, explaining sparse/off-balance layouts.
-2. **Roads have no width hierarchy.** `rasterizeRoads()` Bresenham-rasters
-   every road segment as a single grid tile (`T = 2` WU) wide, with no
-   distinction between a main avenue and a back alley — unlike the design
-   already captured (but unused in the live path) in
-   `SettlementRoadMesh.ts`'s width-by-anchor-kind logic (2 WU main / 1 WU
-   alley). Every street currently reads as a uniform thin dirt/cobble line.
-3. **`SETTLEMENT_MODEL_SCALE = 0.095`** compresses the ward model's
-   200-420-unit model space down to grid tiles; combined with (1)'s
-   silent drops, the final built settlement may be considerably smaller/
-   sparser than the model intended. Needs empirical measurement (how many
-   wards' buildings actually place vs. get dropped, at each settlement
-   size) before deciding whether to retune the scale, the snap radius, or
-   both.
+What's actually live, and what a direct measurement confirmed (built a
+throwaway harness: a fully flat/buildable 400×400 `WorldGrid`, ran
+`planSettlement()` for village/town/city across seeds 1-20, compared
+buildings placed vs. wards' requested rects):
+
+1. **`snapBuildingTile()`'s silent-drop concern did not hold up.** On
+   buildable (non-water, elevation ≥ 1) terrain, drop rate measured **0%**
+   for all three settlement types across 20 seeds each, at both the
+   current `MAX_BUILDING_SNAP_RADIUS = 12` and a much larger radius (20) —
+   changing the radius made no difference, confirming placement isn't
+   radius-starved. (An initial naive measurement showed a 6.9% "drop" for
+   cities; it turned out to be a bug in the *measurement script*, not the
+   generator — it counted `park`-ward plaza rects as "requested buildings"
+   when `planSettlement()` correctly skips wards with no `WARD_TO_KIND`
+   mapping, i.e. parks were never meant to become buildings. Corrected
+   script: 0% for all types.) **Conclusion: this is not a real bug and is
+   dropped from scope** — building density loss is not why settlements
+   look sparse/odd, at least on the buildable terrain this harness models.
+   Residual, unmeasured risk: real terrain has water/river tiles inside a
+   settlement's zone that `applySettlementToGrid`'s flattening step
+   doesn't reclaim, so live drop rates could be nonzero on rough seeds —
+   the fix below adds a permanent regression test on the harness so this
+   stays visible if it ever regresses, without spending further time
+   chasing a currently-unconfirmed problem.
+
+2. **`buildingHalfExtents()` uses the wrong size for anchor buildings —
+   a confirmed, real correctness bug**, independent of placement success.
+   It estimates each anchor building's overlap-avoidance half-extents from
+   an ad-hoc `wardType === 'patriciate' ? 'large' : wardType === 'church'
+   ? 'medium' : 'medium'` check that **ignores `WARD_TO_SIZE` entirely** —
+   the same table `createSettlementBuildingDna()` actually uses to build
+   the real DNA/mesh. E.g. an `inn` ward is `WARD_TO_SIZE.inn = 'large'`
+   (7×5 footprint) but `buildingHalfExtents()` estimates it as `'medium'`
+   (5×4), under-padding its clearance by roughly a full tile. This can let
+   larger anchor buildings (inn, merchant, patriciate, gateward, farm,
+   craftsmen, market — everything but patriciate/church) sit closer to
+   their neighbors than their real mesh footprint allows, a plausible
+   direct cause of the "looks odd" visual (buildings crowding/clipping),
+   not just a cosmetic inconsistency. Verified via the same harness that
+   fixing this (using `WARD_TO_SIZE[wardType] ?? 'medium'` directly) does
+   not regress placement success (still 0%/0%/0% drop after correcting the
+   measurement bug, same as before the fix).
+
+3. **Roads have no width variation**, but not for the reason first
+   assumed. `model.roads[]` (`SettlementModelGenerator.ts`) is a flat array
+   of gate→hub arterials (one per city gate, 2-4 depending on settlement
+   size) — there is no separate secondary/alley road network generated at
+   all, so there's no natural "avenue vs. alley" data to key a width tier
+   off (the `SettlementRoadMesh.ts`/`isMain = ri === 0` distinctions
+   referenced by older docs belong to a *different*, unused spoke-road
+   companion module with a different data shape — not applicable here).
+   The real, simple issue: `rasterizeRoads()` marks a single Bresenham-line
+   grid tile (`T = 2` WU) per road position, so even these primary
+   arterial streets render as a 1-tile-wide dirt/cobble line — too thin to
+   read as a real street. Fix: widen the rasterized swath uniformly (e.g.
+   a perpendicular 3-tile band, ~6 WU), which is honest to what the data
+   actually models (these are all primary streets) rather than inventing
+   a hierarchy the generator doesn't have.
 
 This reframes P1‑2 from "undesigned architecture" to "an existing,
 architecturally-sound pipeline with concrete placement/rendering bugs" —
@@ -122,36 +159,40 @@ shoreline branch, which combined multiple related root-cause fixes):
   passing, and a manual playtest should confirm no visual clipping.
 
 **Workstream 2 — Settlement/road placement fixes**
-- Add a debug counter/log for `snapBuildingTile()` drop rate; run a
-  generation sweep (like RI-3's ford sweep) across several seeds/sizes to
-  quantify the problem before choosing a fix (larger search radius,
-  relaxed overlap padding, and/or retuned `SETTLEMENT_MODEL_SCALE` —
-  decided from the data, not guessed).
-- Give roads a width tier in `rasterizeRoads()`/tile rendering: reuse
-  `SettlementRoadMesh.ts`'s anchor-kind width logic (main-road-adjacent
-  wards wider than alleys) instead of a uniform 1-tile line.
-- Update `STUDIO-LIVE-PARITY.md` and `settlement-integration.md` to reflect
-  that P1(2) is substantially further along than previously recorded.
+- Fix `buildingHalfExtents()` to use `WARD_TO_SIZE[wardType] ?? 'medium'`
+  for anchor buildings (matching `createSettlementBuildingDna()`'s real
+  sizing) instead of the current ad-hoc patriciate/church-only check.
+- Add a permanent regression test (the flat-terrain harness described in
+  Finding B) asserting 0% building-drop rate for village/town/city across
+  a fixed seed range, so this stays visible if terrain-flattening
+  interactions ever regress it.
+- Widen `rasterizeRoads()`'s output from a single Bresenham tile to a
+  perpendicular multi-tile swath (~3 tiles / 6 WU) so primary settlement
+  streets read as real streets rather than 1-tile dirt lines.
+- Update `STUDIO-LIVE-PARITY.md` and `settlement-integration.md` to
+  reflect that P1(2) is substantially further along than previously
+  recorded, and that the building-drop concern was investigated and found
+  not to reproduce on buildable terrain.
 
 ## Testing
 
 - Unit tests for `buildingToDungeonPlan.ts` (existing suite) re-verified
   against the new `cellSize`.
-- Unit tests for `SettlementGenerator.ts`'s snap/drop behavior (new,
-  covering the measured drop-rate fix).
+- New unit tests for `SettlementGenerator.ts`: `buildingHalfExtents()`
+  sizing correctness, and the flat-terrain 0%-drop-rate regression guard.
 - Manual/Playwright playtest: enter a few different building sizes,
   confirm rooms read as spacious and proportioned like dungeon rooms; walk
-  a village/town/city, confirm building density and road width read as
-  intentional rather than sparse/uniform.
+  a village/town/city, confirm road width reads as intentional rather than
+  a thin uniform line.
 - Full regression suite run (same bar as prior branches: no new failures
   beyond the existing pre-existing/unrelated set).
 
 ## Open items for user review
 
-- Workstream 2's exact fix (snap radius vs. overlap padding vs. model
-  scale) is deliberately left to be decided from sweep data collected
-  during implementation, not fixed numbers now — flagged here so it's not
-  mistaken for an oversight.
+- Workstream 2's building-drop concern was measured and found not to
+  reproduce on buildable terrain (see Finding B) — scoped down accordingly.
+  If real playtesting surfaces sparse settlements on rough/water-adjacent
+  terrain, that would need its own follow-up investigation.
 - If, after these fixes, settlements still look meaningfully different
   from Studio's preview, that would indicate P1(2) needs the fuller design
   cycle after all — this branch's job is to close the concrete bugs found,
