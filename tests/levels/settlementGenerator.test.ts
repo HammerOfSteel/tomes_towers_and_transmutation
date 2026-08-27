@@ -5,7 +5,7 @@ import { planSettlement, applySettlementToGrid, type PlacedBuilding } from '@/wo
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
 import { generateRealmData } from '@/world/RealmGenerator';
-import { buildSettlement, type SettlementModel, type WardType } from '@/world/SettlementModelGenerator';
+import { buildSettlement, fillWard, OccupancyGrid, type SettlementModel, type WardType } from '@/world/SettlementModelGenerator';
 import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
 import { factionBuildingDna, getFootprint } from '@/world/buildings/BuildingDNA';
 
@@ -125,6 +125,26 @@ describe('planSettlement', () => {
     }
     const plan = planSettlement('village', 32, 32, 2024, grid, 'Drop', 'human');
     expect(plan.buildings.length).toBe(0);
+  });
+
+  it('drops zero requested buildings on flat, fully buildable terrain (village/town/city, 20 seeds each)', () => {
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const grid = flatGrid(256);
+        const plan = planSettlement(type, 128, 128, seed, grid);
+        const model = buildModelFor(type, seed);
+        const occ = new OccupancyGrid(
+          type === 'village' ? 320 : type === 'town' ? 360 : 420,
+          type === 'village' ? 240 : type === 'town' ? 280 : 320,
+        );
+        let requested = 0;
+        for (const ward of model.wards) {
+          if (!ward.withinCity || !WARD_TO_KIND[ward.type]) continue;
+          requested += fillWard(ward, occ, model.roads).length;
+        }
+        expect(plan.buildings.length, `${type} seed=${seed}`).toBe(requested);
+      }
+    }
   });
 
   it('accepts explicit name and faction override', () => {
