@@ -246,7 +246,10 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
 }
 
 function getBuildingFootprint(dna: BuildingDNA): { w: number; d: number } {
-  // Use the same footprint logic as BuildingBuilder
+  // Deliberately larger than BuildingDNA's exterior SIZE_FOOTPRINT/KIND_FOOTPRINT
+  // tables — interiors are intentionally more spacious than the compact
+  // exterior silhouette, since they render as a fully separate scene
+  // (see SceneManager.loadDungeon()), not a literal inside-the-mesh space.
   const BASE: Record<string, { w: number; d: number }> = {
     tiny: { w: 6, d: 6 }, small: { w: 9, d: 7 }, medium: { w: 11, d: 9 }, large: { w: 15, d: 12 },
   };
