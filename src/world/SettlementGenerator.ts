@@ -258,6 +258,17 @@ function rasterizeRoads(roads: Road[], centerCol: number, centerRow: number, cx:
       prev = cur;
     }
   }
+  // Widen the rasterized center-line into a real street: dilate every
+  // center-line tile by its 4 orthogonal neighbours. model.roads[] are all
+  // primary gate->hub arterials (no separate alley network exists in the
+  // generator), so a uniform width for every road is the honest fix here.
+  const centerLineTiles = [...out.values()];
+  for (const { col, row } of centerLineTiles) {
+    addTile(col + 1, row);
+    addTile(col - 1, row);
+    addTile(col, row + 1);
+    addTile(col, row - 1);
+  }
   return [...out.values()];
 }
 

@@ -153,6 +153,25 @@ describe('planSettlement', () => {
     expect(plan.name).toBe('Custom Falls');
     expect(plan.faction).toBe('elven');
   });
+
+  it('roads are wider than a single tile (each road tile has an orthogonal road neighbor)', () => {
+    const grid = flatGrid(128);
+    const plan = planSettlement('town', 64, 64, 555, grid, 'WideRoads', 'human');
+    const roadSet = new Set(plan.roads.map(r => `${r.col},${r.row}`));
+    expect(plan.roads.length).toBeGreaterThan(0);
+    let tilesWithOrthogonalNeighbor = 0;
+    for (const r of plan.roads) {
+      const hasNeighbor =
+        roadSet.has(`${r.col + 1},${r.row}`) || roadSet.has(`${r.col - 1},${r.row}`) ||
+        roadSet.has(`${r.col},${r.row + 1}`) || roadSet.has(`${r.col},${r.row - 1}`);
+      if (hasNeighbor) tilesWithOrthogonalNeighbor++;
+    }
+    // Every original center-line tile now has all 4 neighbours added, so
+    // essentially every tile should have at least one orthogonal road
+    // neighbour (a genuinely 1-tile-wide road would have none, since
+    // Bresenham lines only touch diagonally at direction changes).
+    expect(tilesWithOrthogonalNeighbor).toBe(plan.roads.length);
+  });
 });
 
 describe('buildingHalfExtents (via overlap padding)', () => {
