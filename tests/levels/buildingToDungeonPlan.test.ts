@@ -140,6 +140,13 @@ describe('buildingToDungeonPlan — core contract', () => {
     }
   });
 
+  it('rooms use the same cellSize convention as other interior scenes (2 world units/tile)', () => {
+    const plan = buildingToDungeonPlan('house', 'human_town', 1);
+    for (const [id, bp] of plan.rooms) {
+      expect(bp.cellSize, `${id}.cellSize`).toBe(2);
+    }
+  });
+
   it('produces a DungeonPlan with a valid startRoomId and no enemy spawns', () => {
     const plan = buildingToDungeonPlan('cottage', 'human_rural', 12345, 'tiny', 1);
     expect(plan.startRoomId).toBeTruthy();

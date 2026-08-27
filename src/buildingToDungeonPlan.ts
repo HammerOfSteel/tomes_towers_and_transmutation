@@ -212,7 +212,7 @@ export function buildingToDungeonPlan(
         version:      1 as const,
         width:        bw,
         depth:        bd,
-        cellSize:     1.0,
+        cellSize:     2,
         wallHeight:   FLOOR_HEIGHT,
         tiles:        buildPerimeterWalls(bw, bd),
         doors:        [],
