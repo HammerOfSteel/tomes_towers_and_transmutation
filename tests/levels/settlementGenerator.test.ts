@@ -135,6 +135,24 @@ describe('planSettlement', () => {
   });
 });
 
+describe('buildingHalfExtents (via overlap padding)', () => {
+  it('pads inn/patriciate-sized anchors using their real WARD_TO_SIZE, not an ad-hoc guess', () => {
+    // Build two adjacent inn anchors close enough to violate correct
+    // (WARD_TO_SIZE-based) padding but not violate the current buggy
+    // ad-hoc 'medium' estimate — this is only reachable if the source
+    // under-pads relative to the real footprint.
+    const innFootprint = getFootprint(WARD_TO_KIND['inn']!, WARD_TO_SIZE['inn'] ?? 'medium');
+    const innHw = Math.ceil(innFootprint.w / 4);
+    const innHd = Math.ceil(innFootprint.d / 4);
+    const a: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: 0, row: 0, rotation: 0, seed: 1 };
+    const b: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: innHw * 2 - 1, row: 0, rotation: 0, seed: 2 };
+    // At this exact spacing (2x the correct half-width apart - 1), correctly
+    // sized anchors must be flagged as overlapping by the real padding
+    // logic used elsewhere in this file's tests.
+    expect(overlaps(a, b)).toBe(true);
+  });
+});
+
 describe('applySettlementToGrid', () => {
   it('marks road and building cells with the new placed-building shape', () => {
     const grid = flatGrid(128);
