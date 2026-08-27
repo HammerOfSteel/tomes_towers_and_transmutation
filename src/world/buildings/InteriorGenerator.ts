@@ -140,11 +140,11 @@ export function generatePlan(dna: BuildingDNA): HousePlan {
   switch (dna.buildingKind) {
     case 'house': case 'cottage': case 'terraced': {
       // living room (front), kitchen (back-left), bedroom (back-right)
-      const ld = Math.ceil(kd * 0.55);
+      const ld = Math.ceil(kd * 0.5);
       fillRoom(1, 1, kw, ld, 'living');
       const bw = Math.floor(kw / 2);
       const backD = kd - ld - 1;
-      if (backD > 1) {
+      if (backD >= 1) {
         fillRoom(1,        1 + ld + 1, bw,       backD, 'kitchen');
         fillRoom(1 + bw + 1, 1 + ld + 1, kw - bw - 1, backD, 'bedroom');
         // 2-tile wide passage: living → kitchen + bedroom

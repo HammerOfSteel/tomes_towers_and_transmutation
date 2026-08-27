@@ -43,6 +43,23 @@ describe('generatePlan', () => {
       expect(hasFloor).toBe(true);
     });
   }
+
+  it('house/cottage/terraced always split into living+kitchen+bedroom, at every size', () => {
+    const factionPerKind = {
+      house: 'human_rural' as const,
+      cottage: 'elven' as const,
+      terraced: 'human_rural' as const,
+    };
+
+    for (const kind of ['house', 'cottage', 'terraced'] as const) {
+      for (const size of ['tiny', 'small', 'medium', 'large'] as const) {
+        const dna = factionBuildingDna(kind, factionPerKind[kind], 1, size, 1);
+        const plan = generatePlan(dna);
+        const purposes = plan.rooms.map(r => r.purpose).sort();
+        expect(purposes, `${kind}/${size}`).toEqual(['bedroom', 'kitchen', 'living']);
+      }
+    }
+  });
 });
 
 describe('deriveBlueprints', () => {
