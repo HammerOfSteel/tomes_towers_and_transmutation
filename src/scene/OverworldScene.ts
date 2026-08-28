@@ -944,6 +944,22 @@ export class OverworldScene {
    * scene, builds its tree/rock scatter (Task 11), and returns all three so
    * `_unloadTerrainChunk` can tear them down.
    */
+  /**
+   * Converts a `ChunkManager` chunk coordinate into the `WorldGrid` col/row
+   * grid-index origin of its top-left tile, applying the same GHW/GHH
+   * centering offset that `worldToGrid()`/`gridToWorld()` use. Shared by
+   * `_loadTerrainChunk()` (terrain mesh/collider) and `_buildChunkScatter()`
+   * (tree/rock placement) so both derive a chunk's grid rectangle from one
+   * formula — the earlier bug was exactly two independent reimplementations
+   * of this offset silently drifting apart when only one got fixed.
+   */
+  private _chunkGridOrigin(coord: ChunkCoord): { colStart: number; rowStart: number } {
+    return {
+      colStart: coord.cx * CHUNK_SIZE + Math.floor(this._GHW),
+      rowStart: coord.cz * CHUNK_SIZE + Math.floor(this._GHH),
+    };
+  }
+
   private _loadTerrainChunk(coord: ChunkCoord): { mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group } {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     // ChunkManager's chunk coordinates live in a 0-centered world-space grid
@@ -957,11 +973,12 @@ export class OverworldScene {
     // chunk actually renders in world space — a real regression: swim mode
     // in deep water never triggered because the collider under the player
     // was flat default terrain, not the carved water floor. `_buildChunkScatter()`
-    // below already applies this exact offset (`- GHW * T` in world units);
-    // `Math.floor()` here converts that same offset into the equivalent
-    // integer grid-index shift.
-    const colStart = coord.cx * CHUNK_SIZE + Math.floor(GHW);
-    const rowStart = coord.cz * CHUNK_SIZE + Math.floor(GHH);
+    // derives its own world-space origin from this exact same grid origin
+    // (via `_chunkGridOrigin()`) so the two can never drift apart again the
+    // way they briefly did (scatter kept using an unshifted formula after
+    // this terrain fix landed, placing trees/rocks outside their chunk's
+    // actual terrain footprint).
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
     const { positions, normals, colors, indices } = buildTerrainGeometryData(
       this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
     );
@@ -1044,8 +1061,15 @@ export class OverworldScene {
     const group = new THREE.Group();
     const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
     const chunkWorldSize = T * CHUNK_SIZE;
-    const originX = coord.cx * chunkWorldSize - GHW * T;
-    const originZ = coord.cz * chunkWorldSize - GHH * T;
+    // Origin must land on the exact same world-space corner as this chunk's
+    // terrain mesh (built by `_loadTerrainChunk()` from `_chunkGridOrigin()`'s
+    // colStart/rowStart via `gridToWorld()`'s (col - GHW) * T convention) —
+    // using a bare `- GHW * T` here (the pre-fix formula) desyncs scatter
+    // from terrain by `Math.floor(GHW/GHH) * T` world units whenever GHW/GHH
+    // aren't already integers.
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
     const rand = mulberry32((this._seed ^ 0x5C47_7E12) ^ (coord.cx * 92821) ^ (coord.cz * 68917));
 
     const treePts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, rand);
