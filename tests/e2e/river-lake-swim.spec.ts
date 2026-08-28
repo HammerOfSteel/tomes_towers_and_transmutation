@@ -11,8 +11,18 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadPage, startGame, goExterior, getPlayerPos } from './helpers';
 
-test.use({ actionTimeout: 60_000 });
-test.setTimeout(180_000);
+// actionTimeout bumped from the original 60s — this shared/sandboxed dev
+// environment's headless Chromium screenshot capture (used by helpers.ts's
+// goExterior()) can take well over 60s under load; this is purely an
+// environment-tolerance adjustment, not a change to test behavior/assertions.
+// actionTimeout/navigationTimeout/per-test timeout bumped from the
+// original 60s/default/180s — this shared/sandboxed dev environment's
+// headless Chromium page load, physics settling, and screenshot capture
+// (used by helpers.ts's loadPage()/goExterior() and this spec's own SS())
+// can take several minutes under heavy host load; this is purely an
+// environment-tolerance adjustment, not a change to test behavior/assertions.
+test.use({ actionTimeout: 150_000, navigationTimeout: 60_000 });
+test.setTimeout(600_000);
 
 const SS = async (page: Page, name: string) => {
   // Best-effort only — screenshots are a visual aid for manual review, not

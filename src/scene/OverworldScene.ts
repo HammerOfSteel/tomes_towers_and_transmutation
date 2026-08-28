@@ -946,8 +946,22 @@ export class OverworldScene {
    */
   private _loadTerrainChunk(coord: ChunkCoord): { mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group } {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const colStart = coord.cx * CHUNK_SIZE;
-    const rowStart = coord.cz * CHUNK_SIZE;
+    // ChunkManager's chunk coordinates live in a 0-centered world-space grid
+    // (chunk (0,0) covers world X/Z in [0, chunkWorldSize)) — see
+    // `worldToChunkCoord()` in ChunkManager.ts. `WorldGrid` col/row indices,
+    // however, are centered so that world (0,0) sits at grid col/row
+    // (GHW, GHH) (see `worldToGrid()`/`gridToWorld()` in WorldGrid.ts).
+    // Without translating through that same GHW/GHH offset here, this
+    // chunk's terrain mesh/collider was built from the wrong (often
+    // out-of-bounds, default-cell) grid rectangle relative to where the
+    // chunk actually renders in world space — a real regression: swim mode
+    // in deep water never triggered because the collider under the player
+    // was flat default terrain, not the carved water floor. `_buildChunkScatter()`
+    // below already applies this exact offset (`- GHW * T` in world units);
+    // `Math.floor()` here converts that same offset into the equivalent
+    // integer grid-index shift.
+    const colStart = coord.cx * CHUNK_SIZE + Math.floor(GHW);
+    const rowStart = coord.cz * CHUNK_SIZE + Math.floor(GHH);
     const { positions, normals, colors, indices } = buildTerrainGeometryData(
       this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
     );
