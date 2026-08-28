@@ -69,6 +69,7 @@ import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
+import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager';
 import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
@@ -120,7 +121,23 @@ interface RockEntry { mesh: THREE.Object3D; px: number; py: number; pz: number; 
 
 export class OverworldScene {
   // ── Visual geometry (built in constructor, never rebuilt)
-  private readonly _terrain:   THREE.Mesh;
+  /** Streams terrain mesh+collider per-chunk around the player (RI-4 wiring) —
+   *  superseded the old whole-grid `_terrain` mesh + `_createTerrainCollider()`. */
+  private _chunkManager!: ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody }>;
+  /**
+   * Mirrors whatever's currently tracked inside `_chunkManager` (keyed by
+   * "cx,cz") purely so `enter()`/`exit()` can cheaply toggle terrain
+   * visibility + collision without unloading/rebuilding it. `ChunkManager`
+   * itself exposes no accessor for its internal payload map, only
+   * load/unload callbacks — so this side map is populated in
+   * `_loadTerrainChunk()` and cleared in `_unloadTerrainChunk()`.
+   * Needed because dungeon/tower interior rooms are built at/near the same
+   * world-origin coordinates as the overworld (see `SceneManager`'s "most
+   * rooms are centred at origin" convention) — without hiding terrain on
+   * `exit()`, its mesh would render through interior geometry and its
+   * Rapier trimesh would still collide with the player underfoot.
+   */
+  private readonly _terrainChunkData = new Map<string, { mesh: THREE.Mesh; body: RAPIER.RigidBody }>();
   private readonly _tower:     THREE.Group;
   private readonly _waterMesh: THREE.Mesh | null;
   /** Shared shader material driving the animated water surface (null when no water tiles exist). */
@@ -235,8 +252,17 @@ export class OverworldScene {
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
-    console.log('[OverworldScene] _buildTerrain...');
-    this._terrain   = this._buildTerrain();
+    console.log('[OverworldScene] setting up terrain ChunkManager...');
+    this._chunkManager = new ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody }>(
+      {
+        load: (coord) => this._loadTerrainChunk(coord),
+        unload: (coord, data) => this._unloadTerrainChunk(coord, data),
+      },
+      { tileSize: T, chunkSize: CHUNK_SIZE },
+    );
+    // Force an initial load centered on the player's starting position so
+    // the world isn't empty for the first frame.
+    this._chunkManager.update(this.player.group.position.x, this.player.group.position.z);
     console.log('[OverworldScene] _buildWaterMesh...');
     this._waterMesh     = this._buildWaterMesh();
     this._waterMaterial = (this._waterMesh?.material as THREE.ShaderMaterial | undefined) ?? null;
@@ -289,8 +315,14 @@ export class OverworldScene {
     // shallow to swim in"). -5 WU of margin below the deepest carve is
     // comfortably clear of any real terrain.
     this._groundBody = this.physics.createGroundPlane(-(OCEAN_DEEP_DEPTH_WU + 5));
-    // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
-    this._staticBodies.push(this._createTerrainCollider());
+    // Terrain mesh + collider are streamed per-chunk by `_chunkManager` (see
+    // `update()`), not created here — but any chunks that were hidden by a
+    // previous exit() (or loaded before the first-ever enter(), from the
+    // constructor's forced initial load) need to be shown/re-enabled now.
+    for (const { mesh, body } of this._terrainChunkData.values()) {
+      this.scene.add(mesh);
+      body.setEnabled(true);
+    }
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
     this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
@@ -311,7 +343,7 @@ export class OverworldScene {
     this._createBuildingColliders();
 
     // Add visuals
-    this.scene.add(this._terrain, this._tower);
+    this.scene.add(this._tower);
     if (this._waterMesh)  this.scene.add(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.add(rm);
     for (const tr of this._trees)        this.scene.add(tr.group);
@@ -355,7 +387,16 @@ export class OverworldScene {
     for (const b of this._staticBodies) this.physics.rapierWorld.removeRigidBody(b);
     this._staticBodies = [];
 
-    this.scene.remove(this._terrain, this._tower);
+    this.scene.remove(this._tower);
+    // Hide + disable (not unload) currently-streamed terrain chunks. They
+    // stay tracked in `_terrainChunkData`/`_chunkManager` so a later
+    // `enter()` (including a bare `enter()` with no scene.update() in
+    // between, e.g. telescope remote-view mode) can cheaply restore them
+    // without waiting for a chunk-streaming update() tick.
+    for (const { mesh, body } of this._terrainChunkData.values()) {
+      this.scene.remove(mesh);
+      body.setEnabled(false);
+    }
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.remove(rm);
     for (const tr of this._trees)        this.scene.remove(tr.group);
@@ -387,6 +428,9 @@ export class OverworldScene {
     const pos = this.player.group.position;
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
+
+    // RI-4: stream terrain chunks in/out around the player.
+    this._chunkManager.update(pos.x, pos.z);
 
     // RI-3: real per-tile swim collision for live overworld rivers/ocean
     // water, reusing the same hysteresis + setSwimming()/setSubmersion()
@@ -466,8 +510,11 @@ export class OverworldScene {
   dispose(): void {
     this._minimap.dispose();
     this.exit();
-    (this._terrain.geometry as THREE.BufferGeometry).dispose();
-    (this._terrain.material as THREE.Material).dispose();
+    // RI-4: unload every currently-streamed terrain chunk — disposes each
+    // chunk's mesh geometry/material and removes its Rapier body, mirroring
+    // what the old whole-grid `_terrain`/`_createTerrainCollider()` teardown
+    // used to do in one shot.
+    this._chunkManager.dispose();
     if (this._waterMesh) {
       this._waterMesh.geometry.dispose();
       (this._waterMesh.material as THREE.Material).dispose();
@@ -528,7 +575,9 @@ export class OverworldScene {
     return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
   }
 
-  /** Number of active static physics bodies (terrain, tower, trees, rocks, buildings).
+  /** Number of active static physics bodies (tower, trees, rocks, buildings —
+   *  terrain chunk colliders are tracked separately by `_chunkManager`/
+   *  `_terrainChunkData`, not in `_staticBodies`).
    *  Used by tests to verify building colliders survive exit()/enter() cycles. */
   getStaticBodyCount(): number {
     return this._staticBodies.length;
@@ -892,17 +941,52 @@ export class OverworldScene {
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**
-   * Build a Rapier trimesh collider from the exact same vertex/index buffers
-   * used to render the terrain (`buildTerrainGeometryData`) — physics and
-   * visuals can never mismatch, including at elevation-edge cliff faces.
+   * ChunkManager `load` handler: builds one chunk's terrain mesh + Rapier
+   * trimesh collider from the same buffers (guarantees they agree — see
+   * TerrainGeometryBuilder.ts's header comment), adds the mesh to the
+   * scene, and returns both so `_unloadTerrainChunk` can tear them down.
    */
-  private _createTerrainCollider(): RAPIER.RigidBody {
+  private _loadTerrainChunk(coord: ChunkCoord): { mesh: THREE.Mesh; body: RAPIER.RigidBody } {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const { positions, indices } = buildTerrainGeometryData(this._wg, GW, GH, GHW, GHH, T, SH);
-    return this.physics.createStaticTrimesh(
+    const colStart = coord.cx * CHUNK_SIZE;
+    const rowStart = coord.cz * CHUNK_SIZE;
+    const { positions, normals, colors, indices } = buildTerrainGeometryData(
+      this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
+    );
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
+    geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    // Chunks can load before the scene is ever entered (the constructor
+    // forces an initial load) or while exited (dungeon/tower interior) —
+    // only add to the live scene graph when actually entered, matching the
+    // `_isInScene` gating already used for buildings/enemies/ruins below.
+    if (this._isInScene) this.scene.add(mesh);
+
+    const body = this.physics.createStaticTrimesh(
       new Float32Array(positions),
       new Uint32Array(indices),
     );
+    if (!this._isInScene) body.setEnabled(false);
+
+    const data = { mesh, body };
+    this._terrainChunkData.set(`${coord.cx},${coord.cz}`, data);
+    return data;
+  }
+
+  /**
+   * ChunkManager `unload` handler: removes the mesh from the scene and
+   * disposes its GPU buffers, and removes the physics body.
+   */
+  private _unloadTerrainChunk(coord: ChunkCoord, data: { mesh: THREE.Mesh; body: RAPIER.RigidBody }): void {
+    this._terrainChunkData.delete(`${coord.cx},${coord.cz}`);
+    this.scene.remove(data.mesh);
+    data.mesh.geometry.dispose();
+    (data.mesh.material as THREE.Material).dispose();
+    this.physics.removeBody(data.body);
   }
 
   /** Create a fixed static rigid body with the given collider at (x, y, z). */
@@ -912,34 +996,6 @@ export class OverworldScene {
     );
     this.physics.rapierWorld.createCollider(desc, body);
     this._staticBodies.push(body);
-  }
-
-  /**
-   * Build the merged terrain BufferGeometry.
-   *
-   * For each tile at height H:
-   *   – Top face     (normal +Y)
-   *   – South wall   (normal +Z) when south neighbour is lower
-   *   – North wall   (normal −Z) when north neighbour is lower
-   *   – East  wall   (normal +X) when east  neighbour is lower
-   *   – West  wall   (normal −X) when west  neighbour is lower
-   *
-   * Winding:  triangles (v0,v1,v2) and (v0,v2,v3) produce the outward normal.
-   * All vertex-order derivations verified with the right-hand rule.
-   */
-  private _buildTerrain(): THREE.Mesh {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const { positions, normals, colors, indices } = buildTerrainGeometryData(
-      this._wg, GW, GH, GHW, GHH, T, SH,
-    );
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
-    geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors, 3));
-    geo.setIndex(indices);
-
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   }
 
   /**
