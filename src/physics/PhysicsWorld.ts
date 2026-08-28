@@ -34,6 +34,20 @@ export class PhysicsWorld {
       const { x: ox, y: oy, z: oz } = this.cullingOrigin;
       this.world.forEachRigidBody(body => {
         if (body.bodyType() !== RAPIER.RigidBodyType.Fixed) return;
+        // Only consider bodies that are CURRENTLY enabled. A body may already
+        // be disabled for a reason that has nothing to do with distance
+        // culling — e.g. the overworld scene disables chunk-streamed
+        // tree/rock bodies on chunk unload or on scene `exit()` (see
+        // OverworldScene) while leaving them alive for later re-enable on
+        // chunk reload. If we culled (and therefore later blindly
+        // re-enabled) a body that was already disabled for one of those
+        // reasons, we'd resurrect it as a live collider in a completely
+        // unrelated scene (e.g. an interior/dungeon) the moment it happened
+        // to sit farther than `cullingRadius` from that scene's player
+        // position — which is exactly the bug this guard prevents. Only
+        // bodies WE disable here (because they're enabled going in, but out
+        // of range) go into `culled` and get the automatic re-enable below.
+        if (!body.isEnabled()) return;
         const t = body.translation();
         const dx = t.x - ox; const dy = t.y - oy; const dz = t.z - oz;
         if (dx*dx + dy*dy + dz*dz > r2) {
