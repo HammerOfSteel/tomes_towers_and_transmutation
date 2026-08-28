@@ -9,7 +9,7 @@
  * at elevation edges/slopes (the old collider used a Rapier heightfield
  * that smoothly interpolated between samples instead of stepping).
  */
-import type { WorldGrid } from './WorldGrid';
+import type { WorldGrid, BiomeId } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 
 /** Biome vertex colours [r, g, b] for height levels 0–4 — kept for backward-compat callers
@@ -69,6 +69,27 @@ export const BIOME_SAND_VARIANTS: readonly (readonly [number, number, number])[]
 export const SHALLOW_WATER_TINT_THRESHOLD_WU = 1.75;
 /** Lighter, more turquoise tint for shallow (wading-depth) water. */
 export const BIOME_WATER_SHALLOW: readonly [number, number, number] = [0.24, 0.46, 0.58];
+
+/** Per-biome colour-look variants for the 7 non-water/beach biomes (ocean
+ *  tiers and beach keep using BIOME_WATER / BIOME_SAND_VARIANTS above,
+ *  which are already biome-correct). 2-3 variants each, following the
+ *  same "base / lighter / darker" patchiness pattern as BIOME_VARIANTS.
+ *  deep_ocean/ocean/beach are included with empty-equivalent aliases
+ *  (pointing at the existing tables) purely so this is a total Record
+ *  over BiomeId — buildTerrainGeometryData's water/beach branches never
+ *  actually read these three entries. */
+export const BIOME_COLOR_VARIANTS: Record<BiomeId, readonly (readonly [number, number, number])[]> = {
+  deep_ocean: [BIOME_WATER],
+  ocean:      [BIOME_WATER_SHALLOW],
+  beach:      BIOME_SAND_VARIANTS,
+  desert:     [[0.78, 0.66, 0.42], [0.82, 0.70, 0.46], [0.72, 0.60, 0.36]],
+  savanna:    [[0.62, 0.56, 0.28], [0.66, 0.60, 0.32], [0.56, 0.50, 0.24]],
+  grassland:  [[0.26, 0.44, 0.16], [0.22, 0.40, 0.15], [0.30, 0.46, 0.20]],
+  forest:     [[0.16, 0.32, 0.14], [0.14, 0.30, 0.20], [0.19, 0.28, 0.15]],
+  taiga:      [[0.15, 0.28, 0.20], [0.13, 0.26, 0.24], [0.18, 0.30, 0.22]],
+  tundra:     [[0.42, 0.44, 0.36], [0.46, 0.46, 0.40], [0.38, 0.40, 0.34]],
+  snow:       [[0.88, 0.90, 0.92], [0.92, 0.93, 0.95], [0.82, 0.85, 0.88]],
+};
 
 /**
  * Deterministic per-cell hash → integer variant index in [0, variantCount).
@@ -178,9 +199,9 @@ export function buildTerrainGeometryData(
       // Biome/feature-aware colour selection
       const cell = wg.get(col, row);
       let biomeRgb: readonly [number, number, number];
-      if (cell.biome === 'water') {
+      if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') {
         biomeRgb = cell.waterDepth < SHALLOW_WATER_TINT_THRESHOLD_WU ? BIOME_WATER_SHALLOW : BIOME_WATER;
-      } else if (cell.biome === 'sand') {
+      } else if (cell.biome === 'beach') {
         const vi = cellVariantIndex(col, row, BIOME_SAND_VARIANTS.length);
         biomeRgb = BIOME_SAND_VARIANTS[vi]!;
       } else if (cell.feature === 'river') {
@@ -191,7 +212,7 @@ export function buildTerrainGeometryData(
         const b = BIOME[H]!;
         biomeRgb = [b[0] * 0.88, b[1] * 0.80, b[2] * 0.68];
       } else {
-        const variants = BIOME_VARIANTS[H] ?? [BIOME[H]!];
+        const variants = BIOME_COLOR_VARIANTS[cell.biome] ?? BIOME_VARIANTS[H] ?? [BIOME[H]!];
         const vi = cellVariantIndex(col, row, variants.length);
         biomeRgb = variants[vi]!;
       }

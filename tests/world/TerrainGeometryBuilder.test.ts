@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
+import type { BiomeId } from '@/world/WorldGrid';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 
 describe('buildTerrainGeometryData', () => {
@@ -44,7 +45,7 @@ describe('buildTerrainGeometryData', () => {
 
   it('colors water-biome tiles using the water palette', () => {
     const wg = new WorldGrid(1, 1);
-    wg.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
+    wg.set(0, 0, { biome: 'deep_ocean', waterDepth: OCEAN_DEEP_DEPTH_WU });
 
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
 
@@ -182,7 +183,7 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
 
   it('keeps water-biome tile color ratio unchanged by variant noise', () => {
     const wg = new WorldGrid(1, 1);
-    wg.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
+    wg.set(0, 0, { biome: 'deep_ocean', waterDepth: OCEAN_DEEP_DEPTH_WU });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
     const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
@@ -226,11 +227,11 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
 describe('buildTerrainGeometryData — sand biome', () => {
   it('colors sand-biome tiles using the sand palette, distinct from grass', () => {
     const sandGrid = new WorldGrid(1, 1);
-    sandGrid.set(0, 0, { biome: 'sand', elevation: 1 });
+    sandGrid.set(0, 0, { biome: 'beach', elevation: 1 });
     const sandData = buildTerrainGeometryData(sandGrid, 1, 1, 0, 0, 1, 1);
 
     const grassGrid = new WorldGrid(1, 1);
-    grassGrid.set(0, 0, { biome: 'grass', elevation: 1 });
+    grassGrid.set(0, 0, { biome: 'grassland', elevation: 1 });
     const grassData = buildTerrainGeometryData(grassGrid, 1, 1, 0, 0, 1, 1);
 
     const sandColor  = [sandData.colors[0]!, sandData.colors[1]!, sandData.colors[2]!];
@@ -242,11 +243,11 @@ describe('buildTerrainGeometryData — sand biome', () => {
 describe('buildTerrainGeometryData — shallow vs deep water tint (RI-3 shoreline)', () => {
   it('tints a shallow-depth water tile lighter than a deep-depth water tile', () => {
     const shallowGrid = new WorldGrid(1, 1);
-    shallowGrid.set(0, 0, { biome: 'water', waterDepth: OCEAN_SHALLOW_DEPTH_WU });
+    shallowGrid.set(0, 0, { biome: 'ocean', waterDepth: OCEAN_SHALLOW_DEPTH_WU });
     const shallowData = buildTerrainGeometryData(shallowGrid, 1, 1, 0, 0, 1, 1);
 
     const deepGrid = new WorldGrid(1, 1);
-    deepGrid.set(0, 0, { biome: 'water', waterDepth: OCEAN_DEEP_DEPTH_WU });
+    deepGrid.set(0, 0, { biome: 'deep_ocean', waterDepth: OCEAN_DEEP_DEPTH_WU });
     const deepData = buildTerrainGeometryData(deepGrid, 1, 1, 0, 0, 1, 1);
 
     // Sum of RGB channels as a simple brightness proxy — shallow should
@@ -254,5 +255,42 @@ describe('buildTerrainGeometryData — shallow vs deep water tint (RI-3 shorelin
     const shallowBrightness = shallowData.colors[0]! + shallowData.colors[1]! + shallowData.colors[2]!;
     const deepBrightness    = deepData.colors[0]!    + deepData.colors[1]!    + deepData.colors[2]!;
     expect(shallowBrightness).toBeGreaterThan(deepBrightness);
+  });
+});
+
+describe('buildTerrainGeometryData — biome-distinct colours', () => {
+  it('renders desert and forest tiles with visibly different top-face colours', () => {
+    const wg = new WorldGrid(1, 2);
+    wg.set(0, 0, { biome: 'desert', elevation: 1 });
+    wg.set(0, 1, { biome: 'forest', elevation: 1 });
+
+    const desertGeo = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
+    const wg2 = new WorldGrid(1, 1);
+    wg2.set(0, 0, { biome: 'forest', elevation: 1 });
+    const forestGeo = buildTerrainGeometryData(wg2, 1, 1, 0, 0, 2, 1);
+
+    const desertColor = [desertGeo.colors[0], desertGeo.colors[1], desertGeo.colors[2]];
+    const forestColor = [forestGeo.colors[0], forestGeo.colors[1], forestGeo.colors[2]];
+    expect(desertColor).not.toEqual(forestColor);
+  });
+
+  it('covers all 7 non-water/beach biomes with a distinct BIOME_COLOR_VARIANTS entry', () => {
+    const landBiomes: BiomeId[] = ['desert', 'savanna', 'grassland', 'forest', 'taiga', 'tundra', 'snow'];
+    const seen = new Set<string>();
+    for (const biome of landBiomes) {
+      const variants = BIOME_COLOR_VARIANTS[biome];
+      expect(variants.length).toBeGreaterThanOrEqual(1);
+      seen.add(JSON.stringify(variants[0]));
+    }
+    // All 7 biomes must have a visually distinct primary colour from each other.
+    expect(seen.size).toBe(landBiomes.length);
+  });
+
+  it('ocean/beach tiles still use the existing water/sand colour tables (unchanged)', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'deep_ocean', elevation: 0, waterDepth: 2.5 });
+    const { colors } = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
+    // Deep water uses BIOME_WATER (darker blue), not a land palette.
+    expect(colors[2]).toBeGreaterThan(colors[1]!); // blue channel dominant
   });
 });
