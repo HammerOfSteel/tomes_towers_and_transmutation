@@ -86,6 +86,13 @@ describe('OverworldScene terrain-chunk streaming — scatter/terrain alignment',
 
       const scatter = (chunkData as any).scatter as THREE.Group;
       for (const child of scatter.children) {
+        // Skip the aggregate render-batch meshes added by
+        // `_mergeGroupMeshesByMaterial()` — their own `.position` is always
+        // (0,0,0) since per-tree/rock/bush/decor world transforms are
+        // baked into their merged vertices instead, so they don't carry
+        // one-object-one-position semantics like the real scatter anchors
+        // this test is checking.
+        if (child.userData.isMergedScatterBatch) continue;
         checkedAnyScatterObject = true;
         const { x: sx, z: sz } = child.position;
         expect(
