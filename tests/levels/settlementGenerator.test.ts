@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import { generateSettlementName } from '@/world/SettlementNameGenerator';
 import { planSettlement, applySettlementToGrid, type PlacedBuilding } from '@/world/SettlementGenerator';
+import type { LayoutType } from '@/world/SettlementModelGenerator';
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
 import { generateRealmData } from '@/world/RealmGenerator';
@@ -152,6 +153,23 @@ describe('planSettlement', () => {
     const plan = planSettlement('town', 32, 32, 0x2222, grid, 'Custom Falls', 'elven');
     expect(plan.name).toBe('Custom Falls');
     expect(plan.faction).toBe('elven');
+  });
+
+  it('defaults to auto layout when layout is omitted (backward compatible)', () => {
+    const grid = flatGrid(128);
+    const plan = planSettlement('village', 64, 64, 42, grid, 'TestVillage', 'human');
+    expect(plan).toBeDefined();
+    expect(plan.buildings).toBeDefined();
+    expect(plan.roads).toBeDefined();
+  });
+
+  it('accepts an explicit layout override and produces a valid plan without throwing', () => {
+    const grid = flatGrid(128);
+    const layout: LayoutType = 'grid';
+    const plan = planSettlement('village', 64, 64, 42, grid, 'TestVillage', 'human', layout);
+    expect(plan).toBeDefined();
+    expect(plan.buildings).toBeDefined();
+    expect(plan.roads).toBeDefined();
   });
 
   it('roads are wider than a single tile (each road tile has an orthogonal road neighbor)', () => {
