@@ -58,7 +58,8 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
     let waterCount = 0;
     for (let row = 0; row < grid.height; row++) {
       for (let col = 0; col < grid.width; col++) {
-        if (grid.get(col, row).biome === 'water') waterCount++;
+        const b = grid.get(col, row).biome;
+        if (b === 'ocean' || b === 'deep_ocean') waterCount++;
       }
     }
     expect(waterCount).toBeGreaterThan(0);
@@ -74,7 +75,10 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
   it('every produced cell has a valid elevation 0-4 and BiomeId', () => {
     const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 4, worldSize: 128 as const };
     const grid = buildWorldGrid(4, cfg);
-    const validBiomes = new Set(['bog', 'grass', 'forest', 'highland', 'rocky', 'water', 'sand']);
+    const validBiomes = new Set([
+      'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+    ]);
     for (let row = 0; row < grid.height; row++) {
       for (let col = 0; col < grid.width; col++) {
         const cell = grid.get(col, row);
@@ -116,5 +120,31 @@ describe('buildWorldData — realm-sourced settlements (P1 siting)', () => {
     for (const b of rich!.plan.buildings) {
       expect(b.wardType).toBeTruthy();
     }
+  });
+});
+
+describe('buildWorldGrid — native realm resolution', () => {
+  it('produces a grid exactly config.worldSize on each side, with no default-96x72 seam', () => {
+    const config = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const };
+    const grid = buildWorldGrid(12345, config);
+    expect(grid.width).toBe(128);
+    expect(grid.height).toBe(128);
+  });
+
+  it('every cell has a biome from the 10-value taxonomy (never falls back to a stretched/default value)', () => {
+    const config = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const };
+    const grid = buildWorldGrid(777, config);
+    const valid = new Set([
+      'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+    ]);
+    let sampled = 0;
+    for (let row = 0; row < 128; row += 7) {
+      for (let col = 0; col < 128; col += 7) {
+        expect(valid.has(grid.get(col, row).biome)).toBe(true);
+        sampled++;
+      }
+    }
+    expect(sampled).toBeGreaterThan(0);
   });
 });

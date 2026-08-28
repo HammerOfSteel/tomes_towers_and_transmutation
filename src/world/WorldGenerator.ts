@@ -46,11 +46,10 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   const rimStart = GHW * 0.80;
   const rimRange = GHW * 0.36;
 
-  // P0 — terrain is now sourced from the same realm generator Overworld
-  // Studio uses, instead of an independent FBM-noise algorithm, so the
-  // same seed produces recognizably the same land/water/mountain layout
-  // in both places. See TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md.
-  const realm = generateRealmData(seed);
+  // Native resolution — realm and world grid are always the same size now,
+  // so RealmToWorldGrid.ts direct-indexes instead of resampling (P0
+  // foundation rebuild, see docs/superpowers/specs/2026-08-28-overworld-foundation-rebuild-design.md).
+  const realm = generateRealmData(seed, config.worldSize, config.worldSize);
   const grid  = realmToWorldGrid(realm, config.worldSize);
 
   for (let row = 0; row < GH; row++) {
