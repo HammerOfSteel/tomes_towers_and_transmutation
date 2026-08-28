@@ -6,12 +6,12 @@
  * is written back after generation so the same world can be recreated.
  */
 
-export type WorldSize = 128 | 256;
+export type WorldSize = 128 | 256 | 512;
 
 export interface WorldGenConfig {
   /** PRNG seed for the whole world.  0 = randomise on first generate. */
   seed:           number;
-  /** Tile count per side.  128 → 256×256 world-units.  256 → 512×512. */
+  /** Tile count per side. 128 → 256×256 world-units.  256 → 512×512. 512 → 1024×1024. */
   worldSize:      WorldSize;
   /** Number of river paths to carve (OW-2). */
   riverCount:     number;
@@ -61,7 +61,7 @@ export const KENNEY_PACKS: readonly { id: string; name: string; icon: string; de
 
 export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   seed:           0,
-  worldSize:      128,
+  worldSize:      512,
   riverCount:     4,
   lakeCount:      2,
   dungeonCount:   6,
