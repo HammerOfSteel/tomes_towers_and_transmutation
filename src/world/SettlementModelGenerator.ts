@@ -393,7 +393,7 @@ export function minDistToRoads(pt: Vec2, roads: Road[]): number {
   return minD;
 }
 
-const ROAD_CLEARANCE = 10;
+const ROAD_CLEARANCE = 3;
 
 function pushRect(out: BuildingRect[], occ: OccupancyGrid, x: number, y: number, w: number, d: number, angle: number): boolean {
   if (occ.blocked(x, y, w, d, angle)) return false;
@@ -521,8 +521,12 @@ export function fillWardPerimeter(poly: Vec2[], _wardType: WardType, seed: numbe
 export function fillWardRadial(poly: Vec2[], _wardType: WardType, seed: number, occ: OccupancyGrid, roads: Road[] = []): BuildingRect[] {
   const out: BuildingRect[] = [];
   if (poly.length < 3) return out;
-  const rand = mulberry32(seed), cent = centroid(poly), centInset = minDistToEdge(cent, poly), STREET = 5, DEPTH = 12, GAP = 3, ALONG = 15;
-  for (let ring = 0; ring * (DEPTH + GAP) < centInset - STREET - DEPTH; ring++) {
+  const rand = mulberry32(seed), cent = centroid(poly), centInset = minDistToEdge(cent, poly), STREET = 5, DEPTH = 12, GAP = 3, ALONG = 15, MAX_RINGS = 3;
+  // Always attempt at least one ring — small wards (the common case once many wards
+  // subdivide a settlement) would otherwise fall below the STREET+DEPTH clearance
+  // and silently place zero buildings, mirroring fillWardOrganically's forced min row.
+  const nRings = Math.min(MAX_RINGS, Math.max(1, Math.floor((centInset - STREET) / (DEPTH + GAP))));
+  for (let ring = 0; ring < nRings; ring++) {
     const r = STREET + ring * (DEPTH + GAP) + DEPTH * 0.5, circ = 2 * Math.PI * r, n = Math.max(3, Math.floor(circ / (ALONG + GAP)));
     for (let i = 0; i < n; i++) {
       const a = (2 * Math.PI * i) / n, bx = cent.x + Math.cos(a) * r, by = cent.y + Math.sin(a) * r;
@@ -531,6 +535,14 @@ export function fillWardRadial(poly: Vec2[], _wardType: WardType, seed: number, 
       if (roads.length > 0 && minDistToRoads({ x: bx, y: by }, roads) < ROAD_CLEARANCE) continue;
       pushRect(out, occ, bx, by, ALONG * (0.82 + rand() * 0.25), DEPTH * (0.82 + rand() * 0.25), a + Math.PI * 0.5 + (rand() - 0.5) * 0.12);
     }
+  }
+  // Last resort: an unlucky sample phase can place every candidate on ring 0 near a
+  // corner (failing the edge-clearance check) for some polygon shapes even though the
+  // ward clearly has room. Rather than leave the ward with zero buildings, drop a single
+  // building at the centroid itself, ignoring edge/road clearance — a small unblocked
+  // ward, positioned safely inside the polygon by construction.
+  if (out.length === 0 && pointInPolygon(cent, poly)) {
+    pushRect(out, occ, cent.x, cent.y, ALONG * 0.9, DEPTH * 0.9, rand() * Math.PI * 2);
   }
   return out;
 }
@@ -549,6 +561,13 @@ export function fillWardClustered(poly: Vec2[], _wardType: WardType, seed: numbe
     if (roads.length > 0 && minDistToRoads(candidate, roads) < ROAD_CLEARANCE + DEPTH) continue;
     if (clusterCentres.some(c => Math.hypot(c.x - candidate.x, c.y - candidate.y) < CLUSTER_MIN_DIST)) continue;
     clusterCentres.push(candidate);
+  }
+  // Small wards routinely fail every randomized attempt above (bbox smaller than the
+  // clearance requirements) — fall back to the ward centroid so the ward is never left
+  // with zero buildings, mirroring the forced-minimum pattern used by the other layouts.
+  if (clusterCentres.length === 0) {
+    const cent = centroid(poly);
+    if (pointInPolygon(cent, poly)) clusterCentres.push(cent);
   }
   for (const cc of clusterCentres) {
     const nBldg = 3 + Math.floor(rand() * 3);
