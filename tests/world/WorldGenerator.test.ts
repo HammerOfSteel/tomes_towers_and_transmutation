@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildWorldGrid, buildWorldData, applyRoadFords } from '@/world/WorldGenerator';
 import { DEFAULT_WORLD_GEN_CONFIG } from '@/world/WorldGenConfig';
 import { WorldGrid } from '@/world/WorldGrid';
+import * as RealmGen from '@/world/RealmGenerator';
 
 describe('applyRoadFords', () => {
   it('turns a river tile crossed by a road into a walkable, dry ford', () => {
@@ -146,5 +147,16 @@ describe('buildWorldGrid — native realm resolution', () => {
       }
     }
     expect(sampled).toBeGreaterThan(0);
+  });
+
+  it('calls generateRealmData with seed, width and height equal to config.worldSize', () => {
+    const config = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const };
+    const spy = vi.spyOn(RealmGen, 'generateRealmData');
+    try {
+      buildWorldGrid(9999, config);
+      expect(spy).toHaveBeenCalledWith(9999, 128, 128);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
