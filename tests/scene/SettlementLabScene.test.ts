@@ -58,11 +58,12 @@ describe('SettlementLabScene', () => {
     const regenBtn = panel.rootEl.querySelector('[data-action="regenerate"]') as HTMLButtonElement;
     regenBtn.click();
 
-    // After regen, count should be the same (not doubled)
+    // After regen (same default seed/type/faction/layout as the initial
+    // enter() call), the scene child count must be EXACTLY the same — any
+    // growth at all would indicate a leaked building/road/lamp object from
+    // the previous settlement not being cleared before the new one is built.
     const afterSecondRegen = scene2.children.length;
-    // Must not have grown by a full settlement's worth — allow ±2 for any
-    // incidental differences in road/lamp counts, but not a full doubling
-    expect(afterSecondRegen).toBeLessThanOrEqual(afterFirstEnter + 2);
+    expect(afterSecondRegen).toBe(afterFirstEnter);
 
     lab2.exit();
     expect(scene2.children.length).toBe(0);

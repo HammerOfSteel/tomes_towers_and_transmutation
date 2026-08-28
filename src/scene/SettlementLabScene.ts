@@ -67,6 +67,8 @@ export class SettlementLabScene {
   // Current settlement render result
   private _renderResult:   SettlementRenderResult | null = null;
   private _roadMeshes:     THREE.Mesh[]                  = [];
+  private _roadGeo:        THREE.PlaneGeometry | null     = null;
+  private _roadMat:        THREE.MeshStandardMaterial | null = null;
   private _buildingBodies: RAPIER.RigidBody[]            = [];
 
   // Panel
@@ -202,9 +204,14 @@ export class SettlementLabScene {
     for (const grp of result.lampGroups)     this._scene.add(grp);
     for (const lt  of result.lampLights)     this._scene.add(lt);
 
-    // Build road tile meshes
+    // Build road tile meshes (geometry/material shared across tiles for this
+    // regeneration cycle; both are tracked on instance fields and disposed in
+    // _clearSettlement() before the next regeneration to avoid leaking WebGL
+    // buffers on every panel "Regenerate" click).
     const roadGeo = new THREE.PlaneGeometry(TILE_UNIT, TILE_UNIT);
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x888060 });
+    this._roadGeo = roadGeo;
+    this._roadMat = roadMat;
     for (const rt of result.roadTiles) {
       const elevation = grid.get(rt.col, rt.row).elevation;
       const wy  = elevation * LEVEL_HEIGHT + 0.02;
@@ -243,6 +250,17 @@ export class SettlementLabScene {
       }
       for (const grp of this._renderResult.lampGroups) {
         this._scene.remove(grp);
+        grp.traverse(obj => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry?.dispose();
+            if (Array.isArray(m.material)) {
+              m.material.forEach(mt => mt.dispose());
+            } else {
+              (m.material as THREE.Material)?.dispose();
+            }
+          }
+        });
       }
       for (const lt of this._renderResult.lampLights) {
         this._scene.remove(lt);
@@ -252,9 +270,12 @@ export class SettlementLabScene {
 
     for (const mesh of this._roadMeshes) {
       this._scene.remove(mesh);
-      // geometry/material are shared instances — only dispose on final cleanup
     }
     this._roadMeshes = [];
+    this._roadGeo?.dispose();
+    this._roadMat?.dispose();
+    this._roadGeo = null;
+    this._roadMat = null;
 
     for (const body of this._buildingBodies) {
       this._physics.removeBody(body);
