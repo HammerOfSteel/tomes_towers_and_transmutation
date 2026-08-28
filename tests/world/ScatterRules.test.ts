@@ -5,7 +5,7 @@ import type { WorldCell } from '@/world/WorldGrid';
 function makeCell(overrides: Partial<WorldCell> = {}): WorldCell {
   return {
     elevation: 2,
-    biome: 'grass',
+    biome: 'grassland',
     feature: 'none',
     content: 'empty',
     dungeonId: 0,
@@ -26,14 +26,14 @@ describe('isScatterAllowed', () => {
   });
 
   it('disallows every scatter kind on a water-biome cell', () => {
-    const cell = makeCell({ biome: 'water', waterDepth: 2.5 });
+    const cell = makeCell({ biome: 'ocean', waterDepth: 2.5 });
     for (const kind of ['tree', 'bush', 'rock', 'camp', 'ruin'] as const) {
       expect(isScatterAllowed(cell, kind)).toBe(false);
     }
   });
 
   it('disallows trees on a sand-biome cell but allows rocks and camps', () => {
-    const cell = makeCell({ biome: 'sand' });
+    const cell = makeCell({ biome: 'beach' });
     expect(isScatterAllowed(cell, 'tree')).toBe(false);
     expect(isScatterAllowed(cell, 'bush')).toBe(false);
     expect(isScatterAllowed(cell, 'rock')).toBe(true);
@@ -72,5 +72,20 @@ describe('isScatterAllowed', () => {
     expect(isScatterAllowed(cell, 'tree')).toBe(false);
     expect(isScatterAllowed(cell, 'bush')).toBe(false);
     expect(isScatterAllowed(cell, 'rock')).toBe(false);
+  });
+});
+
+describe('isScatterAllowed — widened biome taxonomy', () => {
+  it('disallows trees/rocks on both ocean tiers, not just one', () => {
+    const oceanCell = makeCell({ biome: 'ocean' });
+    const deepOceanCell = makeCell({ biome: 'deep_ocean' });
+    expect(isScatterAllowed(oceanCell, 'tree')).toBe(false);
+    expect(isScatterAllowed(deepOceanCell, 'rock')).toBe(false);
+  });
+
+  it('disallows trees/bushes on beach (renamed from sand)', () => {
+    const cell = makeCell({ biome: 'beach', elevation: 1 });
+    expect(isScatterAllowed(cell, 'tree')).toBe(false);
+    expect(isScatterAllowed(cell, 'bush')).toBe(false);
   });
 });

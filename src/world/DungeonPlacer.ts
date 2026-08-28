@@ -62,7 +62,7 @@ export function placeDungeons(
 
     // Must be on walkable mid-elevation, non-water, non-feature tiles
     if (!cell.walkable)                          continue;
-    if (cell.biome === 'water')                  continue;
+    if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') continue;
     if (cell.feature === 'river')                continue;
     if (cell.elevation < 1 || cell.elevation > 3) continue;
     if (cell.content !== 'empty')                continue;

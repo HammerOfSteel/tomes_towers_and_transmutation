@@ -97,7 +97,7 @@ export function placeResourceNodes(worldData: WorldData): ResourceNodeRecord[] {
       if (elev >= 0.55 || biome === 'highlands' || biome === 'mountain') {
         oreCandidates.push({ wx, wz, type: 'ore' });
       }
-      if (biome === 'forest' || biome === 'bog') {
+      if (biome === 'forest' || biome === 'taiga') {
         timberCandidates.push({ wx, wz, type: 'timber' });
       }
       if (biome === 'wetland' || biome === 'river' || biome === 'lake') {

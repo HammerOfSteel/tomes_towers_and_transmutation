@@ -24,7 +24,7 @@ export type ScatterKind = 'tree' | 'bush' | 'rock' | 'camp' | 'ruin';
  * (unchanged from the pre-existing behavior).
  */
 export function isScatterAllowed(cell: WorldCell, kind: ScatterKind): boolean {
-  if (cell.biome === 'water') return false;
+  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
   if (cell.settlementId > 0) return false;
 
   if (kind === 'tree' || kind === 'bush' || kind === 'rock') {
@@ -33,8 +33,8 @@ export function isScatterAllowed(cell: WorldCell, kind: ScatterKind): boolean {
   }
 
   if (kind === 'tree' || kind === 'bush') {
-    if (cell.biome === 'sand') return false;
-    if (cell.elevation < 1) return false; // no trees/undergrowth on bog
+    if (cell.biome === 'beach') return false;
+    if (cell.elevation < 1) return false; // no trees/undergrowth in the lowest band
   }
 
   return true;
