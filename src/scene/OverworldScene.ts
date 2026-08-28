@@ -74,6 +74,7 @@ import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
+import { makeLampPost } from './LampPostFactory';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -2581,7 +2582,8 @@ export class OverworldScene {
       for (const t of lampTiles) {
         const wx = (t.col - GHW) * T + 0.6; // small perpendicular offset so the post
         const wz = (t.row - GHH) * T;       // doesn't sit dead-center of the walking path
-        const { group, light } = this._makeLampPost();
+        const group = makeLampPost();
+        const light = group.children[group.children.length - 1] as THREE.PointLight;
         group.position.set(wx, centreElev * SH, wz);
         this._lampGroups.push(group);
         this._lampLights.push(light);
@@ -2818,33 +2820,6 @@ export class OverworldScene {
       }
     }
     return grp;
-  }
-
-  // ── Settlement lamp posts (Phase 4 — night lighting) ───────────────────────
-
-  private _makeLampPost(): { group: THREE.Group; light: THREE.PointLight } {
-    const g = new THREE.Group();
-
-    const postMat = new THREE.MeshLambertMaterial({ color: 0x2a2620 });
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.4, 6), postMat);
-    post.position.y = 0.7;
-    g.add(post);
-
-    const lanternMat = new THREE.MeshStandardMaterial({
-      color: 0xffcc77,
-      emissive: 0xffaa44,
-      emissiveIntensity: 0.6,
-      roughness: 0.4,
-    });
-    const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), lanternMat);
-    lantern.position.y = 1.42;
-    g.add(lantern);
-
-    const light = new THREE.PointLight(0xffaa55, 0, 5); // starts off — day
-    light.position.y = 1.42;
-    g.add(light);
-
-    return { group: g, light };
   }
 
   /**
