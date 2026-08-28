@@ -7,6 +7,8 @@ import {
 import { planSettlement } from '../../src/world/SettlementGenerator';
 import { WorldGrid } from '../../src/world/WorldGrid';
 import type { SettlementPlan, PlacedBuilding, RoadSegment } from '../../src/world/SettlementGenerator';
+import { LEVEL_HEIGHT } from '../../src/world/WaterDepthConfig';
+import * as BuildingTypeMap from '../../src/world/buildings/BuildingTypeMap';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -65,7 +67,7 @@ describe('renderSettlementPlan', () => {
 
     const expectedX = (orig!.col - GHW) * T;
     const expectedZ = (orig!.row - GHH) * T;
-    const expectedY = wg.get(orig!.col, orig!.row).elevation * 0.55; // SH = LEVEL_HEIGHT
+    const expectedY = wg.get(orig!.col, orig!.row).elevation * LEVEL_HEIGHT;
     expect(rec.pos.x).toBeCloseTo(expectedX);
     expect(rec.pos.y).toBeCloseTo(expectedY);
     expect(rec.pos.z).toBeCloseTo(expectedZ);
@@ -85,9 +87,13 @@ describe('renderSettlementPlan', () => {
   it('skips buildings for which createSettlementBuildingDna returns falsy', () => {
     const wg = makeGrid();
     const ctx = makeCtx();
+    // Explicitly force a null DNA result rather than relying on an implicit
+    // gap in the ward→DNA mapping table (which could change independently).
+    const dnaSpy = vi
+      .spyOn(BuildingTypeMap, 'createSettlementBuildingDna')
+      .mockReturnValue(null);
     const buildings: PlacedBuilding[] = [
-      // Use 'plaza' wardType which has no DNA mapping → dna will be null → skipped.
-      { wardType: 'plaza' as any, isAnchor: false, col: CENTRE, row: CENTRE, rotation: 0, seed: 1 },
+      { wardType: 'market', isAnchor: false, col: CENTRE, row: CENTRE, rotation: 0, seed: 1 },
     ];
     const minimalPlan: SettlementPlan = {
       type: 'village',
@@ -102,9 +108,11 @@ describe('renderSettlementPlan', () => {
 
     const result = renderSettlementPlan(minimalPlan, wg, CENTRE, CENTRE, ctx);
 
-    // 'plaza' buildings produce no DNA → group list must be empty.
+    // A falsy DNA result → no group produced, no collider registered.
     expect(result.buildingGroups.length).toBe(0);
     expect(ctx.registerBuildingCollider).not.toHaveBeenCalled();
+
+    dnaSpy.mockRestore();
   });
 
   it('produces deduped roadTiles within a single settlement', () => {

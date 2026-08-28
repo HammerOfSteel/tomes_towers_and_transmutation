@@ -59,7 +59,10 @@ export interface SettlementRenderResult {
   /** Parallel bookkeeping for buildings; same length as buildingGroups. */
   buildingRecords: SettlementBuildingRecord[];
   /** Raw (col, row) positions of this settlement's road tiles, deduped within
-   *  this call.  Not turned into geometry — caller batches across settlements. */
+   *  this call.  Not turned into geometry — caller batches across settlements.
+   *  NOTE: when building road-tile geometry, the caller must add a small
+   *  positive Y offset (`+0.02` in the original `_buildSettlements()`) on top
+   *  of `elevation * SH` to avoid z-fighting with the terrain mesh. */
   roadTiles:       SettlementRoadTile[];
   /** Positioned lamp-post groups, not added to any scene. */
   lampGroups:      THREE.Group[];
