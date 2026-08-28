@@ -1,58 +1,40 @@
 /**
- * RealmToWorldGrid.ts — resamples a Studio-generated RealmData onto the
- * live game's WorldGrid shape (P0 of the Studio<->live-game parity work,
- * see TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md).
+ * RealmToWorldGrid.ts — builds a live-game WorldGrid directly from a
+ * Studio-generated RealmData (P0/foundation-rebuild of the Studio<->live
+ * parity work, see TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md).
  *
- * Deliberately keeps WorldGrid's existing 6-value BiomeId taxonomy and
- * 0-4 elevation levels unchanged (Approach 2 from the design spec) so
- * every downstream consumer (DungeonPlacer, SettlementPlacer,
- * CaveGladeWorldPlacer, HydrologyGenerator, RoadGenerator,
- * TerrainGeometryBuilder) needs zero changes — only the *source* of
- * biome/elevation per cell changes, from independent FBM noise to a
- * resampled-and-mapped realm map.
- *
- * Resampling is nearest-neighbor: realm dimensions (96x72 by default)
- * essentially never match `worldSize` (128 or 256, always square), so
- * some stretching is unavoidable and acceptable for this slice.
+ * WorldGrid.BiomeId is now identical to RealmBiome (see WorldGrid.ts), so
+ * biome values pass through unchanged — no collapsing table. Realm and
+ * world grid are generated at the same size (WorldGenerator.ts calls
+ * generateRealmData(seed, config.worldSize, config.worldSize)), so this
+ * is a direct 1:1 index, not a resample. A defensive nearest-index
+ * fallback is kept for the (currently unused) case of a differently-sized
+ * realm being passed in, so this function never throws on legitimate
+ * mismatched input.
  */
 
-import { WorldGrid, type BiomeId } from './WorldGrid';
+import { WorldGrid } from './WorldGrid';
 import type { WorldSize } from './WorldGenConfig';
-import type { RealmData, RealmBiome } from '@/overworld-studio';
+import type { RealmData } from '@/overworld-studio';
 import { OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from './WaterDepthConfig';
-
-/**
- * Realm's 10-value biome taxonomy collapsed onto WorldGrid's 6-value
- * BiomeId. Oceans map to 'water' (not 'bog') because 'water' already
- * exists in BiomeId and is actively checked by DungeonPlacer.ts,
- * SettlementPlacer.ts, RoadGenerator.ts, SettlementGenerator.ts, and
- * TerrainGeometryBuilder.ts to avoid placing things in the ocean / render
- * it differently — today's FBM generator never produces 'water', so this
- * mapping makes those existing checks actually take effect for the first
- * time rather than silently never triggering.
- */
-const REALM_BIOME_TO_WORLD_BIOME: Record<RealmBiome, BiomeId> = {
-  deep_ocean: 'water',
-  ocean:      'water',
-  beach:      'sand',
-  desert:     'grass',
-  savanna:    'grass',
-  grassland:  'grass',
-  forest:     'forest',
-  taiga:      'forest',
-  tundra:     'highland',
-  snow:       'rocky',
-};
 
 /** Quantize a continuous 0..1 realm elevation into WorldGrid's 0-4 levels. */
 function quantizeElevation(elevation: number): number {
   return Math.max(0, Math.min(4, Math.floor(elevation * 5)));
 }
 
-/** Nearest-neighbor sample of a realm cell for a target WorldGrid position. */
+/**
+ * Sample a realm cell for a target WorldGrid position. Direct 1:1 index
+ * when `realm` is already `worldSize x worldSize` (the normal case);
+ * nearest-neighbor fallback otherwise so mismatched sizes degrade
+ * gracefully instead of throwing.
+ */
 function sampleRealmCell(realm: RealmData, col: number, row: number, worldSize: number) {
   const realmW = Math.max(1, realm.W);
   const realmH = Math.max(1, realm.H);
+  if (realmW === worldSize && realmH === worldSize) {
+    return realm.cells[row]![col]!;
+  }
   const rx = Math.min(realmW - 1, Math.floor((col / worldSize) * realmW));
   const ry = Math.min(realmH - 1, Math.floor((row / worldSize) * realmH));
   return realm.cells[ry]![rx]!;
@@ -63,23 +45,20 @@ export function realmToWorldGrid(realm: RealmData, worldSize: number): WorldGrid
   for (let row = 0; row < worldSize; row++) {
     for (let col = 0; col < worldSize; col++) {
       const cell = sampleRealmCell(realm, col, row, worldSize);
-      const biome = REALM_BIOME_TO_WORLD_BIOME[cell.biome];
-      // Ocean-rim water tiles get a real carved depth (RI-3) so they're
-      // physically swimmable, not just cosmetically tinted — matching
-      // river tiles' HydrologyGenerator.ts treatment. Two depth tiers
-      // (not one flat value): the realm's own `ocean` (shallow, coastal
-      // ring) vs `deep_ocean` (open water) classification drives a real
-      // shallow-near-shore / deep-further-out gradient instead of
-      // discarding that distinction as before.
-      const isWater = biome === 'water';
-      const waterDepth = cell.biome === 'deep_ocean' ? OCEAN_DEEP_DEPTH_WU
-                         : cell.biome === 'ocean'      ? OCEAN_SHALLOW_DEPTH_WU
-                         : 0;
+      const biome = cell.biome;
+      // Ocean tiles get a real carved depth (RI-3, already shipped) so
+      // they're physically swimmable — two tiers so `ocean` (shallow,
+      // coastal ring) reads as wading depth while `deep_ocean` (open
+      // water) triggers real swim mode.
+      const isWater = biome === 'deep_ocean' || biome === 'ocean';
+      const waterDepth = biome === 'deep_ocean' ? OCEAN_DEEP_DEPTH_WU
+                        : biome === 'ocean'      ? OCEAN_SHALLOW_DEPTH_WU
+                        : 0;
       grid.set(col, row, {
-        elevation:  quantizeElevation(cell.elevation),
+        elevation: quantizeElevation(cell.elevation),
         biome,
         waterDepth,
-        walkable:   !isWater,
+        walkable: !isWater,
       });
     }
   }

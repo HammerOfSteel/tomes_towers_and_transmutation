@@ -69,6 +69,7 @@ import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
+import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager';
 import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
@@ -82,6 +83,21 @@ const T   = 2;                // tile side length in world units (= interior cel
 // LEVEL_HEIGHT or the terrain mesh/collider and the swim water query would
 // silently disagree about tile heights.
 const SH  = LEVEL_HEIGHT;      // world-unit height increment per level
+
+/**
+ * Task 13 final review (Important issue #4) — caps how many NEW chunks
+ * `_chunkManager` is allowed to actually load (geometry + Rapier trimesh +
+ * Poisson scatter + tree/rock colliders) within a single scene `update()`
+ * tick. Crossing one chunk boundary can bring a full edge (up to
+ * `2*LOAD_RADIUS_CHUNKS+1 = 7`) of newly-in-range chunks at once, and a
+ * diagonal crossing a full corner (up to 13) — building all of them
+ * synchronously in one frame is a guaranteed visible hitch. Extra
+ * newly-in-range chunks are queued by `ChunkManager` and drained a few at a
+ * time across subsequent frames (see `ChunkManager.flushPendingLoads()` for
+ * the escape hatch used at scene-entry/spawn time, where the world must not
+ * appear empty for the first frame).
+ */
+const MAX_CHUNK_LOADS_PER_FRAME = 2;
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -112,21 +128,60 @@ export interface GladeEntranceHandle {
   position: THREE.Vector3;
 }
 
-// Internal storage entries (not exported)
-interface TreeEntry { group: THREE.Group; px: number; pz: number; biome: string; }
-interface RockEntry { mesh: THREE.Object3D; px: number; py: number; pz: number; r: number; }
-
 // ── OverworldScene ────────────────────────────────────────────────────────────
+
+/**
+ * Payload tracked per streamed terrain chunk (Task 13 final review): terrain
+ * mesh + its Rapier trimesh body, this chunk's tree/rock/bush/beach-decor
+ * scatter group, and (Important issue #1 fix) the tree/rock static rigid
+ * bodies for THIS chunk's scatter — created in `_loadTerrainChunk()`
+ * alongside the scatter itself and torn down in `_unloadTerrainChunk()`,
+ * instead of only ever being created once for whatever chunks happened to
+ * be loaded at the very first `enter()`.
+ */
+interface TerrainChunkData {
+  mesh: THREE.Mesh;
+  body: RAPIER.RigidBody | null;
+  scatter: THREE.Group;
+  colliders: RAPIER.RigidBody[];
+}
 
 export class OverworldScene {
   // ── Visual geometry (built in constructor, never rebuilt)
-  private readonly _terrain:   THREE.Mesh;
+  /** Streams terrain mesh+collider per-chunk around the player (RI-4 wiring) —
+   *  superseded the old whole-grid `_terrain` mesh + `_createTerrainCollider()`. */
+  private _chunkManager!: ChunkManager<TerrainChunkData>;
+  /**
+   * Mirrors whatever's currently tracked inside `_chunkManager` (keyed by
+   * "cx,cz") purely so `enter()`/`exit()` can cheaply toggle terrain
+   * visibility + collision without unloading/rebuilding it. `ChunkManager`
+   * itself exposes no accessor for its internal payload map, only
+   * load/unload callbacks — so this side map is populated in
+   * `_loadTerrainChunk()` and cleared in `_unloadTerrainChunk()`.
+   * Needed because dungeon/tower interior rooms are built at/near the same
+   * world-origin coordinates as the overworld (see `SceneManager`'s "most
+   * rooms are centred at origin" convention) — without hiding terrain on
+   * `exit()`, its mesh would render through interior geometry and its
+   * Rapier trimesh would still collide with the player underfoot.
+   * `scatter` (Task 11) is each chunk's tree/rock group, toggled alongside
+   * `mesh`/`body` the same way.
+   */
+  private readonly _terrainChunkData = new Map<string, TerrainChunkData>();
+  /**
+   * Task 13 final review (Important issue #3) — small, fixed-size pool of
+   * shared `MeshLambertMaterial`s (each with its own baked
+   * `CanvasTexture`, where applicable) per nature-prop archetype ("kind"),
+   * keyed by kind. Built lazily on first use and cached for this
+   * `OverworldScene` instance's whole lifetime (not per-chunk), so every
+   * chunk's tree/rock/bush/beach-decor scatter reuses the same handful of
+   * materials/textures instead of allocating a brand new one per placed
+   * instance — see `_pooledMaterial()`. Disposed once, in `dispose()`.
+   */
+  private readonly _materialPools = new Map<string, THREE.MeshLambertMaterial[]>();
   private readonly _tower:     THREE.Group;
   private readonly _waterMesh: THREE.Mesh | null;
   /** Shared shader material driving the animated water surface (null when no water tiles exist). */
   private readonly _waterMaterial: THREE.ShaderMaterial | null;
-  private readonly _trees:     TreeEntry[] = [];
-  private readonly _rocks:     RockEntry[] = [];
   private readonly _ruins:          THREE.Group[] = [];
   private readonly _enemies:        SlimeEnemy[]  = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
@@ -154,8 +209,6 @@ export class OverworldScene {
   private readonly _slimeIM: THREE.InstancedMesh = createSlimeBodyIM(128);
 
   // ── Asset-upgraded geometry (added async after construction) ──────────────
-  /** Ground-clutter props (grass, flowers, mushrooms) from nature-kit. */
-  private _clutter:     THREE.Group[] = [];
   /** River tile GLBs replacing the procedural water mesh. */
   private _riverGroups: THREE.Group[] = [];
   /** GLB road-tile groups replacing the flat InstancedMesh roads. */
@@ -202,6 +255,9 @@ export class OverworldScene {
   private readonly _GHW: number;
   private readonly _GHH: number;
   private readonly _FR:  number;   // flat-zone radius in tiles (~28% of half-width)
+  /** World-gen seed (Task 11) — seeds each chunk's `_buildChunkScatter()` deterministically
+   *  alongside its chunk coordinate, so scatter is stable across reloads/re-streaming. */
+  private readonly _seed: number;
 
   /** Optional callback fired when an NPC generates and gives a quest to the player. */
   onQuestGiven?: (quest: import('@/world/QuestDef').QuestDef) => void;
@@ -232,24 +288,41 @@ export class OverworldScene {
     this._GHW = (worldGrid.width  - 1) / 2;
     this._GHH = (worldGrid.height - 1) / 2;
     this._FR  = Math.round(this._GHW * 0.28);
+    this._seed = config.seed;
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
-    console.log('[OverworldScene] _buildTerrain...');
-    this._terrain   = this._buildTerrain();
+    console.log('[OverworldScene] setting up terrain ChunkManager...');
+    this._chunkManager = new ChunkManager<TerrainChunkData>(
+      {
+        load: (coord) => this._loadTerrainChunk(coord),
+        unload: (coord, data) => this._unloadTerrainChunk(coord, data),
+      },
+      {
+        tileSize: T,
+        chunkSize: CHUNK_SIZE,
+        // Task 13 final review (Important issue #4) — budget real chunk
+        // loads per-frame; see `MAX_CHUNK_LOADS_PER_FRAME`'s doc comment.
+        maxLoadsPerUpdate: MAX_CHUNK_LOADS_PER_FRAME,
+      },
+    );
+    // Force an initial load centered on the player's starting position so
+    // the world isn't empty for the first frame — `flushPendingLoads()`
+    // ignores the per-frame budget above so every chunk within load radius
+    // of spawn is actually ready synchronously, not merely queued.
+    this._chunkManager.update(this.player.group.position.x, this.player.group.position.z);
+    this._chunkManager.flushPendingLoads();
     console.log('[OverworldScene] _buildWaterMesh...');
     this._waterMesh     = this._buildWaterMesh();
     this._waterMaterial = (this._waterMesh?.material as THREE.ShaderMaterial | undefined) ?? null;
     console.log('[OverworldScene] _buildTower...');
     this._tower     = this._buildTower();
-    console.log('[OverworldScene] _plantTrees...');
-    this._plantTrees(rand);
-    console.log('[OverworldScene] _placeRocks...');
-    this._placeRocks(rand);
-    console.log('[OverworldScene] _plantBushes...');
-    this._plantBushes(rand);
-    console.log('[OverworldScene] _scatterBeachDecor...');
-    this._scatterBeachDecor(rand);
+    // Tree/rock scatter (Task 11) AND bush/beach-decor ground clutter (Task
+    // 13 final review, Important issue #3) are no longer built here for the
+    // whole world up front — they all stream in per-chunk via
+    // `_buildChunkScatter()`, called from `_loadTerrainChunk()` above
+    // (superseded `_plantTrees()`/`_placeRocks()`/`_plantBushes()`/
+    // `_scatterBeachDecor()`'s whole-world passes).
     console.log('[OverworldScene] _spawnCamps...');
     this._spawnCamps(rand, config.enemyCampCount);
     console.log('[OverworldScene] _addRuins...');
@@ -289,21 +362,24 @@ export class OverworldScene {
     // shallow to swim in"). -5 WU of margin below the deepest carve is
     // comfortably clear of any real terrain.
     this._groundBody = this.physics.createGroundPlane(-(OCEAN_DEEP_DEPTH_WU + 5));
-    // Heightfield collider mirrors the visual tile grid at SH-scaled heights.
-    this._staticBodies.push(this._createTerrainCollider());
+    // Terrain mesh/collider/scatter are streamed per-chunk by `_chunkManager`
+    // (see `update()`), not created here — but any chunks that were hidden by
+    // a previous exit() (or loaded before the first-ever enter(), from the
+    // constructor's forced initial load) need to be shown/re-enabled now.
+    // Tree/rock colliders (Task 11, Important issue #1 fix) are likewise
+    // created once per chunk in `_loadTerrainChunk()` (not re-created here —
+    // that used to double-create colliders for whatever chunks were already
+    // loaded at scene-entry time) and just need re-enabling here, mirroring
+    // the terrain trimesh body's own `setEnabled(true)` below.
+    for (const { mesh, body, scatter, colliders } of this._terrainChunkData.values()) {
+      this.scene.add(mesh);
+      body?.setEnabled(true);
+      this.scene.add(scatter);
+      for (const c of colliders) c.setEnabled(true);
+    }
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
     this._addStaticBody(0, 10, 0, RAPIER.ColliderDesc.capsule(9.0, 4.5));
-
-    // Tree trunk colliders
-    for (const tr of this._trees) {
-      this._addStaticBody(tr.px, 1.2, tr.pz, RAPIER.ColliderDesc.capsule(1.0, 0.22));
-    }
-
-    // Rock colliders
-    for (const rk of this._rocks) {
-      this._addStaticBody(rk.px, rk.py, rk.pz, RAPIER.ColliderDesc.ball(rk.r * 0.85));
-    }
 
     // Building colliders — must be recreated every enter() since exit() clears all
     // _staticBodies (buildings are placed once at construction time but their physics
@@ -311,11 +387,9 @@ export class OverworldScene {
     this._createBuildingColliders();
 
     // Add visuals
-    this.scene.add(this._terrain, this._tower);
+    this.scene.add(this._tower);
     if (this._waterMesh)  this.scene.add(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.add(rm);
-    for (const tr of this._trees)        this.scene.add(tr.group);
-    for (const rk of this._rocks)        this.scene.add(rk.mesh);
     for (const ru of this._ruins)        this.scene.add(ru);
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
@@ -324,7 +398,6 @@ export class OverworldScene {
     for (const gb of this._gladeEntranceBuilts) this.scene.add(gb.root);
     for (const bg of this._buildingGroups) this.scene.add(bg);
     for (const npc of this._npcs)         npc.addToScene(this.scene);
-    for (const cl of this._clutter)       this.scene.add(cl);
     for (const lg of this._lampGroups)    this.scene.add(lg);
     for (const rg of this._resourceGroups) this.scene.add(rg);
     // River tile groups supersede the procedural water mesh when present
@@ -355,11 +428,20 @@ export class OverworldScene {
     for (const b of this._staticBodies) this.physics.rapierWorld.removeRigidBody(b);
     this._staticBodies = [];
 
-    this.scene.remove(this._terrain, this._tower);
+    this.scene.remove(this._tower);
+    // Hide + disable (not unload) currently-streamed terrain chunks. They
+    // stay tracked in `_terrainChunkData`/`_chunkManager` so a later
+    // `enter()` (including a bare `enter()` with no scene.update() in
+    // between, e.g. telescope remote-view mode) can cheaply restore them
+    // without waiting for a chunk-streaming update() tick.
+    for (const { mesh, body, scatter, colliders } of this._terrainChunkData.values()) {
+      this.scene.remove(mesh);
+      body?.setEnabled(false);
+      this.scene.remove(scatter);
+      for (const c of colliders) c.setEnabled(false);
+    }
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.remove(rm);
-    for (const tr of this._trees)        this.scene.remove(tr.group);
-    for (const rk of this._rocks)        this.scene.remove(rk.mesh);
     for (const ru of this._ruins)        this.scene.remove(ru);
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
@@ -368,7 +450,6 @@ export class OverworldScene {
     for (const gb of this._gladeEntranceBuilts) this.scene.remove(gb.root);
     for (const bg of this._buildingGroups) this.scene.remove(bg);
     for (const npc of this._npcs)          npc.removeFromScene(this.scene);
-    for (const cl of this._clutter)        this.scene.remove(cl);
     for (const lg of this._lampGroups)     this.scene.remove(lg);
     for (const rg of this._riverGroups)    this.scene.remove(rg);
     for (const rg of this._roadTileGroups) this.scene.remove(rg);
@@ -387,6 +468,9 @@ export class OverworldScene {
     const pos = this.player.group.position;
     const { col, row } = this._wg.worldToGrid(pos.x, pos.z);
     this._minimap.updatePlayer(col, row);
+
+    // RI-4: stream terrain chunks in/out around the player.
+    this._chunkManager.update(pos.x, pos.z);
 
     // RI-3: real per-tile swim collision for live overworld rivers/ocean
     // water, reusing the same hysteresis + setSwimming()/setSubmersion()
@@ -466,26 +550,17 @@ export class OverworldScene {
   dispose(): void {
     this._minimap.dispose();
     this.exit();
-    (this._terrain.geometry as THREE.BufferGeometry).dispose();
-    (this._terrain.material as THREE.Material).dispose();
+    // RI-4: unload every currently-streamed terrain chunk — disposes each
+    // chunk's mesh geometry/material, scatter (Task 11) tree/rock
+    // geometries/materials, and removes its Rapier body, mirroring what the
+    // old whole-grid `_terrain`/`_createTerrainCollider()` teardown (plus the
+    // old whole-world `_plantTrees()`/`_placeRocks()` disposal) used to do.
+    this._chunkManager.dispose();
     if (this._waterMesh) {
       this._waterMesh.geometry.dispose();
       (this._waterMesh.material as THREE.Material).dispose();
     }
     this._freeGroup(this._tower);
-    for (const tr of this._trees) this._freeGroup(tr.group);
-    for (const rk of this._rocks) {
-      // rk.mesh may be a single Mesh (boulder/slab archetypes) or a Group of 3 Meshes sharing
-      // one material (cluster archetype) — traverse so all archetypes dispose correctly.
-      rk.mesh.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          const mat = obj.material;
-          if (Array.isArray(mat)) mat.forEach(m => m.dispose());
-          else (mat as THREE.Material).dispose();
-        }
-      });
-    }
     for (const ru of this._ruins)        this._freeGroup(ru);
     for (const en of this._enemies)       en.dispose(this.physics);
     for (const npc of this._npcs)          npc.dispose();
@@ -500,8 +575,6 @@ export class OverworldScene {
       (rm.material as THREE.Material).dispose();
     }
     this._roadMeshes = [];
-    for (const cl of this._clutter)       this._freeGroup(cl);
-    this._clutter = [];
     for (const lg of this._lampGroups) {
       lg.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
@@ -518,6 +591,19 @@ export class OverworldScene {
     this._riverGroups = [];
     for (const rg of this._resourceGroups) this._freeGroup(rg);
     this._resourceGroups = [];
+    // Task 13 final review (Important issue #3) — dispose the shared
+    // material/texture pools used by every chunk's tree/rock/bush/beach-decor
+    // scatter (see `_pooledMaterial()`). Individual chunk unloads
+    // (`_unloadTerrainChunk()`) deliberately do NOT dispose these — they're
+    // shared across every currently-loaded chunk — so this is the one place
+    // they're actually freed, when the whole scene is torn down.
+    for (const pool of this._materialPools.values()) {
+      for (const mat of pool) {
+        (mat.map as THREE.Texture | null)?.dispose();
+        mat.dispose();
+      }
+    }
+    this._materialPools.clear();
   }
 
 
@@ -528,7 +614,10 @@ export class OverworldScene {
     return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
   }
 
-  /** Number of active static physics bodies (terrain, tower, trees, rocks, buildings).
+  /** Number of active static physics bodies (tower, buildings — terrain
+   *  chunk mesh colliders AND tree/rock scatter colliders are tracked
+   *  separately per chunk by `_chunkManager`/`_terrainChunkData`, not in
+   *  `_staticBodies` — see Task 13 final review, Important issue #1).
    *  Used by tests to verify building colliders survive exit()/enter() cycles. */
   getStaticBodyCount(): number {
     return this._staticBodies.length;
@@ -621,7 +710,7 @@ export class OverworldScene {
           const row = centerRow + dRow;
           if (col < 0 || col >= GW || row < 0 || row >= GH) continue;
           const cell = this._wg.get(col, row);
-          if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+          if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
           const wx = (col - GHW) * T;
           const wz = (row - GHH) * T;
           if (Math.sqrt(wx * wx + wz * wz) < 60) continue; // too close to tower courtyard
@@ -892,45 +981,53 @@ export class OverworldScene {
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**
-   * Build a Rapier trimesh collider from the exact same vertex/index buffers
-   * used to render the terrain (`buildTerrainGeometryData`) — physics and
-   * visuals can never mismatch, including at elevation-edge cliff faces.
+   * ChunkManager `load` handler: builds one chunk's terrain mesh + Rapier
+   * trimesh collider from the same buffers (guarantees they agree — see
+   * TerrainGeometryBuilder.ts's header comment), adds the mesh to the
+   * scene, builds its tree/rock/bush/beach-decor scatter (Task 11 / Task 13
+   * final review), creates a static Rapier collider for every tree/rock in
+   * that scatter (Task 13 final review, Important issue #1 — this used to
+   * only ever happen once, in `enter()`, for whatever chunks happened to be
+   * loaded at that instant), and returns everything so `_unloadTerrainChunk`
+   * can tear it all down.
    */
-  private _createTerrainCollider(): RAPIER.RigidBody {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const { positions, indices } = buildTerrainGeometryData(this._wg, GW, GH, GHW, GHH, T, SH);
-    return this.physics.createStaticTrimesh(
-      new Float32Array(positions),
-      new Uint32Array(indices),
-    );
-  }
-
-  /** Create a fixed static rigid body with the given collider at (x, y, z). */
-  private _addStaticBody(x: number, y: number, z: number, desc: RAPIER.ColliderDesc): void {
-    const body = this.physics.rapierWorld.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z),
-    );
-    this.physics.rapierWorld.createCollider(desc, body);
-    this._staticBodies.push(body);
-  }
-
   /**
-   * Build the merged terrain BufferGeometry.
-   *
-   * For each tile at height H:
-   *   – Top face     (normal +Y)
-   *   – South wall   (normal +Z) when south neighbour is lower
-   *   – North wall   (normal −Z) when north neighbour is lower
-   *   – East  wall   (normal +X) when east  neighbour is lower
-   *   – West  wall   (normal −X) when west  neighbour is lower
-   *
-   * Winding:  triangles (v0,v1,v2) and (v0,v2,v3) produce the outward normal.
-   * All vertex-order derivations verified with the right-hand rule.
+   * Converts a `ChunkManager` chunk coordinate into the `WorldGrid` col/row
+   * grid-index origin of its top-left tile, applying the same GHW/GHH
+   * centering offset that `worldToGrid()`/`gridToWorld()` use. Shared by
+   * `_loadTerrainChunk()` (terrain mesh/collider) and `_buildChunkScatter()`
+   * (tree/rock placement) so both derive a chunk's grid rectangle from one
+   * formula — the earlier bug was exactly two independent reimplementations
+   * of this offset silently drifting apart when only one got fixed.
    */
-  private _buildTerrain(): THREE.Mesh {
+  private _chunkGridOrigin(coord: ChunkCoord): { colStart: number; rowStart: number } {
+    return {
+      colStart: coord.cx * CHUNK_SIZE + Math.floor(this._GHW),
+      rowStart: coord.cz * CHUNK_SIZE + Math.floor(this._GHH),
+    };
+  }
+
+  private _loadTerrainChunk(coord: ChunkCoord): TerrainChunkData {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
+    // ChunkManager's chunk coordinates live in a 0-centered world-space grid
+    // (chunk (0,0) covers world X/Z in [0, chunkWorldSize)) — see
+    // `worldToChunkCoord()` in ChunkManager.ts. `WorldGrid` col/row indices,
+    // however, are centered so that world (0,0) sits at grid col/row
+    // (GHW, GHH) (see `worldToGrid()`/`gridToWorld()` in WorldGrid.ts).
+    // Without translating through that same GHW/GHH offset here, this
+    // chunk's terrain mesh/collider was built from the wrong (often
+    // out-of-bounds, default-cell) grid rectangle relative to where the
+    // chunk actually renders in world space — a real regression: swim mode
+    // in deep water never triggered because the collider under the player
+    // was flat default terrain, not the carved water floor. `_buildChunkScatter()`
+    // derives its own world-space origin from this exact same grid origin
+    // (via `_chunkGridOrigin()`) so the two can never drift apart again the
+    // way they briefly did (scatter kept using an unshifted formula after
+    // this terrain fix landed, placing trees/rocks outside their chunk's
+    // actual terrain footprint).
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
     const { positions, normals, colors, indices } = buildTerrainGeometryData(
-      this._wg, GW, GH, GHW, GHH, T, SH,
+      this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
     );
 
     const geo = new THREE.BufferGeometry();
@@ -938,8 +1035,180 @@ export class OverworldScene {
     geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals, 3));
     geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors, 3));
     geo.setIndex(indices);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    // Chunks can load before the scene is ever entered (the constructor
+    // forces an initial load) or while exited (dungeon/tower interior) —
+    // only add to the live scene graph when actually entered, matching the
+    // `_isInScene` gating already used for buildings/enemies/ruins below.
+    if (this._isInScene) this.scene.add(mesh);
 
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const body = (indices.length === 0)
+      ? null
+      : this.physics.createStaticTrimesh(new Float32Array(positions), new Uint32Array(indices));
+    if (body && !this._isInScene) body.setEnabled(false);
+
+    const scatter = this._buildChunkScatter(coord);
+
+    // Tree trunk / rock colliders (Task 11 scatter, Task 13 final review
+    // Important issue #1) — walk this chunk's own scatter group and create
+    // one static collider per tree/rock, same shapes/sizes the old
+    // `enter()`-only loop used. Tracked on this chunk's own payload (not
+    // `_staticBodies`, which is cleared on every `exit()`) so they live and
+    // die with the chunk itself, toggled enabled/disabled by enter()/exit()
+    // exactly like the terrain trimesh body above.
+    const colliders: RAPIER.RigidBody[] = [];
+    for (const obj of scatter.children) {
+      if (obj.userData.scatterKind === 'tree') {
+        colliders.push(this._createChunkColliderBody(obj.position.x, 1.2, obj.position.z, RAPIER.ColliderDesc.capsule(1.0, 0.22)));
+      } else if (obj.userData.scatterKind === 'rock') {
+        const radius = obj.userData.scatterRadius as number;
+        // `obj.position.y` is the wrapper's world Y (= ground level, set in
+        // `_buildChunkScatter`) — the visual embed offset (`radius * 0.45`)
+        // lives on the wrapper's inner mesh, not on `obj` itself, so it must
+        // be re-added here to match the original `_placeRocks()` collider
+        // placement (`wy + radius * 0.5`).
+        colliders.push(this._createChunkColliderBody(obj.position.x, obj.position.y + radius * 0.5, obj.position.z, RAPIER.ColliderDesc.ball(radius * 0.85)));
+      }
+    }
+    if (!this._isInScene) {
+      for (const c of colliders) c.setEnabled(false);
+    }
+
+    const data: TerrainChunkData = { mesh, body, scatter, colliders };
+    this._terrainChunkData.set(`${coord.cx},${coord.cz}`, data);
+    return data;
+  }
+
+  /**
+   * ChunkManager `unload` handler: removes the mesh from the scene and
+   * disposes its GPU buffers, removes the physics body, removes this
+   * chunk's tree/rock collider bodies (Task 13 final review, Important
+   * issue #1 — these are chunk-scoped now, not part of `_staticBodies`),
+   * and (Task 11) tears down the chunk's scatter group — removing it from
+   * the scene and disposing every descendant mesh's geometry (but NOT its
+   * material — scatter materials are shared/pooled across every loaded
+   * chunk, see `_pooledMaterial()`, and are only ever disposed once for the
+   * whole scene in `dispose()`). `traverse()` walks the whole subtree
+   * regardless of nesting depth, so this also correctly catches rock
+   * "cluster" archetypes (a Group of 3 Meshes nested one level inside the
+   * top-level rock wrapper) — disposing the group alone would leak those
+   * Meshes' geometries.
+   */
+  private _unloadTerrainChunk(coord: ChunkCoord, data: TerrainChunkData): void {
+    this._terrainChunkData.delete(`${coord.cx},${coord.cz}`);
+    this.scene.remove(data.mesh);
+    data.mesh.geometry.dispose();
+    (data.mesh.material as THREE.Material).dispose();
+    if (data.body) this.physics.removeBody(data.body);
+
+    for (const c of data.colliders) this.physics.removeBody(c);
+
+    this.scene.remove(data.scatter);
+    data.scatter.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+      }
+    });
+  }
+
+  /** Create a fixed static rigid body with the given collider at (x, y, z),
+   *  tracked in the global `_staticBodies` array (torn down on every
+   *  `exit()` — used for things whose physics presence is tied to the
+   *  scene being entered at all, like the tower and buildings). */
+  private _addStaticBody(x: number, y: number, z: number, desc: RAPIER.ColliderDesc): void {
+    this._staticBodies.push(this._createChunkColliderBody(x, y, z, desc));
+  }
+
+  /** Create a fixed static rigid body with the given collider at (x, y, z),
+   *  WITHOUT tracking it in `_staticBodies` — the caller owns the returned
+   *  body's lifetime instead (used for per-chunk tree/rock colliders, which
+   *  must survive `exit()`/`enter()` cycles and only die when their own
+   *  chunk unloads — see `_loadTerrainChunk()`/`_unloadTerrainChunk()`). */
+  private _createChunkColliderBody(x: number, y: number, z: number, desc: RAPIER.ColliderDesc): RAPIER.RigidBody {
+    const body = this.physics.rapierWorld.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z),
+    );
+    this.physics.rapierWorld.createCollider(desc, body);
+    return body;
+  }
+
+  /** Builds one chunk's tree + rock scatter, deterministically seeded by
+   *  world seed + chunk coordinate so results are stable across reloads.
+   *  Runs its own small Poisson-disk pass over just this chunk's world-unit
+   *  extent (CHUNK_SIZE * T on a side) rather than the whole world — the
+   *  dominant fix for scatter's unbounded-with-world-size cost. Known
+   *  tradeoff: chunk-seam density can be slightly uneven since neighbouring
+   *  chunks' points aren't visible to each other's sampling pass.
+   *
+   *  Each placed tree/rock is tagged with `userData.scatterKind` (and,
+   *  for rocks, `userData.scatterRadius`) so `_loadTerrainChunk()` can walk
+   *  this chunk's scatter group to create their individual trunk/boulder
+   *  colliders without needing a separate whole-world `_trees`/`_rocks`
+   *  array. Task 13 final review (Important issue #3) folded the former
+   *  whole-world `_plantBushes()`/`_scatterBeachDecor()` passes into this
+   *  same per-chunk group too (via `_buildChunkBushes()`/
+   *  `_buildChunkBeachDecor()`) — they don't need colliders, so they're
+   *  just extra visual children tagged with their own `scatterKind`,
+   *  ignored by the tree/rock collider loop above. */
+  private _buildChunkScatter(coord: ChunkCoord): THREE.Group {
+    const group = new THREE.Group();
+    const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
+    const chunkWorldSize = T * CHUNK_SIZE;
+    // Origin must land on the exact same world-space corner as this chunk's
+    // terrain mesh (built by `_loadTerrainChunk()` from `_chunkGridOrigin()`'s
+    // colStart/rowStart via `gridToWorld()`'s (col - GHW) * T convention) —
+    // using a bare `- GHW * T` here (the pre-fix formula) desyncs scatter
+    // from terrain by `Math.floor(GHW/GHH) * T` world units whenever GHW/GHH
+    // aren't already integers.
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
+    const rand = mulberry32((this._seed ^ 0x5C47_7E12) ^ (coord.cx * 92821) ^ (coord.cz * 68917));
+
+    const treePts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, rand);
+    for (const [px, pz] of treePts) {
+      const wx = originX + px;
+      const wz = originZ + pz;
+      const d = Math.sqrt(wx * wx + wz * wz);
+      if (d < FR * T + 5) continue; // tower clear-zone
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+      if (!isScatterAllowed(cell, 'tree')) continue;
+      const tree = this._makeTree(rand, wx, wz);
+      tree.position.set(wx, cell.elevation * SH, wz);
+      tree.rotation.y = rand() * Math.PI * 2;
+      tree.userData.scatterKind = 'tree';
+      group.add(tree);
+    }
+
+    const rockPts = poissonDisk(chunkWorldSize, chunkWorldSize, 8, rand);
+    for (const [px, pz] of rockPts) {
+      const wx = originX + px;
+      const wz = originZ + pz;
+      const d = Math.sqrt(wx * wx + wz * wz);
+      if (d < FR * T + 6) continue;
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+      if (!isScatterAllowed(cell, 'rock')) continue;
+      const rock = this._makeRock(rand, wx, wz);
+      rock.position.set(wx, cell.elevation * SH, wz);
+      rock.userData.scatterKind = 'rock';
+      group.add(rock);
+    }
+
+    this._buildChunkBushes(coord, group);
+    this._buildChunkBeachDecor(coord, group);
+
+    // Chunks can load before the scene is ever entered (the constructor's
+    // forced initial load) or while exited (dungeon/tower interior) — only
+    // add to the live scene graph when actually entered, mirroring
+    // `_loadTerrainChunk`'s `_isInScene` gating for its terrain mesh just
+    // above. Without this, scatter loaded while exited would render through
+    // interior geometry the same way ungated terrain did before Task 10.
+    if (this._isInScene) this.scene.add(group);
+    return group;
   }
 
   /**
@@ -972,7 +1241,7 @@ export class OverworldScene {
     for (let row = 0; row < GH; row++) {
       for (let col = 0; col < GW; col++) {
         const cell = this._wg.get(col, row);
-        if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+        if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
 
         const wx  = (col - GHW) * T;
         const wz  = (row - GHH) * T;
@@ -1187,32 +1456,41 @@ export class OverworldScene {
 
   // ── Tree placement ─────────────────────────────────────────────────────────
 
-  private _plantTrees(rand: () => number): void {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
-    const W  = GW * T;
-    const H  = GH * T;
-    const treeInner = FR * T + 5;
-    const treeOuter = GHW * T * 0.88;
-    const pts = poissonDisk(W, H, 5.5, rand);
-
-    for (const [px, pz] of pts) {
-      const wx = px - W / 2;
-      const wz = pz - H / 2;
-      const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < treeInner || d > treeOuter) continue;
-
-      const c = Math.floor(wx / T + GHW);
-      const r = Math.floor(wz / T + GHH);
-
-      const cell = this._wg.get(c, r);
-      if (!isScatterAllowed(cell, 'tree')) continue;
-      const level = cell.elevation;
-
-      const tree = this._makeTree(rand, wx, wz);
-      tree.position.set(wx, level * SH, wz);
-      tree.rotation.y = rand() * Math.PI * 2;
-      this._trees.push({ group: tree, px: wx, pz: wz, biome: cell.biome ?? 'forest' });
+  /**
+   * Task 13 final review (Important issue #3) — returns a shared
+   * `MeshLambertMaterial` from a small, fixed-size pool for `kind`
+   * (archetype name, e.g. `'conifer-lower'`), lazily building the pool
+   * (each variant with its own baked `CanvasTexture` when `variance` is
+   * given) on first use and caching it on `_materialPools` for this
+   * `OverworldScene` instance's whole lifetime. A given instance's material
+   * is picked from the pool via `rand()`, so scatter placement stays fully
+   * deterministic (same seed + chunk coord → same picks) while no longer
+   * allocating a brand-new material + texture per placed object — before
+   * this, a `worldSize: 512` world's full tree/rock/bush/beach-decor
+   * scatter created roughly one unique texture PER OBJECT (~14,000 of
+   * them); now each archetype/kind shares `variantColors.length` (a
+   * handful) of them for its entire lifetime. `variance` omitted (e.g. bare
+   * trunk colors) skips the texture/map entirely, matching the original
+   * flat-color materials. */
+  private _pooledMaterial(
+    kind: string,
+    variantColors: number[],
+    rand: () => number,
+    variance?: number,
+  ): THREE.MeshLambertMaterial {
+    let pool = this._materialPools.get(kind);
+    if (!pool) {
+      // Simple string hash so different `kind`s never collide on texture seed.
+      let hash = 0;
+      for (let i = 0; i < kind.length; i++) hash = (hash * 31 + kind.charCodeAt(i)) | 0;
+      pool = variantColors.map((color, i) => new THREE.MeshLambertMaterial(
+        variance != null
+          ? { color, map: makeMottledCanvasTexture(color, variance, (hash ^ (i * 104729)) >>> 0) }
+          : { color },
+      ));
+      this._materialPools.set(kind, pool);
     }
+    return pool[Math.floor(rand() * pool.length)]!;
   }
 
   private _makeTree(rand: () => number, wx: number, wz: number): THREE.Group {
@@ -1233,28 +1511,32 @@ export class OverworldScene {
     // Trunk
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(trunkR * 0.72, trunkR, trunkH, 6),
-      new THREE.MeshLambertMaterial({ color: 0x4a2810 }),
+      this._pooledMaterial('tree-trunk', [0x4a2810], rand),
     );
     trunk.position.y = trunkH / 2;
     g.add(trunk);
 
-    // Lower canopy cone
-    const greenBase = 0x1a4610 + Math.floor(rand() * 6) * 0x010100;
-    const canopyMat = new THREE.MeshLambertMaterial({
-      color: greenBase,
-      map: makeMottledCanvasTexture(greenBase, 0.18, Math.floor(rand() * 1e6)),
-    });
+    // Lower canopy cone — 6 variants spanning the original 0x1a4610..+5*0x010100 range.
+    const canopyMat = this._pooledMaterial(
+      'conifer-lower',
+      [0x1a4610, 0x1a4610 + 0x010100, 0x1a4610 + 0x020200, 0x1a4610 + 0x030300, 0x1a4610 + 0x040400, 0x1a4610 + 0x050500],
+      rand,
+      0.18,
+    );
     const coneL = new THREE.Mesh(new THREE.ConeGeometry(coneR, coneH, 6), canopyMat);
     coneL.position.y = trunkH + coneH * 0.48;
     g.add(coneL);
 
-    // Upper canopy cone (smaller, slightly lighter)
+    // Upper canopy cone (smaller, slightly lighter) — same range, +0x040800 offset.
+    const upperBase = 0x1a4610 + 0x040800;
     const coneU = new THREE.Mesh(
       new THREE.ConeGeometry(coneR * 0.65, coneH * 0.70, 6),
-      new THREE.MeshLambertMaterial({
-        color: greenBase + 0x040800,
-        map: makeMottledCanvasTexture(greenBase + 0x040800, 0.18, Math.floor(rand() * 1e6)),
-      }),
+      this._pooledMaterial(
+        'conifer-upper',
+        [upperBase, upperBase + 0x010100, upperBase + 0x020200, upperBase + 0x030300, upperBase + 0x040400, upperBase + 0x050500],
+        rand,
+        0.18,
+      ),
     );
     coneU.position.y = trunkH + coneH * 0.88;
     g.add(coneU);
@@ -1270,16 +1552,18 @@ export class OverworldScene {
 
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(trunkR * 0.8, trunkR, trunkH, 6),
-      new THREE.MeshLambertMaterial({ color: 0x4a2810 }),
+      this._pooledMaterial('tree-trunk', [0x4a2810], rand),
     );
     trunk.position.y = trunkH / 2;
     g.add(trunk);
 
-    const greenBase = 0x2c5a18 + Math.floor(rand() * 5) * 0x010200;
-    const canopyMat = new THREE.MeshLambertMaterial({
-      color: greenBase,
-      map: makeMottledCanvasTexture(greenBase, 0.22, Math.floor(rand() * 1e6)),
-    });
+    // 5 variants spanning the original 0x2c5a18..+4*0x010200 range.
+    const canopyMat = this._pooledMaterial(
+      'deciduous',
+      [0x2c5a18, 0x2c5a18 + 0x010200, 0x2c5a18 + 0x020400, 0x2c5a18 + 0x030600, 0x2c5a18 + 0x040800],
+      rand,
+      0.22,
+    );
 
     // 3 overlapping blobs give a rounded, non-symmetric canopy silhouette.
     const blobCount = 3;
@@ -1305,21 +1589,27 @@ export class OverworldScene {
     const trunkH = 1.8 + rand() * 1.4;
     const trunkR = 0.08 + rand() * 0.04;
 
-    const barkColor = 0x3a2818 + Math.floor(rand() * 4) * 0x010101;
+    // 4 variants spanning the original 0x3a2818..+3*0x010101 range.
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(trunkR * 0.5, trunkR, trunkH, 5),
-      new THREE.MeshLambertMaterial({ color: barkColor }),
+      this._pooledMaterial(
+        'sparse-trunk',
+        [0x3a2818, 0x3a2818 + 0x010101, 0x3a2818 + 0x020202, 0x3a2818 + 0x030303],
+        rand,
+      ),
     );
     trunk.position.y = trunkH / 2;
     g.add(trunk);
 
     // A few small angular "sparse foliage / bare branch" fragments near the top.
     const fragmentCount = 2 + Math.floor(rand() * 2);
-    const sparseGreen = 0x3a4a20 + Math.floor(rand() * 4) * 0x010100;
-    const fragMat = new THREE.MeshLambertMaterial({
-      color: sparseGreen,
-      map: makeMottledCanvasTexture(sparseGreen, 0.28, Math.floor(rand() * 1e6)),
-    });
+    // 4 variants spanning the original 0x3a4a20..+3*0x010100 range.
+    const fragMat = this._pooledMaterial(
+      'sparse-foliage',
+      [0x3a4a20, 0x3a4a20 + 0x010100, 0x3a4a20 + 0x020200, 0x3a4a20 + 0x030300],
+      rand,
+      0.28,
+    );
     for (let i = 0; i < fragmentCount; i++) {
       const size = 0.25 + rand() * 0.2;
       const frag = new THREE.Mesh(new THREE.IcosahedronGeometry(size, 0), fragMat);
@@ -1338,81 +1628,85 @@ export class OverworldScene {
 
   // ── Rock placement ─────────────────────────────────────────────────────────
 
-  private _placeRocks(rand: () => number): void {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
-    const W  = GW * T;
-    const H  = GH * T;
-    const rockInner = FR * T + 6;
-    const rockOuter = GHW * T * 0.92;
-    const pts = poissonDisk(W, H, 8, rand);
+  /** Builds one unpositioned rock (boulder/slab/cluster archetype, chosen via
+   *  `pickRockArchetype(wx, wz)`), wrapped in a `THREE.Group` whose local
+   *  origin already accounts for the "half-embedded in ground" vertical
+   *  offset (`radius * 0.45`) that the old `_placeRocks()` baked directly
+   *  into world-space Y — so the caller only needs to set world (x, level *
+   *  SH, z), mirroring `_makeTree()`'s unpositioned-group contract. Also
+   *  tags `userData.scatterRadius` so `_loadTerrainChunk()` can size this
+   *  rock's ball collider without a separate whole-world `_rocks` array. */
+  private _makeRock(rand: () => number, wx: number, wz: number): THREE.Group {
+    const radius = 0.48 + rand() * 0.84;
 
-    for (const [px, pz] of pts) {
-      const wx = px - W / 2;
-      const wz = pz - H / 2;
-      const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < rockInner || d > rockOuter) continue;
+    // 5 variants spanning the original grey range (0x58..0x58+0x17).
+    const greyVariants = [0x58, 0x60, 0x68, 0x6c, 0x6f];
+    const colorForGrey = (grey: number) => (grey << 16) | (Math.floor(grey * 0.96) << 8) | Math.floor(grey * 0.88);
+    const mat = this._pooledMaterial('rock', greyVariants.map(colorForGrey), rand, 0.12);
 
-      const c = Math.floor(wx / T + GHW);
-      const r = Math.floor(wz / T + GHH);
-
-      const cell = this._wg.get(c, r);
-      if (!isScatterAllowed(cell, 'rock')) continue;
-      const level  = cell.elevation;
-      const wy     = level * SH;
-      const radius = 0.48 + rand() * 0.84;
-
-      const grey  = 0x58 + Math.floor(rand() * 0x18);
-      const color = (grey << 16) | (Math.floor(grey * 0.96) << 8) | Math.floor(grey * 0.88);
-      const mat = new THREE.MeshLambertMaterial({
-        color,
-        map: makeMottledCanvasTexture(color, 0.12, Math.floor(rand() * 1e6)),
-      });
-
-      const archetype = pickRockArchetype(wx, wz);
-      let mesh: THREE.Object3D;
-      if (archetype === 'slab') {
-        // Flattened box — mimics a flat rock outcrop/slab.
-        mesh = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.6, radius * 0.5, radius * 1.3), mat);
-      } else if (archetype === 'cluster') {
-        // Grouped small dodecahedra scattered around a shared centre — rock pile look.
-        const grp = new THREE.Group();
-        const pieceCount = 3;
-        for (let i = 0; i < pieceCount; i++) {
-          const pieceR = radius * (0.45 + rand() * 0.35);
-          const piece = new THREE.Mesh(new THREE.DodecahedronGeometry(pieceR, 0), mat);
-          const angle = (i / pieceCount) * Math.PI * 2 + rand() * 0.5;
-          const spread = radius * 0.5;
-          piece.position.set(Math.cos(angle) * spread, pieceR * 0.4, Math.sin(angle) * spread);
-          piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-          grp.add(piece);
-        }
-        mesh = grp;
-      } else {
-        // Default 'boulder' — original dodecahedron look.
-        mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0), mat);
+    const archetype = pickRockArchetype(wx, wz);
+    let mesh: THREE.Object3D;
+    if (archetype === 'slab') {
+      // Flattened box — mimics a flat rock outcrop/slab.
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.6, radius * 0.5, radius * 1.3), mat);
+    } else if (archetype === 'cluster') {
+      // Grouped small dodecahedra scattered around a shared centre — rock pile look.
+      const grp = new THREE.Group();
+      const pieceCount = 3;
+      for (let i = 0; i < pieceCount; i++) {
+        const pieceR = radius * (0.45 + rand() * 0.35);
+        const piece = new THREE.Mesh(new THREE.DodecahedronGeometry(pieceR, 0), mat);
+        const angle = (i / pieceCount) * Math.PI * 2 + rand() * 0.5;
+        const spread = radius * 0.5;
+        piece.position.set(Math.cos(angle) * spread, pieceR * 0.4, Math.sin(angle) * spread);
+        piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+        grp.add(piece);
       }
-      mesh.position.set(wx, wy + radius * 0.45, wz);
-      mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-      mesh.scale.set(1 + rand() * 0.4, 0.5 + rand() * 0.55, 0.9 + rand() * 0.3);
-
-      this._rocks.push({ mesh, px: wx, py: wy + radius * 0.5, pz: wz, r: radius });
+      mesh = grp;
+    } else {
+      // Default 'boulder' — original dodecahedron look.
+      mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0), mat);
     }
+    // Local-only vertical embed offset (world x/z stay 0 here — the caller
+    // sets the wrapper group's world position).
+    mesh.position.y = radius * 0.45;
+    mesh.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+    mesh.scale.set(1 + rand() * 0.4, 0.5 + rand() * 0.55, 0.9 + rand() * 0.3);
+
+    const wrapper = new THREE.Group();
+    wrapper.add(mesh);
+    wrapper.userData.scatterRadius = radius;
+    return wrapper;
   }
 
   // ── Bush placement (ground clutter — no physics collider) ─────────────────
 
-  private _plantBushes(rand: () => number): void {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH, _FR: FR } = this;
-    const W  = GW * T;
-    const H  = GH * T;
+  /** Chunk-scoped bush placement (Task 13 final review, Important issue #3)
+   *  — was a whole-world `_plantBushes()` Poisson-disk pass over the FULL
+   *  grid extent at construction time; now built per-chunk (own Poisson-disk
+   *  pass over just this chunk's extent, own deterministic seed) exactly
+   *  like `_buildChunkScatter()`'s tree/rock placement, so bush count scales
+   *  with loaded-chunk count instead of total world size. Bushes are purely
+   *  visual (no collider) so they're just added straight into the shared
+   *  per-chunk `scatter` group, tagged `userData.scatterKind = 'bush'` so
+   *  `_loadTerrainChunk()`'s tree/rock collider loop correctly ignores
+   *  them. */
+  private _buildChunkBushes(coord: ChunkCoord, group: THREE.Group): void {
+    const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
+    const chunkWorldSize = T * CHUNK_SIZE;
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
     const bushInner = FR * T + 4;
     const bushOuter = GHW * T * 0.90;
+    const rand = mulberry32((this._seed ^ 0x8B21_44F7) ^ (coord.cx * 51749) ^ (coord.cz * 40361));
+
     // Tighter spacing than trees (5.5) — bushes are denser undergrowth.
-    const pts = poissonDisk(W, H, 3.2, rand);
+    const pts = poissonDisk(chunkWorldSize, chunkWorldSize, 3.2, rand);
 
     for (const [px, pz] of pts) {
-      const wx = px - W / 2;
-      const wz = pz - H / 2;
+      const wx = originX + px;
+      const wz = originZ + pz;
       const d  = Math.sqrt(wx * wx + wz * wz);
       if (d < bushInner || d > bushOuter) continue;
 
@@ -1430,17 +1724,20 @@ export class OverworldScene {
       const bush = this._makeBush(rand);
       bush.position.set(wx, level * SH, wz);
       bush.rotation.y = rand() * Math.PI * 2;
-      this._clutter.push(bush);
+      bush.userData.scatterKind = 'bush';
+      group.add(bush);
     }
   }
 
   private _makeBush(rand: () => number): THREE.Group {
     const g = new THREE.Group();
-    const greenBase = 0x2e4a1a + Math.floor(rand() * 5) * 0x010200;
-    const mat = new THREE.MeshLambertMaterial({
-      color: greenBase,
-      map: makeMottledCanvasTexture(greenBase, 0.20, Math.floor(rand() * 1e6)),
-    });
+    // 5 variants spanning the original 0x2e4a1a..+4*0x010200 range.
+    const mat = this._pooledMaterial(
+      'bush',
+      [0x2e4a1a, 0x2e4a1a + 0x010200, 0x2e4a1a + 0x020400, 0x2e4a1a + 0x030600, 0x2e4a1a + 0x040800],
+      rand,
+      0.20,
+    );
 
     const blobCount = 2 + Math.floor(rand() * 3); // 2..4 blobs
     for (let i = 0; i < blobCount; i++) {
@@ -1458,22 +1755,30 @@ export class OverworldScene {
 
   // ── Beach decor (sand-only ground clutter — no physics collider) ──────────
 
-  private _scatterBeachDecor(rand: () => number): void {
-    const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const W = GW * T;
-    const H = GH * T;
+  /** Chunk-scoped beach-decor placement (Task 13 final review, Important
+   *  issue #3) — was a whole-world `_scatterBeachDecor()` pass, now built
+   *  per-chunk exactly like `_buildChunkBushes()` above. Purely visual (no
+   *  collider), tagged `userData.scatterKind = 'decor'`. */
+  private _buildChunkBeachDecor(coord: ChunkCoord, group: THREE.Group): void {
+    const { _GHW: GHW, _GHH: GHH } = this;
+    const chunkWorldSize = T * CHUNK_SIZE;
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
+    const rand = mulberry32((this._seed ^ 0x3F9C_61A2) ^ (coord.cx * 76003) ^ (coord.cz * 86243));
+
     // Denser than bushes (3.2) since beach strips are typically narrow —
     // a wider spacing would mean most candidate points land off the sand.
-    const pts = poissonDisk(W, H, 2.4, rand);
+    const pts = poissonDisk(chunkWorldSize, chunkWorldSize, 2.4, rand);
 
     for (const [px, pz] of pts) {
-      const wx = px - W / 2;
-      const wz = pz - H / 2;
+      const wx = originX + px;
+      const wz = originZ + pz;
 
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
-      if (cell.biome !== 'sand') continue;
+      if (cell.biome !== 'beach') continue;
       if (cell.feature === 'road' || cell.feature === 'road_dirt') continue;
       if (cell.content !== 'empty') continue;
       if (cell.settlementId > 0) continue;
@@ -1485,7 +1790,8 @@ export class OverworldScene {
                   : this._makeBeachPebbles(rand);
       decor.position.set(wx, level * SH, wz);
       decor.rotation.y = rand() * Math.PI * 2;
-      this._clutter.push(decor);
+      decor.userData.scatterKind = 'decor';
+      group.add(decor);
     }
   }
 
@@ -1493,11 +1799,13 @@ export class OverworldScene {
     const g = new THREE.Group();
     const len = 1.1 + rand() * 0.9;
     const r0 = 0.06 + rand() * 0.03;
-    const grey = 0x6a5a48 + Math.floor(rand() * 4) * 0x040302;
-    const mat = new THREE.MeshLambertMaterial({
-      color: grey,
-      map: makeMottledCanvasTexture(grey, 0.16, Math.floor(rand() * 1e6)),
-    });
+    // 4 variants spanning the original 0x6a5a48..+3*0x040302 range.
+    const mat = this._pooledMaterial(
+      'driftwood',
+      [0x6a5a48, 0x6a5a48 + 0x040302, 0x6a5a48 + 0x080604, 0x6a5a48 + 0x0c0906],
+      rand,
+      0.16,
+    );
     const log = new THREE.Mesh(new THREE.CylinderGeometry(r0 * 0.8, r0, len, 6), mat);
     log.rotation.z = Math.PI / 2; // lying flat
     log.rotation.y = rand() * Math.PI;
@@ -1508,11 +1816,13 @@ export class OverworldScene {
 
   private _makeDuneGrassTuft(rand: () => number): THREE.Group {
     const g = new THREE.Group();
-    const tan = 0x9a9660 + Math.floor(rand() * 4) * 0x030200;
-    const mat = new THREE.MeshLambertMaterial({
-      color: tan,
-      map: makeMottledCanvasTexture(tan, 0.22, Math.floor(rand() * 1e6)),
-    });
+    // 4 variants spanning the original 0x9a9660..+3*0x030200 range.
+    const mat = this._pooledMaterial(
+      'dunegrass',
+      [0x9a9660, 0x9a9660 + 0x030200, 0x9a9660 + 0x060400, 0x9a9660 + 0x090600],
+      rand,
+      0.22,
+    );
     const bladeCount = 3 + Math.floor(rand() * 3); // 3..5 blades
     for (let i = 0; i < bladeCount; i++) {
       const h = 0.35 + rand() * 0.3;
@@ -1528,11 +1838,13 @@ export class OverworldScene {
 
   private _makeBeachPebbles(rand: () => number): THREE.Group {
     const g = new THREE.Group();
-    const pale = 0x8a8478 + Math.floor(rand() * 5) * 0x020202;
-    const mat = new THREE.MeshLambertMaterial({
-      color: pale,
-      map: makeMottledCanvasTexture(pale, 0.10, Math.floor(rand() * 1e6)),
-    });
+    // 5 variants spanning the original 0x8a8478..+4*0x020202 range.
+    const mat = this._pooledMaterial(
+      'pebbles',
+      [0x8a8478, 0x8a8478 + 0x020202, 0x8a8478 + 0x040404, 0x8a8478 + 0x060606, 0x8a8478 + 0x080808],
+      rand,
+      0.10,
+    );
     const pieceCount = 2 + Math.floor(rand() * 3); // 2..4 pebbles
     for (let i = 0; i < pieceCount; i++) {
       const pr = 0.08 + rand() * 0.1;
@@ -2356,7 +2668,7 @@ export class OverworldScene {
           for (const [dc, dr] of [[d,-dist],[d,dist],[-dist,d],[dist,d]] as [number,number][]) {
             const c2 = cc + dc, r2 = cr + dr;
             const cell = this._wg.get(c2, r2);
-            if (cell.feature === 'river' || cell.biome === 'water') {
+            if (cell.feature === 'river' || cell.biome === 'ocean' || cell.biome === 'deep_ocean') {
               nearRiverDir = Math.abs(dr) > Math.abs(dc)
                 ? (dr < 0 ? 'north' : 'south')
                 : (dc < 0 ? 'west'  : 'east');

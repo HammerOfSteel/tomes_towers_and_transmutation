@@ -6,7 +6,16 @@
  * than adding more parallel arrays.
  */
 
-export type BiomeId = 'bog' | 'grass' | 'forest' | 'highland' | 'rocky' | 'water' | 'sand';
+/**
+ * Matches Overworld Studio's `RealmBiome` (`src/overworld-studio.ts`)
+ * exactly — a deliberate rename-not-add-alongside decision so every
+ * consumer switches on the same literal set the realm generator produces,
+ * with no collapsing/mapping table needed (see RealmToWorldGrid.ts).
+ */
+export type BiomeId =
+  | 'deep_ocean' | 'ocean' | 'beach'
+  | 'desert' | 'savanna' | 'grassland'
+  | 'forest' | 'taiga' | 'tundra' | 'snow';
 
 /**
  * Feature = a geographic/man-made overlay on the tile (roads, rivers).
@@ -53,7 +62,7 @@ export interface WorldCell {
 function _defaultCell(): WorldCell {
   return {
     elevation:    0,
-    biome:        'bog',
+    biome:        'grassland',
     feature:      'none',
     content:      'empty',
     dungeonId:    0,

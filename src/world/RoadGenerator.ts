@@ -90,7 +90,7 @@ function _moveCost(
   const cell = grid.get(tc, tr);
 
   // Never cross water (lakes/sea)
-  if (cell.biome === 'water') return Infinity;
+  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return Infinity;
 
   // Existing roads are cheap (promotes reuse / road merging)
   if (cell.feature === 'road') return base * 0.25;
@@ -104,7 +104,10 @@ function _moveCost(
   const slope  = Math.abs(elTo - elFrom) * 14.0;
 
   // Light penalty for rocky/highland biome (harder terrain)
-  const terrainPenalty = (cell.biome === 'rocky' || cell.biome === 'highland') ? 2.0 : 0;
+  // Elevation-based (was a rocky/highland biome-name check before the
+  // biome-taxonomy rebuild) — elevation 3-4 was always the old
+  // highland/rocky band, and elevation is unchanged by that rebuild.
+  const terrainPenalty = cell.elevation >= 3 ? 2.0 : 0;
 
   return base + slope + terrainPenalty;
 }

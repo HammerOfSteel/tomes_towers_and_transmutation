@@ -146,7 +146,7 @@ export function applySettlementToGrid(
     for (let dr = -innerR; dr <= innerR; dr++) {
       if (dc * dc + dr * dr > innerR * innerR) continue;
       const cell = grid.get(cc + dc, cr + dr);
-      if (cell.biome !== 'water' && cell.feature !== 'river') {
+      if (cell.biome !== 'deep_ocean' && cell.biome !== 'ocean' && cell.feature !== 'river') {
         elevMap.set(cell.elevation, (elevMap.get(cell.elevation) ?? 0) + 1);
       }
     }
@@ -161,7 +161,7 @@ export function applySettlementToGrid(
       if (dc * dc + dr * dr > innerR * innerR) continue;
       const c = cc + dc, r = cr + dr;
       const cell = grid.get(c, r);
-      if (cell.biome !== 'water' && cell.feature !== 'river') {
+      if (cell.biome !== 'deep_ocean' && cell.biome !== 'ocean' && cell.feature !== 'river') {
         grid.set(c, r, { elevation: targetElev });
       }
     }
@@ -190,7 +190,7 @@ export function applySettlementToGrid(
 function _valid(grid: WorldGrid, col: number, row: number): boolean {
   if (col < 1 || col >= grid.width - 1 || row < 1 || row >= grid.height - 1) return false;
   const cell = grid.get(col, row);
-  if (cell.biome === 'water') return false;
+  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
   if (cell.feature === 'river') return false;
   if (cell.content === 'dungeon_entrance') return false;
   if (cell.elevation < 1) return false;

@@ -6,7 +6,7 @@ import type { WorldCell } from '@/world/WorldGrid';
 function makeCell(overrides: Partial<WorldCell>): WorldCell {
   return {
     elevation: 0,
-    biome: 'bog',
+    biome: 'grassland',
     feature: 'none',
     waterDepth: 0,
     ...overrides,
@@ -22,7 +22,7 @@ function makeMockGrid(cell: WorldCell) {
 
 describe('getWaterInfoAt', () => {
   it('returns null for a dry cell (waterDepth 0, no feature)', () => {
-    const wg = makeMockGrid(makeCell({ feature: 'none', biome: 'grass' as any }));
+    const wg = makeMockGrid(makeCell({ feature: 'none', biome: 'grassland' }));
     expect(getWaterInfoAt(wg as any, 10, 20)).toBeNull();
   });
 

@@ -16,15 +16,20 @@ import type { WorldGrid }                                from '@/world/WorldGrid
 const MAP_PX    = 180;   // display size in CSS / canvas pixels
 const MARGIN_PX = 12;    // from screen edge (right + top)
 
-// Biome fill colours (hex strings, drawn to canvas)
+// Biome fill colours (hex strings, drawn to canvas) — mirrors
+// TerrainGeometryBuilder.ts's BIOME_COLOR_VARIANTS[*][0] (primary variant)
+// so the minimap and the 3D terrain agree on each biome's colour.
 const BIOME_COLOUR: Record<string, string> = {
-  water:    '#192e52',
-  bog:      '#3d4d26',
-  grass:    '#2d5c1e',
-  forest:   '#1a3d12',
-  highland: '#6e5f48',
-  rocky:    '#524d4a',
-  sand:     '#c2ad80', // matches BIOME_SAND in TerrainGeometryBuilder.ts
+  deep_ocean: '#233f7a',
+  ocean:      '#3d7594',
+  beach:      '#c2ad80',
+  desert:     '#c7a86b',
+  savanna:    '#9e8f47',
+  grassland:  '#427029',
+  forest:     '#295224',
+  taiga:      '#1f4733',
+  tundra:     '#6b7059',
+  snow:       '#e0e4e8',
 };
 
 // ── OWMinimap ─────────────────────────────────────────────────────────────────

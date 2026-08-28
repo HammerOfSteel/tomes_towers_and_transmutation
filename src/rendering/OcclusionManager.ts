@@ -13,7 +13,11 @@ const RESTORE_SPEED  = 0.10;
 const EPSILON        = 0.005;
 const CACHE_INTERVAL = 2.0;
 
-interface MatLike { opacity:number; transparent:boolean; depthWrite:boolean; needsUpdate:boolean; isMeshBasicMaterial?:boolean; isLineBasicMaterial?:boolean; }
+interface MatLike {
+  opacity:number; transparent:boolean; depthWrite:boolean; needsUpdate:boolean;
+  isMeshBasicMaterial?:boolean; isLineBasicMaterial?:boolean;
+  clone?: () => MatLike; dispose?: () => void;
+}
 
 const _v = new THREE.Vector3();
 const _d = new THREE.Vector3();
@@ -47,7 +51,18 @@ export class OcclusionManager {
   private _scene: THREE.Scene | null = null;
   private _cache: THREE.Mesh[] = [];
   private _cacheAge = Infinity;
+  // Materials are frequently POOLED/SHARED across many scatter meshes (trees,
+  // rocks — see OverworldScene's `_pooledMaterial()`), so this manager must
+  // never mutate `mesh.material` in place: doing so would visually fade every
+  // OTHER mesh sharing that same material instance, and — worse — a second
+  // mesh starting to fade while the first is still faded would record the
+  // already-dimmed opacity as its "original", permanently corrupting the
+  // shared material. Instead, the first time a mesh needs to fade we clone
+  // its (possibly shared) material once and swap `mesh.material` to that
+  // per-mesh clone; `_origMaterial` remembers the true shared material so it
+  // can be restored (not just its opacity) once the fade completes.
   private readonly _faded = new Map<THREE.Mesh, number>();
+  private readonly _origMaterial = new Map<THREE.Mesh, MatLike>();
   private readonly _rc = new THREE.Raycaster();
 
   setMeshes(meshes: THREE.Mesh[]): void {
@@ -87,9 +102,15 @@ export class OcclusionManager {
 
     for (const mesh of hitSet) {
       if (!this._faded.has(mesh)) {
-        const mat = mesh.material as MatLike;
-        this._faded.set(mesh, mat.opacity ?? 1);
-        mat.transparent = true; mat.needsUpdate = true;
+        const sharedMat = mesh.material as MatLike;
+        this._origMaterial.set(mesh, sharedMat);
+        this._faded.set(mesh, sharedMat.opacity ?? 1);
+        // Clone so subsequent opacity mutations only ever touch this mesh's
+        // own material instance, never the shared/pooled one other meshes
+        // still reference.
+        const clone = (sharedMat.clone ? sharedMat.clone() : sharedMat) as MatLike;
+        clone.transparent = true; clone.needsUpdate = true;
+        (mesh as THREE.Mesh).material = clone as unknown as THREE.Material;
       }
     }
     for (const [mesh, orig] of this._faded) {
@@ -99,7 +120,7 @@ export class OcclusionManager {
       const gap  = tgt - curr;
       if (Math.abs(gap) < EPSILON) {
         mat.opacity=tgt; mat.transparent=tgt<0.99; mat.depthWrite=tgt>=0.5; mat.needsUpdate=true;
-        if (!hitSet.has(mesh)) this._faded.delete(mesh);
+        if (!hitSet.has(mesh)) this._restoreMesh(mesh);
         continue;
       }
       const next = curr + gap * (gap < 0 ? FADE_SPEED : RESTORE_SPEED);
@@ -107,23 +128,34 @@ export class OcclusionManager {
     }
   }
 
+  /** Restores `mesh.material` to the original (possibly shared/pooled)
+   *  material reference it had before fading started, and disposes the
+   *  per-mesh clone created to fade it — never mutates the shared material. */
+  private _restoreMesh(mesh: THREE.Mesh): void {
+    const origMat = this._origMaterial.get(mesh);
+    const clone = mesh.material as MatLike;
+    if (origMat) {
+      if (clone !== (origMat as unknown as MatLike) && clone.dispose) clone.dispose();
+      mesh.material = origMat as unknown as THREE.Material;
+    }
+    this._faded.delete(mesh);
+    this._origMaterial.delete(mesh);
+  }
+
   private _restoreAll(): void {
-    for (const [mesh, orig] of this._faded) {
-      const mat = mesh.material as MatLike;
-      mat.opacity=orig; mat.transparent=orig<1; mat.depthWrite=true; mat.needsUpdate=true;
+    for (const mesh of Array.from(this._faded.keys())) {
+      this._restoreMesh(mesh);
     }
     this._faded.clear();
+    this._origMaterial.clear();
   }
   private _rebuild(): void {
     if (!this._scene) return;
     const out: THREE.Mesh[] = [];
     this._scene.traverse(o => { if (_isCandidate(o)) out.push(o as THREE.Mesh); });
-    for (const [m] of this._faded) {
+    for (const m of Array.from(this._faded.keys())) {
       if (!out.includes(m)) {
-        const mat = m.material as MatLike;
-        const orig = this._faded.get(m) ?? 1;
-        mat.opacity=orig; mat.transparent=orig<1; mat.depthWrite=true; mat.needsUpdate=true;
-        this._faded.delete(m);
+        this._restoreMesh(m);
       }
     }
     this._cache = out;

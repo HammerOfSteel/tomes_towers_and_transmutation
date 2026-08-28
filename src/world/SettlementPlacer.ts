@@ -91,7 +91,7 @@ export function placeSettlements(
     if (tR < innerR || tR > outerR) return false;
 
     const cell = grid.get(col, row);
-    if (cell.biome === 'water')                    return false;
+    if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
     if (cell.feature === 'river')                  return false;
     if (cell.elevation < 1 || cell.elevation > 2)  return false;
     if (cell.content !== 'empty')                  return false;

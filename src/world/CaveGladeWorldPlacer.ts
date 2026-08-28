@@ -29,13 +29,19 @@ const T          = 2;    // world-units per tile (matches OverworldScene/Dungeon
 const SPACING_WU = 24;   // minimum world-unit distance between cave/glade entrances
 const FLAT_MULT  = 2.0;  // clear-zone around tower: FR × FLAT_MULT tiles
 
-/** Cave-eligible biomes: bog (elevation 0) and highland/rocky (elevation 3-4) — the live-grid analogue of "mountain/bog". */
-function isCaveEligible(cell: { biome: string; feature: string; content: string }): boolean {
-  return (cell.biome === 'bog' || cell.biome === 'highland' || cell.biome === 'rocky')
+/** Cave-eligible: elevation 0 (was "bog") or elevation 3-4 (was
+ *  "highland/rocky") — the elevation bands the old biome names
+ *  approximated. Elevation is unchanged by the biome-taxonomy rebuild
+ *  (docs/superpowers/specs/2026-08-28-overworld-foundation-rebuild-design.md),
+ *  so this stays a correct, low-risk substitution rather than an invented
+ *  biome-name mapping. */
+function isCaveEligible(cell: { elevation: number; feature: string; content: string }): boolean {
+  return (cell.elevation === 0 || cell.elevation >= 3)
     && cell.feature === 'none' && cell.content === 'empty';
 }
 
-/** Glade-eligible biome: forest (elevation 2). */
+/** Glade-eligible: forest biome, unchanged — 'forest' still exists in the
+ *  widened taxonomy under the same name. */
 function isGladeEligible(cell: { biome: string; feature: string; content: string }): boolean {
   return cell.biome === 'forest' && cell.feature === 'none' && cell.content === 'empty';
 }

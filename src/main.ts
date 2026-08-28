@@ -37,6 +37,7 @@ import { buildingToDungeonPlan } from '@/buildingToDungeonPlan';
 import { generateTower } from '@/levels/TowerGenerator';
 import { getFloorDef } from '@/levels/TowerFloorDef';
 import { TelescopeView } from '@/ui/TelescopeView';
+import { TELESCOPE_FOG_NEAR, TELESCOPE_FOG_FAR } from '@/rendering/FogConfig';
 import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { WaterLabScene } from '@/scene/WaterLabScene';
@@ -572,7 +573,12 @@ async function main() {
     }
     overworld.enter();
     scene.background = new THREE.Color(0x4a6888);
-    scene.fog = new THREE.Fog(0x4a6888, 200, 800);
+    // Task 13 final review (Important issue #2): these distances derive
+    // from ChunkManager's terrain unload radius (see FogConfig.ts) instead
+    // of being a hardcoded literal, so terrain fades into fog before it
+    // streams out from underfoot rather than visibly popping out of a
+    // still-clear view.
+    scene.fog = new THREE.Fog(0x4a6888, TELESCOPE_FOG_NEAR, TELESCOPE_FOG_FAR);
     player.group.visible = false;
     gameMode = 'telescope';
     telescopeView.updateAspect(window.innerWidth, window.innerHeight);
