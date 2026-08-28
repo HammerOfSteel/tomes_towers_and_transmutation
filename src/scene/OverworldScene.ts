@@ -39,7 +39,7 @@ import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/Wor
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
-import { createSettlementBuildingDna, settlementTypeToFaction, mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
+import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
 import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
 import { createWaterMaterial }          from '@/world/WaterMaterial';
 import {
@@ -61,7 +61,6 @@ import { NPCEntity }                   from '@/world/NPCEntity';
 import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
 import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
-import { selectLampRoadTiles } from '@/world/LampPlacement';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
@@ -74,7 +73,7 @@ import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
-import { makeLampPost } from './LampPostFactory';
+import { renderSettlementPlan } from './SettlementRenderer';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -2526,53 +2525,41 @@ export class OverworldScene {
     for (const entry of settlements) {
       const { plan } = entry;
 
-      // Place building THREE.Groups
-      for (const b of plan.buildings) {
-        const wx = (b.col - GHW) * T;
-        const wz = (b.row - GHH) * T;
-        const lv = this._wg.get(b.col, b.row).elevation;
-        const wy = lv * SH;
-        const runtimeFaction = mapStudioFactionToRuntimeFaction(plan.faction);
-        const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
-        if (!dna) continue;
-        const inst = buildBuilding(dna);
-        const grp = inst.exteriorGroup;
-        grp.position.set(wx, wy, wz);
-        grp.rotation.y = b.rotation;
-        // See `mergeGroupMeshesByMaterial()` doc comment — collapses each
-        // building's 50+ individual exterior-part meshes into a handful of
-        // merged-per-material meshes; buildings, not scatter, turned out to
-        // be the dominant source of draw calls (measured: 41 buildings ->
-        // 2382 individual meshes vs. only 77 for all merged scatter).
-        mergeGroupMeshesByMaterial(grp);
+      const result = renderSettlementPlan(
+        plan,
+        this._wg,
+        GHW,
+        GHH,
+        {
+          registerBuildingCollider: (dna, pos, rotationY) => this.registerBuildingCollider(dna, pos, rotationY),
+          mapFaction: (f) => mapStudioFactionToRuntimeFaction(f),
+        },
+      );
+
+      for (const grp of result.buildingGroups) {
         this._buildingGroups.push(grp);
-        if (b.isAnchor) {
-          this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: b.rotation });
-        }
-        this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), b.rotation);
       }
 
-      // Collect settlement road tiles — all at centre elevation for a flat pavement
+      // Collect road tiles — all at centre elevation for a flat pavement (parity
+      // with pre-refactor: road Y uses settlement-centre elevation, not per-tile).
       const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
-      for (const r of plan.roads) {
-        const k = `${r.col},${r.row}`;
+      for (const rt of result.roadTiles) {
+        const k = `${rt.col},${rt.row}`;
         if (sqSeen.has(k)) continue;
         sqSeen.add(k);
-        const wx = (r.col - GHW) * T;
-        const wz = (r.row - GHH) * T;
+        const wx = (rt.col - GHW) * T;
+        const wz = (rt.row - GHH) * T;
         sqPositions.push(new THREE.Vector3(wx, centreElev * SH + 0.02, wz));
       }
 
-      // Place lamp posts along a stride-sampled subset of this settlement's roads.
-      const lampTiles = selectLampRoadTiles(plan.roads, 4);
-      for (const t of lampTiles) {
-        const wx = (t.col - GHW) * T + 0.6; // small perpendicular offset so the post
-        const wz = (t.row - GHH) * T;       // doesn't sit dead-center of the walking path
-        const group = makeLampPost();
-        const light = group.children[group.children.length - 1] as THREE.PointLight;
-        group.position.set(wx, centreElev * SH, wz);
-        this._lampGroups.push(group);
-        this._lampLights.push(light);
+      for (const grp of result.lampGroups)   this._lampGroups.push(grp);
+      for (const lt  of result.lampLights)   this._lampLights.push(lt);
+
+      const runtimeFaction = mapStudioFactionToRuntimeFaction(plan.faction);
+      for (const rec of result.buildingRecords) {
+        if (rec.isAnchor) {
+          this._buildingData.push({ dna: rec.dna, pos: rec.pos, faction: runtimeFaction, rotationY: rec.rotationY });
+        }
       }
     }
 
