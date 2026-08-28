@@ -41,6 +41,7 @@ import { TELESCOPE_FOG_NEAR, TELESCOPE_FOG_FAR } from '@/rendering/FogConfig';
 import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { WaterLabScene } from '@/scene/WaterLabScene';
+import { SettlementLabScene } from '@/scene/SettlementLabScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
@@ -301,9 +302,10 @@ async function main() {
   sceneManager.loadDungeon(_initialPlan);
 
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
-  let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' = 'interior';
+  let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' | 'settlementlab' = 'interior';
   let overworld: OverworldScene | null = null;
   let waterLab: WaterLabScene | null = null;
+  let settlementLab: SettlementLabScene | null = null;
   let minimap:   OWMinimap | null = null;
 
   // Always-on occlusion manager — switches between scene-wide and mesh-list modes
@@ -1018,6 +1020,9 @@ async function main() {
     } else if (gameMode === 'waterlab') {
       waterLab?.exit();
       gameMode = 'interior';
+    } else if (gameMode === 'settlementlab') {
+      settlementLab?.exit();
+      gameMode = 'interior';
     }
   }
 
@@ -1034,6 +1039,18 @@ async function main() {
     // A real (dry-default) Fog object, not null, so the per-frame underwater
     // fog lerp below (driven by player.underwaterDepthFraction) has
     // something to lerp — the Lab previously disabled fog entirely here.
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+    _sandboxUi?.setLocation('lab');
+  }
+
+  function enterSettlementLab(): void {
+    if (gameMode === 'settlementlab') return; // already there — no-op
+    _exitCurrentSpecialMode();
+    sceneManager.unloadCurrentRoom();
+    if (!settlementLab) settlementLab = new SettlementLabScene(scene, physics, player);
+    settlementLab.enter();
+    gameMode = 'settlementlab';
+    _sandboxLocation = 'lab';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     _sandboxUi?.setLocation('lab');
   }
@@ -2632,7 +2649,7 @@ async function main() {
   // same wheel event (this listener + WoWCameraController's would otherwise
   // both fire and double the zoom rate).
   window.addEventListener('wheel', (e) => {
-    if ((gameMode === 'exterior' || gameMode === 'interior' || gameMode === 'waterlab') && cameraRig.mode !== 'wow') {
+    if ((gameMode === 'exterior' || gameMode === 'interior' || gameMode === 'waterlab' || gameMode === 'settlementlab') && cameraRig.mode !== 'wow') {
       e.preventDefault();
       cameraRig.applyScroll(e.deltaY);
     }
@@ -3478,6 +3495,22 @@ async function main() {
       _startDevPanelInGame();
       (window as any).__tttDevRoomStage = 'entering-water-lab';
       enterWaterLab();
+      (window as any).__tttDevRoomStage = 'booted';
+      (window as any).__tttDevRoomBooted = true;
+      clearPendingDevRoom();
+    } catch (e) {
+      (window as any).__tttDevRoomStage = 'error';
+      (window as any).__tttDevRoomError = String(e);
+      console.error('[dev-room] boot failed:', e);
+    }
+  } else if (_pendingDevRoom === 'settlement-lab') {
+    try {
+      (window as any).__tttDevRoomStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttDevRoomStage = 'starting-game';
+      _startDevPanelInGame();
+      (window as any).__tttDevRoomStage = 'entering-settlement-lab';
+      enterSettlementLab();
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();

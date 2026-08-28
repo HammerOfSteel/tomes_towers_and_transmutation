@@ -17,7 +17,7 @@
 export const DEV_ROOM_LAUNCH_KEY = 'ttt_dev_room_launch';
 export const DEV_ROOM_LAUNCH_PARAM = 'devroom';
 
-export type DevRoomId = 'water-lab';
+export type DevRoomId = 'water-lab' | 'settlement-lab';
 
 /** Builds the URL used to open `page` straight into `room`. */
 export function buildDevRoomLaunchUrl(page: string, room: DevRoomId): string {
@@ -29,10 +29,11 @@ export function buildDevRoomLaunchUrl(page: string, room: DevRoomId): string {
 /** Reads a pending dev-room id from the URL's query param (primary) or
  * localStorage (legacy fallback), returning null if neither is set. */
 export function readPendingDevRoom(): DevRoomId | null {
+  const validIds: DevRoomId[] = ['water-lab', 'settlement-lab'];
   const fromQuery = new URLSearchParams(window.location.search).get(DEV_ROOM_LAUNCH_PARAM);
-  if (fromQuery === 'water-lab') return fromQuery;
+  if (validIds.includes(fromQuery as DevRoomId)) return fromQuery as DevRoomId;
   const fromStorage = localStorage.getItem(DEV_ROOM_LAUNCH_KEY);
-  if (fromStorage === 'water-lab') return fromStorage;
+  if (validIds.includes(fromStorage as DevRoomId)) return fromStorage as DevRoomId;
   return null;
 }
 
