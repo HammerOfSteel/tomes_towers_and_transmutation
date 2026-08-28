@@ -74,4 +74,34 @@ describe('SettlementLabScene', () => {
     const lab3 = new SettlementLabScene(scene3, physics, player);
     expect(() => lab3.update(1 / 60)).not.toThrow();
   });
+
+  it('lamp point-lights stay nested inside their lamp-post group (not reparented onto the scene root)', () => {
+    // Regression test: SettlementLabScene used to additionally call
+    // scene.add(light) for every entry in result.lampLights, on top of the
+    // lights already being children of result.lampGroups (added by
+    // makeLampPost()). THREE.Object3D.add() reparents unconditionally, so
+    // that second add() ripped each light out of its lamp group and
+    // collapsed it to world position (0, 1.42, 0) instead of illuminating
+    // its actual lamp post. lampLights is meant to be a read-only parallel
+    // bookkeeping array (mirroring OverworldScene's usage), never re-added.
+    const scene4 = new THREE.Scene();
+    const lab4 = new SettlementLabScene(scene4, physics, player);
+    lab4.enter();
+
+    const lampGroups = scene4.children.filter(
+      (c): c is THREE.Group => c instanceof THREE.Group && c.children.some(ch => ch instanceof THREE.PointLight),
+    );
+    expect(lampGroups.length).toBeGreaterThan(0);
+
+    for (const grp of lampGroups) {
+      const light = grp.children.find(ch => ch instanceof THREE.PointLight) as THREE.PointLight;
+      expect(light.parent).toBe(grp);
+    }
+
+    // No PointLight should ever be a direct child of the scene root.
+    const directLightsOnScene = scene4.children.filter(c => c instanceof THREE.PointLight);
+    expect(directLightsOnScene).toHaveLength(0);
+
+    lab4.exit();
+  });
 });

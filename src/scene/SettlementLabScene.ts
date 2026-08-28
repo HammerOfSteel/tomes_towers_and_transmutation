@@ -199,10 +199,15 @@ export class SettlementLabScene {
 
     this._renderResult = result;
 
-    // Add buildings + lamps
+    // Add buildings + lamps. lampLights are NOT added separately: each light
+    // is already a child of its lamp group (added by makeLampPost()) — this
+    // mirrors OverworldScene's usage, where _lampLights is only a parallel
+    // bookkeeping array read/written for intensity toggling, never re-added
+    // to the scene. Object3D.add() reparents on call, so doing `scene.add(lt)`
+    // here would rip each light out of its lamp group and collapse it to
+    // world position (0, 1.42, 0) instead of illuminating its actual post.
     for (const grp of result.buildingGroups) this._scene.add(grp);
     for (const grp of result.lampGroups)     this._scene.add(grp);
-    for (const lt  of result.lampLights)     this._scene.add(lt);
 
     // Build road tile meshes (geometry/material shared across tiles for this
     // regeneration cycle; both are tracked on instance fields and disposed in
@@ -262,9 +267,9 @@ export class SettlementLabScene {
           }
         });
       }
-      for (const lt of this._renderResult.lampLights) {
-        this._scene.remove(lt);
-      }
+      // lampLights are children of lampGroups (already removed/disposed
+      // above) — nothing further to remove here since they were never
+      // separately added to the scene root (see _regenerate()).
       this._renderResult = null;
     }
 
