@@ -39,7 +39,7 @@ import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/Wor
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
-import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
+import { createSettlementBuildingDna, settlementTypeToFaction, mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
 import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
 import { createWaterMaterial }          from '@/world/WaterMaterial';
 import {
@@ -2397,20 +2397,6 @@ export class OverworldScene {
     }
   }
 
-  private _mapStudioFactionToRuntimeFaction(faction: string): Faction {
-    const map: Record<string, Faction> = {
-      human: 'human_town',
-      elven: 'elven',
-      dwarven: 'dwarven',
-      orcish: 'orcish',
-      vampire: 'vampire',
-      undead: 'undead_common',
-      vulperia: 'vulperia',
-      slime: 'slime',
-      fae: 'fae',
-    };
-    return map[faction] ?? 'human_town';
-  }
 
   private _buildStudioSettlementPreview(): void {
     const payload = this._readStudioSettlementPreview();
@@ -2425,7 +2411,7 @@ export class OverworldScene {
     const anchorWx = (anchorCol - GHW) * T;
     const anchorWz = (anchorRow - GHH) * T;
     const previewRadiusWU = 14;
-    const runtimeFaction = this._mapStudioFactionToRuntimeFaction(payload.faction);
+    const runtimeFaction = mapStudioFactionToRuntimeFaction(payload.faction);
     const usedTiles = new Set<string>();
     let buildingCount = 0;
 
@@ -2546,7 +2532,7 @@ export class OverworldScene {
         const wz = (b.row - GHH) * T;
         const lv = this._wg.get(b.col, b.row).elevation;
         const wy = lv * SH;
-        const runtimeFaction = this._mapStudioFactionToRuntimeFaction(plan.faction);
+        const runtimeFaction = mapStudioFactionToRuntimeFaction(plan.faction);
         const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
         if (!dna) continue;
         const inst = buildBuilding(dna);
