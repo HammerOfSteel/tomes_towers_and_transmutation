@@ -1866,6 +1866,8 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Jump straight into the Settlement Lab dev room (for e2e tests). */
+      enterSettlementLab: () => enterSettlementLab(),
       /** Perf diagnostic readout — draw stats + per-frame timing breakdown
        *  (see perfState/perfEl above). For automated perf profiling. */
       getPerfStats: () => ({
@@ -2761,6 +2763,10 @@ async function main() {
           `radius: ${Math.hypot(_wlp.x, _wlp.z).toFixed(2)}  camera: ${cameraRig.mode}`;
       } else {
         waterLabDebugEl.style.display = 'none';
+      }
+      if (gameMode === 'settlementlab') {
+        hud.setTime(null);
+        settlementLab?.update(dt);
       }
       if (gameMode === 'interior') {
         hud.setTime(null);
