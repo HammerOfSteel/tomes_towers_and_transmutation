@@ -28,7 +28,6 @@
  */
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
 import { SlimeEnemy, createSlimeBodyIM } from '@/enemy/SlimeEnemy';
@@ -40,7 +39,7 @@ import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/Wor
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
 import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
-import { createSettlementBuildingDna, settlementTypeToFaction } from '@/world/buildings/BuildingTypeMap';
+import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
 import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
 import { createWaterMaterial }          from '@/world/WaterMaterial';
 import {
@@ -62,7 +61,6 @@ import { NPCEntity }                   from '@/world/NPCEntity';
 import type { NPCRole }               from '@/world/NPCDnaGenerator';
 import { eventsNear }                  from '@/world/WorldHistory';
 import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
-import { selectLampRoadTiles } from '@/world/LampPlacement';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
@@ -74,6 +72,8 @@ import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager'
 import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
+import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
+import { renderSettlementPlan } from './SettlementRenderer';
 
 // ── Fixed rendering constants (independent of world size) ─────────────────────
 
@@ -1203,11 +1203,11 @@ export class OverworldScene {
     this._buildChunkBeachDecor(coord, group);
 
     // Collapse every individual tree/rock/bush/decor Mesh in this chunk into
-    // a handful of merged per-material meshes — see `_mergeGroupMeshesByMaterial()`.
+    // a handful of merged per-material meshes — see `mergeGroupMeshesByMaterial()`.
     // Was the dominant cause of sub-7fps in loaded areas: with 7x7 loaded
     // chunks at default settings, un-merged scatter alone produced 3000+
     // individual draw calls (measured), before any buildings/terrain/NPCs.
-    this._mergeGroupMeshesByMaterial(group);
+    mergeGroupMeshesByMaterial(group);
 
     // Chunks can load before the scene is ever entered (the constructor's
     // forced initial load) or while exited (dungeon/tower interior) — only
@@ -1217,97 +1217,6 @@ export class OverworldScene {
     // interior geometry the same way ungated terrain did before Task 10.
     if (this._isInScene) this.scene.add(group);
     return group;
-  }
-
-  /**
-   * Collapses every individual `Mesh` inside a `group` (at any nesting
-   * depth) into one merged `Mesh` per shared material reference — a static
-   * geometry-batching pass that turns "one draw call per primitive mesh"
-   * into "one draw call per distinct material". Used both for per-chunk
-   * tree/rock/bush/decor scatter (materials pooled across the whole scene
-   * via `_pooledMaterial()`, so this collapses ~100+ meshes/chunk down to
-   * ~10-20) and per-building exterior geometry (materials built fresh per
-   * building in `BuildingBuilder.ts`, so this collapses each building's own
-   * wall/roof/window/door/etc. parts, unique to that building, down to one
-   * mesh per material the building actually uses — still typically 60+
-   * meshes down to under 20 per building).
-   *
-   * Individual per-object geometry (size/shape randomization, per-part
-   * placement) is unaffected — each primitive's geometry is cloned and its
-   * world-space transform (relative to `group`) baked into the clone's
-   * vertices before merging, so the merged result renders identically to
-   * the un-merged version.
-   *
-   * For scatter chunks specifically: colliders and chunk-unload bookkeeping
-   * key off each top-level scatter object's own position/
-   * `userData.scatterKind` (see `_loadTerrainChunk()`'s collider loop) —
-   * those top-level wrapper `Group`s are never merged away or removed
-   * here, only the `Mesh` descendants inside them. `_makeTree()`/
-   * `_makeRock()`/`_makeBush()`/the beach-decor builders all return a
-   * `THREE.Group` wrapper (never a bare `Mesh`) for exactly this reason, so
-   * this is safe to do unconditionally. For buildings, collision is
-   * computed analytically from `BuildingDNA`/footprint (see
-   * `registerBuildingCollider()`), not by traversing the exterior group's
-   * meshes, so there is no equivalent anchor constraint there.
-   *
-   * Materials are never disposed here — each merged mesh reuses one of the
-   * original meshes' material references directly (not a clone), so
-   * `BuildingInstance.dispose()` / the scatter pool's lifetime is
-   * unaffected: only the (now-redundant) original per-primitive
-   * `Mesh`/geometry objects are pruned and their geometries disposed.
-   */
-  private _mergeGroupMeshesByMaterial(group: THREE.Group): void {
-    group.updateMatrixWorld(true);
-    const groupInverse = new THREE.Matrix4().copy(group.matrixWorld).invert();
-
-    const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
-    const meshesToRemove: THREE.Mesh[] = [];
-
-    group.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
-      const mat = obj.material;
-      if (Array.isArray(mat)) return; // scatter builders never use multi-material meshes; skip defensively
-      const local = new THREE.Matrix4().multiplyMatrices(groupInverse, obj.matrixWorld);
-      let geo = obj.geometry.clone().applyMatrix4(local);
-      // Normalize indexing before bucketing: some primitives used here
-      // (Icosahedron/DodecahedronGeometry, e.g. tree canopy blobs, rock
-      // boulders/pebbles) are non-indexed by default while others
-      // (Cylinder/Cone/BoxGeometry, e.g. trunks, slab rocks) are indexed —
-      // and a single pooled material (e.g. 'rock') can be shared across
-      // both. mergeGeometries() requires every geometry in a merge to be
-      // uniformly indexed or non-indexed, so force non-indexed here to
-      // guarantee that regardless of which primitives land in a bucket.
-      if (geo.index) geo = geo.toNonIndexed();
-      let bucket = buckets.get(mat);
-      if (!bucket) { bucket = []; buckets.set(mat, bucket); }
-      bucket.push(geo);
-      meshesToRemove.push(obj);
-    });
-
-    for (const [mat, geos] of buckets) {
-      const merged = mergeGeometries(geos, false);
-      for (const g of geos) g.dispose(); // dispose the transformed clones — only the merged result is kept
-      if (!merged) continue;
-      const mesh = new THREE.Mesh(merged, mat);
-      // Distinguishes this aggregate render-batch mesh from a real
-      // per-instance scatter anchor (`userData.scatterKind`) — its own
-      // `.position` is always (0,0,0) since world transforms are already
-      // baked into its merged vertices, so any consumer that expects
-      // `scatter.children[i].position` to be one tree/rock/bush/decor's
-      // world location (e.g. the collider loop in `_loadTerrainChunk()`,
-      // or chunk-scatter-alignment.test.ts) must skip nodes carrying this
-      // flag rather than treating every `scatter.children` entry as such.
-      mesh.userData.isMergedScatterBatch = true;
-      group.add(mesh);
-    }
-
-    // Prune the original per-primitive meshes now that their visual
-    // contribution lives in the merged meshes above. Their parent wrapper
-    // (the tree/rock/bush/decor anchor) stays in `group` untouched.
-    for (const m of meshesToRemove) {
-      m.geometry.dispose();
-      m.parent?.remove(m);
-    }
   }
 
   /**
@@ -2487,20 +2396,6 @@ export class OverworldScene {
     }
   }
 
-  private _mapStudioFactionToRuntimeFaction(faction: string): Faction {
-    const map: Record<string, Faction> = {
-      human: 'human_town',
-      elven: 'elven',
-      dwarven: 'dwarven',
-      orcish: 'orcish',
-      vampire: 'vampire',
-      undead: 'undead_common',
-      vulperia: 'vulperia',
-      slime: 'slime',
-      fae: 'fae',
-    };
-    return map[faction] ?? 'human_town';
-  }
 
   private _buildStudioSettlementPreview(): void {
     const payload = this._readStudioSettlementPreview();
@@ -2515,7 +2410,7 @@ export class OverworldScene {
     const anchorWx = (anchorCol - GHW) * T;
     const anchorWz = (anchorRow - GHH) * T;
     const previewRadiusWU = 14;
-    const runtimeFaction = this._mapStudioFactionToRuntimeFaction(payload.faction);
+    const runtimeFaction = mapStudioFactionToRuntimeFaction(payload.faction);
     const usedTiles = new Set<string>();
     let buildingCount = 0;
 
@@ -2557,9 +2452,9 @@ export class OverworldScene {
       // Each building's exterior is built from 50+ individual wall/roof/
       // window/door/trim/chimney/etc. meshes (BuildingBuilder.ts) — collapse
       // them per-material now, same technique/rationale as chunk scatter
-      // (see `_mergeGroupMeshesByMaterial()`), since this dominated the
+      // (see `mergeGroupMeshesByMaterial()`), since this dominated the
       // scene's total draw-call count far more than scatter did.
-      this._mergeGroupMeshesByMaterial(grp);
+      mergeGroupMeshesByMaterial(grp);
 
       this._buildingGroups.push(grp);
       this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: buildingRotationY });
@@ -2630,52 +2525,41 @@ export class OverworldScene {
     for (const entry of settlements) {
       const { plan } = entry;
 
-      // Place building THREE.Groups
-      for (const b of plan.buildings) {
-        const wx = (b.col - GHW) * T;
-        const wz = (b.row - GHH) * T;
-        const lv = this._wg.get(b.col, b.row).elevation;
-        const wy = lv * SH;
-        const runtimeFaction = this._mapStudioFactionToRuntimeFaction(plan.faction);
-        const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
-        if (!dna) continue;
-        const inst = buildBuilding(dna);
-        const grp = inst.exteriorGroup;
-        grp.position.set(wx, wy, wz);
-        grp.rotation.y = b.rotation;
-        // See `_mergeGroupMeshesByMaterial()` doc comment — collapses each
-        // building's 50+ individual exterior-part meshes into a handful of
-        // merged-per-material meshes; buildings, not scatter, turned out to
-        // be the dominant source of draw calls (measured: 41 buildings ->
-        // 2382 individual meshes vs. only 77 for all merged scatter).
-        this._mergeGroupMeshesByMaterial(grp);
+      const result = renderSettlementPlan(
+        plan,
+        this._wg,
+        GHW,
+        GHH,
+        {
+          registerBuildingCollider: (dna, pos, rotationY) => this.registerBuildingCollider(dna, pos, rotationY),
+          mapFaction: (f) => mapStudioFactionToRuntimeFaction(f),
+        },
+      );
+
+      for (const grp of result.buildingGroups) {
         this._buildingGroups.push(grp);
-        if (b.isAnchor) {
-          this._buildingData.push({ dna, pos: new THREE.Vector3(wx, wy, wz), faction: runtimeFaction, rotationY: b.rotation });
-        }
-        this.registerBuildingCollider(dna, new THREE.Vector3(wx, wy, wz), b.rotation);
       }
 
-      // Collect settlement road tiles — all at centre elevation for a flat pavement
+      // Collect road tiles — all at centre elevation for a flat pavement (parity
+      // with pre-refactor: road Y uses settlement-centre elevation, not per-tile).
       const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
-      for (const r of plan.roads) {
-        const k = `${r.col},${r.row}`;
+      for (const rt of result.roadTiles) {
+        const k = `${rt.col},${rt.row}`;
         if (sqSeen.has(k)) continue;
         sqSeen.add(k);
-        const wx = (r.col - GHW) * T;
-        const wz = (r.row - GHH) * T;
+        const wx = (rt.col - GHW) * T;
+        const wz = (rt.row - GHH) * T;
         sqPositions.push(new THREE.Vector3(wx, centreElev * SH + 0.02, wz));
       }
 
-      // Place lamp posts along a stride-sampled subset of this settlement's roads.
-      const lampTiles = selectLampRoadTiles(plan.roads, 4);
-      for (const t of lampTiles) {
-        const wx = (t.col - GHW) * T + 0.6; // small perpendicular offset so the post
-        const wz = (t.row - GHH) * T;       // doesn't sit dead-center of the walking path
-        const { group, light } = this._makeLampPost();
-        group.position.set(wx, centreElev * SH, wz);
-        this._lampGroups.push(group);
-        this._lampLights.push(light);
+      for (const grp of result.lampGroups)   this._lampGroups.push(grp);
+      for (const lt  of result.lampLights)   this._lampLights.push(lt);
+
+      const runtimeFaction = mapStudioFactionToRuntimeFaction(plan.faction);
+      for (const rec of result.buildingRecords) {
+        if (rec.isAnchor) {
+          this._buildingData.push({ dna: rec.dna, pos: rec.pos, faction: runtimeFaction, rotationY: rec.rotationY });
+        }
       }
     }
 
@@ -2911,33 +2795,6 @@ export class OverworldScene {
     return grp;
   }
 
-  // ── Settlement lamp posts (Phase 4 — night lighting) ───────────────────────
-
-  private _makeLampPost(): { group: THREE.Group; light: THREE.PointLight } {
-    const g = new THREE.Group();
-
-    const postMat = new THREE.MeshLambertMaterial({ color: 0x2a2620 });
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.4, 6), postMat);
-    post.position.y = 0.7;
-    g.add(post);
-
-    const lanternMat = new THREE.MeshStandardMaterial({
-      color: 0xffcc77,
-      emissive: 0xffaa44,
-      emissiveIntensity: 0.6,
-      roughness: 0.4,
-    });
-    const lantern = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), lanternMat);
-    lantern.position.y = 1.42;
-    g.add(lantern);
-
-    const light = new THREE.PointLight(0xffaa55, 0, 5); // starts off — day
-    light.position.y = 1.42;
-    g.add(light);
-
-    return { group: g, light };
-  }
-
   /**
    * Find the nearest harvestable resource node within interact range.
    * Returns null if no node is close enough or all nearby nodes are on
@@ -2971,4 +2828,3 @@ export class OverworldScene {
     return this._nodeRecords[index]?.baseYield ?? 1;
   }
 }
-

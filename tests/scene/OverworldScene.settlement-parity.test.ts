@@ -1,0 +1,53 @@
+/**
+ * OverworldScene.settlement-parity.test.ts
+ *
+ * Parity test for Task 6: verifies that refactoring _buildSettlements() to
+ * delegate to renderSettlementPlan() produces exactly the same building,
+ * road, and lamp counts as the original implementation.
+ *
+ * Written BEFORE the refactor (Step 1) using seed 1 / worldSize 512, which
+ * is confirmed (see drawcall-batching tests) to produce at least one
+ * settlement. The expected values are hardcoded from the pre-refactor run
+ * and must remain identical after the refactor.
+ */
+import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
+import { PhysicsWorld } from '@/physics/PhysicsWorld';
+import { PlayerController } from '@/player/PlayerController';
+import { DEFAULT_PLAYER_DNA } from '@/creatures/CreatureDNA';
+import { OverworldScene } from '@/scene/OverworldScene';
+import { buildWorldData } from '@/world/WorldGenerator';
+import { DEFAULT_WORLD_GEN_CONFIG } from '@/world/WorldGenConfig';
+
+describe('OverworldScene settlement rendering parity', () => {
+  it('produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1)', async () => {
+    const physics = new PhysicsWorld();
+    await physics.init();
+    const player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+    const scene = new THREE.Scene();
+    const worldData = buildWorldData(1, { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 512 });
+    const overworld = new OverworldScene(scene, physics, player, worldData);
+    overworld.enter();
+
+    const buildingGroups: number = (overworld as any)._buildingGroups.length;
+    const roadMeshes: number     = (overworld as any)._roadMeshes.length;
+    const lampGroups: number     = (overworld as any)._lampGroups.length;
+    const lampLights: number     = (overworld as any)._lampLights.length;
+    const buildingData: number   = (overworld as any)._buildingData.length;
+
+    // These values were recorded on the pre-refactor run and must not change.
+    // Non-zero values confirm the settlement was actually rendered (not silently skipped).
+    expect(buildingGroups).toBeGreaterThan(0);
+    expect(roadMeshes).toBeGreaterThan(0);
+    expect(lampGroups).toBeGreaterThan(0);
+    expect(lampLights).toBe(lampGroups);
+    expect(buildingData).toBeGreaterThan(0);
+
+    // Snapshot the exact counts so any accidental change in the refactor is caught.
+    expect(buildingGroups).toMatchSnapshot();
+    expect(roadMeshes).toMatchSnapshot();
+    expect(lampGroups).toMatchSnapshot();
+    expect(buildingData).toMatchSnapshot();
+  }, 120_000);
+});

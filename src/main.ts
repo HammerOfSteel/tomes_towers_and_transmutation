@@ -41,6 +41,7 @@ import { TELESCOPE_FOG_NEAR, TELESCOPE_FOG_FAR } from '@/rendering/FogConfig';
 import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
 import { WaterLabScene } from '@/scene/WaterLabScene';
+import { SettlementLabScene } from '@/scene/SettlementLabScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
@@ -301,9 +302,10 @@ async function main() {
   sceneManager.loadDungeon(_initialPlan);
 
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
-  let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' = 'interior';
+  let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' | 'settlementlab' = 'interior';
   let overworld: OverworldScene | null = null;
   let waterLab: WaterLabScene | null = null;
+  let settlementLab: SettlementLabScene | null = null;
   let minimap:   OWMinimap | null = null;
 
   // Always-on occlusion manager — switches between scene-wide and mesh-list modes
@@ -1018,6 +1020,9 @@ async function main() {
     } else if (gameMode === 'waterlab') {
       waterLab?.exit();
       gameMode = 'interior';
+    } else if (gameMode === 'settlementlab') {
+      settlementLab?.exit();
+      gameMode = 'interior';
     }
   }
 
@@ -1034,6 +1039,18 @@ async function main() {
     // A real (dry-default) Fog object, not null, so the per-frame underwater
     // fog lerp below (driven by player.underwaterDepthFraction) has
     // something to lerp — the Lab previously disabled fog entirely here.
+    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+    _sandboxUi?.setLocation('lab');
+  }
+
+  function enterSettlementLab(): void {
+    if (gameMode === 'settlementlab') return; // already there — no-op
+    _exitCurrentSpecialMode();
+    sceneManager.unloadCurrentRoom();
+    if (!settlementLab) settlementLab = new SettlementLabScene(scene, physics, player);
+    settlementLab.enter();
+    gameMode = 'settlementlab';
+    _sandboxLocation = 'lab';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
     _sandboxUi?.setLocation('lab');
   }
@@ -1849,6 +1866,33 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Jump straight into the Settlement Lab dev room (for e2e tests). */
+      enterSettlementLab: () => enterSettlementLab(),
+      /** Perf diagnostic readout — draw stats + per-frame timing breakdown
+       *  (see perfState/perfEl above). For automated perf profiling. */
+      getPerfStats: () => ({
+        physicsMs: perfState.physicsMs,
+        updateMs: perfState.updateMs,
+        renderMs: perfState.renderMs,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        frameTimesMs: [...perfState.frameTimes],
+      }),
+      /** Programmatically flip a perf isolation toggle without simulating
+       *  keyboard events. name: 'shadows' | 'postfx' | 'physics'. */
+      setPerfToggle: (name: 'shadows' | 'postfx' | 'physics', enabled: boolean) => {
+        if (name === 'shadows') {
+          perfState.shadowsEnabled = enabled;
+          renderer.shadowMap.enabled = enabled;
+          keyLight.castShadow = enabled;
+        } else if (name === 'postfx') {
+          perfState.postFxEnabled = enabled;
+        } else if (name === 'physics') {
+          perfState.physicsEnabled = enabled;
+        }
+      },
       /** Active physics static body count in the overworld scene (for tests). */
       getStaticBodyCount: () => overworld?.getStaticBodyCount() ?? 0,
       /** Registered building collider spec count — persists across exit()/enter() (for tests). */
@@ -2607,7 +2651,7 @@ async function main() {
   // same wheel event (this listener + WoWCameraController's would otherwise
   // both fire and double the zoom rate).
   window.addEventListener('wheel', (e) => {
-    if ((gameMode === 'exterior' || gameMode === 'interior' || gameMode === 'waterlab') && cameraRig.mode !== 'wow') {
+    if ((gameMode === 'exterior' || gameMode === 'interior' || gameMode === 'waterlab' || gameMode === 'settlementlab') && cameraRig.mode !== 'wow') {
       e.preventDefault();
       cameraRig.applyScroll(e.deltaY);
     }
@@ -2719,6 +2763,10 @@ async function main() {
           `radius: ${Math.hypot(_wlp.x, _wlp.z).toFixed(2)}  camera: ${cameraRig.mode}`;
       } else {
         waterLabDebugEl.style.display = 'none';
+      }
+      if (gameMode === 'settlementlab') {
+        hud.setTime(null);
+        settlementLab?.update(dt);
       }
       if (gameMode === 'interior') {
         hud.setTime(null);
@@ -3453,6 +3501,22 @@ async function main() {
       _startDevPanelInGame();
       (window as any).__tttDevRoomStage = 'entering-water-lab';
       enterWaterLab();
+      (window as any).__tttDevRoomStage = 'booted';
+      (window as any).__tttDevRoomBooted = true;
+      clearPendingDevRoom();
+    } catch (e) {
+      (window as any).__tttDevRoomStage = 'error';
+      (window as any).__tttDevRoomError = String(e);
+      console.error('[dev-room] boot failed:', e);
+    }
+  } else if (_pendingDevRoom === 'settlement-lab') {
+    try {
+      (window as any).__tttDevRoomStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttDevRoomStage = 'starting-game';
+      _startDevPanelInGame();
+      (window as any).__tttDevRoomStage = 'entering-settlement-lab';
+      enterSettlementLab();
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();

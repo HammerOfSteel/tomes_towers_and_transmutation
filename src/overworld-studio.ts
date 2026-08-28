@@ -4427,6 +4427,13 @@ document.getElementById('btn-devroom-water-lab')?.addEventListener('click', () =
   window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
 });
 
+document.getElementById('btn-devroom-settlement-lab')?.addEventListener('click', () => {
+  const room: DevRoomId = 'settlement-lab';
+  localStorage.setItem(DEV_ROOM_LAUNCH_KEY, room);
+  _showToast('✓ Opening Settlement Lab');
+  window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
+});
+
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────
 document.getElementById('btn-save-dungeon')?.addEventListener('click', () => {
   if (!currentDungeonPlan) { alert('Generate a dungeon first.'); return; }

@@ -17,7 +17,7 @@ import { mulberry32 } from '@/core/prng';
 import type { SettlementFaction } from '@/overworld-studio';
 import { generateSettlementName } from './SettlementNameGenerator';
 import type { WorldGrid } from './WorldGrid';
-import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type Road, type SettlementType as ModelSettlementType, type WardType } from './SettlementModelGenerator';
+import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type LayoutType, type Road, type SettlementType as ModelSettlementType, type WardType } from './SettlementModelGenerator';
 import { WARD_TO_KIND, WARD_TO_SIZE } from '@/buildingToDungeonPlan';
 import { getFootprint } from './buildings/BuildingDNA';
 
@@ -71,11 +71,12 @@ export function planSettlement(
   grid: WorldGrid,
   name?: string,
   faction?: string,
+  layout?: LayoutType,
 ): SettlementPlan {
   const settlementName = name ?? generateSettlementName(seed, type);
   const planFaction = (faction ?? 'human') as SettlementFaction;
   const params = PARAMS_BY_TYPE[type];
-  const model = buildSettlement({ seed, type, layout: 'auto', faction: planFaction, warp: 0.35, ...params });
+  const model = buildSettlement({ seed, type, layout: layout ?? 'auto', faction: planFaction, warp: 0.35, ...params });
   const occ = new OccupancyGrid(params.width, params.height);
   const buildings: PlacedBuilding[] = [];
   const centreX = params.width / 2;

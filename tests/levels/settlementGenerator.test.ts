@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import { generateSettlementName } from '@/world/SettlementNameGenerator';
 import { planSettlement, applySettlementToGrid, type PlacedBuilding } from '@/world/SettlementGenerator';
+import type { LayoutType } from '@/world/SettlementModelGenerator';
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
 import { generateRealmData } from '@/world/RealmGenerator';
@@ -152,6 +153,30 @@ describe('planSettlement', () => {
     const plan = planSettlement('town', 32, 32, 0x2222, grid, 'Custom Falls', 'elven');
     expect(plan.name).toBe('Custom Falls');
     expect(plan.faction).toBe('elven');
+  });
+
+  it('defaults to auto layout when layout is omitted (backward compatible)', () => {
+    const grid = flatGrid(128);
+    const plan = planSettlement('village', 64, 64, 42, grid, 'TestVillage', 'human');
+    expect(plan).toBeDefined();
+    expect(plan.buildings).toBeDefined();
+    expect(plan.roads).toBeDefined();
+  });
+
+  it('explicit layout override actually changes building positions vs auto', () => {
+    // Both plans use the same seed/type/center so any difference is caused by layout.
+    // 'organic' (the auto default for faction 'human') uses a different fill function
+    // than 'grid', so the resulting building col/row positions must differ.
+    const gridA = flatGrid(128);
+    const gridB = flatGrid(128);
+    const autoPlan  = planSettlement('village', 64, 64, 42, gridA, 'TestVillage', 'human', 'organic');
+    const gridPlan  = planSettlement('village', 64, 64, 42, gridB, 'TestVillage', 'human', 'grid');
+    expect(autoPlan.buildings.length).toBeGreaterThan(0);
+    expect(gridPlan.buildings.length).toBeGreaterThan(0);
+    // Serialising positions to a sorted string lets us do a single stable comparison.
+    const positions = (plan: typeof autoPlan) =>
+      plan.buildings.map(b => `${b.col},${b.row}`).sort().join('|');
+    expect(positions(gridPlan)).not.toBe(positions(autoPlan));
   });
 
   it('roads are wider than a single tile (each road tile has an orthogonal road neighbor)', () => {
