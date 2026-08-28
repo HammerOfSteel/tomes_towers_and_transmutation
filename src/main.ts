@@ -1849,6 +1849,31 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
+      /** Perf diagnostic readout — draw stats + per-frame timing breakdown
+       *  (see perfState/perfEl above). For automated perf profiling. */
+      getPerfStats: () => ({
+        physicsMs: perfState.physicsMs,
+        updateMs: perfState.updateMs,
+        renderMs: perfState.renderMs,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        frameTimesMs: [...perfState.frameTimes],
+      }),
+      /** Programmatically flip a perf isolation toggle without simulating
+       *  keyboard events. name: 'shadows' | 'postfx' | 'physics'. */
+      setPerfToggle: (name: 'shadows' | 'postfx' | 'physics', enabled: boolean) => {
+        if (name === 'shadows') {
+          perfState.shadowsEnabled = enabled;
+          renderer.shadowMap.enabled = enabled;
+          keyLight.castShadow = enabled;
+        } else if (name === 'postfx') {
+          perfState.postFxEnabled = enabled;
+        } else if (name === 'physics') {
+          perfState.physicsEnabled = enabled;
+        }
+      },
       /** Active physics static body count in the overworld scene (for tests). */
       getStaticBodyCount: () => overworld?.getStaticBodyCount() ?? 0,
       /** Registered building collider spec count — persists across exit()/enter() (for tests). */
