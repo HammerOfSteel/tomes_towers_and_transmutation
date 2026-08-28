@@ -18,8 +18,10 @@ export class SettlementLabPanel {
   private readonly regenerateButton: HTMLButtonElement;
   private readonly randomizeClickHandler: () => void;
   private readonly regenerateClickHandler: () => void;
+  private readonly initialSeed: number;
 
   constructor(options: SettlementLabPanelOptions) {
+    this.initialSeed = options.initialSeed;
     this.rootEl = document.createElement('div');
     this.rootEl.className = 'settlement-lab-panel';
 
@@ -48,8 +50,12 @@ export class SettlementLabPanel {
     };
 
     this.regenerateClickHandler = () => {
+      // valueAsNumber is NaN for an empty/invalid <input type="number">;
+      // fall back to the initial seed rather than silently regenerating with 0.
+      const parsedSeed = this.seedInput.valueAsNumber;
+      const seed = Number.isNaN(parsedSeed) ? this.initialSeed : parsedSeed;
       options.onRegenerate({
-        seed: Number(this.seedInput.value),
+        seed,
         type: this.typeSelect.value,
         faction: this.factionSelect.value,
         layout: this.layoutSelect.value,

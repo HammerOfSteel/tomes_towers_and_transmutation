@@ -84,6 +84,7 @@ describe('SettlementLabPanel', () => {
   });
 
   it('randomize seed button changes the seed input value', () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.123456);
     const panel = new SettlementLabPanel({
       initialSeed: 999,
       settlementTypes: ['village'],
@@ -94,11 +95,30 @@ describe('SettlementLabPanel', () => {
 
     const seedInput = panel.rootEl.querySelector('[data-role="seed-input"]') as HTMLInputElement;
     const randomizeButton = panel.rootEl.querySelector('button[data-action="randomize"]') as HTMLButtonElement;
-    const originalValue = seedInput.value;
 
     randomizeButton.click();
 
-    expect(seedInput.value).not.toBe(originalValue);
+    expect(seedInput.value).toBe(String(Math.floor(0.123456 * 1_000_000)));
+    randomSpy.mockRestore();
+  });
+
+  it('falls back to the initial seed instead of 0 when the seed input is cleared', () => {
+    const onRegenerate = vi.fn();
+    const panel = new SettlementLabPanel({
+      initialSeed: 42,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      onRegenerate,
+    });
+
+    const seedInput = panel.rootEl.querySelector('[data-role="seed-input"]') as HTMLInputElement;
+    seedInput.value = '';
+    const regenerateButton = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
+
+    regenerateButton.click();
+
+    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ seed: 42 }));
   });
 
   it('dispose does not throw when root element was never attached to the DOM', () => {
