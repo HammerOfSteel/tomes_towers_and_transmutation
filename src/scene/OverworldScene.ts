@@ -621,7 +621,7 @@ export class OverworldScene {
           const row = centerRow + dRow;
           if (col < 0 || col >= GW || row < 0 || row >= GH) continue;
           const cell = this._wg.get(col, row);
-          if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+          if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
           const wx = (col - GHW) * T;
           const wz = (row - GHH) * T;
           if (Math.sqrt(wx * wx + wz * wz) < 60) continue; // too close to tower courtyard
@@ -972,7 +972,7 @@ export class OverworldScene {
     for (let row = 0; row < GH; row++) {
       for (let col = 0; col < GW; col++) {
         const cell = this._wg.get(col, row);
-        if (cell.feature !== 'river' && cell.biome !== 'water') continue;
+        if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
 
         const wx  = (col - GHW) * T;
         const wz  = (row - GHH) * T;
@@ -1473,7 +1473,7 @@ export class OverworldScene {
       const c = Math.floor(wx / T + GHW);
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
-      if (cell.biome !== 'sand') continue;
+      if (cell.biome !== 'beach') continue;
       if (cell.feature === 'road' || cell.feature === 'road_dirt') continue;
       if (cell.content !== 'empty') continue;
       if (cell.settlementId > 0) continue;
@@ -2356,7 +2356,7 @@ export class OverworldScene {
           for (const [dc, dr] of [[d,-dist],[d,dist],[-dist,d],[dist,d]] as [number,number][]) {
             const c2 = cc + dc, r2 = cr + dr;
             const cell = this._wg.get(c2, r2);
-            if (cell.feature === 'river' || cell.biome === 'water') {
+            if (cell.feature === 'river' || cell.biome === 'ocean' || cell.biome === 'deep_ocean') {
               nearRiverDir = Math.abs(dr) > Math.abs(dc)
                 ? (dr < 0 ? 'north' : 'south')
                 : (dc < 0 ? 'west'  : 'east');
