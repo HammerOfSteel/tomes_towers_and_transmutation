@@ -118,9 +118,29 @@ function _heuristic(c1: number, r1: number, c2: number, r2: number): number {
 }
 
 /**
+ * Cost added whenever a step changes direction from the previous step.
+ * Without this, plain 4-directional A* has no preference between an equal-
+ * cost "long straight run" route and a "zigzag every tile" route, and picks
+ * whichever the heap happens to pop first — producing a jagged staircase
+ * path that reads as visually broken once rendered as flat road tiles.
+ * Biasing toward straight runs (a standard grid-pathfinding technique)
+ * keeps roads readable without materially changing which regions they pass
+ * through (it is small relative to the slope/river/ocean costs above).
+ */
+const TURN_PENALTY = 3.0;
+
+/** Number of entries in DIRS — used to size the direction-aware state space. */
+const N_DIRS = DIRS.length;
+
+/**
  * A* between two grid positions.
  * Returns the path as [{col, row}] from start to end (inclusive).
  * Returns [] if no path is found within the iteration budget.
+ *
+ * State is (position, direction-of-arrival) rather than just position, so a
+ * turn penalty can be applied — see TURN_PENALTY. `dirIndex` is -1 for the
+ * start node (no incoming direction yet) and 0..N_DIRS-1 (an index into
+ * DIRS) for every other node reached by a move.
  */
 function _aStar(
   grid:   WorldGrid,
@@ -128,46 +148,58 @@ function _aStar(
   endC:   number, endR:   number,
 ): { col: number; row: number }[] {
   const W = grid.width;
-  const key = (c: number, r: number) => r * W + c;
+  const posKey = (c: number, r: number) => r * W + c;
+  // Composite state key: position and the direction used to arrive there.
+  // dirIndex is offset by 1 so -1 (start, no direction) maps to 0.
+  const stateKey = (c: number, r: number, dirIndex: number) =>
+    posKey(c, r) * (N_DIRS + 1) + (dirIndex + 1);
 
-  const endKey  = key(endC, endR);
-  const gScore  = new Map<number, number>();
+  const endPosKey = posKey(endC, endR);
+  const gScore   = new Map<number, number>();
   const cameFrom = new Map<number, number>();
-  const heap    = new MinHeap();
+  const heap     = new MinHeap();
 
-  const startKey = key(startC, startR);
+  const startKey = stateKey(startC, startR, -1);
   gScore.set(startKey, 0);
   heap.push(_heuristic(startC, startR, endC, endR), startKey);
 
-  // Safety: limit iterations to avoid hanging on very large / obstacle-heavy grids
-  const MAX_ITER = grid.width * grid.height;
+  // Safety: limit iterations to avoid hanging on very large / obstacle-heavy
+  // grids. The direction-aware state space is (N_DIRS+1)x larger than plain
+  // position-only search, so the budget scales with it.
+  const MAX_ITER = grid.width * grid.height * (N_DIRS + 1);
   let iter = 0;
 
   while (heap.size > 0 && iter++ < MAX_ITER) {
     const [, curKey] = heap.pop()!;
 
-    if (curKey === endKey) {
-      // Reconstruct path
+    const curPosKey = Math.floor(curKey / (N_DIRS + 1));
+    const curDir    = (curKey % (N_DIRS + 1)) - 1;
+
+    if (curPosKey === endPosKey) {
+      // Reconstruct path (position only — direction was search bookkeeping)
       const path: { col: number; row: number }[] = [];
-      let k: number | undefined = endKey;
+      let k: number | undefined = curKey;
       while (k !== undefined) {
-        path.unshift({ col: k % W, row: Math.floor(k / W) });
+        const pk = Math.floor(k / (N_DIRS + 1));
+        path.unshift({ col: pk % W, row: Math.floor(pk / W) });
         k = cameFrom.get(k);
       }
       return path;
     }
 
-    const curC = curKey % W;
-    const curR = Math.floor(curKey / W);
+    const curC = curPosKey % W;
+    const curR = Math.floor(curPosKey / W);
     const curG = gScore.get(curKey) ?? Infinity;
 
-    for (const [dc, dr, baseCost] of DIRS) {
+    for (let di = 0; di < N_DIRS; di++) {
+      const [dc, dr, baseCost] = DIRS[di]!;
       const nc = curC + dc, nr = curR + dr;
       const cost = _moveCost(grid, curC, curR, nc, nr, baseCost);
       if (!isFinite(cost)) continue;
 
-      const tentative = curG + cost;
-      const nKey = key(nc, nr);
+      const turnCost = curDir !== -1 && curDir !== di ? TURN_PENALTY : 0;
+      const tentative = curG + cost + turnCost;
+      const nKey = stateKey(nc, nr, di);
 
       if (tentative < (gScore.get(nKey) ?? Infinity)) {
         gScore.set(nKey, tentative);
