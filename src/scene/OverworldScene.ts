@@ -119,7 +119,7 @@ export class OverworldScene {
   // ── Visual geometry (built in constructor, never rebuilt)
   /** Streams terrain mesh+collider per-chunk around the player (RI-4 wiring) —
    *  superseded the old whole-grid `_terrain` mesh + `_createTerrainCollider()`. */
-  private _chunkManager!: ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody; scatter: THREE.Group }>;
+  private _chunkManager!: ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group }>;
   /**
    * Mirrors whatever's currently tracked inside `_chunkManager` (keyed by
    * "cx,cz") purely so `enter()`/`exit()` can cheaply toggle terrain
@@ -135,7 +135,7 @@ export class OverworldScene {
    * `scatter` (Task 11) is each chunk's tree/rock group, toggled alongside
    * `mesh`/`body` the same way.
    */
-  private readonly _terrainChunkData = new Map<string, { mesh: THREE.Mesh; body: RAPIER.RigidBody; scatter: THREE.Group }>();
+  private readonly _terrainChunkData = new Map<string, { mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group }>();
   private readonly _tower:     THREE.Group;
   private readonly _waterMesh: THREE.Mesh | null;
   /** Shared shader material driving the animated water surface (null when no water tiles exist). */
@@ -253,7 +253,7 @@ export class OverworldScene {
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
     console.log('[OverworldScene] setting up terrain ChunkManager...');
-    this._chunkManager = new ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody; scatter: THREE.Group }>(
+    this._chunkManager = new ChunkManager<{ mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group }>(
       {
         load: (coord) => this._loadTerrainChunk(coord),
         unload: (coord, data) => this._unloadTerrainChunk(coord, data),
@@ -321,7 +321,7 @@ export class OverworldScene {
     // constructor's forced initial load) need to be shown/re-enabled now.
     for (const { mesh, body, scatter } of this._terrainChunkData.values()) {
       this.scene.add(mesh);
-      body.setEnabled(true);
+      body?.setEnabled(true);
       this.scene.add(scatter);
     }
 
@@ -405,7 +405,7 @@ export class OverworldScene {
     // without waiting for a chunk-streaming update() tick.
     for (const { mesh, body, scatter } of this._terrainChunkData.values()) {
       this.scene.remove(mesh);
-      body.setEnabled(false);
+      body?.setEnabled(false);
       this.scene.remove(scatter);
     }
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
@@ -944,7 +944,7 @@ export class OverworldScene {
    * scene, builds its tree/rock scatter (Task 11), and returns all three so
    * `_unloadTerrainChunk` can tear them down.
    */
-  private _loadTerrainChunk(coord: ChunkCoord): { mesh: THREE.Mesh; body: RAPIER.RigidBody; scatter: THREE.Group } {
+  private _loadTerrainChunk(coord: ChunkCoord): { mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group } {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     const colStart = coord.cx * CHUNK_SIZE;
     const rowStart = coord.cz * CHUNK_SIZE;
@@ -964,11 +964,10 @@ export class OverworldScene {
     // `_isInScene` gating already used for buildings/enemies/ruins below.
     if (this._isInScene) this.scene.add(mesh);
 
-    const body = this.physics.createStaticTrimesh(
-      new Float32Array(positions),
-      new Uint32Array(indices),
-    );
-    if (!this._isInScene) body.setEnabled(false);
+    const body = (indices.length === 0)
+      ? null
+      : this.physics.createStaticTrimesh(new Float32Array(positions), new Uint32Array(indices));
+    if (body && !this._isInScene) body.setEnabled(false);
 
     const scatter = this._buildChunkScatter(coord);
 
@@ -987,12 +986,12 @@ export class OverworldScene {
    * inside the top-level rock wrapper) — disposing the group alone would
    * leak those Meshes' geometries/materials.
    */
-  private _unloadTerrainChunk(coord: ChunkCoord, data: { mesh: THREE.Mesh; body: RAPIER.RigidBody; scatter: THREE.Group }): void {
+  private _unloadTerrainChunk(coord: ChunkCoord, data: { mesh: THREE.Mesh; body: RAPIER.RigidBody | null; scatter: THREE.Group }): void {
     this._terrainChunkData.delete(`${coord.cx},${coord.cz}`);
     this.scene.remove(data.mesh);
     data.mesh.geometry.dispose();
     (data.mesh.material as THREE.Material).dispose();
-    this.physics.removeBody(data.body);
+    if (data.body) this.physics.removeBody(data.body);
 
     this.scene.remove(data.scatter);
     data.scatter.traverse((obj) => {
