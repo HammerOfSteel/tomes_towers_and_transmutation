@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WorldGrid } from '@/world/WorldGrid';
+import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
 
 describe('WorldGrid — waterDepth field', () => {
   it('defaults every cell to waterDepth 0 (dry)', () => {
@@ -37,10 +37,30 @@ describe('WorldGrid — river_ford feature', () => {
   });
 });
 
-describe('WorldGrid — sand biome', () => {
-  it('accepts sand as a valid BiomeId via set()', () => {
+describe('WorldGrid — BiomeId taxonomy (10 values, matches RealmBiome)', () => {
+  it('accepts every RealmBiome-aligned biome value via set()', () => {
+    const biomes: BiomeId[] = [
+      'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+    ];
     const wg = new WorldGrid(1, 1);
-    wg.set(0, 0, { biome: 'sand' });
-    expect(wg.get(0, 0).biome).toBe('sand');
+    for (const biome of biomes) {
+      wg.set(0, 0, { biome });
+      expect(wg.get(0, 0).biome).toBe(biome);
+    }
+  });
+
+  it('defaults every cell to grassland (a valid, walkable land biome)', () => {
+    const wg = new WorldGrid(2, 2);
+    expect(wg.get(0, 0).biome).toBe('grassland');
+    expect(wg.get(-1, -1).biome).toBe('grassland'); // out-of-bounds default too
+  });
+});
+
+describe('WorldGrid — beach biome', () => {
+  it('accepts beach as a valid BiomeId via set()', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'beach' });
+    expect(wg.get(0, 0).biome).toBe('beach');
   });
 });
