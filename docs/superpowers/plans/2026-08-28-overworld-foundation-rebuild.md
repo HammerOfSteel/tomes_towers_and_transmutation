@@ -84,7 +84,7 @@ does not make that call.
 | `tests/world/RealmToWorldGrid.test.ts` | Rewrite for identity mapping, remove mismatched-dimension test |
 | `src/world/WorldGenerator.ts` | Pass `config.worldSize` into `generateRealmData()` |
 | `tests/world/WorldGenerator.test.ts` | Assert realm called at native size |
-| `src/world/ScatterRules.ts`, `DungeonPlacer.ts`, `RoadGenerator.ts`, `SettlementGenerator.ts`, `SettlementPlacer.ts`, `CaveGladeWorldPlacer.ts`, `ResourceNodePlacer.ts` | Fix biome-literal checks for the widened taxonomy |
+| `src/world/ScatterRules.ts`, `DungeonPlacer.ts`, `RoadGenerator.ts`, `SettlementGenerator.ts`, `SettlementPlacer.ts`, `CaveGladeWorldPlacer.ts`, `ResourceNodePlacer.ts`, `src/ui/OWMinimap.ts` | Fix biome-literal checks for the widened taxonomy |
 | `src/scene/OverworldScene.ts` | Fix 4 biome-literal sites (water mesh ×2, beach decor, river-scan); wire `ChunkManager` for terrain + collider + scatter |
 | `src/world/TerrainGeometryBuilder.ts` | Add `BIOME_COLOR_VARIANTS`; add chunk sub-rectangle params to `buildTerrainGeometryData()` |
 | `tests/world/TerrainGeometryBuilder.test.ts` | Cover new colours + chunk sub-rectangle behaviour |
@@ -491,7 +491,7 @@ git commit -m "feat(world): generate the realm at native worldSize instead of re
 - Modify: `src/world/ScatterRules.ts`, `src/world/DungeonPlacer.ts:65`,
   `src/world/RoadGenerator.ts:93,107`, `src/world/SettlementGenerator.ts:149,164,193`,
   `src/world/SettlementPlacer.ts:94`, `src/world/CaveGladeWorldPlacer.ts:33-41`,
-  `src/world/ResourceNodePlacer.ts:100`
+  `src/world/ResourceNodePlacer.ts:100`, `src/ui/OWMinimap.ts:19-24`
 - Test: existing test files for each (`tests/world/ScatterRules.test.ts`,
   `tests/world/DungeonPlacer.test.ts`, `tests/world/RoadGenerator.test.ts`,
   `tests/world/SettlementGenerator.test.ts`, `tests/world/SettlementPlacer.test.ts`,
@@ -631,7 +631,32 @@ function isGladeEligible(cell: { biome: string; feature: string; content: string
   `BiomeId`/`RealmBiome` values), unrelated to this rebuild, and out of
   scope to fix here.
 
-- [ ] **Step 8: Add a regression test**
+- [ ] **Step 8: `src/ui/OWMinimap.ts:19-24`** — the minimap's `BIOME_COLOUR`
+  lookup is `Record<string, string>` (not typed against `BiomeId`), so it
+  silently falls back to `'#2d5c1e'` (grass colour) for every biome after
+  the taxonomy widens — meaning the minimap would render the whole 10-biome
+  world as flat grass-green, directly undermining this plan's biome-fidelity
+  goal even though nothing would compile-error. Replace the table:
+
+```typescript
+// Biome fill colours (hex strings, drawn to canvas) — mirrors
+// TerrainGeometryBuilder.ts's BIOME_COLOR_VARIANTS[*][0] (primary variant)
+// so the minimap and the 3D terrain agree on each biome's colour.
+const BIOME_COLOUR: Record<string, string> = {
+  deep_ocean: '#233f7a',
+  ocean:      '#3d7594',
+  beach:      '#c2ad80',
+  desert:     '#c7a86b',
+  savanna:    '#9e8f47',
+  grassland:  '#2d5c1e',
+  forest:     '#1a3d12',
+  taiga:      '#1f4733',
+  tundra:     '#6b7059',
+  snow:       '#e0e4e8',
+};
+```
+
+- [ ] **Step 9: Add a regression test**
 
 Add to `tests/world/ScatterRules.test.ts` (create if it doesn't exist,
 following the file's existing style if it does):
@@ -659,7 +684,7 @@ describe('isScatterAllowed — widened biome taxonomy', () => {
 });
 ```
 
-- [ ] **Step 9: Run all affected test suites**
+- [ ] **Step 10: Run all affected test suites**
 
 Run: `npx vitest run tests/world/ScatterRules.test.ts tests/world/DungeonPlacer.test.ts tests/world/RoadGenerator.test.ts tests/world/SettlementGenerator.test.ts tests/world/SettlementPlacer.test.ts tests/world/CaveGladeWorldPlacer.test.ts tests/world/ResourceNodePlacer.test.ts`
 Expected: PASS (run each individually first if the combined command errors
@@ -667,10 +692,10 @@ on a file that doesn't exist yet — `vitest run` accepts multiple paths but
 skips missing ones with a warning, not a hard failure; if any file is
 genuinely missing, just omit it from the command).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add src/world/ScatterRules.ts src/world/DungeonPlacer.ts src/world/RoadGenerator.ts src/world/SettlementGenerator.ts src/world/SettlementPlacer.ts src/world/CaveGladeWorldPlacer.ts src/world/ResourceNodePlacer.ts tests/world/ScatterRules.test.ts
+git add src/world/ScatterRules.ts src/world/DungeonPlacer.ts src/world/RoadGenerator.ts src/world/SettlementGenerator.ts src/world/SettlementPlacer.ts src/world/CaveGladeWorldPlacer.ts src/world/ResourceNodePlacer.ts src/ui/OWMinimap.ts tests/world/ScatterRules.test.ts
 git commit -m "fix(world): update all biome-literal consumers for the widened 10-value taxonomy"
 ```
 
