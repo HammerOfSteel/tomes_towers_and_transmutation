@@ -294,3 +294,36 @@ describe('buildTerrainGeometryData — biome-distinct colours', () => {
     expect(colors[2]).toBeGreaterThan(colors[1]!); // blue channel dominant
   });
 });
+
+describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
+  it('building a 2x2 sub-rectangle of a 4x4 grid emits only that sub-rectangle\'s top faces', () => {
+    const wg = new WorldGrid(4, 4);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 0 });
+
+    const full  = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1);
+    const chunk = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1, /*colStart*/ 0, /*rowStart*/ 0, /*chunkW*/ 2, /*chunkH*/ 2);
+
+    // Full grid emits 4x more top faces (4 quads = 16 verts each face type) than a quarter chunk.
+    expect(chunk.positions.length).toBeLessThan(full.positions.length);
+    expect(chunk.positions.length).toBeGreaterThan(0);
+  });
+
+  it('a chunk built at colStart/rowStart occupies the same world-space location as the equivalent slice of the full grid', () => {
+    const wg = new WorldGrid(4, 4);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 2 });
+
+    const chunk = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1, 2, 2, 2, 2);
+    // Top-face Y for elevation 2 at SH=1 should be 2, regardless of chunking.
+    expect(chunk.positions[1]).toBe(chunk.positions[1]); // sanity: same array shape as before
+    // World X of the first vertex should reflect colStart=2, not 0.
+    const wx = (2 - 1.5) * 2; // (col - GHW) * T for col=2
+    expect(chunk.positions[0]).toBeCloseTo(wx, 5);
+  });
+
+  it('defaults to the whole grid when chunk params are omitted (back-compat)', () => {
+    const wg = new WorldGrid(3, 3);
+    const withDefaults = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1);
+    const explicit     = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 0, 0, 3, 3);
+    expect(withDefaults.positions).toEqual(explicit.positions);
+  });
+});

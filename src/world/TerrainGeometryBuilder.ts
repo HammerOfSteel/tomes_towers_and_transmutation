@@ -148,6 +148,8 @@ export function buildTerrainGeometryData(
   wg: WorldGrid,
   GW: number, GH: number, GHW: number, GHH: number,
   T: number, SH: number,
+  colStart: number = 0, rowStart: number = 0,
+  chunkW: number = GW, chunkH: number = GH,
 ): TerrainGeometryData {
   const pos: number[] = [];
   const nrm: number[] = [];
@@ -184,8 +186,10 @@ export function buildTerrainGeometryData(
     idx.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
 
-  for (let row = 0; row < GH; row++) {
-    for (let col = 0; col < GW; col++) {
+  const rowEnd = Math.min(GH, rowStart + chunkH);
+  const colEnd = Math.min(GW, colStart + chunkW);
+  for (let row = rowStart; row < rowEnd; row++) {
+    for (let col = colStart; col < colEnd; col++) {
       const H   = lvl(col, row);
       const wy  = physH(col, row);
       const wx  = (col - GHW) * T;
