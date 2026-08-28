@@ -5,16 +5,23 @@
  * Phase 7e: Resource Gathering & Economy
  *
  * Placement rules:
- *  - Ore veins:       near highland / mountain tiles (elevation ≥ 0.6)
- *  - Timber logs:     near forest / bog tiles
- *  - Essence blossoms: near water / wetland tiles
+ *  - Ore veins:       near high-elevation tiles (integer elevation level ≥ 3
+ *                      out of 0-4, i.e. the top two bands) or 'snow' biome
+ *                      (the taxonomy's highest-elevation biome — see
+ *                      RealmGenerator.classifyBiome, elev > 0.85).
+ *  - Timber logs:     near forest / taiga tiles.
+ *  - Essence blossoms: near river tiles (feature === 'river' / 'river_bank' /
+ *                      'river_ford' — WorldGrid has no standalone lake/wetland
+ *                      biome or feature, so river tiles are the closest
+ *                      current stand-in for "water/wetland").
  *  - All types use Poisson-disk minimum separation to avoid clustering.
  *  - Nodes stay clear of the central tower radius (6 tiles) and of any
  *    settlement or dungeon tile.
  */
 
-import type { WorldData } from './WorldData';
-import { mulberry32 }     from '@/core/prng';
+import type { WorldData }               from './WorldData';
+import type { BiomeId, TileFeature }    from './WorldGrid';
+import { mulberry32 }                   from '@/core/prng';
 
 export type ResourceType = 'ore' | 'timber' | 'essence';
 
@@ -91,16 +98,24 @@ export function placeResourceNodes(worldData: WorldData): ResourceNodeRecord[] {
       const distSq = wx * wx + wz * wz;
       if (distSq < TOWER_EXCLUSION_WU * TOWER_EXCLUSION_WU) continue;
 
-      const biome = cell.biome as string;
-      const elev  = ('elevation' in cell ? (cell as unknown as { elevation: number }).elevation : 0) ?? 0;
+      const biome:   BiomeId      = cell.biome;
+      const feature: TileFeature  = cell.feature;
+      const elev = cell.elevation ?? 0;
 
-      if (elev >= 0.55 || biome === 'highlands' || biome === 'mountain') {
+      // Integer 0-4 elevation level: top two bands (≥3) ≈ the original
+      // "elevation ≥ 0.6" continuous-scale intent (quantizeElevation maps
+      // continuous 0.6 → floor(0.6 * 5) = 3). 'snow' is the taxonomy's
+      // highest-elevation biome (RealmGenerator.classifyBiome: elev > 0.85).
+      if (elev >= 3 || biome === 'snow') {
         oreCandidates.push({ wx, wz, type: 'ore' });
       }
       if (biome === 'forest' || biome === 'taiga') {
         timberCandidates.push({ wx, wz, type: 'timber' });
       }
-      if (biome === 'wetland' || biome === 'river' || biome === 'lake') {
+      // No standalone lake/wetland biome or feature exists in the current
+      // taxonomy — river tiles (including banks/fords) are the closest
+      // current stand-in for "near water".
+      if (feature === 'river' || feature === 'river_bank' || feature === 'river_ford') {
         essenceCandidates.push({ wx, wz, type: 'essence' });
       }
     }
