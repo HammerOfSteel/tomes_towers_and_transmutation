@@ -76,6 +76,12 @@ describe('OverworldScene terrain-chunk streaming — grid/chunk coordinate align
     // time centered on the player's start position (0, 5, 0) — force it to also
     // cover the water tile's chunk so we can inspect what got built there.
     (overworld as any)._chunkManager.update(wx, wz);
+    // The scene's real ChunkManager now budgets loads to
+    // MAX_CHUNK_LOADS_PER_FRAME per update() (Task 13 final review,
+    // Important issue #4) — drain the queue synchronously so this test's
+    // pre-existing assumption (the requested chunk is fully loaded
+    // immediately after one update() call) still holds.
+    (overworld as any)._chunkManager.flushPendingLoads();
     const key = `${requested.cx},${requested.cz}`;
     const chunkData = (overworld as any)._terrainChunkData.get(key);
     expect(chunkData, `No terrain chunk data loaded for requested chunk ${key}`).toBeDefined();

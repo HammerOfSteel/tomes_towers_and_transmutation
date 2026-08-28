@@ -160,3 +160,80 @@ describe('ChunkManager', () => {
     expect(result.loaded).toHaveLength((2 * LOAD_RADIUS_CHUNKS + 1) ** 2);
   });
 });
+
+describe('ChunkManager — maxLoadsPerUpdate budgeting (Task 13 final review, Important issue #4)', () => {
+  it('without maxLoadsPerUpdate, a single update() still loads everything synchronously (back-compat)', () => {
+    const handlers = mockHandlers();
+    const mgr = new ChunkManager(handlers, { tileSize: 4, loadRadius: 2, unloadRadius: 4 });
+    const result = mgr.update(0, 0);
+    expect(result.loaded).toHaveLength(25);
+    expect(mgr.pendingLoadCount).toBe(0);
+  });
+
+  it('with maxLoadsPerUpdate set, a single update() only loads up to the budget and queues the rest', () => {
+    const handlers = mockHandlers();
+    const mgr = new ChunkManager(handlers, { tileSize: 4, loadRadius: 2, unloadRadius: 4, maxLoadsPerUpdate: 2 });
+
+    const result = mgr.update(0, 0); // 25 chunks in range, budget 2
+    expect(result.loaded).toHaveLength(2);
+    expect(mgr.loadedChunkCount).toBe(2);
+    expect(mgr.pendingLoadCount).toBe(23);
+  });
+
+  it('subsequent update() calls at the same position keep draining the queue a few at a time', () => {
+    const handlers = mockHandlers();
+    const mgr = new ChunkManager(handlers, { tileSize: 4, loadRadius: 2, unloadRadius: 4, maxLoadsPerUpdate: 2 });
+
+    mgr.update(0, 0);
+    mgr.update(0, 0);
+    mgr.update(0, 0);
+    expect(mgr.loadedChunkCount).toBe(6);
+    expect(mgr.pendingLoadCount).toBe(19);
+
+    // Keep draining until the queue is empty — never loads a chunk twice.
+    let iterations = 0;
+    while (mgr.pendingLoadCount > 0 && iterations < 50) {
+      mgr.update(0, 0);
+      iterations++;
+    }
+    expect(mgr.loadedChunkCount).toBe(25);
+    expect(handlers.load).toHaveBeenCalledTimes(25);
+  });
+
+  it('flushPendingLoads() immediately loads every queued chunk, ignoring the budget', () => {
+    const handlers = mockHandlers();
+    const mgr = new ChunkManager(handlers, { tileSize: 4, loadRadius: 2, unloadRadius: 4, maxLoadsPerUpdate: 2 });
+
+    mgr.update(0, 0);
+    expect(mgr.pendingLoadCount).toBe(23);
+
+    const flushed = mgr.flushPendingLoads();
+    expect(flushed).toHaveLength(23);
+    expect(mgr.pendingLoadCount).toBe(0);
+    expect(mgr.loadedChunkCount).toBe(25);
+  });
+
+  it('drops pending loads that fall out of unload range before they are drained', () => {
+    const handlers = mockHandlers();
+    const tileSize = 4;
+    const chunkWorldSize = tileSize * CHUNK_SIZE;
+    const mgr = new ChunkManager(handlers, { tileSize, loadRadius: 1, unloadRadius: 1, maxLoadsPerUpdate: 1 });
+
+    mgr.update(0, 0); // loads 1 of 9, queues 8 (all centered on chunk (0,0))
+    expect(mgr.pendingLoadCount).toBe(8);
+
+    // Jump far away — everything queued for the old center is now way
+    // beyond the new unloadRadius and should be dropped, not loaded, even
+    // though the new position enqueues its own fresh set of candidates.
+    handlers.load.mockClear();
+    mgr.update(chunkWorldSize * 20, 0);
+    const stillLoadedOldChunk = mgr.isLoaded({ cx: 0, cz: 0 });
+    expect(stillLoadedOldChunk).toBe(false); // was unloaded (beyond new unloadRadius)
+    // None of the freshly-drained/loaded coords this call should be the
+    // stale chunks queued from the old (0,0)-centered position.
+    for (const call of handlers.load.mock.calls) {
+      const coord = call[0] as ChunkCoord;
+      expect(chunkDistance(coord, { cx: 0, cz: 0 })).toBeGreaterThan(1);
+    }
+  });
+});

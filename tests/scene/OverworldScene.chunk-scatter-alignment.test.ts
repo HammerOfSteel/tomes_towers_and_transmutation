@@ -70,6 +70,12 @@ describe('OverworldScene terrain-chunk streaming — scatter/terrain alignment',
     for (const { x, z } of probes) {
       const requested = worldToChunkCoord(x, z, T, CHUNK_SIZE);
       (overworld as any)._chunkManager.update(x, z);
+      // The scene's real ChunkManager now budgets loads to
+      // MAX_CHUNK_LOADS_PER_FRAME per update() (Task 13 final review,
+      // Important issue #4) — drain the queue synchronously so this test's
+      // pre-existing assumption (the requested chunk is fully loaded
+      // immediately after one update() call) still holds.
+      (overworld as any)._chunkManager.flushPendingLoads();
       const key = `${requested.cx},${requested.cz}`;
       const chunkData = (overworld as any)._terrainChunkData.get(key);
       expect(chunkData, `No terrain chunk data loaded for requested chunk ${key}`).toBeDefined();
