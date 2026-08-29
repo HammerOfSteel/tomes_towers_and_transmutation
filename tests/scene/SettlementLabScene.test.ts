@@ -104,4 +104,31 @@ describe('SettlementLabScene', () => {
 
     lab4.exit();
   });
+
+  it('ground plane sits at the same elevation as buildings/roads (no floating gap)', () => {
+    // Regression test: the Lab's grid is force-flattened to elevation=1 (the
+    // minimum value planSettlement's _valid() accepts), and buildings/roads
+    // render at elevation * LEVEL_HEIGHT (0.55 WU) per SettlementRenderer's
+    // convention. The ground plane previously stayed at y=0 regardless,
+    // leaving every building/road visibly floating ~0.55 WU above it.
+    const scene5 = new THREE.Scene();
+    const lab5 = new SettlementLabScene(scene5, physics, player);
+    lab5.enter();
+
+    const groundMesh = scene5.children.find(
+      c => c instanceof THREE.Mesh && (c.geometry as THREE.BufferGeometry).type === 'PlaneGeometry',
+    ) as THREE.Mesh | undefined;
+    expect(groundMesh).toBeDefined();
+
+    const buildingGroup = scene5.children.find(
+      c => c instanceof THREE.Group && c.children.some(ch => ch instanceof THREE.Mesh),
+    ) as THREE.Group | undefined;
+    expect(buildingGroup).toBeDefined();
+
+    // Building group's world Y should match the ground plane's Y exactly —
+    // both are placed at the same flattened elevation plateau.
+    expect(buildingGroup!.position.y).toBeCloseTo(groundMesh!.position.y, 5);
+
+    lab5.exit();
+  });
 });

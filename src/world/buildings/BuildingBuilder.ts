@@ -894,10 +894,17 @@ function buildBlacksmith(dna: BuildingDNA): THREE.Group {
   chimCap.position.set(0, plinthH + wallH * 1.8 + 0.1, -d / 2 + 0.8);
   g.add(chimCap);
 
-  // Simple mono-pitch roof (lean-to over open forge)
+  // Roof — full-footprint pitched roof over the open forge. Previously this
+  // was `pitchedRoof(w + 0.5, d * 0.7, 0.25, ...)` shifted back by `-d*0.15`,
+  // which only covered ~55% of the depth (front edge at z≈0.20d) while the
+  // open archway posts sit at z=d/2 (0.50d) — leaving the front third of the
+  // building with no roof overhead at all, visibly "missing" from outside.
+  // Sized to the full footprint (+ eave overhang, matching the convention
+  // used by buildHouseOrShop/buildBarn) and centred so it covers the entire
+  // building including the open front.
   const roofY = plinthH + wallH;
-  const roof  = pitchedRoof(w + 0.5, d * 0.7, 0.25, rMat);
-  roof.position.set(0, roofY, -d * 0.15);
+  const roof  = pitchedRoof(w + 0.5, d + 0.6, 0.25, rMat);
+  roof.position.set(0, roofY, 0);
   roof.castShadow = true; g.add(roof);
 
   // Tools hung outside
