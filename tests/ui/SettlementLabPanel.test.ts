@@ -132,4 +132,54 @@ describe('SettlementLabPanel', () => {
 
     expect(() => panel.dispose()).not.toThrow();
   });
+
+  it('preselects type/faction/layout dropdowns from initialType/initialFaction/initialLayout options', () => {
+    const onRegenerate = vi.fn();
+    const panel = new SettlementLabPanel({
+      initialSeed: 5,
+      settlementTypes: ['village', 'town', 'city'],
+      factions: [REAL_FACTIONS[0], REAL_FACTIONS[1], REAL_FACTIONS[2]],
+      layouts: ['auto', 'grid', 'radial'],
+      initialType: 'city',
+      initialFaction: REAL_FACTIONS[2],
+      initialLayout: 'radial',
+      onRegenerate,
+    });
+    document.body.appendChild(panel.rootEl);
+
+    const typeSelect = panel.rootEl.querySelector('[data-role="type-select"]') as HTMLSelectElement;
+    const factionSelect = panel.rootEl.querySelector('[data-role="faction-select"]') as HTMLSelectElement;
+    const layoutSelect = panel.rootEl.querySelector('[data-role="layout-select"]') as HTMLSelectElement;
+
+    expect(typeSelect.value).toBe('city');
+    expect(factionSelect.value).toBe(REAL_FACTIONS[2]);
+    expect(layoutSelect.value).toBe('radial');
+
+    // Clicking regenerate right away (no manual selection) must reflect the
+    // preselected values, not the first-option defaults.
+    const button = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
+    button.click();
+    expect(onRegenerate).toHaveBeenCalledWith(
+      expect.objectContaining({ seed: 5, type: 'city', faction: REAL_FACTIONS[2], layout: 'radial' }),
+    );
+
+    panel.dispose();
+  });
+
+  it('falls back to the first option when initialType/initialFaction/initialLayout is not in the provided list', () => {
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village', 'town'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      initialType: 'not-a-real-type',
+      onRegenerate: vi.fn(),
+    });
+    document.body.appendChild(panel.rootEl);
+
+    const typeSelect = panel.rootEl.querySelector('[data-role="type-select"]') as HTMLSelectElement;
+    expect(typeSelect.value).toBe('village'); // first option, unaffected by the invalid override
+
+    panel.dispose();
+  });
 });

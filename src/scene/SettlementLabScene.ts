@@ -33,6 +33,14 @@ const GRID_SIZE    = 64;
 const TILE_UNIT    = 2;  // matches WorldGrid.tileUnit
 const DEFAULT_SEED = 42;
 
+// planSettlement()'s _valid() rejects any tile with elevation < 1 (treats it
+// as below the settleable plateau), so the Lab's grid is force-flattened to
+// this exact value everywhere. Buildings/roads are then rendered at
+// GRID_ELEVATION * LEVEL_HEIGHT (see SettlementRenderer.ts / _regenerate()
+// below) — the ground plane MUST sit at that same height, or everything
+// renders floating above (or sunk below) a ground plane that doesn't match.
+const GRID_ELEVATION = 1;
+
 const SETTLEMENT_TYPES: SettlementType[] = ['village', 'town', 'city'];
 const STUDIO_FACTIONS = [
   'human', 'elven', 'dwarven', 'orcish',
@@ -45,7 +53,7 @@ const LAYOUTS: LayoutType[] = [
 
 // ── Regenerate params type ────────────────────────────────────────────────────
 
-interface RegenParams {
+export interface RegenParams {
   seed:    number;
   type:    string;
   faction: string;
@@ -83,41 +91,65 @@ export class SettlementLabScene {
     this._physics = physics;
   }
 
-  enter(): void {
+  /**
+   * @param initialParams Optional settlement to render on entry, carried
+   *   over from Overworld Studio's Settlement tab "Play in 3D" button (see
+   *   DevRoomHandoff.ts's `SettlementLabLaunchParams` / `readPendingSettlementLabParams`)
+   *   instead of the Lab's own hardcoded default (seed 42 / village / human /
+   *   auto). `type`/`faction`/`layout` are individually validated against
+   *   this Lab's known-good option lists — an invalid/unrecognised value
+   *   for any one of them falls back to that field's default rather than
+   *   throwing or producing an inconsistent panel state; `seed` is used
+   *   verbatim since any finite number is valid.
+   */
+  enter(initialParams?: RegenParams): void {
     if (this._entered) return;
     this._entered = true;
 
     // ── Ground plane ────────────────────────────────────────────────────────
+    // Positioned at GRID_ELEVATION * LEVEL_HEIGHT to match the flattened
+    // grid's elevation plateau (see GRID_ELEVATION doc comment above) —
+    // previously this sat at y=0 while buildings/roads rendered at
+    // y≈0.55, leaving everything visibly floating above a ground plane
+    // that was a full elevation-step too low.
+    const groundY  = GRID_ELEVATION * LEVEL_HEIGHT;
     const groundW = GRID_SIZE * TILE_UNIT;
     const groundH = GRID_SIZE * TILE_UNIT;
     const groundGeo = new THREE.PlaneGeometry(groundW, groundH);
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x5a7a40 });
     this._groundMesh = new THREE.Mesh(groundGeo, groundMat);
     this._groundMesh.rotation.x = -Math.PI / 2;
+    this._groundMesh.position.y = groundY;
     this._scene.add(this._groundMesh);
 
     this._groundBody = this._physics.createStaticBox(
-      new THREE.Vector3(0, -0.05, 0),
+      new THREE.Vector3(0, groundY - 0.05, 0),
       new THREE.Vector3(groundW / 2, 0.05, groundH / 2),
     );
 
+    const seed    = initialParams?.seed ?? DEFAULT_SEED;
+    const type    = initialParams && SETTLEMENT_TYPES.includes(initialParams.type as SettlementType)
+      ? initialParams.type : 'village';
+    const faction = initialParams && STUDIO_FACTIONS.includes(initialParams.faction)
+      ? initialParams.faction : 'human';
+    const layout  = initialParams && LAYOUTS.includes(initialParams.layout as LayoutType)
+      ? initialParams.layout : 'auto';
+
     // ── Panel ────────────────────────────────────────────────────────────────
     this._panel = new SettlementLabPanel({
-      initialSeed:     DEFAULT_SEED,
+      initialSeed:     seed,
       settlementTypes: SETTLEMENT_TYPES,
       factions:        STUDIO_FACTIONS,
       layouts:         LAYOUTS,
+      initialType:     type,
+      initialFaction:  faction,
+      initialLayout:   layout,
       onRegenerate:    (params) => this._regenerate(params),
     });
     document.body.appendChild(this._panel.rootEl);
 
     // ── Initial settlement ────────────────────────────────────────────────
-    this._regenerate({
-      seed:    DEFAULT_SEED,
-      type:    'village',
-      faction: 'human',
-      layout:  'auto',
-    });
+    this._regenerate({ seed, type, faction, layout });
   }
 
   exit(): void {
@@ -156,7 +188,7 @@ export class SettlementLabScene {
     const grid = new WorldGrid(GRID_SIZE, GRID_SIZE);
     for (let row = 0; row < GRID_SIZE; row++) {
       for (let col = 0; col < GRID_SIZE; col++) {
-        grid.set(col, row, { elevation: 1 });
+        grid.set(col, row, { elevation: GRID_ELEVATION });
       }
     }
 

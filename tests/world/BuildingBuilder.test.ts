@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import type { BuildingDNA, BuildingKind, BuildingSize, BuildingStyle } from '@/world/buildings/BuildingDNA';
-import { STYLE_COLORS, SIZE_FOOTPRINT, FLOOR_HEIGHT } from '@/world/buildings/BuildingDNA';
+import { STYLE_COLORS, SIZE_FOOTPRINT, FLOOR_HEIGHT, getFootprint } from '@/world/buildings/BuildingDNA';
 import * as THREE from 'three';
 
 const ALL_KINDS: BuildingKind[] = [
@@ -121,5 +121,40 @@ describe('BuildingBuilder — determinism', () => {
     // Both should succeed — outcomes may vary
     expect(a.exteriorGroup).toBeInstanceOf(THREE.Group);
     expect(b.exteriorGroup).toBeInstanceOf(THREE.Group);
+  });
+});
+
+describe('BuildingBuilder — blacksmith roof coverage', () => {
+  // Regression test: buildBlacksmith()'s roof used to be sized `d * 0.7` and
+  // shifted back by `-d * 0.15`, so its front edge sat at local z ≈ +0.20d —
+  // well short of the open forge archway (posts + lintel) at z = +0.5d. That
+  // left the front ~30% of the building's depth, including the entire open
+  // archway, with no roof overhead at all: visibly a "hole" in the building
+  // from outside (reported via screenshot as "roof doesn't cover the
+  // building" + "missing wall", the open forge front having no wall panel
+  // by design compounded the effect). The roof must now span the full
+  // depth (plus its eave overhang) so it covers the open archway too.
+  it('roof mesh extends at least to the open archway (front, z = +d/2)', () => {
+    const inst = buildBuilding(makeDna('blacksmith', { size: 'small' }));
+    const { d } = getFootprint('blacksmith', 'small');
+
+    // The roof is the only mesh built by pitchedRoof()/thatchedRoof(),
+    // which always emits exactly 6 vertices (front/back eave corners +
+    // front/back ridge peaks) — a more precise selector than height alone,
+    // since some non-roof meshes (e.g. the front lintel beam) sit almost as
+    // high as the wall top and would otherwise be mistaken for the roof.
+    let maxRoofZ = -Infinity;
+    inst.exteriorGroup.traverse(obj => {
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      const posAttr = mesh.geometry.getAttribute('position');
+      if (!posAttr || posAttr.count !== 6) return;
+      const box = new THREE.Box3().setFromObject(mesh);
+      maxRoofZ = Math.max(maxRoofZ, box.max.z);
+    });
+
+    expect(maxRoofZ).toBeGreaterThan(-Infinity); // sanity: a roof mesh was found
+    // Must reach (with some margin) the open archway at z = +d/2.
+    expect(maxRoofZ).toBeGreaterThanOrEqual(d / 2 - 0.05);
   });
 });
