@@ -73,6 +73,14 @@ function addDoorway(g: THREE.Group, w: number, h: number, z: number, doorColor: 
  * stays grounded and smoothly rounded, with lumpy irregularity in between),
  * instead of a perfectly spherical dome. Non-uniformly scaled to fit a
  * `w x d` footprint at height `h`. Added directly to `g` at local (cx, cz).
+ *
+ * When `topColor` is given, the mound is painted with a genuine two-tone
+ * vertical gradient (the base material colour below, blending to
+ * `topColor` above ~45% height) via real per-vertex colours — a hill reads
+ * as "turf grown over packed earth" only if it visibly shows two distinct
+ * materials; painting or overlapping a second mesh can't guarantee a seam-
+ * free match against this mesh's own noise-perturbed silhouette, but a
+ * vertex-colour gradient on the exact same surface always aligns perfectly.
  */
 function addOrganicMound(
   g: THREE.Group,
@@ -81,12 +89,16 @@ function addOrganicMound(
   material: THREE.Material,
   cx = 0, cz = 0,
   jitter = 0.16,
+  topColor?: string,
 ): THREE.Mesh {
   const maxR = Math.max(w, d) / 2;
   const geo = new THREE.SphereGeometry(maxR, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2);
   const noise2D = createNoise2D(seed);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
+  const baseColor = topColor ? new THREE.Color((material as THREE.MeshStandardMaterial).color) : null;
+  const topColorObj = topColor ? new THREE.Color(topColor) : null;
+  const colors: number[] = [];
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
     const heightRatio = THREE.MathUtils.clamp(v.y / maxR, 0, 1);
@@ -102,8 +114,18 @@ function addOrganicMound(
     v.z *= radialScale;
     v.y *= 1 + n * 0.05 * envelope;
     pos.setXYZ(i, v.x, v.y, v.z);
+    if (topColorObj && baseColor) {
+      const t = THREE.MathUtils.clamp((heightRatio - 0.42) / 0.35, 0, 1);
+      const blend = t * t * (3 - 2 * t); // smoothstep
+      const c = baseColor.clone().lerp(topColorObj, blend);
+      colors.push(c.r, c.g, c.b);
+    }
   }
   geo.computeVertexNormals();
+  if (topColorObj) {
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    (material as THREE.MeshStandardMaterial).vertexColors = true;
+  }
   const mesh = new THREE.Mesh(geo, material);
   mesh.scale.set(w / (2 * maxR), h / maxR, d / (2 * maxR));
   mesh.position.set(cx, 0, cz);
@@ -146,9 +168,9 @@ function addTimberRingSegments(
  * robust from any angle), a brass handle, and a stone step/apron leading up
  * to it. Faces +Z (the building's canonical front).
  */
-function addRoundDoor(g: THREE.Group, cx: number, doorY: number, cz: number, dna: BuildingDNA, radius = 0.55): void {
-  const frameMat = mat(dna.colors.trim, { roughness: 0.85 });
-  const doorMat = mat(dna.colors.door, { roughness: 0.7 });
+function addRoundDoor(g: THREE.Group, cx: number, doorY: number, cz: number, frameColor: string, doorColor: string, radius = 0.55): void {
+  const frameMat = mat(frameColor, { roughness: 0.85 });
+  const doorMat = mat(doorColor, { roughness: 0.7 });
   const shadowMat = mat('#120c08', { roughness: 1 });
 
   // Recess shadow — a flat disc degrades safely to a thin line (not a
@@ -174,8 +196,8 @@ function addRoundDoor(g: THREE.Group, cx: number, doorY: number, cz: number, dna
 }
 
 /** A small round port-hole window: a timber-stave ring + inset glass disc, facing +Z. */
-function addRoundWindow(g: THREE.Group, cx: number, cy: number, cz: number, dna: BuildingDNA, lit: boolean, radius = 0.22): void {
-  const frameMat = mat(dna.colors.trim, { roughness: 0.85 });
+function addRoundWindow(g: THREE.Group, cx: number, cy: number, cz: number, frameColor: string, lit: boolean, radius = 0.22): void {
+  const frameMat = mat(frameColor, { roughness: 0.85 });
   addTimberRingSegments(g, cx, cy, cz, radius * 0.95, frameMat, 8, radius * 0.36, radius * 0.28);
   addMesh(g, new THREE.CircleGeometry(radius * 0.65, 12), glassLikeMat(lit), cx, cy, cz + 0.02);
 }
@@ -243,31 +265,60 @@ function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number, opts: 
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE41);
   const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
+  // Hardcoded, saturated accent colours rather than the faction palette's
+  // own trim/door tones: vulperia's palette (walls #d4a060, trim #c88030,
+  // door #6a3810) is all one warm-brown hue family with almost no value/hue
+  // contrast between "wall", "trim" and "door" — which is exactly why the
+  // first attempt at this mound read as a uniform blob with no legible
+  // features: nothing on it actually contrasted against anything else.
+  const grassGreen = '#3d6b35';
+  const facadeColor = '#4a3520';
+  const doorGreen = '#2f5233';
 
-  addOrganicMound(g, dna.seed ^ 0x5011_DE40, w, d, h, earthMat);
+  // Main earthen bank — a real two-tone hill (packed earth below, a
+  // visibly distinct grass-green cap above), and noisier than before so
+  // the silhouette itself reads as an irregular hillock, not a smooth egg.
+  addOrganicMound(g, dna.seed ^ 0x5011_DE40, w, d, h, earthMat, 0, 0, 0.24, grassGreen);
 
-  // Round timber-framed door dug into the front of the bank.
-  const doorR = Math.min(w, d) * 0.24;
+  // A flat facade wall set into the mound's front face. This is the
+  // single most important change: a smooth curved surface alone reads as
+  // "natural hill" no matter what small props are stuck onto it — a flat,
+  // vertical, visibly-built panel is what actually sells "something was
+  // built into this hill", by giving the door/windows a genuine
+  // architectural surface to sit on instead of floating against a curve.
+  const facadeMat = mat(facadeColor, { roughness: 0.92 });
+  const facadeW = w * 0.62;
+  const facadeH = h * 0.62;
+  addMesh(g, new THREE.BoxGeometry(facadeW, facadeH, 0.32), facadeMat, 0, facadeH / 2, d / 2 - 0.1);
+  // Timber corner posts framing the facade for a genuinely "constructed"
+  // edge against the organic mound around it.
+  for (const px of [-facadeW / 2, facadeW / 2]) {
+    addMesh(g, new THREE.CylinderGeometry(0.09, 0.1, facadeH, 6), facadeMat, px, facadeH / 2, d / 2 - 0.1);
+  }
+
+  // Round timber-framed door, sized to dominate the facade (a large,
+  // obviously-primary feature, not a token detail lost against the hill),
+  // painted a colour that actually contrasts against the warm earth tones.
+  const doorR = facadeH * 0.4;
   const doorY = doorR * 1.05;
-  addRoundDoor(g, 0, doorY, d / 2 - 0.08, dna, doorR);
+  addRoundDoor(g, 0, doorY, d / 2 + 0.07, facadeColor, doorGreen, doorR);
 
-  // Small round port-hole windows flanking the door.
+  // Round port-hole windows flanking the door, also enlarged.
   const lit = (dna.seed & 1) === 0;
-  for (const wx of [-w * 0.3, w * 0.3]) {
-    addRoundWindow(g, wx, h * 0.6, d / 2 - 0.1, dna, lit, Math.min(w, d) * 0.1);
+  for (const wx of [-facadeW * 0.32, facadeW * 0.32]) {
+    addRoundWindow(g, wx, facadeH * 0.78, d / 2 + 0.07, facadeColor, lit, doorR * 0.42);
   }
 
   // Timber lintel beam over the door.
-  const beamMat = mat(dna.colors.trim, { roughness: 0.9 });
-  addMesh(g, new THREE.BoxGeometry(doorR * 2.3, 0.1, 0.16), beamMat, 0, doorY + doorR * 1.15, d / 2 - 0.02);
+  addMesh(g, new THREE.BoxGeometry(doorR * 2.4, 0.12, 0.18), facadeMat, 0, doorY + doorR * 1.2, d / 2 + 0.06);
 
   // Fox-tail banner on a pole beside the entrance.
   const poleMat = mat('#5a4020', { roughness: 0.85 });
   addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, h * 0.9, 6), poleMat, w / 2 + 0.15, h * 0.45, d / 2 - 0.3);
-  const bannerMat = mat(dna.colors.trim, { roughness: 0.7, side: THREE.DoubleSide });
+  const bannerMat = mat(doorGreen, { roughness: 0.7, side: THREE.DoubleSide });
   addMesh(g, new THREE.ConeGeometry(0.14, 0.5, 6), bannerMat, w / 2 + 0.15, h * 0.75, d / 2 - 0.3);
 
-  // Grass cap + wildflowers over the mound crown.
+  // Grass tufts + wildflowers scattered over the (now visibly green) crown.
   addGrassTufts(g, dna.seed ^ 0x5011_DE44, h * 0.88, Math.min(w, d) * 0.3, 9);
 
   if (opts.chimney !== false) {
@@ -299,7 +350,7 @@ function buildVulperiaVilla(dna: BuildingDNA): THREE.Group {
   const sideMat = mat(dna.colors.walls, { roughness: 0.98 });
   const sideSize = Math.min(fp.w, fp.d) * 0.56;
   const sideCx = fp.w / 2 + sideSize * 0.3, sideCz = -fp.d * 0.15 + r() * 0.2;
-  addOrganicMound(g, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, sideMat, sideCx, sideCz, 0.14);
+  addOrganicMound(g, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, sideMat, sideCx, sideCz, 0.14, '#3d6b35');
   return g;
 }
 
@@ -312,7 +363,7 @@ function buildVulperiaChapel(dna: BuildingDNA): THREE.Group {
   const pupSize = Math.min(fp.w, fp.d) * 0.36;
   let pupSeed = 0x5011_DE46;
   for (const px of [-fp.w * 0.42, fp.w * 0.42]) {
-    addOrganicMound(g, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, pupMat, px, fp.d * 0.15, 0.14);
+    addOrganicMound(g, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, pupMat, px, fp.d * 0.15, 0.14, '#3d6b35');
     pupSeed += 1;
   }
   return g;
@@ -325,7 +376,7 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
   const r = mulberry32(dna.seed ^ 0x5011_DE43);
   // Night Market den-mouth stall: low earthen mound base with a canvas awning.
   const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
-  addOrganicMound(g, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, earthMat, 0, -fp.d * 0.15, 0.14);
+  addOrganicMound(g, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, earthMat, 0, -fp.d * 0.15, 0.14, '#3d6b35');
   const awningMat = mat(dna.colors.roof, { roughness: 0.8, side: THREE.DoubleSide });
   addMesh(g, new THREE.ConeGeometry(fp.w * 0.55, 0.6, 4), awningMat, 0, h + 0.05, fp.d * 0.25, Math.PI / 4);
   // Counter/table + hanging pelts + string lanterns.

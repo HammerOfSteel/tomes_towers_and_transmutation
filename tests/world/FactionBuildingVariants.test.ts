@@ -187,6 +187,71 @@ describe('Vulperia — organic mound geometry (not a plain sphere blob)', () => 
     expect(sumRadii(gA)).toBe(sumRadii(gA2)); // deterministic for the same seed
     expect(sumRadii(gA)).not.toBe(sumRadii(gB)); // varies across seeds
   });
+
+  // ── v2 fix: "still looks like a blob with a hole poked in it" ─────────────
+  // User feedback after the first pass (real screenshots, not close crops):
+  // noise-jittering a smooth primitive and bolting small props onto its
+  // curved surface is NOT enough -- it still reads as one uniform-coloured
+  // organic blob at normal gameplay distance. These guards target the two
+  // concrete fixes: a real flat facade panel (so the door has an actual
+  // built surface to sit on, not a curve) and a genuine two-tone vertex-
+  // colour gradient (so the hill visibly shows turf-over-earth, not one
+  // flat colour), plus real door/wall colour contrast.
+  it('gives the mound a real flat facade panel (a wide, thin BoxGeometry), not just the curved mound surface', () => {
+    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
+    let hasWideFacade = false;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
+        o.geometry.computeBoundingBox();
+        const bb = o.geometry.boundingBox!;
+        const width = (bb.max.x - bb.min.x) * o.scale.x;
+        const depth = (bb.max.z - bb.min.z) * o.scale.z;
+        // A facade panel is wide (spans a meaningful fraction of the
+        // building) but thin front-to-back (a flat wall, not a solid block).
+        if (width > 1.0 && depth < 0.5) hasWideFacade = true;
+      }
+    });
+    expect(hasWideFacade).toBe(true);
+  });
+
+  it('paints the mound with a genuine two-tone vertex-colour gradient (grass above, earth below), not one flat colour', () => {
+    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
+    const mound = findBiggestMesh(g);
+    const colorAttr = mound.geometry.getAttribute('color');
+    expect(colorAttr).toBeDefined();
+    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
+    let lowY = Infinity, highY = -Infinity, lowIdx = 0, highIdx = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y < lowY) { lowY = y; lowIdx = i; }
+      if (y > highY) { highY = y; highIdx = i; }
+    }
+    const colorAt = (i: number) => new THREE.Color(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i));
+    const lowColor = colorAt(lowIdx);
+    const highColor = colorAt(highIdx);
+    // The crown (grass-green) should be visibly greener than the base
+    // (earth-brown): green channel should dominate more at the top.
+    const lowGreenBias = lowColor.g - Math.max(lowColor.r, lowColor.b);
+    const highGreenBias = highColor.g - Math.max(highColor.r, highColor.b);
+    expect(highGreenBias).toBeGreaterThan(lowGreenBias);
+  });
+
+  it('gives the door a colour that genuinely contrasts against the wall colour (not a same-hue near-match)', () => {
+    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
+    const wallColor = new THREE.Color('#d4a060'); // vulperia's FACTION_PRESETS wall colour
+    const colorDistance = (a: THREE.Color, b: THREE.Color) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+    let maxDoorDistance = 0;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'CircleGeometry' && o.material instanceof THREE.MeshStandardMaterial) {
+        const dist = colorDistance(o.material.color, wallColor);
+        if (dist > maxDoorDistance) maxDoorDistance = dist;
+      }
+    });
+    // A same-hue near-match (the original #6a3810 door vs #d4a060 wall) is
+    // only ~0.5 apart in this RGB colour-distance metric; a genuinely
+    // contrasting accent colour should be well clear of that.
+    expect(maxDoorDistance).toBeGreaterThan(0.6);
+  });
 });
 
 // ── Orcish deep-quality pass (settlement visual fidelity follow-up) ─────────

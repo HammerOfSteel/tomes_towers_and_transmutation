@@ -134,15 +134,25 @@ for the full design/plan.
   quality (matching the human `buildHouseOrShop()` bar: doors/windows/
   chimneys as multi-part assemblies, not one primitive standing in for a
   whole feature), one faction at a time:
-  - [x] Vulperia — **Done.** Noise-perturbed organic earthen mound
-    (`addOrganicMound()`, replacing the plain half-sphere), a genuine
-    Bag-End-style round door built from a ring of chunky timber-stave
-    blocks rather than a flat torus/ring (which degenerates to a hollow
-    "hook" artifact when a building's cardinal rotation puts it edge-on
-    to the fixed isometric camera — discovered and fixed via visual
-    verification), round port-hole windows, chimney + smoke wisp, grass/
-    wildflower crown, garden fence + planter. 34 unit tests (up from 31),
-    Playwright-verified from both face-on and rotated/edge-on angles.
+  - [x] Vulperia — **Done, v2 (v1 was insufficient per direct user
+    feedback with real gameplay screenshots).** v1 (noise-perturbed
+    mound + timber-stave door) still read as "a blob with a hole poked
+    in it" at real gameplay distance — noise-jittering a smooth
+    primitive and bolting small props onto its curved surface doesn't
+    change the fundamental read, and the faction's own palette (walls/
+    trim/door all one near-identical warm-brown hue) meant nothing on
+    it actually contrasted. v2 fix: a real flat facade wall panel for
+    the door/windows to mount onto (not the curved surface directly), a
+    genuine two-tone vertex-colour gradient (earth below, grass-green
+    above, applied to every vulperia mound for consistency), a
+    hardcoded contrasting forest-green door colour, and a bigger/more
+    prominent door. 62 unit tests (up from 59, includes numeric colour-
+    contrast and gradient assertions). Playwright-re-verified at a
+    realistic (non-cropped) camera distance matching the user's own
+    screenshots. **Paused here to confirm this direction is right
+    before re-applying the same lesson to the other 6 factions** — in
+    particular the elven canopy was also reported as reading brown/
+    muddy rather than green in the same feedback round.
   - [x] Orcish — **Done.** Split the previous single tapered-cylinder
     "tent" hut into two real construction layers: a palisade wall of 16
     individual upright log stakes (`addPalisadeWall()`, timber-stave-ring

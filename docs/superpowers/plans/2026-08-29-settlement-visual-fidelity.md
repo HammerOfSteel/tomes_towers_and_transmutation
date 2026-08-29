@@ -678,6 +678,83 @@ prop kit in `FactionBuildingVariants.ts`:
   instead of the hook/loop artifact seen with the two earlier (torus and
   extruded-collar) attempts.
 
+**Vulperia v2 — real fix, after direct user feedback that v1 was NOT
+good enough.** The user sent real gameplay screenshots (not close crops)
+showing the "done" v1 mound still reading as exactly what the original
+complaint described: a uniform-brown egg-shaped blob with a small dark
+hole poked in it. The verification above was real but insufficient — it
+checked that individual *techniques* worked (noise displacement is
+real, the timber-ring door doesn't degenerate) without stepping back to
+honestly ask "does this actually look like a den/house at normal
+gameplay distance," which it did not. Root cause, diagnosed from the
+screenshots: **noise-jittering a smooth curved primitive and bolting
+small props onto its surface does not change the fundamental perceptual
+read** — smooth curved geometry reads as "natural formation" no matter
+how much fine jitter or how many small appendages are added, because the
+appendages are too small relative to the dominant curved mass to
+register. A genuine "built into the hill" read needs a **flat, built-
+looking anchor surface**, real **colour contrast** (the vulperia palette
+— walls `#d4a060`, trim `#c88030`, door `#6a3810` — is one uniform warm-
+brown hue family with almost no value/hue separation, so nothing on the
+mound actually contrasted against anything else), and the door/props
+sized to be *prominent*, not token details. Concretely:
+- `addOrganicMound()` extended with an optional `topColor`: a genuine
+  two-tone **vertex-colour gradient** (earth-brown below, blending to a
+  hardcoded saturated grass-green `#3d6b35` above ~45% height), applied
+  directly on the mound's own noise-perturbed surface. A hill needs to
+  visibly show two materials (turf over soil) to read as a hill with
+  grass, not a uniform-coloured lump — and a vertex-colour gradient on
+  the exact same mesh guarantees a perfect seam, unlike trying to align
+  a second overlapping "cap" mesh against this mesh's own independently-
+  noised silhouette (considered and rejected for exactly that reason).
+  Applied to every vulperia mound (main bank, the Fox Den's side mound,
+  the Den Mother's Hall's pup mounds, the Night Market stall base) for
+  consistency across the whole faction, not just the flagship villa.
+- A real **flat facade wall** (`BoxGeometry`, ~62% of the mound's width,
+  ~62% of its height) set into the mound's front, with timber corner
+  posts framing its edges — the door, windows, and lintel now mount onto
+  this flat, visibly-built panel instead of the curved mound surface
+  directly. This is the single highest-impact change: it gives the
+  props an actual architectural surface to read against.
+- `addRoundDoor()`/`addRoundWindow()` refactored to take explicit
+  `frameColor`/`doorColor` strings instead of the whole `BuildingDNA`,
+  so a genuinely contrasting **hardcoded forest-green door** (`#2f5233`)
+  could be used instead of the palette's own near-match brown — verified
+  numerically in the new test below (a same-hue near-match like the old
+  door/wall pair sits ~0.5 apart in RGB-distance; the new pairing is
+  comfortably past 0.6). Door radius also increased (from `0.24×` to
+  `0.4×` the facade height) so it's a dominant, obviously-primary feature
+  rather than a token detail lost against the hill.
+- Mound noise jitter increased from `0.16` to `0.24` for a visibly
+  lumpier, less egg-like silhouette.
+- Tests: three new assertions added to the existing "Vulperia — organic
+  mound geometry" describe block: a real wide-but-thin facade `BoxGeometry`
+  exists (not just curved mound surface), the mound's vertex-colour
+  attribute shows a genuine green-biased gradient from base to crown (not
+  a flat colour), and the door's material colour is verified to be
+  meaningfully distant (RGB-space) from the wall colour, not a same-hue
+  near-match. 62 tests total (up from 59), all passing. `tsc --noEmit`
+  still at the 145-error baseline.
+- Visually re-verified via Playwright at a **realistic, non-flattering
+  camera distance matching the user's own screenshots** (not a close
+  crop): confirmed the mound now clearly reads as a two-tone grassy hill
+  with a legible flat-fronted dwelling entrance, both face-on and from a
+  rotated angle, and confirmed consistency across the whole settlement
+  (every vulperia mound in frame shows the same green-cap treatment, not
+  just the one tested building).
+- **Explicitly not yet re-applied to the other 6 reworked factions.**
+  The same root-cause lesson (flat anchor surface + real colour contrast
+  + prominent not-token feature sizing, verified at realistic non-cropped
+  camera distance) likely applies to some of them too (the elven canopy
+  in particular was reported as reading as a muddy/brown blob rather than
+  foliage in the same feedback round — the `elven.roof` palette colour
+  `#8a9870` is a desaturated sage-green that likely reads brown under
+  this game's warm torchlit night lighting). Given the trust cost of
+  re-doing this across all 7 factions again without checking in first,
+  this was intentionally paused after vulperia to get explicit
+  confirmation that this v2 direction is actually right before repeating
+  it six more times.
+
 **Orcish — DONE (this session).** Reworked `orcishHut()` (used by the
 Warlord Hall villa) in `FactionBuildingVariants.ts`: the previous version
 was a single tapered `CylinderGeometry` (a "tent") standing in for the
