@@ -21,6 +21,7 @@ import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { cobblestoneTexture } from '@/world/buildings/TextureFactory';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { makeLampPost } from './LampPostFactory';
+import { buildParkFeature } from '@/world/props/WardFeatureClusters';
 
 // Matches OverworldScene's local constants.
 const T  = 2;            // tile side length in world units
@@ -75,6 +76,10 @@ export interface SettlementRenderResult {
    *  (real streets, not the flat per-tile `roadTiles` quads above). Already
    *  textured and positioned in world space — caller just adds to scene. */
   roadRibbonMeshes: THREE.Mesh[];
+  /** Positioned, material-merged non-building "feature cluster" groups —
+   *  one per plan.wardFeatures entry (e.g. a park ward's Sacred Grove/
+   *  Slime Pool/Graveyard centerpiece). Not added to any scene. */
+  featureGroups: THREE.Group[];
 }
 
 // ── Core function ─────────────────────────────────────────────────────────────
@@ -148,7 +153,19 @@ export function renderSettlementPlan(
 
   const roadRibbonMeshes = buildRoadRibbonMeshes(plan, wg, ghw, ghh);
 
-  return { buildingGroups, buildingRecords, roadTiles, lampGroups, lampLights, roadRibbonMeshes };
+  // ── Ward feature clusters (e.g. park ward's Sacred Grove/Slime Pool) ─────
+  const featureGroups: THREE.Group[] = [];
+  for (const f of plan.wardFeatures) {
+    const wx = (f.col - ghw + f.offsetX) * T;
+    const wz = (f.row - ghh + f.offsetZ) * T;
+    const wy = wg.get(f.col, f.row).elevation * SH;
+    const grp = buildParkFeature(runtimeFaction, f.seed);
+    grp.position.set(wx, wy, wz);
+    mergeGroupMeshesByMaterial(grp);
+    featureGroups.push(grp);
+  }
+
+  return { buildingGroups, buildingRecords, roadTiles, lampGroups, lampLights, roadRibbonMeshes, featureGroups };
 }
 
 /**

@@ -44,7 +44,12 @@ describe('OverworldScene settlement rendering parity', () => {
     expect(lampLights).toBe(lampGroups);
     expect(buildingData).toBeGreaterThan(0);
 
-    // Snapshot the exact counts so any accidental change in the refactor is caught.
+    // Snapshot the exact counts so any accidental change in the refactor is
+    // caught. Note: buildingGroups also includes ward "feature cluster"
+    // groups (park-ward Sacred Grove/Slime Pool/etc., see
+    // WardFeatureClusters.ts / Phase 2a) since OverworldScene reuses the
+    // same add/dispose array for both — an increase here after adding a
+    // feature cluster is expected, not a regression.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadMeshes).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

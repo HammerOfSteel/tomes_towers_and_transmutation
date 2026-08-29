@@ -2020,6 +2020,7 @@ export class OverworldScene {
           roads:      [],
           roadRibbons: [],
           population: 0,
+          wardFeatures: [],
         },
       };
       const mystNpc = new NPCEntity(
@@ -2538,6 +2539,12 @@ export class OverworldScene {
       );
 
       for (const grp of result.buildingGroups) {
+        this._buildingGroups.push(grp);
+      }
+      // Ward feature clusters (park-ward Sacred Grove/Slime Pool/etc.) are
+      // decorative, non-collider props — reuse the same add/dispose array
+      // as buildings since OverworldScene treats _buildingGroups generically.
+      for (const grp of result.featureGroups) {
         this._buildingGroups.push(grp);
       }
 

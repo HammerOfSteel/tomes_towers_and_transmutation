@@ -99,11 +99,15 @@ for the full design/plan.
   unit tests + Playwright screenshot re-check (village and city types both
   show visible building gaps, ribbon streets with lamp posts, cardinal
   rotations).
-- [ ] Phase 2 (separately scoped content effort): race-themed settlement
-  prop/decoration library (market stalls, wells, fences, banners, per-
-  faction totems) placed per ward via a shared parametric prop shape
-  library + faction palette, batched through the existing mesh-merge
-  batching to avoid a draw-call regression.
+- [ ] Phase 2a (this pass): park-ward feature clusters — 9 faction-distinct,
+  thematically correct centerpieces (Slime Pool, Sacred Grove, Graveyard,
+  Burrow Commons, etc. — see plan §4.0/§4.0a), not palette-swapped copies of
+  a shared shape. `park` wards currently render nothing at all.
+- [ ] Phase 2b/2c (separately scoped, follow-up): faction-specific building
+  silhouettes for market/patriciate wards (Fox Den, Lich Tower, Wraith
+  Bazaar, Night Market, etc.) + generic prop shape library (market stalls,
+  wells, fences, banners) for craftsmen/slum/market clutter, batched
+  through the existing mesh-merge batching to avoid a draw-call regression.
 - [ ] Phase 3 (stretch, re-evaluate after Phase 1): iso-camera roof
   occlusion/fade near the player.
 - [ ] Phase 4: spot-check the live overworld benefits from Phase 1 the same

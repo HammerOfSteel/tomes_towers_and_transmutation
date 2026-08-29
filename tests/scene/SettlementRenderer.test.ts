@@ -103,7 +103,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings,
       roads: [],
-      roadRibbons: [],
+      roadRibbons: [], wardFeatures: [],
       population: 0,
     };
 
@@ -134,7 +134,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings: [],
       roads,
-      roadRibbons: [],
+      roadRibbons: [], wardFeatures: [],
       population: 0,
     };
     const ctx = makeCtx();
@@ -159,7 +159,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings: [],
       roads,
-      roadRibbons: [],
+      roadRibbons: [], wardFeatures: [],
       population: 0,
     };
     const ctx = makeCtx();

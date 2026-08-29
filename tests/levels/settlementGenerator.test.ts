@@ -272,6 +272,39 @@ describe('planSettlement', () => {
       expect(ribbon.width).toBeGreaterThan(0);
     }
   });
+
+  it('populates wardFeatures for park wards (which have no BuildingKind) instead of rendering nothing', () => {
+    // City/town layouts reliably include enough wards to produce a park;
+    // sweep several seeds/types since Voronoi ward assignment is seed-dependent.
+    let sawAtLeastOnePark = false;
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (const seed of [1, 42, 777, 445176186, 999999]) {
+        const grid = flatGrid(256);
+        const plan = planSettlement(type, 128, 128, seed, grid);
+        for (const f of plan.wardFeatures) {
+          expect(f.wardType).toBe('park'); // only 'park' currently lacks a BuildingKind
+          expect(Number.isFinite(f.col)).toBe(true);
+          expect(Number.isFinite(f.row)).toBe(true);
+          expect(Math.abs(f.offsetX)).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(f.offsetZ)).toBeLessThanOrEqual(0.5);
+          expect(Number.isFinite(f.seed)).toBe(true);
+          sawAtLeastOnePark = true;
+        }
+      }
+    }
+    expect(sawAtLeastOnePark).toBe(true);
+  });
+
+  it('wardFeatures placements never coincide with a building tile', () => {
+    for (const seed of [1, 42, 777, 445176186, 999999]) {
+      const grid = flatGrid(256);
+      const plan = planSettlement('city', 128, 128, seed, grid);
+      const buildingTiles = new Set(plan.buildings.map(b => `${b.col},${b.row}`));
+      for (const f of plan.wardFeatures) {
+        expect(buildingTiles.has(`${f.col},${f.row}`)).toBe(false);
+      }
+    }
+  });
 });
 
 describe('buildingHalfExtents (via overlap padding)', () => {

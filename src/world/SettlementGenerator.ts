@@ -87,6 +87,28 @@ export interface SettlementPlan {
   roadRibbons: RoadRibbon[];
   /** Rough inhabitant count — drives NPC spawning in OW-6. */
   population: number;
+  /** Non-building ward "feature" placements — e.g. a park ward's Sacred
+   *  Grove/Slime Pool/Graveyard centerpiece (see WardFeaturePlacement doc
+   *  comment and docs/superpowers/plans/2026-08-29-settlement-visual-fidelity.md §4). */
+  wardFeatures: WardFeaturePlacement[];
+}
+
+/**
+ * A ward that has no BuildingKind mapping (WARD_TO_KIND[type] is falsy —
+ * currently only 'park') gets a themed, faction-specific non-building
+ * "feature cluster" here instead (a pond+goo-mound cluster for a slime
+ * Slime Pool, a tree-ring+standing-stone cluster for an elven Sacred
+ * Grove, etc. — see src/world/props/WardFeatureClusters.ts). Uses the same
+ * sub-tile offset convention as PlacedBuilding (§3.1): wx = (col - ghw +
+ * offsetX) * TILE_UNIT.
+ */
+export interface WardFeaturePlacement {
+  wardType: WardType;
+  col:      number;
+  row:      number;
+  offsetX:  number;
+  offsetZ:  number;
+  seed:     number;
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -137,8 +159,26 @@ export function planSettlement(
   const centreX = params.width / 2;
   const centreY = params.height / 2;
 
+  const pendingFeatures: { wardType: WardType; exactCol: number; exactRow: number; seed: number }[] = [];
+
   for (const ward of model.wards) {
-    if (!ward.withinCity || !WARD_TO_KIND[ward.type]) continue;
+    if (!ward.withinCity) continue;
+    if (!WARD_TO_KIND[ward.type]) {
+      // No BuildingKind for this ward (currently only 'park') — place a
+      // faction-themed non-building feature cluster at the ward's center
+      // instead of skipping it entirely. See WardFeaturePlacement's doc
+      // comment and plan §4.0a. Deferred to a second pass below (after
+      // `buildings` is fully populated) so overlap-checking against
+      // buildings from *every* ward works regardless of ward iteration
+      // order, not just wards processed earlier in this loop.
+      pendingFeatures.push({
+        wardType: ward.type,
+        exactCol: centerCol + (ward.center.x - centreX) * SETTLEMENT_MODEL_SCALE,
+        exactRow: centerRow + (ward.center.y - centreY) * SETTLEMENT_MODEL_SCALE,
+        seed: ((seed ^ (Math.round(ward.center.x) * 83492791 + Math.round(ward.center.y) * 47762903)) >>> 0),
+      });
+      continue;
+    }
     const rects = fillWard(ward, occ, model.roads);
     if (rects.length === 0) continue;
     let anchor = rects[0]!;
@@ -176,11 +216,28 @@ export function planSettlement(
     }
   }
 
+  const wardFeatures: WardFeaturePlacement[] = [];
+  for (const pf of pendingFeatures) {
+    const mappedCol = Math.round(pf.exactCol);
+    const mappedRow = Math.round(pf.exactRow);
+    const snapped = snapFeatureTile(grid, buildings, mappedCol, mappedRow);
+    if (!snapped) continue;
+    const moved = snapped.col !== mappedCol || snapped.row !== mappedRow;
+    wardFeatures.push({
+      wardType: pf.wardType,
+      col: snapped.col,
+      row: snapped.row,
+      offsetX: moved ? 0 : clamp(pf.exactCol - mappedCol, -0.5, 0.5),
+      offsetZ: moved ? 0 : clamp(pf.exactRow - mappedRow, -0.5, 0.5),
+      seed: pf.seed,
+    });
+  }
+
   const roads = rasterizeRoads(model.roads, centerCol, centerRow, centreX, centreY);
   const roadRibbons = buildRoadRibbons(model.roads, model.wards, centreX, centreY);
   const rand = mulberry32(seed ^ 0xBADC0DE);
   const population = type === 'city' ? 55 + Math.floor(rand() * 30) : type === 'town' ? 25 + Math.floor(rand() * 26) : 8 + Math.floor(rand() * 9);
-  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings, roads, roadRibbons, population };
+  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings, roads, roadRibbons, population, wardFeatures };
 }
 
 /** Round an angle (radians) to the nearest cardinal direction (0/90/180/270°). */
@@ -342,6 +399,31 @@ function _noOverlap(placed: PlacedBuilding[], col: number, row: number, wardType
     if (Math.abs(col - b.col) < cur.hw + other.hw + padding && Math.abs(row - b.row) < cur.hd + other.hd + padding) return false;
   }
   return true;
+}
+
+/** Ward feature clusters (park-ward Sacred Grove/Slime Pool/etc., see
+ *  WardFeatureClusters.ts) span roughly 3 world units of radius — about
+ *  1.5 tiles at TILE_UNIT=2 — so a fixed 2-tile clearance from any
+ *  building keeps the cluster from visually overlapping a house. */
+const FEATURE_CLEARANCE_TILES = 2;
+
+function _featureNoOverlap(placed: PlacedBuilding[], col: number, row: number): boolean {
+  for (const b of placed) {
+    if (Math.abs(col - b.col) < FEATURE_CLEARANCE_TILES && Math.abs(row - b.row) < FEATURE_CLEARANCE_TILES) return false;
+  }
+  return true;
+}
+
+function snapFeatureTile(grid: WorldGrid, placed: PlacedBuilding[], col: number, row: number): { col: number; row: number } | null {
+  if (_valid(grid, col, row) && _featureNoOverlap(placed, col, row)) return { col, row };
+  for (let r = 1; r <= MAX_BUILDING_SNAP_RADIUS; r++) {
+    for (const [dr, dc] of DIRS8) {
+      const nc = col + dc * r;
+      const nr = row + dr * r;
+      if (_valid(grid, nc, nr) && _featureNoOverlap(placed, nc, nr)) return { col: nc, row: nr };
+    }
+  }
+  return null;
 }
 
 function snapBuildingTile(grid: WorldGrid, placed: PlacedBuilding[], col: number, row: number, wardType: WardType, isAnchor: boolean): { col: number; row: number } | null {

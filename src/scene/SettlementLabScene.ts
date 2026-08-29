@@ -238,6 +238,7 @@ export class SettlementLabScene {
     // world position (0, 1.42, 0) instead of illuminating its actual post.
     for (const grp of result.buildingGroups) this._scene.add(grp);
     for (const grp of result.lampGroups)     this._scene.add(grp);
+    for (const grp of result.featureGroups)  this._scene.add(grp);
 
     // Add ribbon-mesh streets (continuous, replaces the old per-tile flat
     // quads — see SettlementRenderer.ts's buildRoadRibbonMeshes()). Meshes
@@ -251,6 +252,7 @@ export class SettlementLabScene {
       `buildings: ${result.buildingGroups.length}`,
       `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
+      `features: ${result.featureGroups.length}`,
     ].join('  |  ');
     this._panel.setReadout(readout);
   }
@@ -272,6 +274,20 @@ export class SettlementLabScene {
         });
       }
       for (const grp of this._renderResult.lampGroups) {
+        this._scene.remove(grp);
+        grp.traverse(obj => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry?.dispose();
+            if (Array.isArray(m.material)) {
+              m.material.forEach(mt => mt.dispose());
+            } else {
+              (m.material as THREE.Material)?.dispose();
+            }
+          }
+        });
+      }
+      for (const grp of this._renderResult.featureGroups) {
         this._scene.remove(grp);
         grp.traverse(obj => {
           if ((obj as THREE.Mesh).isMesh) {

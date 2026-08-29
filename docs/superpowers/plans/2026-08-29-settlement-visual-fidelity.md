@@ -206,19 +206,115 @@ already be sufficient — verify visually first (Phase 1, step 4 below).
 
 ## 4. Race-themed settlement decoration — content plan (Phase 2)
 
-Scope: give each of the 9 settlement factions (`human`, `elven`, `dwarven`,
-`orcish`, `vampire`, `undead`, `vulperia`, `slime`, `fae` — see
-`SettlementLabScene.ts`'s `STUDIO_FACTIONS`) a distinct, thematically
-coherent set of small decorative props placed procedurally per ward, so
-settlements read as "lived in" rather than "buildings on grass."
+### 4.0 Course correction — ward *manifestation*, not just palette (read this first)
 
-This is inherently a large, iterative *content* effort (new geometry/
-texture work per faction), so it's scoped as its own phased follow-up
-after Phase 1's technical fixes land and are verified — not bundled into
-the same implementation pass. The design below is intentionally complete
-enough to execute directly when picked up.
+**Revised understanding, superseding the "shared shape + palette" framing
+below where the two conflict.** The Settlement Studio's own
+`FACTION_WARD_NAMES` table (`overworld-studio.ts`) already establishes that
+a ward isn't just a differently-colored building per faction — it's a
+**different kind of place** per faction, with different geometry, different
+nature (built structure vs. natural/organic feature), and different props
+entirely. Concretely (from `FACTION_WARD_NAMES`, this is the actual source
+of truth — read it before touching anything in this phase):
+
+| Ward     | human (fallback) | elven          | dwarven        | orcish        | vampire          | undead          | vulperia         | slime          | fae               |
+|----------|-------------------|----------------|----------------|---------------|------------------|-----------------|------------------|----------------|-------------------|
+| `park`   | Village Green     | Sacred Grove   | Mushroom Hall  | Pit Arena     | Moon Courtyard   | Graveyard       | Burrow Commons   | Slime Pool     | Enchanted Glade   |
+| `market` | Market            | Moonlit Exch.  | Trade Vault    | Loot Pile     | Blood Market     | Wraith Bazaar   | Night Market     | Goo Stall      | Twilight Market   |
+| `patriciate` | Manor Row     | Elder's Hall   | Guild Hall     | Warlord Hall  | Count's Tower    | Lich Tower      | Fox Den          | Elder Blob     | Fae Court         |
+| `church` | Chapel            | Ancient Shrine | Stone Temple   | War Shrine    | Blood Chapel     | Bone Shrine     | Den Mother's Hall| Pulse Pool     | Faerie Ring       |
+| ...      | (see `WARD_TO_KIND`/`FACTION_WARD_NAMES` for the rest — smithy, inn, merchant, farm, craftsmen, slum, gateward) |
+
+A **Slime Pool** and a **Sacred Grove** must not share geometry, silhouette,
+or material — one is a literal pond of goo with bubbling ooze mounds around
+its rim, the other is a ring of ancient trees around a standing stone. A
+**Wraith Bazaar** (skeletal stalls, bone lanterns, tattered banners) and a
+**Night Market** (den-mouth stalls, string lanterns, pelts/trinkets) are both
+"market wards" but should look nothing alike. This is the actual bar for
+"feels like that race's settlement," and palette-only variation (§4.2-4.3
+below, kept for the props that legitimately *are* palette-appropriate, like
+crates/barrels/fences) does not clear it on its own for these ward-defining
+structures.
+
+**Two manifestation modes per (faction, wardType):**
+1. **Building-variant** — still a real building (has walls/roof/interior),
+   but faction-specific `BuildingKind`/silhouette, not just a recolored
+   generic shape (e.g. Fox Den = earthen dome/burrow structure with a round
+   doorway, not a villa with orange paint; Lich Tower = a gaunt, narrow
+   stone spire, not a villa with grey paint).
+2. **Feature-cluster** — not a building at all: a themed arrangement of
+   procedural props with no interior/collider-as-building (a pond mesh +
+   goo-mound props for Slime Pool; a tree ring + standing stone + firefly
+   motes for Sacred Grove; a tombstone field + small mausoleum for
+   Graveyard). This is the new piece — `park` wards currently render
+   **nothing** (`WARD_TO_KIND['park']` is `null`, so `planSettlement()`
+   skips them entirely today), making `park` the natural, lowest-risk first
+   target: there's no existing behavior to preserve, and it's exactly the
+   ward the user called out (Slime Pool vs. Sacred Grove).
+
+**Scoping decision for this pass (Phase 2a, executed now):** implement the
+**feature-cluster** system end-to-end for the **`park` ward**, covering all
+9 factions (`human` fallback included), since `park` is a real, currently-
+blank gap with zero regression risk and directly answers the user's
+Slime-Pool-vs-Sacred-Grove ask. **Explicitly deferred as Phase 2b/2c**
+(separately scoped, larger effort — new `BuildingKind` variants touch the
+building/interior/collider pipeline, not just rendering):
+- Faction-specific **building-variant** silhouettes for `patriciate`
+  (Fox Den, Lich Tower, Count's Tower, Elder Blob, Fae Court, Warlord Hall,
+  Guild Hall, Elder's Hall) and `market` (Wraith Bazaar, Night Market, Goo
+  Stall, etc.) — these still need real building geometry (walls, doors,
+  possibly interiors), which is a `BuildingBuilder.ts`/`BuildingDNA.ts`
+  scope, not a `SettlementRenderer.ts` scope.
+- The generic prop shape library (§4.2-4.4 below) for market/craftsmen/slum
+  clutter — still valid as designed, and composes with Phase 2a (a market
+  ward can have both faction-flavored stalls *and* generic crates/barrels).
+
+### 4.0a Phase 2a design — park-ward feature clusters
+
+- New module `src/world/props/WardFeatureClusters.ts`: one procedural
+  builder function per faction, `buildParkFeature(faction, seed): THREE.Group`,
+  each producing a self-contained, seeded, no-interior/no-collider prop
+  cluster (reuses `mulberry32` seeding + `MeshStandardMaterial` primitives,
+  matching `BuildingBuilder.ts`'s existing style so it fits visually):
+  - **human** (`Village Green`, fallback — `FACTION_WARD_NAMES` has no human
+    entry so the Studio shows the generic `WARD_LABELS['park']` label,
+    "Park"): a well + a couple of benches + a shade tree — plain, homely.
+  - **elven** (`Sacred Grove`): a ring of tall stylized trees around a
+    tilted standing stone, with small emissive "firefly" motes.
+  - **dwarven** (`Mushroom Hall`): a cluster of oversized stone-toned
+    mushrooms + a stone bench ring — underground-cavern flavor, not
+    surface-forest.
+  - **orcish** (`Pit Arena`): a sunken circular pit ringed by log
+    spectator-benches, with a central bone/trophy totem stake.
+  - **vampire** (`Moon Courtyard`): a dark ornate fountain/basin centerpiece
+    with thin hedge-wall segments framing it.
+  - **undead** (`Graveyard`): a scatter of tombstones (varied heights) around
+    a small stone mausoleum, with a broken iron fence.
+  - **vulperia** (`Burrow Commons`): a cluster of earthen dome burrow-mound
+    entrances (dark doorway discs) around a central totem/marker post.
+  - **slime** (`Slime Pool`): a circular pool of translucent green-glow
+    "goo" (flattened cylinder, emissive material) ringed by a few small
+    squashed-blob mounds; a couple of rising bubble spheres for motion read.
+  - **fae** (`Enchanted Glade`): a ring of giant glowing mushrooms +
+    a faint torus "fae ring" on the ground + tiny lantern motes.
+- `SettlementPlan` gains `wardFeatures: WardFeaturePlacement[]`
+  (`wardType`, `col`, `row`, `offsetX`, `offsetZ`, `seed`) — populated in
+  `planSettlement()` for any ward where `WARD_TO_KIND[ward.type]` is
+  falsy (currently only `park`; the field is generic so Phase 2b's future
+  faction building-variants for `market`/`patriciate` can reuse the same
+  plumbing if they turn out not to need the full building/interior
+  pipeline after all).
+- `renderSettlementPlan()` gains a `featureGroups: THREE.Group[]` loop
+  parallel to the buildings loop, dispatching to
+  `buildParkFeature(faction, wardType, seed)`. `SettlementLabScene.ts` /
+  `OverworldScene.ts` add + dispose `featureGroups` the same way they
+  already do `buildingGroups`.
+- Batch through `mergeGroupMeshesByMaterial()` per cluster, same
+  draw-call discipline as buildings (each settlement has at most one park
+  ward, so this is a small, bounded addition to draw calls).
 
 ### 4.1 Best-practice grounding
+
 
 Procedural settlement "aliveness" in successful genre games (Banished,
 Cities: Skylines, Kenshi, Divinity: Original Sin's isometric towns, Dwarf
@@ -400,13 +496,44 @@ raised it:
      fixtures and `OverworldScene.ts`'s ruins fallback plan). Playwright
      `overworld-studio-settlement-lab-launch.spec.ts` passes.
 
-### Phase 2 — Race-themed prop library (follow-up, separately scoped)
-Execute §4 in full: shape library, per-faction `PropStyle`, ward prop
-table, placement algorithm, data flow wiring. Recommend its own
-brainstorming/plan-refinement pass before coding, since faction art
-direction decisions (esp. vulperia/slime/fae totems, §4.3) benefit from
-explicit sign-off given they set a visual precedent other systems may
-later follow.
+### Phase 2a — Park-ward feature clusters ✅ DONE
+Executed §4.0a: `WardFeatureClusters.ts` (9 faction builders), `SettlementPlan.
+wardFeatures` (two-pass placement with `snapFeatureTile()`/
+`_featureNoOverlap()` collision-checking against buildings),
+`renderSettlementPlan()`'s `featureGroups`, wiring into
+`SettlementLabScene.ts`/`OverworldScene.ts` (reusing `_buildingGroups`'
+generic add/dispose handling).
+
+Unit tests: `WardFeatureClusters.test.ts` (non-empty group per faction,
+determinism, geometric distinctness, Village Green fallback for unmapped
+factions); `settlementGenerator.test.ts` (`wardFeatures` populated for
+`park` wards, no overlap with building tiles). `tsc --noEmit`: no new
+errors (baseline). `npx vitest run`: full suite passes except pre-existing
+baseline failures (`talentSystem`, `WaterMaterial`, `enemyLoader`,
+`towerGenerator`, `main.startup.smoke`, `OverworldScene.chunk-scatter-
+alignment` — confirmed via `git stash` re-run that all fail identically on
+the pre-change baseline, i.e. unrelated to this work).
+
+Visual re-verification (Playwright, Studio "Play in 3D" → Settlement Lab,
+seed=1, type=city): screenshotted Slime Pool (glowing green translucent
+ooze pool + rising bubble motes), Sacred Grove (elven, cluster of trees),
+and Graveyard (undead, jagged fence/tombstone spikes) side by side —
+confirmed each reads as a genuinely distinct place, not a palette-swapped
+copy of shared geometry. Note: `park` wards only reliably appear for
+`type: 'city'` settlements in the current Voronoi ward-type assignment
+(town/village produced zero park wards across a 300-seed sweep) — a
+pre-existing property of `SettlementModelGenerator.ts`, not something this
+pass changed.
+
+### Phase 2b/2c — Faction building-variant silhouettes + generic prop library (follow-up, separately scoped)
+Larger, `BuildingBuilder.ts`/`BuildingDNA.ts`-touching effort: faction-
+specific `BuildingKind` silhouettes for `market`/`patriciate` wards (Fox
+Den, Lich Tower, Wraith Bazaar, Night Market, etc. — see §4.0's table), plus
+the generic prop shape library (§4.2-4.4: crates/barrels/stalls/fences/
+banners for market/craftsmen/slum clutter). Recommend its own brainstorming/
+plan-refinement pass before coding, since faction art direction decisions
+benefit from explicit sign-off given they set a visual precedent other
+systems may later follow.
 
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
