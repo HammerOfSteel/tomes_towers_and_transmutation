@@ -3,6 +3,14 @@ export interface SettlementLabPanelOptions {
   settlementTypes: string[];
   factions: string[];
   layouts: string[];
+  /** Preselected dropdown values, e.g. when launched from the Overworld
+   * Studio Settlement tab's "Play in 3D" button carrying over the
+   * currently-configured settlement. Falls back to the first entry in the
+   * corresponding list (createSelect()'s default `<select>` behaviour) when
+   * omitted or not present in that list. */
+  initialType?: string;
+  initialFaction?: string;
+  initialLayout?: string;
   onRegenerate: (params: { seed: number; type: string; faction: string; layout: string }) => void;
 }
 
@@ -37,6 +45,19 @@ export class SettlementLabPanel {
     this.typeSelect = this.createSelect('type-select', options.settlementTypes);
     this.factionSelect = this.createSelect('faction-select', options.factions);
     this.layoutSelect = this.createSelect('layout-select', options.layouts);
+
+    // Preselect from initialType/initialFaction/initialLayout when given and
+    // present in the corresponding option list; otherwise the <select>
+    // already defaults to its first <option> (set by createSelect() above).
+    if (options.initialType !== undefined && options.settlementTypes.includes(options.initialType)) {
+      this.typeSelect.value = options.initialType;
+    }
+    if (options.initialFaction !== undefined && options.factions.includes(options.initialFaction)) {
+      this.factionSelect.value = options.initialFaction;
+    }
+    if (options.initialLayout !== undefined && options.layouts.includes(options.initialLayout)) {
+      this.layoutSelect.value = options.initialLayout;
+    }
 
     this.regenerateButton = document.createElement('button');
     this.regenerateButton.textContent = 'Regenerate';

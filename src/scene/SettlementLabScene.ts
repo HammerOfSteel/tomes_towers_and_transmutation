@@ -53,7 +53,7 @@ const LAYOUTS: LayoutType[] = [
 
 // ── Regenerate params type ────────────────────────────────────────────────────
 
-interface RegenParams {
+export interface RegenParams {
   seed:    number;
   type:    string;
   faction: string;
@@ -91,7 +91,18 @@ export class SettlementLabScene {
     this._physics = physics;
   }
 
-  enter(): void {
+  /**
+   * @param initialParams Optional settlement to render on entry, carried
+   *   over from Overworld Studio's Settlement tab "Play in 3D" button (see
+   *   DevRoomHandoff.ts's `SettlementLabLaunchParams` / `readPendingSettlementLabParams`)
+   *   instead of the Lab's own hardcoded default (seed 42 / village / human /
+   *   auto). `type`/`faction`/`layout` are individually validated against
+   *   this Lab's known-good option lists — an invalid/unrecognised value
+   *   for any one of them falls back to that field's default rather than
+   *   throwing or producing an inconsistent panel state; `seed` is used
+   *   verbatim since any finite number is valid.
+   */
+  enter(initialParams?: RegenParams): void {
     if (this._entered) return;
     this._entered = true;
 
@@ -116,23 +127,29 @@ export class SettlementLabScene {
       new THREE.Vector3(groundW / 2, 0.05, groundH / 2),
     );
 
+    const seed    = initialParams?.seed ?? DEFAULT_SEED;
+    const type    = initialParams && SETTLEMENT_TYPES.includes(initialParams.type as SettlementType)
+      ? initialParams.type : 'village';
+    const faction = initialParams && STUDIO_FACTIONS.includes(initialParams.faction)
+      ? initialParams.faction : 'human';
+    const layout  = initialParams && LAYOUTS.includes(initialParams.layout as LayoutType)
+      ? initialParams.layout : 'auto';
+
     // ── Panel ────────────────────────────────────────────────────────────────
     this._panel = new SettlementLabPanel({
-      initialSeed:     DEFAULT_SEED,
+      initialSeed:     seed,
       settlementTypes: SETTLEMENT_TYPES,
       factions:        STUDIO_FACTIONS,
       layouts:         LAYOUTS,
+      initialType:     type,
+      initialFaction:  faction,
+      initialLayout:   layout,
       onRegenerate:    (params) => this._regenerate(params),
     });
     document.body.appendChild(this._panel.rootEl);
 
     // ── Initial settlement ────────────────────────────────────────────────
-    this._regenerate({
-      seed:    DEFAULT_SEED,
-      type:    'village',
-      faction: 'human',
-      layout:  'auto',
-    });
+    this._regenerate({ seed, type, faction, layout });
   }
 
   exit(): void {

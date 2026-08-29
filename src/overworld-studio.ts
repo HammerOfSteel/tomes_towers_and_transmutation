@@ -42,7 +42,7 @@ import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
   type OverworldSettlementPreviewPayload,
 } from './overworld-studio/SettlementPreviewPayload';
-import { DEV_ROOM_LAUNCH_KEY, buildDevRoomLaunchUrl, type DevRoomId } from './overworld-studio/DevRoomHandoff';
+import { DEV_ROOM_LAUNCH_KEY, buildDevRoomLaunchUrl, buildSettlementLabLaunchUrl, type DevRoomId } from './overworld-studio/DevRoomHandoff';
 
 import * as THREE from 'three';
 
@@ -4427,11 +4427,23 @@ document.getElementById('btn-devroom-water-lab')?.addEventListener('click', () =
   window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
 });
 
-document.getElementById('btn-devroom-settlement-lab')?.addEventListener('click', () => {
-  const room: DevRoomId = 'settlement-lab';
-  localStorage.setItem(DEV_ROOM_LAUNCH_KEY, room);
-  _showToast('✓ Opening Settlement Lab');
-  window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
+// "Play in 3D" — launches the Settlement Lab pre-loaded with whatever
+// settlement is currently configured/generated in this Settlement tab
+// (seed/type/faction/layout), rather than the Lab's own hardcoded default.
+// Supersedes the old standalone "🏙 Settlement Lab" Dev Rooms button (which
+// always opened the Lab with its own default seed/type/faction/layout,
+// independent of anything shown here) — see buildSettlementLabLaunchUrl()
+// in DevRoomHandoff.ts for how the params travel to the new tab.
+document.getElementById('btn-play-in-3d-lab')?.addEventListener('click', () => {
+  if (!currentModel) { alert('Generate a settlement first.'); return; }
+  const seed = parseInt(seedInput.value) || 0;
+  const params = getParams();
+  const launchParams = { seed, type: params.type, faction: params.faction, layout: params.layout };
+  // No localStorage fallback here (unlike the plain devroom id above) —
+  // these params are only ever consumed by the same window.open() call
+  // that set them, so the storage-drop concern doesn't apply.
+  _showToast(`✓ Opening Settlement Lab for "Settlement #${seed}"`);
+  window.open(buildSettlementLabLaunchUrl('/index.html', launchParams), '_blank');
 });
 
 // ── Save: Dungeon ─────────────────────────────────────────────────────────────

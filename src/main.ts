@@ -42,6 +42,7 @@ import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode'
 import { OverworldScene } from '@/scene/OverworldScene';
 import { WaterLabScene } from '@/scene/WaterLabScene';
 import { SettlementLabScene } from '@/scene/SettlementLabScene';
+import type { RegenParams } from '@/scene/SettlementLabScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
@@ -88,7 +89,7 @@ import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
-import { readPendingDevRoom, clearPendingDevRoom } from '@/overworld-studio/DevRoomHandoff';
+import { readPendingDevRoom, clearPendingDevRoom, readPendingSettlementLabParams } from '@/overworld-studio/DevRoomHandoff';
 
 async function main() {
   injectHudTheme();
@@ -1043,12 +1044,12 @@ async function main() {
     _sandboxUi?.setLocation('lab');
   }
 
-  function enterSettlementLab(): void {
+  function enterSettlementLab(initialParams?: RegenParams): void {
     if (gameMode === 'settlementlab') return; // already there — no-op
     _exitCurrentSpecialMode();
     sceneManager.unloadCurrentRoom();
     if (!settlementLab) settlementLab = new SettlementLabScene(scene, physics, player);
-    settlementLab.enter();
+    settlementLab.enter(initialParams);
     gameMode = 'settlementlab';
     _sandboxLocation = 'lab';
     scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
@@ -1866,8 +1867,11 @@ async function main() {
       },
       /** Whether player is currently in the tower entrance trigger zone. */
       isNearTower: () => overworld?.nearTowerEntrance(player.group.position) ?? false,
-      /** Jump straight into the Settlement Lab dev room (for e2e tests). */
-      enterSettlementLab: () => enterSettlementLab(),
+      /** Jump straight into the Settlement Lab dev room (for e2e tests).
+       *  Optionally pass initialParams to test the "Play in 3D" carried-
+       *  over-settlement handoff without going through the URL/localStorage
+       *  round trip. */
+      enterSettlementLab: (initialParams?: RegenParams) => enterSettlementLab(initialParams),
       /** Perf diagnostic readout — draw stats + per-frame timing breakdown
        *  (see perfState/perfEl above). For automated perf profiling. */
       getPerfStats: () => ({
@@ -3516,7 +3520,7 @@ async function main() {
       (window as any).__tttDevRoomStage = 'starting-game';
       _startDevPanelInGame();
       (window as any).__tttDevRoomStage = 'entering-settlement-lab';
-      enterSettlementLab();
+      enterSettlementLab(readPendingSettlementLabParams() ?? undefined);
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();

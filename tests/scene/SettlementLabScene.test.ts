@@ -132,3 +132,67 @@ describe('SettlementLabScene', () => {
     lab5.exit();
   });
 });
+
+describe('SettlementLabScene — enter(initialParams) for "Play in 3D" handoff', () => {
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+
+  beforeAll(async () => {
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+  });
+
+  it('enter(params) renders the settlement described by params instead of the hardcoded defaults', () => {
+    const scene6 = new THREE.Scene();
+    const labDefault = new SettlementLabScene(scene6, physics, player);
+    labDefault.enter(); // default seed=42/village/human/auto
+    const defaultReadout = (labDefault as unknown as { _panel: { setReadout: unknown } });
+    const defaultPanelEl = (labDefault as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const defaultText = defaultPanelEl.querySelector('[data-role="readout"]')?.textContent;
+    labDefault.exit();
+
+    const scene7 = new THREE.Scene();
+    const labCustom = new SettlementLabScene(scene7, physics, player);
+    labCustom.enter({ seed: 4242, type: 'city', faction: 'dwarven', layout: 'radial' });
+    const customPanelEl = (labCustom as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+
+    // Panel's dropdowns/seed input reflect the carried-over params, not the
+    // Lab's own hardcoded defaults.
+    const seedInput = customPanelEl.querySelector('[data-role="seed-input"]') as HTMLInputElement;
+    const typeSelect = customPanelEl.querySelector('[data-role="type-select"]') as HTMLSelectElement;
+    const factionSelect = customPanelEl.querySelector('[data-role="faction-select"]') as HTMLSelectElement;
+    const layoutSelect = customPanelEl.querySelector('[data-role="layout-select"]') as HTMLSelectElement;
+    expect(seedInput.value).toBe('4242');
+    expect(typeSelect.value).toBe('city');
+    expect(factionSelect.value).toBe('dwarven');
+    expect(layoutSelect.value).toBe('radial');
+
+    // A city with a different seed/faction/layout than the village default
+    // should (overwhelmingly likely, and deterministically for this fixed
+    // seed) produce a different building count than the default village.
+    const customText = customPanelEl.querySelector('[data-role="readout"]')?.textContent;
+    expect(customText).not.toBe(defaultText);
+    void defaultReadout;
+
+    labCustom.exit();
+  });
+
+  it('enter(params) with an invalid type/faction/layout falls back to defaults for just that field', () => {
+    const scene8 = new THREE.Scene();
+    const lab8 = new SettlementLabScene(scene8, physics, player);
+    // seed is fine, but type/faction/layout are garbage — should not throw,
+    // and should fall back to the Lab's known-good defaults for those.
+    expect(() => lab8.enter({ seed: 7, type: 'not-a-type', faction: 'not-a-faction', layout: 'not-a-layout' }))
+      .not.toThrow();
+
+    const panelEl = (lab8 as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const seedInput = panelEl.querySelector('[data-role="seed-input"]') as HTMLInputElement;
+    const typeSelect = panelEl.querySelector('[data-role="type-select"]') as HTMLSelectElement;
+    expect(seedInput.value).toBe('7');
+    expect(typeSelect.value).toBe('village'); // fell back to first/default option
+
+    lab8.exit();
+  });
+});
