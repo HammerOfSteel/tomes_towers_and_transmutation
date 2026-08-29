@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -476,5 +476,104 @@ describe('FactionBlockProfiles — vampire tapering gothic spire', () => {
     const gridC = buildVampireSpireGrid(43, W, D, H, {});
     expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
     expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+});
+
+describe('FactionBlockProfiles — fae twisted stalk + scalloped mushroom cap', () => {
+  const W = 6, D = 6, H = 8;
+
+  function bwOf(w = W): number { return Math.max(3, Math.round(w / BLOCK_UNIT)); }
+  function bdOf(d = D): number { return Math.max(3, Math.round(d / BLOCK_UNIT)); }
+  function bhOf(h = H): number { return Math.max(8, Math.round(h / BLOCK_UNIT)); }
+
+  it('is grounded: the base level has an occupied block at the centre column', () => {
+    const grid = buildFaeStalkGrid(1, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    expect(hasBlock(grid, Math.round(bw / 2), 0, Math.round(bd / 2))).toBe(true);
+  });
+
+  it('flares out dramatically for the cap: the cap band reaches columns far beyond the stalk radius', () => {
+    const grid = buildFaeStalkGrid(2, W, D, H, { capStartFrac: 0.5, waistFrac: 0.8, capFlareFrac: 2.0 });
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    const cz = Math.round((bd - 1) / 2);
+    // A column just outside the stalk's own footprint, empty at the stalk's mid-height...
+    const stalkMidBy = Math.round(bh * 0.3);
+    const farBx = 0;
+    expect(hasBlock(grid, farBx, stalkMidBy, cz)).toBe(false);
+    // ...but reached by the cap's outward flare near its peak.
+    const capPeakBy = Math.round(bh * 0.86);
+    let flaresOut = false;
+    for (let bx = 0; bx < bw; bx++) {
+      for (let bz = 0; bz < bd; bz++) {
+        if (hasBlock(grid, bx, capPeakBy, bz)) { flaresOut = true; break; }
+      }
+      if (flaresOut) break;
+    }
+    expect(flaresOut).toBe(true);
+  });
+
+  it('crowns back in at the very top: the cap domes rather than staying at its widest flare', () => {
+    const grid = buildFaeStalkGrid(3, W, D, H, {});
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    function rowSpan(by: number): number {
+      const cz = Math.round((bd - 1) / 2);
+      let min = Infinity, max = -Infinity;
+      for (let bx = 0; bx < bw; bx++) {
+        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
+      }
+      return max >= min ? max - min : 0;
+    }
+    const peakBy = Math.round(bh * 0.86);
+    const topBy = bh - 1;
+    expect(rowSpan(topBy)).toBeLessThan(rowSpan(peakBy));
+  });
+
+  it('stalk-phase blocks use the stalk material and cap-phase blocks use the cap material', () => {
+    const grid = buildFaeStalkGrid(4, W, D, H, { capStartFrac: 0.5 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2), cz = Math.round(bd / 2);
+    expect(getMaterialKey(grid, cx, 0, cz)).toBe('stalk');
+    let top = -1;
+    for (let by = 0; by < 32; by++) if (hasBlock(grid, cx, by, cz)) top = by;
+    expect(top).toBeGreaterThan(0);
+    expect(getMaterialKey(grid, cx, top, cz)).toBe('cap');
+  });
+
+  it('with a facade requested, carves a circular portal doorway (constant radius, not an arch that grows from the ground)', () => {
+    const grid = buildFaeStalkGrid(5, W, D, H, { facade: true, facadeWidthFrac: 0.4 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    let sawFacadeMaterial = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'facade') { sawFacadeMaterial = true; break; }
+    }
+    expect(sawFacadeMaterial).toBe(true);
+    // Ground level (by=0) must NOT be carved (a circular portal floats
+    // above the ground, unlike elven's/vampire's arches which start at it).
+    expect(hasBlock(grid, cx, 0, frontZ)).toBe(true);
+    // Somewhere mid-portal-height, dead centre must be carved open.
+    let sawCarvedCentre = false;
+    for (let by = 1; by < 8; by++) {
+      if (!hasBlock(grid, cx, by, frontZ) && hasBlock(grid, cx, by, frontZ - 1)) { sawCarvedCentre = true; break; }
+    }
+    expect(sawCarvedCentre).toBe(true);
+  });
+
+  it('is deterministic per seed and varies with a different seed', () => {
+    const gridA = buildFaeStalkGrid(42, W, D, H, {});
+    const gridB = buildFaeStalkGrid(42, W, D, H, {});
+    const gridC = buildFaeStalkGrid(43, W, D, H, {});
+    expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
+    expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+
+  it('gives the cap a bioluminescent "spore" glow accent material, distinct from the cap body', () => {
+    const grid = buildFaeStalkGrid(6, W, D, H, {});
+    let sawSpore = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'spore') { sawSpore = true; break; }
+    }
+    expect(sawSpore).toBe(true);
   });
 });

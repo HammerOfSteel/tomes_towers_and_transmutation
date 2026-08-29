@@ -37,7 +37,7 @@ import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -1237,49 +1237,24 @@ function buildVampireShop(dna: BuildingDNA): THREE.Group {
   return g;
 }
 
-// ── Fae — whimsical mushroom/flower architecture ──────────────────────────────
+// ── Fae — whimsical mushroom/flower block-kit architecture ────────────────────
 // Fae Court (patriciate), Faerie Ring (church), Twilight Market (market):
-// oversized glowing-spotted mushroom caps, curling toadstool stems, petals,
-// firefly motes — nothing built from stone or timber.
-
-/**
- * A mushroom cap with a noise-scalloped rim — visible from the fixed
- * downward isometric camera as a genuinely wavy, irregular toadstool-cap
- * edge, unlike gills (correct but only visible from directly underneath,
- * which this camera never sees). Reuses the same angular-noise-silhouette
- * technique as `addOrganicMound()`/`addRoughConeRoof()`, strongest at the
- * rim and fading to a smooth crown.
- */
-function addScallopedCap(g: THREE.Group, seed: number, capY: number, capR: number, material: THREE.Material, jitter = 0.14): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(capR, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
-  const noise2D = createNoise2D(seed);
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const angle = Math.atan2(v.z, v.x);
-    const heightRatio = THREE.MathUtils.clamp(v.y / capR, 0, 1); // 0 at rim, 1 at crown
-    const n = noise2D(Math.cos(angle) * 3.2, Math.sin(angle) * 3.2);
-    const envelope = 1 - heightRatio; // scalloping strongest at the rim, smooth crown
-    const scale = 1 + n * jitter * envelope;
-    v.x *= scale;
-    v.z *= scale;
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(0, capY, 0);
-  mesh.scale.set(1, 0.5, 1);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  g.add(mesh);
-  return mesh;
-}
+// Phase 2e (fae): a genuine `buildFaeStalkGrid()` occupancy grid — a mildly
+// gnarled toadstool stalk that flares into a real block-built, noise-
+// scalloped mushroom cap with a domed crown and a carved circular "portal"
+// doorway — replacing the old primitive `addScallopedCap()` (a deformed
+// half-sphere) + separate cylinder stalk. Small bolted-on accents (gill
+// ribs, petals, firefly motes) remain acceptable per the established
+// "small props are fine, only large primitive-built main structures are
+// not" precedent.
 
 /**
  * Real underside gill ribs radiating from a mushroom cap's center — thin
  * flat fins fanning out beneath the rim, the classic toadstool detail
- * that's otherwise completely absent from a smooth dome cap.
+ * that's otherwise completely absent from a smooth dome cap. Kept as a
+ * small bolted-on prop (like vampire's rose window) rather than encoded
+ * into block occupancy, since radiating fins are naturally thin/flat
+ * geometry that block-kit's cubic cells can't represent cleanly.
  */
 function addMushroomGills(g: THREE.Group, capY: number, gillSpan: number, material: THREE.Material, count = 14): void {
   for (let i = 0; i < count; i++) {
@@ -1292,67 +1267,63 @@ function addMushroomGills(g: THREE.Group, capY: number, gillSpan: number, materi
 }
 
 /**
- * Raised, glowing wart-like bumps dotting a mushroom cap — real 3D
- * protrusions, not flat painted decals lying flush against the surface.
+ * Builds + meshes + centers a `buildFaeStalkGrid()` toadstool into `g` at
+ * the origin (same centering convention as `addBlockVampireSpire()`). No
+ * materials are chamfer-suppressed here — unlike vampire's hard-edged
+ * iron/dwarven's buttress corners, fae's whimsical theme calls for
+ * everything (stalk, cap, portal frame) reading soft and organic, mirroring
+ * elven's "everything gently chamfered" choice.
  */
-function addMushroomWarts(g: THREE.Group, seed: number, capY: number, capR: number, material: THREE.Material, count = 6): void {
-  const r = mulberry32(seed);
-  for (let i = 0; i < count; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = r() * capR * 0.7;
-    const wartR = 0.07 + r() * 0.04;
-    addMesh(g, new THREE.SphereGeometry(wartR, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), material, Math.cos(ang) * rad, capY + 0.01, Math.sin(ang) * rad);
-  }
-}
-
-function faeMushroom(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const stemMat = mat(dna.colors.walls, { roughness: 0.6 });
-  const capMat = mat(dna.colors.roof, { roughness: 0.55 });
-  const spotMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(dna.colors.trim), emissive: new THREE.Color(dna.colors.trim), emissiveIntensity: 0.6, roughness: 0.4 });
-  const gillMat = mat(dna.colors.trim, { roughness: 0.7 });
-
-  // Twisted, gnarled toadstool stalk — a noise-crumbled surface (reusing
-  // the same technique as undead's stone tiers / elven's bark trunk), not
-  // a perfectly smooth taper.
-  addWeatheredTier(g, dna.seed ^ 0xFA_E00010, 0, Math.min(w, d) * 0.3, Math.min(w, d) * 0.22, h, stemMat, 0.16);
-
-  // Broad mushroom-cap "roof" with a noise-scalloped, wavy rim — visible
-  // from the fixed downward isometric camera, unlike gills.
-  const capR = Math.max(w, d) * 0.55;
-  addScallopedCap(g, dna.seed ^ 0xFA_E00012, h, capR, capMat, 0.14);
-  // Real underside gill ribs — the classic toadstool detail, entirely
-  // absent from a smooth dome cap.
-  addMushroomGills(g, h - 0.02, capR * 0.85, gillMat, 14);
-  // Raised glowing wart bumps dotting the cap, not flat painted decals.
-  addMushroomWarts(g, dna.seed ^ 0xFA_E00011, h, capR, spotMat, 5);
-
-  // Round whimsical doorway.
-  addDoorway(g, Math.min(w, d) * 0.4, h * 0.5, d / 2 - 0.05, dna.colors.door);
-  // Firefly motes drifting near the cap edge.
-  const fireflyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#fff4a0'), emissive: new THREE.Color('#ffe060'), emissiveIntensity: 1.0 });
-  for (let i = 0; i < 3; i++) {
-    const ang = (i / 3) * Math.PI * 2;
-    addMesh(g, new THREE.SphereGeometry(0.04, 6, 6), fireflyMat, Math.cos(ang) * w * 0.5, h * 0.9, Math.sin(ang) * d * 0.5);
-  }
-  return g;
+function addBlockFaeStalk(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  stalkColor: string, capColor: string, doorColor: string,
+  opts: FaeStalkOptions = {},
+): void {
+  const grid = buildFaeStalkGrid(seed, w, d, h, opts);
+  const palette = {
+    stalk:  mat(stalkColor, { roughness: 0.6 }),
+    cap:    mat(capColor, { roughness: 0.5 }),
+    facade: mat(doorColor, { roughness: 0.55 }),
+    spore:  new THREE.MeshStandardMaterial({ color: new THREE.Color('#c8ffb0'), emissive: new THREE.Color('#a0ff70'), emissiveIntensity: 0.85, roughness: 0.35 }),
+  };
+  const mesh = meshBlockGrid(grid, palette, {});
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
+  g.add(mesh);
 }
 
 function buildFaeVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.9;
-  const g = faeMushroom(dna, fp.w, fp.d, h);
-  // Fae Court: a ring of smaller toadstools clustered around the main one.
+  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.1;
+  const g = new THREE.Group();
+  addBlockFaeStalk(g, dna.seed ^ 0xFA_E00010, fp.w, fp.d, h, dna.colors.walls, dna.colors.roof, dna.colors.door, {
+    facade: true,
+  });
+  // Real underside gill ribs — the classic toadstool detail, entirely
+  // absent from a smooth dome cap.
+  addMushroomGills(g, faeCapTopY(h) - h * 0.08, faeCapRimRadius(fp.w, fp.d) * 0.8, mat(dna.colors.trim, { roughness: 0.7 }), 14);
+  // Fae Court: a ring of smaller block-built toadstools clustered around
+  // the main one (mirroring vampire's companion-turret pattern) — each a
+  // reduced-scale instance of the same grid, not a separate primitive.
   const r = mulberry32(dna.seed ^ 0xFA_E00002);
-  const smallStemMat = mat(dna.colors.walls, { roughness: 0.6 });
-  const smallCapMat = mat(dna.colors.trim, { roughness: 0.55 });
   for (let i = 0; i < 3; i++) {
     const ang = (i / 3) * Math.PI * 2 + r() * 0.4;
-    const rad = fp.w * 0.55;
-    const sh = h * 0.35;
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, sh, 8), smallStemMat, Math.cos(ang) * rad, sh / 2, Math.sin(ang) * rad);
-    addMesh(g, new THREE.SphereGeometry(0.22, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), smallCapMat, Math.cos(ang) * rad, sh, Math.sin(ang) * rad)
-      .scale.set(1, 0.5, 1);
+    const rad = fp.w * 0.62;
+    const satellite = new THREE.Group();
+    addBlockFaeStalk(satellite, dna.seed ^ 0xFA_E00020 ^ i, fp.w * 0.32, fp.d * 0.32, h * 0.4, dna.colors.walls, dna.colors.trim, dna.colors.door, {
+      capFlareFrac: 1.8,
+    });
+    satellite.position.set(Math.cos(ang) * rad, 0, Math.sin(ang) * rad);
+    g.add(satellite);
+  }
+  // Firefly motes drifting near the cap edge.
+  const fireflyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#fff4a0'), emissive: new THREE.Color('#ffe060'), emissiveIntensity: 1.0 });
+  for (let i = 0; i < 3; i++) {
+    const ang = (i / 3) * Math.PI * 2;
+    addMesh(g, new THREE.SphereGeometry(0.04, 6, 6), fireflyMat, Math.cos(ang) * fp.w * 0.5, faeCapTopY(h) * 0.9, Math.sin(ang) * fp.d * 0.5);
   }
   return g;
 }
@@ -1361,35 +1332,39 @@ function buildFaeChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xFA_E00003);
-  // Faerie Ring: a literal ring of glowing toadstools around a mossy center.
-  const stemMat = mat(dna.colors.walls, { roughness: 0.6 });
-  const capMat = mat(dna.colors.trim, { roughness: 0.5 });
+  // Faerie Ring: a literal ring of small block-built glowing toadstools
+  // around a mossy, glowing center — no single "main building" the way
+  // the villa/shop have one, matching the old design's intent but now with
+  // genuine block-built caps instead of deformed half-spheres.
   const nRing = 7;
   for (let i = 0; i < nRing; i++) {
     const ang = (i / nRing) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.42;
-    const sh = 0.3 + r() * 0.25;
-    addMesh(g, new THREE.CylinderGeometry(0.04, 0.06, sh, 6), stemMat, Math.cos(ang) * rad, sh / 2, Math.sin(ang) * rad);
-    addMesh(g, new THREE.SphereGeometry(0.14, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat, Math.cos(ang) * rad, sh, Math.sin(ang) * rad)
-      .scale.set(1, 0.5, 1);
+    const rad = Math.min(fp.w, fp.d) * 0.48;
+    const sh = FLOOR_HEIGHT * (0.35 + r() * 0.2);
+    const toadstool = new THREE.Group();
+    addBlockFaeStalk(toadstool, dna.seed ^ 0xFA_E00030 ^ i, 1.0, 1.0, sh, dna.colors.walls, dna.colors.trim, dna.colors.door, {
+      capFlareFrac: 1.6, waistFrac: 0.85,
+    });
+    toadstool.position.set(Math.cos(ang) * rad, 0, Math.sin(ang) * rad);
+    g.add(toadstool);
   }
   const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#e0ffc0'), emissive: new THREE.Color('#a0ff80'), emissiveIntensity: 0.9, roughness: 0.2, transparent: true, opacity: 0.8 });
-  addMesh(g, new THREE.TorusGeometry(Math.min(fp.w, fp.d) * 0.3, 0.03, 6, 20), glowMat, 0, 0.03, 0)
+  addMesh(g, new THREE.TorusGeometry(Math.min(fp.w, fp.d) * 0.32, 0.03, 6, 20), glowMat, 0, 0.03, 0)
     .rotation.x = Math.PI / 2;
   return g;
 }
 
 function buildFaeShop(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.5;
+  const h = FLOOR_HEIGHT * 0.75;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xFA_E00004);
-  // Twilight Market: small mushroom stall + petal decorations + fireflies.
-  const stemMat = mat(dna.colors.walls, { roughness: 0.6 });
-  const capMat = mat(dna.colors.roof, { roughness: 0.5 });
-  addMesh(g, new THREE.CylinderGeometry(0.12, 0.16, h, 8), stemMat, 0, h / 2, 0);
-  addScallopedCap(g, dna.seed ^ 0xFA_E00013, h, fp.w * 0.5, capMat, 0.14).scale.set(1, 0.45, 1);
-  addMushroomGills(g, h - 0.02, fp.w * 0.4, mat(dna.colors.trim, { roughness: 0.7 }), 10);
+  // Twilight Market: a small block-built mushroom stall + petal decorations
+  // + fireflies.
+  addBlockFaeStalk(g, dna.seed ^ 0xFA_E00014, fp.w * 0.6, fp.d * 0.6, h, dna.colors.walls, dna.colors.roof, dna.colors.door, {
+    capFlareFrac: 1.7,
+  });
+  addMushroomGills(g, faeCapTopY(h) - h * 0.06, faeCapRimRadius(fp.w * 0.6, fp.d * 0.6) * 0.85, mat(dna.colors.trim, { roughness: 0.7 }), 10);
   const petalMat = mat(dna.colors.trim, { roughness: 0.6, side: THREE.DoubleSide });
   for (let i = 0; i < 4; i++) {
     const ang = (i / 4) * Math.PI * 2;

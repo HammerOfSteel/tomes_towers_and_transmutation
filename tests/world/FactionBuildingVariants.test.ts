@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -640,67 +640,104 @@ describe('Vampire — BlockKit tapering gothic spire with crenellated iron parap
 });
 
 // ── Fae deep-quality pass (settlement visual fidelity follow-up) ───────────
-// Regression guards for the twisted-stalk + scalloped-cap + gill/wart
-// rework that replaced a smooth cylinder stem and a perfectly circular
-// dome cap standing in for an entire mushroom.
-describe('Fae — twisted stalk + scalloped cap + gills/warts (not a smooth cylinder + dome)', () => {
-  it('produces only finite vertices for the noise-perturbed stalk and cap after displacement', () => {
+// Regression guards for the block-kit toadstool rework that replaced a
+// primitive cylinder stem and a deformed half-sphere dome standing in for
+// an entire mushroom.
+describe('Fae — BlockKit toadstool stalk with scalloped flared cap (not a cylinder + deformed sphere)', () => {
+  it('produces only finite vertices across villa/chapel/shop', () => {
     for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
       expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.fae![kind]!(makeDna(kind, 'fae', 33)));
     }
   });
 
-  it('perturbs the stalk off a perfect cylinder radius (twisted, not smooth taper)', () => {
+  it('builds the villa (Fae Court) from many discrete block meshes (a Lego-style assembly, not a cylinder + a sphere), plus satellite toadstools and firefly accents', () => {
     const g = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
-    const stalk = findBiggestCylinderMesh(g);
+    let sawCylinder = false;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawCylinder = true;
+    });
+    // The old version's main stalk was a CylinderGeometry stem; the block
+    // toadstool's merged mesh is many small unit blocks, so no cylinder
+    // primitive should remain (small SphereGeometry firefly motes are
+    // still fine — those were never the "stem" being replaced).
+    expect(sawCylinder).toBe(false);
+    const stalk = findBiggestMesh(g);
     const pos = stalk.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const xzRadii = new Set<number>();
-    for (let i = 0; i < pos.count; i++) {
-      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
-    }
-    expect(xzRadii.size).toBeGreaterThan(6);
+    expect(pos.count).toBeGreaterThan(60);
   });
 
-  it('scallops the cap rim off a perfect circle (wavy toadstool edge, not a smooth dome)', () => {
-    const g = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
-    // The cap is the biggest SphereGeometry mesh (bigger than the small
-    // wart bumps, which use the same geometry type at a much smaller scale).
-    const sphereMeshes: THREE.Mesh[] = [];
-    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sphereMeshes.push(o); });
-    expect(sphereMeshes.length).toBeGreaterThan(0);
-    let cap = sphereMeshes[0];
-    let biggestRadius = 0;
-    for (const m of sphereMeshes) {
-      m.geometry.computeBoundingSphere();
-      const radius = m.geometry.boundingSphere!.radius;
-      if (radius > biggestRadius) { biggestRadius = radius; cap = m; }
+  it('flares the cap out well beyond the stalk width, then domes back in at the crown (a real mushroom silhouette, not a uniform column)', () => {
+    const grid = buildFaeStalkGrid(3, 6, 6, 8, {});
+    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bh = Math.max(8, Math.round(8 / BLOCK_UNIT));
+    function rowSpan(by: number): number {
+      const cz = Math.round((bd - 1) / 2);
+      let min = Infinity, max = -Infinity;
+      for (let bx = 0; bx < bw; bx++) {
+        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
+      }
+      return max >= min ? max - min : 0;
     }
-    const pos = cap.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const xzRadii = new Set<number>();
-    for (let i = 0; i < pos.count; i++) {
-      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
-    }
-    expect(xzRadii.size).toBeGreaterThan(6);
+    // Mirrors the grid's own `t = by / (bh - 1)` normalization (not
+    // `by / bh`) so these sample points land at the intended phase
+    // boundaries instead of one row short of them.
+    const stalkSpan = rowSpan(Math.round(0.2 * (bh - 1)));
+    const peakSpan = rowSpan(Math.round(0.86 * (bh - 1)));
+    const topSpan = rowSpan(bh - 1);
+    expect(peakSpan).toBeGreaterThan(stalkSpan);
+    expect(topSpan).toBeLessThan(peakSpan);
   });
 
-  it('builds the villa (Fae Court) from many parts (stalk, scalloped cap, gills, warts, doorway, fireflies), not a handful of primitives', () => {
-    const g = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
-    // Stalk tier + cap + 14 gill fins + 5 wart bumps + doorway + 3
-    // fireflies + 3 small toadstools (stem+cap each) = well over 25.
-    expect(countMeshes(g)).toBeGreaterThanOrEqual(25);
+  it('marks the cap with a distinct "spore" bioluminescent accent material, not plain cap colour', () => {
+    const grid = buildFaeStalkGrid(3, 6, 6, 8, {});
+    let sawSpore = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'spore') { sawSpore = true; break; }
+    }
+    expect(sawSpore).toBe(true);
   });
 
-  it('produces a different stalk/cap silhouette per seed (deterministic but seed-varied)', () => {
+  it('carves a real circular portal-sized gap in the block stalk at the front (a genuine hole floating above the ground, not a ground-level arch)', () => {
+    const grid = buildFaeStalkGrid(5, 6, 6, 8, { facade: true });
+    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const cx = Math.round(bw / 2);
+    // Ground level must stay solid (unlike vampire's/elven's ground-level
+    // arches) — the portal floats above it.
+    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(true);
+    let sawCarvedGap = false;
+    for (let by = 1; by < bd + 4; by++) {
+      if (!hasBlock(grid, cx, by, bd - 1)) { sawCarvedGap = true; break; }
+    }
+    expect(sawCarvedGap).toBe(true);
+  });
+
+  it('retains the praised gill-fin, petal, and firefly small accent props', () => {
+    const villa = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
+    let sawGillBox = false, sawFirefly = false;
+    villa.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawGillBox = true;
+      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawFirefly = true;
+    });
+    expect(sawGillBox).toBe(true); // gill fins
+    expect(sawFirefly).toBe(true); // firefly motes
+    const shop = FACTION_BUILDING_VARIANTS.fae!.shop!(makeDna('shop', 'fae', 5));
+    let sawPetal = false;
+    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CircleGeometry') sawPetal = true; });
+    expect(sawPetal).toBe(true); // petal decorations
+  });
+
+  it('is deterministic for the same seed and varies with a different seed', () => {
     const gA = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 1));
-    const gB = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 1));
-    const sumXZ = (g: THREE.Group): number => {
-      const pos = findBiggestCylinderMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
-      let sum = 0;
-      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
-      return sum;
-    };
-    expect(sumXZ(gA)).toBe(sumXZ(gA2));
-    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
+    const gB = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 1));
+    const gC = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 2));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
+    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
+    const posC = findBiggestMesh(gC).geometry.getAttribute('position') as THREE.BufferAttribute;
+    let sumA = 0, sumC = 0;
+    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
+    for (let i = 0; i < posC.count; i++) sumC += posC.getY(i);
+    expect(sumA).not.toBe(sumC);
   });
 });

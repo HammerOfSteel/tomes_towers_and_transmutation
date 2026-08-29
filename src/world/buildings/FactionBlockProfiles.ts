@@ -848,3 +848,176 @@ export function buildVampireSpireGrid(
 
   return grid;
 }
+
+// ── Fae: twisted toadstool stalk + scalloped mushroom cap ───────────────────
+
+export interface FaeStalkOptions {
+  /** Fraction (0-1) of total height where the stalk ends and the cap begins flaring outward (default 0.55). */
+  capStartFrac?: number;
+  /** Fraction of total height where the cap's outward flare peaks, before crowning back in for a domed top (default 0.86). */
+  capPeakFrac?: number;
+  /** Stalk's own mild taper amount at its narrowest, just below the cap (default 0.8 — a gentle gnarled waist, not a dramatic taper). */
+  waistFrac?: number;
+  /** Cap radius fraction at its widest (of the base radius) — mushroom caps oversail the stalk dramatically (default 2.1). */
+  capFlareFrac?: number;
+  /** Radius fraction the very top few levels crown back down to, forming a domed cap-top rather than a flat plateau (default 0.6). */
+  domeFrac?: number;
+  /** Carve a circular whimsical portal doorway into the front (+Z) face, entirely within the stalk phase. */
+  facade?: boolean;
+  /** Portal diameter as a fraction of the stalk's own height range (default 0.4). */
+  facadeWidthFrac?: number;
+  /** Surface irregularity per column; boosted specifically at the cap's rim level for a wavy, scalloped edge (default 0.09). */
+  jitter?: number;
+}
+
+/** Number of `BLOCK_UNIT` levels tall a fae stalk+cap of continuous height `h` resolves to. Mirrors `elvenTrunkBlocksTall()`/`vampireSpireBlocksTall()`. */
+export function faeStalkBlocksTall(h: number): number {
+  return Math.max(8, Math.round(h / BLOCK_UNIT));
+}
+
+/** World-space Y of the cap's domed crown (the true built roofline) — for flush-mounted firefly/spore props. */
+export function faeCapTopY(h: number): number {
+  const bh = faeStalkBlocksTall(h);
+  return (bh - 1) * BLOCK_UNIT + BLOCK_UNIT / 2;
+}
+
+/** World-unit radius of the cap's actual constructed rim (its widest built ring) — for petal/gill props that should sit flush against the real surface instead of an arbitrary radius. Mirrors `elvenWaistRadius()`/`vampireSpireDeckRadius()`. */
+export function faeCapRimRadius(w: number, d: number, opts: FaeStalkOptions = {}): number {
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const cornerDist = Math.hypot(cx, cz) / maxR;
+  const capFlareFrac = Math.min(opts.capFlareFrac ?? 2.1, cornerDist * 0.92);
+  return capFlareFrac * maxR * BLOCK_UNIT;
+}
+
+/**
+ * Fae toadstool occupancy grid: a mildly-tapering stalk (reusing
+ * `smoothTaperRadiusFrac()`, the same shared helper the elven trunk and
+ * vampire spire use) that flares dramatically outward into a broad
+ * mushroom-cap disc, then crowns back down into a domed cap-top — a real
+ * continuous mushroom silhouette carved from block occupancy (the "reuses
+ * taper+flare" technique from the rollout todo), not a smooth cylinder
+ * stalk topped with a separate scalloped-sphere primitive. The cap's rim
+ * level gets amplified per-column noise for a genuinely wavy, irregular
+ * scalloped edge, and a handful of upper cap-surface blocks are
+ * reclassified to a bioluminescent 'spore' accent material — the block
+ * equivalent of the old primitive version's glowing wart bumps. An optional
+ * circular "portal" doorway (constant-radius hole, not an arch that grows
+ * from the ground) carves into the stalk, safely confined to the
+ * near-constant-radius stalk phase so it can never outrun the cap's flare.
+ */
+export function buildFaeStalkGrid(
+  seed: number, w: number, d: number, h: number,
+  opts: FaeStalkOptions = {},
+): BlockGrid {
+  const grid = createBlockGrid();
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const bh = faeStalkBlocksTall(h);
+  const noise2D = createNoise2D(seed);
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const jitterAmt = opts.jitter ?? 0.09;
+
+  const capStartFrac = opts.capStartFrac ?? 0.55;
+  const capPeakFrac = Math.max(capStartFrac + 0.05, opts.capPeakFrac ?? 0.86);
+  const waistFrac = opts.waistFrac ?? 0.8;
+  const domeFrac = opts.domeFrac ?? 0.6;
+  // Same corner-reach clamp technique as the elven canopy: keep the cap's
+  // flare a little under the grid's own diagonal reach so its corners stay
+  // rounded (excluded) at every level instead of filling into a flat slab.
+  const cornerDist = Math.hypot(cx, cz) / maxR;
+  const capFlareFrac = Math.min(opts.capFlareFrac ?? 2.1, cornerDist * 0.92);
+
+  const capStartBy = Math.round(bh * capStartFrac);
+  const capPeakBy = Math.round(bh * capPeakFrac);
+
+  /** Un-jittered radius fraction at level `by`: stalk taper, then cap flare-out, then dome crown-in. */
+  function radiusFracAt(by: number): number {
+    const t = bh > 1 ? by / (bh - 1) : 0;
+    if (t <= capStartFrac) {
+      const u = capStartFrac > 0 ? t / capStartFrac : 1;
+      return smoothTaperRadiusFrac(u, 1, waistFrac);
+    }
+    if (t <= capPeakFrac) {
+      const u = (t - capStartFrac) / (capPeakFrac - capStartFrac);
+      return smoothTaperRadiusFrac(u, waistFrac, capFlareFrac);
+    }
+    const u = capPeakFrac < 1 ? (t - capPeakFrac) / (1 - capPeakFrac) : 1;
+    return smoothTaperRadiusFrac(u, capFlareFrac, domeFrac);
+  }
+
+  const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.4))) : 0;
+  let notchRadius = notchWidth / 2;
+  const notchCy = Math.max(notchRadius + 1, Math.round(capStartBy * 0.5));
+  // Safety clamp (same spirit as the elven trunk's/vampire spire's
+  // frame-corner clamp): the portal's frame must stay entirely within the
+  // stalk's near-constant-radius phase, well clear of where the cap begins
+  // flaring, so the frame ring can never poke out past a stalk surface
+  // that's already receded/expanded behind it.
+  const maxNotchTop = capStartBy - 2;
+  if (opts.facade && notchCy + notchRadius + 1 > maxNotchTop) {
+    notchRadius = Math.max(1, maxNotchTop - notchCy - 1);
+  }
+  const notchCx = Math.round(bw / 2);
+  const notchDepth = 2;
+
+  for (let bx = 0; bx < bw; bx++) {
+    for (let bz = 0; bz < bd; bz++) {
+      const dx = (bx - cx) / maxR, dz = (bz - cz) / maxR;
+      const dNorm = Math.hypot(dx, dz);
+      if (dNorm > capFlareFrac + 0.5) continue; // hard cutoff well outside any possible radius
+
+      for (let by = 0; by < bh; by++) {
+        // Rim-boosted noise: near the cap's widest ring the amplitude is
+        // amplified so the perimeter reads as a genuinely wavy, scalloped
+        // toadstool edge rather than a smooth circular disc.
+        const distToPeak = Math.abs(by - capPeakBy) / Math.max(1, bh * 0.12);
+        const rimBoost = 1 + Math.max(0, 1 - distToPeak) * 1.6;
+        const n = noise2D(bx * 0.55 + by * 0.08, bz * 0.55 - by * 0.06);
+        const radiusFrac = radiusFracAt(by) * (1 + n * jitterAmt * rimBoost);
+        if (dNorm > radiusFrac) continue;
+
+        const inCap = by >= capStartBy;
+        let material = inCap ? 'cap' : 'stalk';
+
+        if (opts.facade && !inCap && bz >= bd - notchDepth) {
+          // Circular whimsical portal: a constant-radius hole (not an arch
+          // that grows from the ground) — carved entirely within the
+          // near-constant-radius stalk phase, so it can never outrun the
+          // cap's dramatic flare above it.
+          const dyToCentre = by - notchCy;
+          const inNotch = Math.abs(bx - notchCx) * Math.abs(bx - notchCx) + dyToCentre * dyToCentre < notchRadius * notchRadius;
+          const inFrame = Math.abs(bx - notchCx) * Math.abs(bx - notchCx) + dyToCentre * dyToCentre < (notchRadius + 1) * (notchRadius + 1);
+          if (inNotch) continue; // carved doorway
+          if (inFrame) material = 'facade'; // kept jamb ring, promoted material
+        }
+        setBlock(grid, bx, by, bz, material);
+      }
+    }
+  }
+
+  // Bioluminescent spore accents: a handful of exposed upper-cap-surface
+  // blocks reclassified to the 'spore' glow material — deterministic per
+  // seed, the block-built equivalent of the old primitive version's raised
+  // glowing wart bumps.
+  const r = mulberry32(seed ^ 0xFA_E0_ACC0);
+  const capSurface = [...grid.cells.entries()].filter(([k, matKey]) => {
+    if (matKey !== 'cap') return false;
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    if (by < capStartBy) return false;
+    return !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1)
+      || !hasBlock(grid, bx, by + 1, bz);
+  });
+  const sporeCount = Math.min(capSurface.length, 3 + Math.floor(r() * 4));
+  for (let i = 0; i < sporeCount; i++) {
+    const idx = Math.floor(r() * capSurface.length);
+    const [sporeKey] = capSurface[idx] ?? [];
+    if (sporeKey) grid.cells.set(sporeKey, 'spore');
+  }
+
+  return grid;
+}

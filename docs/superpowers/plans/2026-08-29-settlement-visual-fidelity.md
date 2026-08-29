@@ -1854,6 +1854,108 @@ camera limitation, not new risk from this change. All throwaway diagnostic
 files (`tests/e2e/_tmp_vampire_diag.spec.ts`, `tests/world/_tmp_vampire_diag
 .test.ts`, `/tmp/vampire_*.png`) were deleted after use.
 
+### Phase 2e.14 — Fae: block-kit toadstool stalk + scalloped, domed mushroom cap — ✅ DONE
+
+Replaced the primitive fae builders (`addScallopedCap()` — a deformed
+half-`SphereGeometry` — plus a separate `CylinderGeometry` stalk via
+`addWeatheredTier()`, and `addMushroomWarts()` — bolted-on glowing sphere
+bumps) with a genuine `buildFaeStalkGrid()` occupancy grid in
+`FactionBlockProfiles.ts`, extending the shared `smoothTaperRadiusFrac()`
+taper helper (already reused by elven's canopy and vampire's spire) to a
+**third** phase, giving fae its own distinct three-phase radius profile
+unlike either prior race:
+
+1. **Stalk phase** (0 → `capStartFrac`, default 0.55): a mild taper from
+   the base radius down to a near-constant `waistFrac` (default 0.8) — a
+   gently gnarled toadstool stalk, not a dramatic taper like vampire's
+   gaunt spire or a perfectly smooth cylinder like the old primitive.
+2. **Cap flare phase** (`capStartFrac` → `capPeakFrac`, default 0.86):
+   flares dramatically outward to `capFlareFrac` (default 2.1x the base
+   radius, clamped against the grid's own corner reach the same way
+   elven's canopy and vampire's plinth are), producing a real oversailing
+   mushroom-cap silhouette.
+3. **Dome crown phase** (`capPeakFrac` → 1.0): narrows back down to
+   `domeFrac` (default 0.6) — this final "crown back in" phase is new,
+   present in neither elven (taper + flare, no crown-back) nor vampire
+   (monotonic taper only), and is what makes the cap read as a rounded
+   dome rather than a flat mushroom-cap plateau.
+
+The cap's rim level (near the flare peak) gets amplified per-column noise
+(`rimBoost`) so the perimeter reads as a genuinely wavy, irregular
+scalloped edge — the same effect the old `addScallopedCap()` achieved via
+vertex displacement, now baked into block occupancy instead. A handful of
+exposed upper-cap-surface blocks are reclassified to a bioluminescent
+`'spore'` glow material via the same deterministic-per-seed
+`mulberry32(seed ^ magic)` random-pick technique vampire's `'bloodglow'`
+accents established, replacing the old bolted-on `addMushroomWarts()`
+sphere props with genuine block-grown glowing warts.
+
+**Facade**: a circular whimsical "portal" doorway — a constant-radius
+hole floating above the ground (`(bx - notchCx)² + (by - notchCy)² <
+notchRadius²`), deliberately distinct from both elven's and vampire's
+arches (which both grow from ground level, `by = 0`). A proactive safety
+clamp (`maxNotchTop = capStartFrac`'s block row `- 2`) keeps the portal's
+frame entirely within the stalk's near-constant-radius phase, so it can
+never poke out past a stalk surface that's already flared away behind it
+— the same defensive pattern used for vulperia's/elven's/vampire's
+doorways, applied here from day one.
+
+No materials are chamfer-suppressed (unlike vampire's hard-edged
+`'iron'`/`'facade'` or dwarven's `'buttress'`) — fae's whimsical theme
+calls for everything reading soft and organic, mirroring elven's
+"everything gently chamfered" choice. Gill ribs (thin radiating fins,
+naturally thin/flat geometry ill-suited to block-kit's cubic cells) and
+firefly motes remain small bolted-on props per the established "small
+props are fine" precedent.
+
+Rewrote `buildFaeVilla()` (Fae Court: main toadstool + a ring of 3 smaller
+block-built satellite toadstools, mirroring vampire's companion-turret
+pattern, + gill ribs + firefly motes), `buildFaeChapel()` (Faerie Ring: a
+literal ring of 7 small block-built glowing toadstools around a mossy
+glowing torus — no single "main building", matching the old design's
+intent but with genuine block-built caps), and `buildFaeShop()` (Twilight
+Market: a smaller block-built toadstool stall + gill ribs + petals +
+fireflies) to use the new grid via a new `addBlockFaeStalk()` assembly
+helper (mirrors `addBlockVampireSpire()`'s build+mesh+center pattern).
+
+**Tests (TDD, written first)**: a new `describe('FactionBlockProfiles —
+fae twisted stalk + scalloped mushroom cap', ...)` block in
+`FactionBlockProfiles.test.ts` (7 tests: grounded base, dramatic cap
+flare-out vs. stalk width, dome crown-back at the very top, stalk/cap
+material assignment, circular-portal facade carve that does *not* touch
+ground level, determinism, spore glow-material presence) — all passed on
+first implementation attempt. Rewrote the pre-existing fae `describe`
+block in `FactionBuildingVariants.test.ts` (which asserted properties of
+the old primitive geometry — cylinder radius perturbation, sphere-cap
+scalloping) to instead assert block-kit properties (no `CylinderGeometry`
+stem remains, dramatic flare-then-dome row-span profile via the grid
+directly, spore material presence, circular non-ground-level portal
+carve, retained gill/petal/firefly props, determinism). One test-writing
+bug was caught and fixed during this pass: the grid's own radius profile
+normalizes height as `t = by / (bh - 1)`, not `by / bh` — an initial test
+draft that sampled `Math.round(bh * capPeakFrac)` landed one row past the
+true phase-boundary row and produced a false failure; corrected to
+`Math.round(capPeakFrac * (bh - 1))` to match the grid's own convention.
+Full targeted suite (`BlockKit.test.ts` + `FactionBlockProfiles.test.ts` +
+`FactionBuildingVariants.test.ts`) — 141/141 passed. `tsc --noEmit` — 143
+errors (2 fewer than the prior 145-error baseline, from removed dead code;
+no new errors, none in the touched files).
+
+Live Settlement Lab screenshots (fae faction, `town` tier) — this time the
+camera angle happened to legibly show the vertical silhouette (unlike
+vampire's screenshot-legibility gap) — clearly show domed purple mushroom
+caps with a visible wavy rim atop pale stalks, firefly motes, and a
+glowing faerie-ring torus, visually distinct from the generic-fallback
+buildings also present in the same shots (a pre-existing per-race
+building-kind coverage gap tracked under `p2b-increment3`, not a defect
+introduced here). Combined with the passing regression suite and a direct
+code-level diagnostic (`FACTION_BUILDING_VARIANTS.fae.villa/chapel/shop`
+called directly, confirming real bounding boxes and 20-30 discrete meshes
+per building), this is accepted as sufficient verification. All throwaway
+diagnostic files (`tests/e2e/_tmp_fae_diag.spec.ts`,
+`tests/world/_tmp_fae_diag.test.ts`, `/tmp/fae_town*.png`) were deleted
+after use.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.
