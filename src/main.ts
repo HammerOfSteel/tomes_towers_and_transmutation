@@ -2235,34 +2235,6 @@ async function main() {
       return;
     }
 
-    // Perf diagnostic overlay + isolation toggles (dev builds only) — see
-    // perfEl/perfState above. Ctrl+Shift+F shows/hides the readout;
-    // Ctrl+Shift+1/2/3 A/B-test shadows / post-processing / physics
-    // stepping in isolation to identify the real framerate bottleneck.
-    if (import.meta.env.DEV && e.ctrlKey && e.shiftKey && e.key === 'F') {
-      e.preventDefault();
-      perfState.visible = !perfState.visible;
-      perfEl.style.display = perfState.visible ? 'block' : 'none';
-      return;
-    }
-    if (import.meta.env.DEV && e.ctrlKey && e.shiftKey && e.key === '1') {
-      e.preventDefault();
-      perfState.shadowsEnabled = !perfState.shadowsEnabled;
-      renderer.shadowMap.enabled = perfState.shadowsEnabled;
-      keyLight.castShadow = perfState.shadowsEnabled;
-      return;
-    }
-    if (import.meta.env.DEV && e.ctrlKey && e.shiftKey && e.key === '2') {
-      e.preventDefault();
-      perfState.postFxEnabled = !perfState.postFxEnabled;
-      return;
-    }
-    if (import.meta.env.DEV && e.ctrlKey && e.shiftKey && e.key === '3') {
-      e.preventDefault();
-      perfState.physicsEnabled = !perfState.physicsEnabled;
-      return;
-    }
-
     // V — toggle between isometric and WoW-style third-person camera
     if ((e.key === 'v' || e.key === 'V') && !gameMenu.isOpen && !editMode.isActive) {
       cameraRig.toggleMode(player.facingAngleRad);
@@ -2520,41 +2492,6 @@ async function main() {
     borderRadius: '4px',
   });
   document.body.appendChild(waterLabDebugEl);
-
-  // ── Perf diagnostic overlay (DEV only) ──────────────────────────────────
-  // Temporary instrumentation added to isolate the reported overworld
-  // framerate problem: shows a rolling FPS average, renderer.info draw
-  // stats, and per-frame timing breakdown (physics step / scene update /
-  // render), plus keyboard toggles to A/B-test likely culprits without a
-  // code round-trip. Ctrl+Shift+F toggles visibility; Ctrl+Shift+1/2/3
-  // toggle shadows / post-processing / physics stepping respectively.
-  // Safe to leave in: gated entirely behind import.meta.env.DEV.
-  const perfEl = document.createElement('div');
-  Object.assign(perfEl.style, {
-    position: 'fixed',
-    top: '8px',
-    right: '8px',
-    padding: '6px 10px',
-    background: 'rgba(0,0,0,0.7)',
-    color: '#9cff9c',
-    font: '12px/1.4 monospace',
-    whiteSpace: 'pre',
-    zIndex: '700',
-    pointerEvents: 'none',
-    display: 'none',
-    borderRadius: '4px',
-  });
-  if (import.meta.env.DEV) document.body.appendChild(perfEl);
-  const perfState = {
-    visible: false,
-    shadowsEnabled: true,
-    postFxEnabled: true,
-    physicsEnabled: true,
-    frameTimes: [] as number[],
-    physicsMs: 0,
-    updateMs: 0,
-    renderMs: 0,
-  };
   const controlsOverlay = new ControlsOverlay();
 
   // ── Exterior interaction prompt ───────────────────────────────────────────
@@ -2667,14 +2604,10 @@ async function main() {
       return;
     }
 
-    const _perfFrameStart = import.meta.env.DEV ? performance.now() : 0;
-
     // 1. Physics — G1: update culling origin to player position each frame
     const _pp = player.group.position;
     physics.cullingOrigin = { x: _pp.x, y: _pp.y, z: _pp.z };
-    const _perfPhysicsStart = import.meta.env.DEV ? performance.now() : 0;
-    if (!import.meta.env.DEV || perfState.physicsEnabled) physics.step(dt);
-    if (import.meta.env.DEV) perfState.physicsMs = performance.now() - _perfPhysicsStart;
+    physics.step(dt);
 
     // 2-7. Game simulation — paused while editor, pause menu, or death screen is open
     if (!editMode.isActive && !gameMenu.isOpen && !deathScreen.isVisible && !spellBook.isOpen && !devPanel.isOpen) {
@@ -2808,9 +2741,7 @@ async function main() {
         const _dayNum = Math.floor(TimeSystem.instance.hour / 24);
         _weatherSys.update(dt, player.group.position, TimeSystem.instance.hour, _dayNum);
         const _npcBlocking = MerchantUI.isOpen || isNPCDialogueOpen();
-        const _perfUpdateStart = import.meta.env.DEV ? performance.now() : 0;
         overworld.update(dt, input.state.interact && !_npcBlocking, cameraRig.camera);
-        if (import.meta.env.DEV) perfState.updateMs = performance.now() - _perfUpdateStart;
         // A5: pass current hour so tower details (lights, gate) can respond
         (overworld as any)._timeHour = TimeSystem.instance.hour % 24;
 
@@ -3440,29 +3371,7 @@ async function main() {
 
     // 10. Render  (occlusion update runs here — single call, all modes)
     _occlusionMgr?.update(cameraRig.camera, player.group.position, dt);
-    const _perfRenderStart = import.meta.env.DEV ? performance.now() : 0;
-    if (import.meta.env.DEV && !perfState.postFxEnabled) {
-      renderer.render(scene, cameraRig.camera);
-    } else {
-      composer.render(dt);
-    }
-    if (import.meta.env.DEV) {
-      perfState.renderMs = performance.now() - _perfRenderStart;
-      const _frameMs = performance.now() - _perfFrameStart;
-      perfState.frameTimes.push(_frameMs);
-      if (perfState.frameTimes.length > 60) perfState.frameTimes.shift();
-      if (perfState.visible) {
-        const _avgMs = perfState.frameTimes.reduce((a, b) => a + b, 0) / perfState.frameTimes.length;
-        const _fps = _avgMs > 0 ? 1000 / _avgMs : 0;
-        const _info = renderer.info;
-        perfEl.textContent =
-          `FPS: ${_fps.toFixed(1)}  (${_avgMs.toFixed(1)} ms/frame avg60)\n` +
-          `physics: ${perfState.physicsMs.toFixed(2)}ms  update: ${perfState.updateMs.toFixed(2)}ms  render: ${perfState.renderMs.toFixed(2)}ms\n` +
-          `drawCalls: ${_info.render.calls}  tris: ${_info.render.triangles}\n` +
-          `geoms: ${_info.memory.geometries}  texs: ${_info.memory.textures}\n` +
-          `shadows:${perfState.shadowsEnabled ? 'ON' : 'off'}(^+1)  postfx:${perfState.postFxEnabled ? 'ON' : 'off'}(^+2)  physics:${perfState.physicsEnabled ? 'ON' : 'off'}(^+3)`;
-      }
-    }
+    composer.render(dt);
 
     // 11. Creative mode per-frame update (dev only)
     if (import.meta.env.DEV) CreativeMode.update(dt);
