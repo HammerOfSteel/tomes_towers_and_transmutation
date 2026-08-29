@@ -219,6 +219,93 @@ describe('BlockKit — single-block geometry sanity', () => {
   });
 });
 
+describe('BlockKit — geometric (winding-based) normals must agree with the stored lighting normals', () => {
+  // THREE.js backface culling (material.side, default THREE.FrontSide) uses
+  // the triangle's *winding order* (screen-space vertex order), NOT the
+  // explicit `normal` buffer attribute — the two are independent and can
+  // silently disagree. If a triangle's vertices are wound so its geometric
+  // front face points inward while its `normal` attribute still (correctly)
+  // points outward, the wall is invisible from outside (culled) and only
+  // visible from inside the building — exactly the "front of the building
+  // is see-through, only the inside/back shows" bug reported live. This
+  // suite asserts they agree for every non-indexed triangle blockGeometry()
+  // can produce, so this class of bug can never silently regress again.
+  function geometricNormal(pos: ArrayLike<number>, base: number): THREE.Vector3 {
+    const a = new THREE.Vector3(pos[base]!, pos[base + 1]!, pos[base + 2]!);
+    const b = new THREE.Vector3(pos[base + 3]!, pos[base + 4]!, pos[base + 5]!);
+    const c = new THREE.Vector3(pos[base + 6]!, pos[base + 7]!, pos[base + 8]!);
+    return new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+  }
+
+  function assertWindingMatchesStoredNormals(geo: THREE.BufferGeometry, label: string, minDot = 0.9): void {
+    const pos = geo.attributes.position!.array;
+    const norm = geo.attributes.normal!.array;
+    const triCount = pos.length / 9;
+    expect(triCount).toBeGreaterThan(0);
+    for (let t = 0; t < triCount; t++) {
+      const base = t * 9;
+      const geomN = geometricNormal(pos, base);
+      // Average the (flat-shaded, identical-per-vertex) stored normal over the triangle's 3 verts.
+      const storedN = new THREE.Vector3(norm[base]!, norm[base + 1]!, norm[base + 2]!);
+      const dot = geomN.dot(storedN);
+      expect(dot, `${label}: triangle ${t} geometric normal (${geomN.toArray()}) vs stored normal (${storedN.toArray()})`).toBeGreaterThan(minDot);
+    }
+  }
+
+  it('a fully-exposed sharp block (no chamfer): every side-wall triangle winds outward', () => {
+    const geo = blockGeometry(
+      { NW: false, NE: false, SE: false, SW: false },
+      { N: true, S: true, E: true, W: true, U: false, D: false },
+      {},
+    );
+    assertWindingMatchesStoredNormals(geo, 'sharp side walls');
+  });
+
+  it('a fully-chamfered isolated block: every diagonal chamfer-face triangle winds outward', () => {
+    const geo = blockGeometry(
+      { NW: true, NE: true, SE: true, SW: true },
+      { N: true, S: true, E: true, W: true, U: false, D: false },
+      {},
+    );
+    assertWindingMatchesStoredNormals(geo, 'chamfered side walls');
+  });
+
+  it('a flat-capped top face (U) winds upward (+Y)', () => {
+    const geo = blockGeometry(
+      { NW: false, NE: false, SE: false, SW: false },
+      { N: false, S: false, E: false, W: false, U: true, D: false },
+      { topBevel: false },
+    );
+    assertWindingMatchesStoredNormals(geo, 'flat top cap');
+  });
+
+  it('a flat bottom face (D) winds downward (-Y)', () => {
+    const geo = blockGeometry(
+      { NW: false, NE: false, SE: false, SW: false },
+      { N: false, S: false, E: false, W: false, U: false, D: true },
+      {},
+    );
+    assertWindingMatchesStoredNormals(geo, 'flat bottom cap');
+  });
+
+  it('a topBevel roofline block (sloped collar + inset cap) winds outward/upward throughout', () => {
+    const geo = blockGeometry(
+      { NW: true, NE: true, SE: true, SW: true },
+      { N: true, S: true, E: true, W: true, U: true, D: false },
+      { topBevel: true },
+    );
+    // The sloped collar band deliberately stores an approximate, softened
+    // normal (a fixed partial upward tilt, not the exact slope normal — see
+    // blockGeometry()'s collar-band code) for a smoother-looking bevel
+    // highlight, so its dot product with the true geometric normal is
+    // lower than the other (exact-normal) cases even when winding is
+    // correct. A strict >0.9 threshold would false-positive on that
+    // intentional softening; >0 still fails hard (~-1) on genuine
+    // winding inversion, which is the only thing this test guards against.
+    assertWindingMatchesStoredNormals(geo, 'topBevel collar + cap', 0.5);
+  });
+});
+
 describe('BlockKit — meshBlockGrid (full grid -> THREE.Group)', () => {
   function samplePalette(): Record<string, THREE.Material> {
     return {

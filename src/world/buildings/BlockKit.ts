@@ -167,7 +167,16 @@ function scaleTowardCenter(pts: [number, number][], factor: number): [number, nu
 /** Fan-triangulate a convex polygon (assumed wound consistently) at a fixed Y, non-indexed (flat shading). */
 function pushFanCap(positions: number[], normals: number[], pts: [number, number][], y: number, normalY: 1 | -1): void {
   if (pts.length < 3) return;
-  const winding = normalY === 1 ? 1 : -1; // flip winding for downward-facing cap
+  // The outline is wound clockwise as viewed from above (see the module-level
+  // comment above buildOutlinePoints()). THREE.js treats a triangle as
+  // front-facing when its vertices appear counter-clockwise *from the
+  // direction its normal points* — so an upward-facing (+Y) triangle needs
+  // its vertices to read counter-clockwise when viewed from above, which
+  // means reversing the (clockwise) outline order to (p0, pB, pA); a
+  // downward-facing (-Y) triangle is viewed from below, where the same
+  // clockwise-from-above sequence already reads counter-clockwise, so it
+  // keeps the outline's own order (p0, pA, pB).
+  const winding = normalY === 1 ? -1 : 1;
   for (let i = 1; i < pts.length - 1; i++) {
     const p0 = pts[0]!, pA = pts[i]!, pB = pts[i + 1]!;
     const tri = winding === 1 ? [p0, pA, pB] : [p0, pB, pA];
@@ -198,7 +207,15 @@ function pushSideQuad(
   const b: [number, number, number] = [x2, yBottom, z2];
   const c: [number, number, number] = [x2, yTop, z2];
   const d: [number, number, number] = [x1, yTop, z1];
-  for (const tri of [[a, b, c], [a, c, d]]) {
+  // Reversed from the naive (a,b,c)/(a,c,d) strip order: THREE.js treats a
+  // triangle as front-facing when its vertices read counter-clockwise as
+  // viewed from the direction its normal points (the outward direction
+  // computed above), and the naive order reads clockwise from outside —
+  // producing a wall whose front face points *inward*, invisible from
+  // outside and only visible from inside the building (the reported
+  // "front of the building is see-through" bug). Swapping each triangle's
+  // last two vertices reverses the winding without changing the quad shape.
+  for (const tri of [[a, c, b], [a, d, c]]) {
     for (const v of tri) {
       positions.push(v[0], v[1], v[2]);
       normals.push(nx, 0, nz);
@@ -259,7 +276,9 @@ export function blockGeometry(
         nx /= len; nz /= len;
         const midX = (outerA[0] + outerB[0]) / 2, midZ = (outerA[1] + outerB[1]) / 2;
         if (nx * midX + nz * midZ < 0) { nx = -nx; nz = -nz; }
-        for (const tri of [[a, b, c], [a, c, d]]) {
+        // Reversed winding — see pushSideQuad()'s comment for why the naive
+        // (a,b,c)/(a,c,d) order produces an inward-facing front face.
+        for (const tri of [[a, c, b], [a, d, c]]) {
           for (const v of tri) { positions.push(v[0], v[1], v[2]); normals.push(nx, 0.3, nz); }
         }
       }

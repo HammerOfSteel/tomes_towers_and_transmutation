@@ -1608,6 +1608,65 @@ realistic camera distance (not close flattering crops) before proceeding
 to the next faction — this phase does not get marked done as a whole until
 every non-exempt faction has passed its own individual checkpoint.
 
+### Phase 2e.11 — Critical bug: block-kit fronts rendered see-through (winding-order bug) — ✅ FIXED
+
+**Symptom (user-reported, 8 live screenshots):** every block-kit-built
+building (vulperia dens, dwarven halls, elven trunks — every race already
+migrated to `BlockKit.ts`) rendered with its near/front-facing walls
+invisible, showing the interior/back geometry through the front instead of
+a solid exterior surface.
+
+**Root cause:** `BlockKit.ts`'s `blockGeometry()` manually computes and
+stores a correct, outward-pointing `normal` buffer attribute per triangle
+(for lighting), but three of its triangle-construction sites — the side
+wall/chamfer quads (`pushSideQuad()`), the top/bottom fan caps
+(`pushFanCap()`), and the topBevel sloped-collar band inside
+`blockGeometry()` itself — built each triangle's **vertex order** with the
+opposite handedness from that stored normal. THREE.js's default
+backface culling (`material.side = THREE.FrontSide`, used everywhere in
+this codebase — no material sets `DoubleSide`/`BackSide`) depends only on
+vertex winding, not the separately-authored normal attribute, so it culled
+exactly the faces that should have been visible from outside and rendered
+the geometrically-"front" (but logically inward-facing) triangles instead
+— precisely "front invisible, only the inside/back shows."
+
+**Why 110/110 "passing" tests didn't catch it:** every existing test
+checked vertex count, NaN-safety, and determinism — none checked that the
+*geometric* (cross-product) normal of a triangle agreed with its *stored*
+(lighting) normal. Winding and the stored normal attribute are independent
+in THREE.js and can silently diverge.
+
+**Fix:** for each of the three sites, reversed the triangle vertex order
+(`(a,b,c),(a,c,d)` → `(a,c,b),(a,d,c)` for the two quad-builder sites;
+inverted the up/down ternary for the fan-cap site) without touching vertex
+positions, shape, or the stored normal attribute itself — a pure winding
+flip.
+
+**New regression coverage** (`tests/world/BlockKit.test.ts`, describe
+block `"BlockKit — geometric (winding-based) normals must agree with the
+stored lighting normals"`, 5 tests): builds real geometry via
+`blockGeometry()` for sharp side walls, chamfered side walls, a flat top
+cap, a flat bottom cap, and a topBevel roofline block, then for every
+non-indexed triangle computes the true geometric normal via cross product
+and asserts it has a positive dot product with the stored normal
+(threshold 0.9 for the exact-normal cases; 0.5 for the topBevel collar
+band, which deliberately stores an approximate softened normal rather than
+the exact slope normal for a smoother bevel highlight — a genuine winding
+inversion would still fail this hard, at ~-1). This is the first test in
+the suite that would catch this exact bug class, and it now guards all
+current and future block-kit races since the fix lives entirely in the
+shared engine.
+
+**Verification performed:** all 5 new tests pass; the full targeted suite
+(`BlockKit.test.ts` + `FactionBlockProfiles.test.ts` +
+`FactionBuildingVariants.test.ts`, 115 tests) passes with zero
+regressions; `tsc --noEmit` shows no new errors (145 pre-existing/baseline
+errors, unchanged); the full project suite shows only the same 12
+pre-existing unrelated failures (talentSystem, WaterMaterial, enemyLoader,
+towerGenerator, main.startup.smoke); and live Settlement Lab screenshots
+(elven, dwarven, vulperia, close-up outside-facing angles) confirm
+building fronts now render fully solid with no see-through artifact.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.
