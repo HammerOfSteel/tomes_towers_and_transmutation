@@ -53,14 +53,31 @@ export interface SettlementPlan {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-const SETTLEMENT_MODEL_SCALE = 0.095;
+// buildSettlement()'s ward-filling algorithms (fillWardOrganically/Grid/etc.
+// in SettlementModelGenerator.ts) place buildings using fixed *absolute*
+// pixel sizes (roughly 14-22px along, 11-16px deep, plus 3-6px street/gap
+// clearance — see fillWardOrganically's ALONG/DEPTH/STREET/BLDG_GAP
+// constants). The previous PARAMS_BY_TYPE width/height below (320x240 for a
+// village) gave each of a village's ~8 Voronoi wards only a sliver of pixel
+// area — nowhere near enough room for even one building-sized rect once
+// street clearance is subtracted, so almost every non-farm ward yielded
+// zero buildings (a village settlement placed only ~2-3 buildings total,
+// regardless of seed). WIDTH_HEIGHT_SCALE_FACTOR inflates the generator's
+// working canvas so each ward has genuine room to pack multiple buildings,
+// while SETTLEMENT_MODEL_SCALE is shrunk by the same factor so the final
+// *world-tile* footprint (post grid-mapping below) stays the same as
+// before — settlements don't get bigger on the map, they get properly
+// filled in. See tests/levels/settlementGenerator.test.ts's "building
+// density" tests for the seed sweep that caught this regression.
+const WIDTH_HEIGHT_SCALE_FACTOR = 3;
+const SETTLEMENT_MODEL_SCALE = 0.095 / WIDTH_HEIGHT_SCALE_FACTOR;
 const DIRS8: [number, number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]];
 const MAX_BUILDING_SNAP_RADIUS = 12;
 
-const PARAMS_BY_TYPE: Record<SettlementType, Omit<GeneratorParams, 'seed' | 'type' | 'layout' | 'faction' | 'warp'>> = {
-  village: { nPatches: 8, nGates: 2, walled: false, hasCitadel: false, hasPlaza: true, width: 320, height: 240 },
-  town: { nPatches: 12, nGates: 3, walled: false, hasCitadel: false, hasPlaza: true, width: 360, height: 280 },
-  city: { nPatches: 18, nGates: 4, walled: true, hasCitadel: true, hasPlaza: true, width: 420, height: 320 },
+export const PARAMS_BY_TYPE: Record<SettlementType, Omit<GeneratorParams, 'seed' | 'type' | 'layout' | 'faction' | 'warp'>> = {
+  village: { nPatches: 8, nGates: 2, walled: false, hasCitadel: false, hasPlaza: true, width: 320 * WIDTH_HEIGHT_SCALE_FACTOR, height: 240 * WIDTH_HEIGHT_SCALE_FACTOR },
+  town: { nPatches: 12, nGates: 3, walled: false, hasCitadel: false, hasPlaza: true, width: 360 * WIDTH_HEIGHT_SCALE_FACTOR, height: 280 * WIDTH_HEIGHT_SCALE_FACTOR },
+  city: { nPatches: 18, nGates: 4, walled: true, hasCitadel: true, hasPlaza: true, width: 420 * WIDTH_HEIGHT_SCALE_FACTOR, height: 320 * WIDTH_HEIGHT_SCALE_FACTOR },
 };
 
 export function planSettlement(
