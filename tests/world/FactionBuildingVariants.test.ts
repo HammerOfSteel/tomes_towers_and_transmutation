@@ -282,3 +282,48 @@ describe('Undead — tiered weathered spire + stone arch doorway (not one tapere
     expect(sumXZ(gA)).not.toBe(sumXZ(gB));
   });
 });
+
+// ── Dwarven deep-quality pass (settlement visual fidelity follow-up) ───────
+// Regression guards for the coursed-masonry wall + vault-wheel door rework
+// that replaced a single smooth full-height box standing in for the whole
+// building, with no roofline at all.
+describe('Dwarven — coursed stone masonry + vault-wheel door (not one smooth box)', () => {
+  it('builds the villa (Guild Hall) as multiple stacked stone courses, not one full-height box', () => {
+    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+    const totalBox = new THREE.Box3().setFromObject(g);
+    const totalHeight = totalBox.max.y - totalBox.min.y;
+    let anyBoxSpansMostOfHeight = false;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
+        o.geometry.computeBoundingBox();
+        const bb = o.geometry.boundingBox!;
+        const meshHeight = (bb.max.y - bb.min.y) * o.scale.y;
+        if (meshHeight > totalHeight * 0.6) anyBoxSpansMostOfHeight = true;
+      }
+    });
+    // The old version was one BoxGeometry spanning the entire wall height
+    // (100% of total). Coursed masonry means every individual course is a
+    // fraction of the whole building's height.
+    expect(anyBoxSpansMostOfHeight).toBe(false);
+  });
+
+  it('assembles the villa from many parts (courses, cornice, trim, pillars w/ caps, door, vault wheel), not a handful of primitives', () => {
+    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+    // 4 courses + 1 cornice + 1 trim band + 4 pillars * (1 shaft + 2 rings)
+    // + 1 door + 3 iron bands + 1 vault-wheel hub + 6 vault-wheel spokes
+    // + banner + chimney = 29; verified 31 in practice (a comfortable margin).
+    expect(countMeshes(g)).toBeGreaterThanOrEqual(29);
+  });
+
+  it('is deterministic for the same seed', () => {
+    const gA = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+    const gB = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
+  });
+
+  it('produces only finite vertices across villa/chapel/shop', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.dwarven![kind]!(makeDna(kind, 'dwarven', 8)));
+    }
+  });
+});

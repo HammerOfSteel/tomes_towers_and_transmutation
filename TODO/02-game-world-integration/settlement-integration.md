@@ -160,7 +160,13 @@ for the full design/plan.
     was picking up the seed-independent floating orb (a non-indexed
     `IcosahedronGeometry`) instead of an actual spire tier.
     Playwright-verified from both face-on and rotated angles.
-  - [ ] Dwarven — stone blocks need real coursed-masonry/vault detail.
+  - [x] Dwarven — **Done.** Wall replaced with 4 stacked stone courses
+    (`addStoneCourses()`, subtle ziggurat taper + visible seams) topped
+    with a heavy corniced cap slab (previously an abrupt flat-topped box
+    with no roofline at all), plus a bank-vault-style door wheel
+    (`addVaultWheel()`: hub + 6 spoke boxes, never a flat ring) shared
+    between the Guild Hall's door and the Trade Vault. 46 unit tests (up
+    from 42). Playwright-verified from both face-on and rotated angles.
   - [ ] Elven — trunk needs real bark/root/woven-platform detail.
   - [ ] Vampire — gothic spire needs real tracery/buttress detail.
   - [ ] Fae — mushroom cap needs real gill/spore/twisted-stalk detail.

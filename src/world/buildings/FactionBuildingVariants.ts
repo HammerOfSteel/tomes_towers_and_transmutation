@@ -681,25 +681,68 @@ function buildElvenShop(dna: BuildingDNA): THREE.Group {
 // squat, heavy, blocky stone construction with carved geometric bands, thick
 // pillars, and iron-banded vault doors — built to endure, not to charm.
 
+/**
+ * A stack of horizontal stone "courses" (slabs), each progressively
+ * inset very slightly going up — real coursed dwarven masonry (built to
+ * look carved from a mountain, tapering subtly like a ziggurat) with a
+ * visible seam between every course, and a heavy corniced cap slab
+ * finishing the roofline. Replaces a single smooth box standing in for
+ * an entire wall+roof.
+ */
+function addStoneCourses(g: THREE.Group, w: number, d: number, h: number, material: THREE.Material, courses = 4, cz = 0): void {
+  const courseH = h / courses;
+  for (let i = 0; i < courses; i++) {
+    const inset = i * 0.025;
+    addMesh(g, new THREE.BoxGeometry(w - inset * 2, courseH * 0.92, d - inset * 2), material, 0, courseH * i + courseH / 2, cz);
+  }
+  // Heavy corniced cap, overhanging slightly past the top course — a real
+  // roofline rather than an abrupt flat-topped box.
+  addMesh(g, new THREE.BoxGeometry(w * 1.1, h * 0.055, d * 1.1), material, 0, h + h * 0.028, cz);
+}
+
+/**
+ * A vault-door wheel mechanism: a hub + radiating spoke boxes (never a
+ * flat torus/ring — spokes are boxes crossing through the hub, so the
+ * shape stays legible from any camera angle instead of degenerating to a
+ * hairline edge-on).
+ */
+function addVaultWheel(g: THREE.Group, cx: number, cy: number, cz: number, radius: number, material: THREE.Material): void {
+  const hub = addMesh(g, new THREE.CylinderGeometry(radius * 0.28, radius * 0.28, radius * 0.18, 10), material, cx, cy, cz);
+  hub.rotation.x = Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.8, radius * 0.16, radius * 0.14), material);
+    spoke.position.set(cx, cy, cz);
+    spoke.rotation.z = ang;
+    spoke.castShadow = true;
+    g.add(spoke);
+  }
+}
+
 function dwarvenBlock(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
   const stoneMat = mat(dna.colors.walls, { roughness: 0.92 });
   const trimMat = mat(dna.colors.trim, { roughness: 0.7, metalness: 0.3 });
 
-  // Squat, wide stone block — dwarves build low and thick, not tall.
-  addMesh(g, new THREE.BoxGeometry(w, h, d), stoneMat, 0, h / 2, 0);
+  // Coursed stone walls with a heavy corniced roofline — built to look
+  // carved from the mountain, not a single smooth box.
+  addStoneCourses(g, w, d, h, stoneMat, 4);
+
   // Carved geometric trim band around the midline.
   addMesh(g, new THREE.BoxGeometry(w + 0.06, 0.18, d + 0.06), trimMat, 0, h * 0.5, 0);
-  // Heavy corner pillars.
+  // Heavy corner pillars with base/capital rings.
   for (const [px, pz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]] as [number, number][]) {
     addMesh(g, new THREE.CylinderGeometry(0.16, 0.2, h, 8), stoneMat, px, h / 2, pz);
+    addMesh(g, new THREE.CylinderGeometry(0.24, 0.24, 0.1, 8), trimMat, px, 0.05, pz);
+    addMesh(g, new THREE.CylinderGeometry(0.24, 0.24, 0.1, 8), trimMat, px, h - 0.05, pz);
   }
-  // Iron-banded vault-style door.
+  // Iron-banded vault-style door with a wheel mechanism.
   const doorMat = mat(dna.colors.door, { roughness: 0.6, metalness: 0.4 });
   addMesh(g, new THREE.BoxGeometry(w * 0.32, h * 0.5, 0.1), doorMat, 0, h * 0.28, d / 2 + 0.02);
   for (let i = 0; i < 3; i++) {
     addMesh(g, new THREE.BoxGeometry(w * 0.32, 0.04, 0.11), trimMat, 0, h * (0.15 + i * 0.15), d / 2 + 0.03);
   }
+  addVaultWheel(g, 0, h * 0.28, d / 2 + 0.07, Math.min(w, d) * 0.14, trimMat);
   return g;
 }
 
@@ -734,12 +777,14 @@ function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
   const h = FLOOR_HEIGHT * 0.6;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xD4A4_0003);
-  // Trade Vault: a stone vault-door front with iron banding, anvil and ore-crate clutter.
+  // Trade Vault: coursed stone front wall with a vault-door wheel mechanism,
+  // anvil and ore-crate clutter.
   const stoneMat = mat(dna.colors.walls, { roughness: 0.92 });
-  addMesh(g, new THREE.BoxGeometry(fp.w, h, fp.d * 0.6), stoneMat, 0, h / 2, -fp.d * 0.1);
+  addStoneCourses(g, fp.w, fp.d * 0.6, h, stoneMat, 3, -fp.d * 0.1);
   const doorMat = mat('#6a6858', { roughness: 0.5, metalness: 0.5 });
   addMesh(g, new THREE.CylinderGeometry(fp.w * 0.3, fp.w * 0.3, 0.08, 16), doorMat, 0, h * 0.5, fp.d * 0.2 + 0.05)
     .rotation.x = Math.PI / 2;
+  addVaultWheel(g, 0, h * 0.5, fp.d * 0.2 + 0.1, fp.w * 0.16, mat(dna.colors.trim, { roughness: 0.6, metalness: 0.5 }));
   const anvilMat = mat('#2a2a28', { roughness: 0.6, metalness: 0.5 });
   addMesh(g, new THREE.BoxGeometry(0.3, 0.25, 0.15), anvilMat, fp.w * 0.35, 0.13, fp.d * 0.35);
   const crateMat = mat('#7a6040', { roughness: 0.9 });

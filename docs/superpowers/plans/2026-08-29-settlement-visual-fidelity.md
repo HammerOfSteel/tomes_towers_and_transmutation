@@ -761,23 +761,57 @@ boxes. Now:
   it's built from solid blocks, not a flat ring), holding up well from
   multiple viewing angles and positions across the settlement.
 
+**Dwarven — DONE (this session).** Reworked `dwarvenBlock()` (used by the
+Guild Hall villa and Stone Temple chapel) plus `buildDwarvenShop()`'s
+Trade Vault front wall in `FactionBuildingVariants.ts`: the previous
+version was a single smooth full-height `BoxGeometry` with **no roofline
+at all** (an abrupt flat top) — about as literal an example of "a basic
+slab of geometry" as the user's complaint described. Now:
+- `addStoneCourses()`: the wall is built from **4 stacked horizontal
+  stone courses**, each very slightly narrower than the one below (a
+  subtle ziggurat-like taper) with a visible seam between every course,
+  finished with a heavy overhanging corniced cap slab — a real roofline
+  instead of an abrupt flat top. Reused for both `dwarvenBlock()` and the
+  Trade Vault shop's front wall (previously two separate single-box
+  implementations).
+- `addVaultWheel()`: a bank-vault-style door wheel mechanism — a hub
+  cylinder plus 6 spoke boxes crossing through it (never a flat torus/
+  ring; spokes are boxes, so the shape stays legible from any camera
+  angle instead of degenerating to a hairline edge-on, the same principle
+  established for vulperia/orcish/undead's round props). Added to both
+  the Guild Hall's door and the Trade Vault's existing circular door
+  plate, tying the whole faction's signature "vault" identity together.
+- Corner pillars now have base/capital rings (previously bare shafts).
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Dwarven —
+  coursed stone masonry + vault-wheel door" describe block (4 tests): no
+  single `BoxGeometry` mesh spans more than 60% of the building's total
+  height (regression guard against reverting to one full-height box —
+  verified empirically at 39% for the tallest individual course/door box
+  in the current tuning), the villa assembles from at least 29 parts (31
+  verified in practice), determinism for the same seed, and finite
+  vertices across villa/chapel/shop. 46 tests total (up from 42), all
+  passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city), checked
+  from both a face-on-ish angle and a rotated angle: confirmed the vault
+  wheel's spoke pattern stays cleanly legible (no hollow-ring artifact)
+  from both angles, the coursed-masonry seams are visible on the walls,
+  and the corniced cap gives the building an actual roofline silhouette
+  instead of reading as a plain box.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
-   real carved-stone detail (coursed masonry look via stacked slabs,
-   proper vault-door mechanism detail, corniced roofline).
-2. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
+1. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
    currently a simple tapered cylinder — needs real bark/root/branch
    detail and a proper woven-platform canopy structure.
-3. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
+2. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
    spire needs real tracery/buttress/window detail, not a bare cone+box.
-4. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+3. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
    needs gill/spore detail and a proper twisted-stalk base, not a plain
    cone-on-cylinder.
-5. **Slime** — explicitly reported as already reading fine ("mostly the
+4. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-6. **Human** — still deferred from increment 2 scoping (already has
+5. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:
