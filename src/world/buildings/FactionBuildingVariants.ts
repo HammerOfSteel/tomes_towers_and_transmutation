@@ -675,27 +675,96 @@ function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
 // Warlord Hall (patriciate), War Shrine (church), Loot Pile (market):
 // lashed-hide longhouses, bone/spike totems, crude scavenged construction.
 
+/**
+ * A ring of upright log "stakes" with per-log height/radius jitter — a
+ * crude palisade wall, read as a genuinely separate layer from whatever
+ * roof sits on top of it. Same "many small solid pieces, never one smooth
+ * primitive standing in for a whole feature" principle as the vulperia
+ * timber-stave ring: a wall built from real individual logs, not a single
+ * tapered cylinder pretending to be a whole hut.
+ */
+function addPalisadeWall(g: THREE.Group, seed: number, radius: number, wallH: number, material: THREE.Material, count = 16): void {
+  const r = mulberry32(seed);
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2 + r() * 0.05;
+    const logRad = radius * (0.94 + r() * 0.12);
+    const logH = wallH * (0.85 + r() * 0.3);
+    const logThickness = radius * 0.1 * (0.8 + r() * 0.4);
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(logThickness, logThickness * 1.1, logH, 6), material);
+    log.position.set(Math.cos(ang) * logRad, logH / 2, Math.sin(ang) * logRad);
+    log.castShadow = true;
+    log.receiveShadow = true;
+    g.add(log);
+  }
+}
+
+/**
+ * A steep conical hide/thatch roof whose base rim is perturbed by angular
+ * simplex noise for a ragged, hand-made silhouette (uneven hide-flap
+ * lengths, drooping unevenly), fading out toward the apex which stays
+ * tidy — instead of a perfect geometric cone.
+ */
+function addRoughConeRoof(g: THREE.Group, seed: number, baseY: number, radius: number, roofH: number, material: THREE.Material, jitter = 0.16): THREE.Mesh {
+  const geo = new THREE.ConeGeometry(radius, roofH, 12, 4);
+  const noise2D = createNoise2D(seed);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const heightRatio = THREE.MathUtils.clamp((v.y + roofH / 2) / roofH, 0, 1); // 0 at base, 1 at apex
+    const angle = Math.atan2(v.z, v.x);
+    const n = noise2D(Math.cos(angle) * 2.2, Math.sin(angle) * 2.2);
+    const envelope = 1 - heightRatio; // ragged at the base, tidy at the apex
+    v.x *= 1 + n * jitter * envelope;
+    v.z *= 1 + n * jitter * envelope;
+    v.y -= n * jitter * envelope * roofH * 0.25; // uneven flap droop
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(0, baseY + roofH / 2, 0);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
 function orcishHut(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x0AC1_0001);
-  const hideMat = mat(dna.colors.walls, { roughness: 0.95 });
+  const hideMat = mat(dna.colors.walls, { roughness: 0.92 });
   const woodMat = mat('#4a3a28', { roughness: 0.9 });
+  const logMat = mat(dna.colors.trim, { roughness: 0.95 });
 
-  // Crude lashed-hide longhouse body (angled tent-like walls, not a clean box).
-  const wall = addMesh(g, new THREE.CylinderGeometry(Math.max(w, d) * 0.15, Math.max(w, d) * 0.55, h, 8), hideMat, 0, h / 2, 0);
-  wall.rotation.y = r() * 0.3;
+  // Wall and roof are two genuinely distinct construction layers (a real
+  // log palisade under a separate hide roof), not one tapered cylinder
+  // standing in for a whole hut.
+  const wallR  = Math.max(w, d) * 0.42;
+  const wallH  = h * 0.42;
+  const roofBaseY = wallH * 0.9;
+  const roofH  = h - roofBaseY;
+  addPalisadeWall(g, dna.seed ^ 0x0AC1_0010, wallR, wallH, logMat, 16);
+  addRoughConeRoof(g, dna.seed ^ 0x0AC1_0011, roofBaseY, wallR * 1.2, roofH, hideMat);
+
   // Crossed timber support poles jutting past the roofline (crude, asymmetric).
   for (const ang of [0.4, -0.4, 2.2, -2.2]) {
-    const pole = addMesh(g, new THREE.CylinderGeometry(0.05, 0.07, h * 1.3, 5), woodMat, Math.cos(ang) * w * 0.3, h * 0.55, Math.sin(ang) * d * 0.3);
+    const pole = addMesh(g, new THREE.CylinderGeometry(0.05, 0.07, h * 1.15, 5), woodMat, Math.cos(ang) * w * 0.32, h * 0.55, Math.sin(ang) * d * 0.32);
     pole.rotation.z = Math.cos(ang) * 0.25;
   }
-  // Doorway (crude hide flap, not a clean opening).
-  addDoorway(g, Math.min(w, d) * 0.4, h * 0.5, d / 2 - 0.05, dna.colors.door);
+
+  // Crude log door posts + lintel flanking a hide-flap doorway.
+  const doorW = Math.min(w, d) * 0.42;
+  for (const px of [-doorW * 0.55, doorW * 0.55]) {
+    addMesh(g, new THREE.CylinderGeometry(0.07, 0.08, wallH * 0.95, 6), woodMat, px, wallH * 0.48, d / 2 - 0.02);
+  }
+  addMesh(g, new THREE.BoxGeometry(doorW * 1.3, 0.12, 0.16), woodMat, 0, wallH * 0.92, d / 2 - 0.02);
+  addDoorway(g, doorW, wallH * 0.8, d / 2 - 0.05, dna.colors.door);
+
   // Bone/spike totem clutter around the base.
   const boneMat = mat('#d8d0b8', { roughness: 0.85 });
   for (let i = 0; i < 3; i++) {
     const ang = (i / 3) * Math.PI * 2 + 1.0;
-    const rad = Math.max(w, d) * 0.5 + 0.15;
+    const rad = wallR + 0.25;
     addMesh(g, new THREE.ConeGeometry(0.04, 0.5 + r() * 0.3, 5), boneMat, Math.cos(ang) * rad, 0.3, Math.sin(ang) * rad);
   }
   return g;

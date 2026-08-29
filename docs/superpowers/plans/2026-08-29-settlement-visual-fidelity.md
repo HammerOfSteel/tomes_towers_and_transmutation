@@ -678,29 +678,58 @@ prop kit in `FactionBuildingVariants.ts`:
   instead of the hook/loop artifact seen with the two earlier (torus and
   extruded-collar) attempts.
 
+**Orcish — DONE (this session).** Reworked `orcishHut()` (used by the
+Warlord Hall villa) in `FactionBuildingVariants.ts`: the previous version
+was a single tapered `CylinderGeometry` (a "tent") standing in for the
+whole hut. Now genuinely two separate construction layers:
+- `addPalisadeWall()`: a ring of 16 individual upright log "stakes"
+  (`CylinderGeometry`), each with its own per-log height/radius/thickness
+  jitter, reusing the vulperia timber-stave-ring principle (many small
+  solid pieces, never one smooth primitive) — reads as a real log
+  palisade wall from any angle, including edge-on (individual logs stay
+  individually visible, no ring-collapse artifact).
+- `addRoughConeRoof()`: a steep hide/thatch roof cone whose base rim is
+  perturbed by angular simplex noise (ragged, unevenly-drooping hide-flap
+  edges), fading to a tidy point at the apex — a genuinely separate,
+  distinct-looking layer from the wall beneath it, not the same primitive.
+- Added: crude log door posts + a lintel beam flanking the doorway (the
+  previous version only had a flat doorway disc with no structural
+  framing), matching the same "layered assembly, not one primitive"
+  principle used for vulperia's door.
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Orcish — palisade
+  wall + rough hide roof" describe block (4 tests): finite vertices after
+  roof-noise displacement, the villa assembles from 16 log pieces plus
+  roof/poles/door/totems (not one primitive), the roof cone's radii are
+  no longer uniform (proves real displacement, not a passthrough cone),
+  and roof shape is deterministic per seed but seed-varied. 38 tests total
+  (up from 34), all passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city), checked
+  from both a face-on-ish angle and a rotated angle where the log wall is
+  seen edge-on: confirmed the Warlord Hall now reads as a genuine tribal
+  roundhouse (visible log wall, distinct ragged hide roof, crossed poles
+  through the apex, mounted skull/tusk trophy above the door) from both
+  angles, with no degenerate artifacts.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Orcish** — Warlord Hall/War Shrine/Loot Pile currently a crude hut +
-   trophy prop; bring to the same layered-assembly quality bar (proper
-   lashed-hide/log hut construction, not a single hut primitive).
-2. **Undead** — Lich Tower/Bone Shrine/Wraith Bazaar spires; add real
+1. **Undead** — Lich Tower/Bone Shrine/Wraith Bazaar spires; add real
    crypt/ossuary detail (coffin niches, rib-cage arch framing, carved
    stone courses) rather than a single tapered-spire primitive.
-3. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
+2. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
    real carved-stone detail (coursed masonry look via stacked slabs,
    proper vault-door mechanism detail, corniced roofline).
-4. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
+3. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
    currently a simple tapered cylinder — needs real bark/root/branch
    detail and a proper woven-platform canopy structure.
-5. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
+4. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
    spire needs real tracery/buttress/window detail, not a bare cone+box.
-6. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+5. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
    needs gill/spore detail and a proper twisted-stalk base, not a plain
    cone-on-cylinder.
-7. **Slime** — explicitly reported as already reading fine ("mostly the
+6. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-8. **Human** — still deferred from increment 2 scoping (already has
+7. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:

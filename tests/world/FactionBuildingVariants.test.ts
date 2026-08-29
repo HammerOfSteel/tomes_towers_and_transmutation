@@ -29,6 +29,30 @@ function countMeshes(g: THREE.Group): number {
   return n;
 }
 
+function findBiggestMesh(g: THREE.Group): THREE.Mesh {
+  let biggest: THREE.Mesh | null = null;
+  let biggestCount = 0;
+  g.traverse(o => {
+    if (o instanceof THREE.Mesh) {
+      const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
+      if (count > biggestCount) { biggestCount = count; biggest = o; }
+    }
+  });
+  expect(biggest).not.toBeNull();
+  return biggest!;
+}
+
+function expectAllVerticesFinite(g: THREE.Group): void {
+  g.traverse(o => {
+    if (o instanceof THREE.Mesh) {
+      const attr = o.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < attr.array.length; i++) {
+        expect(Number.isFinite(attr.array[i])).toBe(true);
+      }
+    }
+  });
+}
+
 describe('FACTION_BUILDING_VARIANTS registry', () => {
   const covered: Array<[Faction, BuildingKind]> = [
     ['vulperia', 'villa'], ['vulperia', 'chapel'], ['vulperia', 'shop'],
@@ -109,30 +133,9 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
 // timber-stave round door/window kit added to replace the original plain
 // half-sphere + flat torus-ring approach.
 describe('Vulperia — organic mound geometry (not a plain sphere blob)', () => {
-  function findBiggestMesh(g: THREE.Group): THREE.Mesh {
-    let biggest: THREE.Mesh | null = null;
-    let biggestCount = 0;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh) {
-        const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-        if (count > biggestCount) { biggestCount = count; biggest = o; }
-      }
-    });
-    expect(biggest).not.toBeNull();
-    return biggest!;
-  }
-
   it('produces only finite (non-NaN/non-infinite) vertices after noise-based silhouette displacement', () => {
     for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      const g = FACTION_BUILDING_VARIANTS.vulperia![kind]!(makeDna(kind, 'vulperia', 123));
-      g.traverse(o => {
-        if (o instanceof THREE.Mesh) {
-          const attr = o.geometry.getAttribute('position') as THREE.BufferAttribute;
-          for (let i = 0; i < attr.array.length; i++) {
-            expect(Number.isFinite(attr.array[i])).toBe(true);
-          }
-        }
-      });
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vulperia![kind]!(makeDna(kind, 'vulperia', 123)));
     }
   });
 
@@ -162,5 +165,53 @@ describe('Vulperia — organic mound geometry (not a plain sphere blob)', () => 
     };
     expect(sumRadii(gA)).toBe(sumRadii(gA2)); // deterministic for the same seed
     expect(sumRadii(gA)).not.toBe(sumRadii(gB)); // varies across seeds
+  });
+});
+
+// ── Orcish deep-quality pass (settlement visual fidelity follow-up) ─────────
+// Regression guards for the palisade-wall + rough-cone-roof rework that
+// replaced the original single tapered-cylinder "tent" standing in for a
+// whole hut.
+describe('Orcish — palisade wall + rough hide roof (not one tapered cylinder)', () => {
+  it('produces only finite vertices for the noise-perturbed roof after displacement', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.orcish![kind]!(makeDna(kind, 'orcish', 55)));
+    }
+  });
+
+  it('builds the villa (Warlord Hall) from many individually-solid log pieces, not one primitive', () => {
+    const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
+    // The palisade wall alone contributes 16 individual log cylinders, plus
+    // the roof cone, crossed poles, door posts/lintel, doorway and totems --
+    // a real multi-part assembly rather than a single tapered-cylinder "hut".
+    expect(countMeshes(g)).toBeGreaterThanOrEqual(16 + 8);
+  });
+
+  it('perturbs the rough-cone roof off a perfect cone radius (ragged hide flaps, not a tidy cone)', () => {
+    const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
+    const roof = findBiggestMesh(g);
+    const pos = roof.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const xzRadii = new Set<number>();
+    for (let i = 0; i < pos.count; i++) {
+      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
+    }
+    // A perfect cone has a small, fixed set of ring radii (one per height
+    // segment); noise perturbation should spread this out into many distinct
+    // values.
+    expect(xzRadii.size).toBeGreaterThan(6);
+  });
+
+  it('produces a different roof silhouette per seed (deterministic but seed-varied)', () => {
+    const gA = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
+    const gB = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 2));
+    const gA2 = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
+    const sumXZ = (g: THREE.Group): number => {
+      const pos = findBiggestMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
+      let sum = 0;
+      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
+      return sum;
+    };
+    expect(sumXZ(gA)).toBe(sumXZ(gA2));
+    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
   });
 });

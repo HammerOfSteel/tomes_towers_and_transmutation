@@ -143,7 +143,13 @@ for the full design/plan.
     verification), round port-hole windows, chimney + smoke wisp, grass/
     wildflower crown, garden fence + planter. 34 unit tests (up from 31),
     Playwright-verified from both face-on and rotated/edge-on angles.
-  - [ ] Orcish — crude hut construction needs real lashed-hide/log detail.
+  - [x] Orcish — **Done.** Split the previous single tapered-cylinder
+    "tent" hut into two real construction layers: a palisade wall of 16
+    individual upright log stakes (`addPalisadeWall()`, timber-stave-ring
+    technique reused from vulperia) and a noise-ragged hide roof cone
+    (`addRoughConeRoof()`), plus log door posts + lintel. 38 unit tests
+    (up from 34), Playwright-verified from face-on and edge-on angles —
+    the Warlord Hall now reads as a genuine tribal roundhouse.
   - [ ] Undead — spires need real crypt/ossuary/coffin-niche detail.
   - [ ] Dwarven — stone blocks need real coursed-masonry/vault detail.
   - [ ] Elven — trunk needs real bark/root/woven-platform detail.
