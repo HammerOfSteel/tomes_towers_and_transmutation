@@ -258,24 +258,42 @@ export function buildVulperiaDenMoundGrid(
 
   for (let bx = 0; bx < bw; bx++) {
     for (let bz = 0; bz < bd; bz++) {
+      const inFrameX = opts.facade && bx >= frameXMin && bx < frameXMax;
+      const inFrontRows = bz >= bd - notchDepth;
+      const isFacadeColumn = inFrameX && inFrontRows;
+
       const dx = (bx - cx) / maxR, dz = (bz - cz) / maxR;
       const dist = Math.hypot(dx, dz);
-      if (dist > 1.0) continue; // outside the rounded footprint -> hill silhouette, not a filled rectangle
+      // The rounded-footprint cutoff would normally skip columns this far
+      // out, but a facade column (door frame post or notch/lintel column)
+      // sits deliberately right at the mound's front rim -- exactly where
+      // the dome silhouette is thinnest -- so it must never be skipped
+      // here, or the door loses its post/lintel entirely on that side.
+      if (dist > 1.0 && !isFacadeColumn) continue; // outside the rounded footprint -> hill silhouette, not a filled rectangle
 
       const domeFalloff = Math.cos(Math.min(1, dist) * Math.PI / 2); // 1 at centre, 0 at rim
       const n = noise2D(bx * 0.35, bz * 0.35);
       const jitter = 1 + n * jitterAmt;
       let colHeight = Math.round(bh * domeFalloff * jitter);
       colHeight = Math.max(1, Math.min(bh, colHeight));
+      // A facade column (door post or notch/lintel column) must always be
+      // tall enough to fully border the doorway opening (one block above
+      // the notch, for a connecting lintel), regardless of where it lands
+      // on the mound's natural dome falloff. The notch sits at the very
+      // front rim, exactly where the dome silhouette is shortest, so
+      // without this floor a post could end up only 1 block tall -- far
+      // short of framing a `notchHeight`-tall doorway -- leaving the door
+      // decoration looking disconnected/floating with nothing solid built
+      // around it. This was the root cause of the reported "door doesn't
+      // connect to the mound" bug.
+      if (isFacadeColumn) colHeight = Math.max(colHeight, notchHeight + 1);
 
       const inNotchX = bx >= notchXMin && bx < notchXMax;
-      const inFrameX = bx >= frameXMin && bx < frameXMax;
-      const inFrontRows = bz >= bd - notchDepth;
 
       const topStart = colHeight - Math.max(1, Math.round(colHeight * 0.3));
       for (let by = 0; by < colHeight; by++) {
         if (opts.facade && inNotchX && inFrontRows && by < notchHeight) continue; // carved doorway/facade recess
-        const isFrameBlock = opts.facade && inFrameX && inFrontRows && by < notchHeight + 1;
+        const isFrameBlock = inFrameX && inFrontRows && by < notchHeight + 1;
         const isTop = by >= topStart;
         setBlock(grid, bx, by, bz, isFrameBlock ? 'facade' : (isTop ? 'grass' : 'earth'));
       }

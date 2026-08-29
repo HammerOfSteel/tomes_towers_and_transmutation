@@ -330,16 +330,31 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
   const h = FLOOR_HEIGHT * 0.55;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE43);
-  // Night Market den-mouth stall: low earthen mound base with a canvas awning.
+  // Night Market den-mouth stall: low earthen mound base with a pole-and-
+  // canvas market awning over the counter (not a pointy witch-hat "roof"
+  // stuck on top of the mound -- the mound's own grassy crown already
+  // reads as its roof, and a separate peaked cap floating above/behind it
+  // just looked disconnected and wrong).
   const baseGroup = new THREE.Group();
   addBlockDenMound(baseGroup, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, dna.colors.walls, '#3d6b35', '#4a3520');
   baseGroup.position.set(0, 0, -fp.d * 0.15);
   g.add(baseGroup);
-  const awningMat = mat(dna.colors.roof, { roughness: 0.8, side: THREE.DoubleSide });
-  addMesh(g, new THREE.ConeGeometry(fp.w * 0.55, 0.6, 4), awningMat, 0, h + 0.05, fp.d * 0.25, Math.PI / 4);
   // Counter/table + hanging pelts + string lanterns.
   const woodMat = mat('#6a4a28', { roughness: 0.9 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.7, 0.4, 0.4), woodMat, 0, 0.2, fp.d * 0.35);
+  const counterZ = fp.d * 0.35;
+  addMesh(g, new THREE.BoxGeometry(fp.w * 0.7, 0.4, 0.4), woodMat, 0, 0.2, counterZ);
+  // Awning: two corner poles planted at the counter's front edge, and a
+  // single flat, gently-tilted canvas panel resting across their tops --
+  // a real pole-supported stall canopy over the counter, not a shape
+  // floating disconnected from anything.
+  const poleH = h * 0.95;
+  const awningHalfW = fp.w * 0.42;
+  for (const px of [-awningHalfW, awningHalfW]) {
+    addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, poleH, 6), woodMat, px, poleH / 2, counterZ + 0.25);
+  }
+  const canvasMat = mat(dna.colors.roof, { roughness: 0.75, side: THREE.DoubleSide });
+  const canopy = addMesh(g, new THREE.BoxGeometry(awningHalfW * 2 + 0.3, 0.06, fp.d * 0.4), canvasMat, 0, poleH, counterZ - fp.d * 0.05);
+  canopy.rotation.x = -0.12; // slight forward tilt so it reads as taut cloth, not a flat slab
   const peltMat = mat('#a88060', { roughness: 0.95 });
   for (let i = 0; i < 3; i++) {
     addMesh(g, new THREE.BoxGeometry(0.2, 0.5, 0.05), peltMat, -fp.w * 0.3 + i * fp.w * 0.3, h * 0.7, fp.d * 0.3 + 0.1);

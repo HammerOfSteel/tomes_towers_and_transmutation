@@ -1667,6 +1667,78 @@ towerGenerator, main.startup.smoke); and live Settlement Lab screenshots
 (elven, dwarven, vulperia, close-up outside-facing angles) confirm
 building fronts now render fully solid with no see-through artifact.
 
+### Phase 2e.12 — Vulperia den bug fixes: disconnected door frame + floating cone "roof" — ✅ FIXED
+
+Two concrete defects reported from live vulperia Settlement Lab screenshots.
+
+**Bug 1 — door frame not connecting to the mound.** `buildVulperiaDenMoundGrid()`
+(`FactionBlockProfiles.ts`) computed every column's height from the mound's
+natural dome-falloff formula (`colHeight = round(bh * cos(dist * π/2) *
+jitter)`, which craters to ~0 at the footprint rim), with no floor applied to
+the door/facade-frame columns — which sit exactly at that rim (the notch is
+carved into the front-most rows). This left frame posts and the lintel as
+short as 0-1 blocks, far short of `notchHeight + 1`, so the separately-placed
+round-door mesh (sized for a properly-framed opening) read as structurally
+disconnected/floating.
+
+*Fix:* compute `isFacadeColumn` before the rounded-footprint `dist > 1.0`
+skip and exempt facade columns from it (so a post at the rim is never
+silently omitted), then force `colHeight = Math.max(colHeight, notchHeight +
+1)` for every facade column — guaranteeing both door posts and the lintel
+above the doorway are always solid, regardless of the natural dome falloff
+at that position.
+
+*Verification:* a direct grid-dump diagnostic (bx/bz/topBy/material table)
+confirmed before-fix heights of 0-1 at the front row for what should be
+solid frame posts, and after-fix heights of 2-3 with a continuous,
+unbroken lintel. A new permanent regression test in
+`tests/world/FactionBlockProfiles.test.ts` asserts (a) the two outer post
+columns reach `notchHeight + 1`, and (b) every notch/lintel column has a
+block at `by === notchHeight` (the carved notch legitimately has no blocks
+below that, so a naive "every facade column ≥ notchHeight+1" assertion is
+wrong — split accordingly). Live Settlement Lab screenshots (multiple
+mounds, multiple angles) show every facade/door-frame column as a
+continuous tan strip from crown to base with no gaps — the specific defect
+class this fix targets. (A direct face-on shot of the round door mesh
+itself wasn't obtainable in this pass due to a separate, pre-existing
+building-density/occlusion issue — nearby generic-ward buildings with
+pyramid roofs kept blocking the door-facing side of every mound tried; see
+Phase 3.) All 116 targeted tests pass (`BlockKit.test.ts` +
+`FactionBlockProfiles.test.ts` + `FactionBuildingVariants.test.ts`);
+`tsc --noEmit` shows the same 145 pre-existing/baseline errors, unchanged.
+
+**Bug 2 — small den/stall "roof" looked wrong.** `buildVulperiaShop()`
+(`FactionBuildingVariants.ts`) added a 4-sided `ConeGeometry` "awning",
+rotated 45° around Y, positioned at `(0, h+0.05, fp.d*0.25)` while the den
+mound base itself sits at `(0, 0, -fp.d*0.15)` — a different z-offset
+entirely, so the cone floated in open air well away from the mound's own
+apex, above the counter. Rendered, this read as a smooth flat
+diamond/pyramid panel disconnected from the blocky mound beneath it —
+inconsistent with the block-kit aesthetic and exactly the "roof thing that
+looks just wrong" the user flagged.
+
+*Fix:* removed the cone entirely and replaced it with a proper pole-and-
+canvas market stall canopy: two corner support poles (`CylinderGeometry`)
+planted at the counter's front edge, and a single flat, gently-tilted
+canvas panel resting across their tops, positioned directly over the
+counter it's meant to shade. This is both more market-stall-appropriate
+(a real awning, not a witch-hat) and better fits the "small pieces, not
+deformed primitives" direction — the den mound's own grassy crown still
+reads as the "roof."
+
+*Verification:* a direct code-level diagnostic (`FACTION_BUILDING_VARIANTS
+.vulperia.shop(...)`, dumping every mesh's geometry type + bounding box)
+confirms zero `ConeGeometry` remains in the shop group post-fix. All 116
+targeted tests pass; `tsc --noEmit` unchanged at 145 baseline errors.
+
+**Known pre-existing issue surfaced during this verification (not fixed
+here, out of scope):** vulperia buildings are placed close enough together
+that generic-ward buildings (pyramid-roofed, not yet given bespoke
+vulperia builders per the Phase 2b/2c coverage-gap note) visually overlap
+and occlude den mounds from most camera angles in Settlement Lab. This
+matches the user's earlier "buildings too close together... no occlusion
+in iso camera" feedback and is tracked under Phase 3 below.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

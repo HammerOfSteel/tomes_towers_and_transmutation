@@ -79,6 +79,46 @@ describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
     expect(sawFacadeMaterial).toBe(true);
   });
 
+  it('door frame posts always reach at least notchHeight+1, and the lintel above the doorway is unbroken across its full width, even at the mound rim where the natural dome falloff would otherwise leave posts far too short (regression: door not connecting to the mound)', () => {
+    // A small, low, wide footprint maximizes the dome falloff at the front
+    // rim (exactly where the door frame sits) -- the exact shape that
+    // produced 1-block-tall (or completely empty) frame posts before this
+    // fix, leaving the door decoration looking disconnected from the mound.
+    const w = 4.5, d = 3.5, h = 2.2;
+    const grid = buildVulperiaDenMoundGrid(12345, w, d, h, { facade: true, jitter: 0.24 });
+    const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+    const bh = Math.max(2, Math.round(h / BLOCK_UNIT));
+    const notchHeight = Math.max(2, Math.round(bh * 0.55));
+    const notchWidth = Math.max(2, Math.round(bw * 0.42));
+    const cx = (bw - 1) / 2;
+    const notchXMin = Math.round(cx - notchWidth / 2);
+    const notchXMax = notchXMin + notchWidth;
+    const frameXMin = notchXMin - 1;
+    const frameXMax = notchXMax + 1;
+
+    function columnHeight(bx: number, bz: number): number {
+      let n = 0;
+      for (let by = 0; by < 32; by++) if (hasBlock(grid, bx, by, bz)) n++;
+      return n;
+    }
+
+    for (const bz of [bd - 1, bd - 2]) {
+      // The two true door posts (just outside the carved notch) must be
+      // solid all the way up to at least one block above the doorway.
+      for (const bx of [frameXMin, frameXMax - 1]) {
+        expect(columnHeight(bx, bz), `post column (${bx},${bz}) too short to frame the doorway`).toBeGreaterThanOrEqual(notchHeight + 1);
+      }
+      // The lintel spanning the doorway itself (the notch columns, above
+      // the carved opening) must be present and unbroken across the full
+      // width, connecting both posts -- not just present wherever the
+      // dome's natural height happened to reach that high.
+      for (let bx = notchXMin; bx < notchXMax; bx++) {
+        expect(hasBlock(grid, bx, notchHeight, bz), `lintel gap at (${bx},${notchHeight},${bz})`).toBe(true);
+      }
+    }
+  });
+
   it('is deterministic per seed and varies with a different seed', () => {
     const gridA = buildVulperiaDenMoundGrid(42, 6, 5, 3, {});
     const gridB = buildVulperiaDenMoundGrid(42, 6, 5, 3, {});
