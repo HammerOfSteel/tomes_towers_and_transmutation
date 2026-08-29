@@ -125,6 +125,32 @@ for the full design/plan.
   shared-shape variety) and for the remaining ward kinds (smithy, inn,
   craftsmen, merchant, slum, gateward, farm) beyond patriciate/church/
   market, across all 9 factions.
+- [ ] Phase 2d (in progress, working race-by-race per explicit user
+  direction — see plan §Phase 2d): increment 1/2 gave factions distinct
+  *silhouettes* but most buildings still read as "basic slabs of geometry"
+  up close, not real buildings (e.g. vulperia's Fox Den looked like "a
+  blob with a roof thing," not a fox den/hobbit-hole). Bringing each
+  faction's patriciate/church/market buildings to real layered-assembly
+  quality (matching the human `buildHouseOrShop()` bar: doors/windows/
+  chimneys as multi-part assemblies, not one primitive standing in for a
+  whole feature), one faction at a time:
+  - [x] Vulperia — **Done.** Noise-perturbed organic earthen mound
+    (`addOrganicMound()`, replacing the plain half-sphere), a genuine
+    Bag-End-style round door built from a ring of chunky timber-stave
+    blocks rather than a flat torus/ring (which degenerates to a hollow
+    "hook" artifact when a building's cardinal rotation puts it edge-on
+    to the fixed isometric camera — discovered and fixed via visual
+    verification), round port-hole windows, chimney + smoke wisp, grass/
+    wildflower crown, garden fence + planter. 34 unit tests (up from 31),
+    Playwright-verified from both face-on and rotated/edge-on angles.
+  - [ ] Orcish — crude hut construction needs real lashed-hide/log detail.
+  - [ ] Undead — spires need real crypt/ossuary/coffin-niche detail.
+  - [ ] Dwarven — stone blocks need real coursed-masonry/vault detail.
+  - [ ] Elven — trunk needs real bark/root/woven-platform detail.
+  - [ ] Vampire — gothic spire needs real tracery/buttress detail.
+  - [ ] Fae — mushroom cap needs real gill/spore/twisted-stalk detail.
+  - [ ] Slime — reported as already reading fine, lowest priority.
+  - [ ] Human — still deferred (decent shared-shape variety already).
 - [ ] Phase 2c (separately scoped, follow-up): generic prop shape library
   (market stalls, wells, fences, banners) for craftsmen/slum/market
   clutter, batched through the existing mesh-merge batching to avoid a

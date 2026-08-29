@@ -603,6 +603,112 @@ factions — not palette swaps.
 - The generic prop shape library (§4.2-4.4) for market/craftsmen/slum
   clutter — still valid as designed, composes with both Phase 2a and 2b.
 
+### Phase 2d — Deep per-race building geometry pass (visual quality, not just distinctness)
+
+**Problem statement (direct user feedback after increment 2 shipped):**
+increment 1/2 achieved *silhouette distinctness* between factions, but on a
+closer look most of the individual buildings don't actually read as real
+buildings — they're "basic slabs of geometry," not "vulperia dens." The
+explicit example given: the vulperia Fox Den "does not look like a den at
+all, just some blobs with a roof thing" — the ask is for it to actually
+evoke a fox den / hobbit-hole (a recognizable, richly-detailed dwelling),
+not merely "a squashed sphere that is earth-coloured." Per the user's
+direction, this is being worked **one faction at a time**, each faction
+brought to real quality (not just a quick geometric tweak) before moving to
+the next, since "this will give us time to make each building unique to
+each race also and really put effort into it."
+
+**Root cause of the "basic slab" feel**: increment 1/2's builders mostly
+composed 2-4 raw primitives (a sphere, a cone, a couple of boxes) with a
+faction colour palette — enough to look *distinct* from a neighbour, but
+not enough parts/detail to look *designed*. The existing human/generic
+`buildHouseOrShop()` (BuildingBuilder.ts) sets the real quality bar: doors
+are frame+panel+handle+step (4 parts), windows are frame+glass+glazing-bar
+(3 parts), chimneys are shaft+corbel+pot (3 parts) — real layered assemblies,
+not one primitive standing in for a whole feature.
+
+**Vulperia — DONE (this session).** Reworked `vulperiaMound()` and its
+prop kit in `FactionBuildingVariants.ts`:
+- `addOrganicMound()`: the main bank is now a hemisphere with **angular
+  simplex-noise-perturbed silhouette** (`createNoise2D` from
+  `src/core/SimplexNoise.ts`), fading to zero at the grounded base and at
+  the crown so it stays flush with the ground and smoothly rounded on top,
+  with genuine lumpy irregularity in between — reads as a hand-dug earthen
+  bank, not a perfect sphere. Non-uniformly scaled to fit a `w x d`
+  footprint (previously the plain-sphere version silently used a single
+  uniform radius for both axes, ignoring non-square footprints).
+- `addRoundDoor()` / `addRoundWindow()`: a genuine Bag-End-style round
+  door — recessed shadow disc, a **ring of small chunky timber-stave
+  blocks** standing in for the frame (`addTimberRingSegments()`), a door
+  panel with vertical plank strips, a brass handle, and a stone step/apron.
+  **Important technique note** (found via visual verification, not
+  assumed): the first attempt used a flat `TorusGeometry` frame, and later
+  a thicker `ExtrudeGeometry` annulus/collar — both still degenerate into a
+  confusing hollow "hook/loop" artifact when a building's cardinal
+  rotation (0/90/180/270, from Phase 1) turns it edge-on to the fixed
+  isometric camera, because *any* ring-shaped mesh (however thick) shows
+  its front and back rim as two connected arcs from a steep enough angle.
+  The fix that actually holds up under rotation: build the "ring" out of
+  individually-solid small `BoxGeometry` blocks arranged in a circle —
+  no single block can ever present a hollow-loop silhouette, so worst case
+  (dead edge-on) it just reads as a cluster of timber stakes, which still
+  looks intentional rather than broken. **Any future round/circular prop
+  (windows, portholes, medallions) for any faction should use this
+  timber-stave-ring technique, not `TorusGeometry`/flat rings.**
+- Also added: a stubby chimney stack with a smoke wisp, a scattered
+  grass-tuft + wildflower crown over the mound, a garden fence + planter
+  barrel (villa only), and the mound itself now uses correct non-uniform
+  w/d scaling. The Fox Den's second "extension" mound and the Den Mother's
+  Hall's flanking "pup" mounds now use the same organic-mound builder
+  (previously plain spheres).
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Vulperia — organic
+  mound geometry" describe block (3 tests): all mesh vertices remain finite
+  after noise displacement (regression guard against NaN/degenerate
+  geometry), the main mound's vertex radii are no longer uniform (proves
+  real displacement happened, not a passthrough sphere), and the mound
+  shape is deterministic per seed but varies across seeds. 34 tests total
+  (up from 31), all passing.
+- Visually verified via Playwright (Settlement Lab, teleporting to the
+  villa/chapel/shop anchors of a seed=1 city): confirmed an organic
+  egg/mound silhouette (not a smooth dome), a recognisable round timber
+  door and port-hole windows from face-on and 3/4 angles, and — critically
+  — re-verified from the angles where the door faces sideways to camera
+  (roughly half of buildings, since rotation is cardinal) that the
+  timber-stave ring degrades gracefully to a scattered block cluster
+  instead of the hook/loop artifact seen with the two earlier (torus and
+  extruded-collar) attempts.
+
+**Still to do, in order (same "one faction at a time, do it properly"
+approach — do not batch these into one shallow pass):**
+1. **Orcish** — Warlord Hall/War Shrine/Loot Pile currently a crude hut +
+   trophy prop; bring to the same layered-assembly quality bar (proper
+   lashed-hide/log hut construction, not a single hut primitive).
+2. **Undead** — Lich Tower/Bone Shrine/Wraith Bazaar spires; add real
+   crypt/ossuary detail (coffin niches, rib-cage arch framing, carved
+   stone courses) rather than a single tapered-spire primitive.
+3. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
+   real carved-stone detail (coursed masonry look via stacked slabs,
+   proper vault-door mechanism detail, corniced roofline).
+4. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
+   currently a simple tapered cylinder — needs real bark/root/branch
+   detail and a proper woven-platform canopy structure.
+5. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
+   spire needs real tracery/buttress/window detail, not a bare cone+box.
+6. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+   needs gill/spore detail and a proper twisted-stalk base, not a plain
+   cone-on-cylinder.
+7. **Slime** — explicitly reported as already reading fine ("mostly the
+   slime buildings are ok") — lowest priority, only revisit if a specific
+   issue is raised.
+8. **Human** — still deferred from increment 2 scoping (already has
+   decent rural/town/noble variety from the shared-shape system).
+
+Each entry above should be verified with the same rigor as vulperia:
+unit tests (no-NaN/geometry-sanity + determinism) plus Playwright
+screenshots checked from *both* a face-on-ish angle and a
+rotated/edge-on-ish angle (given the cardinal-rotation + fixed-iso-camera
+interaction discovered above), before being marked done.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

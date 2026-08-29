@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
+import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 
@@ -59,41 +60,225 @@ function addDoorway(g: THREE.Group, w: number, h: number, z: number, doorColor: 
     .scale.set(1, 1, 0.35);
 }
 
+// ── Organic-mound / round-door prop kit ──────────────────────────────────────
+// Shared by any faction whose architecture is a dug-in earthen bank rather
+// than a walled structure (currently vulperia). A plain half-sphere reads as
+// "a blob with a roof thing", not a den — noise-perturbing the silhouette and
+// layering real props (round door+frame+handle, port-hole windows, chimney,
+// grass cap, garden clutter) is what actually sells "hobbit-hole" / "fox den".
+
+/**
+ * A hemispherical earthen mound whose silhouette is perturbed by angular
+ * simplex noise (fades to 0 at the grounded base and at the crown so it
+ * stays grounded and smoothly rounded, with lumpy irregularity in between),
+ * instead of a perfectly spherical dome. Non-uniformly scaled to fit a
+ * `w x d` footprint at height `h`. Added directly to `g` at local (cx, cz).
+ */
+function addOrganicMound(
+  g: THREE.Group,
+  seed: number,
+  w: number, d: number, h: number,
+  material: THREE.Material,
+  cx = 0, cz = 0,
+  jitter = 0.16,
+): THREE.Mesh {
+  const maxR = Math.max(w, d) / 2;
+  const geo = new THREE.SphereGeometry(maxR, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2);
+  const noise2D = createNoise2D(seed);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const heightRatio = THREE.MathUtils.clamp(v.y / maxR, 0, 1);
+    const angle = Math.atan2(v.z, v.x);
+    const n = noise2D(Math.cos(angle) * 1.6, Math.sin(angle) * 1.6) * 0.6
+            + noise2D(Math.cos(angle) * 3.7 + 41, Math.sin(angle) * 3.7 + 41) * 0.4;
+    // 0 at the grounded base and at the very crown, peaks mid-height — keeps
+    // the mound flush with the ground and smoothly rounded on top while
+    // still reading as an irregular, hand-dug bank in the middle.
+    const envelope = Math.sin(heightRatio * Math.PI);
+    const radialScale = 1 + n * jitter * envelope;
+    v.x *= radialScale;
+    v.z *= radialScale;
+    v.y *= 1 + n * 0.05 * envelope;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.scale.set(w / (2 * maxR), h / maxR, d / (2 * maxR));
+  mesh.position.set(cx, 0, cz);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
+/**
+ * A ring of small chunky timber-stave blocks (BoxGeometry), each genuinely
+ * 3D. Unlike `TorusGeometry` or an extruded annulus, no single piece is a
+ * thin/hollow shape, so the ring can never degenerate into a hollow-loop
+ * "hook" silhouette when a building's cardinal rotation (0/90/180/270) turns
+ * it away from face-on to the fixed isometric camera — worst case (viewed
+ * dead edge-on) it just reads as a scattered cluster of wood blocks, which
+ * still looks like intentional timber framing rather than a rendering
+ * artifact.
+ */
+function addTimberRingSegments(
+  g: THREE.Group,
+  cx: number, cy: number, cz: number,
+  radius: number, material: THREE.Material,
+  count: number, segSize: number, segDepth: number,
+): void {
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2;
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(segSize, segSize, segDepth), material);
+    seg.position.set(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius, cz);
+    seg.rotation.z = ang;
+    seg.castShadow = true;
+    g.add(seg);
+  }
+}
+
+/**
+ * A round, timber-framed door dug into an earthen bank (Bag-End style): a
+ * ring of chunky timber staves standing in for the frame, a recessed shadow
+ * disc, a round door panel with vertical plank strips (boxes — real volume,
+ * robust from any angle), a brass handle, and a stone step/apron leading up
+ * to it. Faces +Z (the building's canonical front).
+ */
+function addRoundDoor(g: THREE.Group, cx: number, doorY: number, cz: number, dna: BuildingDNA, radius = 0.55): void {
+  const frameMat = mat(dna.colors.trim, { roughness: 0.85 });
+  const doorMat = mat(dna.colors.door, { roughness: 0.7 });
+  const shadowMat = mat('#120c08', { roughness: 1 });
+
+  // Recess shadow — a flat disc degrades safely to a thin line (not a
+  // distracting artifact) when viewed edge-on, unlike a hollow ring.
+  addMesh(g, new THREE.CircleGeometry(radius * 0.85, 16), shadowMat, cx, doorY, cz - 0.04);
+
+  // Round timber-stave frame.
+  addTimberRingSegments(g, cx, doorY, cz, radius * 0.92, frameMat, 10, radius * 0.34, radius * 0.3);
+
+  // The door itself + vertical plank strips (boxes, real volume, robust).
+  addMesh(g, new THREE.CircleGeometry(radius * 0.72, 16), doorMat, cx, doorY, cz + 0.02);
+  for (const [i, plankH] of [[-1, 1.0], [0, 1.3], [1, 1.0]] as const) {
+    addMesh(g, new THREE.BoxGeometry(radius * 0.16, radius * plankH, 0.035), frameMat, cx + i * radius * 0.36, doorY, cz + 0.04);
+  }
+
+  // Brass handle.
+  const handleMat = mat('#c9a24a', { metalness: 0.6, roughness: 0.35 });
+  addMesh(g, new THREE.SphereGeometry(radius * 0.1, 8, 8), handleMat, cx + radius * 0.4, doorY, cz + 0.08);
+
+  // Stone step/apron.
+  const stepMat = mat('#8a8578', { roughness: 0.95 });
+  addMesh(g, new THREE.CylinderGeometry(radius * 1.1, radius * 1.15, 0.08, 12), stepMat, cx, 0.04, cz + radius * 0.8);
+}
+
+/** A small round port-hole window: a timber-stave ring + inset glass disc, facing +Z. */
+function addRoundWindow(g: THREE.Group, cx: number, cy: number, cz: number, dna: BuildingDNA, lit: boolean, radius = 0.22): void {
+  const frameMat = mat(dna.colors.trim, { roughness: 0.85 });
+  addTimberRingSegments(g, cx, cy, cz, radius * 0.95, frameMat, 8, radius * 0.36, radius * 0.28);
+  addMesh(g, new THREE.CircleGeometry(radius * 0.65, 12), glassLikeMat(lit), cx, cy, cz + 0.02);
+}
+
+function glassLikeMat(lit: boolean): THREE.MeshStandardMaterial {
+  return lit
+    ? mat('#f0c878', { emissive: new THREE.Color('#f0c060'), emissiveIntensity: 0.7, roughness: 0.4 })
+    : mat('#2a3038', { roughness: 0.3, metalness: 0.1 });
+}
+
+/** A stubby stone chimney stack with a small wisp of smoke. */
+function addChimneyStack(g: THREE.Group, cx: number, apexY: number, cz: number, dna: BuildingDNA): void {
+  const stoneMat = mat(dna.colors.trim, { roughness: 0.95 });
+  addMesh(g, new THREE.CylinderGeometry(0.16, 0.2, 0.55, 8), stoneMat, cx, apexY + 0.28, cz);
+  addMesh(g, new THREE.CylinderGeometry(0.22, 0.22, 0.08, 8), stoneMat, cx, apexY + 0.55, cz);
+  const smokeMat = mat('#e8e4dc', { transparent: true, opacity: 0.35, roughness: 1 });
+  addMesh(g, new THREE.SphereGeometry(0.18, 8, 6), smokeMat, cx + 0.05, apexY + 0.85, cz);
+}
+
+/** A scatter of grass-tuft blades and the odd wildflower over the mound's crown. */
+function addGrassTufts(g: THREE.Group, seed: number, apexY: number, capRadius: number, count: number): void {
+  const r = mulberry32(seed);
+  const grassMat = mat('#6a8a3a', { roughness: 0.9 });
+  const flowerMat = mat('#e8d868', { emissive: new THREE.Color('#e8d868'), emissiveIntensity: 0.15, roughness: 0.6 });
+  for (let i = 0; i < count; i++) {
+    const ang = r() * Math.PI * 2;
+    const rad = r() * capRadius;
+    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
+    const bladeH = 0.18 + r() * 0.16;
+    addMesh(g, new THREE.ConeGeometry(0.045, bladeH, 5), grassMat, x, apexY + bladeH / 2 - 0.05, z, r() * Math.PI);
+    if (r() < 0.3) {
+      addMesh(g, new THREE.SphereGeometry(0.035, 6, 5), flowerMat, x + 0.05, apexY, z);
+    }
+  }
+}
+
+/** A small wood-plank garden fence flanking the path, either side of `cz`. */
+function addGardenFence(g: THREE.Group, cz: number, halfSpan: number, dna: BuildingDNA): void {
+  const postMat = mat(dna.colors.trim, { roughness: 0.9 });
+  for (const side of [-1, 1]) {
+    const px = side * halfSpan;
+    addMesh(g, new THREE.CylinderGeometry(0.04, 0.045, 0.45, 6), postMat, px, 0.22, cz);
+    addMesh(g, new THREE.CylinderGeometry(0.04, 0.045, 0.45, 6), postMat, px, 0.22, cz + 0.35);
+    addMesh(g, new THREE.BoxGeometry(0.4, 0.05, 0.05), postMat, px, 0.32, cz + 0.17, Math.PI / 2);
+  }
+}
+
+/** A wooden planter barrel with a small bush/sprig — cosy dooryard clutter. */
+function addPlanterBarrel(g: THREE.Group, x: number, z: number): void {
+  const woodMat = mat('#6a4a28', { roughness: 0.9 });
+  addMesh(g, new THREE.CylinderGeometry(0.18, 0.2, 0.4, 10), woodMat, x, 0.2, z);
+  const plantMat = mat('#4a7a30', { roughness: 0.9 });
+  addMesh(g, new THREE.ConeGeometry(0.16, 0.35, 6), plantMat, x, 0.55, z);
+  addMesh(g, new THREE.SphereGeometry(0.14, 8, 6), plantMat, x, 0.42, z);
+}
+
 // ── Vulperia — earthen burrow/den architecture ───────────────────────────────
 // Fox Den (patriciate), Den Mother's Hall (church), Night Market (market):
-// dug-in earthen mounds with round doorways, no flat walls, timber props,
-// tinker-scrap decoration, fur/pelt drapes, string lanterns.
+// dug-in earthen mounds, hobbit-hole-style — noise-lumped banks (not perfect
+// spheres), a real round timber door dug into the front with a proud frame,
+// handle and stone step, port-hole windows either side, a chimney stack,
+// a grassy/wildflower crown, and dooryard clutter (fence, planter, crates).
 
-function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
+function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number, opts: { chimney?: boolean; garden?: boolean } = {}): THREE.Group {
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE41);
   const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
-  const thatchMat = mat(dna.colors.roof, { roughness: 0.95 });
 
-  // Main mound: squashed sphere sunk halfway into the ground.
-  const mound = addMesh(g, new THREE.SphereGeometry(Math.max(w, d) / 2, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), earthMat, 0, 0, 0);
-  mound.scale.set(1, h / (Math.max(w, d) / 2) * 0.9, 1);
+  addOrganicMound(g, dna.seed ^ 0x5011_DE40, w, d, h, earthMat);
 
-  // Grass/thatch cap tuft.
-  addMesh(g, new THREE.ConeGeometry(Math.max(w, d) * 0.22, 0.5, 8), thatchMat, 0, h + 0.1, 0);
+  // Round timber-framed door dug into the front of the bank.
+  const doorR = Math.min(w, d) * 0.24;
+  const doorY = doorR * 1.05;
+  addRoundDoor(g, 0, doorY, d / 2 - 0.08, dna, doorR);
 
-  // Round doorway.
-  addDoorway(g, Math.min(w, d) * 0.42, h * 0.55, d / 2 - 0.05, dna.colors.door);
-
-  // Timber support beams flanking the door (den entrance frame).
-  const beamMat = mat(dna.colors.trim, { roughness: 0.9 });
-  for (const bx of [-Math.min(w, d) * 0.3, Math.min(w, d) * 0.3]) {
-    addMesh(g, new THREE.CylinderGeometry(0.08, 0.1, h * 0.6, 6), beamMat, bx, h * 0.3, d / 2 - 0.05);
+  // Small round port-hole windows flanking the door.
+  const lit = (dna.seed & 1) === 0;
+  for (const wx of [-w * 0.3, w * 0.3]) {
+    addRoundWindow(g, wx, h * 0.6, d / 2 - 0.1, dna, lit, Math.min(w, d) * 0.1);
   }
+
+  // Timber lintel beam over the door.
+  const beamMat = mat(dna.colors.trim, { roughness: 0.9 });
+  addMesh(g, new THREE.BoxGeometry(doorR * 2.3, 0.1, 0.16), beamMat, 0, doorY + doorR * 1.15, d / 2 - 0.02);
 
   // Fox-tail banner on a pole beside the entrance.
   const poleMat = mat('#5a4020', { roughness: 0.85 });
-  const pole = addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, h * 0.9, 6), poleMat, w / 2 + 0.15, h * 0.45, d / 2 - 0.3);
+  addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, h * 0.9, 6), poleMat, w / 2 + 0.15, h * 0.45, d / 2 - 0.3);
   const bannerMat = mat(dna.colors.trim, { roughness: 0.7, side: THREE.DoubleSide });
   addMesh(g, new THREE.ConeGeometry(0.14, 0.5, 6), bannerMat, w / 2 + 0.15, h * 0.75, d / 2 - 0.3);
-  void pole;
 
-  // Tinker-scrap: small crate + barrel clutter typical of a den market/hall.
+  // Grass cap + wildflowers over the mound crown.
+  addGrassTufts(g, dna.seed ^ 0x5011_DE44, h * 0.88, Math.min(w, d) * 0.3, 9);
+
+  if (opts.chimney !== false) {
+    addChimneyStack(g, -w * 0.2, h * 0.92, -d * 0.05, dna);
+  }
+  if (opts.garden) {
+    addPlanterBarrel(g, -Math.min(w, d) * 0.45, d / 2 + 0.15);
+    addGardenFence(g, d / 2 + 0.2, Math.min(w, d) * 0.55, dna);
+  }
+
+  // Tinker-scrap: small crate clutter typical of a den market/hall.
   const crateMat = mat('#8a6840', { roughness: 0.9 });
   for (let i = 0; i < 2; i++) {
     const cx = (r() - 0.5) * w * 0.6;
@@ -107,26 +292,28 @@ function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number): THREE
 function buildVulperiaVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.85;
-  const g = vulperiaMound(dna, fp.w, fp.d, h);
-  // Fox Den (seat of the settlement's leader): a second, smaller side mound.
+  const g = vulperiaMound(dna, fp.w, fp.d, h, { chimney: true, garden: true });
+  // Fox Den (seat of the settlement's leader): a second, smaller den mound
+  // overlapping the main bank so the pair reads as one dug-in burrow complex.
   const r = mulberry32(dna.seed ^ 0x5011_DE42);
   const sideMat = mat(dna.colors.walls, { roughness: 0.98 });
-  const sideR = Math.min(fp.w, fp.d) * 0.28;
-  addMesh(g, new THREE.SphereGeometry(sideR, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), sideMat, fp.w / 2 + sideR * 0.5, 0, -fp.d * 0.2 + r() * 0.2)
-    .scale.set(1, 0.8, 1);
+  const sideSize = Math.min(fp.w, fp.d) * 0.56;
+  const sideCx = fp.w / 2 + sideSize * 0.3, sideCz = -fp.d * 0.15 + r() * 0.2;
+  addOrganicMound(g, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, sideMat, sideCx, sideCz, 0.14);
   return g;
 }
 
 function buildVulperiaChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.9;
-  const g = vulperiaMound(dna, fp.w, fp.d * 0.6, h);
+  const g = vulperiaMound(dna, fp.w, fp.d * 0.6, h, { chimney: false, garden: false });
   // Den Mother's Hall: flanking smaller burrow-pups either side of the main mound.
   const pupMat = mat(dna.colors.walls, { roughness: 0.98 });
-  const pupR = Math.min(fp.w, fp.d) * 0.18;
+  const pupSize = Math.min(fp.w, fp.d) * 0.36;
+  let pupSeed = 0x5011_DE46;
   for (const px of [-fp.w * 0.42, fp.w * 0.42]) {
-    addMesh(g, new THREE.SphereGeometry(pupR, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), pupMat, px, 0, fp.d * 0.15)
-      .scale.set(1, 0.7, 1);
+    addOrganicMound(g, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, pupMat, px, fp.d * 0.15, 0.14);
+    pupSeed += 1;
   }
   return g;
 }
@@ -136,10 +323,9 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
   const h = FLOOR_HEIGHT * 0.55;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE43);
-  // Night Market den-mouth stall: low mound base with a canvas awning.
+  // Night Market den-mouth stall: low earthen mound base with a canvas awning.
   const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
-  addMesh(g, new THREE.SphereGeometry(Math.max(fp.w, fp.d) / 2, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), earthMat, 0, 0, -fp.d * 0.15)
-    .scale.set(1, h / (Math.max(fp.w, fp.d) / 2), 1);
+  addOrganicMound(g, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, earthMat, 0, -fp.d * 0.15, 0.14);
   const awningMat = mat(dna.colors.roof, { roughness: 0.8, side: THREE.DoubleSide });
   addMesh(g, new THREE.ConeGeometry(fp.w * 0.55, 0.6, 4), awningMat, 0, h + 0.05, fp.d * 0.25, Math.PI / 4);
   // Counter/table + hanging pelts + string lanterns.

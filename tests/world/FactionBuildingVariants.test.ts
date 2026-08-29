@@ -102,3 +102,65 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
     expect(countMeshes(inst.exteriorGroup)).toBeGreaterThan(0);
   });
 });
+
+// ── Vulperia deep-quality pass (settlement visual fidelity, "not just a
+// blob with a roof thing" follow-up) ────────────────────────────────────────
+// Regression guards for the noise-perturbed organic mound and the
+// timber-stave round door/window kit added to replace the original plain
+// half-sphere + flat torus-ring approach.
+describe('Vulperia — organic mound geometry (not a plain sphere blob)', () => {
+  function findBiggestMesh(g: THREE.Group): THREE.Mesh {
+    let biggest: THREE.Mesh | null = null;
+    let biggestCount = 0;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh) {
+        const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
+        if (count > biggestCount) { biggestCount = count; biggest = o; }
+      }
+    });
+    expect(biggest).not.toBeNull();
+    return biggest!;
+  }
+
+  it('produces only finite (non-NaN/non-infinite) vertices after noise-based silhouette displacement', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      const g = FACTION_BUILDING_VARIANTS.vulperia![kind]!(makeDna(kind, 'vulperia', 123));
+      g.traverse(o => {
+        if (o instanceof THREE.Mesh) {
+          const attr = o.geometry.getAttribute('position') as THREE.BufferAttribute;
+          for (let i = 0; i < attr.array.length; i++) {
+            expect(Number.isFinite(attr.array[i])).toBe(true);
+          }
+        }
+      });
+    }
+  });
+
+  it('perturbs the main mound off a perfect sphere radius (organic bank, not a smooth dome)', () => {
+    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 7));
+    const mound = findBiggestMesh(g);
+    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const radii: number[] = [];
+    for (let i = 0; i < pos.count; i++) {
+      radii.push(Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i)));
+    }
+    // A perfectly spherical (undisplaced) hemisphere has every vertex at the
+    // exact same distance from the origin. Noise displacement should spread
+    // that distance out into a real range.
+    expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(0.01);
+  });
+
+  it('produces a different mound silhouette per seed (deterministic but seed-varied)', () => {
+    const gA = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
+    const gB = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 2));
+    const gA2 = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
+    const sumRadii = (g: THREE.Group): number => {
+      const pos = findBiggestMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
+      let sum = 0;
+      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
+      return sum;
+    };
+    expect(sumRadii(gA)).toBe(sumRadii(gA2)); // deterministic for the same seed
+    expect(sumRadii(gA)).not.toBe(sumRadii(gB)); // varies across seeds
+  });
+});
