@@ -427,6 +427,63 @@ function buildSlimeShop(dna: BuildingDNA): THREE.Group {
 // gaunt stone spires, rib-cage bone arches, skull motifs — a "haunted crypt"
 // rather than a house.
 
+/**
+ * A single tapered stone tier with a noise-crumbled surface (weathered,
+ * ancient masonry) instead of a perfectly smooth cone/cylinder taper.
+ * Stacking a few of these with shrinking radii reads as a real tiered
+ * tower built from distinct stone courses, not one smooth primitive.
+ */
+function addWeatheredTier(g: THREE.Group, seed: number, baseY: number, radiusBottom: number, radiusTop: number, tierH: number, material: THREE.Material, jitter = 0.07): THREE.Mesh {
+  const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, tierH, 10, 3);
+  const noise2D = createNoise2D(seed);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const angle = Math.atan2(v.z, v.x);
+    const heightRatio = THREE.MathUtils.clamp((v.y + tierH / 2) / tierH, 0, 1);
+    const n = noise2D(Math.cos(angle) * 2.5, Math.sin(angle) * 2.5 + heightRatio * 3);
+    const radialScale = 1 + n * jitter;
+    v.x *= radialScale;
+    v.z *= radialScale;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(0, baseY + tierH / 2, 0);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
+/**
+ * A carved gothic archway built from small voussoir-like stone blocks
+ * (never a flat torus/ring — this is only a half-circle arch, but the
+ * same "many small solid pieces" principle keeps it robust from any
+ * angle), with straight door jambs and a dark recessed doorway panel.
+ * A proper carved crypt entrance instead of a flat doorway disc.
+ */
+function addStoneArchDoorway(g: THREE.Group, cx: number, cz: number, doorW: number, doorH: number, material: THREE.Material): void {
+  const archR = doorW / 2;
+  const voussoirs = 7;
+  for (let i = 0; i <= voussoirs; i++) {
+    const ang = (i / voussoirs) * Math.PI; // 0 (right springer) .. PI (left springer)
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(archR * 0.32, archR * 0.34, archR * 0.3), material);
+    seg.position.set(cx + Math.cos(ang) * archR, doorH + Math.sin(ang) * archR, cz);
+    seg.rotation.z = ang;
+    seg.castShadow = true;
+    g.add(seg);
+  }
+  // Straight door jambs below the springline.
+  for (const side of [-1, 1]) {
+    addMesh(g, new THREE.BoxGeometry(archR * 0.3, doorH, archR * 0.3), material, cx + side * archR, doorH / 2, cz);
+  }
+  // Dark recessed doorway opening.
+  const voidMat = mat('#0a0a0c', { roughness: 1 });
+  addMesh(g, new THREE.BoxGeometry(doorW * 0.72, doorH * 0.96, 0.08), voidMat, cx, doorH * 0.5, cz + 0.03);
+}
+
 function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const g = new THREE.Group();
@@ -435,14 +492,20 @@ function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
   const w = Math.min(fp.w, fp.d) * 0.7;
   const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.6; // gaunt and tall
 
-  // Tapered spire body (narrower at top — cylinder w/ shrinking radius via cone approximation).
-  addMesh(g, new THREE.CylinderGeometry(w * 0.32, w * 0.5, h, 8), stoneMat, 0, h / 2, 0);
+  // Weathered stone spire built from three genuinely distinct tapering
+  // tiers (a real tiered tower of stone courses), not one smooth primitive.
+  const tier1H = h * 0.42, tier2H = h * 0.34, tier3H = h * 0.24;
+  let y = 0;
+  addWeatheredTier(g, dna.seed ^ 0xDEAD_1001, y, w * 0.5, w * 0.42, tier1H, stoneMat); y += tier1H;
+  addWeatheredTier(g, dna.seed ^ 0xDEAD_1002, y, w * 0.42, w * 0.36, tier2H, stoneMat); y += tier2H;
+  addWeatheredTier(g, dna.seed ^ 0xDEAD_1003, y, w * 0.36, w * 0.3, tier3H, stoneMat); y += tier3H;
+
   // Jagged broken-crenellation crown.
   const crownMat = mat(dna.colors.trim, { roughness: 0.95 });
   const nCren = 6;
   for (let i = 0; i < nCren; i++) {
     const ang = (i / nCren) * Math.PI * 2;
-    const rad = w * 0.3;
+    const rad = w * 0.28;
     const ch = 0.3 + r() * 0.4;
     addMesh(g, new THREE.BoxGeometry(0.18, ch, 0.18), crownMat, Math.cos(ang) * rad, h + ch / 2, Math.sin(ang) * rad);
   }
@@ -452,7 +515,22 @@ function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
   // Narrow arrow-slit windows.
   const slitMat = mat('#0a0a10', { roughness: 0.9 });
   for (let fl = 0; fl < 3; fl++) {
-    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), w * 0.32 + 0.02);
+    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), w * 0.36 + 0.02);
+  }
+  // Gothic arch doorway carved from stone voussoirs, flanked by bone ribs.
+  const doorW = w * 0.5, doorH = h * 0.18;
+  addStoneArchDoorway(g, 0, w * 0.5 - 0.02, doorW, doorH, mat(dna.colors.trim, { roughness: 0.95 }));
+  const ribMat = mat('#d8d0b8', { roughness: 0.92 });
+  for (const side of [-1, 1]) {
+    const rib = addMesh(g, new THREE.CylinderGeometry(0.04, 0.07, doorH * 1.3, 5), ribMat, side * doorW * 0.4, doorH * 0.6, w * 0.5 + 0.05);
+    rib.rotation.z = side * 0.18;
+  }
+  // Fallen rubble blocks scattered at the base (decay storytelling).
+  const rubbleMat = mat(dna.colors.walls, { roughness: 1 });
+  for (let i = 0; i < 3; i++) {
+    const ang = r() * Math.PI * 2;
+    const rad = w * 0.6 + r() * 0.4;
+    addMesh(g, new THREE.BoxGeometry(0.2 + r() * 0.15, 0.15 + r() * 0.1, 0.2 + r() * 0.15), rubbleMat, Math.cos(ang) * rad, 0.1, Math.sin(ang) * rad, r() * Math.PI);
   }
   return g;
 }

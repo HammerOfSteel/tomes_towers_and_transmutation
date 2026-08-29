@@ -42,6 +42,27 @@ function findBiggestMesh(g: THREE.Group): THREE.Mesh {
   return biggest!;
 }
 
+/**
+ * Like findBiggestMesh, but restricted to CylinderGeometry meshes. Some
+ * faction builders (e.g. undead's floating orb, an IcosahedronGeometry)
+ * include non-indexed geometries whose raw vertex-array length is inflated
+ * well past any indexed cylinder/cone mesh's — this avoids accidentally
+ * grabbing a fixed, seed-independent decorative shape when the intent is
+ * to inspect the noise-perturbed tapered body.
+ */
+function findBiggestCylinderMesh(g: THREE.Group): THREE.Mesh {
+  let biggest: THREE.Mesh | null = null;
+  let biggestCount = 0;
+  g.traverse(o => {
+    if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') {
+      const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
+      if (count > biggestCount) { biggestCount = count; biggest = o; }
+    }
+  });
+  expect(biggest).not.toBeNull();
+  return biggest!;
+}
+
 function expectAllVerticesFinite(g: THREE.Group): void {
   g.traverse(o => {
     if (o instanceof THREE.Mesh) {
@@ -207,6 +228,52 @@ describe('Orcish — palisade wall + rough hide roof (not one tapered cylinder)'
     const gA2 = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
     const sumXZ = (g: THREE.Group): number => {
       const pos = findBiggestMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
+      let sum = 0;
+      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
+      return sum;
+    };
+    expect(sumXZ(gA)).toBe(sumXZ(gA2));
+    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
+  });
+});
+
+// ── Undead deep-quality pass (settlement visual fidelity follow-up) ────────
+// Regression guards for the tiered weathered-stone spire + carved
+// gothic-arch doorway rework that replaced the original single
+// tapered-cylinder "spire" standing in for a whole crypt tower.
+describe('Undead — tiered weathered spire + stone arch doorway (not one tapered cylinder)', () => {
+  it('produces only finite vertices for the noise-perturbed tiers after displacement', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.undead_common![kind]!(makeDna(kind, 'undead_common', 42)));
+    }
+  });
+
+  it('builds the villa (Lich Tower) from three distinct stone tiers plus arch/crown/orb/rubble, not one primitive', () => {
+    const g = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 3));
+    // 3 tiers + 6 crenellations + 1 orb + 3 arrow slits + (7 voussoirs + 2
+    // jambs + 1 void panel for the arch) + 2 ribs + 3 rubble chunks.
+    expect(countMeshes(g)).toBeGreaterThanOrEqual(3 + 6 + 1 + 3 + 10 + 2 + 3);
+  });
+
+  it('perturbs a tower tier off a perfect cylinder radius (crumbling ancient stone, not smooth taper)', () => {
+    const g = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 3));
+    const tier = findBiggestCylinderMesh(g);
+    const pos = tier.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const xzRadii = new Set<number>();
+    for (let i = 0; i < pos.count; i++) {
+      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
+    }
+    // A perfect cylinder/cone tier has a small, fixed set of ring radii;
+    // noise perturbation should spread this out into many distinct values.
+    expect(xzRadii.size).toBeGreaterThan(6);
+  });
+
+  it('produces a different tower silhouette per seed (deterministic but seed-varied)', () => {
+    const gA = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 1));
+    const gB = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 2));
+    const gA2 = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 1));
+    const sumXZ = (g: THREE.Group): number => {
+      const pos = findBiggestCylinderMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
       let sum = 0;
       for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
       return sum;

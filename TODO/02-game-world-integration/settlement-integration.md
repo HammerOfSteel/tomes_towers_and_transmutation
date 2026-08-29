@@ -150,7 +150,16 @@ for the full design/plan.
     (`addRoughConeRoof()`), plus log door posts + lintel. 38 unit tests
     (up from 34), Playwright-verified from face-on and edge-on angles —
     the Warlord Hall now reads as a genuine tribal roundhouse.
-  - [ ] Undead — spires need real crypt/ossuary/coffin-niche detail.
+  - [x] Undead — **Done.** The Lich Tower is now built from three
+    genuinely distinct, shrinking-radius stone tiers with a
+    noise-crumbled weathered surface (`addWeatheredTier()`), plus a
+    proper carved gothic archway made of stone voussoir blocks
+    (`addStoneArchDoorway()`) instead of a flat doorway disc, flanked by
+    bone rib struts, with fallen rubble at the base. 42 unit tests (up
+    from 38) — also fixed a shared test-helper bug where `findBiggestMesh`
+    was picking up the seed-independent floating orb (a non-indexed
+    `IcosahedronGeometry`) instead of an actual spire tier.
+    Playwright-verified from both face-on and rotated angles.
   - [ ] Dwarven — stone blocks need real coursed-masonry/vault detail.
   - [ ] Elven — trunk needs real bark/root/woven-platform detail.
   - [ ] Vampire — gothic spire needs real tracery/buttress detail.

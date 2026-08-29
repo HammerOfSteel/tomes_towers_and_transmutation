@@ -710,26 +710,74 @@ whole hut. Now genuinely two separate construction layers:
   through the apex, mounted skull/tusk trophy above the door) from both
   angles, with no degenerate artifacts.
 
+**Undead — DONE (this session).** Reworked `buildUndeadVilla()`'s Lich
+Tower in `FactionBuildingVariants.ts`: the previous version was a single
+tapered `CylinderGeometry` body (one primitive) topped with crenellation
+boxes. Now:
+- `addWeatheredTier()`: the spire is built from **three genuinely
+  distinct, shrinking-radius stone tiers**, each with its own
+  noise-crumbled surface (angular simplex noise, ancient weathered
+  masonry rather than a smooth taper) — reads as a real tiered tower of
+  stone courses, not one smooth cone.
+- `addStoneArchDoorway()`: a proper carved gothic archway built from 7
+  small voussoir-like stone blocks (never a flat torus/ring — this is a
+  half-circle arch, and even so uses the same "many small solid pieces"
+  principle as vulperia/orcish for robustness from any angle), plus
+  straight door jambs and a dark recessed doorway panel — a genuine
+  carved crypt entrance instead of a flat doorway disc, flanked by bone
+  rib struts (reusing the visual language already established by the
+  Bone Shrine chapel).
+- Added fallen rubble blocks scattered at the base for decay storytelling.
+- The crenellation crown, floating orb, and arrow-slit windows were kept
+  (already reasonable layered details) but repositioned to the new
+  3-tier height budget.
+- The chapel (Bone Shrine: paired rib-arch struts + altar + skull posts +
+  candles) and shop (Wraith Bazaar: bone-strut stall + cloth canopy +
+  skull lanterns + counter) were left unchanged — both already read as
+  genuine multi-part assemblies (4-5 distinct feature types each), not
+  the "one primitive" problem the villa had.
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Undead — tiered
+  weathered spire + stone arch doorway" describe block (4 tests). **Found
+  and fixed a real test-helper bug during this work**: the shared
+  `findBiggestMesh()` helper (used by both the vulperia and orcish
+  describe blocks) picked undead's floating orb — an `IcosahedronGeometry`,
+  which is non-indexed and so has a far larger raw vertex-array length
+  (240) than any indexed cylinder/cone tier (86) — instead of an actual
+  spire tier. Since the orb's shape and position don't depend on `seed`,
+  the "different silhouette per seed" test was passing for the wrong
+  reason (comparing the same static orb to itself) rather than actually
+  testing the tier's noise displacement. Fixed by adding a
+  `findBiggestCylinderMesh()` helper restricted to `CylinderGeometry`
+  meshes, used for all of undead's tier-focused assertions. **Any future
+  test using a "biggest mesh" heuristic should be aware that
+  non-indexed geometries (Icosahedron, and any `BufferGeometry` built via
+  `mergeVertices`-free construction) can have vertex-array lengths that
+  don't correspond to visual complexity or seed-sensitivity.** 42 tests
+  total (up from 38), all passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city), checked
+  from both a face-on-ish angle and a rotated angle: confirmed the Lich
+  Tower now reads as a genuine weathered crypt tower with a real carved
+  gothic archway entrance (clearly visible, robust from both angles since
+  it's built from solid blocks, not a flat ring), holding up well from
+  multiple viewing angles and positions across the settlement.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Undead** — Lich Tower/Bone Shrine/Wraith Bazaar spires; add real
-   crypt/ossuary detail (coffin niches, rib-cage arch framing, carved
-   stone courses) rather than a single tapered-spire primitive.
-2. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
+1. **Dwarven** — Guild Hall/Stone Temple/Trade Vault stone blocks; add
    real carved-stone detail (coursed masonry look via stacked slabs,
    proper vault-door mechanism detail, corniced roofline).
-3. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
+2. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
    currently a simple tapered cylinder — needs real bark/root/branch
    detail and a proper woven-platform canopy structure.
-4. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
+3. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
    spire needs real tracery/buttress/window detail, not a bare cone+box.
-5. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+4. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
    needs gill/spore detail and a proper twisted-stalk base, not a plain
    cone-on-cylinder.
-6. **Slime** — explicitly reported as already reading fine ("mostly the
+5. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-7. **Human** — still deferred from increment 2 scoping (already has
+6. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:
