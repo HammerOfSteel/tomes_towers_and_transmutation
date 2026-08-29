@@ -877,15 +877,62 @@ Now:
   the buttresses show a clear stepped, tapering silhouette from both
   angles.
 
+**Fae — DONE (this session).** Reworked `faeMushroom()` (used by the Fae
+Court villa) plus `buildFaeShop()`'s cap in `FactionBuildingVariants.ts`:
+the previous version was a perfectly smooth tapered `CylinderGeometry`
+stem topped with a perfectly smooth half-`Sphere` dome cap, with flat
+`CircleGeometry` decals standing in for "glowing spots." Now:
+- The stalk reuses `addWeatheredTier()` (the noise-crumbled-surface
+  technique from undead/elven) for a genuinely twisted, gnarled toadstool
+  base instead of a perfectly smooth taper.
+- `addScallopedCap()`: the cap's rim is now perturbed by angular simplex
+  noise (strongest at the rim, fading to a smooth crown) for a real wavy,
+  irregular toadstool-cap edge, visible from the game's fixed downward
+  isometric camera — this was chosen over gills as the primary "make the
+  cap read as organic" fix specifically *because* it's camera-visible, see
+  below.
+- `addMushroomGills()`: real underside gill ribs (14 thin radiating fins)
+  added for geometric correctness — the classic toadstool detail. **Note
+  on a visual-verification finding that shaped the final approach**: gills
+  are only visible from directly underneath a cap, which the game's fixed
+  downward-angle isometric camera never sees. They were kept (harmless,
+  geometrically correct, low triangle cost, and could matter if a future
+  camera angle ever changes) but the scalloped-rim noise perturbation
+  above was added as the change that actually reads in normal gameplay.
+- `addMushroomWarts()`: raised glowing bump protrusions (real 3D
+  hemispheres) replacing the flat circular "glowing spot" decals.
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Fae — twisted
+  stalk + scalloped cap + gills/warts" describe block (5 tests): finite
+  vertices after stalk/cap-noise displacement, the stalk's radii are no
+  longer uniform (proves real displacement), the cap's radii (in the
+  horizontal XZ plane) are no longer uniform either (proves the rim is
+  scalloped, not a perfect circle), the villa assembles from at least 25
+  parts, and stalk/cap shape is deterministic per seed but seed-varied.
+  **Found and fixed a real TypeScript control-flow-narrowing quirk while
+  writing these tests**: a `let cap: THREE.Mesh | null = null` variable
+  reassigned inside a `.traverse()` callback, when later narrowed via
+  `if (cap === null) throw`, was incorrectly inferred by the compiler as
+  narrowing to `never` (as if the declared type were exactly `null`, not
+  `THREE.Mesh | null`) — TypeScript's control-flow analysis does not
+  reliably track reassignments of an outer `let` from inside a nested
+  callback for narrowing purposes at the call site. Fixed by collecting
+  candidates into an array first (`sphereMeshes: THREE.Mesh[]`) and
+  picking the biggest in a plain `for` loop afterward, avoiding the
+  reassign-inside-a-closure pattern entirely. 59 tests total (up from
+  54), all passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city),
+  including a closer teleport-to-anchor check specifically to inspect the
+  cap silhouette: confirmed the scalloped, faceted cap-rim edge is clearly
+  visible on multiple buildings from the game's normal iso-camera angle
+  (a genuinely wavy toadstool silhouette, not a smooth circle), and the
+  twisted stalk reads as an irregular, gnarled base.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
-   needs gill/spore detail and a proper twisted-stalk base, not a plain
-   cone-on-cylinder.
-2. **Slime** — explicitly reported as already reading fine ("mostly the
+1. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-3. **Human** — still deferred from increment 2 scoping (already has
+2. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:

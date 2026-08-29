@@ -183,7 +183,16 @@ for the full design/plan.
     `addTimberRingSegments()`) framing a stained-glass disc, instead of a
     flat coloured circle. 54 unit tests (up from 50). Playwright-verified
     from both face-on and rotated angles.
-  - [ ] Fae — mushroom cap needs real gill/spore/twisted-stalk detail.
+  - [x] Fae — **Done.** Stalk now uses the noise-crumbled-surface
+    technique (`addWeatheredTier()`) for a twisted, gnarled base, and the
+    cap rim is now perturbed by angular noise (`addScallopedCap()`) for a
+    genuinely wavy toadstool edge — chosen as the primary fix because
+    it's visible from the game's fixed downward iso camera, unlike gills
+    (added anyway for correctness: `addMushroomGills()`, real underside
+    ribs, only visible from directly underneath). Glowing "spot" decals
+    replaced with raised bump protrusions (`addMushroomWarts()`). 59 unit
+    tests (up from 54). Playwright-verified from both face-on and
+    rotated angles, plus a close-up check of the cap silhouette.
   - [ ] Slime — reported as already reading fine, lowest priority.
   - [ ] Human — still deferred (decent shared-shape variety already).
 - [ ] Phase 2c (separately scoped, follow-up): generic prop shape library

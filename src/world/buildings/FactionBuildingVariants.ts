@@ -1110,25 +1110,91 @@ function buildVampireShop(dna: BuildingDNA): THREE.Group {
 // oversized glowing-spotted mushroom caps, curling toadstool stems, petals,
 // firefly motes — nothing built from stone or timber.
 
+/**
+ * A mushroom cap with a noise-scalloped rim — visible from the fixed
+ * downward isometric camera as a genuinely wavy, irregular toadstool-cap
+ * edge, unlike gills (correct but only visible from directly underneath,
+ * which this camera never sees). Reuses the same angular-noise-silhouette
+ * technique as `addOrganicMound()`/`addRoughConeRoof()`, strongest at the
+ * rim and fading to a smooth crown.
+ */
+function addScallopedCap(g: THREE.Group, seed: number, capY: number, capR: number, material: THREE.Material, jitter = 0.14): THREE.Mesh {
+  const geo = new THREE.SphereGeometry(capR, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  const noise2D = createNoise2D(seed);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const angle = Math.atan2(v.z, v.x);
+    const heightRatio = THREE.MathUtils.clamp(v.y / capR, 0, 1); // 0 at rim, 1 at crown
+    const n = noise2D(Math.cos(angle) * 3.2, Math.sin(angle) * 3.2);
+    const envelope = 1 - heightRatio; // scalloping strongest at the rim, smooth crown
+    const scale = 1 + n * jitter * envelope;
+    v.x *= scale;
+    v.z *= scale;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(0, capY, 0);
+  mesh.scale.set(1, 0.5, 1);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
+/**
+ * Real underside gill ribs radiating from a mushroom cap's center — thin
+ * flat fins fanning out beneath the rim, the classic toadstool detail
+ * that's otherwise completely absent from a smooth dome cap.
+ */
+function addMushroomGills(g: THREE.Group, capY: number, gillSpan: number, material: THREE.Material, count = 14): void {
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2;
+    const gill = new THREE.Mesh(new THREE.BoxGeometry(gillSpan * 2, 0.015, gillSpan * 0.19), material);
+    gill.position.set(0, capY, 0);
+    gill.rotation.y = ang;
+    g.add(gill);
+  }
+}
+
+/**
+ * Raised, glowing wart-like bumps dotting a mushroom cap — real 3D
+ * protrusions, not flat painted decals lying flush against the surface.
+ */
+function addMushroomWarts(g: THREE.Group, seed: number, capY: number, capR: number, material: THREE.Material, count = 6): void {
+  const r = mulberry32(seed);
+  for (let i = 0; i < count; i++) {
+    const ang = r() * Math.PI * 2;
+    const rad = r() * capR * 0.7;
+    const wartR = 0.07 + r() * 0.04;
+    addMesh(g, new THREE.SphereGeometry(wartR, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), material, Math.cos(ang) * rad, capY + 0.01, Math.sin(ang) * rad);
+  }
+}
+
 function faeMushroom(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xFA_E00001);
   const stemMat = mat(dna.colors.walls, { roughness: 0.6 });
   const capMat = mat(dna.colors.roof, { roughness: 0.55 });
   const spotMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(dna.colors.trim), emissive: new THREE.Color(dna.colors.trim), emissiveIntensity: 0.6, roughness: 0.4 });
+  const gillMat = mat(dna.colors.trim, { roughness: 0.7 });
 
-  // Curved, gently tapered toadstool stem.
-  addMesh(g, new THREE.CylinderGeometry(Math.min(w, d) * 0.22, Math.min(w, d) * 0.3, h, 10), stemMat, 0, h / 2, 0);
-  // Broad mushroom-cap "roof".
-  const cap = addMesh(g, new THREE.SphereGeometry(Math.max(w, d) * 0.55, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat, 0, h, 0);
-  cap.scale.set(1, 0.5, 1);
-  // Glowing spots dotting the cap.
-  for (let i = 0; i < 5; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = r() * Math.max(w, d) * 0.4;
-    addMesh(g, new THREE.CircleGeometry(0.06, 8), spotMat, Math.cos(ang) * rad, h + 0.02, Math.sin(ang) * rad)
-      .rotation.x = -Math.PI / 2;
-  }
+  // Twisted, gnarled toadstool stalk — a noise-crumbled surface (reusing
+  // the same technique as undead's stone tiers / elven's bark trunk), not
+  // a perfectly smooth taper.
+  addWeatheredTier(g, dna.seed ^ 0xFA_E00010, 0, Math.min(w, d) * 0.3, Math.min(w, d) * 0.22, h, stemMat, 0.16);
+
+  // Broad mushroom-cap "roof" with a noise-scalloped, wavy rim — visible
+  // from the fixed downward isometric camera, unlike gills.
+  const capR = Math.max(w, d) * 0.55;
+  addScallopedCap(g, dna.seed ^ 0xFA_E00012, h, capR, capMat, 0.14);
+  // Real underside gill ribs — the classic toadstool detail, entirely
+  // absent from a smooth dome cap.
+  addMushroomGills(g, h - 0.02, capR * 0.85, gillMat, 14);
+  // Raised glowing wart bumps dotting the cap, not flat painted decals.
+  addMushroomWarts(g, dna.seed ^ 0xFA_E00011, h, capR, spotMat, 5);
+
   // Round whimsical doorway.
   addDoorway(g, Math.min(w, d) * 0.4, h * 0.5, d / 2 - 0.05, dna.colors.door);
   // Firefly motes drifting near the cap edge.
@@ -1190,8 +1256,8 @@ function buildFaeShop(dna: BuildingDNA): THREE.Group {
   const stemMat = mat(dna.colors.walls, { roughness: 0.6 });
   const capMat = mat(dna.colors.roof, { roughness: 0.5 });
   addMesh(g, new THREE.CylinderGeometry(0.12, 0.16, h, 8), stemMat, 0, h / 2, 0);
-  addMesh(g, new THREE.SphereGeometry(fp.w * 0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat, 0, h, 0)
-    .scale.set(1, 0.45, 1);
+  addScallopedCap(g, dna.seed ^ 0xFA_E00013, h, fp.w * 0.5, capMat, 0.14).scale.set(1, 0.45, 1);
+  addMushroomGills(g, h - 0.02, fp.w * 0.4, mat(dna.colors.trim, { roughness: 0.7 }), 10);
   const petalMat = mat(dna.colors.trim, { roughness: 0.6, side: THREE.DoubleSide });
   for (let i = 0; i < 4; i++) {
     const ang = (i / 4) * Math.PI * 2;
