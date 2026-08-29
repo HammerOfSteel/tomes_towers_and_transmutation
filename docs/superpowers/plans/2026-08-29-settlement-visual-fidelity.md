@@ -1956,6 +1956,111 @@ diagnostic files (`tests/e2e/_tmp_fae_diag.spec.ts`,
 `tests/world/_tmp_fae_diag.test.ts`, `/tmp/fae_town*.png`) were deleted
 after use.
 
+### Phase 2e.15 — Orcish: block-kit asymmetric lashed hut with jagged patchwork lean-to roof — ✅ DONE
+
+Replaced the primitive orcish builders (`addPalisadeWall()` — a bolted-on
+ring of 16 individual log `CylinderGeometry` pieces — `addRoughConeRoof()` —
+a single noise-perturbed `ConeGeometry` — and the `orcishHut()` assembler)
+with a genuine `buildOrcishHutGrid()` occupancy grid in
+`FactionBlockProfiles.ts`. Orcish was deliberately designed as this rollout's
+**asymmetric/irregular contrast case** against the taper-family races
+(elven/vampire/fae, all radially-symmetric single-footprint shapes built on
+`smoothTaperRadiusFrac()`), mirroring how dwarven was the "angular precise"
+contrast to vulperia's rounded mound:
+
+1. **Rectangular, not circular, footprint** — a hand-lashed rectangular hut
+   body rather than any tapering radial profile.
+2. **Noise-bitten/bulged perimeter edge** — only the outermost ring of wall
+   columns is subject to inclusion noise (interior columns 2+ cells from
+   any edge are always solid), producing a genuinely lopsided, hand-built
+   silhouette while keeping the hut structurally coherent. Verified via
+   direct grid inspection: base-row corner occupancy differs between
+   opposite corners for most seeds (`[true, true, true, false]` at seed 9).
+3. **Mismatched "patch" wall materials** — `patchA`/`patchB`/`patchC`
+   assigned via contiguous low-frequency noise blobs (not per-block
+   speckle), reading as sewn-together scavenged planks/hide/bone. All 3
+   patch materials are present in real proportion (verified: 147/117/120
+   blocks respectively for patchA/B/C on a 12x12x8 test grid).
+4. **Single-pitch lean-to roof** (`ridgeAxis` option) with a strong,
+   separate higher-frequency jaggedness noise channel layered on top,
+   producing a genuinely uneven patchwork skyline rather than one clean
+   slope — verified via direct grid inspection: column-top heights along
+   the ridge axis at seed 3 span `[5, 6, 7, 7, 3, 5, 5, 5, 3, 5, 3, 3]`, a
+   4-level swing, not a flat gradient.
+5. **Crude, hand-hacked doorway** — per-row width jaggedness (noise-
+   perturbed half-width per row), deliberately the roughest-edged doorway
+   of any race so far (vs. elven/vampire/fae's smooth arches/portal).
+   Because the wall body is a flat rectangular column (no radius taper
+   with height, unlike the taper-family races), the safety clamp is
+   trivial: `notchHeight = min(wallBlocksH - 1, ...)` — no frame-corner-
+   distance math is needed.
+
+Material/chamfer convention introduces a new wrinkle: `patchA`/`patchB`/
+`patchC` (wall body) and `facade` (door frame) are chamfer-suppressed for a
+hard-edged "rough-hewn carpentry" read, while `roofpatchA`/`roofpatchB`
+(roof) are left softly chamfered since draped hide/thatch reads better
+rounded — the first race to deliberately split hard-vs-soft chamfer
+*within* a single building (prior races suppressed uniformly for one accent
+material vs. one body material). `patchC`'s and `roofpatchB`'s hardcoded
+accent colors (`#c8ba94` pale bone/scrap, `#5a4a30` weathered thatch/hide)
+were spot-checked against the faction's actual `walls`/`trim`/`roof`
+palette in `BuildingDNA.ts` (`#6a5838`/`#8a6840`/`#3a2818`) — the initial
+`patchC` value (`#8a7860`) was caught during this check as too close in hue
+to `trim` (`#8a6840`, same warm-tan family, ~36 RGB-units apart) and was
+shifted to a genuinely distinct pale bone tone before commit, following the
+precedent set by vampire's `trim`-too-close-to-`walls` correction.
+
+Rewrote `buildOrcishVilla()` (Warlord Hall: block-built lashed hut, kept
+skull-and-tusk trophy props repositioned flush against the new
+`orcishWallTopY()`), `buildOrcishChapel()` (left unchanged — its
+bonfire/totem-pole props were already small bolted-on props with no
+primitive main-structure to replace), and `buildOrcishShop()` (now a small
+block-built lean-to hut in place of the old tarp-over-poles stall, keeping
+its crate/blade props) to use the new grid via a new `addBlockOrcishHut()`
+assembly helper (mirrors `addBlockVampireSpire()`'s build+mesh+center
+pattern). The now-fully-unused legacy `addDoorway()` disc/box stand-in
+(its last remaining callers were fae's and orcish's old primitive builders)
+was deleted as dead code.
+
+**Tests (TDD, written first)**: a new `describe('FactionBlockProfiles —
+orcish lashed hut with jagged patchwork roofline', ...)` block in
+`FactionBlockProfiles.test.ts` (7 tests: grounded base, asymmetric footprint
+via corner-occupancy comparison across seeds, jagged roofline via
+neighbouring-column height comparison, patch-material variety, doorway
+carve, determinism, all-finite-vertices) — all 46 tests (39 pre-existing +
+7 new) passed on first implementation attempt. Rewrote the pre-existing
+orcish `describe` block in `FactionBuildingVariants.test.ts` (which asserted
+properties of the old primitives — a 16-log palisade-cylinder count, cone-
+radius perturbation) to instead assert block-kit properties (single merged
+dense-vertex block-kit mesh instead of palisade logs + a lone cone roof,
+asymmetric footprint and jagged roofline via direct grid inspection, patch-
+material variety, retained skull/tusk/totem-pole/crate props, determinism).
+Full targeted suite (`BlockKit.test.ts` + `FactionBlockProfiles.test.ts` +
+`FactionBuildingVariants.test.ts`) — 150/150 passed. `tsc --noEmit` — 143
+errors (matches the current baseline exactly; the orcish rewrite introduced
+and then immediately fixed two transient unused-variable errors — dead
+`addDoorway()` and a leftover unused `corners` test binding — before this
+final count, no new errors remain in the touched files).
+
+Live verification: a direct code-level diagnostic (`buildOrcishHutGrid()`
+called directly, dumping material counts/column-top spans/corner occupancy;
+`FACTION_BUILDING_VARIANTS.orcish.villa/chapel/shop` called directly,
+confirming real bounding boxes and expected geometry-type mix per building —
+villa: one merged `BufferGeometry` hut + skull `SphereGeometry` + tusk
+`ConeGeometry`s; chapel: totem-pole `CylinderGeometry`s + bonfire props, no
+block-kit hut, matching the "chapel unchanged" design choice; shop: one
+merged `BufferGeometry` hut + crate `BoxGeometry`s) confirmed the geometry
+matches the design intent. Playwright screenshots of the Settlement Lab
+(orcish, town tier, 3 seeds) show chunky, visibly asymmetric brown hut
+clusters with sloped patchwork roofs and road/street props, clearly
+distinct in silhouette from the taper-family races' rounded/domed shapes
+also visible in other faction screenshots this rollout, alongside expected
+pre-existing generic-fallback buildings (the same known per-race coverage
+gap noted in every prior race's verification, not a new defect). All
+throwaway diagnostic files (`tests/e2e/_tmp_orcish_diag.spec.ts`,
+`tests/world/_tmp_orcish_diag.test.ts`, `/tmp/orcish_town_*.png`) were
+deleted after use.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

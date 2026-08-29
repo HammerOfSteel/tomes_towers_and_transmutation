@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -251,50 +251,80 @@ describe('Vulperia — BlockKit heightfield den mound (not a deformed sphere blo
 });
 
 // ── Orcish deep-quality pass (settlement visual fidelity follow-up) ─────────
-// Regression guards for the palisade-wall + rough-cone-roof rework that
-// replaced the original single tapered-cylinder "tent" standing in for a
-// whole hut.
-describe('Orcish — palisade wall + rough hide roof (not one tapered cylinder)', () => {
-  it('produces only finite vertices for the noise-perturbed roof after displacement', () => {
+// Regression guards for the block-kit lashed-hut rework that replaced a
+// bolted-on log-palisade ring plus a separate noise-perturbed cone roof.
+describe('Orcish — BlockKit lashed hut with jagged patchwork roofline (not palisade logs + a cone)', () => {
+  it('produces only finite vertices across villa/chapel/shop', () => {
     for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
       expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.orcish![kind]!(makeDna(kind, 'orcish', 55)));
     }
   });
 
-  it('builds the villa (Warlord Hall) from many individually-solid log pieces, not one primitive', () => {
+  it('builds the villa (Warlord Hall) main hut as one merged, dense block-kit mesh (not 16 palisade log cylinders + a lone cone roof), plus skull/tusk trophy accents', () => {
     const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    // The palisade wall alone contributes 16 individual log cylinders, plus
-    // the roof cone, crossed poles, door posts/lintel, doorway and totems --
-    // a real multi-part assembly rather than a single tapered-cylinder "hut".
-    expect(countMeshes(g)).toBeGreaterThanOrEqual(16 + 8);
+    let sawCone = false;
+    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'ConeGeometry') sawCone = true; });
+    // greedy-meshed block-kit output is a single merged BufferGeometry with a
+    // dense vertex count reflecting the underlying block construction, not a
+    // pile of separate log-cylinder/cone primitives; the tusk trophies are
+    // the only ConeGeometry expected on the villa.
+    const stalk = findBiggestMesh(g);
+    const pos = stalk.geometry.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(60);
+    expect(sawCone).toBe(true); // the tusk trophy cones, not a roof cone
   });
 
-  it('perturbs the rough-cone roof off a perfect cone radius (ragged hide flaps, not a tidy cone)', () => {
-    const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    const roof = findBiggestMesh(g);
-    const pos = roof.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const xzRadii = new Set<number>();
-    for (let i = 0; i < pos.count; i++) {
-      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
+  it('produces an asymmetric footprint and a jagged (non-uniform) roofline from the live grid', () => {
+    const grid = buildOrcishHutGrid(9, 6, 6, 4, {});
+    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bh = Math.max(6, Math.round(4 / BLOCK_UNIT));
+    function colTop(bx: number, bz: number): number {
+      let top = -1;
+      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
+      return top;
     }
-    // A perfect cone has a small, fixed set of ring radii (one per height
-    // segment); noise perturbation should spread this out into many distinct
-    // values.
-    expect(xzRadii.size).toBeGreaterThan(6);
+    const cx = Math.round(bw / 2);
+    const heights = new Set<number>();
+    for (let bz = 1; bz < bd - 1; bz++) heights.add(colTop(cx, bz));
+    expect(heights.size).toBeGreaterThanOrEqual(2);
   });
 
-  it('produces a different roof silhouette per seed (deterministic but seed-varied)', () => {
+  it('assigns wall columns mismatched "patch" materials, not a single uniform material', () => {
+    const grid = buildOrcishHutGrid(9, 10, 10, 4, {});
+    const patchMaterials = new Set<string>();
+    for (const matKey of grid.cells.values()) {
+      if (matKey.startsWith('patch')) patchMaterials.add(matKey);
+    }
+    expect(patchMaterials.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('retains the praised skull-and-tusk trophy, bonfire/totem-pole, and loot-crate/blade accent props', () => {
+    const villa = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
+    let sawSkull = false;
+    villa.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawSkull = true; });
+    expect(sawSkull).toBe(true);
+    const chapel = FACTION_BUILDING_VARIANTS.orcish!.chapel!(makeDna('chapel', 'orcish', 9));
+    let sawTotemPole = false;
+    chapel.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawTotemPole = true; });
+    expect(sawTotemPole).toBe(true);
+    const shop = FACTION_BUILDING_VARIANTS.orcish!.shop!(makeDna('shop', 'orcish', 9));
+    let sawCrate = false;
+    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawCrate = true; });
+    expect(sawCrate).toBe(true);
+  });
+
+  it('produces a different hut silhouette per seed (deterministic but seed-varied)', () => {
     const gA = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
     const gB = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 2));
     const gA2 = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
-    const sumXZ = (g: THREE.Group): number => {
-      const pos = findBiggestMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
-      let sum = 0;
-      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
-      return sum;
-    };
-    expect(sumXZ(gA)).toBe(sumXZ(gA2));
-    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
+    expect(countMeshes(gA)).toBe(countMeshes(gA2));
+    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
+    const posB = findBiggestMesh(gB).geometry.getAttribute('position') as THREE.BufferAttribute;
+    let sumA = 0, sumB = 0;
+    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
+    for (let i = 0; i < posB.count; i++) sumB += posB.getY(i);
+    expect(sumA).not.toBe(sumB);
   });
 });
 

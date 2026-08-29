@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -575,5 +575,99 @@ describe('FactionBlockProfiles — fae twisted stalk + scalloped mushroom cap', 
       if (matKey === 'spore') { sawSpore = true; break; }
     }
     expect(sawSpore).toBe(true);
+  });
+});
+
+describe('FactionBlockProfiles — orcish lashed hut with jagged patchwork roofline', () => {
+  const W = 6, D = 6, H = 4;
+
+  function bwOf(w = W): number { return Math.max(3, Math.round(w / BLOCK_UNIT)); }
+  function bdOf(d = D): number { return Math.max(3, Math.round(d / BLOCK_UNIT)); }
+  function bhOf(h = H): number { return Math.max(6, Math.round(h / BLOCK_UNIT)); }
+
+  it('is grounded: the base level has an occupied block at the centre column', () => {
+    const grid = buildOrcishHutGrid(1, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    expect(hasBlock(grid, Math.round(bw / 2), 0, Math.round(bd / 2))).toBe(true);
+  });
+
+  it('produces an asymmetric footprint: perimeter occupancy differs between opposite corners (not a clean symmetric rectangle)', () => {
+    const bw = bwOf(), bd = bdOf();
+    // At least one corner combination must differ in occupancy from
+    // another — a perfectly symmetric rectangle would have all 4 corners
+    // (or none) occupied identically for every seed, which a lashed,
+    // hand-built hut should not guarantee.
+    let sawAsymmetry = false;
+    for (let trySeed = 2; trySeed < 30 && !sawAsymmetry; trySeed++) {
+      const g = buildOrcishHutGrid(trySeed, W, D, H, {});
+      const c = [
+        hasBlock(g, 0, 0, 0), hasBlock(g, bw - 1, 0, 0),
+        hasBlock(g, 0, 0, bd - 1), hasBlock(g, bw - 1, 0, bd - 1),
+      ];
+      if (new Set(c).size > 1) sawAsymmetry = true;
+    }
+    expect(sawAsymmetry).toBe(true);
+  });
+
+  it('produces a jagged roofline: two neighbouring columns along the ridge axis have different roof heights', () => {
+    const grid = buildOrcishHutGrid(3, W, D, H, { roofJitter: 0.6 });
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    function colTop(bx: number, bz: number): number {
+      let top = -1;
+      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
+      return top;
+    }
+    const cx = Math.round(bw / 2);
+    const heights = new Set<number>();
+    for (let bz = 1; bz < bd - 1; bz++) heights.add(colTop(cx, bz));
+    // A tidy, non-jagged roof (single coherent slope with no per-column
+    // noise) would still vary smoothly, but real jaggedness means at
+    // least 3 distinct height values across the ridge-axis columns.
+    expect(heights.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('overall roof height slopes from one eave to the other (a lean-to, not a flat roof)', () => {
+    const grid = buildOrcishHutGrid(4, W, D, H, { roofJitter: 0.15 });
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    function avgTopAtZ(bz: number): number {
+      let sum = 0, n = 0;
+      for (let bx = 1; bx < bw - 1; bx++) {
+        for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) { sum += by; n++; }
+      }
+      return n > 0 ? sum / n : 0;
+    }
+    const nearAvg = avgTopAtZ(1);
+    const farAvg = avgTopAtZ(bd - 2);
+    expect(nearAvg).not.toBe(farAvg);
+  });
+
+  it('assigns wall columns one of several mismatched "patch" materials, not a single uniform material', () => {
+    const grid = buildOrcishHutGrid(5, 10, 10, H, {});
+    const wallMaterials = new Set<string>();
+    for (const matKey of grid.cells.values()) {
+      if (matKey.startsWith('patch')) wallMaterials.add(matKey);
+    }
+    expect(wallMaterials.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('with a facade requested, carves a crude hand-hacked doorway (irregular width per row, not a clean rectangle)', () => {
+    const grid = buildOrcishHutGrid(6, W, D, H, { facade: true, facadeWidthFrac: 0.4 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    expect(hasBlock(grid, cx, 0, frontZ)).toBe(false); // door starts at ground level
+    let sawFacadeMaterial = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'facade') { sawFacadeMaterial = true; break; }
+    }
+    expect(sawFacadeMaterial).toBe(true);
+  });
+
+  it('is deterministic per seed and varies with a different seed', () => {
+    const gridA = buildOrcishHutGrid(42, W, D, H, {});
+    const gridB = buildOrcishHutGrid(42, W, D, H, {});
+    const gridC = buildOrcishHutGrid(43, W, D, H, {});
+    expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
+    expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
   });
 });

@@ -37,7 +37,7 @@ import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -55,12 +55,11 @@ function addMesh(g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x
   return mesh;
 }
 
-/** Dark inset disc/box standing in for a doorway opening (interior is generated separately). */
-function addDoorway(g: THREE.Group, w: number, h: number, z: number, doorColor: string): void {
-  const dm = mat(doorColor, { roughness: 0.9 });
-  addMesh(g, new THREE.CylinderGeometry(w / 2, w / 2, h, 10, 1, false, 0, Math.PI), dm, 0, h / 2, z, Math.PI / 2)
-    .scale.set(1, 1, 0.35);
-}
+// (Legacy `addDoorway()` disc/box doorway-opening stand-in removed once the
+// last remaining callers — fae and orcish — migrated to block-kit carved
+// doorway openings; every race now either carves its doorway directly into
+// the block grid or, where still primitive-based, uses its own inline
+// doorway geometry.)
 
 // (Legacy per-mesh-deformation "organic mound" primitive removed in Phase 2e
 // §2e.3 — replaced by the grounded BlockKit heightfield mound,
@@ -929,115 +928,68 @@ function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
   return g;
 }
 
-// ── Orcish — crude wood/bone/hide tribal architecture ─────────────────────────
+// ── Orcish — lashed/asymmetric block-kit hut architecture ─────────────────────
 // Warlord Hall (patriciate), War Shrine (church), Loot Pile (market):
-// lashed-hide longhouses, bone/spike totems, crude scavenged construction.
+// Phase 2e (orcish): a genuine `buildOrcishHutGrid()` occupancy grid — an
+// asymmetric, lashed-together hut body in mismatched "patch" materials
+// topped with a jagged, single-pitch lean-to roof — replacing the old
+// `addPalisadeWall()` (a ring of bolted-on log cylinders) + separate
+// `addRoughConeRoof()` (a single noise-perturbed cone). Small bolted-on
+// accents (bone/spike totems, skull-and-tusk trophy, bonfire, loot
+// crates/blade) remain acceptable per the established "small props are
+// fine, only large primitive-built main structures are not" precedent.
 
 /**
- * A ring of upright log "stakes" with per-log height/radius jitter — a
- * crude palisade wall, read as a genuinely separate layer from whatever
- * roof sits on top of it. Same "many small solid pieces, never one smooth
- * primitive standing in for a whole feature" principle as the vulperia
- * timber-stave ring: a wall built from real individual logs, not a single
- * tapered cylinder pretending to be a whole hut.
+ * Builds + meshes + centers a `buildOrcishHutGrid()` hut into `g` at the
+ * origin (same centering convention as `addBlockFaeStalk()`). The
+ * mismatched wall "patch" materials (rough-hewn scavenged planks/hide/
+ * bone) and the crude door frame are chamfer-suppressed for a hard-edged,
+ * hand-hacked-carpentry read; the roof patches stay softly chamfered
+ * (draped hide/thatch reads better rounded than sharp), the same
+ * body-vs-accent contrast convention as dwarven's buttress/vampire's iron.
  */
-function addPalisadeWall(g: THREE.Group, seed: number, radius: number, wallH: number, material: THREE.Material, count = 16): void {
-  const r = mulberry32(seed);
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2 + r() * 0.05;
-    const logRad = radius * (0.94 + r() * 0.12);
-    const logH = wallH * (0.85 + r() * 0.3);
-    const logThickness = radius * 0.1 * (0.8 + r() * 0.4);
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(logThickness, logThickness * 1.1, logH, 6), material);
-    log.position.set(Math.cos(ang) * logRad, logH / 2, Math.sin(ang) * logRad);
-    log.castShadow = true;
-    log.receiveShadow = true;
-    g.add(log);
-  }
-}
-
-/**
- * A steep conical hide/thatch roof whose base rim is perturbed by angular
- * simplex noise for a ragged, hand-made silhouette (uneven hide-flap
- * lengths, drooping unevenly), fading out toward the apex which stays
- * tidy — instead of a perfect geometric cone.
- */
-function addRoughConeRoof(g: THREE.Group, seed: number, baseY: number, radius: number, roofH: number, material: THREE.Material, jitter = 0.16): THREE.Mesh {
-  const geo = new THREE.ConeGeometry(radius, roofH, 12, 4);
-  const noise2D = createNoise2D(seed);
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const heightRatio = THREE.MathUtils.clamp((v.y + roofH / 2) / roofH, 0, 1); // 0 at base, 1 at apex
-    const angle = Math.atan2(v.z, v.x);
-    const n = noise2D(Math.cos(angle) * 2.2, Math.sin(angle) * 2.2);
-    const envelope = 1 - heightRatio; // ragged at the base, tidy at the apex
-    v.x *= 1 + n * jitter * envelope;
-    v.z *= 1 + n * jitter * envelope;
-    v.y -= n * jitter * envelope * roofH * 0.25; // uneven flap droop
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(0, baseY + roofH / 2, 0);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+function addBlockOrcishHut(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  wallColor: string, trimColor: string, roofColor: string, doorColor: string,
+  opts: OrcishHutOptions = {},
+): void {
+  const grid = buildOrcishHutGrid(seed, w, d, h, opts);
+  const palette = {
+    patchA: mat(wallColor, { roughness: 0.92 }),
+    patchB: mat(trimColor, { roughness: 0.92 }),
+    patchC: mat('#c8ba94', { roughness: 0.88 }), // hardcoded pale bone/scrap patch (checked distinct from wallColor/trimColor: shifted lighter/greyer than the warm tan trim so it reads as a genuinely mismatched scavenged patch, not just a shade of the same brown)
+    roofpatchA: mat(roofColor, { roughness: 0.85 }),
+    roofpatchB: mat('#5a4a30', { roughness: 0.88 }), // hardcoded weathered-thatch/hide contrast patch
+    facade: mat(doorColor, { roughness: 0.8 }),
+  };
+  const mesh = meshBlockGrid(grid, palette, {
+    suppressChamfer: (bx, by, bz) => {
+      const k = getMaterialKey(grid, bx, by, bz);
+      return k === 'patchA' || k === 'patchB' || k === 'patchC' || k === 'facade';
+    },
+  });
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
   g.add(mesh);
-  return mesh;
-}
-
-function orcishHut(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x0AC1_0001);
-  const hideMat = mat(dna.colors.walls, { roughness: 0.92 });
-  const woodMat = mat('#4a3a28', { roughness: 0.9 });
-  const logMat = mat(dna.colors.trim, { roughness: 0.95 });
-
-  // Wall and roof are two genuinely distinct construction layers (a real
-  // log palisade under a separate hide roof), not one tapered cylinder
-  // standing in for a whole hut.
-  const wallR  = Math.max(w, d) * 0.42;
-  const wallH  = h * 0.42;
-  const roofBaseY = wallH * 0.9;
-  const roofH  = h - roofBaseY;
-  addPalisadeWall(g, dna.seed ^ 0x0AC1_0010, wallR, wallH, logMat, 16);
-  addRoughConeRoof(g, dna.seed ^ 0x0AC1_0011, roofBaseY, wallR * 1.2, roofH, hideMat);
-
-  // Crossed timber support poles jutting past the roofline (crude, asymmetric).
-  for (const ang of [0.4, -0.4, 2.2, -2.2]) {
-    const pole = addMesh(g, new THREE.CylinderGeometry(0.05, 0.07, h * 1.15, 5), woodMat, Math.cos(ang) * w * 0.32, h * 0.55, Math.sin(ang) * d * 0.32);
-    pole.rotation.z = Math.cos(ang) * 0.25;
-  }
-
-  // Crude log door posts + lintel flanking a hide-flap doorway.
-  const doorW = Math.min(w, d) * 0.42;
-  for (const px of [-doorW * 0.55, doorW * 0.55]) {
-    addMesh(g, new THREE.CylinderGeometry(0.07, 0.08, wallH * 0.95, 6), woodMat, px, wallH * 0.48, d / 2 - 0.02);
-  }
-  addMesh(g, new THREE.BoxGeometry(doorW * 1.3, 0.12, 0.16), woodMat, 0, wallH * 0.92, d / 2 - 0.02);
-  addDoorway(g, doorW, wallH * 0.8, d / 2 - 0.05, dna.colors.door);
-
-  // Bone/spike totem clutter around the base.
-  const boneMat = mat('#d8d0b8', { roughness: 0.85 });
-  for (let i = 0; i < 3; i++) {
-    const ang = (i / 3) * Math.PI * 2 + 1.0;
-    const rad = wallR + 0.25;
-    addMesh(g, new THREE.ConeGeometry(0.04, 0.5 + r() * 0.3, 5), boneMat, Math.cos(ang) * rad, 0.3, Math.sin(ang) * rad);
-  }
-  return g;
 }
 
 function buildOrcishVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.9;
-  const g = orcishHut(dna, fp.w, fp.d, h);
+  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.1;
+  const g = new THREE.Group();
+  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
+    facade: true,
+  });
   // Warlord Hall: a mounted skull-and-tusk trophy above the entrance.
   const skullMat = mat('#e8dcc0', { roughness: 0.8 });
-  addMesh(g, new THREE.SphereGeometry(0.2, 8, 6), skullMat, 0, h * 0.85, fp.d / 2 - 0.1);
+  const wallTopY = orcishWallTopY(h);
+  addMesh(g, new THREE.SphereGeometry(0.2, 8, 6), skullMat, 0, wallTopY * 0.95, fp.d / 2 - 0.1);
   const tuskMat = mat('#f0e8d0', { roughness: 0.6 });
   for (const tx of [-0.12, 0.12]) {
-    const tusk = addMesh(g, new THREE.ConeGeometry(0.04, 0.35, 5), tuskMat, tx, h * 0.78, fp.d / 2 - 0.05);
+    const tusk = addMesh(g, new THREE.ConeGeometry(0.04, 0.35, 5), tuskMat, tx, wallTopY * 0.85, fp.d / 2 - 0.05);
     tusk.rotation.z = tx > 0 ? -0.6 : 0.6;
   }
   return g;
@@ -1065,16 +1017,15 @@ function buildOrcishChapel(dna: BuildingDNA): THREE.Group {
 
 function buildOrcishShop(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.5;
+  const h = FLOOR_HEIGHT * 0.6;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x0AC1_0003);
-  // Loot Pile: a crude tarp-over-poles stall over a heap of plundered crates/weapons.
-  const poleMat = mat('#3a2c1a', { roughness: 0.9 });
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, -fp.d / 2], [-fp.w / 2, fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, h, 6), poleMat, sx, h / 2, sz);
-  }
-  const tarpMat = mat(dna.colors.roof, { roughness: 0.9, side: THREE.DoubleSide });
-  addMesh(g, new THREE.BoxGeometry(fp.w + 0.1, 0.06, fp.d + 0.1), tarpMat, 0, h, 0);
+  // Loot Pile: a small block-built lean-to hut over a heap of plundered
+  // crates/weapons — no facade (an open-fronted stall), reusing the same
+  // jagged patchwork silhouette at a reduced scale.
+  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0013, fp.w * 0.7, fp.d * 0.7, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
+    wallHeightFrac: 0.3,
+  });
   const crateMat = mat('#6a5030', { roughness: 0.9 });
   for (let i = 0; i < 4; i++) {
     const cx = (r() - 0.5) * fp.w * 0.6;

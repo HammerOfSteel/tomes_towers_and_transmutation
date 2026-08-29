@@ -1021,3 +1021,144 @@ export function buildFaeStalkGrid(
 
   return grid;
 }
+
+// ── Orcish: lashed, asymmetric hut with a jagged patchwork roofline ─────────
+
+export interface OrcishHutOptions {
+  /** Fraction (0-1) of total height that's the wall body (default 0.42 — a squat hut, not a tapering tower). */
+  wallHeightFrac?: number;
+  /** How jagged the roof's per-column height is (default 0.5 — deliberately much rougher than any other race's silhouette noise). */
+  roofJitter?: number;
+  /** Which footprint axis the lean-to roof's single ridge/eave slope runs along (default 'z'). */
+  ridgeAxis?: 'x' | 'z';
+  /** How much the footprint's own perimeter is bitten into / extended for an asymmetric, lashed-together outline (default 0.3). */
+  edgeBiteAmt?: number;
+  /** Carve a crude, hand-hacked (irregular width per row, not a clean rectangle/arch/portal) doorway into the front (+Z) face. */
+  facade?: boolean;
+  /** Doorway width as a fraction of the base footprint width (default 0.4). */
+  facadeWidthFrac?: number;
+  /** Doorway height as a fraction of the wall body's own height (default 0.75). */
+  facadeHeightFrac?: number;
+}
+
+/** Number of `BLOCK_UNIT` levels tall an orcish hut of continuous height `h` resolves to. */
+export function orcishHutBlocksTall(h: number): number {
+  return Math.max(6, Math.round(h / BLOCK_UNIT));
+}
+
+/** World-space Y of the wall body's own top (the roofline's lowest eave) — for flush-mounted door-lintel/trophy props. */
+export function orcishWallTopY(h: number, opts: OrcishHutOptions = {}): number {
+  const bh = orcishHutBlocksTall(h);
+  const wallBlocksH = Math.max(2, Math.round(bh * (opts.wallHeightFrac ?? 0.42)));
+  return wallBlocksH * BLOCK_UNIT;
+}
+
+/**
+ * Orcish hut occupancy grid: a genuinely *asymmetric, irregular* silhouette
+ * — the deliberate structural contrast case to the elven/vampire/fae
+ * "radially-symmetric taper+flare" family, the same role dwarven plays as
+ * the "angular precise" contrast to vulperia's rounded mound. Two distinct
+ * construction layers, same principle as `addPalisadeWall()` +
+ * `addRoughConeRoof()` before it, but now real block occupancy instead of
+ * bolted-on primitives:
+ *
+ * 1. A rectangular wall body whose own perimeter is bitten into / bulged
+ *    out asymmetrically per edge cell (via noise) — a lashed-together,
+ *    scavenged outline, never a perfectly clean rectangle — with wall
+ *    columns assigned one of three "patch" materials in contiguous
+ *    low-frequency-noise blobs (mismatched scavenged planks/hide/bone
+ *    sewn together), not per-block speckle noise (which would read as
+ *    static, not patches).
+ * 2. A single-pitch lean-to roof (tallest along one eave, shortest along
+ *    the opposite one) with strong *per-column* height jaggedness layered
+ *    on top of that base slope — the "jagged irregular hut roofline" the
+ *    rollout todo calls for, deliberately much rougher than any other
+ *    race's silhouette noise (a coherent cone/dome would read as too
+ *    tidy for crude tribal construction).
+ */
+export function buildOrcishHutGrid(
+  seed: number, w: number, d: number, h: number,
+  opts: OrcishHutOptions = {},
+): BlockGrid {
+  const grid = createBlockGrid();
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const bh = orcishHutBlocksTall(h);
+  const edgeNoise = createNoise2D(seed);
+  const patchNoise = createNoise2D(seed ^ 0x0AC1_9001);
+  const roofNoise = createNoise2D(seed ^ 0x0AC1_9002);
+
+  const wallHeightFrac = opts.wallHeightFrac ?? 0.42;
+  const wallBlocksH = Math.max(2, Math.round(bh * wallHeightFrac));
+  const maxRoofBlocks = Math.max(1, bh - wallBlocksH);
+  const roofJitter = opts.roofJitter ?? 0.5;
+  const ridgeAxis = opts.ridgeAxis ?? 'z';
+  const edgeBiteAmt = opts.edgeBiteAmt ?? 0.3;
+
+  const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.4))) : 0;
+  const notchHeight = opts.facade ? Math.min(wallBlocksH - 1, Math.max(2, Math.round(wallBlocksH * (opts.facadeHeightFrac ?? 0.75)))) : 0;
+  const notchCx = Math.round(bw / 2);
+  const notchDepth = 2;
+
+  /** Is this column part of the (asymmetric, bitten/bulged) footprint at all? Interior columns are always included; only perimeter-adjacent cells get the noise-driven bite/bulge. */
+  function inFootprint(bx: number, bz: number): boolean {
+    const edgeDist = Math.min(bx, bw - 1 - bx, bz, bd - 1 - bz);
+    if (edgeDist >= 2) return true; // solidly interior
+    const n = edgeNoise(bx * 0.5, bz * 0.5);
+    if (edgeDist === 0) {
+      // Outermost ring: biased toward inclusion (keeps the hut from
+      // shrinking into a shapeless blob) but occasionally bitten away
+      // entirely for a lashed, uneven edge.
+      return n > -edgeBiteAmt;
+    }
+    // One cell in from the edge: occasionally bulges out an extra corner
+    // block cluster (handled by the outer-ring check above already
+    // including it when n is favourable) — here just always include,
+    // the asymmetry reads clearly enough from the outer ring alone.
+    return true;
+  }
+
+  for (let bx = 0; bx < bw; bx++) {
+    for (let bz = 0; bz < bd; bz++) {
+      if (!inFootprint(bx, bz)) continue;
+
+      const isDoorFrontRow = bz >= bd - notchDepth;
+      // Wall-patch material: contiguous low-frequency noise blobs, not
+      // per-block speckle, so it reads as mismatched sewn-together
+      // material patches rather than static.
+      const pn = patchNoise(bx * 0.22, bz * 0.22);
+      const wallMaterial = pn > 0.25 ? 'patchC' : pn > -0.15 ? 'patchB' : 'patchA';
+
+      for (let by = 0; by < wallBlocksH; by++) {
+        if (opts.facade && isDoorFrontRow && by < notchHeight) {
+          // Crude hand-hacked doorway: per-row width jaggedness (never a
+          // clean rectangle, arch, or circular portal — deliberately the
+          // roughest-edged doorway of any race so far, matching the
+          // "crude scavenged construction" theme).
+          const rowJag = roofNoise(by * 0.7, 0.42) * 0.35;
+          const halfWidthHere = Math.max(1, Math.round((notchWidth / 2) * (1 + rowJag)));
+          const inNotchX = Math.abs(bx - notchCx) < halfWidthHere;
+          const inFrameX = Math.abs(bx - notchCx) < halfWidthHere + 1;
+          if (inNotchX) continue; // hacked-open doorway
+          if (inFrameX) { setBlock(grid, bx, by, bz, 'facade'); continue; }
+        }
+        setBlock(grid, bx, by, bz, wallMaterial);
+      }
+
+      // Lean-to roof: a single base slope (tallest along one eave,
+      // shortest along the opposite one) plus strong per-column
+      // jaggedness — the jagged, patchwork skyline the design calls for.
+      const axisFrac = ridgeAxis === 'z' ? (bd > 1 ? bz / (bd - 1) : 0) : (bw > 1 ? bx / (bw - 1) : 0);
+      const slopeFrac = 1 - axisFrac; // tallest at axisFrac=0, shortest at axisFrac=1
+      const rn = roofNoise(bx * 0.6, bz * 0.6);
+      let roofBlocks = Math.round(maxRoofBlocks * slopeFrac + rn * roofJitter * maxRoofBlocks);
+      roofBlocks = Math.max(1, Math.min(maxRoofBlocks, roofBlocks));
+      const roofMaterial = rn > 0.1 ? 'roofpatchB' : 'roofpatchA';
+      for (let ry = 0; ry < roofBlocks; ry++) {
+        setBlock(grid, bx, wallBlocksH + ry, bz, roofMaterial);
+      }
+    }
+  }
+
+  return grid;
+}
