@@ -14,6 +14,7 @@ import {
   slateTexture, thatchTexture,
 } from './TextureFactory';
 import { mulberry32 } from '@/core/prng';
+import { getFactionBuildingVariant } from './FactionBuildingVariants';
 
 // ── Public contract ───────────────────────────────────────────────────────────
 
@@ -1525,7 +1526,8 @@ const KIND_BUILDERS: Partial<Record<BuildingKind, (dna: BuildingDNA) => THREE.Gr
 // ── Main entry ────────────────────────────────────────────────────────────────
 
 export function buildBuilding(dna: BuildingDNA): BuildingInstance {
-  const builder  = KIND_BUILDERS[dna.buildingKind] ?? buildHouseOrShop;
+  const variantBuilder = getFactionBuildingVariant(dna.faction, dna.buildingKind);
+  const builder  = variantBuilder ?? KIND_BUILDERS[dna.buildingKind] ?? buildHouseOrShop;
   const fp       = getFootprint(dna.buildingKind, dna.size);
   const fullDna: BuildingDNA = { ...dna, colors: { ...STYLE_COLORS[dna.style], ...dna.colors } };
 

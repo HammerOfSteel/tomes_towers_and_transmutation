@@ -525,15 +525,49 @@ copy of shared geometry. Note: `park` wards only reliably appear for
 pre-existing property of `SettlementModelGenerator.ts`, not something this
 pass changed.
 
-### Phase 2b/2c — Faction building-variant silhouettes + generic prop library (follow-up, separately scoped)
-Larger, `BuildingBuilder.ts`/`BuildingDNA.ts`-touching effort: faction-
-specific `BuildingKind` silhouettes for `market`/`patriciate` wards (Fox
-Den, Lich Tower, Wraith Bazaar, Night Market, etc. — see §4.0's table), plus
-the generic prop shape library (§4.2-4.4: crates/barrels/stalls/fences/
-banners for market/craftsmen/slum clutter). Recommend its own brainstorming/
-plan-refinement pass before coding, since faction art direction decisions
-benefit from explicit sign-off given they set a visual precedent other
-systems may later follow.
+### Phase 2b/2c — Faction building-variant silhouettes + generic prop library
+
+**Phase 2b increment 1 — DONE (this session, in direct response to user
+feedback that Phase 2a alone wasn't enough: "the building still look way
+way way too similar between races... vulperia's church type buildings are
+not churches").** `src/world/buildings/FactionBuildingVariants.ts` (new):
+a `(faction, BuildingKind) -> builder` override registry, checked first by
+`buildBuilding()` (`BuildingBuilder.ts`) before the shared-shape + style-
+overlay fallback. Added `BuildingDNA.faction?: Faction` (optional, so the
+several call sites that construct `BuildingDNA` literals directly without
+`factionBuildingDna()` keep compiling unchanged).
+
+Covers the three highest-visibility "signature" ward kinds — patriciate
+(`villa`), church (`chapel`), market (`shop`) — for the three most
+geometrically-extreme factions: **vulperia** (Fox Den/Den Mother's Hall/
+Night Market: earthen burrow mounds, round doorways, timber props, fox-
+tail banners, pelts, no flat walls), **slime** (Elder Blob/Pulse Pool/Goo
+Stall: translucent gelatinous domes with a glowing inner core, satellite
+ooze bubbles, drip strands, no walls at all), **undead** (Lich Tower/Bone
+Shrine/Wraith Bazaar: gaunt tapered stone spires with jagged crenellation
+and a floating dark orb, rib-cage bone arches, skull-lantern bazaar
+stalls). Unit tests: `FactionBuildingVariants.test.ts` (16 tests — each
+covered (faction, kind) builds a non-empty group, dispatch precedence in
+`buildBuilding()`, fallback to shared-shape for uncovered pairs and for
+`faction: undefined`, determinism, geometric distinctness). Visually
+verified via Playwright (Studio "Play in 3D", seed=1, type city): Fox
+Den's burrow mound + market's whole burrow-stall district, Elder Blob's
+glowing translucent dome, Lich Tower's spire silhouette + Wraith Bazaar's
+ghostly cloth-canopy stalls — confirmed each reads as its own architecture
+family, not a recolored villa/chapel/shop.
+
+**Still deferred (follow-up, separately scoped):**
+- Extend bespoke building variants to the remaining 6 factions (elven,
+  dwarven, orcish, vampire, fae, human) for patriciate/church/market —
+  they currently still use the shared-shape + style-overlay system (gives
+  *some* geometric distinction via `applyStyleOverlay()`'s gargoyles/
+  vines/carved-bands/etc., but not a full bespoke silhouette).
+- Extend variant coverage to the remaining ward kinds beyond patriciate/
+  church/market (smithy, inn, craftsmen, merchant, slum, gateward, farm) —
+  currently share the generic kind builder for every faction including
+  the three covered here.
+- The generic prop shape library (§4.2-4.4) for market/craftsmen/slum
+  clutter — still valid as designed, composes with both Phase 2a and 2b.
 
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the

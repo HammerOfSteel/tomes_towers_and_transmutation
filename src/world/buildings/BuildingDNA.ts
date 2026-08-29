@@ -69,6 +69,17 @@ export interface BuildingDNA extends ProceduralDNA {
   /** Terraced house: which sides are party walls (no windows/details). */
   terrace:        TerraceSide;
   /**
+   * Optional runtime faction this building belongs to. Set by
+   * `factionBuildingDna()`. When present, `buildBuilding()` checks
+   * `FACTION_BUILDING_VARIANTS` (FactionBuildingVariants.ts) first for a
+   * bespoke faction-specific silhouette (e.g. a vulperia burrow instead of
+   * a generic villa) before falling back to the shared `BuildingKind` shape
+   * + palette/style-overlay. Optional (not `faction`) to avoid breaking the
+   * several call sites that construct `BuildingDNA` literals directly
+   * without going through `factionBuildingDna()`.
+   */
+  faction?:       Faction;
+  /**
    * Optional feature overrides.
    * bay_window: projecting 3-light window on front
    * jetty: upper floors overhang lower by ~0.4m (Tudor/medieval)
@@ -192,5 +203,6 @@ export function factionBuildingDna(
     rotation:       0,
     terrace:        'none',
     features:       [],
+    faction,
   };
 }

@@ -99,15 +99,27 @@ for the full design/plan.
   unit tests + Playwright screenshot re-check (village and city types both
   show visible building gaps, ribbon streets with lamp posts, cardinal
   rotations).
-- [ ] Phase 2a (this pass): park-ward feature clusters — 9 faction-distinct,
+- [x] Phase 2a: park-ward feature clusters — 9 faction-distinct,
   thematically correct centerpieces (Slime Pool, Sacred Grove, Graveyard,
   Burrow Commons, etc. — see plan §4.0/§4.0a), not palette-swapped copies of
-  a shared shape. `park` wards currently render nothing at all.
-- [ ] Phase 2b/2c (separately scoped, follow-up): faction-specific building
-  silhouettes for market/patriciate wards (Fox Den, Lich Tower, Wraith
-  Bazaar, Night Market, etc.) + generic prop shape library (market stalls,
-  wells, fences, banners) for craftsmen/slum/market clutter, batched
-  through the existing mesh-merge batching to avoid a draw-call regression.
+  a shared shape. `park` wards previously rendered nothing at all. **Done**
+  — verified via unit tests + Playwright screenshots (Slime Pool/Sacred
+  Grove/Graveyard confirmed visually distinct).
+- [x] Phase 2b increment 1: faction-specific building silhouettes for
+  patriciate/church/market wards (vulperia Fox Den/Den Mother's Hall/Night
+  Market = burrow mounds; slime Elder Blob/Pulse Pool/Goo Stall =
+  translucent gelatinous domes; undead Lich Tower/Bone Shrine/Wraith
+  Bazaar = bone/crypt spires) via `FactionBuildingVariants.ts`. **Done** —
+  verified via unit tests + Playwright screenshots.
+- [ ] Phase 2b increment 2 (follow-up): extend bespoke building-variant
+  silhouettes to the remaining 6 factions (elven, dwarven, orcish, vampire,
+  fae, human) and to the remaining ward kinds (smithy, inn, craftsmen,
+  merchant, slum, gateward, farm) beyond the patriciate/church/market
+  already covered.
+- [ ] Phase 2c (separately scoped, follow-up): generic prop shape library
+  (market stalls, wells, fences, banners) for craftsmen/slum/market
+  clutter, batched through the existing mesh-merge batching to avoid a
+  draw-call regression.
 - [ ] Phase 3 (stretch, re-evaluate after Phase 1): iso-camera roof
   occlusion/fade near the player.
 - [ ] Phase 4: spot-check the live overworld benefits from Phase 1 the same
