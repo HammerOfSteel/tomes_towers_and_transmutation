@@ -1407,6 +1407,64 @@ hardcoded door green), not rely on the shared muted faction palette.
   *Sacred Grove*.
 - Tasks mirror §2e.3.
 
+**Status: DONE, verified** (`buildElvenTrunkGrid()` in
+`src/world/buildings/FactionBlockProfiles.ts`, wired into
+`FactionBuildingVariants.ts`'s `buildElvenVilla()`/`buildElvenChapel()`/
+`buildElvenShop()`, plus `house`/`terraced` — see §8 "Faction-specific
+coverage gap"). 110/110 targeted unit tests pass (`BlockKit.test.ts`,
+`FactionBlockProfiles.test.ts`, `FactionBuildingVariants.test.ts`), `tsc
+--noEmit` shows zero new errors, full suite shows only 12 pre-existing
+unrelated failures (`talentSystem`, `WaterMaterial`, `enemyLoader`,
+`towerGenerator`, `main.startup.smoke` — none touch faction-building code).
+
+Real bugs found and fixed this pass:
+1. **Mushroom-cap canopy** — the original canopy was a single wide disc
+   sitting flat atop the trunk (read as "a blob," per the user's direct
+   feedback), not a real tree crown. Rebuilt as a multi-lobe, asymmetric
+   canopy with visibly tapered branch-connections back to the trunk (the
+   heightfield radius profile now varies per-lobe instead of being
+   perfectly disc-symmetric).
+2. **Floating door-frame pillars** — a safety clamp was missing on the
+   door-frame block placement, letting frame pillars land above the
+   trunk's actual tapered radius at that height on narrow trunk sizes;
+   fixed by clamping frame pillar position within the trunk's real
+   occupied radius at each level.
+3. **Detached plank ring** — the ring brace (`addRingBraces()`) was
+   computed from a fixed nominal waist radius that didn't track the
+   trunk's actual tapered radius at the ring's height, leaving a visible
+   gap on smaller trunk sizes; fixed via a new `elvenWaistRadius()` helper
+   that both the ring geometry and `addRingBraces()` read from, so they
+   can't silently diverge.
+
+Verification method (three tiers, matching §2e.4's dwarven rigor):
+isolated Playwright preview harness (iso/front/orthographic screenshots)
+confirmed the canopy/trunk/ring geometry directly; **live in-game
+Settlement Lab screenshots** (not just the isolated harness) via a
+temporary teleport + direct-camera debug hook (`_debugFindBuildingsByKind`/
+`_debugRenderBuildingByKind` in `src/main.ts`, added and fully reverted —
+`git diff --stat` shows zero net change to `main.ts`) confirmed:
+- The elven villa's trunk/canopy/ring geometry is real and correct in a
+  live `city`-type settlement, matching the isolated harness.
+- A **universal, pre-existing night-time lighting/contrast issue**
+  (buildings read as very dark/low-contrast against night ambient
+  lighting) affects elven *and* dwarven equally when direct-camera
+  rendered — not something this pass introduced or something specific to
+  elven's geometry/materials. Flagged as a separate future lighting/
+  exposure/time-of-day tuning concern, explicitly **out of scope** here.
+- The `house`/`terraced` faction-coverage extension (§8) is real and
+  reachable: elven, vulperia, and dwarven `terraced` buildings in live
+  `town`-type settlements all render their faction's real villa geometry
+  (not the generic default), correctly scaled to the smaller `terraced`
+  footprint — screenshots confirmed elven's tapering trunk+canopy+ring,
+  vulperia's rounded den mound with its hobbit-hole door, and dwarven's
+  stepped stone tower silhouette (dark per the lighting issue above, but
+  the correct dwarven silhouette).
+- The elven shop's deliberately small "sapling on a trading platform"
+  design (an intentional choice from a prior segment, not a bug) reads as
+  small/subordinate to its plaza plot in a direct render — left unchanged
+  to avoid scope creep, but flagged here in case further live evidence
+  suggests it should be revisited.
+
 #### 2e.6 Orcish — crude, lashed, scrap-built
 
 Theme grounding: *Warlord Hall* (patriciate), *War Shrine* (church),
@@ -1597,15 +1655,51 @@ claims):
   so the fix is judged against multiple factions' windows side by side
   rather than over-fit to one screenshot.
 - **Faction-specific coverage gap** (found during vulperia's §2e.3
-  verification, pre-existing/not caused by Phase 2e): `FACTION_BUILDING_VARIANTS`
-  only overrides `villa`/`chapel`/`shop` (`patriciate`/`merchant`, `church`,
-  `market`/`craftsmen` wards). All other ward kinds (`gateward`/`farm` →
-  `house`, `slum` → `terraced`, `inn` → `inn`, `smithy` → `blacksmith`) fall
-  back to the shared generic builder regardless of faction, and those are
-  the *numerically dominant* buildings in any generated settlement — so a
-  settlement doesn't read as "faction X" at a glance even once every
-  villa/chapel/shop anchor is fully block-built and verified. Worth raising
-  with the user as a possible follow-on scope extension (extending
-  faction-specific variants to `house`/`inn`/`blacksmith`/`terraced`) once
-  the anchor-building rollout (§2e.4-2e.10) is complete, not assumed
-  in-scope silently.
+  verification; investigated in depth and *partially closed* during
+  elven's §2e.5 pass — see below). `FACTION_BUILDING_VARIANTS` originally
+  only overrode `villa`/`chapel`/`shop` (`patriciate`/`merchant`, `church`,
+  `market`/`craftsmen` wards). Tracing `WARD_TO_KIND`
+  (`src/buildingToDungeonPlan.ts`) against the actual ward-assignment logic
+  in `SettlementModelGenerator.ts`/`SettlementGenerator.ts` clarified which
+  of the remaining kinds are actually reachable in a real generated
+  settlement:
+  - `gateward` → `house` and `farm` → `house` are **dead mappings** —
+    `gateward` is never assigned as a ward type anywhere in
+    `buildSettlement()` (present only in the `WardType` union and the
+    per-layout config table, never actually chosen), and `farm` wards are
+    always created with `withinCity: false`, which
+    `SettlementGenerator.ts`'s building-placement loop unconditionally
+    skips. So `house` currently **never appears as a real `BuildingKind`**
+    in any settlement this pipeline generates, regardless of size/type —
+    registering a faction override for it is harmless future-proofing but
+    has zero current visual effect.
+  - `slum` → `terraced` **is** live and reachable — `assign('slum', ...)`
+    only fires when `nPatches >= 12`, so it never appears for `village`
+    (`nPatches: 8`) but reliably appears for `town`/`city`
+    (`nPatches: 12`/`18`). Confirmed via live Settlement Lab direct-camera
+    renders (not just the isolated harness) for elven, vulperia, and
+    dwarven `town`-type settlements: each showed its faction's real villa
+    geometry correctly reused/scaled to the `terraced` (tiny) footprint —
+    elven's tapering trunk+canopy+ring, vulperia's rounded den mound with
+    its hobbit-hole-style door, dwarven's stepped stone tower silhouette.
+  - `inn` → `inn` and `smithy` → `blacksmith` remain genuinely
+    **unaddressed** — both are live/reachable (every settlement has an inn
+    and a smithy ward) and still fall through to the shared generic
+    builder for every faction, including the three "DONE" races. This is
+    the real remaining piece of this gap.
+  - **Fix applied this pass**: `house`/`terraced` were registered to reuse
+    each race's already-verified villa builder (`buildElvenVilla`,
+    `buildVulperiaVilla`, `buildDwarvenVilla`) for vulperia, dwarven, *and*
+    elven — safe because every builder derives its footprint dynamically
+    from `dna.buildingKind`/`dna.size` (`getFootprint()`), so reuse scales
+    correctly to `terraced`'s smaller footprint rather than assuming
+    villa's fixed dimensions. `cottage` was considered but **not**
+    registered — it doesn't appear in `WARD_TO_KIND` at all, so it's not a
+    real kind this pipeline produces; adding it would be misleading dead
+    code.
+  - **Still open, tracked as follow-on scope** (not done this pass, to
+    avoid the elven task ballooning further): give `inn` and `blacksmith`
+    real faction-specific geometry for every race (not just a palette),
+    applied retroactively to vulperia/dwarven/elven and then as a
+    mandatory part of each remaining race's own phase (orcish onward) from
+    the start, rather than deferred again.

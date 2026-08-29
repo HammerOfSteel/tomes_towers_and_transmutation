@@ -37,7 +37,7 @@ import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -604,88 +604,109 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 
 // ── Elven — living-tree architecture ──────────────────────────────────────────
 // Elder's Hall (patriciate), Ancient Shrine (church), Moonlit Exchange (market):
-// organic curved trunk silhouettes, woven-vine walls, leaf-canopy roofs, elevated
-// platforms — a village grown from trees, not built with lumber.
+// organic curved trunk silhouettes grown from real block occupancy, leaf-canopy
+// crowns, and moonstone/firefly accents — a village grown from trees, not built
+// with lumber. Phase 2e (§2e.5): the trunk+canopy body is now a genuine BlockKit
+// grid (`buildElvenTrunkGrid()` — the heightfield technique run "inside-out": a
+// per-*level* radius that narrows to a waist then flares into a canopy), not a
+// noise-crumbled cylinder topped with a cluster of overlapping foliage spheres
+// (see plan doc §2e.5 for why the old sphere-cluster canopy read as "a muddy
+// brown blob with dangling root tendrils").
 
 /**
- * A canopy built from a cluster of overlapping foliage blobs around a
- * larger central crown blob — real individual leaf clusters, not one
- * smooth dome standing in for an entire tree canopy.
+ * Builds + meshes + centers a `buildElvenTrunkGrid()` living-tree trunk into
+ * `g` at the origin (same centering convention as `addBlockDwarvenHall()`).
+ * No corner is chamfer-suppressed — unlike dwarven's deliberately-hard
+ * buttresses, elven architecture wants every edge softened into an organic
+ * silhouette.
  */
-function addLeafCanopyCluster(g: THREE.Group, seed: number, apexY: number, canopyR: number, material: THREE.Material, blobCount = 6): void {
+function addBlockElvenTrunk(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  barkColor: string, leafColor: string, facadeColor: string,
+  opts: ElvenTrunkOptions = {},
+): void {
+  const grid = buildElvenTrunkGrid(seed, w, d, h, opts);
+  const palette = {
+    bark:      mat(barkColor, { roughness: 0.9 }),
+    leaf:      mat(leafColor, { roughness: 0.75 }),
+    facade:    mat(facadeColor, { roughness: 0.8 }),
+    moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
+    glow:      new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.9, roughness: 0.5 }),
+  };
+  const mesh = meshBlockGrid(grid, palette);
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
+  g.add(mesh);
+}
+
+/**
+ * A ring platform/balcony built from small radial plank blocks — the same
+ * "many small solid pieces read correctly from every angle" principle as
+ * vulperia's timber-stave door ring, replacing a single smooth
+ * `TorusGeometry` (which, being a thin continuous ring, degenerates to a
+ * hairline edge-on and doesn't read as "built" at all).
+ */
+function addPlankRing(g: THREE.Group, seed: number, y: number, radius: number, material: THREE.Material, count = 14): void {
   const r = mulberry32(seed);
-  addMesh(g, new THREE.SphereGeometry(canopyR * 0.55, 10, 8), material, 0, apexY + canopyR * 0.3, 0);
-  for (let i = 0; i < blobCount; i++) {
-    const ang = (i / blobCount) * Math.PI * 2 + r() * 0.3;
-    const rad = canopyR * (0.35 + r() * 0.25);
-    const blobR = canopyR * (0.45 + r() * 0.25);
-    addMesh(g, new THREE.SphereGeometry(blobR, 10, 8), material, Math.cos(ang) * rad, apexY + blobR * (0.15 + r() * 0.2), Math.sin(ang) * rad);
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2;
+    const rad = radius * (0.96 + r() * 0.06);
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(radius * (Math.PI * 2 / count) * 1.15, 0.06, radius * 0.22), material);
+    plank.position.set(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
+    plank.rotation.y = -ang + Math.PI / 2;
+    plank.castShadow = true;
+    plank.receiveShadow = true;
+    g.add(plank);
   }
 }
 
-function elvenTrunk(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xE1F3_0001);
-  const barkMat = mat(dna.colors.walls, { roughness: 0.9 });
-  const canopyMat = mat(dna.colors.roof, { roughness: 0.75 });
-
-  // Gnarled living trunk — a noise-crumbled bark surface (reusing the same
-  // technique as undead's weathered stone tiers), not a perfectly smooth
-  // tapered cylinder.
-  addWeatheredTier(g, dna.seed ^ 0xE1F3_0010, 0, Math.min(w, d) * 0.42, Math.min(w, d) * 0.32, h, barkMat, 0.13);
-
-  // Root buttresses flaring out at the base.
-  for (let i = 0; i < 4; i++) {
-    const ang = (i / 4) * Math.PI * 2 + r() * 0.3;
-    const rad = Math.min(w, d) * 0.4;
-    const root = addMesh(g, new THREE.CylinderGeometry(0.06, 0.14, 0.5, 6), barkMat, Math.cos(ang) * rad, 0.25, Math.sin(ang) * rad);
-    root.rotation.z = Math.cos(ang) * 0.4;
-    root.rotation.x = Math.sin(ang) * 0.4;
+/**
+ * Diagonal wooden support brackets bracing a plank ring against the trunk
+ * surface just below it — without these the ring reads as a disc floating
+ * in mid-air next to the trunk (a "flying saucer collar" illusion),
+ * regardless of how correctly its radius/height are otherwise sized.
+ * A handful of angled braces running from the trunk surface up/out to the
+ * ring's underside visually "grounds" it as an attached platform.
+ */
+function addRingBraces(g: THREE.Group, seed: number, y: number, trunkRadius: number, ringRadius: number, material: THREE.Material, count = 6): void {
+  const r = mulberry32(seed);
+  const braceLen = Math.hypot(ringRadius - trunkRadius, ringRadius * 0.3);
+  for (let i = 0; i < count; i++) {
+    const ang = (i / count) * Math.PI * 2 + r() * 0.3;
+    const innerR = trunkRadius * 0.92;
+    const midX = Math.cos(ang) * (innerR + ringRadius) * 0.5;
+    const midZ = Math.sin(ang) * (innerR + ringRadius) * 0.5;
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(braceLen, 0.05, 0.05), material);
+    brace.position.set(midX, y - ringRadius * 0.18, midZ);
+    brace.rotation.y = -ang + Math.PI / 2;
+    brace.rotation.z = Math.atan2(ringRadius * 0.3, ringRadius - trunkRadius);
+    brace.castShadow = true;
+    g.add(brace);
   }
-
-  // Leafy canopy built from a cluster of foliage blobs, not one smooth dome.
-  addLeafCanopyCluster(g, dna.seed ^ 0xE1F3_0011, h, Math.max(w, d) * 0.6, canopyMat, 6);
-
-  // Round doorway carved into the trunk, framed by a natural root archway
-  // (curved root-like segments arcing overhead — the same "many small
-  // solid pieces, never one flat primitive" principle as the other
-  // factions' round-prop/archway kits, but organic rather than blocky).
-  addDoorway(g, Math.min(w, d) * 0.4, h * 0.5, d / 2 - 0.05, dna.colors.door);
-  const archR = Math.min(w, d) * 0.28;
-  const archSegs = 5;
-  for (let i = 0; i <= archSegs; i++) {
-    const ang = (i / archSegs) * Math.PI;
-    const seg = addMesh(g, new THREE.CylinderGeometry(0.045, 0.07, archR * 0.55, 5), barkMat,
-      Math.cos(ang) * archR, h * 0.5 + Math.sin(ang) * archR, d / 2 + 0.02);
-    seg.rotation.z = ang;
-  }
-
-  // Hanging vine tendrils drooping from the canopy.
-  const vineMat = mat('#4a7a3a', { roughness: 0.85 });
-  for (let i = 0; i < 4; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = Math.max(w, d) * 0.3;
-    const len = 0.4 + r() * 0.5;
-    addMesh(g, new THREE.CylinderGeometry(0.02, 0.03, len, 5), vineMat, Math.cos(ang) * rad, h - len / 2 + 0.1, Math.sin(ang) * rad);
-  }
-
-  // Glowing moonlit lantern-vines hanging from the canopy.
-  const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.7, roughness: 0.5 });
-  for (let i = 0; i < 3; i++) {
-    const ang = (i / 3) * Math.PI * 2;
-    addMesh(g, new THREE.SphereGeometry(0.06, 6, 6), glowMat, Math.cos(ang) * w * 0.4, h * 0.85, Math.sin(ang) * d * 0.4);
-  }
-  return g;
 }
 
 function buildElvenVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.3; // tall, reaching into canopy
-  const g = elvenTrunk(dna, fp.w, fp.d, h);
-  // Elder's Hall: a spiral wooden platform/balcony ringing the upper trunk.
+  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.5; // tall, reaching into canopy
+  const g = new THREE.Group();
+  addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
+    facade: true,
+  });
+  // Elder's Hall: a block-built plank ring/balcony girdling the trunk's
+  // actual neck (where the taper stops and the canopy begins), sized to
+  // just overhang the trunk's real constructed waist radius there (not an
+  // arbitrary fraction of the whole footprint) plus a handful of angled
+  // support braces bridging ring-to-trunk, so it reads as a platform built
+  // onto the tree rather than a disc floating beside it.
   const woodMat = mat(dna.colors.trim, { roughness: 0.85 });
-  const platform = addMesh(g, new THREE.TorusGeometry(Math.min(fp.w, fp.d) * 0.45, 0.08, 6, 16), woodMat, 0, h * 0.6, 0);
-  platform.rotation.x = Math.PI / 2;
+  const neckY = elvenNeckY(h);
+  const trunkRadiusAtNeck = elvenWaistRadius(fp.w, fp.d);
+  const ringRadius = trunkRadiusAtNeck * 1.25;
+  addPlankRing(g, dna.seed ^ 0xE1F3_0013, neckY, ringRadius, woodMat, 14);
+  addRingBraces(g, dna.seed ^ 0xE1F3_0015, neckY, trunkRadiusAtNeck, ringRadius, woodMat, 6);
   return g;
 }
 
@@ -693,7 +714,9 @@ function buildElvenChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xE1F3_0002);
-  // Ancient Shrine: a ring of standing tree-stones around a central glowing crystal.
+  // Ancient Shrine: a ring of standing tree-stones around a central glowing
+  // crystal — already genuine discrete standing monoliths (not a deformed
+  // blob primitive), kept as-is from Phase 2b/2d.
   const stoneMat = mat('#7a8a70', { roughness: 0.95 });
   const nStones = 6;
   for (let i = 0; i < nStones; i++) {
@@ -709,19 +732,25 @@ function buildElvenChapel(dna: BuildingDNA): THREE.Group {
 
 function buildElvenShop(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
+  const h = FLOOR_HEIGHT * 1.1; // a small sapling, not a full trunk
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xE1F3_0003);
-  // Moonlit Exchange: a raised wooden platform stall beneath a small tree.
+  // Moonlit Exchange: a raised wooden trading platform beneath a small
+  // block-built sapling (a miniature version of the same trunk+canopy grid,
+  // not a separate sphere-cluster technique) — reusing the villa's own
+  // shape profile at a smaller scale is the same "small, consistent
+  // vocabulary" principle the block-kit engine is built on.
   const woodMat = mat(dna.colors.trim, { roughness: 0.85 });
-  addMesh(g, new THREE.CylinderGeometry(0.1, 0.14, h, 8), woodMat, 0, h / 2, 0);
-  addMesh(g, new THREE.BoxGeometry(fp.w, 0.12, fp.d), woodMat, 0, h, 0);
-  const leafMat = mat(dna.colors.roof, { roughness: 0.75 });
-  addLeafCanopyCluster(g, dna.seed ^ 0xE1F3_0012, h + 0.3, fp.w * 0.42, leafMat, 4);
+  addMesh(g, new THREE.CylinderGeometry(0.1, 0.14, 0.35, 8), woodMat, 0, 0.175, 0);
+  addMesh(g, new THREE.BoxGeometry(fp.w, 0.1, fp.d), woodMat, 0, 0.35, 0);
+  addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0014, fp.w * 0.55, fp.d * 0.55, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
+    canopyStartFrac: 0.35, waistFrac: 0.6, canopyFlareFrac: 1.2,
+  });
+  g.children[g.children.length - 1]!.position.y += 0.4; // sit atop the trading platform
   // Hanging glow-motes typical of a moonlit night market.
   const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.8 });
   for (let i = 0; i < 4; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), glowMat, (r() - 0.5) * fp.w, h + 0.1, (r() - 0.5) * fp.d);
+    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), glowMat, (r() - 0.5) * fp.w, 0.5, (r() - 0.5) * fp.d);
   }
   return g;
 }
@@ -1325,9 +1354,13 @@ function buildFaeShop(dna: BuildingDNA): THREE.Group {
 
 export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<BuildingKind, (dna: BuildingDNA) => THREE.Group>>>> = {
   vulperia: {
-    villa:  buildVulperiaVilla,
-    chapel: buildVulperiaChapel,
-    shop:   buildVulperiaShop,
+    villa:    buildVulperiaVilla,
+    chapel:   buildVulperiaChapel,
+    shop:     buildVulperiaShop,
+    // See elven's `house`/`terraced` comment above for why these two
+    // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
+    house:    buildVulperiaVilla,
+    terraced: buildVulperiaVilla,
   },
   slime: {
     villa:  buildSlimeVilla,
@@ -1340,14 +1373,29 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     shop:   buildUndeadShop,
   },
   elven: {
-    villa:  buildElvenVilla,
-    chapel: buildElvenChapel,
-    shop:   buildElvenShop,
+    villa:    buildElvenVilla,
+    chapel:   buildElvenChapel,
+    shop:     buildElvenShop,
+    // `house` (gateward/farm wards) and `terraced` (slum ward) are real
+    // BuildingKinds produced by WARD_TO_KIND (src/buildingToDungeonPlan.ts)
+    // — every settlement's farm/gateward/slum buildings use them, so
+    // without an override here they fell through to the generic default
+    // builder and only got elven's STYLE_COLORS palette (pale sage walls/
+    // roof tint), not elven geometry. Reusing buildElvenVilla is safe:
+    // it derives its footprint from `dna.buildingKind`/`dna.size`
+    // dynamically (via getFootprint()), so it scales correctly to these
+    // smaller kinds rather than assuming villa's fixed 7x5.
+    house:    buildElvenVilla,
+    terraced: buildElvenVilla,
   },
   dwarven: {
-    villa:  buildDwarvenVilla,
-    chapel: buildDwarvenChapel,
-    shop:   buildDwarvenShop,
+    villa:    buildDwarvenVilla,
+    chapel:   buildDwarvenChapel,
+    shop:     buildDwarvenShop,
+    // See elven's `house`/`terraced` comment above for why these two
+    // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
+    house:    buildDwarvenVilla,
+    terraced: buildDwarvenVilla,
   },
   orcish: {
     villa:  buildOrcishVilla,

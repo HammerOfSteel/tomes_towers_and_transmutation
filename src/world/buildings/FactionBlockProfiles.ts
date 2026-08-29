@@ -284,3 +284,340 @@ export function buildVulperiaDenMoundGrid(
 
   return grid;
 }
+
+/** Shared default so `buildElvenTrunkGrid()` and `elvenWaistRadius()` never drift apart. */
+const ELVEN_DEFAULT_WAIST_FRAC = 0.38;
+
+export interface ElvenTrunkOptions {
+  /** Fraction (0-1) of total height where the trunk transitions into the canopy (default 0.6). */
+  canopyStartFrac?: number;
+  /** Radius fraction (of the base radius) at the trunk's narrowest "waist" point (default 0.38 — a distinctly slender trunk, not half the base width, so the canopy silhouette reads as sitting on a proper trunk rather than a stubby neck). */
+  waistFrac?: number;
+  /** Radius fraction (of the base radius) at the canopy's widest bulge (default 1.35). */
+  canopyFlareFrac?: number;
+  /** Radius fraction at the very base (root flare), tapering to normal within ~2 levels (default 1.15). */
+  rootFlareFrac?: number;
+  /** Carve an arched doorway/facade notch into the trunk's front (+Z) face. */
+  facade?: boolean;
+  /** Fraction of the base footprint width the notch spans at its widest, ground row (default 0.32). */
+  facadeWidthFrac?: number;
+  /**
+   * Fraction of the trunk-phase height the arch rises (default ~0.36, i.e.
+   * a human-scale ~2 world-unit-tall doorway). Kept modest by design: the
+   * trunk radius shrinks with height, so a fixed-Z-depth door frame taller
+   * than this would outrun the (narrowing) trunk surface behind it and
+   * read as a disconnected floating post rather than a doorway carved into
+   * the trunk — the actual value used is additionally auto-clamped for
+   * safety against whatever `waistFrac`/`canopyStartFrac` are in effect.
+   */
+  facadeHeightFrac?: number;
+  /** Bark-surface radius irregularity, applied per vertical "rib" (default 0.1). */
+  jitter?: number;
+}
+
+/**
+ * Number of `BLOCK_UNIT` levels tall an elven trunk of continuous height `h`
+ * resolves to. Mirrors `dwarvenBlocksTall()` — exported so callers placing
+ * height-dependent props can work in the same quantized space as the grid.
+ */
+export function elvenTrunkBlocksTall(h: number): number {
+  return Math.max(6, Math.round(h / BLOCK_UNIT));
+}
+
+/**
+ * World-space Y (matching the trunk mesh's own centring convention — see
+ * `elvenCanopyTopY()` in FactionBuildingVariants.ts) of the trunk's actual
+ * "neck": the level where the taper stops and the canopy ellipsoid
+ * begins. Callers placing a balcony/platform ring flush against the trunk
+ * (not floating above or sunk into it) should anchor at this height, not
+ * an arbitrary fraction of the total trunk height.
+ */
+export function elvenNeckY(h: number, canopyStartFrac = 0.6): number {
+  const bh = elvenTrunkBlocksTall(h);
+  const canopyStartBy = Math.round(bh * canopyStartFrac);
+  return canopyStartBy * BLOCK_UNIT + BLOCK_UNIT / 2;
+}
+
+/**
+ * World-unit radius of the trunk's actual constructed surface at the neck
+ * (where the taper stops and the canopy begins) — i.e. `waistFrac` of the
+ * base radius, converted out of the normalized (÷maxR) space
+ * `buildElvenTrunkGrid()` works in and into real world units. Callers
+ * sizing a balcony/platform ring should use this (plus a small overhang)
+ * so the ring sits flush against the trunk's real surface instead of
+ * floating at an arbitrary, possibly much wider or narrower, radius.
+ */
+export function elvenWaistRadius(w: number, d: number, opts: ElvenTrunkOptions = {}): number {
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
+  return waistFrac * maxR * BLOCK_UNIT;
+}
+
+/**
+ * Elven living-tree occupancy grid: the heightfield technique run
+ * "inside-out" — instead of a per-column stack height (vulperia's mound),
+ * every horizontal *level* gets its own radius, narrowing from the base
+ * through a "waist" partway up the trunk, then flaring back out into a
+ * wider canopy band near the top (a real tapering-then-bulging tree
+ * silhouette, not a smooth deformed cylinder-plus-sphere-cluster). A slight
+ * root flare widens the very base, and an optional facade notch carves an
+ * arched doorway whose width narrows with height following a circular arc
+ * — a genuine "round arch," built entirely from block occupancy rather
+ * than a separate curved mesh.
+ */
+export function buildElvenTrunkGrid(
+  seed: number, w: number, d: number, h: number,
+  opts: ElvenTrunkOptions = {},
+): BlockGrid {
+  const grid = createBlockGrid();
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const bh = elvenTrunkBlocksTall(h);
+  const noise2D = createNoise2D(seed);
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const jitterAmt = opts.jitter ?? 0.18;
+
+  const canopyStartFrac = opts.canopyStartFrac ?? 0.6;
+  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
+  const rootFlareFrac = opts.rootFlareFrac ?? 1.15;
+  // Clamp the canopy flare so it can never exceed the grid's own diagonal
+  // reach — otherwise the widest canopy cross-section would include every
+  // corner cell (dNorm never exceeds the clamp), filling the entire bw x bd
+  // rectangle with zero rounding and reading as a flat slab instead of a
+  // bulging crown. `cornerDist` is the normalized distance to the grid's
+  // farthest corner; keeping the flare a little under it guarantees the
+  // canopy's corners stay excluded (rounded) at every level.
+  const cornerDist = Math.hypot(cx, cz) / maxR;
+  const canopyFlareFrac = Math.min(opts.canopyFlareFrac ?? 1.2, cornerDist * 0.85);
+
+  /**
+   * Trunk-phase radius (as a fraction of the base radius) at normalized
+   * height `t` (0..1, trunk-only range). Eases from 1.0 (base) down to
+   * `waistFrac` with a *zero-derivative* landing (smoothstep) so the
+   * canopy ellipsoid grafted on top (see below) meets it without a visible
+   * kink/collar — the single biggest cause of the old profile reading as
+   * a flying-saucer "mushroom cap" instead of a tree crown.
+   */
+  function trunkRadiusFracAt(t: number): number {
+    const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
+    const eased = u * u * (3 - 2 * u); // smoothstep
+    return 1 + (waistFrac - 1) * eased;
+  }
+
+  const canopyStartBy = Math.round(bh * canopyStartFrac);
+  // Canopy modelled as a small central crown cap plus several DISTINCTLY
+  // SEPARATED satellite foliage lobes, each reached by its own visible
+  // branch — not one single wide ellipsoid disc (always axi-symmetric,
+  // reads as a "mushroom cap"), and not lobes packed so tightly against
+  // the trunk that they visually fuse into one undifferentiated mass
+  // either (the earlier attempt's failure mode: branches existed in code
+  // but were entirely swallowed by overlapping leaf lobes, so they added
+  // no visible geometry). Real trees — and stylized tree references from
+  // Zelda: Wind Waker's toon foliage to Minecraft's oak canopy — read as
+  // *recognizably a tree* specifically because you can see individual
+  // rounded foliage clumps held apart from the trunk by branches, not
+  // because the clumps are perfectly smooth or perfectly round.
+  const canopyRadiusY = Math.max(1, bh - 1 - canopyStartBy);
+  const lobeRng = mulberry32(seed ^ 0x9E37_79B9);
+  // Central crown cap: modest size, sits right above the neck — reads as
+  // the core of the canopy, not the whole silhouette.
+  const mainRxz = canopyFlareFrac * maxR * 0.34;
+  const mainRy = canopyRadiusY * 0.4;
+  interface CanopyLobe { cx: number; cy: number; cz: number; rxz: number; ry: number }
+  const lobes: CanopyLobe[] = [
+    { cx, cy: canopyStartBy + mainRy * 0.7, cz, rxz: mainRxz, ry: mainRy },
+  ];
+  const numSatellites = 3 + Math.floor(lobeRng() * 2); // 3-4 satellite foliage masses
+  interface BranchSeg { ax: number; ay: number; az: number; bx: number; by: number; bz: number; }
+  const branches: BranchSeg[] = [];
+  for (let i = 0; i < numSatellites; i++) {
+    const ang = (i / numSatellites) * Math.PI * 2 + lobeRng() * 0.8;
+    // Real separation from the trunk axis: far enough out that, after the
+    // central cap's own radius is subtracted, there's genuine empty space
+    // between the cap and each satellite — that gap is what makes the
+    // connecting branch visible instead of swallowed.
+    const offsetFrac = 0.95 + lobeRng() * 0.45;
+    const satRxz = mainRxz * (0.62 + lobeRng() * 0.3);
+    const satRy = mainRy * (0.75 + lobeRng() * 0.4);
+    // Vary height broadly across the canopy's vertical range so the
+    // satellites sit at different levels (asymmetric, layered crown)
+    // rather than all lined up in one flat ring at the same height.
+    const heightFrac = 0.25 + lobeRng() * 0.65;
+    const satCy = canopyStartBy + canopyRadiusY * heightFrac;
+    const lobeCx = cx + Math.cos(ang) * offsetFrac * maxR;
+    const lobeCz = cz + Math.sin(ang) * offsetFrac * maxR;
+    lobes.push({ cx: lobeCx, cy: satCy, cz: lobeCz, rxz: satRxz, ry: satRy });
+    // Branch: starts low on the upper trunk/neck (varied per branch, some
+    // originating a little below the neck like a real limb splitting off
+    // the trunk itself) and climbs out to the satellite's own centre —
+    // the only connective tissue between trunk and this foliage mass, so
+    // it reads as a genuine branch bridging real empty space.
+    const branchStartBy = canopyStartBy - Math.round(lobeRng() * 3);
+    branches.push({ ax: cx, ay: branchStartBy, az: cz, bx: lobeCx, by: satCy, bz: lobeCz });
+  }
+  /** Shortest distance from point p to line segment a-b, all in raw column-index units; also returns the segment parameter t (0=a, 1=b) for radius tapering. */
+  function distToSegment(px: number, py: number, pz: number, seg: BranchSeg): { dist: number; t: number } {
+    const abx = seg.bx - seg.ax, aby = seg.by - seg.ay, abz = seg.bz - seg.az;
+    const apx = px - seg.ax, apy = py - seg.ay, apz = pz - seg.az;
+    const abLenSq = abx * abx + aby * aby + abz * abz;
+    const t = abLenSq > 0 ? Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / abLenSq)) : 0;
+    const cxp = seg.ax + abx * t, cyp = seg.ay + aby * t, czp = seg.az + abz * t;
+    return { dist: Math.hypot(px - cxp, py - cyp, pz - czp), t };
+  }
+  /**
+   * Branch thickness at parameter `segT` (0 at the trunk end, 1 at the
+   * lobe end) — tapered thicker-at-trunk, thinner-at-tip like a real limb,
+   * in raw (unnormalized) column-index units.
+   */
+  function branchRadiusAt(segT: number): number {
+    return maxR * (0.22 - 0.09 * segT);
+  }
+  // Generous early-exit radius (in the same ÷maxR normalized units as
+  // dNorm) accounting for the furthest any satellite lobe can reach from
+  // the trunk axis, so the per-column scan below doesn't clip any lobe
+  // short. Computed from the actual lobe set rather than guessed, so it
+  // stays correct if the lobe sizing/offset tuning above changes again.
+  let canopyReachNorm = 0;
+  for (const lobe of lobes) {
+    const offCx = (lobe.cx - cx) / maxR, offCz = (lobe.cz - cz) / maxR;
+    const reach = Math.hypot(offCx, offCz) + lobe.rxz / maxR;
+    if (reach > canopyReachNorm) canopyReachNorm = reach;
+  }
+
+  const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.32))) : 0;
+  const requestedNotchHeight = opts.facade ? Math.max(3, Math.round(canopyStartBy * (opts.facadeHeightFrac ?? 0.36))) : 0;
+  // The doorway/frame is carved into the trunk's fixed front footprint rows
+  // (bz >= bd - notchDepth), but the trunk itself tapers inward with height.
+  // Once the taper has narrowed enough that the trunk's own radius no
+  // longer reaches that fixed Z depth, the frame posts would stick out
+  // past the (already-receded) trunk surface behind them — reading as a
+  // thin vertical pillar floating disconnected in front of the trunk,
+  // rather than a doorway built into it (this was a real, confirmed bug,
+  // not just a rendering illusion). Clamp the notch height to stop
+  // *before* that happens: find the tallest row at which the trunk still
+  // comfortably covers the frame post's worst-case (outermost) corner,
+  // with a safety margin against the per-cell jitter noise.
+  const notchDepth = 2;
+  const frameCornerDx = (notchWidth / 2 + 1) / maxR;
+  const frameCornerDz = (bd - 1 - cz) / maxR;
+  const frameCornerDist = Math.hypot(frameCornerDx, frameCornerDz);
+  let notchHeight = requestedNotchHeight;
+  if (opts.facade) {
+    notchHeight = requestedNotchHeight;
+    for (let by = 0; by < requestedNotchHeight; by++) {
+      const t = bh > 1 ? by / (bh - 1) : 0;
+      if (trunkRadiusFracAt(t) < frameCornerDist * 1.08) { notchHeight = Math.max(2, by); break; }
+    }
+  }
+  const notchCx = Math.round(bw / 2);
+
+  for (let bx = 0; bx < bw; bx++) {
+    for (let bz = 0; bz < bd; bz++) {
+      const dx = (bx - cx) / maxR, dz = (bz - cz) / maxR;
+      const dNorm = Math.hypot(dx, dz);
+      if (dNorm > Math.max(1.5, canopyReachNorm)) continue; // hard cutoff, avoids scanning far outside any possible radius
+
+      for (let by = 0; by < bh; by++) {
+        const inCanopy = by >= canopyStartBy;
+        // Organic surface roughening: noise that varies with BOTH column
+        // position and height, so the bark/leaf boundary reads as a
+        // mottled, hand-carved surface rather than either static vertical
+        // "ribs" (noise fixed per column) or perfectly concentric rings
+        // (no per-level variation at all).
+        const n = noise2D(bx * 0.42 + by * 0.11, bz * 0.42 - by * 0.09);
+
+        if (!inCanopy) {
+          const t = bh > 1 ? by / (bh - 1) : 0;
+          let radiusFrac = trunkRadiusFracAt(t) * (1 + n * jitterAmt);
+          if (by <= 1) {
+            // Root flare: widen the base 2 levels, tapering to the normal
+            // trunk radius by by=2 — baked directly into the occupancy
+            // silhouette instead of bolted-on cylinder "root" props.
+            const flareBlend = by === 0 ? 1 : 0.5;
+            radiusFrac = Math.max(radiusFrac, rootFlareFrac * flareBlend + radiusFrac * (1 - flareBlend));
+          }
+          if (dNorm > radiusFrac) continue;
+
+          let material = 'bark';
+          if (opts.facade && by < notchHeight && bz >= bd - notchDepth) {
+            // Arch narrows with height following a circular arc — a
+            // genuine round-top archway built from occupancy, not a
+            // separate curved mesh. `frac` is how far up the arch this
+            // row is; the notch's half-width shrinks toward 0 as frac -> 1.
+            const frac = by / notchHeight;
+            const halfWidthHere = Math.max(0, Math.round((notchWidth / 2) * Math.sqrt(Math.max(0, 1 - frac * frac))));
+            const inNotchX = Math.abs(bx - notchCx) < halfWidthHere;
+            const inFrameX = Math.abs(bx - notchCx) < halfWidthHere + 1;
+            if (inNotchX) continue; // carved doorway
+            if (inFrameX) material = 'facade'; // kept jamb post, promoted material
+          }
+          setBlock(grid, bx, by, bz, material);
+        } else {
+          // Multi-lobe crown test: distance to the *nearest* lobe's own
+          // ellipsoid centre/radii, roughened by the same organic noise so
+          // each lobe's boundary is a lumpy, hand-grown mass rather than a
+          // smooth dome — occupied if any lobe covers this cell.
+          let best = Infinity;
+          for (const lobe of lobes) {
+            const ddx = (bx - lobe.cx) / lobe.rxz;
+            const ddy = (by - lobe.cy) / lobe.ry;
+            const ddz = (bz - lobe.cz) / lobe.rxz;
+            const dist = Math.hypot(ddx, ddy, ddz);
+            if (dist < best) best = dist;
+          }
+          if (best <= 1 + n * (jitterAmt * 1.3)) {
+            setBlock(grid, bx, by, bz, 'leaf');
+            continue;
+          }
+          // Not inside any leaf lobe — check whether this cell sits on one
+          // of the branch connectors reaching out to a satellite lobe; if
+          // so, occupy it as bark so the satellite visibly grows out of a
+          // branch instead of floating detached in open space.
+          let onBranch = false;
+          for (const seg of branches) {
+            const { dist, t } = distToSegment(bx, by, bz, seg);
+            if (dist <= branchRadiusAt(t)) { onBranch = true; break; }
+          }
+          if (onBranch) setBlock(grid, bx, by, bz, 'bark');
+        }
+      }
+    }
+  }
+
+  // Moonlit belt: reclassify the outward-facing surface ring right at the
+  // trunk/canopy transition to a pale "moonstone" accent material — a
+  // decorative band grown into the silhouette rather than a bolted-on ring.
+  for (const [k, matKey] of [...grid.cells.entries()]) {
+    if (matKey !== 'bark') continue;
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    if (Math.abs(by - canopyStartBy) > 0) continue;
+    const exposed = !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1);
+    if (exposed) grid.cells.set(k, 'moonstone');
+  }
+
+  // Firefly/moonberry glow accents: a handful of canopy-surface blocks
+  // (exposed on at least one side, so the glow reads from outside)
+  // reclassified to the 'glow' material — deterministic per seed, always
+  // an existing solid block (never a separately floating prop).
+  const r = mulberry32(seed ^ 0xE1F3_ACC1);
+  const canopySurface = [...grid.cells.entries()].filter(([k, matKey]) => {
+    if (matKey !== 'leaf') return false;
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    return !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1)
+      || !hasBlock(grid, bx, by + 1, bz);
+  });
+  const glowCount = Math.min(canopySurface.length, 3 + Math.floor(r() * 3));
+  for (let i = 0; i < glowCount; i++) {
+    const idx = Math.floor(r() * canopySurface.length);
+    const [glowKey] = canopySurface[idx] ?? [];
+    if (glowKey) grid.cells.set(glowKey, 'glow');
+  }
+
+  return grid;
+}
