@@ -102,12 +102,14 @@ interface DwarvenTierPlan {
 }
 
 /**
- * Computes the block-grid tier layout for a dwarven hall — shared by
- * `buildDwarvenHallGrid()` (which fills it) and `dwarvenTopTierExtents()`
- * (which callers use to place roofline props safely within the topmost,
- * inset tier's actual footprint, not the base footprint).
+ * Computes the block-grid tier layout for a stepped rectangular tower —
+ * shared by `buildDwarvenHallGrid()`/`dwarvenTopTierExtents()` (dwarven's
+ * precise, undecayed guild-hall) and `buildUndeadTierGrid()` (undead's
+ * decayed reuse of the exact same tier-inset math — see its doc comment
+ * for why undead builds on this rather than reimplementing its own
+ * stepped-tower layout).
  */
-function planDwarvenTiers(w: number, d: number, h: number, opts: DwarvenHallOptions): DwarvenTierPlan {
+export function planDwarvenTiers(w: number, d: number, h: number, opts: DwarvenHallOptions): DwarvenTierPlan {
   const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
   const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
   const bh = dwarvenBlocksTall(h);
@@ -1157,6 +1159,209 @@ export function buildOrcishHutGrid(
       for (let ry = 0; ry < roofBlocks; ry++) {
         setBlock(grid, bx, wallBlocksH + ry, bz, roofMaterial);
       }
+    }
+  }
+
+  return grid;
+}
+
+export interface UndeadTierOptions extends DwarvenHallOptions {
+  /**
+   * Probability (0..1) that any given eligible mid-body block gets
+   * eroded away entirely, leaving a scattered pockmark hole through the
+   * tower's stonework (default 0.16). Applied per-tier, skipping the
+   * grounded base row and the load-bearing corner columns so the tower
+   * never loses its footing or its structural spine.
+   */
+  decayFrac?: number;
+  /**
+   * Maximum blocks of height jitter applied per perimeter column on the
+   * topmost tier only, for a broken/crumbled crenellation skyline baked
+   * directly into the grid (default 3) rather than dwarven's separate
+   * bolted-on crenellation props on a clean flat parapet.
+   */
+  crownJitterBlocks?: number;
+  /** Number of body blocks reassigned to the bioluminescent 'runeglow' accent material (default 5). */
+  runeglowCount?: number;
+}
+
+/**
+ * Number of `BLOCK_UNIT` cubes tall an undead spire of continuous height
+ * `h` resolves to. Undead reuses the exact same tiered-tower quantization
+ * math dwarven uses (`dwarvenBlocksTall()`/`dwarvenRoofTopY()`) — a
+ * stepped stone tower is a stepped stone tower whether it's pristine
+ * dwarven masonry or a centuries-decayed undead ossuary spire; only the
+ * *body* filling (decay holes, broken crenellation, rune accents,
+ * material names) differs, not the tier-inset geometry itself.
+ */
+export const undeadBlocksTall = dwarvenBlocksTall;
+/** World-space Y of the topmost (pre-decay) rendered face — see `dwarvenRoofTopY()`. Decay/crumbling may leave individual perimeter columns lower than this; it's the *intact* baseline roofline props like a floating rune-orb should target. */
+export const undeadRoofTopY = dwarvenRoofTopY;
+/** Safe placement half-extents within the topmost tier's real footprint — see `dwarvenTopTierExtents()`, reused verbatim since the tier layout math is identical. */
+export function undeadTopTierExtents(
+  w: number, d: number, h: number, opts: UndeadTierOptions = {}, margin = BLOCK_UNIT,
+): { halfW: number; halfD: number } {
+  return dwarvenTopTierExtents(w, d, h, opts, margin);
+}
+
+/**
+ * Undead ossuary-spire occupancy grid: the *deliberate decay/erosion
+ * case* of this rollout. Reuses dwarven's exact stepped-tower tier-inset
+ * layout (`planDwarvenTiers()`) — this is centuries-old dwarven-style
+ * masonry left to crumble, not a different silhouette family — but fills
+ * it with:
+ *
+ * 1. **Ash-stone body** (`'ashstone'`) instead of dwarven's clean
+ *    `'stone'`, with load-bearing corners kept in a bone/reliquary accent
+ *    material (`'ossuary'`) rather than dwarven's `'buttress'` — same
+ *    "protect the structural corners from decay" principle, renamed to
+ *    fit the theme.
+ * 2. **Sparse block-omission decay**: per tier, each eligible mid-body
+ *    column (never the grounded base row, never a load-bearing corner)
+ *    has an independent `decayFrac` chance of losing exactly one block
+ *    partway up its height — scattered erosion pockmarks through the
+ *    stonework, not dwarven's much sparser 2-4-chip weathering pass.
+ * 3. **Broken/crumbled crenellation baked into the grid**: unlike
+ *    dwarven's flat-topped tower (whose crenellations are separate
+ *    bolted-on props), undead's topmost tier's own perimeter columns
+ *    (again excluding load-bearing corners) get randomly cut down by up
+ *    to `crownJitterBlocks`, producing a genuinely jagged, broken
+ *    skyline — some sections still standing proud, others crumbled away.
+ * 4. **Rune-glow accents**: a handful of body blocks reassigned to a
+ *    bioluminescent `'runeglow'` material, the same deterministic
+ *    per-seed pick technique as vampire's `'bloodglow'`/fae's `'spore'`
+ *    accents.
+ *
+ * An optional facade notch reuses dwarven's carved-doorway technique but
+ * tapers its top two rows inward by one block each, baking a pointed
+ * Gothic arch directly into the block carve (dwarven's notch is a plain
+ * flat-topped rectangle) — framed by `'facade'`-material jamb blocks.
+ */
+export function buildUndeadTierGrid(
+  seed: number, w: number, d: number, h: number,
+  opts: UndeadTierOptions = {},
+): BlockGrid {
+  const grid = createBlockGrid();
+  const plan = planDwarvenTiers(w, d, h, opts);
+  const { bw, bd, bh } = plan;
+  const tiers = Math.max(1, opts.tiers ?? 3);
+  const insetStep = Math.max(1, opts.insetStep ?? 2);
+  const refDim = Math.max(bw, bd);
+  const insetStepX = Math.max(1, Math.round((insetStep * bw) / refDim));
+  const insetStepZ = Math.max(1, Math.round((insetStep * bd) / refDim));
+  const r = mulberry32(seed);
+
+  const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.34))) : 0;
+  const tierH = Math.max(1, Math.round(bh / tiers));
+  const decayFrac = Math.max(0, Math.min(1, opts.decayFrac ?? 0.16));
+  const crownJitterBlocks = Math.max(0, opts.crownJitterBlocks ?? 3);
+
+  // Track whichever tier is actually the last one *built* (the nominal
+  // loop may break early if inset-stepping shrinks a tier to nothing),
+  // since the crumbled-crenellation pass below only touches that real
+  // topmost tier, not necessarily `tiers - 1`.
+  let lastTier = { xMin: 0, xMax: bw, zMin: 0, zMax: bd, byMin: 0, byMax: bh };
+
+  for (let t = 0; t < tiers; t++) {
+    const insetX = t * insetStepX, insetZ = t * insetStepZ;
+    const xMin = insetX, xMax = bw - insetX;
+    const zMin = insetZ, zMax = bd - insetZ;
+    if (xMax - xMin < 2 || zMax - zMin < 2) break; // tower has stepped to nothing
+    const byMin = t * tierH;
+    const byMax = t === tiers - 1 ? bh : byMin + tierH;
+    lastTier = { xMin, xMax, zMin, zMax, byMin, byMax };
+
+    for (let bx = xMin; bx < xMax; bx++) {
+      for (let bz = zMin; bz < zMax; bz++) {
+        const isCorner = (bx === xMin || bx === xMax - 1) && (bz === zMin || bz === zMax - 1);
+        for (let by = byMin; by < byMax; by++) {
+          setBlock(grid, bx, by, bz, isCorner ? 'ossuary' : 'ashstone');
+        }
+      }
+    }
+
+    // Sparse block-omission decay: one independent roll per eligible
+    // column (never a corner, never touching the grounded base row or
+    // this tier's own top row) picks a single mid-height block to erode
+    // away entirely — a scattered pockmark hole, never a whole column
+    // emptied out (which would read as a structurally-impossible floating
+    // gap rather than weathered stonework).
+    if (byMax - byMin > 2) {
+      for (let bx = xMin; bx < xMax; bx++) {
+        for (let bz = zMin; bz < zMax; bz++) {
+          const isCorner = (bx === xMin || bx === xMax - 1) && (bz === zMin || bz === zMax - 1);
+          if (isCorner) continue;
+          if (opts.facade && byMin === 0 && bx === Math.round(bw / 2) && bz === zMax - 1) continue; // never eat the doorway's own frame column
+          if (r() >= decayFrac) continue;
+          const decayLoRow = byMin === 0 ? byMin + 1 : byMin; // keep the true ground-floor row solid
+          const decayHiRow = byMax - 2; // leave this tier's own top row intact for the crown pass below
+          if (decayHiRow < decayLoRow) continue;
+          const by = decayLoRow + Math.floor(r() * (decayHiRow - decayLoRow + 1));
+          grid.cells.delete(`${bx},${by},${bz}`);
+        }
+      }
+    }
+  }
+
+  // Broken/crumbled crenellation: bake per-perimeter-column height jitter
+  // directly into the topmost tier's own blocks (excluding the
+  // load-bearing corners, which stand proud as ruined turret stumps),
+  // instead of dwarven's separate bolted-on crenellation props on a
+  // clean flat parapet.
+  {
+    const { xMin, xMax, zMin, zMax, byMin, byMax } = lastTier;
+    for (let bx = xMin; bx < xMax; bx++) {
+      for (let bz = zMin; bz < zMax; bz++) {
+        const isPerimeter = bx === xMin || bx === xMax - 1 || bz === zMin || bz === zMax - 1;
+        if (!isPerimeter) continue;
+        const isCorner = (bx === xMin || bx === xMax - 1) && (bz === zMin || bz === zMax - 1);
+        if (isCorner) continue;
+        const cut = Math.floor(r() * (crownJitterBlocks + 1)); // 0..crownJitterBlocks
+        for (let i = 0; i < cut && byMax - 1 - i > byMin; i++) {
+          grid.cells.delete(`${bx},${byMax - 1 - i},${bz}`);
+        }
+      }
+    }
+  }
+
+  if (opts.facade) {
+    const cx = Math.round(bw / 2);
+    const notchXMin = cx - Math.round(notchWidth / 2);
+    const notchXMax = notchXMin + notchWidth;
+    const frameXMin = notchXMin - 1, frameXMax = notchXMax + 1;
+    const notchHeight = Math.max(3, Math.round(tierH * (opts.facadeHeightFrac ?? 0.6)));
+    const frontZ = bd - 1;
+    // Pointed Gothic arch: the top two rows of the notch narrow inward by
+    // one block per row (dwarven's equivalent notch is a plain flat-topped
+    // rectangle), baking the arch's point directly into the block carve.
+    const taperRows = Math.min(2, notchHeight - 1);
+    for (let by = 0; by < notchHeight; by++) {
+      const rowsFromTop = notchHeight - 1 - by;
+      const taperIn = rowsFromTop < taperRows ? (taperRows - rowsFromTop) : 0;
+      const rowNotchXMin = notchXMin + taperIn;
+      const rowNotchXMax = notchXMax - taperIn;
+      for (let bx = frameXMin; bx < frameXMax; bx++) {
+        const inNotchX = bx >= rowNotchXMin && bx < rowNotchXMax;
+        if (inNotchX) {
+          grid.cells.delete(`${bx},${by},${frontZ}`); // carve the doorway
+        } else if (hasBlock(grid, bx, by, frontZ)) {
+          setBlock(grid, bx, by, frontZ, 'facade'); // promote jamb posts
+        }
+      }
+    }
+  }
+
+  // Rune-glow accents: a handful of body blocks reassigned to a
+  // bioluminescent accent material, the same deterministic per-seed pick
+  // technique as vampire's 'bloodglow'/fae's 'spore' accents.
+  {
+    const runeglowCount = Math.max(0, opts.runeglowCount ?? 5);
+    const bodyCells = [...grid.cells.entries()].filter(([, m]) => m === 'ashstone');
+    const rr = mulberry32(seed ^ 0xDEAD_5117);
+    for (let i = 0; i < runeglowCount && bodyCells.length > 0; i++) {
+      const idx = Math.floor(rr() * bodyCells.length);
+      const [key] = bodyCells[idx] ?? [];
+      if (key) grid.cells.set(key, 'runeglow');
     }
   }
 

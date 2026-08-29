@@ -33,11 +33,10 @@
 
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
-import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -448,111 +447,82 @@ function buildSlimeShop(dna: BuildingDNA): THREE.Group {
 // ── Undead — bone/crypt ossuary architecture ─────────────────────────────────
 // Lich Tower (patriciate), Bone Shrine (church), Wraith Bazaar (market):
 // gaunt stone spires, rib-cage bone arches, skull motifs — a "haunted crypt"
-// rather than a house.
+// rather than a house. Phase 2e (undead): a genuine `buildUndeadTierGrid()`
+// occupancy grid — this is the rollout's deliberate *decay/erosion* case,
+// reusing dwarven's exact stepped-tower tier-inset layout (the same
+// centuries-old masonry technique, left to crumble) rather than a different
+// silhouette family — replacing the old `addWeatheredTier()` (3 separate
+// noise-perturbed `CylinderGeometry` tiers) and `addStoneArchDoorway()`
+// (bolted-on voussoir boxes). Sparse block-omission decay, a broken/jagged
+// crenellation, and bioluminescent rune-glow accents are now baked directly
+// into the block grid instead of applied as separate crumbling props.
 
 /**
- * A single tapered stone tier with a noise-crumbled surface (weathered,
- * ancient masonry) instead of a perfectly smooth cone/cylinder taper.
- * Stacking a few of these with shrinking radii reads as a real tiered
- * tower built from distinct stone courses, not one smooth primitive.
+ * Builds + meshes + centers a `buildUndeadTierGrid()` decayed ossuary
+ * spire into `g` at the origin (same centering convention as
+ * `addBlockVampireSpire()`/`addBlockDwarvenHall()`). The weathered
+ * `'ashstone'` body is left softly chamfered (centuries-worn stone should
+ * read rounded and eroded, not crisp), while the load-bearing `'ossuary'`
+ * bone/reliquary corners and the carved `'facade'` doorway jambs are
+ * chamfer-suppressed for a hard "still standing proud amid the decay"
+ * contrast — the same soft-body/hard-corner split dwarven established,
+ * reused here since undead is explicitly dwarven's decayed reflection.
  */
-function addWeatheredTier(g: THREE.Group, seed: number, baseY: number, radiusBottom: number, radiusTop: number, tierH: number, material: THREE.Material, jitter = 0.07): THREE.Mesh {
-  const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, tierH, 10, 3);
-  const noise2D = createNoise2D(seed);
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const angle = Math.atan2(v.z, v.x);
-    const heightRatio = THREE.MathUtils.clamp((v.y + tierH / 2) / tierH, 0, 1);
-    const n = noise2D(Math.cos(angle) * 2.5, Math.sin(angle) * 2.5 + heightRatio * 3);
-    const radialScale = 1 + n * jitter;
-    v.x *= radialScale;
-    v.z *= radialScale;
-    pos.setXYZ(i, v.x, v.y, v.z);
-  }
-  geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(0, baseY + tierH / 2, 0);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+function addBlockUndeadSpire(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  wallColor: string, doorColor: string,
+  opts: UndeadTierOptions = {},
+): void {
+  const grid = buildUndeadTierGrid(seed, w, d, h, opts);
+  const palette = {
+    ashstone: mat(wallColor, { roughness: 0.98 }),
+    ossuary:  mat('#d8d0b8', { roughness: 0.9 }),
+    facade:   mat(doorColor, { roughness: 0.9 }),
+    runeglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.9, roughness: 0.4 }),
+  };
+  const mesh = meshBlockGrid(grid, palette, {
+    suppressChamfer: (bx, by, bz) => {
+      const k = getMaterialKey(grid, bx, by, bz);
+      return k === 'ossuary' || k === 'facade';
+    },
+  });
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
   g.add(mesh);
-  return mesh;
-}
-
-/**
- * A carved gothic archway built from small voussoir-like stone blocks
- * (never a flat torus/ring — this is only a half-circle arch, but the
- * same "many small solid pieces" principle keeps it robust from any
- * angle), with straight door jambs and a dark recessed doorway panel.
- * A proper carved crypt entrance instead of a flat doorway disc.
- */
-function addStoneArchDoorway(g: THREE.Group, cx: number, cz: number, doorW: number, doorH: number, material: THREE.Material): void {
-  const archR = doorW / 2;
-  const voussoirs = 7;
-  for (let i = 0; i <= voussoirs; i++) {
-    const ang = (i / voussoirs) * Math.PI; // 0 (right springer) .. PI (left springer)
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(archR * 0.32, archR * 0.34, archR * 0.3), material);
-    seg.position.set(cx + Math.cos(ang) * archR, doorH + Math.sin(ang) * archR, cz);
-    seg.rotation.z = ang;
-    seg.castShadow = true;
-    g.add(seg);
-  }
-  // Straight door jambs below the springline.
-  for (const side of [-1, 1]) {
-    addMesh(g, new THREE.BoxGeometry(archR * 0.3, doorH, archR * 0.3), material, cx + side * archR, doorH / 2, cz);
-  }
-  // Dark recessed doorway opening.
-  const voidMat = mat('#0a0a0c', { roughness: 1 });
-  addMesh(g, new THREE.BoxGeometry(doorW * 0.72, doorH * 0.96, 0.08), voidMat, cx, doorH * 0.5, cz + 0.03);
 }
 
 function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xDEAD_B011);
-  const stoneMat = mat(dna.colors.walls, { roughness: 0.98 });
-  const w = Math.min(fp.w, fp.d) * 0.7;
   const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.6; // gaunt and tall
-
-  // Weathered stone spire built from three genuinely distinct tapering
-  // tiers (a real tiered tower of stone courses), not one smooth primitive.
-  const tier1H = h * 0.42, tier2H = h * 0.34, tier3H = h * 0.24;
-  let y = 0;
-  addWeatheredTier(g, dna.seed ^ 0xDEAD_1001, y, w * 0.5, w * 0.42, tier1H, stoneMat); y += tier1H;
-  addWeatheredTier(g, dna.seed ^ 0xDEAD_1002, y, w * 0.42, w * 0.36, tier2H, stoneMat); y += tier2H;
-  addWeatheredTier(g, dna.seed ^ 0xDEAD_1003, y, w * 0.36, w * 0.3, tier3H, stoneMat); y += tier3H;
-
-  // Jagged broken-crenellation crown.
-  const crownMat = mat(dna.colors.trim, { roughness: 0.95 });
-  const nCren = 6;
-  for (let i = 0; i < nCren; i++) {
-    const ang = (i / nCren) * Math.PI * 2;
-    const rad = w * 0.28;
-    const ch = 0.3 + r() * 0.4;
-    addMesh(g, new THREE.BoxGeometry(0.18, ch, 0.18), crownMat, Math.cos(ang) * rad, h + ch / 2, Math.sin(ang) * rad);
-  }
-  // Floating dark orb near the top (lich's power source).
+  // Lich Tower: a narrower-than-lot decayed ossuary spire (gaunt, not
+  // filling the whole footprint) with 4 stepped tiers so the decay/crumble
+  // reads clearly across several distinct courses.
+  const w = fp.w * 0.72, d = fp.d * 0.72;
+  addBlockUndeadSpire(g, dna.seed ^ 0xDEAD_1010, w, d, h, dna.colors.walls, dna.colors.trim, {
+    tiers: 4, facade: true, decayFrac: 0.18, crownJitterBlocks: 3, runeglowCount: 6,
+  });
+  // Floating dark orb near the top (lich's power source) -- kept from the
+  // old design, now floating above the genuinely broken/crumbled crown
+  // rather than a separate bolted-on crenellation ring.
   const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.8, roughness: 0.3 });
-  addMesh(g, new THREE.IcosahedronGeometry(0.28, 1), orbMat, 0, h * 0.85, 0);
-  // Narrow arrow-slit windows.
+  addMesh(g, new THREE.IcosahedronGeometry(0.28, 1), orbMat, 0, undeadRoofTopY(h) + 0.35, 0);
+  // Narrow arrow-slit windows -- naturally thin/flat geometry ill-suited to
+  // block-kit's cubic cells, kept as a small bolted-on prop.
   const slitMat = mat('#0a0a10', { roughness: 0.9 });
   for (let fl = 0; fl < 3; fl++) {
-    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), w * 0.36 + 0.02);
+    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), d * 0.36 + 0.02);
   }
-  // Gothic arch doorway carved from stone voussoirs, flanked by bone ribs.
-  const doorW = w * 0.5, doorH = h * 0.18;
-  addStoneArchDoorway(g, 0, w * 0.5 - 0.02, doorW, doorH, mat(dna.colors.trim, { roughness: 0.95 }));
-  const ribMat = mat('#d8d0b8', { roughness: 0.92 });
-  for (const side of [-1, 1]) {
-    const rib = addMesh(g, new THREE.CylinderGeometry(0.04, 0.07, doorH * 1.3, 5), ribMat, side * doorW * 0.4, doorH * 0.6, w * 0.5 + 0.05);
-    rib.rotation.z = side * 0.18;
-  }
-  // Fallen rubble blocks scattered at the base (decay storytelling).
+  // Fallen rubble blocks scattered at the base (decay storytelling) --
+  // small debris chunks knocked loose from the crumbling tower above.
   const rubbleMat = mat(dna.colors.walls, { roughness: 1 });
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     const ang = r() * Math.PI * 2;
-    const rad = w * 0.6 + r() * 0.4;
+    const rad = Math.max(w, d) * 0.55 + r() * 0.4;
     addMesh(g, new THREE.BoxGeometry(0.2 + r() * 0.15, 0.15 + r() * 0.1, 0.2 + r() * 0.15), rubbleMat, Math.cos(ang) * rad, 0.1, Math.sin(ang) * rad, r() * Math.PI);
   }
   return g;
@@ -562,33 +532,68 @@ function buildUndeadChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xDEAD_B012);
+  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.15; // squat mausoleum, not a tall spire
   const boneMat = mat('#d8d0b8', { roughness: 0.92 });
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.1;
-
-  // Ribcage-arch entrance: paired tapered "rib" struts curving inward.
+  // Bone Shrine: a small decayed ossuary mausoleum (block-kit, same
+  // technique as the villa's tower at a much squatter scale) at the rear
+  // of a graveyard scene -- headstones and a low bone-post fence ring it,
+  // per the "headstone/fence" props called for by this phase's plan.
+  const shrine = new THREE.Group();
+  addBlockUndeadSpire(shrine, dna.seed ^ 0xDEAD_1020, fp.w * 0.42, fp.d * 0.4, h, dna.colors.walls, dna.colors.trim, {
+    tiers: 2, facade: true, decayFrac: 0.14, crownJitterBlocks: 2, runeglowCount: 3,
+  });
+  shrine.position.set(0, 0, -fp.d * 0.28);
+  g.add(shrine);
+  // Ribcage-arch entrance in front of the shrine: paired tapered "rib"
+  // struts curving inward -- naturally thin curved geometry, kept as a
+  // bolted-on prop rather than block-carved.
   const nRibs = 5;
   for (let i = 0; i < nRibs; i++) {
     const t = i / (nRibs - 1);
-    const zOff = fp.d / 2 - 0.3;
+    const zOff = fp.d * 0.05;
     for (const side of [-1, 1]) {
-      const rib = addMesh(g, new THREE.CylinderGeometry(0.05, 0.1, h * 0.9, 5), boneMat,
-        side * (fp.w * 0.45 - t * fp.w * 0.15), h * 0.45, zOff);
+      const rib = addMesh(g, new THREE.CylinderGeometry(0.05, 0.1, h * 0.65, 5), boneMat,
+        side * (fp.w * 0.4 - t * fp.w * 0.12), h * 0.32, zOff);
       rib.rotation.z = side * (0.15 + t * 0.25);
     }
   }
-  // Bone altar slab at the rear.
+  // Bone altar slab in front of the ribcage arch.
   const altarMat = mat(dna.colors.walls, { roughness: 0.95 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.5, 0.5, fp.d * 0.3), altarMat, 0, 0.25, -fp.d * 0.3);
-  // Skulls-on-posts flanking the altar.
-  const skullMat = mat('#e8e0c8', { roughness: 0.85 });
-  for (const sx of [-fp.w * 0.32, fp.w * 0.32]) {
-    addMesh(g, new THREE.CylinderGeometry(0.05, 0.06, 0.9, 5), mat('#3a3028'), sx, 0.45, -fp.d * 0.25);
-    addMesh(g, new THREE.SphereGeometry(0.16, 8, 6), skullMat, sx, 0.95, -fp.d * 0.25);
+  addMesh(g, new THREE.BoxGeometry(fp.w * 0.4, 0.4, fp.d * 0.22), altarMat, 0, 0.2, fp.d * 0.2);
+  // Headstones scattered across the graveyard plot in front of the shrine.
+  const stoneMat = mat('#8a8878', { roughness: 0.95 });
+  const headstonePositions: [number, number][] = [
+    [-fp.w * 0.4, fp.d * 0.32], [fp.w * 0.38, fp.d * 0.3], [-fp.w * 0.22, fp.d * 0.42],
+    [fp.w * 0.2, fp.d * 0.44], [-fp.w * 0.4, fp.d * 0.5], [fp.w * 0.4, fp.d * 0.48],
+  ];
+  for (const [hx, hz] of headstonePositions) {
+    const lean = (r() - 0.5) * 0.3;
+    const stone = addMesh(g, new THREE.BoxGeometry(0.18, 0.28 + r() * 0.12, 0.06), stoneMat, hx + (r() - 0.5) * 0.15, 0.16, hz + (r() - 0.5) * 0.15);
+    stone.rotation.z = lean;
+    stone.rotation.y = r() * 0.3;
+  }
+  // Low bone-post fence ringing the graveyard plot.
+  const fenceMat = mat('#c8c0a8', { roughness: 0.9 });
+  const fenceHalfW = fp.w * 0.55, fenceHalfD = fp.d * 0.62, fenceZOffset = fp.d * 0.15;
+  const fencePosts: [number, number][] = [];
+  const postsPerSide = 5;
+  for (let i = 0; i <= postsPerSide; i++) {
+    const t = i / postsPerSide;
+    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset - fenceHalfD]);
+    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset + fenceHalfD]);
+  }
+  for (let i = 0; i <= postsPerSide; i++) {
+    const t = i / postsPerSide;
+    fencePosts.push([-fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
+    fencePosts.push([fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
+  }
+  for (const [fx, fz] of fencePosts) {
+    addMesh(g, new THREE.CylinderGeometry(0.03, 0.035, 0.42, 5), fenceMat, fx, 0.21, fz);
   }
   // Candle sconces (small glowing orange dots) along the sides.
   const candleMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f0a040'), emissive: new THREE.Color('#f0a040'), emissiveIntensity: 0.7 });
   for (let i = 0; i < 4; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05, 6, 6), candleMat, (r() - 0.5) * fp.w * 0.8, 0.7 + r() * 0.3, (r() - 0.5) * fp.d * 0.5);
+    addMesh(g, new THREE.SphereGeometry(0.05, 6, 6), candleMat, (r() - 0.5) * fp.w * 0.6, 0.55 + r() * 0.2, fp.d * 0.05 + (r() - 0.5) * fp.d * 0.2);
   }
   return g;
 }
@@ -599,7 +604,17 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
   const r = mulberry32(dna.seed ^ 0xDEAD_B013);
   const boneMat = mat('#d8d0b8', { roughness: 0.92 });
   const h = FLOOR_HEIGHT * 0.6;
-  // Wraith Bazaar: a bone-strut stall frame with a tattered cloth canopy.
+  // Wraith Bazaar: the stall huddles against a low, single-tier decayed
+  // wall stub (a fragment of some older ruin the bazaar has been built
+  // into), tying it to the same block-kit decay language as the villa and
+  // chapel even at this small scale.
+  const wallStub = new THREE.Group();
+  addBlockUndeadSpire(wallStub, dna.seed ^ 0xDEAD_1030, fp.w * 0.9, fp.d * 0.22, h * 1.4, dna.colors.walls, dna.colors.trim, {
+    tiers: 1, decayFrac: 0.22, crownJitterBlocks: 3, runeglowCount: 2,
+  });
+  wallStub.position.set(0, 0, -fp.d * 0.42);
+  g.add(wallStub);
+  // Bone-strut stall frame with a tattered cloth canopy.
   for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, -fp.d / 2], [-fp.w / 2, fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
     addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, h, 6), boneMat, sx, h / 2, sz);
   }
@@ -610,8 +625,10 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
   for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
     addMesh(g, new THREE.SphereGeometry(0.1 + r() * 0.03, 7, 6), lanternMat, sx, h - 0.15, sz);
   }
-  // Counter with tattered goods.
-  const woodMat = mat('#4a4038', { roughness: 0.9 });
+  // Counter with tattered goods -- a warm rotten-wood brown, deliberately
+  // a different hue family from the cool stone-grey walls (#5a5048) so it
+  // reads as a distinct material, not the same stone darkened.
+  const woodMat = mat('#3a2818', { roughness: 0.9 });
   addMesh(g, new THREE.BoxGeometry(fp.w * 0.6, 0.4, 0.35), woodMat, 0, 0.2, fp.d * 0.3);
   return g;
 }

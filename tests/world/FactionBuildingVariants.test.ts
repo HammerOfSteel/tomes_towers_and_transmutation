@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -36,27 +36,6 @@ function findBiggestMesh(g: THREE.Group): THREE.Mesh {
   let biggestCount = 0;
   g.traverse(o => {
     if (o instanceof THREE.Mesh) {
-      const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-      if (count > biggestCount) { biggestCount = count; biggest = o; }
-    }
-  });
-  expect(biggest).not.toBeNull();
-  return biggest!;
-}
-
-/**
- * Like findBiggestMesh, but restricted to CylinderGeometry meshes. Some
- * faction builders (e.g. undead's floating orb, an IcosahedronGeometry)
- * include non-indexed geometries whose raw vertex-array length is inflated
- * well past any indexed cylinder/cone mesh's — this avoids accidentally
- * grabbing a fixed, seed-independent decorative shape when the intent is
- * to inspect the noise-perturbed tapered body.
- */
-function findBiggestCylinderMesh(g: THREE.Group): THREE.Mesh {
-  let biggest: THREE.Mesh | null = null;
-  let biggestCount = 0;
-  g.traverse(o => {
-    if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') {
       const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
       if (count > biggestCount) { biggestCount = count; biggest = o; }
     }
@@ -329,48 +308,113 @@ describe('Orcish — BlockKit lashed hut with jagged patchwork roofline (not pal
 });
 
 // ── Undead deep-quality pass (settlement visual fidelity follow-up) ────────
-// Regression guards for the tiered weathered-stone spire + carved
-// gothic-arch doorway rework that replaced the original single
-// tapered-cylinder "spire" standing in for a whole crypt tower.
-describe('Undead — tiered weathered spire + stone arch doorway (not one tapered cylinder)', () => {
-  it('produces only finite vertices for the noise-perturbed tiers after displacement', () => {
+// Regression guards for the block-kit decayed ossuary spire + baked-in
+// sparse decay/broken crenellation/pointed-arch doorway rework that
+// replaced the original three noise-perturbed `CylinderGeometry` tiers +
+// bolted-on voussoir arch.
+describe('Undead — BlockKit decayed ossuary spire with sparse decay + broken crenellation (not tapered cylinder tiers)', () => {
+  it('produces only finite vertices across villa/chapel/shop', () => {
     for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
       expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.undead_common![kind]!(makeDna(kind, 'undead_common', 42)));
     }
   });
 
-  it('builds the villa (Lich Tower) from three distinct stone tiers plus arch/crown/orb/rubble, not one primitive', () => {
+  it('builds the villa (Lich Tower) main spire as one merged, dense block-kit mesh (not 3 tapered cylinder tiers), plus orb/rubble accents', () => {
     const g = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 3));
-    // 3 tiers + 6 crenellations + 1 orb + 3 arrow slits + (7 voussoirs + 2
-    // jambs + 1 void panel for the arch) + 2 ribs + 3 rubble chunks.
-    expect(countMeshes(g)).toBeGreaterThanOrEqual(3 + 6 + 1 + 3 + 10 + 2 + 3);
+    let sawCylinderTier = false;
+    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawCylinderTier = true; });
+    // greedy-meshed block-kit output is a single merged BufferGeometry with a
+    // dense vertex count reflecting the underlying block construction, not a
+    // stack of separate tapered-cylinder tiers.
+    const spire = findBiggestMesh(g);
+    const pos = spire.geometry.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(60);
+    expect(sawCylinderTier).toBe(false); // no cylinder tiers remain on the villa
+    let sawOrb = false;
+    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'IcosahedronGeometry') sawOrb = true; });
+    expect(sawOrb).toBe(true);
   });
 
-  it('perturbs a tower tier off a perfect cylinder radius (crumbling ancient stone, not smooth taper)', () => {
-    const g = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 3));
-    const tier = findBiggestCylinderMesh(g);
-    const pos = tier.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const xzRadii = new Set<number>();
-    for (let i = 0; i < pos.count; i++) {
-      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
+  it('produces sparse block-omission decay holes in the live grid (scattered erosion pockmarks, not smooth walls)', () => {
+    const grid = buildUndeadTierGrid(3, 8, 8, 8, { decayFrac: 0.4 });
+    let sawHole = false;
+    const bw = Math.max(3, Math.round(8 / BLOCK_UNIT));
+    const bh = Math.max(3, Math.round(8 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(8 / BLOCK_UNIT));
+    for (let bx = 1; bx < bw - 1 && !sawHole; bx++) {
+      for (let by = 1; by < bh - 1 && !sawHole; by++) {
+        for (let bz = 1; bz < bd - 1 && !sawHole; bz++) {
+          if (!hasBlock(grid, bx, by, bz) && (hasBlock(grid, bx, by - 1, bz) || hasBlock(grid, bx, by + 1, bz))) sawHole = true;
+        }
+      }
     }
-    // A perfect cylinder/cone tier has a small, fixed set of ring radii;
-    // noise perturbation should spread this out into many distinct values.
-    expect(xzRadii.size).toBeGreaterThan(6);
+    expect(sawHole).toBe(true);
   });
 
-  it('produces a different tower silhouette per seed (deterministic but seed-varied)', () => {
+  it('produces a broken/jagged crenellation crown baked into the topmost tier (not a uniform flat top)', () => {
+    // Sample every non-corner perimeter column across all 4 edges of the
+    // topmost (inset) tier -- the tier the crumbled-crenellation pass
+    // actually touches -- trying a few seeds since a small footprint's
+    // topmost tier is narrow and a single seed's jitter rolls can
+    // coincidentally collide (mirrors the equivalent FactionBlockProfiles
+    // test's seed-loop + all-4-edges sampling).
+    const bh = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    function colTop(grid: ReturnType<typeof buildUndeadTierGrid>, bx: number, bz: number): number {
+      let top = -1;
+      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
+      return top;
+    }
+    const plan = planDwarvenTiers(8, 8, 6, { tiers: 2, insetStep: 2 });
+    let sawVariance = false;
+    for (let trySeed = 1; trySeed < 20 && !sawVariance; trySeed++) {
+      const grid = buildUndeadTierGrid(trySeed, 8, 8, 6, { tiers: 2, crownJitterBlocks: 3 });
+      const tops = new Set<number>();
+      for (let bx = plan.topXMin + 1; bx < plan.topXMax - 1; bx++) {
+        tops.add(colTop(grid, bx, plan.topZMin));
+        tops.add(colTop(grid, bx, plan.topZMax - 1));
+      }
+      for (let bz = plan.topZMin + 1; bz < plan.topZMax - 1; bz++) {
+        tops.add(colTop(grid, plan.topXMin, bz));
+        tops.add(colTop(grid, plan.topXMax - 1, bz));
+      }
+      if (tops.size >= 2) sawVariance = true;
+    }
+    expect(sawVariance).toBe(true);
+  });
+
+  it('assigns load-bearing corners a distinct "ossuary" material, not the same "ashstone" as the body', () => {
+    const grid = buildUndeadTierGrid(3, 8, 8, 6, {});
+    const bw = Math.max(3, Math.round(8 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(8 / BLOCK_UNIT));
+    expect(getMaterialKey(grid, 0, 0, 0)).toBe('ossuary');
+    expect(getMaterialKey(grid, bw - 1, 0, bd - 1)).toBe('ossuary');
+  });
+
+  it('retains the praised headstone/fence graveyard props on the chapel and skull-lantern/wall-stub props on the shop', () => {
+    const chapel = FACTION_BUILDING_VARIANTS.undead_common!.chapel!(makeDna('chapel', 'undead_common', 9));
+    let sawHeadstone = false;
+    chapel.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawHeadstone = true; });
+    expect(sawHeadstone).toBe(true);
+    let sawFencePost = false;
+    chapel.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawFencePost = true; });
+    expect(sawFencePost).toBe(true);
+    const shop = FACTION_BUILDING_VARIANTS.undead_common!.shop!(makeDna('shop', 'undead_common', 9));
+    let sawLantern = false;
+    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawLantern = true; });
+    expect(sawLantern).toBe(true);
+  });
+
+  it('produces a different spire silhouette per seed (deterministic but seed-varied)', () => {
     const gA = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 1));
     const gB = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 2));
     const gA2 = FACTION_BUILDING_VARIANTS.undead_common!.villa!(makeDna('villa', 'undead_common', 1));
-    const sumXZ = (g: THREE.Group): number => {
-      const pos = findBiggestCylinderMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
-      let sum = 0;
-      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
-      return sum;
-    };
-    expect(sumXZ(gA)).toBe(sumXZ(gA2));
-    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
+    expect(countMeshes(gA)).toBe(countMeshes(gA2));
+    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
+    const posB = findBiggestMesh(gB).geometry.getAttribute('position') as THREE.BufferAttribute;
+    let sumA = 0, sumB = 0;
+    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
+    for (let i = 0; i < posB.count; i++) sumB += posB.getY(i);
+    expect(sumA).not.toBe(sumB);
   });
 });
 

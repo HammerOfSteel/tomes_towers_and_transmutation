@@ -2061,6 +2061,125 @@ throwaway diagnostic files (`tests/e2e/_tmp_orcish_diag.spec.ts`,
 `tests/world/_tmp_orcish_diag.test.ts`, `/tmp/orcish_town_*.png`) were
 deleted after use.
 
+### Phase 2e.16 — Undead: block-kit decayed ossuary spire (reuses dwarven's tiered-tower profile) — ✅ DONE
+
+Undead was deliberately designed as this rollout's **decay/erosion contrast
+case**: rather than a new silhouette family, it reuses dwarven's exact
+stepped-tower tier-inset layout math (`planDwarvenTiers()`, now exported so
+undead's builder can call it directly) — the same centuries-old masonry
+technique, left to crumble for a thousand years. Replaced the primitive
+undead builders (`addWeatheredTier()` — three separate noise-perturbed
+`CylinderGeometry` tiers — `addStoneArchDoorway()` — bolted-on voussoir
+boxes — and `buildUndeadVilla/Chapel/Shop()`) with a genuine
+`buildUndeadTierGrid()` occupancy grid in `FactionBlockProfiles.ts`:
+
+1. **Reused stepped-tower tier-inset layout** — calls `planDwarvenTiers()`
+   verbatim for the tier count/per-axis inset stepping/early-break-if-
+   tier-shrinks-to-nothing logic, so the underlying silhouette is
+   identifiably the "same tower type" as dwarven's, just decayed.
+2. **Sparse block-omission decay** — per tier, each eligible mid-body
+   column (never a corner, never the grounded base row, never the tier's
+   own top row) has an independent `decayFrac` (default 0.16) chance of
+   losing exactly one block at a random mid-height — scattered erosion
+   pockmarks, never a fully-emptied column. Verified via direct grid
+   inspection (a hole adjacent to a still-solid block above/below it) and
+   confirmed visually in Settlement Lab screenshots as small pitted gaps
+   in the tower faces.
+3. **Broken/crumbled crenellation baked into the grid** — on the actually-
+   last-built tier (tracked via `lastTier`, since the tier-inset loop can
+   break early), each non-corner perimeter column is cut down by 0 to
+   `crownJitterBlocks` (default 3) blocks from its top, producing a
+   genuinely jagged skyline directly in the block occupancy — unlike
+   dwarven's flat-topped tower with separate bolted-on crenellation props.
+   Verified via a seed-loop + all-4-edges perimeter sample (mirroring
+   orcish's asymmetric-footprint seed-loop pattern, needed because a small
+   footprint's topmost tier is narrow enough that a single seed's jitter
+   rolls can coincidentally collide).
+4. **Pointed Gothic arch facade** — reuses dwarven's carved-doorway
+   technique, but the top 2 rows of the notch taper inward by 1 block
+   each, baking a pointed arch directly into the block carve (dwarven's
+   equivalent notch is a plain flat-topped rectangle).
+5. **Rune-glow accents** — a handful of body blocks (default 5) reassigned
+   to a bioluminescent `'runeglow'` material via the same deterministic
+   `mulberry32(seed ^ magic)` pick technique as vampire's `'bloodglow'`/
+   fae's `'spore'`.
+
+Material/chamfer convention: `'ashstone'` (weathered body) and `'runeglow'`
+(bioluminescent accent) are left softly chamfered (centuries-worn stone
+should read rounded/eroded), while the load-bearing `'ossuary'` bone/
+reliquary corners and the carved `'facade'` doorway jambs are chamfer-
+suppressed — the same soft-body/hard-corner split dwarven established for
+`'stone'`/`'buttress'`, reused here since undead is explicitly dwarven's
+decayed reflection. `'ossuary'`'s hardcoded accent color (`#d8d0b8`, pale
+bone) was spot-checked against the faction's actual `walls`/`roof`/`trim`/
+`door` palette in `BuildingDNA.ts` (`#5a5048`/`#383028`/`#2a2020`/`#1a1a18`)
+and found genuinely distinct (much lighter, cool-neutral vs. the palette's
+dark warm-greys) — no correction needed there, but the shop's counter
+`woodMat` was caught during this pass at only ~16 RGB-units from `walls`
+(too close, same "the same stone with a value shift" issue flagged for
+orcish/vampire) and was shifted to a genuinely distinct warm rotten-wood
+brown (`#3a2818`) before commit.
+
+Rewrote `buildUndeadVilla()` (Lich Tower: a narrower-than-lot gaunt block-
+built spire — `fp.w * 0.72` — with 4 tiers so the decay reads clearly
+across several courses; kept the floating dark power orb, narrow arrow-
+slit windows, and fallen-rubble-at-the-base props, repositioned flush
+against `undeadRoofTopY()`), `buildUndeadChapel()` (reimagined as a small
+graveyard scene: a squat 2-tier block-built ossuary mausoleum at the rear,
+ribcage-arch bone struts, a bone altar, and — new per this phase's
+"headstone/fence" prop callout — scattered leaning headstones and a low
+bone-post fence ringing the plot), and `buildUndeadShop()` (the Wraith
+Bazaar's bone-strut stall now huddles against a small single-tier decayed
+block-built wall stub, tying it into the same decay language as the larger
+buildings even at this small scale) to use the new grid via a new
+`addBlockUndeadSpire()` assembly helper (mirrors `addBlockVampireSpire()`'s
+build+mesh+center pattern). The now-fully-unused primitive helpers
+(`addWeatheredTier()`, `addStoneArchDoorway()`) and their sole remaining
+import (`createNoise2D`) were deleted as dead code.
+
+**Tests (TDD, written first)**: a new `describe('FactionBlockProfiles —
+undead decayed ossuary spire (reuses dwarven tiered-tower profile)', ...)`
+block in `FactionBlockProfiles.test.ts` (8 tests: grounded base, stepped-
+tower silhouette via `planDwarvenTiers()`'s real topmost-tier bounds, sparse
+decay holes, broken crenellation via seed-loop + all-4-edges sampling,
+corner-material integrity, pointed-arch doorway carve, rune-glow accent
+presence, determinism) — all 54 tests (46 pre-existing + 8 new) passed.
+Rewrote the pre-existing undead `describe` block in
+`FactionBuildingVariants.test.ts` (which asserted properties of the old
+primitives — noise-perturbed cylinder-tier radius variance, a fixed mesh
+count including voussoir/rib counts) to instead assert block-kit properties
+(single merged dense-vertex block-kit mesh instead of cylinder tiers,
+sparse decay holes and broken crenellation via direct grid inspection using
+the same seed-loop + all-4-edges pattern, ossuary corner-material
+integrity, retained headstone/fence/skull-lantern/wall-stub props,
+determinism) — this also required deleting the now-unused
+`findBiggestCylinderMesh()` test helper (its only two callers were in the
+rewritten block). Full targeted suite (`BlockKit.test.ts` +
+`FactionBlockProfiles.test.ts` + `FactionBuildingVariants.test.ts`) —
+161/161 passed. `tsc --noEmit` — 143 errors (matches the current baseline
+exactly; a transient unused-variable error introduced by a test-authoring
+fix during TDD was caught and fixed before this final count, no new errors
+remain in the touched files).
+
+Live verification: a direct code-level diagnostic (`buildUndeadTierGrid()`
+called directly, dumping material counts/column-top spans;
+`FACTION_BUILDING_VARIANTS.undead_common.villa/chapel/shop` called
+directly, confirming real bounding boxes and mesh counts per building)
+confirmed the geometry matches the design intent. Playwright screenshots of
+the Settlement Lab (undead, town tier, 2 seeds) — after discovering and
+working around a query-param gotcha (`sl_faction` expects the *studio*
+faction key `undead`, which `mapStudioFactionToRuntimeFaction()` translates
+to the registry key `undead_common`; passing the registry key directly
+silently falls back to generic `human_town` buildings with no error, which
+is why the first screenshot pass showed unrelated generic gabled houses) —
+show clearly stepped 3-tier stone towers with pale bone "ossuary" corner
+pillars, purple rune-glow accent blocks, floating dark power orbs above the
+crowns, and small rubble debris at the base, visibly distinct in silhouette
+and material from the taper-family races and from dwarven's own
+undecayed/flat-topped tower. All throwaway diagnostic files
+(`tests/e2e/_tmp_undead_diag.spec.ts`, `tests/world/_tmp_undead_diag.test.ts`,
+`/tmp/undead_*.png`) were deleted after use.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

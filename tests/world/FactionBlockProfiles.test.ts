@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -671,3 +671,116 @@ describe('FactionBlockProfiles — orcish lashed hut with jagged patchwork roofl
     expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
   });
 });
+
+describe('FactionBlockProfiles — undead decayed ossuary spire (reuses dwarven tiered-tower profile)', () => {
+  const W = 6, D = 6, H = 6;
+
+  function bwOf(w = W): number { return Math.max(3, Math.round(w / BLOCK_UNIT)); }
+  function bdOf(d = D): number { return Math.max(3, Math.round(d / BLOCK_UNIT)); }
+  function bhOf(h = H): number { return Math.max(3, Math.round(h / BLOCK_UNIT)); }
+
+  it('is grounded: the base level has an occupied block at a corner column', () => {
+    const grid = buildUndeadTierGrid(1, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    expect(hasBlock(grid, 0, 0, 0)).toBe(true);
+    expect(hasBlock(grid, bw - 1, 0, bd - 1)).toBe(true);
+  });
+
+  it('produces a stepped tower silhouette (each successive tier inset from the one below), matching dwarven\'s tier layout', () => {
+    const grid = buildUndeadTierGrid(2, W, D, H, { tiers: 3, insetStep: 2 });
+    // The base tier's own corner should be solid ...
+    expect(hasBlock(grid, 0, 0, 0)).toBe(true);
+    // ... but a higher tier's row should no longer reach that same base
+    // corner, since it steps inward — same principle dwarven's stepped
+    // hall relies on.
+    const bh = bhOf();
+    const topRow = bh - 1;
+    expect(hasBlock(grid, 0, topRow, 0)).toBe(false);
+  });
+
+  it('produces sparse block-omission decay: some non-corner mid-body cells are missing that a pristine dwarven-style tower would have solid', () => {
+    let sawHole = false;
+    for (let trySeed = 1; trySeed < 30 && !sawHole; trySeed++) {
+      const grid = buildUndeadTierGrid(trySeed, W, D, H, { decayFrac: 0.6 });
+      const bw = bwOf(), bd = bdOf();
+      for (let bx = 1; bx < bw - 1; bx++) {
+        for (let bz = 1; bz < bd - 1; bz++) {
+          if (!hasBlock(grid, bx, 1, bz) && hasBlock(grid, bx, 0, bz)) { sawHole = true; break; }
+        }
+        if (sawHole) break;
+      }
+    }
+    expect(sawHole).toBe(true);
+  });
+
+  it('produces a broken/jagged crenellation: perimeter column top-heights on the topmost tier are not all identical', () => {
+    // Sample every non-corner perimeter column across all 4 edges of the
+    // topmost (inset) tier — the tier the crumbled-crenellation pass
+    // actually touches — trying a few seeds since a small footprint's
+    // topmost tier is narrow and a single seed's jitter rolls can
+    // coincidentally collide.
+    const bh = bhOf();
+    function colTop(grid: ReturnType<typeof buildUndeadTierGrid>, bx: number, bz: number): number {
+      let top = -1;
+      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
+      return top;
+    }
+    const plan = planDwarvenTiers(W, D, H, { tiers: 3, insetStep: 2 });
+    let sawVariance = false;
+    for (let trySeed = 1; trySeed < 20 && !sawVariance; trySeed++) {
+      const grid = buildUndeadTierGrid(trySeed, W, D, H, { tiers: 3, insetStep: 2, crownJitterBlocks: 4 });
+      const tops = new Set<number>();
+      for (let bx = plan.topXMin + 1; bx < plan.topXMax - 1; bx++) {
+        tops.add(colTop(grid, bx, plan.topZMin));
+        tops.add(colTop(grid, bx, plan.topZMax - 1));
+      }
+      for (let bz = plan.topZMin + 1; bz < plan.topZMax - 1; bz++) {
+        tops.add(colTop(grid, plan.topXMin, bz));
+        tops.add(colTop(grid, plan.topXMax - 1, bz));
+      }
+      if (tops.size >= 2) sawVariance = true;
+    }
+    expect(sawVariance).toBe(true);
+  });
+
+  it('keeps load-bearing corner columns intact as ashstone/ossuary, distinct from body material', () => {
+    const grid = buildUndeadTierGrid(9, W, D, H, {});
+    expect(getMaterialKey(grid, 0, 0, 0)).toBe('ossuary');
+    let sawAshstone = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'ashstone') { sawAshstone = true; break; }
+    }
+    expect(sawAshstone).toBe(true);
+  });
+
+  it('carves a pointed-arch (tapered top) facade doorway starting at ground level, framed by facade posts', () => {
+    const grid = buildUndeadTierGrid(6, W, D, H, { facade: true, facadeWidthFrac: 0.4 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    expect(hasBlock(grid, cx, 0, frontZ)).toBe(false); // door starts at ground level
+    let sawFacadeMaterial = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'facade') { sawFacadeMaterial = true; break; }
+    }
+    expect(sawFacadeMaterial).toBe(true);
+  });
+
+  it('produces a bioluminescent rune-glow accent material on a handful of body blocks', () => {
+    const grid = buildUndeadTierGrid(9, W, D, H, { runeglowCount: 5 });
+    let runeglowCount = 0;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'runeglow') runeglowCount++;
+    }
+    expect(runeglowCount).toBeGreaterThan(0);
+  });
+
+  it('is deterministic per seed and varies with a different seed', () => {
+    const gridA = buildUndeadTierGrid(42, W, D, H, {});
+    const gridB = buildUndeadTierGrid(42, W, D, H, {});
+    const gridC = buildUndeadTierGrid(43, W, D, H, {});
+    expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
+    expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+});
+
