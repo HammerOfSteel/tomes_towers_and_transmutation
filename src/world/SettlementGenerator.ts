@@ -17,7 +17,7 @@ import { mulberry32 } from '@/core/prng';
 import type { SettlementFaction } from '@/overworld-studio';
 import { generateSettlementName } from './SettlementNameGenerator';
 import type { WorldGrid } from './WorldGrid';
-import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type LayoutType, type Road, type SettlementType as ModelSettlementType, type WardType } from './SettlementModelGenerator';
+import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type LayoutType, type Road, type SettlementType as ModelSettlementType, type WardType, type Ward } from './SettlementModelGenerator';
 import { WARD_TO_KIND, WARD_TO_SIZE } from '@/buildingToDungeonPlan';
 import { getFootprint } from './buildings/BuildingDNA';
 
@@ -30,6 +30,27 @@ export interface PlacedBuilding {
   isAnchor: boolean;
   col: number;
   row: number;
+  /**
+   * Sub-tile continuous rendering offset, in fractional grid-tile units
+   * (e.g. 0.3 means 0.3 of a tile's world width), on top of the tile-
+   * quantized (col, row) position. Renderers multiply by their own
+   * world-unit tile size: wx = (col - ghw + offsetX) * TILE_UNIT.
+   *
+   * fillWard() computes buildings with real spacing in continuous pixel
+   * space, but (col, row) is a Math.round()-ed integer tile — that rounding
+   * collapses the real spacing between nearby buildings once several of
+   * them round to the same or adjacent tile. offsetX/offsetZ preserve the
+   * fractional remainder the rounding discarded, so the renderer can place
+   * buildings much closer to their true computed position instead of dead-
+   * center on a coarse grid, without changing (col, row)'s meaning for any
+   * existing grid-based logic (collision, walkability, applySettlementToGrid,
+   * SettlementPlacer.ts spacing) — those all keep using (col, row) exactly
+   * as before. See docs/superpowers/plans/2026-08-29-settlement-visual-fidelity.md.
+   * Clamped to [-0.5, 0.5] so a building's rendered position can never
+   * visually escape its own tile-plus-immediate-neighbor space.
+   */
+  offsetX: number;
+  offsetZ: number;
   rotation: number;
   seed: number;
 }
@@ -37,6 +58,22 @@ export interface PlacedBuilding {
 export interface RoadSegment {
   col: number;
   row: number;
+}
+
+/**
+ * A continuous (non-grid-quantized) road centerline, in fractional grid-tile
+ * units relative to the settlement center, for ribbon-mesh rendering.
+ * Parallel to RoadSegment[] (which stays tile-quantized, for WorldGrid
+ * `feature: 'road'` walkability bookkeeping) — this is purely a rendering-
+ * layer addition.
+ */
+export interface RoadRibbon {
+  /** Points along the ribbon's centerline, in fractional grid-tile units
+   *  relative to the settlement center (same convention as a building's
+   *  offsetX/offsetZ: wx = (point.x) * TILE_UNIT relative to center). */
+  points: { x: number; z: number }[];
+  /** World-unit ribbon width — wider for roads connecting anchor wards. */
+  width: number;
 }
 
 export interface SettlementPlan {
@@ -47,6 +84,7 @@ export interface SettlementPlan {
   centerRow:  number;
   buildings:  PlacedBuilding[];
   roads:      RoadSegment[];
+  roadRibbons: RoadRibbon[];
   /** Rough inhabitant count — drives NPC spawning in OW-6. */
   population: number;
 }
@@ -110,18 +148,93 @@ export function planSettlement(
       if (d < best) { best = d; anchor = rect; }
     }
     for (const rect of rects) {
-      const mappedCol = centerCol + Math.round((rect.x - centreX) * SETTLEMENT_MODEL_SCALE);
-      const mappedRow = centerRow + Math.round((rect.y - centreY) * SETTLEMENT_MODEL_SCALE);
+      const exactCol = centerCol + (rect.x - centreX) * SETTLEMENT_MODEL_SCALE;
+      const exactRow = centerRow + (rect.y - centreY) * SETTLEMENT_MODEL_SCALE;
+      const mappedCol = Math.round(exactCol);
+      const mappedRow = Math.round(exactRow);
       const snapped = snapBuildingTile(grid, buildings, mappedCol, mappedRow, ward.type, rect === anchor);
       if (!snapped) continue;
-      buildings.push({ wardType: ward.type, isAnchor: rect === anchor, col: snapped.col, row: snapped.row, rotation: rect.angle, seed: ((seed ^ (Math.round(rect.x) * 73856093 + Math.round(rect.y) * 19349663)) >>> 0) });
+      // Sub-tile offset: only meaningful relative to the tile the building
+      // actually landed on. If snapBuildingTile() had to move it elsewhere
+      // to resolve a collision/invalid-terrain conflict, the original
+      // fractional remainder no longer corresponds to anywhere near the new
+      // tile, so fall back to 0 (render dead-center on the snapped tile)
+      // rather than an offset that could point in a misleading direction.
+      const moved = snapped.col !== mappedCol || snapped.row !== mappedRow;
+      const offsetX = moved ? 0 : clamp(exactCol - mappedCol, -0.5, 0.5);
+      const offsetZ = moved ? 0 : clamp(exactRow - mappedRow, -0.5, 0.5);
+      buildings.push({
+        wardType: ward.type,
+        isAnchor: rect === anchor,
+        col: snapped.col,
+        row: snapped.row,
+        offsetX,
+        offsetZ,
+        rotation: snapToCardinal(rect.angle),
+        seed: ((seed ^ (Math.round(rect.x) * 73856093 + Math.round(rect.y) * 19349663)) >>> 0),
+      });
     }
   }
 
   const roads = rasterizeRoads(model.roads, centerCol, centerRow, centreX, centreY);
+  const roadRibbons = buildRoadRibbons(model.roads, model.wards, centreX, centreY);
   const rand = mulberry32(seed ^ 0xBADC0DE);
   const population = type === 'city' ? 55 + Math.floor(rand() * 30) : type === 'town' ? 25 + Math.floor(rand() * 26) : 8 + Math.floor(rand() * 9);
-  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings, roads, population };
+  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings, roads, roadRibbons, population };
+}
+
+/** Round an angle (radians) to the nearest cardinal direction (0/90/180/270°). */
+function snapToCardinal(radians: number): number {
+  const QUARTER = Math.PI / 2;
+  return Math.round(radians / QUARTER) * QUARTER;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/** Ward types considered settlement anchors — matches
+ *  SettlementRoadMesh.ts's MAIN_ROAD_KINDS convention: a road ending at one
+ *  of these wards renders as a wider "main street" instead of a narrow
+ *  "alley". */
+const MAIN_ROAD_WARD_TYPES: ReadonlySet<WardType> = new Set<WardType>([
+  'market', 'church', 'inn', 'gateward',
+]);
+const MAIN_ROAD_WIDTH = 2;
+const ALLEY_WIDTH = 1;
+
+/**
+ * Continuous (non-grid-quantized) road ribbons for visual rendering — a
+ * parallel, un-rounded counterpart to rasterizeRoads(). See RoadRibbon's
+ * doc comment: points are in fractional grid-tile units relative to the
+ * settlement center, for the renderer to build a quad-strip ribbon mesh
+ * from directly (no per-tile flat quads, no rounding-induced gaps).
+ *
+ * Width is picked per-road by checking which ward (if any) the road's far
+ * endpoint terminates nearest to — Road itself carries no ward reference,
+ * so this re-derives it geometrically rather than threading a new field
+ * through buildSettlement()'s output.
+ */
+function buildRoadRibbons(roads: Road[], wards: Ward[], cx: number, cy: number): RoadRibbon[] {
+  const out: RoadRibbon[] = [];
+  for (const road of roads) {
+    if (road.points.length < 2) continue;
+    const points = road.points.map(p => ({
+      x: (p.x - cx) * SETTLEMENT_MODEL_SCALE,
+      z: (p.y - cy) * SETTLEMENT_MODEL_SCALE,
+    }));
+    const endpoint = road.points[road.points.length - 1]!;
+    let nearestWard: Ward | null = null;
+    let best = Infinity;
+    for (const ward of wards) {
+      if (!ward.withinCity) continue;
+      const d = Math.hypot(ward.center.x - endpoint.x, ward.center.y - endpoint.y);
+      if (d < best) { best = d; nearestWard = ward; }
+    }
+    const isMain = !!nearestWard && MAIN_ROAD_WARD_TYPES.has(nearestWard.type);
+    out.push({ points, width: isMain ? MAIN_ROAD_WIDTH : ALLEY_WIDTH });
+  }
+  return out;
 }
 
 /**

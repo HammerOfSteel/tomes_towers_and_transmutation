@@ -2018,6 +2018,7 @@ export class OverworldScene {
           centerRow:  mRow,
           buildings:  [],
           roads:      [],
+          roadRibbons: [],
           population: 0,
         },
       };

@@ -75,8 +75,6 @@ export class SettlementLabScene {
   // Current settlement render result
   private _renderResult:   SettlementRenderResult | null = null;
   private _roadMeshes:     THREE.Mesh[]                  = [];
-  private _roadGeo:        THREE.PlaneGeometry | null     = null;
-  private _roadMat:        THREE.MeshStandardMaterial | null = null;
   private _buildingBodies: RAPIER.RigidBody[]            = [];
 
   // Panel
@@ -241,29 +239,17 @@ export class SettlementLabScene {
     for (const grp of result.buildingGroups) this._scene.add(grp);
     for (const grp of result.lampGroups)     this._scene.add(grp);
 
-    // Build road tile meshes (geometry/material shared across tiles for this
-    // regeneration cycle; both are tracked on instance fields and disposed in
-    // _clearSettlement() before the next regeneration to avoid leaking WebGL
-    // buffers on every panel "Regenerate" click).
-    const roadGeo = new THREE.PlaneGeometry(TILE_UNIT, TILE_UNIT);
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x888060 });
-    this._roadGeo = roadGeo;
-    this._roadMat = roadMat;
-    for (const rt of result.roadTiles) {
-      const elevation = grid.get(rt.col, rt.row).elevation;
-      const wy  = elevation * LEVEL_HEIGHT + 0.02;
-      const wx  = (rt.col - ghw) * TILE_UNIT;
-      const wz  = (rt.row - ghh) * TILE_UNIT;
-      const mesh = new THREE.Mesh(roadGeo, roadMat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(wx, wy, wz);
+    // Add ribbon-mesh streets (continuous, replaces the old per-tile flat
+    // quads — see SettlementRenderer.ts's buildRoadRibbonMeshes()). Meshes
+    // are already positioned/textured; just add and track for disposal.
+    for (const mesh of result.roadRibbonMeshes) {
       this._scene.add(mesh);
       this._roadMeshes.push(mesh);
     }
 
     const readout = [
       `buildings: ${result.buildingGroups.length}`,
-      `roads: ${result.roadTiles.length}`,
+      `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
     ].join('  |  ');
     this._panel.setReadout(readout);
@@ -307,12 +293,16 @@ export class SettlementLabScene {
 
     for (const mesh of this._roadMeshes) {
       this._scene.remove(mesh);
+      // Ribbon meshes each own their own geometry/material (unlike the old
+      // shared-per-tile PlaneGeometry/Material pair), so dispose per-mesh.
+      mesh.geometry?.dispose();
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach(mt => mt.dispose());
+      } else {
+        (mesh.material as THREE.Material)?.dispose();
+      }
     }
     this._roadMeshes = [];
-    this._roadGeo?.dispose();
-    this._roadMat?.dispose();
-    this._roadGeo = null;
-    this._roadMat = null;
 
     for (const body of this._buildingBodies) {
       this._physics.removeBody(body);

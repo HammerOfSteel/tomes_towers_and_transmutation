@@ -356,12 +356,19 @@ raised it:
 
 ## 6. Implementation phases & tasks
 
-### Phase 1 — Technical rendering fixes (this session's execution scope)
+### Phase 1 — Technical rendering fixes (this session's execution scope) — ✅ DONE
 1. `SettlementGenerator.ts`: add `offsetX`/`offsetZ` to `PlacedBuilding`
    (§3.1), `snapToCardinal()` + apply to `rotation` (§3.2), bump
    `_noOverlap()` padding default (§3.1). Unit tests: offset stays within
    ±0.5 tile, rotation is always one of the 4 cardinal values across a seed
    sweep, existing collision/determinism tests still pass unmodified.
+   - **Note:** `_noOverlap()`'s padding was investigated but *not* bumped
+     from `1` — because `col`/`row`/half-extents are all integers, any
+     padding value in `[1, 2)` behaves identically (the comparison is
+     integer `<` integer+padding), so a "bump" only has effect right at the
+     `padding >= 2` boundary, which crashed city-type worst-case placement
+     ratio from 0.842 to 0.554 in measurement. Left at `1`; sub-tile offset
+     alone restores the real spacing without touching collision logic.
 2. `SettlementGenerator.ts`: add `roadRibbons: RoadRibbon[]` to
    `SettlementPlan`, computed alongside `rasterizeRoads()` from the same
    `model.roads` (§3.3). Unit test: ribbon point count/positions derived
@@ -377,10 +384,21 @@ raised it:
    buildings have visible gaps, streets are visible, and rotations look
    axis-aligned. If city-type still looks overcrowded, revisit §3.4's
    fallback (do not implement it preemptively).
+   - **Verified:** village and city screenshots both show clear building
+     gaps, visible cobblestone ribbon streets with lamp posts along them,
+     and axis-aligned (cardinal) building rotations. No further work needed
+     on §3.4's fallback.
 5. Full regression pass: `tests/levels/settlementGenerator.test.ts`,
    `tests/scene/OverworldScene.*`, `tests/world/SettlementRoadMesh.test.ts`
    (unrelated pipeline, just confirm untouched), `tsc --noEmit` baseline
    check, Playwright `overworld-studio-settlement-lab-launch.spec.ts`.
+   - **Verified:** full `npx vitest run` passes 2352/2364 (12 pre-existing,
+     unrelated failures in talentSystem/WaterMaterial/enemyLoader/
+     towerGenerator/main-startup-smoke — confirmed unrelated by file-touch
+     diff). `tsc --noEmit` stays at the same ~145 pre-existing error
+     baseline (fixed a handful of new-required-field breakages in test
+     fixtures and `OverworldScene.ts`'s ruins fallback plan). Playwright
+     `overworld-studio-settlement-lab-launch.spec.ts` passes.
 
 ### Phase 2 — Race-themed prop library (follow-up, separately scoped)
 Execute §4 in full: shape library, per-faction `PropStyle`, ward prop

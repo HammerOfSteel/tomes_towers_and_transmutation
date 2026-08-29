@@ -18,12 +18,15 @@ import {
 } from '@/world/buildings/BuildingTypeMap';
 import { selectLampRoadTiles } from '@/world/LampPlacement';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
+import { cobblestoneTexture } from '@/world/buildings/TextureFactory';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { makeLampPost } from './LampPostFactory';
 
 // Matches OverworldScene's local constants.
 const T  = 2;            // tile side length in world units
 const SH = LEVEL_HEIGHT; // world-unit height increment per elevation level
+/** Vertical offset above the terrain top face, avoids z-fighting — matches SettlementRoadMesh.ts's ROAD_HEIGHT_OFFSET. */
+const ROAD_HEIGHT_OFFSET = 0.02;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -68,6 +71,10 @@ export interface SettlementRenderResult {
   lampGroups:      THREE.Group[];
   /** Parallel PointLight array; same order/length as lampGroups. */
   lampLights:      THREE.PointLight[];
+  /** Continuous quad-strip ribbon meshes built from `plan.roadRibbons`
+   *  (real streets, not the flat per-tile `roadTiles` quads above). Already
+   *  textured and positioned in world space — caller just adds to scene. */
+  roadRibbonMeshes: THREE.Mesh[];
 }
 
 // ── Core function ─────────────────────────────────────────────────────────────
@@ -98,8 +105,8 @@ export function renderSettlementPlan(
 
   // ── Buildings ──────────────────────────────────────────────────────────────
   for (const b of plan.buildings) {
-    const wx = (b.col - ghw) * T;
-    const wz = (b.row - ghh) * T;
+    const wx = (b.col - ghw + b.offsetX) * T;
+    const wz = (b.row - ghh + b.offsetZ) * T;
     const wy = wg.get(b.col, b.row).elevation * SH;
 
     const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
@@ -139,5 +146,81 @@ export function renderSettlementPlan(
     lampLights.push(light);
   }
 
-  return { buildingGroups, buildingRecords, roadTiles, lampGroups, lampLights };
+  const roadRibbonMeshes = buildRoadRibbonMeshes(plan, wg, ghw, ghh);
+
+  return { buildingGroups, buildingRecords, roadTiles, lampGroups, lampLights, roadRibbonMeshes };
+}
+
+/**
+ * Build continuous quad-strip ribbon meshes from `plan.roadRibbons`
+ * (RoadRibbon.points are fractional grid-tile units relative to the
+ * settlement centre) — same width-varying quad-strip technique as
+ * `SettlementRoadMesh.ts`/`RealmRiverMesh.ts`, textured with the existing
+ * cobblestone canvas texture. One mesh per ribbon (a settlement typically
+ * has a handful of roads, so per-ribbon meshes are fine without merging).
+ */
+function buildRoadRibbonMeshes(plan: SettlementPlan, wg: WorldGrid, ghw: number, ghh: number): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  for (const ribbon of plan.roadRibbons) {
+    if (ribbon.points.length < 2) continue;
+    const halfWidth = ribbon.width / 2;
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    let cumulativeLength = 0;
+
+    // World-space position + terrain elevation for one ribbon point.
+    const worldPoint = (p: { x: number; z: number }) => {
+      const wx = (p.x + plan.centerCol - ghw) * T;
+      const wz = (p.z + plan.centerRow - ghh) * T;
+      const col = Math.round(p.x + plan.centerCol);
+      const row = Math.round(p.z + plan.centerRow);
+      const wy = wg.get(col, row).elevation * SH + ROAD_HEIGHT_OFFSET;
+      return { wx, wy, wz };
+    };
+
+    let prevWorld = worldPoint(ribbon.points[0]!);
+    for (let i = 0; i < ribbon.points.length - 1; i++) {
+      const a = prevWorld;
+      const nextWorld = worldPoint(ribbon.points[i + 1]!);
+      const b = nextWorld;
+      const dx = b.wx - a.wx, dz = b.wz - a.wz;
+      const segLen = Math.hypot(dx, dz);
+      prevWorld = nextWorld;
+      if (segLen < 1e-6) continue;
+
+      const dirX = dx / segLen, dirZ = dz / segLen;
+      const rightX = -dirZ, rightZ = dirX;
+      const base = positions.length / 3;
+
+      positions.push(
+        a.wx + rightX * halfWidth, a.wy, a.wz + rightZ * halfWidth,
+        a.wx - rightX * halfWidth, a.wy, a.wz - rightZ * halfWidth,
+        b.wx + rightX * halfWidth, b.wy, b.wz + rightZ * halfWidth,
+        b.wx - rightX * halfWidth, b.wy, b.wz - rightZ * halfWidth,
+      );
+      const v0 = cumulativeLength * 0.5;
+      cumulativeLength += segLen;
+      const v1 = cumulativeLength * 0.5;
+      uvs.push(0, v0, 1, v0, 0, v1, 1, v1);
+      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    }
+    if (positions.length === 0) continue;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const uvRepeat = Math.max(1, Math.round(cumulativeLength * 0.5));
+    const material = new THREE.MeshStandardMaterial({
+      map: cobblestoneTexture(1, uvRepeat), roughness: 0.9, metalness: 0,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.receiveShadow = true;
+    mesh.userData['roadWidth'] = ribbon.width;
+    meshes.push(mesh);
+  }
+  return meshes;
 }

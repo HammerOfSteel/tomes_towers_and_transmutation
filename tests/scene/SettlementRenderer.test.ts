@@ -65,8 +65,8 @@ describe('renderSettlementPlan', () => {
     const orig = plan.buildings.find(b => b.col === rec.col && b.row === rec.row);
     expect(orig).toBeDefined();
 
-    const expectedX = (orig!.col - GHW) * T;
-    const expectedZ = (orig!.row - GHH) * T;
+    const expectedX = (orig!.col - GHW + orig!.offsetX) * T;
+    const expectedZ = (orig!.row - GHH + orig!.offsetZ) * T;
     const expectedY = wg.get(orig!.col, orig!.row).elevation * LEVEL_HEIGHT;
     expect(rec.pos.x).toBeCloseTo(expectedX);
     expect(rec.pos.y).toBeCloseTo(expectedY);
@@ -93,7 +93,7 @@ describe('renderSettlementPlan', () => {
       .spyOn(BuildingTypeMap, 'createSettlementBuildingDna')
       .mockReturnValue(null);
     const buildings: PlacedBuilding[] = [
-      { wardType: 'market', isAnchor: false, col: CENTRE, row: CENTRE, rotation: 0, seed: 1 },
+      { wardType: 'market', isAnchor: false, col: CENTRE, row: CENTRE, offsetX: 0, offsetZ: 0, rotation: 0, seed: 1 },
     ];
     const minimalPlan: SettlementPlan = {
       type: 'village',
@@ -103,6 +103,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings,
       roads: [],
+      roadRibbons: [],
       population: 0,
     };
 
@@ -133,6 +134,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings: [],
       roads,
+      roadRibbons: [],
       population: 0,
     };
     const ctx = makeCtx();
@@ -157,6 +159,7 @@ describe('renderSettlementPlan', () => {
       centerRow: CENTRE,
       buildings: [],
       roads,
+      roadRibbons: [],
       population: 0,
     };
     const ctx = makeCtx();

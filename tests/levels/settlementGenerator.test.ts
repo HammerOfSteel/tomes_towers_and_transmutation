@@ -234,6 +234,44 @@ describe('planSettlement', () => {
     // Bresenham lines only touch diagonally at direction changes).
     expect(tilesWithOrthogonalNeighbor).toBe(plan.roads.length);
   });
+
+  it('sub-tile offsets stay within a bounded fraction of a tile (seed sweep)', () => {
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (const seed of [1, 42, 777, 445176186, 999999]) {
+        const grid = flatGrid(256);
+        const plan = planSettlement(type, 128, 128, seed, grid);
+        for (const b of plan.buildings) {
+          expect(Math.abs(b.offsetX), `${type} seed=${seed}`).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(b.offsetZ), `${type} seed=${seed}`).toBeLessThanOrEqual(0.5);
+        }
+      }
+    }
+  });
+
+  it('building rotation is always snapped to a cardinal direction (0/90/180/270°, seed sweep)', () => {
+    const QUARTER = Math.PI / 2;
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (const seed of [1, 42, 777, 445176186, 999999]) {
+        const grid = flatGrid(256);
+        const plan = planSettlement(type, 128, 128, seed, grid);
+        for (const b of plan.buildings) {
+          const remainder = Math.abs(b.rotation % QUARTER);
+          const isCardinal = remainder < 1e-9 || Math.abs(remainder - QUARTER) < 1e-9;
+          expect(isCardinal, `${type} seed=${seed}: rotation=${b.rotation}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('produces road ribbons with at least 2 points and a positive width for every road', () => {
+    const grid = flatGrid(128);
+    const plan = planSettlement('town', 64, 64, 555, grid, 'RibbonTown', 'human');
+    expect(plan.roadRibbons.length).toBeGreaterThan(0);
+    for (const ribbon of plan.roadRibbons) {
+      expect(ribbon.points.length).toBeGreaterThanOrEqual(2);
+      expect(ribbon.width).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('buildingHalfExtents (via overlap padding)', () => {
@@ -245,8 +283,8 @@ describe('buildingHalfExtents (via overlap padding)', () => {
     const innFootprint = getFootprint(WARD_TO_KIND['inn']!, WARD_TO_SIZE['inn'] ?? 'medium');
     const innHw = Math.ceil(innFootprint.w / 4);
     const innHd = Math.ceil(innFootprint.d / 4);
-    const a: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: 0, row: 0, rotation: 0, seed: 1 };
-    const b: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: innHw * 2 - 1, row: 0, rotation: 0, seed: 2 };
+    const a: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: 0, row: 0, offsetX: 0, offsetZ: 0, rotation: 0, seed: 1 };
+    const b: PlacedBuilding = { wardType: 'inn', isAnchor: true, col: innHw * 2 - 1, row: 0, offsetX: 0, offsetZ: 0, rotation: 0, seed: 2 };
     // At this exact spacing (2x the correct half-width apart - 1), correctly
     // sized anchors must be flagged as overlapping by the real padding
     // logic used elsewhere in this file's tests.

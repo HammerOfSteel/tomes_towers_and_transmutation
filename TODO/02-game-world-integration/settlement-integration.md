@@ -92,10 +92,13 @@ for the full design/plan.
 > spacing, roads render as isolated per-tile quads instead of a continuous
 > street ribbon, and building rotation is copied through un-snapped
 > (arbitrary angle instead of cardinal 0/90/180/270°).
-- [ ] Phase 1 (technical fixes): sub-tile continuous building offset,
+- [x] Phase 1 (technical fixes): sub-tile continuous building offset,
   cardinal rotation snapping, continuous road-ribbon rendering — no
   footprint/spacing-constant changes, purely a rendering-layer fix shared
-  by both the Settlement Lab and the live overworld.
+  by both the Settlement Lab and the live overworld. **Done** — verified via
+  unit tests + Playwright screenshot re-check (village and city types both
+  show visible building gaps, ribbon streets with lamp posts, cardinal
+  rotations).
 - [ ] Phase 2 (separately scoped content effort): race-themed settlement
   prop/decoration library (market stalls, wells, fences, banners, per-
   faction totems) placed per ward via a shared parametric prop shape
