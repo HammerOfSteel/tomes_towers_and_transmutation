@@ -1739,6 +1739,121 @@ and occlude den mounds from most camera angles in Settlement Lab. This
 matches the user's earlier "buildings too close together... no occlusion
 in iso camera" feedback and is tracked under Phase 3 below.
 
+### Phase 2e.13 — Vampire: block-kit tapering gothic spire — ✅ DONE
+
+Replaced vampire's old primitive-based `gothicBase()` (a flat `BoxGeometry`
+wall + 2 bolted-on stepped-slab "buttresses" + a single `ConeGeometry` spire
+roof + a `ConeGeometry` shop awning — the same "blob"/primitive style
+already rejected for vulperia/dwarven/elven) with a genuine
+`buildVampireSpireGrid()` block-kit occupancy grid, following the rollout
+order's next race (`p2e-vampire-blocks`).
+
+**Shared taper helper.** Extracted `smoothTaperRadiusFrac(t, startFrac,
+endFrac)` out of elven's `trunkRadiusFracAt()` closure into
+`FactionBlockProfiles.ts` as a standalone exported function (smoothstep
+easing, zero-derivative landing at `t=1`) — elven's trunk now calls this
+shared helper instead of duplicating the formula inline. This satisfies the
+todo's "reusing elven's taper helper" literally: both races' tapering
+profiles share the actual interpolation formula, not just the general
+technique, so a future tuning pass can't silently let them drift apart.
+Confirmed behavior-preserving via the full elven test suite still passing
+before any vampire-specific code was added.
+
+**Shape design.** `buildVampireSpireGrid()`: a monotonic one-way taper from
+a flared plinth (radius fraction 1.12 at the base) down to a narrow neck
+(`waistFrac` 0.34 by default) via `smoothTaperRadiusFrac()` — unlike elven's
+trunk, the vampire spire does NOT flare back out into a canopy; instead it
+holds a flat "parapet deck" for the last couple of levels, then ends in a
+genuine alternating merlon/gap crenellation ring: the deck's own exposed
+perimeter cells are found, sorted by angle around the tower's axis, and
+every other one is raised one block into an `'iron'` merlon — a real
+battlement built from occupancy, not a bolted-on ring mesh. A coping band
+(the exposed ring right at the taper-to-deck transition) is reclassified to
+`'iron'` after the main fill pass, mirroring elven's "moonlit belt"
+technique. A handful of upper-body surface blocks are reclassified to a
+`'bloodglow'` accent material (lit gothic windows), deterministic per seed,
+mirroring elven's firefly-glow accents.
+
+**Facade.** An optional pointed gothic arch (linear half-width taper with
+height, `halfWidthHere = max(0, round((notchWidth/2) * (1 - frac)))`) is
+carved into the front face — a genuine silhouette distinction from elven's
+*round* arch (`sqrt`-based taper). Learning directly from the vulperia
+door-frame bug (Phase 2e.12), the arch height is proactively clamped
+*before* the fill loop runs: the loop walks upward from the ground and
+stops the requested notch height at the first level where the taper's own
+radius would recede inside the frame-post's corner distance (with an 8%
+safety margin against the per-cell jitter noise) — the same technique
+elven's trunk already uses, applied here from day one instead of being
+bolted on after a bug report. A dedicated regression test
+(`FactionBlockProfiles.test.ts`) asserts the frame-post column has no
+gap-then-solid discontinuity between the ground and the arch springline.
+
+**Materials/chamfering.** `'iron'` (crenellations + coping band) and
+`'facade'` (door jambs) are chamfer-suppressed for a deliberately hard,
+precise "cut stonework/wrought iron" read, in contrast to the softly-
+chamfered `'obsidian'` body that keeps the tapering silhouette from looking
+aliased — the same "suppress chamfer only at the cells that should read as
+hard-edged" principle dwarven's buttress corners established. The iron
+accent colour (`#3a3a42`, neutral dark steel-grey) is deliberately
+hardcoded rather than reused from the faction's own `trim` palette entry
+(`#4a3050`), because that trim tone is too close in hue/value to the
+`walls` obsidian body to read as a visually distinct metal accent — this
+repeats the exact lesson learned from vulperia's own hardcoded accent-colour
+fix.
+
+**Assembly.** `buildVampireVilla` → "Count's Tower": the main tapering
+spire (with facade) + a smaller companion turret (the same spire profile at
+reduced scale, mirroring vulperia's Fox Den / elven's satellite-lobe
+pattern) + bat-gargoyle accents and a balcony positioned flush against the
+spire's real constructed parapet-deck radius (`vampireSpireDeckRadius()`)
+and roofline (`vampireSpireTopY()`) rather than an arbitrary offset.
+`buildVampireChapel` → "Blood Chapel": a shorter/wider spire (with facade)
+flanked by two miniature spirelets, plus the existing rose-window and
+blood-orb props kept as small bolted-on accents. `buildVampireShop` →
+"Blood Market": kept its existing iron-pole market-stall frame, but
+replaced its own floating `ConeGeometry` canopy (the same disconnected-roof
+bug *class* as vulperia's shop, fixed proactively here rather than waiting
+for a bug report) with a pole-and-canvas panel, directly reusing the fix
+pattern from Phase 2e.12.
+
+**Verification.** Wrote the new tests first (TDD): 13 new tests in
+`FactionBlockProfiles.test.ts` (grounded base, monotonic taper, no
+canopy-flare, plinth flare, crenellated parapet, material assignment,
+pointed-arch facade narrowing, door-frame-connectivity regression,
+determinism) plus 3 tests for the shared `smoothTaperRadiusFrac()` helper —
+all passed on first implementation attempt. Rewrote the 2 pre-existing
+vampire tests in `FactionBuildingVariants.test.ts` that asserted properties
+of the old primitive geometry (mesh count, stepped-buttress box-width
+variety) to instead assert properties of the new block-kit spire (Lego-
+style many-mesh assembly, no single primitive spanning most of the
+building's height, no canopy flare-back, iron material presence/colour,
+doorway carve, retained rose-window/orb/candelabra props). Full targeted
+suite (`BlockKit.test.ts` + `FactionBlockProfiles.test.ts` +
+`FactionBuildingVariants.test.ts`) — 132/132 passed. `tsc --noEmit` — 145
+errors, matching the known pre-existing baseline, no new errors.
+
+Live Settlement Lab screenshots (vampire faction, `town` tier) show the
+expected dark-obsidian block-built silhouette, rose-window tracery, and
+small crenellation/spike accents along rooflines, distinct from the
+generic-fallback buildings' pyramid roofs also visible in the same shots —
+but the lab's fixed, steep overhead iso camera (no orbit/drag control
+available) compresses a *vertically monotonic* taper into very few visible
+pixels, making the silhouette's narrowing hard to confirm from a screenshot
+alone (the same iso-camera limitation already tracked under Phase 3, not a
+defect introduced here). Per the vulperia-verification precedent, a direct
+code-level diagnostic was used instead: a scratch script called
+`buildVampireSpireGrid()` with the real live villa footprint/height (`w=7,
+d=5, h=10.88`) and dumped the occupied-column span at every level — showing
+a clean monotonic narrowing from span 13 at the base down to span 3 at the
+deck before the sparse merlon ring, and confirmed `FACTION_BUILDING_VARIANTS
+.vampire.villa(...)` (the exact live code path) produces a real bounding
+box matching the intended height and 12 discrete meshes. This, combined
+with the passing regression suite, is accepted as sufficient verification
+of the shape/material work; the screenshot-legibility gap is a pre-existing
+camera limitation, not new risk from this change. All throwaway diagnostic
+files (`tests/e2e/_tmp_vampire_diag.spec.ts`, `tests/world/_tmp_vampire_diag
+.test.ts`, `/tmp/vampire_*.png`) were deleted after use.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

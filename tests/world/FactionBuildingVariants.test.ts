@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -548,42 +548,94 @@ describe('Elven — BlockKit tapering living-tree trunk + canopy (not a smooth c
 // ── Vampire deep-quality pass (settlement visual fidelity follow-up) ───────
 // Regression guards for the stepped gothic buttress + rose-window tracery
 // rework that replaced flat slab buttresses and a flat-disc "rose window".
-describe('Vampire — stepped buttresses + rose-window tracery (not flat slabs/discs)', () => {
-  it("builds the villa (Count's Tower) from many parts, not a handful of primitives", () => {
-    const g = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
-    // Main wall + 2 buttresses * (3 stepped blocks + 1 pinnacle cone) + rose
-    // window (8 spoke boxes + 10 tracery-ring segments + 1 glass disc) +
-    // spire + gargoyles + balcony = 33 verified in practice.
-    expect(countMeshes(g)).toBeGreaterThanOrEqual(30);
+describe('Vampire — BlockKit tapering gothic spire with crenellated iron parapet (not flat slabs/cones)', () => {
+  it('produces only finite vertices across villa/chapel/shop', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vampire![kind]!(makeDna(kind, 'vampire', 12)));
+    }
   });
 
-  it('gives each buttress a real stepped silhouette (multiple distinct box widths), not one flat slab', () => {
+  it("builds the villa (Count's Tower) from many discrete block meshes (a Lego-style assembly, not one flat slab + cone roof), plus companion turret and gargoyle/balcony accents", () => {
     const g = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
-    const boxWidths = new Set<number>();
+    const totalBox = new THREE.Box3().setFromObject(g);
+    const totalHeight = totalBox.max.y - totalBox.min.y;
+    let anyBoxSpansMostOfHeight = false;
     g.traverse(o => {
       if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
         o.geometry.computeBoundingBox();
         const bb = o.geometry.boundingBox!;
-        boxWidths.add(+((bb.max.x - bb.min.x) * o.scale.x).toFixed(4));
+        const meshHeight = (bb.max.y - bb.min.y) * o.scale.y;
+        if (meshHeight > totalHeight * 0.6) anyBoxSpansMostOfHeight = true;
       }
     });
-    // The old version had exactly one buttress width (0.14) plus the main
-    // wall's width -- two distinct values. Stepped buttresses (3 steps,
-    // each narrower than the last) plus rose-window tracery boxes should
-    // produce many more distinct widths.
-    expect(boxWidths.size).toBeGreaterThan(4);
+    // The old version had a full-height flat wall slab; the block spire's
+    // merged mesh is many small unit blocks, so no single box primitive
+    // should span most of the building's height.
+    expect(anyBoxSpansMostOfHeight).toBe(false);
+    const spire = findBiggestMesh(g);
+    const pos = spire.geometry.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(60);
+  });
+
+  it('does not flare back out into a canopy: unlike elven, the spire narrows monotonically up to the flat parapet deck', () => {
+    const grid = buildVampireSpireGrid(3, 6, 6, 10, {});
+    const bh = Math.max(8, Math.round(10 / BLOCK_UNIT));
+    function rowSpan(by: number): number {
+      const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
+      const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
+      const cz = Math.round((bd - 1) / 2);
+      let min = Infinity, max = -Infinity;
+      for (let bx = 0; bx < bw; bx++) {
+        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
+      }
+      return max >= min ? max - min : 0;
+    }
+    expect(rowSpan(bh - 2)).toBeLessThanOrEqual(rowSpan(Math.round(bh * 0.4)));
+  });
+
+  it('marks the crenellations with a distinct un-chamfered "iron" material, not plain obsidian', () => {
+    const grid = buildVampireSpireGrid(3, 6, 6, 10, {});
+    let sawIron = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'iron') { sawIron = true; break; }
+    }
+    expect(sawIron).toBe(true);
+  });
+
+  it('gives the tower a genuinely distinct iron material colour, not the same obsidian hue with sharp edges', () => {
+    const g = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
+    const materialColors = new Set<string>();
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+        materialColors.add(o.material.color.getHexString());
+      }
+    });
+    expect(materialColors.has(new THREE.Color('#3a3a42').getHexString())).toBe(true);
+  });
+
+  it('carves a real doorway-sized gap in the block spire at the front (a genuine hole, not just an applied surface)', () => {
+    const grid = buildVampireSpireGrid(5, 6, 6, 10, { facade: true });
+    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
+    const cx = Math.round(bw / 2);
+    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
+  });
+
+  it('retains the praised rose window + blood-orb + candelabra small accent props', () => {
+    const chapel = FACTION_BUILDING_VARIANTS.vampire!.chapel!(makeDna('chapel', 'vampire', 5));
+    let sawCircle = false, sawSphere = false;
+    chapel.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'CircleGeometry') sawCircle = true;
+      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawSphere = true;
+    });
+    expect(sawCircle).toBe(true); // rose window glass disc
+    expect(sawSphere).toBe(true); // blood orb
   });
 
   it('is deterministic for the same seed', () => {
     const gA = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
     const gB = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
     expect(countMeshes(gA)).toBe(countMeshes(gB));
-  });
-
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vampire![kind]!(makeDna(kind, 'vampire', 12)));
-    }
   });
 });
 

@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -324,3 +324,157 @@ describe('FactionBlockProfiles — elven tapering living-wood trunk', () => {
   });
 });
 
+
+describe('FactionBlockProfiles — smoothTaperRadiusFrac (shared taper helper)', () => {
+  it('returns startFrac at t=0 and endFrac at t=1', () => {
+    expect(smoothTaperRadiusFrac(0, 1, 0.4)).toBeCloseTo(1, 5);
+    expect(smoothTaperRadiusFrac(1, 1, 0.4)).toBeCloseTo(0.4, 5);
+  });
+
+  it('clamps t outside [0,1]', () => {
+    expect(smoothTaperRadiusFrac(-1, 1, 0.4)).toBeCloseTo(1, 5);
+    expect(smoothTaperRadiusFrac(2, 1, 0.4)).toBeCloseTo(0.4, 5);
+  });
+
+  it('is monotonic between the two endpoints for a simple narrowing taper', () => {
+    const a = smoothTaperRadiusFrac(0.3, 1, 0.4);
+    const b = smoothTaperRadiusFrac(0.6, 1, 0.4);
+    expect(b).toBeLessThan(a);
+  });
+});
+
+describe('FactionBlockProfiles — vampire tapering gothic spire', () => {
+  const W = 6, D = 6, H = 10;
+
+  function bwOf(w = W): number { return Math.max(3, Math.round(w / BLOCK_UNIT)); }
+  function bdOf(d = D): number { return Math.max(3, Math.round(d / BLOCK_UNIT)); }
+  function bhOf(h = H): number { return Math.max(8, Math.round(h / BLOCK_UNIT)); }
+
+  it('is grounded: the base level has an occupied block at the centre column', () => {
+    const grid = buildVampireSpireGrid(1, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    expect(hasBlock(grid, Math.round(bw / 2), 0, Math.round(bd / 2))).toBe(true);
+  });
+
+  it('tapers inward monotonically: an edge column occupied near the base is empty by the neck', () => {
+    const grid = buildVampireSpireGrid(2, W, D, H, { parapetStartFrac: 0.8, waistFrac: 0.34 });
+    const bd = bdOf(), bh = bhOf();
+    const cz = Math.round((bd - 1) / 2);
+    expect(hasBlock(grid, 0, 0, cz)).toBe(true);
+    const neckBy = Math.round(bh * 0.6);
+    expect(hasBlock(grid, 0, neckBy, cz)).toBe(false);
+  });
+
+  it('does NOT flare back out: the spire never widens again after the neck (unlike elven canopy)', () => {
+    const grid = buildVampireSpireGrid(3, W, D, H, {});
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    function rowSpan(by: number): number {
+      const cz = Math.round((bd - 1) / 2);
+      let min = Infinity, max = -Infinity;
+      for (let bx = 0; bx < bw; bx++) {
+        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
+      }
+      return max >= min ? max - min : 0;
+    }
+    const midSpan = rowSpan(Math.round(bh * 0.4));
+    const topSpan = rowSpan(bh - 2); // deck level
+    expect(topSpan).toBeLessThanOrEqual(midSpan);
+  });
+
+  it('plinth flares at the base: the ground-level footprint is at least as wide as a few levels up', () => {
+    const grid = buildVampireSpireGrid(4, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    const cz = Math.round(bd / 2);
+    function rowSpan(by: number): number {
+      let min = Infinity, max = -Infinity;
+      for (let bx = 0; bx < bw; bx++) {
+        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
+      }
+      return max >= min ? max - min : 0;
+    }
+    expect(rowSpan(0)).toBeGreaterThanOrEqual(rowSpan(3));
+  });
+
+  it('ends in a crenellated parapet: the topmost level is partially occupied — more than none, fewer than the solid deck below', () => {
+    const grid = buildVampireSpireGrid(5, W, D, H, {});
+    const bw = bwOf(), bd = bdOf(), bh = bhOf();
+    let topOccupied = 0, deckOccupied = 0;
+    for (let bx = 0; bx < bw; bx++) {
+      for (let bz = 0; bz < bd; bz++) {
+        if (hasBlock(grid, bx, bh - 1, bz)) topOccupied++;
+        if (hasBlock(grid, bx, bh - 2, bz)) deckOccupied++;
+      }
+    }
+    expect(topOccupied).toBeGreaterThan(0);
+    expect(topOccupied).toBeLessThan(deckOccupied);
+  });
+
+  it('the tapering body uses the obsidian material; the crenellations use the iron material', () => {
+    const grid = buildVampireSpireGrid(6, W, D, H, {});
+    const bw = bwOf(), bd = bdOf();
+    expect(getMaterialKey(grid, Math.round(bw / 2), 0, Math.round(bd / 2))).toBe('obsidian');
+    let sawIron = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'iron') { sawIron = true; break; }
+    }
+    expect(sawIron).toBe(true);
+  });
+
+  it('with a facade requested, carves a pointed arch that narrows monotonically with height', () => {
+    const grid = buildVampireSpireGrid(7, W, D, H, { facade: true, facadeWidthFrac: 0.5 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    expect(hasBlock(grid, cx, 0, frontZ)).toBe(false);
+    let sawFacadeMaterial = false;
+    for (const matKey of grid.cells.values()) {
+      if (matKey === 'facade') { sawFacadeMaterial = true; break; }
+    }
+    expect(sawFacadeMaterial).toBe(true);
+    const scanHalf = Math.round(bw * 0.5);
+    function carvedHalfSpan(by: number): number {
+      let maxAbs = 0;
+      for (let bx = cx - scanHalf; bx <= cx + scanHalf; bx++) {
+        if (bx < 0 || bx >= bw) continue;
+        if (hasBlock(grid, bx, by, frontZ - 1) && !hasBlock(grid, bx, by, frontZ)) {
+          maxAbs = Math.max(maxAbs, Math.abs(bx - cx));
+        }
+      }
+      return maxAbs;
+    }
+    expect(carvedHalfSpan(2)).toBeLessThan(carvedHalfSpan(0));
+  });
+
+  it('door-frame posts stay connected top-to-bottom (regression: vulperia-style disconnected-frame bug)', () => {
+    const grid = buildVampireSpireGrid(8, W, D, H, { facade: true, facadeWidthFrac: 0.5 });
+    const bw = bwOf(), bd = bdOf();
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    // Find a frame-post column: solid at ground level, immediately outside
+    // the ground-level notch span.
+    let frameBx = -1;
+    for (let bx = cx + 1; bx < bw; bx++) {
+      if (hasBlock(grid, bx, 0, frontZ)) { frameBx = bx; break; }
+    }
+    expect(frameBx).toBeGreaterThan(-1);
+    // The post must not have any gap between ground level and wherever it
+    // stops being part of the frame — i.e. no "floating" disconnected
+    // segment above a hole.
+    let sawGapThenSolid = false;
+    let sawGap = false;
+    for (let by = 0; by < 6; by++) {
+      const occ = hasBlock(grid, frameBx, by, frontZ);
+      if (!occ) sawGap = true;
+      else if (sawGap) sawGapThenSolid = true;
+    }
+    expect(sawGapThenSolid).toBe(false);
+  });
+
+  it('is deterministic per seed and varies with a different seed', () => {
+    const gridA = buildVampireSpireGrid(42, W, D, H, {});
+    const gridB = buildVampireSpireGrid(42, W, D, H, {});
+    const gridC = buildVampireSpireGrid(43, W, D, H, {});
+    expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
+    expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+});

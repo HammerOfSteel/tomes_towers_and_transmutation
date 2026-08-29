@@ -37,7 +37,7 @@ import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -1088,27 +1088,17 @@ function buildOrcishShop(dna: BuildingDNA): THREE.Group {
   return g;
 }
 
-// ── Vampire — gothic castle architecture ──────────────────────────────────────
+// ── Vampire — tapering gothic-spire block-kit architecture ────────────────────
 // Count's Tower (patriciate), Blood Chapel (church), Blood Market (market):
-// tall pointed gothic spires, ribbed buttresses, dark stained-glass motifs.
-
-/**
- * A tall gothic buttress pier: 3 stacked, progressively narrower stepped
- * blocks (a real stepped silhouette) capped with a tapered pinnacle, not
- * a single flat slab standing in for a buttress.
- */
-function addGothicButtress(g: THREE.Group, x: number, h: number, dDepth: number, material: THREE.Material): void {
-  const steps = 3;
-  let y = 0;
-  for (let i = 0; i < steps; i++) {
-    const stepH = h / steps;
-    const depth = dDepth * (1 - i * 0.22);
-    const width = 0.16 - i * 0.03;
-    addMesh(g, new THREE.BoxGeometry(width, stepH * 0.96, depth), material, x, y + stepH / 2, 0);
-    y += stepH;
-  }
-  addMesh(g, new THREE.ConeGeometry(0.1, h * 0.15, 4), material, x, h + h * 0.075, 0, Math.PI / 4);
-}
+// Phase 2e (vampire): a genuine `buildVampireSpireGrid()` occupancy grid —
+// a gaunt, monotonically-tapering obsidian spire ending in a real
+// block-built crenellated iron parapet and a carved pointed-arch doorway —
+// replacing the old boxy `gothicBase()` (a flat slab + bolted-on cone roof +
+// bolted-on stepped-slab "buttresses", the same primitive-cone-roof pattern
+// already rejected for vulperia/dwarven/elven). Small bolted-on accents
+// (gargoyles, rose window, blood orb, candelabra) remain acceptable per the
+// established "small props are fine, only large primitive-built main
+// structures are not" precedent.
 
 /**
  * A gothic rose window: stone tracery mullions — 8 radial spoke blocks
@@ -1130,53 +1120,92 @@ function addRoseWindow(g: THREE.Group, cx: number, cy: number, cz: number, radiu
   addTimberRingSegments(g, cx, cy, cz + 0.01, radius * 0.95, stoneMat, 10, radius * 0.22, 0.08);
 }
 
-function gothicBase(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const stoneMat = mat(dna.colors.walls, { roughness: 0.7 });
-  const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
-
-  addMesh(g, new THREE.BoxGeometry(w * 0.8, h, d * 0.8), stoneMat, 0, h / 2, 0);
-  // Stepped gothic buttress piers along each side (a real stepped
-  // silhouette, not a single flat slab).
-  for (const bx of [-w * 0.42, w * 0.42]) {
-    addGothicButtress(g, bx, h * 0.95, d * 0.5, trimMat);
-  }
-  // Pointed gothic spire roof.
-  addMesh(g, new THREE.ConeGeometry(w * 0.5, h * 0.55, 4), trimMat, 0, h + h * 0.27, 0, Math.PI / 4);
-  // Dark red stained-glass rose window with real stone tracery.
-  const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a1020'), emissive: new THREE.Color('#a01830'), emissiveIntensity: 0.5, roughness: 0.3 });
-  addRoseWindow(g, 0, h * 0.7, d * 0.4 + 0.02, w * 0.18, trimMat, glassMat);
-  // Doorway.
-  addDoorway(g, w * 0.3, h * 0.4, d * 0.4 - 0.02, dna.colors.door);
-  return g;
+/**
+ * Builds + meshes + centers a `buildVampireSpireGrid()` gothic spire into
+ * `g` at the origin (same centering convention as `addBlockElvenTrunk()`).
+ * The 'iron' crenellations and 'facade' door jambs are chamfer-suppressed —
+ * a battlement merlon or a carved door-post reads as *cut, precise*
+ * stonework, in deliberate contrast to the softly-chamfered 'obsidian' body
+ * that keeps the tapering silhouette from looking aliased/blocky.
+ */
+function addBlockVampireSpire(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  wallColor: string, doorColor: string,
+  opts: VampireSpireOptions = {},
+): void {
+  const grid = buildVampireSpireGrid(seed, w, d, h, opts);
+  const palette = {
+    obsidian:  mat(wallColor, { roughness: 0.55, metalness: 0.1 }),
+    iron:      mat('#3a3a42', { roughness: 0.45, metalness: 0.55 }),
+    facade:    mat(doorColor, { roughness: 0.6 }),
+    bloodglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#c81030'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.85, roughness: 0.35 }),
+  };
+  const mesh = meshBlockGrid(grid, palette, {
+    suppressChamfer: (bx, by, bz) => {
+      const k = getMaterialKey(grid, bx, by, bz);
+      return k === 'iron' || k === 'facade';
+    },
+  });
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
+  g.add(mesh);
 }
 
 function buildVampireVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.5; // tall, gaunt
-  const g = gothicBase(dna, fp.w, fp.d, h);
-  // Count's Tower: bat-gargoyle silhouettes on the upper corners + a balcony.
+  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.7; // tall, gaunt
+  const g = new THREE.Group();
+  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.door, {
+    facade: true,
+  });
+  // Count's Tower: a smaller companion turret (the same spire profile at a
+  // reduced scale, mirroring vulperia's Fox Den / elven's satellite-lobe
+  // pattern) plus bat-gargoyle silhouettes and a balcony sitting flush
+  // against the main spire's real constructed parapet-deck radius.
+  const turretH = h * 0.62;
+  const turret = new THREE.Group();
+  addBlockVampireSpire(turret, dna.seed ^ 0xB100D_0011, fp.w * 0.5, fp.d * 0.5, turretH, dna.colors.walls, dna.colors.door, {
+    waistFrac: 0.4,
+  });
+  turret.position.set(fp.w * 0.48, 0, fp.d * 0.3);
+  g.add(turret);
   const gargoyleMat = mat('#2a2020', { roughness: 0.6 });
-  for (const gx of [-fp.w * 0.4, fp.w * 0.4]) {
-    const gargoyle = addMesh(g, new THREE.ConeGeometry(0.14, 0.3, 4), gargoyleMat, gx, h * 0.9, fp.d * 0.35);
+  const deckR = vampireSpireDeckRadius(fp.w, fp.d);
+  for (const ang of [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75]) {
+    const gargoyle = addMesh(g, new THREE.ConeGeometry(0.13, 0.28, 4), gargoyleMat, Math.cos(ang) * deckR * 0.95, vampireSpireTopY(h) - h * 0.12, Math.sin(ang) * deckR * 0.95);
     gargoyle.rotation.x = Math.PI;
   }
   const balconyMat = mat(dna.colors.trim, { roughness: 0.6, metalness: 0.2 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.6, 0.08, 0.3), balconyMat, 0, h * 0.55, fp.d * 0.44);
+  addMesh(g, new THREE.BoxGeometry(fp.w * 0.5, 0.08, 0.28), balconyMat, 0, h * 0.5, fp.d * 0.4);
   return g;
 }
 
 function buildVampireChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.2;
-  const g = gothicBase(dna, fp.w, fp.d * 0.85, h);
-  // Blood Chapel: twin flanking spirelets + a hovering blood-red orb.
-  const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
-  for (const sx of [-fp.w * 0.36, fp.w * 0.36]) {
-    addMesh(g, new THREE.ConeGeometry(0.18, h * 0.35, 4), trimMat, sx, h + h * 0.15, 0, Math.PI / 4);
+  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.3; // shorter & wider than the villa's tower
+  const g = new THREE.Group();
+  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0002, fp.w * 1.15, fp.d * 1.0, h, dna.colors.walls, dna.colors.door, {
+    facade: true, parapetStartFrac: 0.7, waistFrac: 0.45,
+  });
+  // Blood Chapel: twin flanking spirelets (miniature spires, reusing the
+  // same shape profile at a much smaller scale) + a dark red stained-glass
+  // rose window with real stone tracery + a hovering blood-red orb.
+  for (const sx of [-fp.w * 0.5, fp.w * 0.5]) {
+    const spirelet = new THREE.Group();
+    addBlockVampireSpire(spirelet, dna.seed ^ 0xB100D_0003 ^ (sx > 0 ? 1 : 2), fp.w * 0.3, fp.d * 0.3, h * 0.5, dna.colors.walls, dna.colors.door, {
+      waistFrac: 0.3,
+    });
+    spirelet.position.set(sx, 0, 0);
+    g.add(spirelet);
   }
+  const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a1020'), emissive: new THREE.Color('#a01830'), emissiveIntensity: 0.5, roughness: 0.3 });
+  addRoseWindow(g, 0, h * 0.62, fp.d * 0.5 + 0.02, fp.w * 0.16, trimMat, glassMat);
   const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#4a0510'), emissive: new THREE.Color('#c81030'), emissiveIntensity: 0.9, roughness: 0.3 });
-  addMesh(g, new THREE.SphereGeometry(0.16, 10, 8), orbMat, 0, h * 0.6, fp.d * 0.44);
+  addMesh(g, new THREE.SphereGeometry(0.15, 10, 8), orbMat, 0, h * 0.55, fp.d * 0.55);
   return g;
 }
 
@@ -1184,17 +1213,26 @@ function buildVampireShop(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * 0.6;
   const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xB100D_0003);
-  // Blood Market: a dark iron-framed stall with a blood-red canopy and candelabra.
+  const r = mulberry32(dna.seed ^ 0xB100D_0004);
+  // Blood Market: a dark iron-framed stall — the same pole-and-canvas
+  // canopy technique used to fix vulperia's shop (a flat, slightly-tilted
+  // panel resting on real support poles), replacing the old floating
+  // `ConeGeometry` awning that shared the same disconnected-roof bug class.
   const ironMat = mat('#1a1818', { roughness: 0.5, metalness: 0.4 });
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, -fp.d / 2], [-fp.w / 2, fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.CylinderGeometry(0.05, 0.06, h, 6), ironMat, sx, h / 2, sz);
+  const poleH = h * 0.95;
+  const awningHalfW = fp.w * 0.42;
+  const counterZ = fp.d * 0.3;
+  for (const sx of [-awningHalfW, awningHalfW]) {
+    addMesh(g, new THREE.CylinderGeometry(0.04, 0.05, poleH, 6), ironMat, sx, poleH / 2, counterZ);
   }
+  const woodMat = mat('#241818', { roughness: 0.85 });
+  addMesh(g, new THREE.BoxGeometry(fp.w * 0.75, 0.35, 0.32), woodMat, 0, 0.175, counterZ);
   const canopyMat = mat('#5a0818', { roughness: 0.6, side: THREE.DoubleSide });
-  addMesh(g, new THREE.ConeGeometry(Math.max(fp.w, fp.d) * 0.6, 0.4, 4), canopyMat, 0, h + 0.2, 0, Math.PI / 4);
+  const canopy = addMesh(g, new THREE.BoxGeometry(awningHalfW * 2 + 0.25, 0.06, fp.d * 0.42), canopyMat, 0, poleH, counterZ);
+  canopy.rotation.x = -0.1;
   const candelabraMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#b01828'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.8 });
   for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), candelabraMat, -fp.w * 0.3 + i * fp.w * 0.3, h * 0.6, fp.d * 0.3);
+    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), candelabraMat, -fp.w * 0.25 + i * fp.w * 0.25, poleH * 0.7, counterZ);
   }
   return g;
 }

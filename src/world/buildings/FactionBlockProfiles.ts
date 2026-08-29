@@ -23,6 +23,24 @@ import { createNoise2D } from '@/core/SimplexNoise';
 import { mulberry32 } from '@/core/prng';
 import { BLOCK_UNIT, createBlockGrid, setBlock, hasBlock, type BlockGrid } from './BlockKit';
 
+/**
+ * Smoothstep-eased taper: interpolates from `startFrac` (at `t=0`) to
+ * `endFrac` (at `t=1`) with a *zero-derivative* landing at `t=1`, so
+ * whatever shape gets grafted on top of the tapered surface (elven's
+ * canopy, vampire's parapet deck) meets it without a visible kink/collar
+ * — the single biggest cause of early taper-profile attempts reading as a
+ * "flying-saucer" cap instead of a real tapering trunk/spire. `t` outside
+ * `[0,1]` is clamped. Shared by `buildElvenTrunkGrid()`'s trunk-to-canopy
+ * taper and `buildVampireSpireGrid()`'s spire-to-parapet taper — the one
+ * piece of the "tapering vertical silhouette" technique that's genuinely
+ * identical between the two, rather than merely similar in spirit.
+ */
+export function smoothTaperRadiusFrac(t: number, startFrac: number, endFrac: number): number {
+  const u = Math.max(0, Math.min(1, t));
+  const eased = u * u * (3 - 2 * u); // smoothstep
+  return startFrac + (endFrac - startFrac) * eased;
+}
+
 export interface DwarvenHallOptions {
   /** Number of stepped tiers (default 3). */
   tiers?: number;
@@ -422,8 +440,7 @@ export function buildElvenTrunkGrid(
    */
   function trunkRadiusFracAt(t: number): number {
     const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
-    const eased = u * u * (3 - 2 * u); // smoothstep
-    return 1 + (waistFrac - 1) * eased;
+    return smoothTaperRadiusFrac(u, 1, waistFrac);
   }
 
   const canopyStartBy = Math.round(bh * canopyStartFrac);
@@ -635,6 +652,198 @@ export function buildElvenTrunkGrid(
     const idx = Math.floor(r() * canopySurface.length);
     const [glowKey] = canopySurface[idx] ?? [];
     if (glowKey) grid.cells.set(glowKey, 'glow');
+  }
+
+  return grid;
+}
+
+// ── Vampire: tapering gothic spire ──────────────────────────────────────────
+
+export interface VampireSpireOptions {
+  /**
+   * Fraction (0-1) of total height where the tapering body stops
+   * narrowing and the flat crenellated parapet deck begins (default 0.82
+   * — a tall spire with a proportionally small deck, the opposite ratio
+   * from a squat dwarven tower).
+   */
+  parapetStartFrac?: number;
+  /** Radius fraction (of the base radius) at the spire's narrowest point, just below the deck (default 0.34 — gaunt and needle-narrow). */
+  waistFrac?: number;
+  /** Radius fraction at the very base (plinth flare), tapering to normal within ~2 levels (default 1.12). */
+  plinthFlareFrac?: number;
+  /** Carve a pointed gothic-arch doorway/facade notch into the front (+Z) face. */
+  facade?: boolean;
+  /** Fraction of the base footprint width the notch spans at its widest, ground row (default 0.34). */
+  facadeWidthFrac?: number;
+  /** Fraction of the pre-parapet height the pointed arch rises (default 0.4, auto-clamped for safety — see `buildElvenTrunkGrid()`'s identical technique). */
+  facadeHeightFrac?: number;
+  /** Surface irregularity per column (default 0.05 — obsidian reads as cut, precise stone, deliberately far less organic noise than vulperia's earth or elven's bark). */
+  jitter?: number;
+}
+
+/** Number of `BLOCK_UNIT` levels tall a vampire spire of continuous height `h` resolves to. Mirrors `elvenTrunkBlocksTall()`/`dwarvenBlocksTall()`. */
+export function vampireSpireBlocksTall(h: number): number {
+  return Math.max(8, Math.round(h / BLOCK_UNIT));
+}
+
+/** World-space Y of the topmost crenellation ring (the spire's true built roofline) — for flush-mounted banner/weathervane props. */
+export function vampireSpireTopY(h: number): number {
+  const bh = vampireSpireBlocksTall(h);
+  return (bh - 1) * BLOCK_UNIT + BLOCK_UNIT / 2;
+}
+
+/** World-unit radius of the parapet deck's actual constructed surface (the flat neck below the crenellations) — for props (gargoyles, balconies) that should sit flush against the real surface instead of an arbitrary radius. Mirrors `elvenWaistRadius()`. */
+export function vampireSpireDeckRadius(w: number, d: number, opts: VampireSpireOptions = {}): number {
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const waistFrac = opts.waistFrac ?? 0.34;
+  return waistFrac * maxR * BLOCK_UNIT;
+}
+
+/**
+ * Vampire gothic-spire occupancy grid: a tall, gaunt tower that tapers
+ * monotonically from its (slightly flared) plinth up to a narrow neck
+ * using the same `smoothTaperRadiusFrac()` technique as
+ * `buildElvenTrunkGrid()`'s trunk-to-canopy taper (run here as a single
+ * one-way taper with no flare-back-out), then holds a flat parapet deck
+ * for a short run before ending in an alternating merlon/gap crenellation
+ * ring built entirely from block occupancy — a real battlement, not a
+ * bolted-on cone or box roof. An optional pointed (linear, not round)
+ * gothic-arch doorway carves into the front face using the same
+ * "clamp the arch height so it never outruns the receding taper surface"
+ * safety technique the elven trunk uses.
+ */
+export function buildVampireSpireGrid(
+  seed: number, w: number, d: number, h: number,
+  opts: VampireSpireOptions = {},
+): BlockGrid {
+  const grid = createBlockGrid();
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const bh = vampireSpireBlocksTall(h);
+  const noise2D = createNoise2D(seed);
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const jitterAmt = opts.jitter ?? 0.05;
+
+  const parapetStartFrac = opts.parapetStartFrac ?? 0.82;
+  const waistFrac = opts.waistFrac ?? 0.34;
+  const plinthFlareFrac = opts.plinthFlareFrac ?? 1.12;
+
+  let parapetStartBy = Math.round(bh * parapetStartFrac);
+  const deckTopBy = bh - 2;   // solid flat roof deck (last fully-filled disc)
+  const merlonBy = bh - 1;    // topmost level: alternating merlons only
+  parapetStartBy = Math.max(1, Math.min(parapetStartBy, deckTopBy - 1));
+
+  /** Un-jittered taper radius fraction at level `by` (monotonic 1 -> waistFrac, then held flat through the deck). */
+  function taperFracAt(by: number): number {
+    const cappedBy = Math.min(by, parapetStartBy);
+    const t = bh > 1 ? cappedBy / (bh - 1) : 0;
+    const u = parapetStartFrac > 0 ? t / parapetStartFrac : 1;
+    return smoothTaperRadiusFrac(u, 1, waistFrac);
+  }
+
+  const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.34))) : 0;
+  const requestedNotchHeight = opts.facade ? Math.max(3, Math.round(parapetStartBy * (opts.facadeHeightFrac ?? 0.4))) : 0;
+  const notchDepth = 2;
+  const notchCx = Math.round(bw / 2);
+  // Same safety clamp as buildElvenTrunkGrid(): stop the arch before the
+  // taper narrows past the frame post's own corner, so the post is never
+  // left floating in front of a surface that's already receded behind it.
+  const frameCornerDx = (notchWidth / 2 + 1) / maxR;
+  const frameCornerDz = (bd - 1 - cz) / maxR;
+  const frameCornerDist = Math.hypot(frameCornerDx, frameCornerDz);
+  let notchHeight = requestedNotchHeight;
+  if (opts.facade) {
+    for (let by = 0; by < requestedNotchHeight; by++) {
+      if (taperFracAt(by) < frameCornerDist * 1.08) { notchHeight = Math.max(2, by); break; }
+    }
+  }
+
+  for (let bx = 0; bx < bw; bx++) {
+    for (let bz = 0; bz < bd; bz++) {
+      const dx = (bx - cx) / maxR, dz = (bz - cz) / maxR;
+      const dNorm = Math.hypot(dx, dz);
+      if (dNorm > 1.5) continue; // hard cutoff well outside any possible radius
+
+      for (let by = 0; by <= deckTopBy; by++) {
+        const n = noise2D(bx * 0.5 + by * 0.05, bz * 0.5 - by * 0.05);
+        let radiusFrac = taperFracAt(by) * (1 + n * jitterAmt);
+        if (by <= 1) {
+          // Plinth flare: widen the base 2 levels, same technique as the
+          // elven trunk's root flare, baked into the occupancy silhouette.
+          const flareBlend = by === 0 ? 1 : 0.5;
+          radiusFrac = Math.max(radiusFrac, plinthFlareFrac * flareBlend + radiusFrac * (1 - flareBlend));
+        }
+        if (dNorm > radiusFrac) continue;
+
+        let material = 'obsidian';
+        if (opts.facade && by < notchHeight && bz >= bd - notchDepth) {
+          // Pointed gothic arch: half-width tapers LINEARLY (not the
+          // elven doorway's sqrt round-arch curve) so the apex comes to a
+          // genuine point — the deliberate silhouette difference between
+          // vampire's gothic arch and elven's round arch.
+          const frac = by / notchHeight;
+          const halfWidthHere = Math.max(0, Math.round((notchWidth / 2) * (1 - frac)));
+          const inNotchX = Math.abs(bx - notchCx) < halfWidthHere;
+          const inFrameX = Math.abs(bx - notchCx) < halfWidthHere + 1;
+          if (inNotchX) continue; // carved doorway
+          if (inFrameX) material = 'facade'; // kept jamb post, promoted material
+        }
+        setBlock(grid, bx, by, bz, material);
+      }
+    }
+  }
+
+  // Crenellated parapet: find the deck's own exposed perimeter ring (the
+  // boundary cells of the solid disc at deckTopBy), order them by angle
+  // around the tower's own axis, and raise every OTHER one by a single
+  // block into an 'iron' merlon at merlonBy — a genuine alternating
+  // merlon/gap battlement built from occupancy, not a bolted-on ring mesh.
+  const ring: Array<{ bx: number; bz: number }> = [];
+  for (const [k, matKey] of grid.cells) {
+    if (matKey === 'facade') continue; // door lintel shouldn't sprout a merlon
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    if (by !== deckTopBy) continue;
+    const exposed = !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1);
+    if (exposed) ring.push({ bx, bz });
+  }
+  ring.sort((a, b) => Math.atan2(a.bz - cz, a.bx - cx) - Math.atan2(b.bz - cz, b.bx - cx));
+  for (let i = 0; i < ring.length; i++) {
+    if (i % 2 === 0) setBlock(grid, ring[i]!.bx, merlonBy, ring[i]!.bz, 'iron');
+  }
+
+  // Coping band: reclassify the exposed surface ring right at the
+  // taper-to-deck transition to the 'iron' material — a decorative band
+  // grown into the silhouette, mirroring the elven trunk's "moonlit belt."
+  for (const [k, matKey] of [...grid.cells.entries()]) {
+    if (matKey !== 'obsidian') continue;
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    if (by !== parapetStartBy) continue;
+    const exposed = !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1);
+    if (exposed) grid.cells.set(k, 'iron');
+  }
+
+  // Lit gothic windows: a handful of upper-body surface blocks (never the
+  // plinth) reclassified to the 'bloodglow' accent material — deterministic
+  // per seed, mirroring the elven canopy's firefly-glow accents.
+  const r = mulberry32(seed ^ 0xB100D_1234);
+  const upperSurface = [...grid.cells.entries()].filter(([k, matKey]) => {
+    if (matKey !== 'obsidian') return false;
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    if (by < 2 || by >= parapetStartBy) return false;
+    return !hasBlock(grid, bx + 1, by, bz) || !hasBlock(grid, bx - 1, by, bz)
+      || !hasBlock(grid, bx, by, bz + 1) || !hasBlock(grid, bx, by, bz - 1);
+  });
+  const glowCount = Math.min(upperSurface.length, 2 + Math.floor(r() * 3));
+  for (let i = 0; i < glowCount; i++) {
+    const idx = Math.floor(r() * upperSurface.length);
+    const [glowKey] = upperSurface[idx] ?? [];
+    if (glowKey) grid.cells.set(glowKey, 'bloodglow');
   }
 
   return grid;
