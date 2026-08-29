@@ -11,6 +11,8 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid } from '@/world/buildings/FactionBlockProfiles';
+import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
   return {
@@ -148,92 +150,86 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 });
 
-// ── Vulperia deep-quality pass (settlement visual fidelity, "not just a
-// blob with a roof thing" follow-up) ────────────────────────────────────────
-// Regression guards for the noise-perturbed organic mound and the
-// timber-stave round door/window kit added to replace the original plain
-// half-sphere + flat torus-ring approach.
-describe('Vulperia — organic mound geometry (not a plain sphere blob)', () => {
-  it('produces only finite (non-NaN/non-infinite) vertices after noise-based silhouette displacement', () => {
+// ── Vulperia deep-quality pass (settlement visual fidelity follow-up) ──────
+// Phase 2e §2e.3: regression guards for the grounded BlockKit heightfield
+// den mound (small earth/grass/facade blocks with marching-squares-style
+// corner rounding) that replaced the earlier noise-perturbed deformed-
+// sphere ("organic mound") body, plus the timber-stave round door/window
+// kit (unchanged/reused across both mound implementations).
+describe('Vulperia — BlockKit heightfield den mound (not a deformed sphere blob)', () => {
+  it('produces only finite (non-NaN/non-infinite) vertices for the block mound + props', () => {
     for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
       expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vulperia![kind]!(makeDna(kind, 'vulperia', 123)));
     }
   });
 
-  it('perturbs the main mound off a perfect sphere radius (organic bank, not a smooth dome)', () => {
+  it('builds the mound from many discrete block meshes (a Lego-style assembly, not one smooth primitive)', () => {
     const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 7));
+    // No large SphereGeometry mound body anywhere (the old deformed-
+    // hemisphere body is gone) -- small decorative spheres (door handle,
+    // chimney smoke puff, flower/plant heads) are fine and expected.
+    let hasLargeSphere = false;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') {
+        const params = (o.geometry as THREE.SphereGeometry).parameters;
+        if (params.radius > 0.5) hasLargeSphere = true;
+      }
+    });
+    expect(hasLargeSphere).toBe(false);
+    // A block mound's merged geometry has far more vertices than a single
+    // low-poly primitive would, reflecting many individually-culled block
+    // faces assembled together.
     const mound = findBiggestMesh(g);
     const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const radii: number[] = [];
-    for (let i = 0; i < pos.count; i++) {
-      radii.push(Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i)));
-    }
-    // A perfectly spherical (undisplaced) hemisphere has every vertex at the
-    // exact same distance from the origin. Noise displacement should spread
-    // that distance out into a real range.
-    expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(0.01);
+    expect(pos.count).toBeGreaterThan(60);
   });
 
   it('produces a different mound silhouette per seed (deterministic but seed-varied)', () => {
+    const countBlockVerts = (g: THREE.Group): number => {
+      let total = 0;
+      g.traverse(o => {
+        if (o instanceof THREE.Mesh) total += (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
+      });
+      return total;
+    };
     const gA = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
     const gB = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 2));
     const gA2 = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
-    const sumRadii = (g: THREE.Group): number => {
-      const pos = findBiggestMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
-      let sum = 0;
-      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
-      return sum;
-    };
-    expect(sumRadii(gA)).toBe(sumRadii(gA2)); // deterministic for the same seed
-    expect(sumRadii(gA)).not.toBe(sumRadii(gB)); // varies across seeds
+    expect(countBlockVerts(gA)).toBe(countBlockVerts(gA2)); // deterministic for the same seed
+    expect(countBlockVerts(gA)).not.toBe(countBlockVerts(gB)); // varies across seeds
   });
 
-  // ── v2 fix: "still looks like a blob with a hole poked in it" ─────────────
-  // User feedback after the first pass (real screenshots, not close crops):
-  // noise-jittering a smooth primitive and bolting small props onto its
-  // curved surface is NOT enough -- it still reads as one uniform-coloured
-  // organic blob at normal gameplay distance. These guards target the two
-  // concrete fixes: a real flat facade panel (so the door has an actual
-  // built surface to sit on, not a curve) and a genuine two-tone vertex-
-  // colour gradient (so the hill visibly shows turf-over-earth, not one
-  // flat colour), plus real door/wall colour contrast.
-  it('gives the mound a real flat facade panel (a wide, thin BoxGeometry), not just the curved mound surface', () => {
-    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
-    let hasWideFacade = false;
+  // ── v2 fix, still honoured by the block mound: a real flat facade so the
+  // door sits on a genuinely "built" surface, not a bare curved bank. The
+  // block system achieves this via a carved notch framed by dedicated
+  // `'facade'`-material post/lintel blocks rather than a separate bolted-on
+  // BoxGeometry panel.
+  it('gives the mound a dedicated facade-material block group (a genuinely built surface around the door), distinct from the earth/grass body', () => {
+    const dna = makeDna('villa', 'vulperia', 5);
+    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(dna);
+    const materialColors = new Set<string>();
     g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
-        o.geometry.computeBoundingBox();
-        const bb = o.geometry.boundingBox!;
-        const width = (bb.max.x - bb.min.x) * o.scale.x;
-        const depth = (bb.max.z - bb.min.z) * o.scale.z;
-        // A facade panel is wide (spans a meaningful fraction of the
-        // building) but thin front-to-back (a flat wall, not a solid block).
-        if (width > 1.0 && depth < 0.5) hasWideFacade = true;
+      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+        materialColors.add(o.material.color.getHexString());
       }
     });
-    expect(hasWideFacade).toBe(true);
+    // Earth (dna.colors.walls), grass (#3d6b35) and facade (#4a3520) block
+    // materials should all be present as distinct merged meshes.
+    expect(materialColors.has(new THREE.Color(dna.colors.walls).getHexString())).toBe(true);
+    expect(materialColors.has(new THREE.Color('#3d6b35').getHexString())).toBe(true);
+    expect(materialColors.has(new THREE.Color('#4a3520').getHexString())).toBe(true);
   });
 
-  it('paints the mound with a genuine two-tone vertex-colour gradient (grass above, earth below), not one flat colour', () => {
-    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
-    const mound = findBiggestMesh(g);
-    const colorAttr = mound.geometry.getAttribute('color');
-    expect(colorAttr).toBeDefined();
-    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
-    let lowY = Infinity, highY = -Infinity, lowIdx = 0, highIdx = 0;
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i);
-      if (y < lowY) { lowY = y; lowIdx = i; }
-      if (y > highY) { highY = y; highIdx = i; }
-    }
-    const colorAt = (i: number) => new THREE.Color(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i));
-    const lowColor = colorAt(lowIdx);
-    const highColor = colorAt(highIdx);
-    // The crown (grass-green) should be visibly greener than the base
-    // (earth-brown): green channel should dominate more at the top.
-    const lowGreenBias = lowColor.g - Math.max(lowColor.r, lowColor.b);
-    const highGreenBias = highColor.g - Math.max(highColor.r, highColor.b);
-    expect(highGreenBias).toBeGreaterThan(lowGreenBias);
+  it('carves a real doorway-sized gap in the block mound at the front (a genuine hole, not just an applied surface)', () => {
+    // The block occupancy grid itself (which the mound mesh is built from)
+    // must have an actual notch carved into the front face so the round
+    // door prop sits in a real recess rather than floating in front of a
+    // solid bank.
+    const grid = buildVulperiaDenMoundGrid(5, 6, 5, 3, { facade: true });
+    const bw = Math.round(6 / BLOCK_UNIT);
+    const bd = Math.round(5 / BLOCK_UNIT);
+    const cx = Math.round(bw / 2);
+    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
   });
 
   it('gives the door a colour that genuinely contrasts against the wall colour (not a same-hue near-match)', () => {
@@ -349,11 +345,19 @@ describe('Undead — tiered weathered spire + stone arch doorway (not one tapere
 });
 
 // ── Dwarven deep-quality pass (settlement visual fidelity follow-up) ───────
-// Regression guards for the coursed-masonry wall + vault-wheel door rework
-// that replaced a single smooth full-height box standing in for the whole
-// building, with no roofline at all.
-describe('Dwarven — coursed stone masonry + vault-wheel door (not one smooth box)', () => {
-  it('builds the villa (Guild Hall) as multiple stacked stone courses, not one full-height box', () => {
+// Phase 2e §2e.4: regression guards for the stepped-tier BlockKit hall
+// (`buildDwarvenHallGrid()`) that replaced the earlier smooth-coursed-box
+// stacking — the deliberate *contrast case* proving the block-kit engine
+// generalises to crisp, monumental masonry with intentionally
+// un-chamfered "buttress" corners, not just vulperia's organic mound.
+describe('Dwarven — stepped-tier BlockKit hall with hard-edged buttress corners (not smooth coursed boxes)', () => {
+  it('produces only finite vertices across villa/chapel/shop', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.dwarven![kind]!(makeDna(kind, 'dwarven', 8)));
+    }
+  });
+
+  it('builds the tower from many discrete block meshes (a Lego-style assembly, not one smooth box)', () => {
     const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
     const totalBox = new THREE.Box3().setFromObject(g);
     const totalHeight = totalBox.max.y - totalBox.min.y;
@@ -366,30 +370,86 @@ describe('Dwarven — coursed stone masonry + vault-wheel door (not one smooth b
         if (meshHeight > totalHeight * 0.6) anyBoxSpansMostOfHeight = true;
       }
     });
-    // The old version was one BoxGeometry spanning the entire wall height
-    // (100% of total). Coursed masonry means every individual course is a
-    // fraction of the whole building's height.
+    // The old version had a full-height coursed-box stack; the block hall's
+    // merged mesh is many small unit blocks, so no single box primitive
+    // should span most of the building's height.
     expect(anyBoxSpansMostOfHeight).toBe(false);
+    const mound = findBiggestMesh(g);
+    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(60);
   });
 
-  it('assembles the villa from many parts (courses, cornice, trim, pillars w/ caps, door, vault wheel), not a handful of primitives', () => {
+  it('produces a different tower silhouette per seed (deterministic but seed-varied, via weathering chips)', () => {
+    const countBlockVerts = (g: THREE.Group): number => {
+      let total = 0;
+      g.traverse(o => {
+        if (o instanceof THREE.Mesh) total += (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
+      });
+      return total;
+    };
+    const gA = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 1));
+    const gB = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 2));
+    const gA2 = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 1));
+    expect(countBlockVerts(gA)).toBe(countBlockVerts(gA2)); // deterministic for the same seed
+    expect(countBlockVerts(gA)).not.toBe(countBlockVerts(gB)); // varies across seeds
+  });
+
+  it('gives the tower a genuine stepped-tier profile: a real inset step from the base grid', () => {
+    const grid = buildDwarvenHallGrid(3, 8, 6, 4.5, { tiers: 3 });
+    const bh = Math.round(4.5 / BLOCK_UNIT);
+    // Base-tier corner is occupied near the ground...
+    expect(hasBlock(grid, 0, 0, 0)).toBe(true);
+    // ...but the same column has stepped inward by the top tier.
+    expect(hasBlock(grid, 0, bh - 1, 0)).toBe(false);
+  });
+
+  it('marks corner columns with a distinct un-chamfered "buttress" material, not plain stone', () => {
+    const grid = buildDwarvenHallGrid(3, 8, 6, 4.5, { tiers: 3 });
+    expect(getMaterialKey(grid, 0, 0, 0)).toBe('buttress');
+  });
+
+  it('gives the tower a genuinely distinct buttress material colour, not the same stone hue with sharp edges', () => {
     const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
-    // 4 courses + 1 cornice + 1 trim band + 4 pillars * (1 shaft + 2 rings)
-    // + 1 door + 3 iron bands + 1 vault-wheel hub + 6 vault-wheel spokes
-    // + banner + chimney = 29; verified 31 in practice (a comfortable margin).
-    expect(countMeshes(g)).toBeGreaterThanOrEqual(29);
+    const materialColors = new Set<string>();
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+        materialColors.add(o.material.color.getHexString());
+      }
+    });
+    // The iron-grey buttress colour (#4a4a48) must appear as its own
+    // merged material group, distinct from the warm stone body colour.
+    expect(materialColors.has(new THREE.Color('#4a4a48').getHexString())).toBe(true);
+  });
+
+  it('carves a real doorway-sized gap in the block hall at the front (a genuine hole, not just an applied surface)', () => {
+    const grid = buildDwarvenHallGrid(5, 8, 6, 4.5, { tiers: 3, facade: true });
+    const bw = Math.round(8 / BLOCK_UNIT);
+    const bd = Math.round(6 / BLOCK_UNIT);
+    const cx = Math.round(bw / 2);
+    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
+  });
+
+  it('retains the praised iron-banded vault door + wheel mechanism', () => {
+    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+    let hubCount = 0;
+    let spokeCount = 0;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') hubCount++;
+      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
+        const p = (o.geometry as THREE.BoxGeometry).parameters;
+        // Spokes are long, thin, flat boxes distinguishable from block-kit
+        // unit cubes by their aspect ratio.
+        if (p.width > p.height * 3 && p.height > 0) spokeCount++;
+      }
+    });
+    expect(hubCount).toBeGreaterThan(0);
+    expect(spokeCount).toBeGreaterThanOrEqual(6);
   });
 
   it('is deterministic for the same seed', () => {
     const gA = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
     const gB = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
     expect(countMeshes(gA)).toBe(countMeshes(gB));
-  });
-
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.dwarven![kind]!(makeDna(kind, 'dwarven', 8)));
-    }
   });
 });
 

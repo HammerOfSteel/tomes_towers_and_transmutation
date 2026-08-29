@@ -1018,6 +1018,538 @@ screenshots checked from *both* a face-on-ish angle and a
 rotated/edge-on-ish angle (given the cardinal-rotation + fixed-iso-camera
 interaction discovered above), before being marked done.
 
+### Phase 2e — Modular sub-tile block-kit architecture (paradigm shift, supersedes 2b/2d primitive approach)
+
+**Why this phase exists.** After Phase 2d shipped (7 factions reworked with
+noise-perturbed primitives) and a "v2" vulperia fix (flat facade + two-tone
+gradient bolted onto the same mound primitive), direct user review of
+realistic-distance screenshots still read every non-slime faction's
+buildings as **"blob type structures"** — geometry sculpted by deforming one
+large smooth primitive (sphere/cylinder/cone) with noise, however much
+surface detail or colour contrast is layered on top, does not stop reading
+as "a blob," because the *underlying construction technique* never matches
+the game's own visual language. The user has explicitly rejected this
+technique for every faction except slime (whose gelatinous-blob nature makes
+a deformed-primitive read *correct*, not wrong) and specified the fix
+technique directly: build shapes out of **many small, chunky, grid-aligned
+blocks** — "like Lego" — sized to relate to the overworld's own tile grid,
+with organic softness added by **rounding/texturing the small blocks
+themselves** (not by deforming one big shape). This is a from-scratch
+architectural technique change, not a per-faction tweak, so it gets its own
+phase with a shared engine (§2e.1) built once and then applied faction by
+faction (§2e.2–§2e.10), each faction still getting the "one at a time, do it
+properly, verify at realistic distance before moving on" treatment that
+Phase 2d established.
+
+#### 2e.0 Research grounding (what this design is built on, not guessed)
+
+Real technique research (not just "it'll probably look fine") was done
+before design, per explicit user request:
+
+- **Marching-squares corner/edge selection (blob tilesets / auto-tiling)** —
+  a decades-old, well-documented technique (used for terrain auto-tiling in
+  RTS/RPG games, contour generation, and directly credited by Oskar
+  Stålberg as the core mechanism behind *Townscaper*'s buildings): classify
+  each grid cell by which of its immediate neighbours are "filled" vs
+  "empty," and pick a specific edge/corner geometry variant from a small
+  fixed table based on that classification, instead of deforming a
+  continuous surface. Applied to *Townscaper* at the level of wall corners
+  between filled/empty voxel columns — the discrete occupancy grid never
+  changes, only which small pre-built corner/edge piece renders at each
+  position, and the result reads as smoothly organic despite being 100%
+  grid-based. **This is the direct technical precedent for "round the edges
+  of the small blocks, don't deform a blob."**
+- **Modular kit-bashing / trim-sheet architecture** (standard technique
+  behind asset packs like Kenney.nl's building kits and Synty Studios'
+  POLYGON series, and the subject of many GDC-style "modular environment
+  art" talks): buildings are assembled from a small fixed vocabulary of
+  grid-unit pieces (wall segment, corner, doorway, window, roof cap,
+  decoration/greeble) that all share one snap-grid, so any combination
+  tiles seamlessly and the *pieces themselves* carry the material identity
+  (stone-block texture baked onto the wall-segment piece, not painted after
+  the fact).
+- **Greebling** — adding small non-functional surface-detail clusters at a
+  finer sub-grid scale than the main structure to break up flat/blank
+  surfaces and read as "built, lived-in, and detailed" rather than smooth —
+  directly answers the user's "not just slabs of geometry" complaint from
+  Phase 2d, generalized to the new block system.
+- **Heightfield/voxel-column stacking** (the technique behind Minecraft-like
+  or *Voxatron*-style organic mounds/hills): an organic silhouette (a mound,
+  a hill, a dune) is built as a 2D heightfield of column heights over a
+  grid, not a single deformed sphere — each column is a stack of unit
+  blocks, and the *silhouette* comes from varying stack height per column
+  plus corner/edge rounding at the boundary, never from bending a
+  continuous mesh. This directly replaces `addOrganicMound()`'s
+  sphere-plus-noise approach for vulperia's den mounds while keeping the
+  same "grounded earthen hill" read the user liked structurally (just not
+  as a smooth blob).
+- **Existing in-repo precedent already found by accident and validated**:
+  Phase 2d's vulperia round-door fix (§ above, "Important technique note")
+  independently discovered exactly this principle — a ring built from
+  individually-solid small `BoxGeometry` blocks arranged in a circle reads
+  correctly from every camera angle, where a continuous ring/torus geometry
+  does not. That fix is the proof-of-concept for the whole phase and is
+  reused/generalized here, not thrown away.
+
+#### 2e.1 Core engine — `src/world/buildings/BlockKit.ts` (new, shared by all factions)
+
+**Grid unit.** `BLOCK_UNIT = 0.5` world units — exactly 1/8 of
+`TERRAIN_TILE_SIZE` (4 WU, `RealmToTerrain.ts`), so block geometry is always
+an integer subdivision of the terrain's own tile grid (the literal
+"blend into the terrain tile system" the user asked for). A `medium`
+footprint (5×4 WU) is a 10×8 block grid — chunky enough to read as discrete
+"Lego" pieces at gameplay camera distance, fine enough to carve
+recognisable doors/windows/roof shapes.
+
+**Data model.** A building's shape is a sparse 3D occupancy grid:
+`type BlockGrid = Map<string, BlockCell>` keyed by `"bx,by,bz"` integer block
+coordinates (`by` = vertical level, one block = one `BLOCK_UNIT` tall). Each
+occupied cell carries a `BlockCell { materialKey: string }` — an index into
+that faction's `BlockPalette` (see §2e.1.3), so a single grid can mix e.g.
+"earth" blocks low down and "grass-cap" blocks on top, or "stone" blocks
+with occasional "rune-glow accent" blocks for undead.
+
+Per-faction **shape-profile functions** (one per faction, e.g.
+`vulperiaDenProfile(w, d, h, seed, opts)`) populate a `BlockGrid` from a
+footprint (`getFootprint()`, already exists) + seed + faction-specific
+options (chimney/garden/tiers/etc., mirroring the existing
+`vulperiaMound()` opts shape) — this is the piece that actually varies per
+faction/building and is where each race's silhouette personality lives
+(heightfield mound for vulperia, stepped ziggurat for dwarven, tapering
+trunk-then-canopy for elven, etc. — full per-faction detail in §2e.2+).
+
+**Meshing — the corner-rounding algorithm (the actual "organic from
+blocks" technique).** For every occupied cell:
+1. Skip any of its 6 faces whose neighbour cell is also occupied (standard
+   voxel face-culling — keeps triangle counts sane even at fine
+   subdivision).
+2. For each of the 4 *vertical* edges of the block (NE/NW/SE/SW, running
+   along Y), chamfer that edge (cut it at 45° to a configurable radius,
+   default `0.16 * BLOCK_UNIT`) **if and only if both of the two
+   orthogonal neighbour cells that meet at that edge are empty** — e.g. the
+   NE edge is chamfered only if both the North neighbour and the East
+   neighbour of this cell are unoccupied at the same level. This is a
+   direct 3D generalisation of the marching-squares "is this an exterior
+   corner" test: a cell buried in a flat wall run has all 4 edges sharp
+   (reads as solid, deliberately-built masonry where it should); a cell at
+   the tip of a silhouette (isolated column, or the outer corner of a
+   stepped tier) gets some/all edges chamfered, softening exactly the
+   boundary where "blockiness" would otherwise read as harsh, without
+   touching a single vertex of the interior structure. A fully isolated
+   single-block column (all 4 neighbours empty) gets all 4 edges chamfered
+   — an octagonal-cross-section "soft post," matching e.g. a single
+   chimney-cap block or an isolated roof finial.
+3. The top face of any cell whose upward neighbour is empty (i.e. a
+   "roofline" cell) additionally gets its 4 *horizontal* top edges
+   bevelled by the same rule using the horizontal neighbours, softening
+   silhouette skylines (this is what turns a stepped block tower into a
+   worn/rounded stepped tower rather than a staircase of razor-sharp
+   cubes).
+
+This is implemented as one shared, fully unit-tested function
+(`meshBlockGrid(grid, palette, opts) -> THREE.Group`), **not** copy-pasted
+per faction — the only per-faction inputs are the occupancy grid (from that
+faction's shape-profile function) and the palette (materials/colors).
+Tests assert (via geometry inspection, following the existing
+"no-NaN + determinism + structural sanity" pattern from
+`FactionBuildingVariants.test.ts`): an isolated single block produces an
+octagonal (8-sided) horizontal cross-section; a block buried in a 3×3×3
+solid cube of neighbours produces a plain unchamfered box (0 extra
+vertices beyond a standard cube); a block at the outer corner of an L-shape
+produces exactly one chamfered vertical edge; face-culling removes shared
+internal faces (buried cell contributes 0 visible triangles); output is
+deterministic per seed.
+
+**Texture strategy.** Extend `TextureFactory.ts` (already has
+canvas-generated `stoneTexture`/`brickTexture`/`thatchTexture`/etc. — same
+pattern, not a new pipeline) with one new procedural canvas texture per
+faction's primary block material (earth-and-root for vulperia, coarse
+granite-with-mortar for dwarven, living-bark for elven, lashed-hide/bone
+for orcish, weathered ash-stone for undead, black obsidian-with-veins for
+vampire, mottled toadstool-skin for fae) — applied per-block via UV so
+individual blocks show grain/variation rather than reading as flat plastic
+Lego, plus a small per-block colour jitter (a cached low-amplitude
+value-noise sampled by block coordinate, baked as a vertex-colour
+multiplier) so no two blocks of the same material are perfectly identical
+— cheap, and exactly the "texture tricks" the user asked for to keep small
+blocks from looking uniform/toylike.
+
+**Reused, not rebuilt**: the vulperia round-door timber-stave-ring
+technique (§Phase 2d) is generalised into a shared
+`blockRingDoor()`/`blockRingWindow()` helper in `BlockKit.ts` usable by any
+faction that wants a round opening — it already *is* small-block
+construction, it just needs to read from a faction's palette instead of a
+hardcoded colour.
+
+#### 2e.2 Per-faction sub-phases — shared checklist
+
+Every faction sub-phase below follows the same task list (mirroring Phase
+2d's proven "one faction at a time" discipline) — none may be marked done
+without all of these:
+1. Define the faction's `BlockPalette` (2-4 block material keys + 1-2
+   accent/glow material keys, deliberately colour-contrasted per the
+   Phase 2d "vulperia palette was one hue family" lesson).
+2. Write/extend the faction's canvas texture in `TextureFactory.ts`.
+3. Write the faction's shape-profile function(s) (patriciate/church/market,
+   matching Phase 2b/2d's existing coverage) producing a `BlockGrid` via
+   the shared heightfield/tier/tower helpers in `BlockKit.ts`.
+4. Write the faction's prop/decoration/environment kit — small standalone
+   block-built assets placed around the ward (reusing/extending the
+   existing `SettlementPropFactory.ts` placement plumbing from §4.2-4.4),
+   thematically grounded in that faction's actual ward vocabulary (see each
+   sub-phase below — sourced directly from `FACTION_WARD_NAMES` in
+   `overworld-studio.ts`, which the user pointed to explicitly as the
+   canonical statement of what each race's spaces actually *are*).
+5. Unit tests first (TDD): geometric sanity + determinism for the new
+   shape-profile + palette, following the existing test file's pattern.
+6. Playwright visual verification **at realistic camera distance matching
+   the user's own screenshots** (the hard-won lesson from vulperia v1→v2 —
+   never judge from a flattering close crop), from both a face-on and a
+   rotated/edge-on angle, before the faction is marked done.
+7. Update this plan doc + TODO + SQL todos honestly with what was verified,
+   including screenshots description/findings — no completion claims
+   without step 6 having actually been run.
+
+#### 2e.3 Vulperia — proof-of-concept faction (do first; reuses praised facade+door)
+
+Theme grounding: *Fox Den* (patriciate), *Den Mother's Hall* (church),
+*Night Market* (market), *Burrow Commons* (park), *Tinker's Row*
+(craftsmen) — a warm, earthy, semi-wild "clever fox-folk living in
+burrows and hollows" identity, explicitly **not** rejected by the user (the
+big villa's facade + round door was called out as "pretty lovely,
+especially... looking like a hobbit hole"). Scope: replace the mound's
+*body* (currently a deformed sphere) with a block-built heightfield mound;
+keep and adapt the facade-wall + round-door composition, now carved
+directly into the block grid (a literal rectangular notch of missing
+blocks framed by kept "post" blocks) rather than a separate bolted-on
+`BoxGeometry`.
+- **Palette**: packed-earth blocks (warm brown, new canvas texture with
+  root/pebble fleck detail), turf/grass-cap blocks (saturated green,
+  reusing the vulperia v2 two-tone-gradient insight but as a literal
+  separate top-layer block material instead of a vertex gradient), timber
+  accent blocks (door posts/lintel, dark brown), and a small "toadstool/
+  burrow-flower" accent block for garden clutter.
+- **Shape profile**: a heightfield mound — column height falls off from
+  centre to footprint edge (grounded, not floating), grass-cap blocks
+  occupy the top 1-2 levels of each column, earth blocks below; a
+  rectangular block-notch at the front carves the facade recess, framed by
+  kept timber-post blocks; corner-chamfering (§2e.1) automatically softens
+  the mound's silhouette into a rounded hill shape from the sharp
+  heightfield steps.
+- **Props/decor**: fox-tail grass tufts, small toadstool clusters, a
+  packed-dirt path of flat paver blocks leading to the door, a burrow-vent
+  chimney stack (small block cluster, not the old smooth-box chimney).
+- Tasks: 2e.3.1 palette + texture, 2e.3.2 heightfield mound profile +
+  facade notch, 2e.3.3 door/window reuse via `blockRingDoor()`,
+  2e.3.4 props, 2e.3.5 tests, 2e.3.6 Playwright verification (villa +
+  chapel pup-mounds + market stall, face-on and rotated), 2e.3.7 docs/todo
+  update.
+
+**Status: DONE, verified** (`buildVulperiaDenMoundGrid()` in
+`src/world/buildings/FactionBlockProfiles.ts`, wired into
+`FactionBuildingVariants.ts`'s `vulperiaMound()`/villa/chapel/shop). 90/90
+targeted unit tests pass (`BlockKit.test.ts`, `FactionBlockProfiles.test.ts`,
+`FactionBuildingVariants.test.ts`), `tsc --noEmit` shows zero new errors.
+Playwright visual verification against the *live* Settlement Lab (not a
+synthetic test harness) confirmed via a teleport-to-building-position +
+scene-graph inspection (temporary debug hook, added and fully reverted —
+`git diff --stat` on `SettlementLabScene.ts` shows zero net change) that the
+villa's block mound at world position genuinely renders as a discrete,
+chamfered, grid-built dome with the expected earth/grass/facade material
+split, matching `buildVulperiaDenMoundGrid()`'s design — **not** a
+regression back to blob geometry.
+
+Two real, non-blocking issues found during this verification and carried
+forward rather than silently accepted:
+1. **Window emissive bloom is over-tuned at this scale.** `glassLikeMat()`'s
+   lit-window material (`emissiveIntensity: 0.7`) blooms into a large,
+   indistinct yellow flare at typical camera distance, obscuring the
+   door/facade detail it's supposed to accent. This is a *shared* helper
+   used by every faction's windows (not vulperia-specific), so fixing it
+   is a cross-cutting lighting/bloom-tuning task, not a per-faction one —
+   tracked as a new backlog item (`p2e-bloom-tuning`, §8) to address in a
+   dedicated pass once more factions are block-built and comparable side by
+   side, rather than over-fitting the tuning to one screenshot.
+2. **Confirms the pre-existing "only villa/chapel/shop are faction-specific"
+   architecture gap** (see §8 "open questions") — in a real generated
+   settlement, the block-mound anchor buildings are visually sparse (1-2
+   per settlement) relative to the many generic non-faction "house"/`inn`/
+   `blacksmith`/`terraced` buildings that dominate the view, so a
+   real settlement's silhouette doesn't yet read as "vulperia" at a glance
+   even with a fully-verified villa. This is unchanged/pre-existing scope,
+   not something this session's work regressed, but it caps how much visual
+   impact any single faction's Phase 2e rebuild can have until it's
+   addressed — flagged to the user, not assumed away.
+
+#### 2e.4 Dwarven — contrast case (angular, precise; proves the system generalises beyond "mound")
+
+Theme grounding: *Guild Hall* (patriciate), *Stone Temple* (church),
+*Trade Vault* (market), *Mushroom Hall*/*Mushroom Farm* (park/farm — an
+underground-fungiculture detail worth honouring in props), *Great Forge*
+(smithy) — precise, blocky, geometric masonry; the *opposite* silhouette
+personality from vulperia's organic mound, good proof the block system
+isn't secretly just "mounds with a different palette."
+- **Palette**: coursed granite blocks (grey-blue, new canvas texture with
+  visible mortar coursing — reuse `_buildStoneCanvas()`'s coursing
+  technique as a base, adapted colours), dark iron-banding accent blocks,
+  a warm glowing "forge-light" accent block for smithy/hall windows.
+- **Shape profile**: a stepped tiered block tower/hall — rectangular tiers
+  each slightly inset from the one below (a real stepped ziggurat, not a
+  cone), heavy corner "buttress" block columns at the tier edges left
+  deliberately un-chamfered (dwarven architecture should read as
+  *intentionally* hard-edged and monumental, so §2e.1's chamfer rule gets a
+  faction-level override flag to suppress edge-softening on designated
+  "monumental" cells while still softening roofline/silhouette cells) —
+  this is an important test that the shared engine supports "this faction
+  wants some blocks to stay sharp on purpose," not just uniform organic
+  softening everywhere.
+- **Props/decor**: rune-carved standing-stone marker blocks, a
+  fungus/mushroom-farm prop cluster (small pale block-built mushroom caps,
+  distinct from fae's — grounding the *Mushroom Hall*/*Mushroom Farm*
+  naming with an actual prop, not just a name nobody sees), anvil + tool
+  rack props near smithy.
+- Tasks mirror §2e.3's structure (7 subtasks), substituting dwarven's
+  profile/palette/props.
+
+**Status: DONE, verified** (`buildDwarvenHallGrid()` in
+`src/world/buildings/FactionBlockProfiles.ts`, wired into
+`FactionBuildingVariants.ts`'s `buildDwarvenVilla()`/`buildDwarvenChapel()`/
+`buildDwarvenShop()` via `addBlockDwarvenHall()`). 101/101 targeted unit
+tests pass (`BlockKit.test.ts`, `FactionBlockProfiles.test.ts`,
+`FactionBuildingVariants.test.ts`), `tsc --noEmit` shows zero new errors.
+
+Verification method: this faction surfaced real geometry bugs that pure
+unit tests (which only assert block counts/materials, not proportions) did
+not catch — found via a three-tier methodology: (1) an ASCII occupancy-grid
+dump of the block array per Y-level to see the actual shape without relying
+on screenshots, (2) an isolated Playwright preview harness with front/side/
+iso *and* true-orthographic camera modes (the orthographic mode was added
+specifically to disambiguate real geometry bugs from perspective/proximity
+illusions — see below), and (3) live in-game Settlement Lab screenshots via
+a temporary teleport-to-building-position debug hook (added and fully
+reverted — `git diff --stat` on `SettlementLabScene.ts` shows zero net
+change).
+
+Real bugs found and fixed this pass (not false alarms):
+1. **Tier-inset proportionality bug**: `buildDwarvenHallGrid()`'s per-tier
+   inward inset was a fixed block count applied identically to both
+   footprint axes. On a wide-but-shallow footprint (e.g. the villa,
+   7x5 blocks-per-unit wide/deep), this shrank the *shorter* axis far more
+   aggressively as a percentage each tier, collapsing the top tier to a
+   near-zero-depth slab — exactly matching the user's "buttress corners
+   look like thin flat cards" complaint. Root-caused via the ASCII dump
+   (showed the top tier at 6 wide x 2 deep, should be ~6x6). Fixed by
+   scaling `insetStepX`/`insetStepZ` proportionally to each axis's share of
+   `Math.max(bw, bd)` so every tier preserves the base footprint's aspect
+   ratio.
+2. **Roof-height quantization bug**: banner/chimney props were positioned
+   using `dwarvenBlocksTall(h) * BLOCK_UNIT`, which ignored `BlockKit.ts`'s
+   block-centring convention (each block extends +/-`BLOCK_UNIT/2`, so the
+   true roof top is `(bh-1)*BLOCK_UNIT + BLOCK_UNIT/2`, half a block lower
+   than the naive formula) — this produced the reported "banner/chimney
+   floating above the roofline" gap. Fixed by adding an exported
+   `dwarvenRoofTopY(h)` helper used consistently for prop placement.
+3. **Top-tier-extents prop-placement bug**: even after the height fix, the
+   chimney's X/Z position was still derived from the *base* footprint, which
+   is much wider than the real (inset) top tier once bug #1 was fixed — so
+   the chimney had no solid block beneath it at that height. Fixed by adding
+   `dwarvenTopTierExtents()` (backed by a new shared internal
+   `planDwarvenTiers()` helper so the fill logic and the extents query can't
+   silently diverge) and clamping prop X/Z within it.
+4. **Chapel column oversizing**: flanking columns used `h * 1.1` for height
+   — literally taller than the tower itself. An initial perspective-view
+   screenshot after the first fix attempt (`dwarvenRoofTopY(h) * 0.7`) still
+   *looked* wrong (columns appeared to tower over the roof), but a true
+   orthographic-camera cross-check confirmed the fix was actually correct —
+   the alarming appearance was a perspective/proximity illusion from a
+   wide-FOV camera close to the columns, not a real bug. This is a reusable
+   lesson: cross-check any ambiguous perspective screenshot with an
+   orthographic view before concluding there's a geometry bug.
+5. **Shop door/depth inconsistency**: prop Z-positions (door, vault-wheel,
+   anvil, crates) mixed the nominal footprint depth `fp.d` with the shop's
+   actual (intentionally shallower, "squat strongroom front") built depth
+   `fp.d * 0.6`, and the door/wheel radius (`fp.w * 0.22`, nearly half the
+   wall width) was oversized. Fixed by using the real built depth
+   consistently for all props and reducing the door radius to match the
+   villa's own door-width proportion.
+
+Live in-game screenshots (Settlement Lab, actual gameplay lighting/camera,
+not the isolated harness) confirmed villa, chapel, and shop all read as
+solid, proportioned, coherent buildings with no floating props and no
+thin-slab artifacts.
+
+#### 2e.5 Elven — tapering living-wood tower + canopy
+
+Theme grounding: *Elder's Hall* (patriciate), *Ancient Shrine* (church),
+*Moonlit Exchange* (market), *Sacred Grove* (park), *Moon Garden* (farm) —
+living trees grown/shaped into dwellings, canopy-topped. Root-cause note
+from Phase 2d: the previous canopy read as "a muddy brown blob with
+dangling root tendrils," and the roof colour `#8a9870` (desaturated sage)
+was independently flagged as reading brown under the game's warm
+torchlight — this rebuild must deliberately pick a more saturated,
+contrast-checked leaf-green accent block colour (same lesson as vulperia's
+hardcoded door green), not rely on the shared muted faction palette.
+- **Palette**: living-bark trunk blocks (new canvas texture, vertical bark
+  grain), saturated leaf-canopy blocks (a hardcoded richer green, contrast-
+  checked against the trunk colour the same way vulperia's door was),
+  pale "moonstone" accent blocks for shrine trim, small glowing
+  firefly/spore accent blocks for night ambience.
+- **Shape profile**: a tapering trunk (columns narrow with height — the
+  heightfield technique run "inside-out," each level's occupied radius
+  shrinking) flaring back out into a wider canopy tier at the top (radius
+  increases again for the top 2-3 levels) — corner-chamfering at every
+  level keeps the taper reading as a smooth living trunk rather than a
+  stepped pyramid; canopy-tier cells get extra top-edge bevel for a soft,
+  leafy silhouette instead of a flat mushroom-cap disc.
+- **Props/decor**: root-arch entrance (block-built, replacing the old
+  "dangling tendrils"), lantern-hung branches, moss/flower ground clutter,
+  a distinct grove-of-small-trees prop cluster for the park ward honouring
+  *Sacred Grove*.
+- Tasks mirror §2e.3.
+
+#### 2e.6 Orcish — crude, lashed, scrap-built
+
+Theme grounding: *Warlord Hall* (patriciate), *War Shrine* (church),
+*Loot Pile* (market — literally a pile of scavenged junk, a fun concrete
+prop target), *Pit Arena* (park), *Armory*/*Weapon Works* — deliberately
+crude, asymmetric, patched-together construction; a good faction to prove
+the block system can look *intentionally* rough (irregular, non-uniform
+block placement, mismatched palette blocks bolted on) rather than always
+clean.
+- **Palette**: rough lashed-hide/hewn-log blocks (brown-green, coarse
+  texture), scavenged mismatched "patch" blocks (a few off-palette colours
+  deliberately mixed in — planks, rusted metal, bone), bone/skull accent
+  blocks for totems.
+- **Shape profile**: an irregular low hut silhouette with a deliberately
+  jagged, uneven roofline (heightfield with higher per-column randomness
+  than vulperia's smooth mound, plus a chance for a column to use a
+  mismatched "patch" material) — asymmetry is the intended read here, not
+  a flaw to smooth away.
+- **Props/decor**: the *Loot Pile* market prop (a genuine small pile of
+  block-built scavenged junk — crates, weapon fragments, coin heaps), bone/
+  skull totem poles, a rough palisade-fence prop kit for ward boundaries.
+- Tasks mirror §2e.3.
+
+#### 2e.7 Undead — crumbling, decayed, bone-and-ash
+
+Theme grounding: *Lich Tower* (patriciate), *Bone Shrine* (church),
+*Wraith Bazaar* (market), *Graveyard* (park), *Death Forge* (smithy),
+*Crypt Gate* (gateward) — ruined, weathered stone with an eerie
+necromantic-glow accent.
+- **Palette**: ashen weathered-stone blocks (grey-purple, new canvas
+  texture with cracking/staining detail), bone-white accent blocks
+  (ossuary details), glowing sickly-green "rune"/"phylactery-light" accent
+  blocks used sparingly for windows/sigils.
+- **Shape profile**: a stepped/tiered tower like dwarven's but
+  *deliberately decayed* — the shape-profile function randomly omits a
+  sparse scatter of blocks near the upper tiers (holes/collapse, not
+  present in dwarven's pristine version) and lets chamfering read as
+  crumbled/worn edges rather than clean rounding — reusing the same
+  chamfer math but leaning into it as "erosion" rather than "polish" is a
+  nice demonstration that one engine serves very different aesthetic
+  intents via parameters alone.
+- **Props/decor**: cracked headstone/tombstone cluster for *Graveyard*,
+  wrought-iron/bone fence, a bazaar prop kit of shrouded stalls for
+  *Wraith Bazaar*.
+- Tasks mirror §2e.3.
+
+#### 2e.8 Vampire — gothic, elegant, dark stone spire
+
+Theme grounding: *Count's Tower* (patriciate), *Blood Chapel* (church),
+*Blood Market* (market), *Moon Courtyard* (park), *Torture Chamber*
+(smithy) — tall, narrow, elegant gothic spires; the tallest/most vertical
+silhouette of any faction, a good test of the tapering-tower shape-profile
+technique from elven applied with a totally different (angular, not
+organic) palette.
+- **Palette**: near-black obsidian-stone blocks (dark canvas texture with
+  subtle veining), deep-red/purple trim accent blocks, wrought-iron accent
+  blocks for railings/finials.
+- **Shape profile**: a tall narrow tower, tapering slightly with height
+  (reusing elven's taper helper with different proportions — much
+  narrower, much taller), a flared crenellated top tier (a distinct
+  battlement-notch pattern in the top level's occupancy, deliberately
+  jagged rather than chamfered-smooth — another proof that the same engine
+  supports both "smooth organic" and "sharp gothic" outcomes via the
+  occupancy pattern alone).
+- **Props/decor**: wrought-iron lantern posts, thorned-vine block clusters
+  climbing the tower, a moon-courtyard fountain prop for the park ward.
+- Tasks mirror §2e.3.
+
+#### 2e.9 Fae — whimsical mushroom-cap, bioluminescent
+
+Theme grounding: *Fae Court* (patriciate), *Faerie Ring* (church),
+*Twilight Market* (market), *Enchanted Glade* (park), *Glamour Forge*
+(smithy) — whimsical, magical, pastel-and-glow; the existing Phase 2d
+"twisted stalk + scalloped cap" silhouette was the best-received of the
+original primitive-based passes, so this sub-phase's job is specifically
+translating that already-good *silhouette idea* into block construction
+(not inventing a new shape), proving the new technique doesn't have to
+throw away good prior design decisions, just rebuild them the right way.
+- **Palette**: pastel toadstool-skin blocks (cream/blush, mottled canvas
+  texture, distinct from dwarven's pale mushroom-farm prop colour), a
+  saturated bioluminescent blue-green accent block for gills/glow-spots,
+  petal-pink accent blocks for the *Faerie Ring* church.
+- **Shape profile**: narrow stalk tier (tapering, like elven/vampire's
+  helper but proportioned shorter/stubbier) flaring dramatically into a
+  wide overhanging cap tier (radius increases sharply for the top 2
+  levels, overhanging past the stalk's footprint) — cap-tier top edges get
+  extra bevel/scallop treatment (a per-cell radial offset pattern on the
+  cap's outer ring, echoing the old scalloped-rim silhouette but achieved
+  via which corner cells are chamfered vs left proud, not via mesh
+  deformation).
+- **Props/decor**: small glowing spore-pod clusters, flower-ring ground
+  decoration for *Faerie Ring*, twilight-lantern posts for the market.
+- Tasks mirror §2e.3.
+
+#### 2e.10 Human — lower priority, block-ify for consistency only
+
+Human (rural/town/noble) already reads fine via the existing shared
+`ModularSet.ts` wall-panel/roof system (never part of the "blob" complaint
+— it uses `BoxGeometry` wall panels, not deformed primitives, so it never
+had this problem). Per the user's "all races" instruction this still gets
+a pass, but scoped down: add block-scale **greebling only** (small
+`BlockKit`-built decorative clusters — window-box planters, roof-tile
+texture via the new per-block canvas-texture technique, a chimney rebuilt
+as a small block stack instead of a single smooth box) layered onto the
+existing wall-panel skeleton, not a full rebuild of a system that was
+never broken. Lowest priority; do after all 7 non-human, non-slime
+factions above are verified.
+
+**Slime**: explicitly and permanently exempt from this phase — the user
+confirmed slime's gelatinous-blob geometry is *correct* for that faction's
+nature and should not be converted to blocks.
+
+#### 2e.11 Rollout order & checkpoints
+
+Sequential, each gated on the shared checklist (§2e.2) passing before the
+next starts — no batching multiple factions into one shallow pass (the
+exact mistake Phase 2d's first attempt made):
+1. **`BlockKit.ts` core engine** (§2e.1) — built and unit-tested once,
+   with no faction-specific code, before any faction sub-phase starts.
+2. **Vulperia** (§2e.3) — proof of concept; reuses the already-praised
+   facade/door; first real end-to-end validation of the whole pipeline
+   (profile → mesh → texture → props) before trusting it on the rest.
+3. **Dwarven** (§2e.4) — contrast case (angular/monumental, proves the
+   engine isn't secretly mound-only, proves the "suppress chamfer on
+   monumental cells" override).
+4. **Elven** (§2e.5) — taper/canopy shape-profile, direct fix for the
+   Phase 2d canopy complaint.
+5. **Vampire** (§2e.8) — reuses elven's taper helper at different
+   proportions with a totally different palette/mood; validates the
+   helper is genuinely shared, not elf-specific.
+6. **Fae** (§2e.9) — reuses the taper+flare pattern again, translating the
+   already-liked Phase 2d silhouette idea into blocks.
+7. **Orcish** (§2e.6) — irregular/asymmetric case, proves the engine
+   supports deliberate roughness, not just clean organic softening.
+8. **Undead** (§2e.7) — decay/erosion case, reuses dwarven's tiered-tower
+   profile with a "sparse omission" decay parameter.
+9. **Human** (§2e.10) — greebling-only pass, lowest priority.
+
+At each of steps 2-9, report back with real Playwright screenshots at
+realistic camera distance (not close flattering crops) before proceeding
+to the next faction — this phase does not get marked done as a whole until
+every non-exempt faction has passed its own individual checkpoint.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.
@@ -1054,3 +1586,26 @@ claims):
 - Whether Phase 3 (occlusion) turns out to be needed at all after Phase 1's
   spacing fix, or whether the fixed iso camera's current framing is fine
   once streets are visible.
+- **`p2e-bloom-tuning`** (new, found during vulperia's §2e.3 Playwright
+  verification): `glassLikeMat()`'s lit-window emissive
+  (`emissiveIntensity: 0.7`) blooms into an oversized, indistinct flare at
+  realistic camera distance once buildings are built from many small
+  blocks rather than one large primitive (more, smaller emissive surfaces
+  bunched close together compounds the bloom pass). Needs a dedicated
+  tuning pass (lower intensity and/or a bloom-threshold/radius adjustment
+  in the postprocessing pipeline) once 2-3 more factions are block-built,
+  so the fix is judged against multiple factions' windows side by side
+  rather than over-fit to one screenshot.
+- **Faction-specific coverage gap** (found during vulperia's §2e.3
+  verification, pre-existing/not caused by Phase 2e): `FACTION_BUILDING_VARIANTS`
+  only overrides `villa`/`chapel`/`shop` (`patriciate`/`merchant`, `church`,
+  `market`/`craftsmen` wards). All other ward kinds (`gateward`/`farm` →
+  `house`, `slum` → `terraced`, `inn` → `inn`, `smithy` → `blacksmith`) fall
+  back to the shared generic builder regardless of faction, and those are
+  the *numerically dominant* buildings in any generated settlement — so a
+  settlement doesn't read as "faction X" at a glance even once every
+  villa/chapel/shop anchor is fully block-built and verified. Worth raising
+  with the user as a possible follow-on scope extension (extending
+  faction-specific variants to `house`/`inn`/`blacksmith`/`terraced`) once
+  the anchor-building rollout (§2e.4-2e.10) is complete, not assumed
+  in-scope silently.

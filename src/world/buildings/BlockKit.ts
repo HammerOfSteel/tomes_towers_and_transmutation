@@ -1,0 +1,331 @@
+/**
+ * BlockKit.ts — Phase 2e of the settlement visual fidelity plan
+ * (docs/superpowers/plans/2026-08-29-settlement-visual-fidelity.md §2e.1).
+ *
+ * Shared modular sub-tile "block-kit" engine: buildings/props are
+ * constructed from small grid-aligned unit blocks (`BLOCK_UNIT` = 1/8 of
+ * the overworld's own 4 WU terrain tile, so block geometry is always an
+ * integer subdivision of the terrain grid) rather than one large primitive
+ * deformed with noise. Organic softness comes from *which small blocks get
+ * their edges rounded*, decided by a marching-squares-style occupancy test
+ * (the same family of technique that makes Townscaper's grid-based
+ * buildings read as organic, and that terrain/wall auto-tiling ("blob
+ * tilesets") has used for decades) — not from bending a continuous mesh.
+ *
+ * Core rule: a block's vertical edge (where two side faces meet) is
+ * chamfered if and only if BOTH of the two orthogonal neighbour cells that
+ * meet at that edge are empty. A cell buried in a flat wall run therefore
+ * stays a sharp, deliberately-built-looking cube; a cell at the tip of a
+ * silhouette (an isolated column, or the outer corner of a stepped tier)
+ * gets its exposed corner(s) softened. This lets one shared engine produce
+ * very different aesthetic outcomes per faction purely from the occupancy
+ * pattern + palette it's given (organic mound, crisp monumental tower,
+ * jagged crenellations, decayed ruin) — see FactionBlockProfiles.ts.
+ */
+
+import * as THREE from 'three';
+import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
+
+// ── Grid unit ─────────────────────────────────────────────────────────────────
+
+/** World units per block edge. Exactly 1/8 of TERRAIN_TILE_SIZE (4 WU). */
+export const BLOCK_UNIT = 0.5;
+
+// ── Occupancy grid ────────────────────────────────────────────────────────────
+
+export interface BlockGrid {
+  /** key = `${bx},${by},${bz}` (integer block coords) -> materialKey string. */
+  cells: Map<string, string>;
+}
+
+export function createBlockGrid(): BlockGrid {
+  return { cells: new Map() };
+}
+
+function key(bx: number, by: number, bz: number): string {
+  return `${bx},${by},${bz}`;
+}
+
+export function setBlock(grid: BlockGrid, bx: number, by: number, bz: number, materialKey: string): void {
+  grid.cells.set(key(bx, by, bz), materialKey);
+}
+
+export function hasBlock(grid: BlockGrid, bx: number, by: number, bz: number): boolean {
+  return grid.cells.has(key(bx, by, bz));
+}
+
+export function getMaterialKey(grid: BlockGrid, bx: number, by: number, bz: number): string | undefined {
+  return grid.cells.get(key(bx, by, bz));
+}
+
+// ── Corner / face classification ─────────────────────────────────────────────
+
+export type CornerId = 'NW' | 'NE' | 'SE' | 'SW';
+export interface ChamferFlags { NW: boolean; NE: boolean; SE: boolean; SW: boolean }
+export interface FaceVisibility { N: boolean; S: boolean; E: boolean; W: boolean; U: boolean; D: boolean }
+
+// Convention: N = -Z, S = +Z, E = +X, W = -X, U = +Y, D = -Y.
+const DIRS = {
+  N: [0, 0, -1], S: [0, 0, 1], E: [1, 0, 0], W: [-1, 0, 0], U: [0, 1, 0], D: [0, -1, 0],
+} as const;
+
+/**
+ * Which of a cell's 4 vertical edges should be chamfered, based purely on
+ * neighbour occupancy (the marching-squares-style exterior-corner test).
+ * `suppressChamfer`, when it returns true for this cell, forces every edge
+ * sharp regardless of neighbours (used by e.g. dwarven "monumental" cells
+ * that should read as deliberately hard-edged masonry).
+ */
+export function getChamferFlags(
+  grid: BlockGrid,
+  bx: number, by: number, bz: number,
+  suppressChamfer?: (bx: number, by: number, bz: number) => boolean,
+): ChamferFlags {
+  if (suppressChamfer?.(bx, by, bz)) {
+    return { NW: false, NE: false, SE: false, SW: false };
+  }
+  const nEmpty = !hasBlock(grid, bx + DIRS.N[0], by + DIRS.N[1], bz + DIRS.N[2]);
+  const sEmpty = !hasBlock(grid, bx + DIRS.S[0], by + DIRS.S[1], bz + DIRS.S[2]);
+  const eEmpty = !hasBlock(grid, bx + DIRS.E[0], by + DIRS.E[1], bz + DIRS.E[2]);
+  const wEmpty = !hasBlock(grid, bx + DIRS.W[0], by + DIRS.W[1], bz + DIRS.W[2]);
+  return {
+    NW: nEmpty && wEmpty,
+    NE: nEmpty && eEmpty,
+    SE: sEmpty && eEmpty,
+    SW: sEmpty && wEmpty,
+  };
+}
+
+/** Standard voxel face culling: a face is visible iff its neighbour is empty. */
+export function getFaceVisibility(grid: BlockGrid, bx: number, by: number, bz: number): FaceVisibility {
+  return {
+    N: !hasBlock(grid, bx + DIRS.N[0], by + DIRS.N[1], bz + DIRS.N[2]),
+    S: !hasBlock(grid, bx + DIRS.S[0], by + DIRS.S[1], bz + DIRS.S[2]),
+    E: !hasBlock(grid, bx + DIRS.E[0], by + DIRS.E[1], bz + DIRS.E[2]),
+    W: !hasBlock(grid, bx + DIRS.W[0], by + DIRS.W[1], bz + DIRS.W[2]),
+    U: !hasBlock(grid, bx + DIRS.U[0], by + DIRS.U[1], bz + DIRS.U[2]),
+    D: !hasBlock(grid, bx + DIRS.D[0], by + DIRS.D[1], bz + DIRS.D[2]),
+  };
+}
+
+// ── Outline polygon (2D horizontal cross-section) ───────────────────────────
+// Corners are visited clockwise (viewed from above): NW -> NE -> SE -> SW.
+// A sharp corner contributes 1 point; a chamfered corner contributes 2
+// (pulled back by `r` along each of its adjacent edges), so the outline is
+// a 4..8 point convex polygon depending on how many corners are chamfered.
+
+const OUTGOING_EDGE: Record<CornerId, keyof FaceVisibility> = { NW: 'N', NE: 'E', SE: 'S', SW: 'W' };
+
+function cornerPoints(corner: CornerId, s: number, r: number, chamfered: boolean): [number, number][] {
+  switch (corner) {
+    case 'NW': return chamfered ? [[-s, -s + r], [-s + r, -s]] : [[-s, -s]];
+    case 'NE': return chamfered ? [[s - r, -s], [s, -s + r]] : [[s, -s]];
+    case 'SE': return chamfered ? [[s, s - r], [s - r, s]] : [[s, s]];
+    case 'SW': return chamfered ? [[-s + r, s], [-s, s - r]] : [[-s, s]];
+  }
+}
+
+/** One outline point per element; `edgeTag[i]` names the segment from `points[i]` to `points[(i+1)%n]`. */
+export interface BlockOutline extends Array<[number, number]> {}
+
+interface OutlinePoint { p: [number, number]; tagToNext: string }
+
+function buildOutlinePoints(flags: ChamferFlags, s: number, r: number): OutlinePoint[] {
+  const CORNERS: CornerId[] = ['NW', 'NE', 'SE', 'SW'];
+  const out: OutlinePoint[] = [];
+  for (const corner of CORNERS) {
+    const chamfered = flags[corner];
+    const pts = cornerPoints(corner, s, Math.min(r, s * 0.98), chamfered);
+    if (pts.length === 2) {
+      out.push({ p: pts[0]!, tagToNext: `${corner}_diag` });
+      out.push({ p: pts[1]!, tagToNext: OUTGOING_EDGE[corner] });
+    } else {
+      out.push({ p: pts[0]!, tagToNext: OUTGOING_EDGE[corner] });
+    }
+  }
+  return out;
+}
+
+/** Public: just the ordered `[x,z]` outline points (for direct unit testing of the corner algorithm). */
+export function buildBlockOutline(flags: ChamferFlags, s: number, r: number): [number, number][] {
+  return buildOutlinePoints(flags, s, r).map(pt => pt.p);
+}
+
+// ── Single-block geometry ─────────────────────────────────────────────────────
+
+export interface BlockGeometryOptions {
+  chamferRadius?: number;   // world units, default 0.16 * BLOCK_UNIT
+  topBevel?: boolean;       // roofline-cell bevel (frustum-shaped cap)
+  topBevelInset?: number;   // world units, default 0.12 * BLOCK_UNIT
+  topBevelDrop?: number;    // world units, default 0.12 * BLOCK_UNIT
+}
+
+function scaleTowardCenter(pts: [number, number][], factor: number): [number, number][] {
+  return pts.map(([x, z]) => [x * factor, z * factor]);
+}
+
+/** Fan-triangulate a convex polygon (assumed wound consistently) at a fixed Y, non-indexed (flat shading). */
+function pushFanCap(positions: number[], normals: number[], pts: [number, number][], y: number, normalY: 1 | -1): void {
+  if (pts.length < 3) return;
+  const winding = normalY === 1 ? 1 : -1; // flip winding for downward-facing cap
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[0]!, pA = pts[i]!, pB = pts[i + 1]!;
+    const tri = winding === 1 ? [p0, pA, pB] : [p0, pB, pA];
+    for (const [x, z] of tri) {
+      positions.push(x, y, z);
+      normals.push(0, normalY, 0);
+    }
+  }
+}
+
+/** Emit one quad (2 triangles) between two vertical edges of the outline at a given y-span, non-indexed. */
+function pushSideQuad(
+  positions: number[], normals: number[],
+  p1: [number, number], p2: [number, number],
+  yBottom: number, yTop: number,
+): void {
+  const [x1, z1] = p1, [x2, z2] = p2;
+  // Outward normal: perpendicular to the (p1->p2) edge, pointing away from origin.
+  const ex = x2 - x1, ez = z2 - z1;
+  let nx = ez, nz = -ex;
+  const len = Math.hypot(nx, nz) || 1;
+  nx /= len; nz /= len;
+  // Ensure the normal points outward (away from the block centre), not inward.
+  const midX = (x1 + x2) / 2, midZ = (z1 + z2) / 2;
+  if (nx * midX + nz * midZ < 0) { nx = -nx; nz = -nz; }
+
+  const a: [number, number, number] = [x1, yBottom, z1];
+  const b: [number, number, number] = [x2, yBottom, z2];
+  const c: [number, number, number] = [x2, yTop, z2];
+  const d: [number, number, number] = [x1, yTop, z1];
+  for (const tri of [[a, b, c], [a, c, d]]) {
+    for (const v of tri) {
+      positions.push(v[0], v[1], v[2]);
+      normals.push(nx, 0, nz);
+    }
+  }
+}
+
+/**
+ * Build one block's geometry (non-indexed, flat-shaded) from its chamfer
+ * flags + face visibility. Culled faces contribute nothing (voxel face
+ * culling); a `topBevel`-flagged roofline cell gets a frustum-shaped collar
+ * (scaled-in top cap connected by a sloped band) instead of a flat cap.
+ */
+export function blockGeometry(
+  flags: ChamferFlags,
+  faces: FaceVisibility,
+  opts: BlockGeometryOptions = {},
+): THREE.BufferGeometry {
+  const s = BLOCK_UNIT / 2;
+  const r = opts.chamferRadius ?? 0.16 * BLOCK_UNIT;
+  const inset = opts.topBevelInset ?? 0.12 * BLOCK_UNIT;
+  const drop = opts.topBevelDrop ?? 0.12 * BLOCK_UNIT;
+
+  const outline = buildOutlinePoints(flags, s, r);
+  const positions: number[] = [];
+  const normals: number[] = [];
+
+  const n = outline.length;
+  const wallTop = opts.topBevel && faces.U ? s - drop : s;
+
+  for (let i = 0; i < n; i++) {
+    const cur = outline[i]!;
+    const next = outline[(i + 1) % n]!;
+    const tag = cur.tagToNext;
+    const visible = tag.endsWith('_diag') ? true : faces[tag as keyof FaceVisibility];
+    if (!visible) continue;
+    pushSideQuad(positions, normals, cur.p, next.p, -s, wallTop);
+  }
+
+  if (faces.U) {
+    if (opts.topBevel) {
+      const outlinePts = outline.map(o => o.p);
+      const scale = Math.max(0.05, 1 - inset / s);
+      const insetPts = scaleTowardCenter(outlinePts, scale);
+      // Sloped collar band connecting the (shrunken-height) wall top
+      // (outer ring, at `wallTop`) to the inset cap (inner ring, at `s`).
+      for (let i = 0; i < n; i++) {
+        const outerA = outlinePts[i]!, outerB = outlinePts[(i + 1) % n]!;
+        const innerA = insetPts[i]!, innerB = insetPts[(i + 1) % n]!;
+        // Quad: outerA(wallTop) - outerB(wallTop) - innerB(s) - innerA(s)
+        const a: [number, number, number] = [outerA[0], wallTop, outerA[1]];
+        const b: [number, number, number] = [outerB[0], wallTop, outerB[1]];
+        const c: [number, number, number] = [innerB[0], s, innerB[1]];
+        const d: [number, number, number] = [innerA[0], s, innerA[1]];
+        const ex = outerB[0] - outerA[0], ez = outerB[1] - outerA[1];
+        let nx = ez, nz = -ex;
+        const len = Math.hypot(nx, nz) || 1;
+        nx /= len; nz /= len;
+        const midX = (outerA[0] + outerB[0]) / 2, midZ = (outerA[1] + outerB[1]) / 2;
+        if (nx * midX + nz * midZ < 0) { nx = -nx; nz = -nz; }
+        for (const tri of [[a, b, c], [a, c, d]]) {
+          for (const v of tri) { positions.push(v[0], v[1], v[2]); normals.push(nx, 0.3, nz); }
+        }
+      }
+      pushFanCap(positions, normals, insetPts, s, 1);
+    } else {
+      pushFanCap(positions, normals, outline.map(o => o.p), s, 1);
+    }
+  }
+  if (faces.D) {
+    pushFanCap(positions, normals, outline.map(o => o.p), -s, -1);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  return geo;
+}
+
+// ── Full grid meshing ─────────────────────────────────────────────────────────
+
+export interface MeshBlockGridOptions {
+  chamferRadius?: number;
+  topBevel?: boolean;
+  topBevelInset?: number;
+  topBevelDrop?: number;
+  suppressChamfer?: (bx: number, by: number, bz: number) => boolean;
+  suppressTopBevel?: (bx: number, by: number, bz: number) => boolean;
+}
+
+/**
+ * Mesh an entire `BlockGrid` into a `THREE.Group`. Builds one mesh per
+ * occupied cell (simple, easy to reason about/test) then merges by
+ * material via the existing `mergeGroupMeshesByMaterial` utility (already
+ * used by the scatter/decor systems) so a whole building/prop still costs
+ * one draw call per distinct palette material, not one per block.
+ */
+export function meshBlockGrid(
+  grid: BlockGrid,
+  palette: Record<string, THREE.Material>,
+  opts: MeshBlockGridOptions = {},
+): THREE.Group {
+  const group = new THREE.Group();
+  const topBevelDefault = opts.topBevel ?? true;
+
+  for (const [k, materialKey] of grid.cells) {
+    const [bx, by, bz] = k.split(',').map(Number) as [number, number, number];
+    const faces = getFaceVisibility(grid, bx, by, bz);
+    if (!faces.N && !faces.S && !faces.E && !faces.W && !faces.U && !faces.D) continue; // fully buried
+    const flags = getChamferFlags(grid, bx, by, bz, opts.suppressChamfer);
+    const useTopBevel = topBevelDefault && !(opts.suppressTopBevel?.(bx, by, bz));
+    const geo = blockGeometry(flags, faces, {
+      chamferRadius: opts.chamferRadius,
+      topBevel: useTopBevel,
+      topBevelInset: opts.topBevelInset,
+      topBevelDrop: opts.topBevelDrop,
+    });
+    if (geo.attributes.position.count === 0) continue;
+    const mat = palette[materialKey] ?? palette[Object.keys(palette)[0] ?? ''];
+    if (!mat) continue;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(bx * BLOCK_UNIT, by * BLOCK_UNIT, bz * BLOCK_UNIT);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
+  mergeGroupMeshesByMaterial(group);
+  return group;
+}

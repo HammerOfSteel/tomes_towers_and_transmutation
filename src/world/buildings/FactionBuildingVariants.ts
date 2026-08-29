@@ -36,6 +36,8 @@ import { mulberry32 } from '@/core/prng';
 import { createNoise2D } from '@/core/SimplexNoise';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
+import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -60,80 +62,9 @@ function addDoorway(g: THREE.Group, w: number, h: number, z: number, doorColor: 
     .scale.set(1, 1, 0.35);
 }
 
-// ── Organic-mound / round-door prop kit ──────────────────────────────────────
-// Shared by any faction whose architecture is a dug-in earthen bank rather
-// than a walled structure (currently vulperia). A plain half-sphere reads as
-// "a blob with a roof thing", not a den — noise-perturbing the silhouette and
-// layering real props (round door+frame+handle, port-hole windows, chimney,
-// grass cap, garden clutter) is what actually sells "hobbit-hole" / "fox den".
-
-/**
- * A hemispherical earthen mound whose silhouette is perturbed by angular
- * simplex noise (fades to 0 at the grounded base and at the crown so it
- * stays grounded and smoothly rounded, with lumpy irregularity in between),
- * instead of a perfectly spherical dome. Non-uniformly scaled to fit a
- * `w x d` footprint at height `h`. Added directly to `g` at local (cx, cz).
- *
- * When `topColor` is given, the mound is painted with a genuine two-tone
- * vertical gradient (the base material colour below, blending to
- * `topColor` above ~45% height) via real per-vertex colours — a hill reads
- * as "turf grown over packed earth" only if it visibly shows two distinct
- * materials; painting or overlapping a second mesh can't guarantee a seam-
- * free match against this mesh's own noise-perturbed silhouette, but a
- * vertex-colour gradient on the exact same surface always aligns perfectly.
- */
-function addOrganicMound(
-  g: THREE.Group,
-  seed: number,
-  w: number, d: number, h: number,
-  material: THREE.Material,
-  cx = 0, cz = 0,
-  jitter = 0.16,
-  topColor?: string,
-): THREE.Mesh {
-  const maxR = Math.max(w, d) / 2;
-  const geo = new THREE.SphereGeometry(maxR, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2);
-  const noise2D = createNoise2D(seed);
-  const pos = geo.attributes.position;
-  const v = new THREE.Vector3();
-  const baseColor = topColor ? new THREE.Color((material as THREE.MeshStandardMaterial).color) : null;
-  const topColorObj = topColor ? new THREE.Color(topColor) : null;
-  const colors: number[] = [];
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const heightRatio = THREE.MathUtils.clamp(v.y / maxR, 0, 1);
-    const angle = Math.atan2(v.z, v.x);
-    const n = noise2D(Math.cos(angle) * 1.6, Math.sin(angle) * 1.6) * 0.6
-            + noise2D(Math.cos(angle) * 3.7 + 41, Math.sin(angle) * 3.7 + 41) * 0.4;
-    // 0 at the grounded base and at the very crown, peaks mid-height — keeps
-    // the mound flush with the ground and smoothly rounded on top while
-    // still reading as an irregular, hand-dug bank in the middle.
-    const envelope = Math.sin(heightRatio * Math.PI);
-    const radialScale = 1 + n * jitter * envelope;
-    v.x *= radialScale;
-    v.z *= radialScale;
-    v.y *= 1 + n * 0.05 * envelope;
-    pos.setXYZ(i, v.x, v.y, v.z);
-    if (topColorObj && baseColor) {
-      const t = THREE.MathUtils.clamp((heightRatio - 0.42) / 0.35, 0, 1);
-      const blend = t * t * (3 - 2 * t); // smoothstep
-      const c = baseColor.clone().lerp(topColorObj, blend);
-      colors.push(c.r, c.g, c.b);
-    }
-  }
-  geo.computeVertexNormals();
-  if (topColorObj) {
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    (material as THREE.MeshStandardMaterial).vertexColors = true;
-  }
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.scale.set(w / (2 * maxR), h / maxR, d / (2 * maxR));
-  mesh.position.set(cx, 0, cz);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  g.add(mesh);
-  return mesh;
-}
+// (Legacy per-mesh-deformation "organic mound" primitive removed in Phase 2e
+// §2e.3 — replaced by the grounded BlockKit heightfield mound,
+// `addBlockDenMound()`/`buildVulperiaDenMoundGrid()`, below.)
 
 /**
  * A ring of small chunky timber-stave blocks (BoxGeometry), each genuinely
@@ -256,15 +187,45 @@ function addPlanterBarrel(g: THREE.Group, x: number, z: number): void {
 
 // ── Vulperia — earthen burrow/den architecture ───────────────────────────────
 // Fox Den (patriciate), Den Mother's Hall (church), Night Market (market):
-// dug-in earthen mounds, hobbit-hole-style — noise-lumped banks (not perfect
-// spheres), a real round timber door dug into the front with a proud frame,
-// handle and stone step, port-hole windows either side, a chimney stack,
-// a grassy/wildflower crown, and dooryard clutter (fence, planter, crates).
+// dug-in earthen mounds, hobbit-hole-style — a grounded BlockKit heightfield
+// hill (Phase 2e §2e.3; small grid-aligned earth/grass blocks with
+// marching-squares-style corner rounding at the silhouette, NOT a deformed
+// sphere primitive), a real round timber door dug into a carved facade
+// notch with a proud frame, handle and stone step, port-hole windows either
+// side, a chimney stack, a grassy/wildflower crown, and dooryard clutter
+// (fence, planter, crates).
+
+/**
+ * Build+mesh+center a vulperia den mound from the BlockKit heightfield
+ * profile (`buildVulperiaDenMoundGrid`) — the Phase 2e replacement for the
+ * old `addOrganicMound()` deformed-sphere body. Returns a group already
+ * positioned so (0,0,0) is the footprint centre at ground level, matching
+ * the coordinate convention the rest of this file's prop placement
+ * (facade, door, windows, chimney, grass) assumes.
+ */
+function addBlockDenMound(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  earthColor: string, grassColor: string, facadeColor: string,
+  opts: DenMoundOptions = {},
+): void {
+  const grid = buildVulperiaDenMoundGrid(seed, w, d, h, opts);
+  const palette = {
+    earth:  mat(earthColor, { roughness: 0.98 }),
+    grass:  mat(grassColor, { roughness: 0.9 }),
+    facade: mat(facadeColor, { roughness: 0.92 }),
+  };
+  const mesh = meshBlockGrid(grid, palette);
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
+  g.add(mesh);
+}
 
 function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number, opts: { chimney?: boolean; garden?: boolean } = {}): THREE.Group {
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE41);
-  const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
   // Hardcoded, saturated accent colours rather than the faction palette's
   // own trim/door tones: vulperia's palette (walls #d4a060, trim #c88030,
   // door #6a3810) is all one warm-brown hue family with almost no value/hue
@@ -275,26 +236,17 @@ function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number, opts: 
   const facadeColor = '#4a3520';
   const doorGreen = '#2f5233';
 
-  // Main earthen bank — a real two-tone hill (packed earth below, a
-  // visibly distinct grass-green cap above), and noisier than before so
-  // the silhouette itself reads as an irregular hillock, not a smooth egg.
-  addOrganicMound(g, dna.seed ^ 0x5011_DE40, w, d, h, earthMat, 0, 0, 0.24, grassGreen);
-
-  // A flat facade wall set into the mound's front face. This is the
-  // single most important change: a smooth curved surface alone reads as
-  // "natural hill" no matter what small props are stuck onto it — a flat,
-  // vertical, visibly-built panel is what actually sells "something was
-  // built into this hill", by giving the door/windows a genuine
-  // architectural surface to sit on instead of floating against a curve.
+  // Main earthen bank — a grounded BlockKit heightfield hill built from
+  // small earth/grass blocks with a carved facade/doorway notch (Phase 2e
+  // §2e.3), replacing the old deformed-sphere-plus-noise body. Silhouette
+  // irregularity now comes from per-column height variation + the shared
+  // engine's marching-squares-style corner rounding, not mesh deformation.
+  addBlockDenMound(g, dna.seed ^ 0x5011_DE40, w, d, h, dna.colors.walls, grassGreen, facadeColor, {
+    facade: true, jitter: 0.24,
+  });
   const facadeMat = mat(facadeColor, { roughness: 0.92 });
-  const facadeW = w * 0.62;
+  const facadeW = w * 0.42; // matches buildVulperiaDenMoundGrid's default facadeWidthFrac
   const facadeH = h * 0.62;
-  addMesh(g, new THREE.BoxGeometry(facadeW, facadeH, 0.32), facadeMat, 0, facadeH / 2, d / 2 - 0.1);
-  // Timber corner posts framing the facade for a genuinely "constructed"
-  // edge against the organic mound around it.
-  for (const px of [-facadeW / 2, facadeW / 2]) {
-    addMesh(g, new THREE.CylinderGeometry(0.09, 0.1, facadeH, 6), facadeMat, px, facadeH / 2, d / 2 - 0.1);
-  }
 
   // Round timber-framed door, sized to dominate the facade (a large,
   // obviously-primary feature, not a token detail lost against the hill),
@@ -347,10 +299,12 @@ function buildVulperiaVilla(dna: BuildingDNA): THREE.Group {
   // Fox Den (seat of the settlement's leader): a second, smaller den mound
   // overlapping the main bank so the pair reads as one dug-in burrow complex.
   const r = mulberry32(dna.seed ^ 0x5011_DE42);
-  const sideMat = mat(dna.colors.walls, { roughness: 0.98 });
   const sideSize = Math.min(fp.w, fp.d) * 0.56;
   const sideCx = fp.w / 2 + sideSize * 0.3, sideCz = -fp.d * 0.15 + r() * 0.2;
-  addOrganicMound(g, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, sideMat, sideCx, sideCz, 0.14, '#3d6b35');
+  const sideGroup = new THREE.Group();
+  addBlockDenMound(sideGroup, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, dna.colors.walls, '#3d6b35', '#4a3520');
+  sideGroup.position.set(sideCx, 0, sideCz);
+  g.add(sideGroup);
   return g;
 }
 
@@ -359,11 +313,13 @@ function buildVulperiaChapel(dna: BuildingDNA): THREE.Group {
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.9;
   const g = vulperiaMound(dna, fp.w, fp.d * 0.6, h, { chimney: false, garden: false });
   // Den Mother's Hall: flanking smaller burrow-pups either side of the main mound.
-  const pupMat = mat(dna.colors.walls, { roughness: 0.98 });
   const pupSize = Math.min(fp.w, fp.d) * 0.36;
   let pupSeed = 0x5011_DE46;
   for (const px of [-fp.w * 0.42, fp.w * 0.42]) {
-    addOrganicMound(g, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, pupMat, px, fp.d * 0.15, 0.14, '#3d6b35');
+    const pupGroup = new THREE.Group();
+    addBlockDenMound(pupGroup, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, dna.colors.walls, '#3d6b35', '#4a3520');
+    pupGroup.position.set(px, 0, fp.d * 0.15);
+    g.add(pupGroup);
     pupSeed += 1;
   }
   return g;
@@ -375,8 +331,10 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0x5011_DE43);
   // Night Market den-mouth stall: low earthen mound base with a canvas awning.
-  const earthMat = mat(dna.colors.walls, { roughness: 0.98 });
-  addOrganicMound(g, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, earthMat, 0, -fp.d * 0.15, 0.14, '#3d6b35');
+  const baseGroup = new THREE.Group();
+  addBlockDenMound(baseGroup, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, dna.colors.walls, '#3d6b35', '#4a3520');
+  baseGroup.position.set(0, 0, -fp.d * 0.15);
+  g.add(baseGroup);
   const awningMat = mat(dna.colors.roof, { roughness: 0.8, side: THREE.DoubleSide });
   addMesh(g, new THREE.ConeGeometry(fp.w * 0.55, 0.6, 4), awningMat, 0, h + 0.05, fp.d * 0.25, Math.PI / 4);
   // Counter/table + hanging pelts + string lanterns.
@@ -770,27 +728,13 @@ function buildElvenShop(dna: BuildingDNA): THREE.Group {
 
 // ── Dwarven — carved-stone mountain architecture ──────────────────────────────
 // Guild Hall (patriciate), Stone Temple (church), Trade Vault (market):
-// squat, heavy, blocky stone construction with carved geometric bands, thick
-// pillars, and iron-banded vault doors — built to endure, not to charm.
-
-/**
- * A stack of horizontal stone "courses" (slabs), each progressively
- * inset very slightly going up — real coursed dwarven masonry (built to
- * look carved from a mountain, tapering subtly like a ziggurat) with a
- * visible seam between every course, and a heavy corniced cap slab
- * finishing the roofline. Replaces a single smooth box standing in for
- * an entire wall+roof.
- */
-function addStoneCourses(g: THREE.Group, w: number, d: number, h: number, material: THREE.Material, courses = 4, cz = 0): void {
-  const courseH = h / courses;
-  for (let i = 0; i < courses; i++) {
-    const inset = i * 0.025;
-    addMesh(g, new THREE.BoxGeometry(w - inset * 2, courseH * 0.92, d - inset * 2), material, 0, courseH * i + courseH / 2, cz);
-  }
-  // Heavy corniced cap, overhanging slightly past the top course — a real
-  // roofline rather than an abrupt flat-topped box.
-  addMesh(g, new THREE.BoxGeometry(w * 1.1, h * 0.055, d * 1.1), material, 0, h + h * 0.028, cz);
-}
+// squat, heavy, precise stepped-tier stone blockwork with un-chamfered
+// monumental buttress corners and iron-banded vault doors — built to
+// endure, not to charm. Phase 2e (§2e.4): the tiered tower body is now a
+// genuine BlockKit stepped-tier grid (`buildDwarvenHallGrid()`), not a
+// stack of smooth inset boxes — the deliberate *contrast case* proving the
+// block-kit engine generalises beyond vulperia's organic mound to crisp,
+// monumental masonry (see plan doc §2e.4).
 
 /**
  * A vault-door wheel mechanism: a hub + radiating spoke boxes (never a
@@ -811,30 +755,59 @@ function addVaultWheel(g: THREE.Group, cx: number, cy: number, cz: number, radiu
   }
 }
 
+/**
+ * Builds + meshes + centers a `buildDwarvenHallGrid()` stepped-tier tower
+ * into `g` at the origin (same centering convention as `addBlockDenMound()`).
+ * Corner "buttress" columns are exempted from edge-chamfering via
+ * `suppressChamfer` — dwarven monumental masonry should read as
+ * *deliberately* hard-edged at its load-bearing corners, in contrast to
+ * vulperia's uniformly-softened organic hill.
+ */
+function addBlockDwarvenHall(
+  g: THREE.Group,
+  seed: number, w: number, d: number, h: number,
+  stoneColor: string, buttressColor: string, facadeColor: string,
+  opts: DwarvenHallOptions = {},
+): void {
+  const grid = buildDwarvenHallGrid(seed, w, d, h, opts);
+  const palette = {
+    stone:    mat(stoneColor, { roughness: 0.92 }),
+    buttress: mat(buttressColor, { roughness: 0.6, metalness: 0.25 }),
+    facade:   mat(facadeColor, { roughness: 0.85, metalness: 0.15 }),
+  };
+  const mesh = meshBlockGrid(grid, palette, {
+    suppressChamfer: (bx, by, bz) => getMaterialKey(grid, bx, by, bz) === 'buttress',
+  });
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
+  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
+  g.add(mesh);
+}
+
 function dwarvenBlock(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
-  const stoneMat = mat(dna.colors.walls, { roughness: 0.92 });
   const trimMat = mat(dna.colors.trim, { roughness: 0.7, metalness: 0.3 });
+  // Deliberately darker/desaturated iron-grey buttress colour (distinct from
+  // the warm stone body) so the un-chamfered corners actually read as a
+  // contrasting structural material, not just "the same stone with sharp
+  // edges" — the same colour-contrast lesson vulperia's v2 fix established.
+  const buttressColor = '#4a4a48';
+  const facadeColor = dna.colors.trim;
 
-  // Coursed stone walls with a heavy corniced roofline — built to look
-  // carved from the mountain, not a single smooth box.
-  addStoneCourses(g, w, d, h, stoneMat, 4);
+  addBlockDwarvenHall(g, dna.seed ^ 0xD4A4_0010, w, d, h, dna.colors.walls, buttressColor, facadeColor, {
+    tiers: 3, facade: true,
+  });
 
-  // Carved geometric trim band around the midline.
-  addMesh(g, new THREE.BoxGeometry(w + 0.06, 0.18, d + 0.06), trimMat, 0, h * 0.5, 0);
-  // Heavy corner pillars with base/capital rings.
-  for (const [px, pz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.CylinderGeometry(0.16, 0.2, h, 8), stoneMat, px, h / 2, pz);
-    addMesh(g, new THREE.CylinderGeometry(0.24, 0.24, 0.1, 8), trimMat, px, 0.05, pz);
-    addMesh(g, new THREE.CylinderGeometry(0.24, 0.24, 0.1, 8), trimMat, px, h - 0.05, pz);
-  }
-  // Iron-banded vault-style door with a wheel mechanism.
+  // Iron-banded vault-style door with a wheel mechanism, sitting in the
+  // block grid's carved facade notch.
   const doorMat = mat(dna.colors.door, { roughness: 0.6, metalness: 0.4 });
-  addMesh(g, new THREE.BoxGeometry(w * 0.32, h * 0.5, 0.1), doorMat, 0, h * 0.28, d / 2 + 0.02);
+  const doorH = h * 0.5;
+  addMesh(g, new THREE.BoxGeometry(w * 0.28, doorH, 0.1), doorMat, 0, doorH / 2, d / 2 + 0.02);
   for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.BoxGeometry(w * 0.32, 0.04, 0.11), trimMat, 0, h * (0.15 + i * 0.15), d / 2 + 0.03);
+    addMesh(g, new THREE.BoxGeometry(w * 0.28, 0.04, 0.11), trimMat, 0, doorH * (0.2 + i * 0.28), d / 2 + 0.03);
   }
-  addVaultWheel(g, 0, h * 0.28, d / 2 + 0.07, Math.min(w, d) * 0.14, trimMat);
+  addVaultWheel(g, 0, doorH * 0.5, d / 2 + 0.07, Math.min(w, d) * 0.14, trimMat);
   return g;
 }
 
@@ -842,11 +815,19 @@ function buildDwarvenVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.75;
   const g = dwarvenBlock(dna, fp.w, fp.d, h);
-  // Guild Hall: a raised banner-crest above the entrance and a low chimney-forge stack.
+  // Guild Hall: a raised banner-crest above the entrance and a low
+  // chimney-forge stack. Positioned off the tower's *actual* block-
+  // quantized height (not the raw continuous `h`), and clamped within the
+  // topmost tier's real (post-inset) footprint — the tiers step inward as
+  // they rise, so placing a roofline prop using the *base* footprint's
+  // width/depth can land it beyond the actual (narrower) top tier's edge,
+  // floating with nothing built underneath it.
+  const roofH = dwarvenRoofTopY(h);
+  const topExtents = dwarvenTopTierExtents(fp.w, fp.d, h, { tiers: 3 });
   const bannerMat = mat(dna.colors.trim, { roughness: 0.7, side: THREE.DoubleSide });
-  addMesh(g, new THREE.BoxGeometry(0.5, 0.7, 0.04), bannerMat, 0, h + 0.35, fp.d / 2 - 0.2);
+  addMesh(g, new THREE.BoxGeometry(0.5, 0.7, 0.04), bannerMat, 0, roofH + 0.35, Math.min(fp.d / 2 - 0.2, topExtents.halfD));
   const chimneyMat = mat('#3a3a38', { roughness: 0.9 });
-  addMesh(g, new THREE.CylinderGeometry(0.18, 0.22, 0.6, 8), chimneyMat, fp.w * 0.35, h + 0.3, -fp.d * 0.3);
+  addMesh(g, new THREE.CylinderGeometry(0.18, 0.22, 0.6, 8), chimneyMat, Math.min(fp.w * 0.35, topExtents.halfW), roofH + 0.3, -Math.min(fp.d * 0.3, topExtents.halfD));
   return g;
 }
 
@@ -854,10 +835,17 @@ function buildDwarvenChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.8;
   const g = dwarvenBlock(dna, fp.w * 0.9, fp.d, h);
-  // Stone Temple: flanking column pillars either side of the entrance + a brazier.
+  // Stone Temple: flanking column pillars either side of the entrance + a
+  // brazier. Sized off the tower's actual constructed roof height (not
+  // `h * 1.1`, which — since `h` is itself already close to the tower's
+  // full height — produced free-standing columns *taller than the temple
+  // they were meant to flank*. A believable classical flanking pillar
+  // rises to a bit under the roofline, not past it.
+  const roofH = dwarvenRoofTopY(h);
+  const columnH = roofH * 0.7;
   const columnMat = mat('#8a8478', { roughness: 0.9 });
   for (const cx of [-fp.w * 0.38, fp.w * 0.38]) {
-    addMesh(g, new THREE.CylinderGeometry(0.15, 0.18, h * 1.1, 8), columnMat, cx, h * 0.55, fp.d * 0.42);
+    addMesh(g, new THREE.CylinderGeometry(0.15, 0.18, columnH, 8), columnMat, cx, columnH / 2, fp.d * 0.42);
   }
   const brazierMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a2818'), emissive: new THREE.Color('#e07020'), emissiveIntensity: 0.7, roughness: 0.6 });
   addMesh(g, new THREE.CylinderGeometry(0.16, 0.1, 0.3, 8), brazierMat, 0, 0.15, fp.d / 2 + 0.4);
@@ -866,22 +854,33 @@ function buildDwarvenChapel(dna: BuildingDNA): THREE.Group {
 
 function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
+  const h = FLOOR_HEIGHT * 0.9;
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xD4A4_0003);
-  // Trade Vault: coursed stone front wall with a vault-door wheel mechanism,
-  // anvil and ore-crate clutter.
-  const stoneMat = mat(dna.colors.walls, { roughness: 0.92 });
-  addStoneCourses(g, fp.w, fp.d * 0.6, h, stoneMat, 3, -fp.d * 0.1);
+  // Trade Vault: a single-tier block hall (no stepped tiers — a squat
+  // strongroom front, not a full guild tower) with the same vault-door
+  // wheel mechanism, anvil and ore-crate clutter. The hall is built
+  // shallower than the nominal footprint (`d`, not `fp.d`) — every prop
+  // below is positioned relative to `d` too, not `fp.d`, so the door,
+  // wheel, anvil and crates land against the vault's *actual* front wall
+  // instead of floating past it into open air.
+  const d = fp.d * 0.6;
+  addBlockDwarvenHall(g, dna.seed ^ 0xD4A4_0011, fp.w, d, h, dna.colors.walls, '#4a4a48', dna.colors.trim, {
+    tiers: 1, facade: true,
+  });
   const doorMat = mat('#6a6858', { roughness: 0.5, metalness: 0.5 });
-  addMesh(g, new THREE.CylinderGeometry(fp.w * 0.3, fp.w * 0.3, 0.08, 16), doorMat, 0, h * 0.5, fp.d * 0.2 + 0.05)
+  // A vault door sized as a believable doorway (~1/4 of the wall width),
+  // not the ~44%-of-width oversized disc the old `fp.w * 0.22` radius
+  // produced on smaller shop footprints.
+  const doorRadius = Math.min(fp.w * 0.13, d * 0.4);
+  addMesh(g, new THREE.CylinderGeometry(doorRadius, doorRadius, 0.08, 16), doorMat, 0, h * 0.42, d / 2 + 0.05)
     .rotation.x = Math.PI / 2;
-  addVaultWheel(g, 0, h * 0.5, fp.d * 0.2 + 0.1, fp.w * 0.16, mat(dna.colors.trim, { roughness: 0.6, metalness: 0.5 }));
+  addVaultWheel(g, 0, h * 0.42, d / 2 + 0.1, doorRadius * 0.65, mat(dna.colors.trim, { roughness: 0.6, metalness: 0.5 }));
   const anvilMat = mat('#2a2a28', { roughness: 0.6, metalness: 0.5 });
-  addMesh(g, new THREE.BoxGeometry(0.3, 0.25, 0.15), anvilMat, fp.w * 0.35, 0.13, fp.d * 0.35);
+  addMesh(g, new THREE.BoxGeometry(0.3, 0.25, 0.15), anvilMat, fp.w * 0.35, 0.13, d / 2 + 0.2);
   const crateMat = mat('#7a6040', { roughness: 0.9 });
   for (let i = 0; i < 2; i++) {
-    addMesh(g, new THREE.BoxGeometry(0.3, 0.3, 0.3), crateMat, -fp.w * 0.35 + i * 0.15, 0.15, fp.d * 0.4, r() * 0.5);
+    addMesh(g, new THREE.BoxGeometry(0.3, 0.3, 0.3), crateMat, -fp.w * 0.35 + i * 0.15, 0.15, d / 2 + 0.35, r() * 0.5);
   }
   return g;
 }
