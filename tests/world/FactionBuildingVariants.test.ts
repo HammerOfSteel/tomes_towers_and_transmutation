@@ -327,3 +327,52 @@ describe('Dwarven — coursed stone masonry + vault-wheel door (not one smooth b
     }
   });
 });
+
+// ── Elven deep-quality pass (settlement visual fidelity follow-up) ─────────
+// Regression guards for the gnarled-bark trunk + leaf-cluster canopy
+// rework that replaced a perfectly smooth tapered cylinder trunk and a
+// single smooth dome standing in for an entire tree canopy.
+describe('Elven — gnarled bark trunk + leaf-cluster canopy (not a smooth cylinder + dome)', () => {
+  it('produces only finite vertices for the noise-perturbed trunk after displacement', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.elven![kind]!(makeDna(kind, 'elven', 21)));
+    }
+  });
+
+  it('perturbs the trunk off a perfect cylinder radius (gnarled bark, not smooth taper)', () => {
+    const g = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 5));
+    const trunk = findBiggestCylinderMesh(g);
+    const pos = trunk.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const xzRadii = new Set<number>();
+    for (let i = 0; i < pos.count; i++) {
+      xzRadii.add(+Math.hypot(pos.getX(i), pos.getZ(i)).toFixed(4));
+    }
+    expect(xzRadii.size).toBeGreaterThan(6);
+  });
+
+  it('builds the canopy from a cluster of leaf blobs, not one smooth dome', () => {
+    const g = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 5));
+    let sphereCount = 0;
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sphereCount++;
+    });
+    // 7 canopy blobs (1 central crown + 6 surrounding) + 3 glow-mote
+    // lanterns = 10; the old version had exactly 1 (the single dome) + 3
+    // glow motes = 4.
+    expect(sphereCount).toBeGreaterThanOrEqual(8);
+  });
+
+  it('produces a different trunk silhouette per seed (deterministic but seed-varied)', () => {
+    const gA = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 1));
+    const gB = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 2));
+    const gA2 = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 1));
+    const sumXZ = (g: THREE.Group): number => {
+      const pos = findBiggestCylinderMesh(g).geometry.getAttribute('position') as THREE.BufferAttribute;
+      let sum = 0;
+      for (let i = 0; i < pos.count; i++) sum += Math.hypot(pos.getX(i), pos.getZ(i));
+      return sum;
+    };
+    expect(sumXZ(gA)).toBe(sumXZ(gA2));
+    expect(sumXZ(gA)).not.toBe(sumXZ(gB));
+  });
+});

@@ -798,20 +798,61 @@ slab of geometry" as the user's complaint described. Now:
   and the corniced cap gives the building an actual roofline silhouette
   instead of reading as a plain box.
 
+**Elven — DONE (this session).** Reworked `elvenTrunk()` (used by the
+Elder's Hall villa) plus `buildElvenShop()`'s canopy in
+`FactionBuildingVariants.ts`: the previous version was a perfectly smooth
+tapered `CylinderGeometry` trunk topped with a single smooth half-`Sphere`
+dome standing in for the entire leaf canopy. Now:
+- The trunk reuses `addWeatheredTier()` (the same noise-crumbled-surface
+  technique built for undead's stone tiers) to give the bark a genuinely
+  gnarled, irregular silhouette instead of a perfectly smooth taper.
+- `addLeafCanopyCluster()`: the canopy is now a **cluster of 6 overlapping
+  foliage blobs around a larger central crown blob** — real individual
+  leaf clusters, not one smooth dome. Reused (at a smaller scale) for the
+  Moonlit Exchange shop's canopy, which previously used a single
+  `ConeGeometry` "leaf roof."
+- Added a natural root archway over the doorway (5 curved root-like
+  tapered-cylinder segments arcing overhead, echoing undead's stone-
+  voussoir archway technique but organic rather than blocky) and hanging
+  vine tendrils drooping from the canopy — addressing the "woven-vine
+  walls" identity from the section's own header comment, which wasn't
+  actually present in the code before this pass.
+- The existing woven wooden platform ring (a flat horizontal `Torus`) and
+  the Ancient Shrine chapel (ring of standing tree-stones + glowing
+  crystal) were left unchanged. **Note on why the platform's flat torus
+  is fine, unlike the round-door rings fixed in earlier factions**: a
+  ring lying flat in the horizontal (ground) plane is rotationally
+  symmetric around the vertical (Y) axis, so a building's cardinal
+  Y-axis rotation has *zero* effect on how it's framed by a
+  fixed-downward-angle isometric camera — the "hook/loop" artifact only
+  ever affected *vertical* rings (doors, windows) whose facing direction
+  actually changes as the building rotates.
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Elven — gnarled
+  bark trunk + leaf-cluster canopy" describe block (4 tests): finite
+  vertices after trunk-noise displacement, the trunk's radii are no
+  longer uniform (proves real displacement, not a passthrough cylinder),
+  the canopy assembles from at least 8 sphere meshes (10 verified in
+  practice: 7 canopy blobs + 3 glow motes, vs. the old version's 4: 1
+  dome + 3 motes), and trunk shape is deterministic per seed but
+  seed-varied. 50 tests total (up from 46), all passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city), checked
+  from both a face-on-ish angle and a rotated angle: confirmed the
+  gnarled bark trunk and the leaf-cluster canopy read as a genuine living
+  tree from both angles (the woven platform ring, as expected, was
+  unaffected by rotation), a clear improvement over the previous smooth
+  cylinder-and-dome silhouette.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Elven** — Elder's Hall/Ancient Shrine/Moonlit Exchange; the trunk is
-   currently a simple tapered cylinder — needs real bark/root/branch
-   detail and a proper woven-platform canopy structure.
-2. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
+1. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
    spire needs real tracery/buttress/window detail, not a bare cone+box.
-3. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+2. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
    needs gill/spore detail and a proper twisted-stalk base, not a plain
    cone-on-cylinder.
-4. **Slime** — explicitly reported as already reading fine ("mostly the
+3. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-5. **Human** — still deferred from increment 2 scoping (already has
+4. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:

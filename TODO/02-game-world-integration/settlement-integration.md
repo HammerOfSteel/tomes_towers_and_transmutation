@@ -167,7 +167,14 @@ for the full design/plan.
     (`addVaultWheel()`: hub + 6 spoke boxes, never a flat ring) shared
     between the Guild Hall's door and the Trade Vault. 46 unit tests (up
     from 42). Playwright-verified from both face-on and rotated angles.
-  - [ ] Elven — trunk needs real bark/root/woven-platform detail.
+  - [x] Elven — **Done.** Trunk now uses the noise-crumbled-surface
+    technique (`addWeatheredTier()`, reused from undead) for gnarled bark
+    instead of a perfectly smooth taper, and the canopy is a cluster of 6
+    overlapping foliage blobs around a central crown
+    (`addLeafCanopyCluster()`, reused at smaller scale for the Moonlit
+    Exchange shop) instead of one smooth dome/cone. Added a natural root
+    archway over the door and hanging vine tendrils. 50 unit tests (up
+    from 46). Playwright-verified from both face-on and rotated angles.
   - [ ] Vampire — gothic spire needs real tracery/buttress detail.
   - [ ] Fae — mushroom cap needs real gill/spore/twisted-stalk detail.
   - [ ] Slime — reported as already reading fine, lowest priority.

@@ -598,14 +598,33 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 // organic curved trunk silhouettes, woven-vine walls, leaf-canopy roofs, elevated
 // platforms — a village grown from trees, not built with lumber.
 
+/**
+ * A canopy built from a cluster of overlapping foliage blobs around a
+ * larger central crown blob — real individual leaf clusters, not one
+ * smooth dome standing in for an entire tree canopy.
+ */
+function addLeafCanopyCluster(g: THREE.Group, seed: number, apexY: number, canopyR: number, material: THREE.Material, blobCount = 6): void {
+  const r = mulberry32(seed);
+  addMesh(g, new THREE.SphereGeometry(canopyR * 0.55, 10, 8), material, 0, apexY + canopyR * 0.3, 0);
+  for (let i = 0; i < blobCount; i++) {
+    const ang = (i / blobCount) * Math.PI * 2 + r() * 0.3;
+    const rad = canopyR * (0.35 + r() * 0.25);
+    const blobR = canopyR * (0.45 + r() * 0.25);
+    addMesh(g, new THREE.SphereGeometry(blobR, 10, 8), material, Math.cos(ang) * rad, apexY + blobR * (0.15 + r() * 0.2), Math.sin(ang) * rad);
+  }
+}
+
 function elvenTrunk(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
   const r = mulberry32(dna.seed ^ 0xE1F3_0001);
   const barkMat = mat(dna.colors.walls, { roughness: 0.9 });
   const canopyMat = mat(dna.colors.roof, { roughness: 0.75 });
 
-  // Tapered living-trunk body (wider at base, narrower up top).
-  addMesh(g, new THREE.CylinderGeometry(Math.min(w, d) * 0.32, Math.min(w, d) * 0.42, h, 10, 1), barkMat, 0, h / 2, 0);
+  // Gnarled living trunk — a noise-crumbled bark surface (reusing the same
+  // technique as undead's weathered stone tiers), not a perfectly smooth
+  // tapered cylinder.
+  addWeatheredTier(g, dna.seed ^ 0xE1F3_0010, 0, Math.min(w, d) * 0.42, Math.min(w, d) * 0.32, h, barkMat, 0.13);
+
   // Root buttresses flaring out at the base.
   for (let i = 0; i < 4; i++) {
     const ang = (i / 4) * Math.PI * 2 + r() * 0.3;
@@ -614,11 +633,33 @@ function elvenTrunk(dna: BuildingDNA, w: number, d: number, h: number): THREE.Gr
     root.rotation.z = Math.cos(ang) * 0.4;
     root.rotation.x = Math.sin(ang) * 0.4;
   }
-  // Leafy canopy dome overhead.
-  const canopy = addMesh(g, new THREE.SphereGeometry(Math.max(w, d) * 0.6, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), canopyMat, 0, h, 0);
-  canopy.scale.set(1, 0.6, 1);
-  // Round doorway carved into the trunk.
+
+  // Leafy canopy built from a cluster of foliage blobs, not one smooth dome.
+  addLeafCanopyCluster(g, dna.seed ^ 0xE1F3_0011, h, Math.max(w, d) * 0.6, canopyMat, 6);
+
+  // Round doorway carved into the trunk, framed by a natural root archway
+  // (curved root-like segments arcing overhead — the same "many small
+  // solid pieces, never one flat primitive" principle as the other
+  // factions' round-prop/archway kits, but organic rather than blocky).
   addDoorway(g, Math.min(w, d) * 0.4, h * 0.5, d / 2 - 0.05, dna.colors.door);
+  const archR = Math.min(w, d) * 0.28;
+  const archSegs = 5;
+  for (let i = 0; i <= archSegs; i++) {
+    const ang = (i / archSegs) * Math.PI;
+    const seg = addMesh(g, new THREE.CylinderGeometry(0.045, 0.07, archR * 0.55, 5), barkMat,
+      Math.cos(ang) * archR, h * 0.5 + Math.sin(ang) * archR, d / 2 + 0.02);
+    seg.rotation.z = ang;
+  }
+
+  // Hanging vine tendrils drooping from the canopy.
+  const vineMat = mat('#4a7a3a', { roughness: 0.85 });
+  for (let i = 0; i < 4; i++) {
+    const ang = r() * Math.PI * 2;
+    const rad = Math.max(w, d) * 0.3;
+    const len = 0.4 + r() * 0.5;
+    addMesh(g, new THREE.CylinderGeometry(0.02, 0.03, len, 5), vineMat, Math.cos(ang) * rad, h - len / 2 + 0.1, Math.sin(ang) * rad);
+  }
+
   // Glowing moonlit lantern-vines hanging from the canopy.
   const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.7, roughness: 0.5 });
   for (let i = 0; i < 3; i++) {
@@ -667,7 +708,7 @@ function buildElvenShop(dna: BuildingDNA): THREE.Group {
   addMesh(g, new THREE.CylinderGeometry(0.1, 0.14, h, 8), woodMat, 0, h / 2, 0);
   addMesh(g, new THREE.BoxGeometry(fp.w, 0.12, fp.d), woodMat, 0, h, 0);
   const leafMat = mat(dna.colors.roof, { roughness: 0.75 });
-  addMesh(g, new THREE.ConeGeometry(fp.w * 0.5, 0.7, 8), leafMat, 0, h + 0.5, 0);
+  addLeafCanopyCluster(g, dna.seed ^ 0xE1F3_0012, h + 0.3, fp.w * 0.42, leafMat, 4);
   // Hanging glow-motes typical of a moonlit night market.
   const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.8 });
   for (let i = 0; i < 4; i++) {
