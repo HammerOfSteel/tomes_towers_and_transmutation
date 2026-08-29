@@ -556,16 +556,50 @@ glowing translucent dome, Lich Tower's spire silhouette + Wraith Bazaar's
 ghostly cloth-canopy stalls — confirmed each reads as its own architecture
 family, not a recolored villa/chapel/shop.
 
+**Phase 2b increment 2 — DONE (this session, same "no need to ask"
+authorization, continuing the increment-1 pattern to the remaining
+geometrically-extreme factions).** Extended
+`FactionBuildingVariants.ts` with 5 more bespoke architecture families
+(villa/chapel/shop each) for patriciate/church/market: **elven**
+(Elder's Hall/Ancient Shrine/Moonlit Exchange: living-tree trunk+leaf-
+canopy architecture, standing-stone rings, raised-platform stalls under
+small trees — no flat walls, no square silhouettes), **dwarven** (Guild
+Hall/Stone Temple/Trade Vault: carved-stone mountain-block architecture,
+flanking columns + braziers, iron vault doors + anvils), **orcish**
+(Warlord Hall/War Shrine/Loot Pile: crude wood/bone/hide tribal huts,
+skull/tusk trophies, bonfire pits ringed by bone totems, tarp-covered
+loot heaps), **vampire** (Count's Tower/Blood Chapel/Blood Market:
+gothic castle spires, bat gargoyles, hovering blood orbs, iron-framed
+market stalls with red canopies), **fae** (Fae Court/Faerie Ring/
+Twilight Market: whimsical giant-mushroom-cap architecture, literal
+toadstool rings, firefly-lit petal-strewn stalls). All 5 built with the
+same shared-per-faction-helper pattern as increment 1 (`elvenTrunk()`,
+`dwarvenBlock()`, `orcishHut()`, `gothicBase()`, `faeMushroom()`).
+Registry now covers **8 of 9 settlement factions** (all but human) for
+their 3 signature ward kinds. Unit tests: `FactionBuildingVariants.test.ts`
+expanded from 16 to 31 tests (all 8 factions × 3 kinds = 24 covered-pair
+assertions, uncovered-pair fallback re-verified against `human_town/villa`
+since `elven/villa` — the prior uncovered example — is now covered,
+geometric-distinctness assertions extended to all 8 factions). Visually
+verified via Playwright (Settlement Lab, teleporting directly to each
+faction's patriciate/church/market anchor to avoid the camera-framing
+pitfall where a neighboring building can dominate an offset shot):
+confirmed elven trunk+canopy, dwarven stone-block+columns+brazier,
+orcish hut+tusks, vampire gothic-spire+gargoyles+rose-window, and fae
+mushroom-cap-cluster architecture all render as intended and are
+genuinely distinct from each other and from increment 1's three
+factions — not palette swaps.
+
 **Still deferred (follow-up, separately scoped):**
-- Extend bespoke building variants to the remaining 6 factions (elven,
-  dwarven, orcish, vampire, fae, human) for patriciate/church/market —
-  they currently still use the shared-shape + style-overlay system (gives
-  *some* geometric distinction via `applyStyleOverlay()`'s gargoyles/
-  vines/carved-bands/etc., but not a full bespoke silhouette).
+- Extend bespoke building variants to the one remaining faction,
+  **human** (rural/town/noble sub-factions), for patriciate/church/
+  market — human already has acceptable rural/town/noble geometric
+  variety from the pre-existing shared-shape system, so this is lower
+  priority than the other 8 factions were.
 - Extend variant coverage to the remaining ward kinds beyond patriciate/
   church/market (smithy, inn, craftsmen, merchant, slum, gateward, farm) —
   currently share the generic kind builder for every faction including
-  the three covered here.
+  all 8 covered here.
 - The generic prop shape library (§4.2-4.4) for market/craftsmen/slum
   clutter — still valid as designed, composes with both Phase 2a and 2b.
 

@@ -111,11 +111,20 @@ for the full design/plan.
   translucent gelatinous domes; undead Lich Tower/Bone Shrine/Wraith
   Bazaar = bone/crypt spires) via `FactionBuildingVariants.ts`. **Done** —
   verified via unit tests + Playwright screenshots.
-- [ ] Phase 2b increment 2 (follow-up): extend bespoke building-variant
-  silhouettes to the remaining 6 factions (elven, dwarven, orcish, vampire,
-  fae, human) and to the remaining ward kinds (smithy, inn, craftsmen,
-  merchant, slum, gateward, farm) beyond the patriciate/church/market
-  already covered.
+- [x] Phase 2b increment 2: extend bespoke building-variant silhouettes to
+  5 more factions (elven Elder's Hall/Ancient Shrine/Moonlit Exchange =
+  living-tree architecture; dwarven Guild Hall/Stone Temple/Trade Vault =
+  carved-stone mountain blocks; orcish Warlord Hall/War Shrine/Loot Pile =
+  crude wood/bone/hide tribal huts; vampire Count's Tower/Blood Chapel/
+  Blood Market = gothic castle spires; fae Fae Court/Faerie Ring/Twilight
+  Market = giant-mushroom whimsy) via `FactionBuildingVariants.ts`. **Done**
+  — 8 of 9 factions now covered (all but human) for patriciate/church/
+  market; verified via unit tests (31 total) + Playwright screenshots.
+- [ ] Phase 2b increment 3 (follow-up): bespoke silhouettes for the last
+  faction (human rural/town/noble — lower priority, already has decent
+  shared-shape variety) and for the remaining ward kinds (smithy, inn,
+  craftsmen, merchant, slum, gateward, farm) beyond patriciate/church/
+  market, across all 9 factions.
 - [ ] Phase 2c (separately scoped, follow-up): generic prop shape library
   (market stalls, wells, fences, banners) for craftsmen/slum/market
   clutter, batched through the existing mesh-merge batching to avoid a

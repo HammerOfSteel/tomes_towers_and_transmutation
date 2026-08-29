@@ -34,6 +34,11 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
     ['vulperia', 'villa'], ['vulperia', 'chapel'], ['vulperia', 'shop'],
     ['slime', 'villa'], ['slime', 'chapel'], ['slime', 'shop'],
     ['undead_common', 'villa'], ['undead_common', 'chapel'], ['undead_common', 'shop'],
+    ['elven', 'villa'], ['elven', 'chapel'], ['elven', 'shop'],
+    ['dwarven', 'villa'], ['dwarven', 'chapel'], ['dwarven', 'shop'],
+    ['orcish', 'villa'], ['orcish', 'chapel'], ['orcish', 'shop'],
+    ['vampire', 'villa'], ['vampire', 'chapel'], ['vampire', 'shop'],
+    ['fae', 'villa'], ['fae', 'chapel'], ['fae', 'shop'],
   ];
 
   for (const [faction, kind] of covered) {
@@ -47,7 +52,7 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
   }
 
   it('returns null for an uncovered (faction, kind) pair', () => {
-    expect(getFactionBuildingVariant('elven', 'villa')).toBeNull();
+    expect(getFactionBuildingVariant('human_town', 'villa')).toBeNull();
     expect(getFactionBuildingVariant('vulperia', 'watchtower')).toBeNull();
   });
 
@@ -61,13 +66,13 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
     expect(countMeshes(a)).toBe(countMeshes(b));
   });
 
-  it('produces geometrically distinct mesh counts across the three covered factions for the same kind', () => {
+  it('produces geometrically distinct mesh counts across all covered factions for the same kind', () => {
     const counts = new Set(
-      (['vulperia', 'slime', 'undead_common'] as Faction[]).map(f =>
+      (['vulperia', 'slime', 'undead_common', 'elven', 'dwarven', 'orcish', 'vampire', 'fae'] as Faction[]).map(f =>
         countMeshes(FACTION_BUILDING_VARIANTS[f]!.villa!(makeDna('villa', f, 7))),
       ),
     );
-    // Not a strict requirement that all three differ, but they should not
+    // Not a strict requirement that all eight differ, but they should not
     // all collapse to one identical count (which would suggest they're
     // secretly sharing the same builder).
     expect(counts.size).toBeGreaterThan(1);
