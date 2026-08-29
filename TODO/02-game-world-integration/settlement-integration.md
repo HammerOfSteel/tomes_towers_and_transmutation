@@ -175,7 +175,14 @@ for the full design/plan.
     Exchange shop) instead of one smooth dome/cone. Added a natural root
     archway over the door and hanging vine tendrils. 50 unit tests (up
     from 46). Playwright-verified from both face-on and rotated angles.
-  - [ ] Vampire — gothic spire needs real tracery/buttress detail.
+  - [x] Vampire — **Done.** Buttresses are now 3 stacked, progressively
+    narrower stepped blocks + a tapered pinnacle (`addGothicButtress()`,
+    a real stepped silhouette instead of a flat slab), and the rose
+    window is now genuine stone tracery — 8 radial spoke blocks + a ring
+    of chunky stone segments (`addRoseWindow()`, reusing
+    `addTimberRingSegments()`) framing a stained-glass disc, instead of a
+    flat coloured circle. 54 unit tests (up from 50). Playwright-verified
+    from both face-on and rotated angles.
   - [ ] Fae — mushroom cap needs real gill/spore/twisted-stalk detail.
   - [ ] Slime — reported as already reading fine, lowest priority.
   - [ ] Human — still deferred (decent shared-shape variety already).

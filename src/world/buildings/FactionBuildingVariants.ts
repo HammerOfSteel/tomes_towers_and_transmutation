@@ -998,21 +998,60 @@ function buildOrcishShop(dna: BuildingDNA): THREE.Group {
 // Count's Tower (patriciate), Blood Chapel (church), Blood Market (market):
 // tall pointed gothic spires, ribbed buttresses, dark stained-glass motifs.
 
+/**
+ * A tall gothic buttress pier: 3 stacked, progressively narrower stepped
+ * blocks (a real stepped silhouette) capped with a tapered pinnacle, not
+ * a single flat slab standing in for a buttress.
+ */
+function addGothicButtress(g: THREE.Group, x: number, h: number, dDepth: number, material: THREE.Material): void {
+  const steps = 3;
+  let y = 0;
+  for (let i = 0; i < steps; i++) {
+    const stepH = h / steps;
+    const depth = dDepth * (1 - i * 0.22);
+    const width = 0.16 - i * 0.03;
+    addMesh(g, new THREE.BoxGeometry(width, stepH * 0.96, depth), material, x, y + stepH / 2, 0);
+    y += stepH;
+  }
+  addMesh(g, new THREE.ConeGeometry(0.1, h * 0.15, 4), material, x, h + h * 0.075, 0, Math.PI / 4);
+}
+
+/**
+ * A gothic rose window: stone tracery mullions — 8 radial spoke blocks
+ * plus an outer ring of chunky stone segments (reusing the same
+ * "many small solid pieces, never a flat torus" principle as vulperia's
+ * timber-stave ring) — framing a dark stained-glass disc, instead of a
+ * flat colour disc standing in for an entire rose window.
+ */
+function addRoseWindow(g: THREE.Group, cx: number, cy: number, cz: number, radius: number, stoneMat: THREE.Material, glassMat: THREE.Material): void {
+  addMesh(g, new THREE.CircleGeometry(radius * 0.85, 16), glassMat, cx, cy, cz);
+  const spokes = 8;
+  for (let i = 0; i < spokes; i++) {
+    const ang = (i / spokes) * Math.PI * 2;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.8, radius * 0.1, 0.06), stoneMat);
+    spoke.position.set(cx, cy, cz + 0.02);
+    spoke.rotation.z = ang;
+    g.add(spoke);
+  }
+  addTimberRingSegments(g, cx, cy, cz + 0.01, radius * 0.95, stoneMat, 10, radius * 0.22, 0.08);
+}
+
 function gothicBase(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
   const g = new THREE.Group();
   const stoneMat = mat(dna.colors.walls, { roughness: 0.7 });
   const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
 
   addMesh(g, new THREE.BoxGeometry(w * 0.8, h, d * 0.8), stoneMat, 0, h / 2, 0);
-  // Ribbed buttresses along each side.
+  // Stepped gothic buttress piers along each side (a real stepped
+  // silhouette, not a single flat slab).
   for (const bx of [-w * 0.42, w * 0.42]) {
-    addMesh(g, new THREE.BoxGeometry(0.14, h * 0.95, d * 0.5), trimMat, bx, h * 0.5, 0);
+    addGothicButtress(g, bx, h * 0.95, d * 0.5, trimMat);
   }
   // Pointed gothic spire roof.
   addMesh(g, new THREE.ConeGeometry(w * 0.5, h * 0.55, 4), trimMat, 0, h + h * 0.27, 0, Math.PI / 4);
-  // Dark red stained-glass window motif (rose window disc).
+  // Dark red stained-glass rose window with real stone tracery.
   const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a1020'), emissive: new THREE.Color('#a01830'), emissiveIntensity: 0.5, roughness: 0.3 });
-  addMesh(g, new THREE.CircleGeometry(w * 0.18, 12), glassMat, 0, h * 0.7, d * 0.4 + 0.02);
+  addRoseWindow(g, 0, h * 0.7, d * 0.4 + 0.02, w * 0.18, trimMat, glassMat);
   // Doorway.
   addDoorway(g, w * 0.3, h * 0.4, d * 0.4 - 0.02, dna.colors.door);
   return g;

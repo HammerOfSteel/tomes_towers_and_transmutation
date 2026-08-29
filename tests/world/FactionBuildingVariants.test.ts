@@ -376,3 +376,45 @@ describe('Elven — gnarled bark trunk + leaf-cluster canopy (not a smooth cylin
     expect(sumXZ(gA)).not.toBe(sumXZ(gB));
   });
 });
+
+// ── Vampire deep-quality pass (settlement visual fidelity follow-up) ───────
+// Regression guards for the stepped gothic buttress + rose-window tracery
+// rework that replaced flat slab buttresses and a flat-disc "rose window".
+describe('Vampire — stepped buttresses + rose-window tracery (not flat slabs/discs)', () => {
+  it("builds the villa (Count's Tower) from many parts, not a handful of primitives", () => {
+    const g = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
+    // Main wall + 2 buttresses * (3 stepped blocks + 1 pinnacle cone) + rose
+    // window (8 spoke boxes + 10 tracery-ring segments + 1 glass disc) +
+    // spire + gargoyles + balcony = 33 verified in practice.
+    expect(countMeshes(g)).toBeGreaterThanOrEqual(30);
+  });
+
+  it('gives each buttress a real stepped silhouette (multiple distinct box widths), not one flat slab', () => {
+    const g = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
+    const boxWidths = new Set<number>();
+    g.traverse(o => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
+        o.geometry.computeBoundingBox();
+        const bb = o.geometry.boundingBox!;
+        boxWidths.add(+((bb.max.x - bb.min.x) * o.scale.x).toFixed(4));
+      }
+    });
+    // The old version had exactly one buttress width (0.14) plus the main
+    // wall's width -- two distinct values. Stepped buttresses (3 steps,
+    // each narrower than the last) plus rose-window tracery boxes should
+    // produce many more distinct widths.
+    expect(boxWidths.size).toBeGreaterThan(4);
+  });
+
+  it('is deterministic for the same seed', () => {
+    const gA = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
+    const gB = FACTION_BUILDING_VARIANTS.vampire!.villa!(makeDna('villa', 'vampire', 5));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
+  });
+
+  it('produces only finite vertices across villa/chapel/shop', () => {
+    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vampire![kind]!(makeDna(kind, 'vampire', 12)));
+    }
+  });
+});

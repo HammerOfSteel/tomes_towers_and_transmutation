@@ -842,17 +842,50 @@ dome standing in for the entire leaf canopy. Now:
   unaffected by rotation), a clear improvement over the previous smooth
   cylinder-and-dome silhouette.
 
+**Vampire — DONE (this session).** Reworked `gothicBase()` (used by the
+Count's Tower villa and Blood Chapel) in `FactionBuildingVariants.ts`:
+the previous version had flanking buttresses that were literal flat thin
+`BoxGeometry` slabs (no protruding silhouette at all) and a "rose window"
+that was just a flat coloured `CircleGeometry` disc with no tracery.
+Now:
+- `addGothicButtress()`: each buttress pier is **3 stacked, progressively
+  narrower stepped blocks** capped with a tapered pinnacle — a real
+  stepped silhouette (the hallmark of actual Gothic flying-buttress
+  piers), not a flat slab.
+- `addRoseWindow()`: a genuine rose window — 8 radial stone spoke blocks
+  plus an outer ring of 10 chunky stone tracery segments (reusing
+  vulperia's `addTimberRingSegments()` — the same "many small solid
+  pieces, never a flat torus" principle, since this ring, like the
+  earlier door rings, *is* a vertical ring whose facing direction
+  changes with the building's cardinal rotation) framing a dark
+  stained-glass disc — a genuine cathedral-style tracery wheel instead of
+  a flat coloured circle.
+- The existing spire, bat gargoyles, balcony (villa), twin flanking
+  spirelets + hovering blood orb (chapel), and iron-framed market stall
+  (shop) were left unchanged — already reasonable layered details.
+- Tests: `FactionBuildingVariants.test.ts` gained a new "Vampire —
+  stepped buttresses + rose-window tracery" describe block (4 tests):
+  the villa assembles from at least 30 parts (33 verified in practice,
+  vs. the old version's much smaller primitive count), buttresses/
+  tracery produce more than 4 distinct box widths (vs. 2 in the old flat-
+  slab version — a direct silhouette-variety regression guard),
+  determinism for the same seed, and finite vertices across villa/
+  chapel/shop.  54 tests total (up from 50), all passing.
+- Visually verified via Playwright (Settlement Lab, seed=1 city), checked
+  from both a face-on-ish angle and a rotated angle: confirmed the rose
+  window reads as a vivid red spoked tracery wheel (not a flat disc) and
+  the buttresses show a clear stepped, tapering silhouette from both
+  angles.
+
 **Still to do, in order (same "one faction at a time, do it properly"
 approach — do not batch these into one shallow pass):**
-1. **Vampire** — Count's Tower/Blood Chapel/Blood Market; the gothic
-   spire needs real tracery/buttress/window detail, not a bare cone+box.
-2. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
+1. **Fae** — Fae Court/Faerie Ring/Twilight Market; the mushroom cap
    needs gill/spore detail and a proper twisted-stalk base, not a plain
    cone-on-cylinder.
-3. **Slime** — explicitly reported as already reading fine ("mostly the
+2. **Slime** — explicitly reported as already reading fine ("mostly the
    slime buildings are ok") — lowest priority, only revisit if a specific
    issue is raised.
-4. **Human** — still deferred from increment 2 scoping (already has
+3. **Human** — still deferred from increment 2 scoping (already has
    decent rural/town/noble variety from the shared-shape system).
 
 Each entry above should be verified with the same rigor as vulperia:
