@@ -1,6 +1,46 @@
 # Overworld Lab Implementation Plan
 > "Play in 3D" for the Overworld Studio Realm tab
 
+> **Status: ✅ DONE (2026-08-30).** All 7 tasks shipped, tested, and
+> verified. Summary:
+> - `WorldGenConfig` gained `shape`/`climate`/`roughness`; `buildWorldGrid()`
+>   now threads them plus the previously-ignored `settlementCount` into
+>   `generateRealmData()`.
+> - `_makeOverworld()`/`switchToExterior()` gained a non-persisted
+>   `configOverride` parameter.
+> - `DevRoomHandoff.ts` gained `'overworld-lab'` + `OverworldLabLaunchParams`
+>   + matching build/read/clear functions.
+> - `main.ts` gained `enterOverworldLab()`, wired into the devroom boot
+>   handoff and the `window.__game` test-hook object.
+> - Realm tab gained a "🧪 Play in 3D (Overworld Lab)" button
+>   (`btn-play-in-3d-realm`) in `overworld-studio.html`/`overworld-studio.ts`.
+> - New permanent e2e spec `tests/e2e/overworld-studio-overworld-lab-launch.spec.ts`
+>   (mirrors the existing settlement-lab-launch spec): clicks the real
+>   button on a live Studio page, confirms the popup boots to
+>   `gameMode === 'exterior'` with zero console/page errors — **passing**.
+>
+> **Verification:** Targeted suites (`WorldGenConfig.test.ts`,
+> `WorldGenerator.test.ts`, `DevRoomHandoff.test.ts`) all green (35 tests,
+> including 2 fixed inline `WorldGenConfig` literals in
+> `settlementGenerator.test.ts`/`SettlementModelGenerator.test.ts` that were
+> missing the new required fields). `tsc --noEmit` steady at the 143-error
+> baseline throughout (confirmed via a temporary baseline worktree at the
+> pre-session commit). Full `npx vitest run` — 2614/2626 passing; the 12
+> failures (`main.startup.smoke.test.ts` ×3 full-suite-scale-only,
+> `enemyLoader`/`towerGenerator`/`talentSystem` content-data mismatches,
+> `WaterMaterial` fragment-shader regex) were confirmed **byte-for-byte
+> identical, including test names, at the pre-session baseline commit**
+> (verified by running the full suite in a temporary `git worktree` at that
+> commit) — zero regressions introduced by this work. `tests/scene/`
+> (55 tests) also green. Manual Playwright screenshots (via a raw CDP
+> `Page.captureScreenshot` — `page.screenshot()`'s stability-wait heuristic
+> hung indefinitely against this scene's continuous WebGL animation in the
+> sandboxed headless environment, a tooling limitation not a functional
+> bug) for `island`/`temperate` and `archipelago`/`arctic` at the same seed
+> confirmed visually distinct terrain (warm desert-sand tones vs. cold
+> blue/white tones) — proving `shape`/`climate` genuinely drive the live
+> world's output, not just pass through inertly.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a "🎮 Play in 3D" button to Overworld Studio's Realm tab, mirroring
