@@ -12,6 +12,7 @@
 import type { WorldGrid, BiomeId, WorldCell } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
+import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
 
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
@@ -210,13 +211,6 @@ function _lowCorners(
   ];
 }
 
-/** Test-only export — exercises `_tileCornerLevels` directly. Removed once
- *  Task 4 wires these helpers into `buildTerrainGeometryData()` and adds
- *  end-to-end coverage through the public API instead. */
-export function _testOnlyTileCornerLevels(wg: WorldGrid, col: number, row: number): [number, number, number, number] {
-  return _tileCornerLevels(wg, col, row);
-}
-
 export interface RoadVariantGeometry {
   positions: number[];
   normals:   number[];
@@ -368,6 +362,26 @@ export function buildTerrainGeometryData(
       const jNE = cornerHeightJitter(col + 1, row + 1);
       const jSE = cornerHeightJitter(col + 1, row);
 
+      // Ramp classification (see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md):
+      // a dry tile's 4 corners derive from its real neighbors' elevation levels
+      // (clamped to at most 1 level of slope); water tiles are never ramp-eligible,
+      // so shorelines/riverbanks are completely unaffected by this block.
+      const rampEligible = _isRampEligible(cell);
+      const cornerLevels = rampEligible ? _tileCornerLevels(wg, col, row) : [H, H, H, H] as const;
+      const lowCorners = rampEligible ? _lowCorners(cornerLevels, H) : [false, false, false, false] as const;
+      const { shape, diagonal } = classifyTileShape(lowCorners);
+
+      // Raw (pre-jitter) ramp corner Y offsets from this tile's own `wy` — always 0 for
+      // flat/all-four-down/non-ramp-eligible tiles (byte-identical to pre-ramp behavior),
+      // exactly (H - level) * SH (0 or SH) for genuinely ramped shapes. Computed once here
+      // so both the top face below AND the wall blocks further down can share it.
+      const rampDrop = (level: number): number =>
+        (!rampEligible || shape === 'flat' || shape === 'all-four-down') ? 0 : (H - level) * SH;
+      const swY = wy - rampDrop(cornerLevels[0]);
+      const nwY = wy - rampDrop(cornerLevels[1]);
+      const neY = wy - rampDrop(cornerLevels[2]);
+      const seY = wy - rampDrop(cornerLevels[3]);
+
       // Road sub-tile surface: only attempted for tiles already flagged as
       // carrying a road, and only when the caller actually supplied path
       // data. `computeTileRoadCoverage()` can legitimately return "no
@@ -380,7 +394,9 @@ export function buildTerrainGeometryData(
       // WorldGenerator.applyRoadFords() per RI-3) get the same sub-tile
       // treatment as an ordinary road so the crossing renders as a real
       // bridge deck instead of a plain colored ground quad — see the
-      // BRIDGE_ROAD_VARIANT override just below.
+      // BRIDGE_ROAD_VARIANT override just below. Road sub-tiles never get
+      // ramp geometry (deferred non-goal — see design spec §2), always
+      // using the flat `wy` + jitter exactly as before.
       const isRoadTile = cell.feature === 'road' || cell.feature === 'road_dirt' || cell.feature === 'river_ford';
       const rawCoverage = (isRoadTile && roadPaths.length > 0)
         ? computeTileRoadCoverage(roadPaths, wx, wz, T, roadSubdivisions)
@@ -434,11 +450,39 @@ export function buildTerrainGeometryData(
             }
           }
         }
-      } else {
+      } else if (shape === 'flat' || shape === 'all-four-down' || !rampEligible) {
+        // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
         addFace(
           [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
           0, 1, 0,  tr, tg, tb,
         );
+      } else if (shape === 'edge') {
+        // Genuinely tilted but still planar — cheap 4-vertex/1-normal path
+        // with a REAL computed normal (an Edge ramp really is sloped).
+        const corners = {
+          sw: [wx,  swY + jSW, wz]  as [number, number, number],
+          nw: [wx,  nwY + jNW, wz1] as [number, number, number],
+          ne: [wx1, neY + jNE, wz1] as [number, number, number],
+          se: [wx1, seY + jSE, wz]  as [number, number, number],
+        };
+        const [v0, v1, v2, v3] = orderCornersForDiagonal(corners, diagonal);
+        const n = triangleNormal(v0, v1, v2);
+        addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
+      } else {
+        // single-corner / outer-corner / saddle: non-planar, 2 explicit
+        // triangles with independently-computed per-triangle normals.
+        const corners = {
+          sw: [wx,  swY + jSW, wz]  as [number, number, number],
+          nw: [wx,  nwY + jNW, wz1] as [number, number, number],
+          ne: [wx1, neY + jNE, wz1] as [number, number, number],
+          se: [wx1, seY + jSE, wz]  as [number, number, number],
+        };
+        const { positions: rampPos, normals: rampNrm } = buildQuadFace(corners, diagonal);
+        const base = pos.length / 3;
+        pos.push(...rampPos);
+        nrm.push(...rampNrm);
+        for (let i = 0; i < 6; i++) clr.push(tr, tg, tb);
+        idx.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
       }
 
       // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────

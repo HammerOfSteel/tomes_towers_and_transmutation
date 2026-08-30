@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, _testOnlyTileCornerLevels } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
@@ -459,46 +459,111 @@ describe('buildTerrainGeometryData — river_ford tiles render as bridge decks (
   });
 });
 
-describe('corner-height derivation for ramp classification', () => {
-  it('gives all 4 corners the tile\'s own elevation when every neighbor matches', () => {
+describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
+  function flatGrid(size: number, elevation: number): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) g.set(c, r, { elevation });
+    return g;
+  }
+
+  it('renders a flat tile identically to before (byte-for-byte position/normal match)', () => {
+    const wg = flatGrid(3, 2);
+    // Isolate tile (1,1) via the chunk sub-rectangle params — its 4 real
+    // neighbors are all in-bounds and match its own elevation, so (unlike a
+    // whole-grid render, where the OUTER ring's out-of-bounds neighbors
+    // default to elevation 0 and trigger real edge walls — pre-existing,
+    // unrelated to this plan) this isolated tile has zero walls at all,
+    // exactly 1 flat top face.
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
+    expect(data.positions.length).toBe(4 * 3); // 1 flat quad, 4 verts x 3 floats
+    for (let i = 0; i < data.normals.length; i += 3) {
+      expect([data.normals[i], data.normals[i + 1], data.normals[i + 2]]).toEqual([0, 1, 0]);
+    }
+  });
+
+  it('renders an Edge-shaped tile (one full side ramped down) as a tilted planar quad with no wall on the OTHER 3 sides', () => {
+    const wg = flatGrid(3, 3);
+    wg.set(0, 1, { elevation: 2 }); // west neighbor of tile (1,1), 1 level lower
+    // Isolate tile (1,1)'s own contribution via the chunk sub-rectangle params
+    // (colStart=1, rowStart=1, chunkW=1, chunkH=1) — scanning the WHOLE 3x3
+    // buffer for "any tilted normal" would be a false-positive risk, since
+    // OTHER tiles in the scene (e.g. tile (0,1) itself, bordering its own
+    // now-different neighbors) already draw ordinary vertical WALL faces
+    // whose normals also have ny=0, which a naive "ny < 0.999" scan would
+    // wrongly count as "tilted". Isolating to exactly tile (1,1) avoids that.
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
+    // Tile (1,1)'s west neighbor is 1 level lower (classifies 'edge', ramped
+    // west side); its north/south/east neighbors all match its own elevation,
+    // so — with Task 4 alone (walls not yet updated, that's Task 5) — the
+    // OLD wall code still fires a west wall here (still comparing the flat
+    // `wy`, not yet aware of the ramp) and no other walls. Expected
+    // contribution: 1 top face (planar Edge quad, 4 verts) + 1 west wall (4
+    // verts) = 8 vertices = 24 normal floats total.
+    expect(data.normals).toHaveLength(24);
+    // The top face's normal (first of the 4 verts) must be genuinely tilted
+    // — not exactly (0,1,0) — confirming Task 4's real slope, while still
+    // mostly upward-facing (not vertical like a wall).
+    const topFaceNy = data.normals[1]!;
+    expect(topFaceNy).toBeLessThan(0.999);
+    expect(topFaceNy).toBeGreaterThan(0);
+  });
+
+  it('renders a Single-corner-shaped tile as 2 explicit triangles with different normals', () => {
+    const wg = flatGrid(4, 3);
+    // Lower only the SW-diagonal neighbor (0,0) relative to tile (1,1), leaving the
+    // orthogonal neighbors (1,0) and (0,1) at the same level — only the NE corner
+    // of tile (1,1) sees a lower contributor, isolating a single-corner dip.
+    // (NE corner of tile(1,1) is lattice (2,2), contributed to by tiles (1,1),(2,1),(1,2),(2,2).)
+    wg.set(2, 2, { elevation: 2 });
+    // Isolate tile (1,1) via the chunk sub-rectangle params — its 4 orthogonal
+    // neighbors (0,1),(2,1),(1,0),(1,2) all still match its own elevation 3,
+    // so no wall faces trigger at all; the buffer contains EXACTLY the top
+    // face's geometry, avoiding any risk of an unrelated wall/flat-tile
+    // normal elsewhere in a wider scan being mistaken for the ramp's own.
+    const data = buildTerrainGeometryData(wg, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1);
+    expect(data.normals).toHaveLength(18); // 2 triangles x 3 verts x 3 floats — the non-planar path
+    const tri1Normal = [data.normals[0], data.normals[1], data.normals[2]];
+    const tri2Normal = [data.normals[9], data.normals[10], data.normals[11]];
+    expect(tri1Normal).not.toEqual(tri2Normal);
+  });
+
+  it('falls back to flat-plus-wall (today\'s exact behavior) for the degenerate all-four-down case', () => {
+    // Reuses the existing "emits 4 wall faces around a single raised tile" scenario —
+    // tile 1 in a 1-row grid, both orthogonal neighbors 2 levels lower, and (with
+    // height=1) the north/south neighbors are out-of-bounds, substituted as this
+    // tile's own elevation — so tile 1 classifies as all-four-down and must render
+    // exactly like before: flat top face, full walls on both sides.
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { elevation: 2 });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+    expect(data.positions).toHaveLength(84); // unchanged from the pre-existing test's expectation
+    expect(data.indices).toHaveLength(42);
+    const normalSet = new Set<string>();
+    for (let i = 0; i < data.normals.length; i += 3) {
+      normalSet.add(`${data.normals[i]},${data.normals[i + 1]},${data.normals[i + 2]}`);
+    }
+    expect(normalSet).toEqual(new Set(['0,1,0', '0,0,1', '0,0,-1', '1,0,0', '-1,0,0']));
+  });
+
+  it('never ramps a dry tile toward an adjacent water tile (shoreline stays exactly as before)', () => {
     const wg = new WorldGrid(3, 3);
     for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 2 });
-    const levels = _testOnlyTileCornerLevels(wg, 1, 1);
-    expect(levels).toEqual([2, 2, 2, 2]);
-  });
-
-  it('pulls the shared corners down by exactly 1 level toward a lower west neighbor', () => {
-    const wg = new WorldGrid(3, 3);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 2 });
-    wg.set(0, 1, { elevation: 1 }); // west neighbor of tile (1,1)
-    const [sw, nw, ne, se] = _testOnlyTileCornerLevels(wg, 1, 1);
-    expect(sw).toBe(1);
-    expect(nw).toBe(1);
-    expect(ne).toBe(2);
-    expect(se).toBe(2);
-  });
-
-  it('clamps a 2-level-lower neighbor to only 1 level of ramp (residual handled by walls, not ramp)', () => {
-    const wg = new WorldGrid(3, 3);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 3 });
-    wg.set(0, 1, { elevation: 1 }); // 2 levels lower than this tile's elevation 3
-    const [sw] = _testOnlyTileCornerLevels(wg, 1, 1);
-    expect(sw).toBe(2); // clamped to elevation-1, not the raw elevation 1
-  });
-
-  it('treats out-of-bounds neighbors as matching the tile\'s own elevation (no spurious edge-of-map ramp)', () => {
-    const wg = new WorldGrid(2, 2);
-    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) wg.set(c, r, { elevation: 4 });
-    const levels = _testOnlyTileCornerLevels(wg, 0, 0); // corner tile, 2 of its corners touch OOB
-    expect(levels).toEqual([4, 4, 4, 4]);
-  });
-
-  it('never lets a water-tile neighbor (ocean/river) pull a dry tile\'s corner down', () => {
-    const wg = new WorldGrid(3, 3);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 3 });
-    wg.set(0, 1, { elevation: 1, biome: 'ocean', waterDepth: 1 }); // lower AND water
-    const levels = _testOnlyTileCornerLevels(wg, 1, 1);
-    expect(levels).toEqual([3, 3, 3, 3]); // water neighbor ignored entirely
+    wg.set(0, 1, { elevation: 1, biome: 'ocean', waterDepth: 1 }); // lower AND water, west of (1,1)
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1);
+    // A real vertical wall face DOES still exist here (tile (1,1) dropping
+    // into the carved water) — that's correct, unchanged, pre-existing
+    // behavior, not a regression. What must NOT exist is a "partial ramp
+    // tilt" normal — every normal must be either a flat top face
+    // (ny ~ 1) or a fully-vertical wall (ny ~ 0), never a value strictly
+    // between the two, which would indicate a dry tile incorrectly ramping
+    // toward the water boundary instead of keeping today's clean
+    // vertical-wall-into-water look.
+    for (let i = 0; i < data.normals.length; i += 3) {
+      const ny = data.normals[i + 1]!;
+      const isFlat = Math.abs(ny - 1) < 0.01;
+      const isWall = Math.abs(ny) < 0.01;
+      expect(isFlat || isWall, `unexpected partial-tilt normal ny=${ny}`).toBe(true);
+    }
   });
 });
 
