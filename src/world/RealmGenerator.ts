@@ -15,8 +15,10 @@
 import { mulberry32 }    from '@/core/prng';
 import { createNoise2D } from '@/core/SimplexNoise';
 import { chaikin }       from '@/core/chaikin';
+import { selectRiverSources, flowDownhill } from './RiverFlow';
+import { selectLakeSources, floodFillBasin } from './LakeSiting';
 import type {
-  RealmData, RealmCell, RealmBiome, RealmRiver, RealmSettlement,
+  RealmData, RealmCell, RealmBiome, RealmRiver, RealmLake, RealmSettlement,
   SettlementFaction, Vec2,
 } from '@/overworld-studio';
 
@@ -147,40 +149,65 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
     }),
   );
 
-  // ── Rivers ───────────────────────────────────────────────────────────────────
-  const rivers: RealmRiver[] = [];
-  const DIRS8: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]];
-  let riverCount = 0;
-  const maxRivers = 4 + Math.floor(roughness * 8);
+  // ── Rivers (Phase 3: same algorithm as the live game's HydrologyGenerator,
+  // via the shared RiverFlow.ts module — see
+  // docs/superpowers/specs/2026-08-31-lakes-hydrology-unification-design.md §2) ──
+  const claimedRiver = new Set<string>();
+  // A tile this walk must never step onto: already-claimed river tiles, or
+  // open water (ocean/deep_ocean) — RealmCell has no discrete elevation-0
+  // "bog level" the way WorldGrid does (elevation here is a continuous
+  // 0-1 float, essentially never exactly 0), so an explicit ocean-biome
+  // check is this preview's real river-termination condition.
+  const isBlocked = (col: number, row: number): boolean => {
+    if (claimedRiver.has(`${col},${row}`)) return true;
+    const b = cells[row]![col]!.biome;
+    return b === 'ocean' || b === 'deep_ocean';
+  };
+  const realElevationAt = (col: number, row: number) => cells[row]![col]!.elevation;
+  // Snow-capped peaks never source a river (matches the old inline block's
+  // `c.biome !== 'snow'` source exclusion) — kept separate from
+  // realElevationAt so this only affects source *selection*, not the
+  // downhill walk's own neighbour scoring.
+  const sourceElevationAt = (col: number, row: number) => {
+    const c = cells[row]![col]!;
+    return c.biome === 'snow' ? -1 : c.elevation;
+  };
 
-  for (let y = 2; y < H-2 && riverCount < maxRivers; y++) {
-    for (let x = 2; x < W-2 && riverCount < maxRivers; x++) {
-      const c = cells[y]![x]!;
-      if (c.elevation > 0.68 && c.biome !== 'deep_ocean' && c.biome !== 'ocean' && c.biome !== 'snow' && rand4() > 0.965) {
-        const pts: Vec2[] = [{ x: x+0.5, y: y+0.5 }];
-        let [cx, cy2] = [x, y];
-        const visited = new Set<string>();
-        for (let step = 0; step < 220; step++) {
-          const key = `${cx},${cy2}`;
-          if (visited.has(key)) break;
-          visited.add(key);
-          const b = cells[cy2]![cx]!.biome;
-          if (b === 'ocean' || b === 'deep_ocean') break;
-          const curE = cells[cy2]![cx]!.elevation;
-          let lowestE = curE - 0.0005, nx2 = cx, ny2 = cy2;
-          for (const [dy, dx] of DIRS8) {
-            const ney = cy2+dy, nex = cx+dx;
-            if (ney < 0||ney >= H||nex < 0||nex >= W) continue;
-            const e = cells[ney]![nex]!.elevation;
-            if (e < lowestE) { lowestE = e; nx2 = nex; ny2 = ney; }
-          }
-          if (nx2 === cx && ny2 === cy2) break;
-          cx = nx2; cy2 = ny2;
-          pts.push({ x: cx+0.5, y: cy2+0.5 });
-        }
-        if (pts.length >= 6) { rivers.push({ points: chaikin(pts, 2) }); riverCount++; }
-      }
-    }
+  const riverSources = selectRiverSources(
+    W, H, sourceElevationAt,
+    0.68, // sourceMinLevel — matches the old inline block's elevation threshold
+    0,    // sourceMinRadius — Studio's realm shapes (island/continents/archipelago/
+          // pangaea) don't guarantee a high-elevation outer rim the way the live
+          // game's post-processed bowl terrain does, so no radius filter here
+    Math.min(W, H) * 0.10, // sourceMinSpacing
+    4 + Math.floor(roughness * 8), // count — matches the old maxRivers heuristic
+    rand4,
+  );
+
+  const rivers: RealmRiver[] = [];
+  for (const source of riverSources) {
+    const path = flowDownhill(source, W, H, realElevationAt, isBlocked, 0);
+    if (path.length < 6) continue; // matches the old ">= 6 points" quality gate
+    for (const p of path) claimedRiver.add(`${p.col},${p.row}`);
+    const pts: Vec2[] = path.map(p => ({ x: p.col + 0.5, y: p.row + 0.5 }));
+    rivers.push({ points: chaikin(pts, 2) });
+  }
+
+  // ── Lakes (Phase 3: independent local-minima siting, see design spec §3) ──
+  const lakeSources = selectLakeSources(
+    W, H, realElevationAt, isBlocked, Math.min(W, H) * 0.10, 2, rand4,
+  );
+  const lakes: RealmLake[] = [];
+  const claimedLake = new Set<string>();
+  for (const source of lakeSources) {
+    if (claimedLake.has(`${source.col},${source.row}`)) continue;
+    const basin = floodFillBasin(
+      source, W, H, realElevationAt,
+      (c, r) => isBlocked(c, r) || claimedLake.has(`${c},${r}`),
+      40,
+    );
+    for (const p of basin) claimedLake.add(`${p.col},${p.row}`);
+    lakes.push({ cells: basin.map(p => ({ x: p.col + 0.5, y: p.row + 0.5 })) });
   }
 
   // ── Settlements ──────────────────────────────────────────────────────────────
@@ -208,6 +235,7 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   }
 
   // Tower at map centre (nudge to land)
+  const DIRS8: [number,number][] = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,1],[-1,1],[1,-1]];
   let [towerX, towerY] = [Math.floor(W/2), Math.floor(H/2)];
   for (let r = 0; r < 14; r++) {
     const b = cells[towerY]![towerX]!.biome;
@@ -236,5 +264,5 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
     if (farFromSettlements && farFromOtherDungeons) dungeons.push({ x: cell.x, y: cell.y });
   }
 
-  return { cells, W, H, rivers, settlements, dungeons, towerX, towerY, seed };
+  return { cells, W, H, rivers, lakes, settlements, dungeons, towerX, towerY, seed };
 }

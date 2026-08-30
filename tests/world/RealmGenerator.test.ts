@@ -60,6 +60,23 @@ describe('generateRealmData', () => {
     const realm = generateRealmData(777);
     expect(realm.seed).toBe(777);
   });
+
+  it('produces a lakes field (array) alongside rivers', () => {
+    const realm = generateRealmData(42, 40, 30);
+    expect(Array.isArray(realm.lakes)).toBe(true);
+  });
+
+  it('produces at least one lake with tiles for at least one of several seeds ' +
+     '(lake placement depends on local elevation minima, so checked loosely ' +
+     'across seeds rather than guaranteed for every single one)', () => {
+    const seeds = [10, 11, 12, 13, 14, 15, 16, 17];
+    let found = false;
+    for (const seed of seeds) {
+      const realm = generateRealmData(seed, 80, 60);
+      if (realm.lakes.some(l => l.cells.length > 0)) { found = true; break; }
+    }
+    expect(found).toBe(true);
+  });
 });
 
 describe('classifyBiome — mountain biome (Phase 1)', () => {

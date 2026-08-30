@@ -2632,6 +2632,9 @@ export type RealmBiome =
 
 export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
 export interface RealmRiver { points: Vec2[]; }
+/** A lake's tile footprint — an unordered set of covered cells (unlike a
+ *  river's ordered path), since a lake is a filled area, not a path. */
+export interface RealmLake { cells: Vec2[]; }
 
 export interface RealmSettlement {
   x: number; y: number;
@@ -2644,6 +2647,7 @@ export interface RealmData {
   cells: RealmCell[][];
   W: number; H: number;
   rivers: RealmRiver[];
+  lakes: RealmLake[];
   settlements: RealmSettlement[];
   /** Dungeon entrance positions — clickable markers on the realm map. */
   dungeons: { x: number; y: number }[];

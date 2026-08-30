@@ -6,7 +6,7 @@ import type { RealmData, RealmCell } from '@/overworld-studio';
 function fakeRealm(cells: RealmCell[][]): RealmData {
   return {
     cells, W: cells[0]!.length, H: cells.length,
-    rivers: [], settlements: [], dungeons: [],
+    rivers: [], lakes: [], settlements: [], dungeons: [],
     towerX: 0, towerY: 0, seed: 1,
   };
 }
