@@ -513,41 +513,110 @@ research note above:
       itself still returns the raw ribbon/tile data for its existing test
       coverage, it is simply no longer consumed for live rendering).
 
-### Phase 3 — Lakes + hydrology unification
+### Phase 3 — Lakes + hydrology unification ✅ DONE (2026-08-31)
 **Depends on:** Phase 1 (mountain sourcing for lake basins reads better with real elevation range), independent of Phase 2.
 
-Closes §1.2/§1.3's two findings together since they're both "water body
-generation" gaps: implement the dead `lakeCount` config field for real, and
-resolve the long-standing `HydrologyGenerator`/Studio-`rivers[]`
+Closed §1.2/§1.3's two findings together since they're both "water body
+generation" gaps: implemented the dead `lakeCount` config field for real, and
+resolved the long-standing `HydrologyGenerator`/Studio-`rivers[]`
 duplication flagged by `STUDIO-LIVE-PARITY.md`.
 
-- [ ] Lakes: endorheic-basin detection (a local elevation minimum with no
-      downhill outflow to the map edge/ocean within N steps) or simpler
-      "river terminates inland at a flat low point → pool" rule, carving a
-      real `waterDepth` basin exactly like rivers/ocean already do
-      (`WaterDepthConfig.ts` gains a `LAKE_DEPTH_WU` tier). Reads
-      `WorldGenConfig.lakeCount` for the first time ever.
-  - [ ] Add `WaterDetection`/swim-state support for lakes (should already
-        mostly fall out of the existing generic "any tile with
-        `waterDepth > 0`" swim query, but verify explicitly with a test).
-- [ ] Hydrology unification: pick ONE river algorithm as the real source of
-      truth and delete/deprecate the other, rather than continuing to
-      maintain two. Given `RealmGenerator.ts`'s `rivers[]` is the one
-      Overworld Studio actually previews (so what a designer sees in the
-      Realm tab should be what generates live, per the Overworld Lab
-      feature this overhaul follows from), the likely direction is:
-      resample `RealmData.rivers[]`'s spline paths onto the live `WorldGrid`
-      (analogous to how `RealmToWorldGrid.ts` already resamples elevation/
-      biome) instead of running `HydrologyGenerator`'s independent
-      downhill-flow a second time — but confirm this against a live
-      screenshot comparison before committing, since `HydrologyGenerator`'s
-      orthogonal-step/ford-friendly grid rivers may actually suit the
-      collider/pathfinding needs better than a resampled spline would.
-      Whichever direction, the end state is ONE river shape, driven by ONE
-      algorithm, matching between Studio preview and live game.
-- [ ] Tests updated for whichever direction is chosen; full regression on
-      `tests/world/HydrologyGenerator.test.ts` / `RealmRiverMesh.test.ts` /
-      `RealmToTerrain.test.ts`.
+Design spec: `docs/superpowers/specs/2026-08-31-lakes-hydrology-unification-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-31-lakes-hydrology-unification-plan.md`.
+
+**What shipped:**
+- [x] Hydrology unification: extracted the live game's already-tested
+      source-selection + downhill-walk algorithm out of `HydrologyGenerator.ts`
+      into a new pure, grid-shape-agnostic module `src/world/RiverFlow.ts`
+      (`selectRiverSources()`/`flowDownhill()`, parameterized by plain
+      `elevationAt`/`isRiver` callbacks instead of a concrete `WorldGrid`).
+      Both `HydrologyGenerator.ts` (live, wraps `WorldGrid`) and
+      `RealmGenerator.ts` (Studio preview, wraps `RealmData.cells`) are now
+      thin wrappers around the identical algorithm — reversing the doc's
+      original tentative "resample Studio's splines onto the live grid"
+      guess in favor of "extract the shared algorithm, wrap both ways",
+      since the live grid-based rivers are the only ones with real, tested,
+      physically-carved swim/collision/ford behavior. Studio's preview
+      river shape changed from smooth Chaikin-spline curves to a blockier,
+      grid-aligned line — a deliberate accuracy improvement (this now
+      matches what `TerrainGeometryBuilder`'s `BIOME_RIVER` tint actually
+      renders live), not a regression.
+- [x] Lakes: independent local-minima siting (not river-fed) via a new pure
+      module `src/world/LakeSiting.ts` (`selectLakeSources()` — local-minima
+      detection over the 8-neighbor ring — + `floodFillBasin()` — BFS same-
+      elevation basin fill, capped at 40 tiles per lake). New `WorldGrid`
+      wrapper `src/world/LakeGenerator.ts` finally reads
+      `WorldGenConfig.lakeCount` for real. New `TileFeature: 'lake'` value;
+      new `LAKE_DEPTH_WU` constant in `WaterDepthConfig.ts` (2.0, matching
+      `RIVER_DEPTH_WU` — both need to reliably trigger real swim state, kept
+      as a separate named constant so future re-tuning of one doesn't
+      silently affect the other). Lakes reuse the exact same
+      `waterDepth`-driven carving path already built for rivers in
+      `TerrainGeometryBuilder.buildTerrainGeometryData()` — no new physics/
+      collider machinery, confirmed by unit test that lake carving math is
+      byte-identical to river carving math at the same depth. New
+      `BIOME_LAKE` color tint (calmer/greener than `BIOME_RIVER`) reads as
+      still water vs. flowing water.
+  - [x] `WaterDetection.getWaterInfoAt()` needed zero changes — it already
+        keys off `waterDepth > 0` generically, feature-agnostic.
+- [x] `RoadGenerator.ts` lake avoidance: added `feature === 'lake'` checks
+      to both `_moveCost` and `_pathCrossesWater()`, exactly mirroring the
+      ocean-crossing fix shipped just before this phase (`cd930d3`) — lakes
+      sit on ordinary land biomes, not a special lake `BiomeId`, so the
+      existing ocean-only checks wouldn't have caught them.
+- [x] Consistency sweep: `ResourceNodePlacer.ts`'s essence-blossom "near
+      water" siting and `OverworldScene.ts`'s near-water narration helper
+      both extended to also match `feature === 'lake'` (previously only
+      river/ocean).
+- [x] Dead code cleanup: `RealmRiverMesh.ts`'s `buildRiverMesh()`/
+      `makeHeightSampler()` (zero real callers outside their own test file)
+      deleted outright, along with `tests/world/RealmRiverMesh.test.ts`.
+      Its still-used `RiverHeightSampler` type alias (a generic
+      `(worldX, worldZ) => number` shape, unrelated to rivers specifically)
+      relocated to a new minimal `src/world/HeightSampler.ts`.
+- [x] Studio preview: `overworld-studio.ts`'s Realm-tab canvas gained a
+      lake-fill drawing block (same per-cell fill technique other biome
+      tiles use) and the summary readout now shows lake count alongside
+      river/settlement counts. World-package export also carries the new
+      `lakes` field.
+- [x] Tests: new `RiverFlow.test.ts` (9), `LakeSiting.test.ts` (7),
+      `LakeGenerator.test.ts` (4); extended `WorldGrid.test.ts`,
+      `WaterDepthConfig.test.ts`, `WorldGenerator.test.ts`,
+      `RoadGenerator.test.ts` (+3 lake-avoidance tests mirroring the ocean
+      ones), `TerrainGeometryBuilder.test.ts` (+2 lake carving/color
+      tests), `RealmGenerator.test.ts` (+3 lake tests), and a stale-literal
+      fix in `ResourceNodePlacer.test.ts` (its own mirror of
+      `ResourceNodePlacer.ts`'s essence-feature check hadn't been updated
+      for `'lake'`). `HydrologyGenerator.test.ts`'s full existing suite
+      re-run unchanged post-refactor (behavior-preserving) — confirmed
+      identical pass. Full project suite: same 12 pre-existing baseline
+      failures, zero regressions (verified across 2 clean full-suite runs;
+      one run showed an unrelated one-off flake in
+      `ResourceNodePlacer.test.ts` that did not reproduce on rerun in
+      isolation or in a second full run — logged as sandbox flakiness, not
+      a code regression). `tsc --noEmit` steady at 144 (145 baseline minus
+      one, from `RealmRiverMesh.test.ts`'s deletion).
+- [x] Manual/live verification: confirmed via Playwright against the dev
+      server — Overworld Studio's Realm-tab preview renders lake-colored
+      pixels distinct from rivers/ocean (confirmed both visually via
+      screenshot and by sampling canvas pixel data for the `BIOME_LAKE`-
+      matching fill color); in the live game, teleporting the player into a
+      generated lake tile and force-ticking the physics/game loop confirmed
+      `isPlayerSwimming() === true` with a buoyant Y position between the
+      carved floor and the water surface — real swim state, not a cosmetic
+      offset. This also surfaced and fixed a small pre-existing dev-tooling
+      gap: `OverworldScene.findFirstWaterTile()` (a test/verification-only
+      helper) never checked `feature === 'lake'`, so it could never locate
+      one — fixed alongside this phase.
+
+**Deferred (documented, not started):** Studio UI sliders for river/lake
+count (Studio's preview count stays independently derived per each
+generator's own existing heuristic); lake-to-lake or lake-to-river
+connecting channels; variable lake depth/shape (bowl bottoms, ramped
+shores — lakes use the same flat-`waterDepth`-basin approach as rivers);
+bridges (a road physically spanning a river/lake) — a road that would need
+to cross a lake is skipped entirely, same as the ocean-crossing fix; fords
+remain the only river-crossing mechanism.
 
 ### Phase 4 — Organic biome transitions
 **Depends on:** Phase 1, independent of Phases 2/3.
@@ -763,7 +832,8 @@ per the instruction to check TODO docs for similar planned work:
 - Exact `mountain` biome elevation/temperature thresholds (Phase 1).
 - Exact per-faction biome affinity weights (Phase 5) — the suggested list
   above is a starting hypothesis, not a spec.
-- Direction of Phase 3's hydrology unification (resample Studio's spline
-  rivers vs. keep `HydrologyGenerator`'s grid algorithm and retire the
-  Studio one instead) — flagged above as needing a live screenshot
-  comparison before committing either way.
+- Direction of Phase 3's hydrology unification — resolved 2026-08-31: kept
+  `HydrologyGenerator`'s grid algorithm (extracted to shared `RiverFlow.ts`)
+  and retired Studio's independent probabilistic-spline block; confirmed
+  via live Playwright screenshot + canvas pixel sampling, not just unit
+  tests.
