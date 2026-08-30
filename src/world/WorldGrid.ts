@@ -22,7 +22,7 @@ export type BiomeId =
  * Feature = a geographic/man-made overlay on the tile (roads, rivers).
  * Populated by OW-2 (hydrology) and OW-5 (settlements).
  */
-export type TileFeature = 'none' | 'river' | 'river_bank' | 'river_ford' | 'road' | 'road_dirt';
+export type TileFeature = 'none' | 'river' | 'river_bank' | 'river_ford' | 'lake' | 'road' | 'road_dirt';
 
 /**
  * Content = an object that occupies the tile.

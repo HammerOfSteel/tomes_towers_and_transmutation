@@ -3,6 +3,7 @@ import {
   RIVER_DEPTH_WU,
   OCEAN_SHALLOW_DEPTH_WU,
   OCEAN_DEEP_DEPTH_WU,
+  LAKE_DEPTH_WU,
   LEVEL_HEIGHT,
   physicalHeightWU,
 } from '@/world/WaterDepthConfig';
@@ -36,5 +37,20 @@ describe('WaterDepthConfig — physicalHeightWU', () => {
     expect(RIVER_DEPTH_WU).toBeGreaterThan(0);
     expect(OCEAN_SHALLOW_DEPTH_WU).toBeGreaterThan(0);
     expect(OCEAN_DEEP_DEPTH_WU).toBeGreaterThan(0);
+  });
+});
+
+describe('WaterDepthConfig — LAKE_DEPTH_WU', () => {
+  it('is a positive number', () => {
+    expect(LAKE_DEPTH_WU).toBeGreaterThan(0);
+  });
+
+  it('equals RIVER_DEPTH_WU (same swim-triggering depth, separately named)', () => {
+    expect(LAKE_DEPTH_WU).toBe(RIVER_DEPTH_WU);
+  });
+
+  it('subtracts the lake depth for a lake tile', () => {
+    const h = physicalHeightWU({ elevation: 1, waterDepth: LAKE_DEPTH_WU });
+    expect(h).toBeCloseTo(1 * LEVEL_HEIGHT - LAKE_DEPTH_WU, 9);
   });
 });

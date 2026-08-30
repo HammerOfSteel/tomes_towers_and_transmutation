@@ -49,6 +49,12 @@ export const OCEAN_SHALLOW_DEPTH_WU = 1.0;
  *  one flat value. */
 export const OCEAN_DEEP_DEPTH_WU = 2.5;
 
+/** Carved depth (world units) for lakes. Numerically the same as
+ *  RIVER_DEPTH_WU (both need to reliably trigger real swim state, see the
+ *  reasoning above), but kept as its own named constant so a future
+ *  re-tuning of one doesn't silently affect the other. */
+export const LAKE_DEPTH_WU = 2.0;
+
 /**
  * Physical (carved) height of a tile in world units: the logical elevation
  * converted to world units, minus any carved water depth. Dry tiles and

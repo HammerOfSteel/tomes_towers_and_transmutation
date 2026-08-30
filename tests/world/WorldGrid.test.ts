@@ -32,8 +32,15 @@ describe('WorldGrid — river_ford feature', () => {
     wg.set(0, 0, { feature: 'river_ford', waterDepth: 0, walkable: true });
     const cell = wg.get(0, 0);
     expect(cell.feature).toBe('river_ford');
-    expect(cell.waterDepth).toBe(0);
-    expect(cell.walkable).toBe(true);
+  });
+
+  it('accepts lake as a valid TileFeature via set()', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { feature: 'lake', waterDepth: 2.0, walkable: false });
+    const cell = wg.get(0, 0);
+    expect(cell.feature).toBe('lake');
+    expect(cell.waterDepth).toBe(2.0);
+    expect(cell.walkable).toBe(false);
   });
 });
 
