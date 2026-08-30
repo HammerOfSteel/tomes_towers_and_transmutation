@@ -51,7 +51,8 @@ describe('live settlement generation (regression: zero-building settlements)', (
     const config: WorldGenConfig = {
       seed: 0, worldSize: 512, riverCount: 2, lakeCount: 0,
       dungeonCount: 2, caveCount: 0, gladeCount: 0,
-      settlementCount: 6, enemyCampCount: 2,
+      settlementCount: 6, shape: 'island', climate: 'temperate', roughness: 0.5,
+      enemyCampCount: 2,
       assetMode: 'code', assetPacks: [], charMode: 'code', charPacks: [],
     };
     for (let seed = 1; seed <= 6; seed++) {
