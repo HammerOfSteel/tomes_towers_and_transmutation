@@ -23,7 +23,8 @@ function flatGrid(size = 64): WorldGrid {
 const BASE_CONFIG: WorldGenConfig = {
   seed: 42, worldSize: 128, riverCount: 2, lakeCount: 0,
   dungeonCount: 2, caveCount: 0, gladeCount: 0,
-  settlementCount: 3, enemyCampCount: 2,
+  settlementCount: 3, shape: 'island', climate: 'temperate', roughness: 0.5,
+  enemyCampCount: 2,
   assetMode: 'code', assetPacks: [], charMode: 'code', charPacks: [],
 };
 

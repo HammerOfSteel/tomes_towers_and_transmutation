@@ -49,7 +49,10 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   // Native resolution — realm and world grid are always the same size now,
   // so RealmToWorldGrid.ts direct-indexes instead of resampling (P0
   // foundation rebuild, see docs/superpowers/specs/2026-08-28-overworld-foundation-rebuild-design.md).
-  const realm = generateRealmData(seed, config.worldSize, config.worldSize);
+  const realm = generateRealmData(
+    seed, config.worldSize, config.worldSize,
+    config.settlementCount, config.shape, config.climate, config.roughness,
+  );
   const grid  = realmToWorldGrid(realm, config.worldSize);
 
   for (let row = 0; row < GH; row++) {

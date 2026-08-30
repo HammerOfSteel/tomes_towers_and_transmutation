@@ -6,6 +6,8 @@
  * is written back after generation so the same world can be recreated.
  */
 
+import type { RealmShape, RealmClimate } from './RealmGenerator';
+
 export type WorldSize = 128 | 256 | 512;
 
 export interface WorldGenConfig {
@@ -30,6 +32,16 @@ export interface WorldGenConfig {
    * parameter to `generateRealmData()`.
    */
   settlementCount: number;
+  /**
+   * Realm landmass shape (Studio Realm tab parity — see
+   * `RealmGenerator.ts`'s `RealmShape`). Threaded into `generateRealmData()`
+   * so the live world can reproduce a Studio-previewed realm's shape.
+   */
+  shape:      RealmShape;
+  /** Realm climate bias (Studio Realm tab parity). */
+  climate:    RealmClimate;
+  /** Terrain roughness 0-1 (Studio Realm tab parity). */
+  roughness:  number;
   /** Number of enemy camps to place. */
   enemyCampCount: number;
   /**
@@ -68,6 +80,9 @@ export const DEFAULT_WORLD_GEN_CONFIG: Readonly<WorldGenConfig> = {
   caveCount:      3,
   gladeCount:     2,
   settlementCount: 6,
+  shape:      'island',
+  climate:    'temperate',
+  roughness:  0.5,
   enemyCampCount: 8,
   assetMode:      'code',
   assetPacks:     [],

@@ -149,14 +149,35 @@ describe('buildWorldGrid — native realm resolution', () => {
     expect(sampled).toBeGreaterThan(0);
   });
 
-  it('calls generateRealmData with seed, width and height equal to config.worldSize', () => {
+  it('calls generateRealmData with seed, width, height, settlementCount, shape, climate, roughness (all of config, not just size)', () => {
     const config = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const };
     const spy = vi.spyOn(RealmGen, 'generateRealmData');
     try {
       buildWorldGrid(9999, config);
-      expect(spy).toHaveBeenCalledWith(9999, 128, 128);
+      expect(spy).toHaveBeenCalledWith(
+        9999, 128, 128,
+        config.settlementCount, config.shape, config.climate, config.roughness,
+      );
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('honors config.shape/climate/roughness/settlementCount (not hardcoded defaults)', () => {
+    const seed = 777;
+    const baseCfg = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const, seed };
+    const islandGrid = buildWorldGrid(seed, { ...baseCfg, shape: 'island' });
+    const pangaeaGrid = buildWorldGrid(seed, { ...baseCfg, shape: 'pangaea' });
+    const oceanCount = (g: WorldGrid) => {
+      let n = 0;
+      for (let r = 0; r < 128; r++) for (let c = 0; c < 128; c++) {
+        const b = g.get(c, r).biome;
+        if (b === 'ocean' || b === 'deep_ocean') n++;
+      }
+      return n;
+    };
+    // Same seed, different shape → measurably different ocean tile count
+    // (island biases strongly toward ocean at the edges; pangaea does not).
+    expect(oceanCount(islandGrid)).not.toBe(oceanCount(pangaeaGrid));
   });
 });
