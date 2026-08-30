@@ -1363,10 +1363,11 @@ export class OverworldScene {
    */
 
   /**
-   * Build a single semi-transparent water mesh for all river / water-biome tiles.
-   * Each qualifying tile gets a flat quad placed at `elevation × SH + 0.05`
-   * (just above the terrain top face).  All quads are merged into one
-   * BufferGeometry → one draw call, `depthWrite:false` prevents z-fighting.
+   * Build a single semi-transparent water mesh for all river / lake / water-
+   * biome tiles. Each qualifying tile gets a flat quad placed at
+   * `elevation × SH + 0.05` (just above the terrain top face).  All quads
+   * are merged into one BufferGeometry → one draw call, `depthWrite:false`
+   * prevents z-fighting.
    */
   private _buildWaterMesh(): THREE.Mesh | null {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
@@ -1376,7 +1377,7 @@ export class OverworldScene {
     for (let row = 0; row < GH; row++) {
       for (let col = 0; col < GW; col++) {
         const cell = this._wg.get(col, row);
-        if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
+        if (cell.feature !== 'river' && cell.feature !== 'lake' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
 
         const wx  = (col - GHW) * T;
         const wz  = (row - GHH) * T;
