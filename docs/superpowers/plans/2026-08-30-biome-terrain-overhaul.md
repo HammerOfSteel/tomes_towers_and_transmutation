@@ -140,28 +140,71 @@ above it that it depends on are done, though several are independent and
 can be reordered/parallelized (noted per-phase).
 
 ### Phase 1 — Elevation range & mountain biome
-**Depends on:** nothing (foundational, do first).
+> **Status: ✅ DONE (2026-08-30).** Split into two independently-tested,
+> independently-committed sub-changes:
+> - **Mountain biome** (commit `feat(world): add mountain biome`): added
+>   `mountain` to the unified `RealmBiome`/`BiomeId` taxonomy (11 values
+>   now), `classifyBiome()`'s new bucket at elevation 0.70-0.85 (below
+>   snow, regardless of moisture/temperature — real alpine terrain is rugged
+>   whether hot or cold), `BIOME_COLOR_VARIANTS.mountain` (warm grey-brown,
+>   distinct from tundra/desert), dungeons now prefer mountain terrain
+>   (settlements already excluded it implicitly). `CaveGladeWorldPlacer.ts`/
+>   `CaveGladePlacer.ts` cave eligibility switched from an elevation-band
+>   proxy to a direct `biome === 'mountain'` check (more accurate); updated
+>   both modules' and `cave-glade-integration.md`'s stale pre-unification
+>   doc text.
+> - **Elevation widening** (commit `feat(world): widen elevation levels
+>   5->8`): `RealmToWorldGrid.ts` gained an exported `ELEVATION_LEVELS = 8`
+>   constant (was a hardcoded 5), giving ~75% more total height range at
+>   unchanged per-level height — deliberately conservative (finer, more
+>   numerous terracing steps rather than taller cliffs; Phase 2's ramp
+>   geometry is where terraces become actual slopes). `HydrologyGenerator.ts`'s
+>   river-source threshold and `WorldGenerator.ts`'s `MLV` now derive from
+>   `ELEVATION_LEVELS` instead of duplicated magic numbers.
+>
+> **Verification:** all planned tests written (11 in `RealmGenerator.test.ts`
+> incl. 3 new `classifyBiome` unit tests, `WorldGrid.test.ts`,
+> `TerrainGeometryBuilder.test.ts`'s 8-biome distinctness check,
+> `CaveGladeWorldPlacer.test.ts`, `RealmToWorldGrid.test.ts`'s quantization
+> tests). Full project suite: 2618/2630 passing — the 12 failures confirmed
+> byte-for-byte identical (same file+test names) to the pre-Phase-1 baseline
+> via a temporary `git worktree` comparison at each sub-change, proving zero
+> regressions. `tsc --noEmit` baseline unchanged (143 errors) throughout.
+> Caught and fixed one real side effect along the way:
+> `RoadGenerator.ts`'s inter-settlement road pathing had an `elevation >= 3`
+> "rocky terrain" cost penalty that fired against a much larger fraction of
+> the map once the range widened (causing a measurable zigzag/turn-ratio
+> regression in `RoadGenerator.test.ts`) — replaced with a direct
+> `biome === 'mountain'` check, which fixed the regression outright (more
+> accurate than the elevation proxy ever was) rather than needing to loosen
+> the test's tolerance. Live-verified via the Overworld Lab (a moderate
+> config renders correctly with no errors; an extreme stress-test config —
+> `pangaea` shape, `roughness: 0.9` — crashes the headless browser during
+> shadow-map rendering, but this was confirmed to reproduce **identically
+> on the pre-Phase-1 baseline** via a temporary worktree comparison, so it's
+> a pre-existing headless-rendering environment fragility under extreme
+> parameters, not a regression from this phase).
 
 Widen the discrete elevation model so real hills/valleys/mountains are
 physically possible, and add a `mountain` biome so the tallest terrain
 reads as rock/peak rather than snowing over everything above 0.85.
 
-- [ ] Increase `quantizeElevation()`'s level count (e.g. 0-4 → 0-9, tune by
+- [x] Increase `quantizeElevation()`'s level count (e.g. 0-4 → 0-9, tune by
       playtesting) and/or increase `LEVEL_HEIGHT` — both raise the max
       height range; changing level *count* also gives finer terracing steps
       near the same total height, so both knobs should be tuned together
       against actual playtested "does this feel like a hill" screenshots,
       not picked by formula alone.
-- [ ] Add `'mountain'` to `RealmBiome`/`BiomeId` (both, kept in lockstep per
+- [x] Add `'mountain'` to `RealmBiome`/`BiomeId` (both, kept in lockstep per
       the existing unification). `classifyBiome()`: elevation above some
       threshold *and* not already claimed by `snow`'s colder-climate rule
       becomes `mountain` (rocky, mostly bare) — snow still wins at the very
       coldest temperatures/highest elevations (a snow-capped-peak reads as
       `snow`, the rocky slopes below the cap read as `mountain`).
-- [ ] `TerrainGeometryBuilder.ts`: add a `BIOME_COLOR_VARIANTS.mountain`
+- [x] `TerrainGeometryBuilder.ts`: add a `BIOME_COLOR_VARIANTS.mountain`
       entry (bare rock grey/brown tones, distinct from `tundra`'s existing
       colors and from `BIOME[4]`'s "rocky upland" default).
-- [ ] Extend `CaveGladeWorldPlacer.ts`'s cave eligibility (currently an
+- [x] Extend `CaveGladeWorldPlacer.ts`'s cave eligibility (currently an
       elevation-band substitute for the "mountain/bog" biome that never
       existed, per its own header comment) to use the real `mountain` biome
       now that it exists, simplifying that workaround away. Update the
@@ -169,14 +212,14 @@ reads as rock/peak rather than snowing over everything above 0.85.
       describes the *old* `bog|grass|forest|highland|rocky|water` biome
       taxonomy that predates the 10-value unification — a documentation
       fix, not a code fix, since the code already moved on).
-- [ ] Nature/settlement/dungeon scatter rules (`ScatterRules.ts`,
+- [x] Nature/settlement/dungeon scatter rules (`ScatterRules.ts`,
       `RealmGenerator.ts`'s settlement/dungeon eligibility sets) need an
       explicit decision per mountain: settlements should very likely
       exclude `mountain` (steep, poor building ground) the same way they
       already exclude ocean/beach/tundra/snow/desert-adjacent — dungeons
       should probably *prefer* mountains (rocky, remote) alongside their
       existing eligible-biome set.
-- [ ] Tests: `RealmGenerator.test.ts` (mountain appears at high elevation,
+- [x] Tests: `RealmGenerator.test.ts` (mountain appears at high elevation,
       doesn't appear at low elevation regardless of moisture/temp),
       `WorldGrid.test.ts` (mountain is a valid `BiomeId`),
       `TerrainGeometryBuilder.test.ts` (mountain has a color-variant entry),
