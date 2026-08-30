@@ -251,6 +251,11 @@ export class NPCEntity {
   private _frameCount: number = 0;
   private _questGiven: boolean = false;
 
+  /** Running animation clock, seconds — fed to `_rig.update(t, dt)` every
+   *  real per-frame update (see `_tickAnim()`'s doc comment for why this
+   *  must never be skipped). */
+  private _animTime: number = 0;
+
   /** Optional callback fired once when this NPC hands out a quest. */
   onQuestGiven?: (quest: QuestDef) => void;
 
@@ -318,6 +323,27 @@ export class NPCEntity {
 
   // ── Per-frame update ──────────────────────────────────────────────────────
 
+  /**
+   * Drives the rig's actual animation-clock/pose-blending forward
+   * (`NpcInstance.update(t, dt)` — see its doc comment: "call every
+   * frame", which selects/advances clips via the underlying `Animator`)
+   * and re-asserts which base loop it should be blending toward
+   * (`setAnimState`). `setAnimState` alone only *selects* a target state;
+   * without a matching `update()` call every real frame the blend never
+   * advances and the NPC visually freezes at whatever pose was last
+   * composed — this was the root cause of NPCs showing a single frozen
+   * pose instead of walking/idling. MUST be called from every FSM branch
+   * below (idle/interact/wander-no-target/wander-arrived all `return`
+   * before reaching the bottom of the old single-exit-point version of
+   * this method), which is why it's a small shared helper rather than one
+   * call at the tail of `update()`.
+   */
+  private _tickAnim(dt: number, isMoving: boolean): void {
+    this._animTime += dt;
+    this._rig.update(this._animTime, dt);
+    this._rig.setAnimState(isMoving ? 'walk' : 'idle');
+  }
+
   update(dt: number, playerPos: THREE.Vector3, inputE: boolean): void {
     const pos  = this._rig.root.position;
     const dx   = playerPos.x - pos.x;
@@ -376,6 +402,7 @@ export class NPCEntity {
         _closeDialogue();
         this._state = 'wander';
       }
+      this._tickAnim(dt, false);
       return;
     }
 
@@ -391,12 +418,14 @@ export class NPCEntity {
         this._state = 'wander';
         this._pickWanderTarget(mulberry32(this._seed ^ (this._frameCount * 31337)));
       }
+      this._tickAnim(dt, false);
       return;
     }
 
     if (this._state === 'wander') {
       if (!this._target) {
         this._pickWanderTarget(mulberry32(this._seed ^ (this._frameCount * 31337)));
+        this._tickAnim(dt, false);
         return;
       }
       const tdx   = this._target.x - pos.x;
@@ -411,6 +440,7 @@ export class NPCEntity {
         this._target    = null;
         this._state     = 'idle';
         this._idleTimer = idleMin + (mulberry32(this._seed ^ this._frameCount)() * (idleMax - idleMin));
+        this._tickAnim(dt, false);
         return;
       }
 
@@ -422,7 +452,7 @@ export class NPCEntity {
 
     // ── Walk/idle animation ────────────────────────────────────────────────
     const isMoving = this._state === 'wander' && this._target !== null;
-    this._rig.setAnimState(isMoving ? 'walk' : 'idle');
+    this._tickAnim(dt, isMoving);
   }
 
   // ── Label ─────────────────────────────────────────────────────────────────

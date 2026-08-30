@@ -5,7 +5,7 @@
  * gameplay surface (name, role, group, dispose) intact.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { NPCEntity } from '@/world/NPCEntity';
 import type { SettlementEntry } from '@/world/WorldData';
@@ -52,5 +52,55 @@ describe('NPCEntity', () => {
     const npc = new NPCEntity(4, 4, 0, 0, 'citizen', settlement);
     const playerPos = new THREE.Vector3(0, 0, 20); // far enough to avoid interact range, close enough to update
     expect(() => npc.update(0.016, playerPos, false)).not.toThrow();
+  });
+
+  describe('animation clock regression (rig.update() was never called — NPCs froze at their initial pose)', () => {
+    it('calls the rig\'s own update(t, dt) while idle (the default/most common state), not just setAnimState', () => {
+      const settlement = makeSettlement();
+      const npc = new NPCEntity(5, 5, 0, 0, 'citizen', settlement);
+      const updateSpy = vi.fn();
+      (npc as any)._rig.update = updateSpy;
+      const farPlayerPos = new THREE.Vector3(0, 0, 50); // outside interact/aggro range, well inside freeze range
+      npc.update(0.016, farPlayerPos, false);
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      const [t, dt] = updateSpy.mock.calls[0]!;
+      expect(dt).toBeCloseTo(0.016);
+      expect(typeof t).toBe('number');
+    });
+
+    it('advances its own animation clock (t) across successive frames instead of passing a constant', () => {
+      const settlement = makeSettlement();
+      const npc = new NPCEntity(6, 6, 0, 0, 'citizen', settlement);
+      const updateSpy = vi.fn();
+      (npc as any)._rig.update = updateSpy;
+      const farPlayerPos = new THREE.Vector3(0, 0, 50);
+      npc.update(0.1, farPlayerPos, false);
+      npc.update(0.1, farPlayerPos, false);
+      npc.update(0.1, farPlayerPos, false);
+      expect(updateSpy).toHaveBeenCalledTimes(3);
+      const times = updateSpy.mock.calls.map(c => c[0] as number);
+      expect(times[1]).toBeGreaterThan(times[0]!);
+      expect(times[2]).toBeGreaterThan(times[1]!);
+    });
+
+    it('still calls rig.update(t, dt) while in the interact state (talking to the player)', () => {
+      const settlement = makeSettlement();
+      const npc = new NPCEntity(7, 7, 0, 0, 'citizen', settlement);
+      const updateSpy = vi.fn();
+      (npc as any)._rig.update = updateSpy;
+      const closePlayerPos = new THREE.Vector3(0, 0, 1); // within INTERACT_RANGE
+      npc.update(0.016, closePlayerPos, true); // inputE=true triggers interact state
+      expect(updateSpy).toHaveBeenCalled();
+    });
+
+    it('does not call rig.update at all once the NPC is fully distance-frozen (perf optimization preserved)', () => {
+      const settlement = makeSettlement();
+      const npc = new NPCEntity(8, 8, 0, 0, 'citizen', settlement);
+      const updateSpy = vi.fn();
+      (npc as any)._rig.update = updateSpy;
+      const veryFarPlayerPos = new THREE.Vector3(0, 0, 1000); // beyond FREEZE_DIST_SQ
+      npc.update(0.016, veryFarPlayerPos, false);
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
   });
 });
