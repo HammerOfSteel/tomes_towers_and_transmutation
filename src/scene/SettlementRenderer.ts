@@ -19,6 +19,7 @@ import {
 import { selectLampRoadTiles } from '@/world/LampPlacement';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { cobblestoneTexture } from '@/world/buildings/TextureFactory';
+import { CORNER_JITTER_MAX } from '@/world/TerrainGeometryBuilder';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { makeLampPost } from './LampPostFactory';
 import { buildParkFeature } from '@/world/props/WardFeatureClusters';
@@ -26,8 +27,13 @@ import { buildParkFeature } from '@/world/props/WardFeatureClusters';
 // Matches OverworldScene's local constants.
 const T  = 2;            // tile side length in world units
 const SH = LEVEL_HEIGHT; // world-unit height increment per elevation level
-/** Vertical offset above the terrain top face, avoids z-fighting — matches SettlementRoadMesh.ts's ROAD_HEIGHT_OFFSET. */
-const ROAD_HEIGHT_OFFSET = 0.02;
+/** Vertical offset above the terrain top face, avoids z-fighting — matches
+ *  SettlementRoadMesh.ts's ROAD_HEIGHT_OFFSET. Must clear
+ *  TerrainGeometryBuilder's CORNER_JITTER_MAX (the terrain top face's own
+ *  per-corner cosmetic jitter) or road geometry can visibly clip through/
+ *  under the jittered ground at random corners — this was the root cause
+ *  of the "roads glitch into the ground" bug report. */
+const ROAD_HEIGHT_OFFSET = CORNER_JITTER_MAX + 0.02;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 

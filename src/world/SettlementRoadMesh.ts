@@ -29,6 +29,7 @@
 
 import * as THREE from 'three';
 import { cobblestoneTexture } from './buildings/TextureFactory';
+import { CORNER_JITTER_MAX } from './TerrainGeometryBuilder';
 import type { SettlementSpawnPlan, WorldPos2 } from './SettlementSpawner';
 import type { RiverHeightSampler } from './RealmRiverMesh';
 import type { BuildingKind } from './buildings/BuildingDNA';
@@ -39,8 +40,11 @@ export const MAIN_ROAD_WIDTH = 2;
 /** World-unit width of an "alley" — connects minor buildings. */
 export const ALLEY_WIDTH = 1;
 
-/** Vertical offset above the sampled terrain height, avoids z-fighting with the ground plane. */
-export const ROAD_HEIGHT_OFFSET = 0.02;
+/** Vertical offset above the sampled terrain height, avoids z-fighting with
+ *  the ground plane. Must clear TerrainGeometryBuilder's CORNER_JITTER_MAX
+ *  (the terrain top face's own per-corner cosmetic jitter) — kept in sync
+ *  with SettlementRenderer.ts's own ROAD_HEIGHT_OFFSET. */
+export const ROAD_HEIGHT_OFFSET = CORNER_JITTER_MAX + 0.02;
 
 /** Building kinds considered settlement anchors (get the wider "main road"). */
 const MAIN_ROAD_KINDS: ReadonlySet<BuildingKind> = new Set<BuildingKind>([

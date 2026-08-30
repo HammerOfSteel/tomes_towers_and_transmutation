@@ -50,6 +50,7 @@ import {
   type Faction,
 } from '@/world/buildings/BuildingDNA';
 import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
+import { earthTexture }                from '@/world/buildings/FactionBlockTextures';
 import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
 import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
@@ -64,7 +65,7 @@ import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
-import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, CORNER_JITTER_MAX } from '@/world/TerrainGeometryBuilder';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
@@ -84,6 +85,13 @@ const T   = 2;                // tile side length in world units (= interior cel
 // LEVEL_HEIGHT or the terrain mesh/collider and the swim water query would
 // silently disagree about tile heights.
 const SH  = LEVEL_HEIGHT;      // world-unit height increment per level
+
+/** Vertical offset above the terrain top face for flat road/pavement planes
+ *  (settlement interior squares, inter-settlement dirt roads). Must clear
+ *  TerrainGeometryBuilder's CORNER_JITTER_MAX or the plane can visibly clip
+ *  through/under the jittered ground at random corners — kept in sync with
+ *  SettlementRenderer.ts's own ROAD_HEIGHT_OFFSET (same formula). */
+const ROAD_HEIGHT_OFFSET = CORNER_JITTER_MAX + 0.02;
 
 /**
  * Task 13 final review (Important issue #4) — caps how many NEW chunks
@@ -2557,7 +2565,17 @@ export class OverworldScene {
         sqSeen.add(k);
         const wx = (rt.col - GHW) * T;
         const wz = (rt.row - GHH) * T;
-        sqPositions.push(new THREE.Vector3(wx, centreElev * SH + 0.02, wz));
+        sqPositions.push(new THREE.Vector3(wx, centreElev * SH + ROAD_HEIGHT_OFFSET, wz));
+      }
+
+      // Continuous quad-strip street ribbons (real streets following the
+      // ward-model's road graph, width-varying main-road/alley) — layered on
+      // top of the flat pavement squares above, which still fill in plaza/
+      // ward-interior tiles the ribbons themselves don't cover. This is what
+      // turns the old "every road tile is an identical flat square" look
+      // into an actual road shape.
+      for (const rm of result.roadRibbonMeshes) {
+        this._roadMeshes.push(rm);
       }
 
       for (const grp of result.lampGroups)   this._lampGroups.push(grp);
@@ -2592,7 +2610,11 @@ export class OverworldScene {
     if (interRoads.length > 0) {
       const dirtGeo = new THREE.PlaneGeometry(T * 1.15, T * 1.15);
       dirtGeo.rotateX(-Math.PI / 2);
-      const dirtMat  = new THREE.MeshLambertMaterial({ color: 0x7d5e3c });
+      // Textured (packed-earth canvas texture, same one used for vulperia's
+      // block-kit walls) instead of a flat solid color — was previously the
+      // most visibly "blocky" road surface in the game (a single flat brown
+      // tint with no surface detail at all).
+      const dirtMat  = new THREE.MeshStandardMaterial({ map: earthTexture(2, 2), color: 0x9a8060, roughness: 0.95 });
       const dirtPos: THREE.Vector3[] = [];
       const dirtSeen = new Set<string>();
 
@@ -2602,7 +2624,7 @@ export class OverworldScene {
         dirtSeen.add(k);
         const wx = (r.col - GHW) * T;
         const wz = (r.row - GHH) * T;
-        const wy = this._wg.get(r.col, r.row).elevation * SH + 0.01;
+        const wy = this._wg.get(r.col, r.row).elevation * SH + ROAD_HEIGHT_OFFSET;
         dirtPos.push(new THREE.Vector3(wx, wy, wz));
       }
 

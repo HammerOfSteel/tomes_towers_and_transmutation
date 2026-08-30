@@ -106,7 +106,7 @@ export function cellVariantIndex(col: number, row: number, variantCount: number)
 }
 
 /** Max Y-offset (world units) applied to a single grid corner by cornerHeightJitter. */
-const CORNER_JITTER_MAX = 0.03;
+export const CORNER_JITTER_MAX = 0.03;
 
 /**
  * Deterministic per-GRID-CORNER (not per-cell) small Y jitter, in world units,

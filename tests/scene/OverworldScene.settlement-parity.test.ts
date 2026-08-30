@@ -49,7 +49,13 @@ describe('OverworldScene settlement rendering parity', () => {
     // groups (park-ward Sacred Grove/Slime Pool/etc., see
     // WardFeatureClusters.ts / Phase 2a) since OverworldScene reuses the
     // same add/dispose array for both — an increase here after adding a
-    // feature cluster is expected, not a regression.
+    // feature cluster is expected, not a regression. roadMeshes also jumped
+    // (2 -> many) once real per-ribbon street meshes (SettlementRenderer.ts's
+    // buildRoadRibbonMeshes(), previously built but never consumed) were
+    // wired in on top of the flat per-tile pavement squares, replacing the
+    // "every road tile is an identical flat square" look with actual
+    // road-shaped ribbons — an increase here is the intended fix, not a
+    // regression.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadMeshes).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();
