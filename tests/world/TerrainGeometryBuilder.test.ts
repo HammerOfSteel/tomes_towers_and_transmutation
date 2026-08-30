@@ -481,7 +481,7 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     }
   });
 
-  it('renders an Edge-shaped tile (one full side ramped down) as a tilted planar quad with no wall on the OTHER 3 sides', () => {
+  it('renders an Edge-shaped tile (one full side ramped down) as a tilted planar quad with no wall at all (ramp reaches the neighbor exactly)', () => {
     const wg = flatGrid(3, 3);
     wg.set(0, 1, { elevation: 2 }); // west neighbor of tile (1,1), 1 level lower
     // Isolate tile (1,1)'s own contribution via the chunk sub-rectangle params
@@ -493,13 +493,12 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // wrongly count as "tilted". Isolating to exactly tile (1,1) avoids that.
     const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
     // Tile (1,1)'s west neighbor is 1 level lower (classifies 'edge', ramped
-    // west side); its north/south/east neighbors all match its own elevation,
-    // so — with Task 4 alone (walls not yet updated, that's Task 5) — the
-    // OLD wall code still fires a west wall here (still comparing the flat
-    // `wy`, not yet aware of the ramp) and no other walls. Expected
-    // contribution: 1 top face (planar Edge quad, 4 verts) + 1 west wall (4
-    // verts) = 8 vertices = 24 normal floats total.
-    expect(data.normals).toHaveLength(24);
+    // west side); its north/south/east neighbors all match its own elevation.
+    // With the wall-anchoring fix (Task 5), the west wall is now correctly
+    // suppressed too — the ramp already reaches exactly down to the west
+    // neighbor's own height, leaving no gap. Expected contribution: just the
+    // 1 top face (planar Edge quad, 4 verts) = 12 normal floats total.
+    expect(data.normals).toHaveLength(12);
     // The top face's normal (first of the 4 verts) must be genuinely tilted
     // — not exactly (0,1,0) — confirming Task 4's real slope, while still
     // mostly upward-facing (not vertical like a wall).
@@ -564,6 +563,59 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
       const isWall = Math.abs(ny) < 0.01;
       expect(isFlat || isWall, `unexpected partial-tilt normal ny=${ny}`).toBe(true);
     }
+  });
+
+  it('suppresses the wall on the ramped side once the ramp itself reaches exactly down to the lower neighbor', () => {
+    const isolated = new WorldGrid(2, 1);
+    isolated.set(0, 0, { elevation: 3 });
+    isolated.set(1, 0, { elevation: 2 }); // tile 1 is exactly 1 level lower, directly east of tile 0
+    // Isolate tile 0 only (chunk sub-rectangle) — otherwise tile 1's OWN
+    // east wall (toward the out-of-bounds void past col=1, which defaults
+    // to elevation 0) would also appear in the buffer and be mistaken for
+    // tile 0's east wall by a whole-buffer normal scan.
+    const data = buildTerrainGeometryData(isolated, 2, 1, 1, 0, 2, 1, 0, 0, 1, 1);
+    // Tile 0 (elevation 3) has an EAST-adjacent edge ramp toward tile 1 (elevation 2) —
+    // with a 1-row grid, north/south are out-of-bounds (treated as self, no ramp
+    // there), so tile 0 classifies as 'edge' (its NE+SE corners clamp to exactly
+    // tile 1's own elevation). The east wall must be fully suppressed since the
+    // ramp already reaches exactly down to tile 1's height — no gap remains.
+    const eastWallNormalPresent = (() => {
+      for (let i = 0; i < data.normals.length; i += 3) {
+        const nx = data.normals[i]!, ny = data.normals[i + 1]!, nz = data.normals[i + 2]!;
+        if (Math.abs(nx - 1) < 0.01 && Math.abs(ny) < 0.01 && Math.abs(nz) < 0.01) return true;
+      }
+      return false;
+    })();
+    expect(eastWallNormalPresent).toBe(false);
+  });
+
+  it('still draws a residual wall for the rare 2-level-jump case, anchored to the clamped ramp height not the old flat height', () => {
+    const isolated = new WorldGrid(2, 1);
+    isolated.set(0, 0, { elevation: 3 });
+    isolated.set(1, 0, { elevation: 1 }); // 2 levels lower — ramp only covers 1 level, residual wall for the rest
+    const data = buildTerrainGeometryData(isolated, 2, 1, 1, 0, 2, 1, 0, 0, 1, 1); // isolate tile 0 only
+    let eastWallTopY = -Infinity;
+    for (let i = 0; i < data.normals.length; i += 3) {
+      const nx = data.normals[i]!, ny = data.normals[i + 1]!, nz = data.normals[i + 2]!;
+      if (Math.abs(nx - 1) < 0.01 && Math.abs(ny) < 0.01 && Math.abs(nz) < 0.01) {
+        eastWallTopY = Math.max(eastWallTopY, data.positions[i + 1]!); // Y component of this same vertex
+      }
+    }
+    expect(eastWallTopY).toBeGreaterThan(-Infinity); // residual wall is present
+    // SH=1 here (buildTerrainGeometryData's SH parameter) — elevation 3 tile ramped
+    // down 1 level = physical height 2, strictly less than the old flat height of 3
+    // (the wall's top now starts where the ramp's own corner already reached, not
+    // at the tile's original flat elevation).
+    expect(eastWallTopY).toBeLessThan(3);
+    expect(eastWallTopY).toBeCloseTo(2, 5);
+  });
+
+  it('the pre-existing all-four-down wall test still produces exactly 4 full walls (unaffected by the anchor change)', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { elevation: 2 });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+    expect(data.positions).toHaveLength(84);
+    expect(data.indices).toHaveLength(42);
   });
 });
 

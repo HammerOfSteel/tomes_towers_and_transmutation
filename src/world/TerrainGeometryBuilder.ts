@@ -489,46 +489,51 @@ export function buildTerrainGeometryData(
       // Wall faces compare *physical* (carved) height, not raw elevation
       // level, so a land tile next to a carved river/ocean tile grows a
       // wall down into the basin — a real riverbank/shore lip — with no
-      // extra logic: this is the same "draw a wall wherever my neighbour is
-      // lower" rule as before, just fed carved heights instead of levels.
+      // extra logic. Anchored to this tile's own NW/NE ramp corners
+      // (Task 4) rather than the flat `wy`, so a ramp that already
+      // reaches down to a lower neighbor doesn't leave a redundant wall —
+      // see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md §5.
+      const wallTopS = Math.min(nwY, neY);
       const wyS = physH(col, row + 1);
-      if (wyS < wy) {
+      if (wyS < wallTopS) {
         const d = 0.76;
         addFace(
-          [wx1, wy, wz1], [wx, wy, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
+          [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
           0, 0, 1,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
+      const wallTopN = Math.min(swY, seY);
       const wyN = physH(col, row - 1);
-      if (wyN < wy) {
+      if (wyN < wallTopN) {
         const d = 0.50;
         addFace(
-          [wx, wy, wz], [wx1, wy, wz], [wx1, wyN, wz], [wx, wyN, wz],
+          [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
           0, 0, -1,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── EAST wall (+X face, at wx1) ──────────────────────────────────
+      const wallTopE = Math.min(neY, seY);
       const wyE = physH(col + 1, row);
-      if (wyE < wy) {
+      if (wyE < wallTopE) {
         const d = 0.63;
         addFace(
-          [wx1, wy, wz], [wx1, wy, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
+          [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
           1, 0, 0,  tr * d, tg * d, tb * d,
         );
       }
 
       // ── WEST wall (−X face, at wx) ───────────────────────────────────
+      const wallTopW = Math.min(swY, nwY);
       const wyW = physH(col - 1, row);
-      if (wyW < wy) {
+      if (wyW < wallTopW) {
         const d = 0.55;
         addFace(
-          [wx, wy, wz1], [wx, wy, wz], [wx, wyW, wz], [wx, wyW, wz1],
+          [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
           -1, 0, 0,  tr * d, tg * d, tb * d,
         );
-
       }
     }
   }
