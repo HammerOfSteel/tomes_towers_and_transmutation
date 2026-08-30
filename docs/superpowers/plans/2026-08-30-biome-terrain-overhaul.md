@@ -228,6 +228,69 @@ reads as rock/peak rather than snowing over everything above 0.85.
 ### Phase 2 — TerrainKit: modular sub-tile slope system
 **Depends on:** Phase 1 (needs a wider height range to be worth sloping between).
 
+> **Status: 🟡 Partially DONE (2026-08-30) — "roads as a first-class
+> terrain surface" sub-item shipped; the generic ramp/slope sub-item
+> below is still outstanding.**
+>
+> Shipped, in dependency order (4 commits): `RoadPathSampler.ts` (pure
+> sub-tile road/ground classification given world-space road paths with
+> width — nearer-path-wins when two roads' bands overlap a sub-tile, a
+> bounding-box pre-filter so a long inter-settlement path doesn't get
+> segment-tested against every distant tile); `RoadGenerator.ts` exposing
+> ordered per-edge `paths: GridPath[]` alongside the existing deduplicated
+> flat tile list (needed for Chaikin-smoothing a centerline, which can't
+> tolerate the gaps a global dedup can introduce); `TerrainGeometryBuilder.ts`'s
+> `buildTerrainGeometryData()` gaining optional `roadPaths`/`roadSubdivisions`
+> params — a road-flagged tile with actual path coverage now subdivides
+> into a 4x4 sub-tile grid, ground sub-tiles going into the existing
+> buffers exactly as before and road sub-tiles becoming a literal hole in
+> that buffer (never emitted there at all) plus a separate per-variant
+> `roadGeometry` output with real UV; `RoadTextures.ts` mapping a
+> settlement's faction (or a generic open-road id) to a real canvas
+> texture, reusing the same 7 per-faction textures already proven out for
+> buildings (`FactionBlockTextures.ts`) — zero new art assets needed;
+> `OverworldScene.ts` collecting every settlement's ward-model road ribbons
+> (tagged with that settlement's own faction) plus every inter-settlement
+> A*/L-shape path Chaikin-smoothed into an organic curve (tagged generic),
+> once at construction time before the first chunk ever loads, feeding
+> `_loadTerrainChunk()`'s per-chunk `buildTerrainGeometryData()` call and
+> building one textured mesh per road variant actually present in that
+> chunk — merged into the SAME Rapier trimesh collider buffer the ground
+> alone would otherwise use (a visual-only hole is not a physics hole),
+> with the old settlement-interior flat pavement squares, inter-settlement
+> flat dirt-road squares, and ribbon-mesh overlay all retired outright.
+>
+> **Why this was the real fix, not another patch:** a prior same-day quick
+> fix (see Phase 8's sibling note and git history) tuned the old overlay
+> meshes' height offset above `CORNER_JITTER_MAX`, which helped but did not
+> fully resolve a reported "roads still glitch, two textures competing for
+> the same space" symptom — because the ribbon mesh and the flat pavement
+> squares were *both* still separate, still-coincident-in-places planes
+> layered over the terrain. Baking the road into the terrain mesh itself
+> (a literal hole where the road renders instead of a second surface)
+> removes the entire *category* of bug, not just one instance of it.
+>
+> **Verification:** 19 new tests across the 4 modules (RoadPathSampler
+> coverage classification/nearer-wins/bounding-box filter/determinism,
+> RoadGenerator path-contiguity/endpoint-correctness, TerrainGeometryBuilder
+> backward-compat-with-no-paths/no-coverage-fallback/partial-and-full-
+> coverage-subdivision/multi-variant-grouping/watertight-height-continuity,
+> RoadTextures per-faction/generic/fallback/caching/distinctness/wrapping).
+> Full project suite: 2640/2652 passing throughout, the 12 failures
+> confirmed identical to the pre-session baseline at every commit. `tsc
+> --noEmit` baseline unchanged (143 errors) throughout. Live-verified via
+> the Overworld Lab across several teleported views of a live settlement's
+> streets and the surrounding inter-settlement road: no instance of the
+> reported z-fighting/flicker artifact visible in any view (a clean
+> checkerboard brightness-variation pattern only, no dashed interference
+> lines), confirming the fix visually as well as structurally.
+>
+> **Not yet done (tracked as continued Phase 2 work):** the generic
+> corner-height ramp/slope geometry for ordinary hill/mountain terrain
+> (this pass only subdivides tiles that carry a road — a plain hillside
+> tile is still a single flat quad per elevation level, i.e. still
+> terraced steps, not smooth slopes) — see the unchanged task list below.
+
 The centerpiece the user specifically asked for: "smaller pieces of tiles...
 subtiles and subsubtiles... that can slope and connect to each other in
 various ways," explicitly comparing it to the BlockKit lego-piece technique
@@ -277,7 +340,7 @@ research note above:
       generates in < 4ms" perf-test item — this is the natural point to
       finally close that out, now that there's an actual renderer to
       benchmark).
-- [ ] **Roads as a first-class terrain surface, not overlaid geometry**
+- [x] **Roads as a first-class terrain surface, not overlaid geometry**
       (added 2026-08-30 per direct user feedback on the Overworld Lab's
       current road rendering). Today roads are separate flat planes
       overlaid on top of the terrain mesh (`OverworldScene.ts`'s
@@ -298,7 +361,14 @@ research note above:
       instead of being locked to whole-tile-width rectangles, which is
       what makes it possible to have an organic dirt track through a
       forest look meaningfully different from a paved city street.
-- [ ] **Per-biome road styles** (part of the same ask): road texture/
+      **DONE** — see this phase's status note above (RoadPathSampler.ts +
+      TerrainGeometryBuilder.ts's roadGeometry output + OverworldScene.ts
+      wiring). Road sub-tile classification currently checks a fixed
+      `roadSubdivisions = 4` grid per tile (not yet a further-nested
+      "subsubtile" level) — sufficient for the width/curve granularity
+      shipped so far; revisit only if a future biome/race-specific road
+      style genuinely needs finer resolution than 0.5 WU sub-tiles.
+- [x] **Per-biome road styles** (part of the same ask): road texture/
       width/edge-treatment should vary by the biome it passes through —
       a forest path reads as a narrow trampled-dirt trail with grass
       overhang at the edges, a desert road reads as a wider hard-packed
@@ -310,12 +380,25 @@ research note above:
       edge treatment (organic tapered/blended edges where road meets
       ground, using the same small-block "lego" edge-rounding technique
       already established for `BlockKit.ts`'s chamfers).
-- [ ] Migration path: `SettlementRenderer.ts`'s `buildRoadRibbonMeshes()`
+      **DONE for the per-race half** — `RoadTextures.ts`'s
+      `roadVariantTexture(variant)` gives every settlement's own streets a
+      distinct texture keyed by that settlement's faction (reusing the 7
+      existing per-faction block textures), plus a generic open-road
+      texture for inter-settlement stretches. **Not yet done**: true
+      per-biome (not per-faction) variation for open-road stretches
+      (a forest-vs-desert open road currently share the one generic
+      texture) and organic tapered sub-tile edges where road meets
+      ground (edges are currently a hard subtile-boundary cut, not
+      blended/chamfered) — both remain Phase 8 follow-up work.
+- [x] Migration path: `SettlementRenderer.ts`'s `buildRoadRibbonMeshes()`
       and the inter-settlement flat-plane roads in `OverworldScene.ts`
       (both wired in as an interim fix ahead of this phase) should be
       retired once TerrainKit road-surface tiles land, rather than kept
       running in parallel — two road-rendering systems would be strictly
-      worse than either one alone.
+      worse than either one alone. **DONE** — both retired outright in
+      the same change that wired in the terrain-baked system (renderSettlementPlan()
+      itself still returns the raw ribbon/tile data for its existing test
+      coverage, it is simply no longer consumed for live rendering).
 
 ### Phase 3 — Lakes + hydrology unification
 **Depends on:** Phase 1 (mountain sourcing for lake basins reads better with real elevation range), independent of Phase 2.
