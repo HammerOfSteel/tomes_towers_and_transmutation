@@ -234,6 +234,45 @@ research note above:
       generates in < 4ms" perf-test item — this is the natural point to
       finally close that out, now that there's an actual renderer to
       benchmark).
+- [ ] **Roads as a first-class terrain surface, not overlaid geometry**
+      (added 2026-08-30 per direct user feedback on the Overworld Lab's
+      current road rendering). Today roads are separate flat planes
+      overlaid on top of the terrain mesh (`OverworldScene.ts`'s
+      instanced pavement squares + `SettlementRenderer.ts`'s road-ribbon
+      meshes, held a small height offset above the ground — patched in a
+      quick z-fighting fix ahead of this phase, see git history around
+      2026-08-30, but still a fundamentally separate layer, not a tile
+      property) — this reads as visibly "blocky" and disconnected from
+      the ground itself. The TerrainKit-native fix: give a tile/subtile a
+      `surface: 'ground' | 'road'` (or similar) flag directly in its
+      `TerrainKit` cell data, so a "road" subtile is rendered as part of
+      the SAME terrain mesh pass as its neighbours (no separate overlay
+      mesh, no height-offset z-fighting class of bug possible even in
+      principle) with a road-specific texture swapped in via Phase 8's
+      texture system instead of a bolted-on plane. Because roads become
+      ordinary terrain sub-tiles, they inherit sub-tile subdivision for
+      free — a road can narrow/widen/curve at sub-tile granularity
+      instead of being locked to whole-tile-width rectangles, which is
+      what makes it possible to have an organic dirt track through a
+      forest look meaningfully different from a paved city street.
+- [ ] **Per-biome road styles** (part of the same ask): road texture/
+      width/edge-treatment should vary by the biome it passes through —
+      a forest path reads as a narrow trampled-dirt trail with grass
+      overhang at the edges, a desert road reads as a wider hard-packed
+      sandy track, a settlement's own internal streets keep the existing
+      cobblestone look, a swamp/bog crossing might become a raised
+      plank/corduroy-road treatment. This is a natural extension of
+      Phase 8's per-biome `TerrainTextures.ts` (a `roadTexture(biome)`
+      alongside each biome's ground texture) plus this phase's sub-tile
+      edge treatment (organic tapered/blended edges where road meets
+      ground, using the same small-block "lego" edge-rounding technique
+      already established for `BlockKit.ts`'s chamfers).
+- [ ] Migration path: `SettlementRenderer.ts`'s `buildRoadRibbonMeshes()`
+      and the inter-settlement flat-plane roads in `OverworldScene.ts`
+      (both wired in as an interim fix ahead of this phase) should be
+      retired once TerrainKit road-surface tiles land, rather than kept
+      running in parallel — two road-rendering systems would be strictly
+      worse than either one alone.
 
 ### Phase 3 — Lakes + hydrology unification
 **Depends on:** Phase 1 (mountain sourcing for lake basins reads better with real elevation range), independent of Phase 2.
@@ -397,6 +436,14 @@ per-material canvas swatches, `color * map` tint-preserving multiply).
       Extend the biome coverage to the full current 10(+`mountain`)-value
       taxonomy per §1.6's finding, rather than reviving the narrower
       4-biome `tile-designer.md` table as-is.
+- [ ] Also export a `roadTexture(biome)` per biome (worn cobblestone for
+      settlement streets, packed dirt/gravel for open-road stretches,
+      narrower trampled-earth for forest paths, hard sandy track for
+      desert, raised plank/corduroy treatment for bog/swamp crossings) —
+      feeds Phase 2's "roads as a first-class terrain surface" item, so
+      a road subtile picks its texture the same way a ground subtile
+      picks its biome texture, rather than being a separately-textured
+      overlay plane.
 - [ ] `TerrainGeometryBuilder.ts`: add world-space-projected `uv` output to
       `buildTerrainGeometryData()` (same technique as `BlockKit.ts`'s
       `blockGeometry()` — planar top-down UV for the flat/ramp top faces,
