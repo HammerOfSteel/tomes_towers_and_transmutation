@@ -15,6 +15,7 @@ import type { WorldHistoryResult }          from './WorldHistory';
 import type { ResourceNodeRecord }          from './ResourceNodePlacer';
 import type { CaveEntranceBiome }           from './CaveGladePlacer';
 import type { DungeonSiteFamily, DungeonRewardBiasTag } from './DungeonSiteMetadata';
+import type { GridPath }                    from './RoadGenerator';
 
 
 // ── Entity record types ────────────────────────────────────────────────────────
@@ -84,6 +85,11 @@ export interface WorldData {
   glades:      GladeEntry[];
   /** Road tiles connecting settlements across the overworld (A* routed). */
   interRoads:      RoadSegment[];
+  /** Ordered, un-deduplicated per-edge paths for the same inter-settlement
+   *  roads as `interRoads` — used to build a continuous (Chaikin-smoothed)
+   *  world-space centerline for road sub-tile rendering, since `interRoads`
+   *  itself is a deduplicated flat set with no path ordering preserved. */
+  interRoadPaths:  GridPath[];
   /** World history simulation result (50-turn). Populated by WorldGenerator. */
   history?:        WorldHistoryResult;
   /** Harvestable resource nodes scattered across the overworld. Phase 7e. */

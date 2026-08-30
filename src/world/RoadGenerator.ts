@@ -31,6 +31,13 @@ export type GridPath = GridPt[];
 export interface InterRoadResult {
   /** Flat deduplicated tile list — used for WorldGrid marking and flat-tile rendering. */
   tiles:  RoadSegment[];
+  /** One ordered, un-deduplicated 4-connected path per connecting edge (raw
+   *  A-star / L-shape output before flattening) — used to build a continuous
+   *  world-space centerline for road sub-tile rendering (RoadPathSampler.ts).
+   *  Unlike `tiles`, this is never deduplicated across edges, so Chaikin-
+   *  smoothing a path never sees a gap where another edge already claimed
+   *  a shared tile. */
+  paths:  GridPath[];
 }
 
 // ── Min-heap priority queue ───────────────────────────────────────────────────
@@ -309,7 +316,7 @@ export function buildInterSettlementRoads(
   settlements: { plan: SettlementCentre }[],
   grid: WorldGrid,
 ): InterRoadResult {
-  if (settlements.length < 2) return { tiles: [] };
+  if (settlements.length < 2) return { tiles: [], paths: [] };
 
   const centres: Centre[] = settlements.map(s => ({
     col: s.plan.centerCol,
@@ -323,11 +330,17 @@ export function buildInterSettlementRoads(
 
   const seen   = new Set<string>();
   const tiles: RoadSegment[] = [];
+  const paths: GridPath[] = [];
 
   for (const [ai, bi] of edges) {
     const a = centres[ai]!, b = centres[bi]!;
     const raw  = _aStar(grid, a.col, a.row, b.col, b.row);
     const full = raw.length > 1 ? raw : _lShape(a.col, a.row, b.col, b.row);
+
+    // Ordered, un-deduplicated per-edge path — for road sub-tile rendering
+    // (RoadPathSampler.ts), which needs a contiguous centerline, not a
+    // globally-deduplicated flat set.
+    paths.push(full.map(({ col, row }) => ({ col, row })));
 
     // Full tile set for grid marking and flat-tile rendering
     for (const { col, row } of full) {
@@ -337,6 +350,6 @@ export function buildInterSettlementRoads(
     }
   }
 
-  return { tiles };
+  return { tiles, paths };
 }
 

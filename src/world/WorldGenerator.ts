@@ -125,16 +125,16 @@ export function buildWorldData(seed: number, config: WorldGenConfig): WorldData 
   const { caves, glades } = placeCavesAndGlades(grid, cfg, seed);
 
   // Build terrain-aware inter-settlement roads (MST + A* + DP simplification).
-  const { tiles: interRoads } = buildInterSettlementRoads(settlements, grid);
+  const { tiles: interRoads, paths: interRoadPaths } = buildInterSettlementRoads(settlements, grid);
 
   // Mark inter-settlement road tiles on the grid so the overworld mesh picks
   // them up (river crossings become fords instead of plain road — RI-3).
   applyRoadFords(grid, interRoads);
 
 
-  const partial = { config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
+  const partial = { config: cfg, grid, dungeons, settlements, caves, glades, interRoads, interRoadPaths,
                     resourceNodes: [] as import('./ResourceNodePlacer').ResourceNodeRecord[],
-                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, caves, glades, interRoads,
+                    history: simulateWorldHistory({ config: cfg, grid, dungeons, settlements, caves, glades, interRoads, interRoadPaths,
                       resourceNodes: [] }, seed) };
   partial.resourceNodes = placeResourceNodes(partial);
   return partial;

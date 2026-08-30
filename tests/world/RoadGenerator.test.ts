@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildWorldData } from '../../src/world/WorldGenerator';
+import { buildInterSettlementRoads } from '../../src/world/RoadGenerator';
+import { WorldGrid } from '../../src/world/WorldGrid';
 
 /**
  * Regression coverage for the road-jaggedness fix: A* previously had no
@@ -52,4 +54,54 @@ describe('RoadGenerator — turn penalty reduces zigzag', () => {
       }
     }
   }, 60000);
+});
+
+describe('buildInterSettlementRoads — ordered per-edge paths', () => {
+  function flatGrid(size: number): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) g.set(col, row, { elevation: 1, biome: 'grassland' });
+    }
+    return g;
+  }
+
+  it('returns one ordered path per connecting edge, each a contiguous 4-connected walk', () => {
+    const grid = flatGrid(20);
+    const settlements = [
+      { plan: { centerCol: 2, centerRow: 2 } },
+      { plan: { centerCol: 17, centerRow: 2 } },
+      { plan: { centerCol: 17, centerRow: 17 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    expect(result.paths).toBeDefined();
+    expect(result.paths!.length).toBeGreaterThan(0);
+    for (const path of result.paths!) {
+      expect(path.length).toBeGreaterThan(1);
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1]!, b = path[i]!;
+        const dist = Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
+        expect(dist).toBe(1); // every consecutive pair is 4-connected (no gaps/jumps)
+      }
+    }
+  });
+
+  it('every path endpoint matches a settlement center (paths connect real settlements)', () => {
+    const grid = flatGrid(20);
+    const settlements = [
+      { plan: { centerCol: 2, centerRow: 2 } },
+      { plan: { centerCol: 17, centerRow: 2 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    expect(result.paths!.length).toBe(1);
+    const path = result.paths![0]!;
+    const centers = settlements.map(s => `${s.plan.centerCol},${s.plan.centerRow}`);
+    expect(centers).toContain(`${path[0]!.col},${path[0]!.row}`);
+    expect(centers).toContain(`${path[path.length - 1]!.col},${path[path.length - 1]!.row}`);
+  });
+
+  it('returns no paths for fewer than 2 settlements', () => {
+    const grid = flatGrid(10);
+    const result = buildInterSettlementRoads([{ plan: { centerCol: 5, centerRow: 5 } }], grid);
+    expect(result.paths ?? []).toEqual([]);
+  });
 });
