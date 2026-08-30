@@ -48,10 +48,10 @@ describe('placeResourceNodes — biome/feature literal correctness', () => {
     // catching the exact class of bug this test guards against.
     const oreBiomes: BiomeId[] = ['snow'];
     const timberBiomes: BiomeId[] = ['forest', 'taiga'];
-    const essenceFeatures: TileFeature[] = ['river', 'river_bank', 'river_ford'];
+    const essenceFeatures: TileFeature[] = ['river', 'river_bank', 'river_ford', 'lake'];
 
     expect(oreBiomes.length).toBe(1);
     expect(timberBiomes.length).toBe(2);
-    expect(essenceFeatures.length).toBe(3);
+    expect(essenceFeatures.length).toBe(4);
   });
 });
