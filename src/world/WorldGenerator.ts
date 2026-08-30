@@ -20,12 +20,12 @@ import { buildInterSettlementRoads } from './RoadGenerator';
 import { simulateWorldHistory }      from './WorldHistory';
 import { placeResourceNodes }         from './ResourceNodePlacer';
 import { generateRealmData }   from './RealmGenerator';
-import { realmToWorldGrid }    from './RealmToWorldGrid';
+import { realmToWorldGrid, ELEVATION_LEVELS }    from './RealmToWorldGrid';
 
-const MLV = 4;
+const MLV = ELEVATION_LEVELS - 1;
 
 /**
- * Build a WorldGrid with elevation (0–4) and biome data sourced from the
+ * Build a WorldGrid with elevation (0–7) and biome data sourced from the
  * same `generateRealmData()` realm generator Overworld Studio uses (P0
  * realm/terrain unification — see
  * TODO/02-game-world-integration/STUDIO-LIVE-PARITY.md), resampled onto

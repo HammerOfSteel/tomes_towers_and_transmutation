@@ -73,7 +73,7 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
     expect(grid.get(center, center).elevation).toBeLessThanOrEqual(1);
   });
 
-  it('every produced cell has a valid elevation 0-4 and BiomeId', () => {
+  it('every produced cell has a valid elevation 0-7 and BiomeId', () => {
     const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 4, worldSize: 128 as const };
     const grid = buildWorldGrid(4, cfg);
     const validBiomes = new Set([
@@ -84,7 +84,7 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
       for (let col = 0; col < grid.width; col++) {
         const cell = grid.get(col, row);
         expect(cell.elevation).toBeGreaterThanOrEqual(0);
-        expect(cell.elevation).toBeLessThanOrEqual(4);
+        expect(cell.elevation).toBeLessThanOrEqual(7);
         expect(validBiomes.has(cell.biome)).toBe(true);
       }
     }

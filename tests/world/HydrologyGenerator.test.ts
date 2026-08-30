@@ -8,9 +8,10 @@ describe('generateHydrology — waterDepth', () => {
   it('sets waterDepth = RIVER_DEPTH_WU on every carved river tile', () => {
     const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const, riverCount: 3 };
     const grid = new WorldGrid(cfg.worldSize, cfg.worldSize);
-    // Give the whole grid enough elevation for river sourcing to find candidates.
+    // Give the whole grid enough elevation for river sourcing to find candidates
+    // (max level after Phase 1's widening to 8 levels, 0-7).
     for (let row = 0; row < grid.height; row++) {
-      for (let col = 0; col < grid.width; col++) grid.set(col, row, { elevation: 4 });
+      for (let col = 0; col < grid.width; col++) grid.set(col, row, { elevation: 7 });
     }
     generateHydrology(grid, cfg, 42);
 
@@ -31,7 +32,7 @@ describe('generateHydrology — waterDepth', () => {
     const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const, riverCount: 3 };
     const grid = new WorldGrid(cfg.worldSize, cfg.worldSize);
     for (let row = 0; row < grid.height; row++) {
-      for (let col = 0; col < grid.width; col++) grid.set(col, row, { elevation: 4 });
+      for (let col = 0; col < grid.width; col++) grid.set(col, row, { elevation: 7 });
     }
     generateHydrology(grid, cfg, 42);
 

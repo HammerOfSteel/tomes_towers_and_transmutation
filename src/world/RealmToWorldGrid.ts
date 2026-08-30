@@ -18,9 +18,21 @@ import type { WorldSize } from './WorldGenConfig';
 import type { RealmData } from '@/overworld-studio';
 import { OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from './WaterDepthConfig';
 
-/** Quantize a continuous 0..1 realm elevation into WorldGrid's 0-4 levels. */
+/** Number of discrete elevation levels WorldGrid cells quantize into (0 to
+ *  ELEVATION_LEVELS-1). Widened from the original 5 (0-4) to 8 (0-7) as
+ *  Phase 1 of the biome/terrain overhaul, giving finer terracing gradation
+ *  and ~75% more total height range at the same per-level height
+ *  (LEVEL_HEIGHT in WaterDepthConfig.ts is unchanged) — see
+ *  docs/superpowers/plans/2026-08-30-biome-terrain-overhaul.md Phase 1.
+ *  Exported so WorldGenerator.ts's rim-bias clamp and any other consumer
+ *  that needs "the current max level" can derive it from one source of
+ *  truth instead of duplicating the magic number 7. */
+export const ELEVATION_LEVELS = 8;
+
+/** Quantize a continuous 0..1 realm elevation into WorldGrid's discrete
+ *  elevation levels (0 to ELEVATION_LEVELS-1). */
 function quantizeElevation(elevation: number): number {
-  return Math.max(0, Math.min(4, Math.floor(elevation * 5)));
+  return Math.max(0, Math.min(ELEVATION_LEVELS - 1, Math.floor(elevation * ELEVATION_LEVELS)));
 }
 
 /**

@@ -39,7 +39,9 @@ export type TileContent =
   | 'glade_entrance';
 
 export interface WorldCell {
-  /** 0–4 integer elevation level (matches existing SH-scaled rendering). */
+  /** 0–7 integer elevation level (matches existing SH-scaled rendering;
+   *  widened from 0-4 in Phase 1 of the biome/terrain overhaul — see
+   *  RealmToWorldGrid.ts's ELEVATION_LEVELS). */
   elevation:    number;
   biome:        BiomeId;
   feature:      TileFeature;

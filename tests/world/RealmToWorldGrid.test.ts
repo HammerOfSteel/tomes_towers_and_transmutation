@@ -68,7 +68,7 @@ describe('realmToWorldGrid — identity biome mapping', () => {
     expect(grid.get(0, 0).walkable).toBe(true);
   });
 
-  it('quantizes continuous 0..1 realm elevation into WorldGrid 0-4 levels', () => {
+  it('quantizes continuous 0..1 realm elevation into WorldGrid 0-7 levels', () => {
     const cells = [[
       { elevation: 0.0,  moisture: 0.5, biome: 'grassland' as const },
       { elevation: 0.99, moisture: 0.5, biome: 'grassland' as const },
@@ -76,6 +76,17 @@ describe('realmToWorldGrid — identity biome mapping', () => {
     const realm = fakeRealm(cells);
     const grid = realmToWorldGrid(realm, 2);
     expect(grid.get(0, 0).elevation).toBe(0);
+    expect(grid.get(1, 0).elevation).toBe(7);
+  });
+
+  it('produces intermediate levels for intermediate elevations (finer gradation than the old 5-level scheme)', () => {
+    const cells = [[
+      { elevation: 0.30, moisture: 0.5, biome: 'grassland' as const }, // ~level 2
+      { elevation: 0.55, moisture: 0.5, biome: 'grassland' as const }, // ~level 4
+    ]];
+    const realm = fakeRealm(cells);
+    const grid = realmToWorldGrid(realm, 2);
+    expect(grid.get(0, 0).elevation).toBe(2);
     expect(grid.get(1, 0).elevation).toBe(4);
   });
 });

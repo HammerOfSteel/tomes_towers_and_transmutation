@@ -26,6 +26,7 @@ import { WorldGrid } from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import { mulberry32 } from '@/core/prng';
 import { RIVER_DEPTH_WU } from './WaterDepthConfig';
+import { ELEVATION_LEVELS } from './RealmToWorldGrid';
 
 // Terminate river before it enters the flat tower zone
 const FLAT_MARGIN     = 1.8;
@@ -35,6 +36,11 @@ const SOURCE_MIN_FRAC = 0.70;
 const SOURCE_MIN_SPACING_FRAC = 0.15;
 // Maximum river path length (safety cap)
 const MAX_STEPS = 512;
+// River sources must sit at or above this elevation level — the top ~40% of
+// levels (matches the original "elevation >= 3" out of 0-4 before Phase 1's
+// widening to 0-7; recomputed from ELEVATION_LEVELS so this stays correct
+// if the level count changes again).
+const RIVER_SOURCE_MIN_LEVEL = Math.round(ELEVATION_LEVELS * 0.6);
 
 export function generateHydrology(
   grid:   WorldGrid,
@@ -58,7 +64,7 @@ export function generateHydrology(
     for (let col = 0; col < GW; col++) {
       const dc = col - GHW, dr = row - GHH;
       const tR = Math.sqrt(dc * dc + dr * dr);
-      if (tR >= sourceMinR && grid.get(col, row).elevation >= 3) {
+      if (tR >= sourceMinR && grid.get(col, row).elevation >= RIVER_SOURCE_MIN_LEVEL) {
         candidates.push({ col, row });
       }
     }

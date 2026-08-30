@@ -103,11 +103,13 @@ function _moveCost(
   const elTo   = cell.elevation;
   const slope  = Math.abs(elTo - elFrom) * 14.0;
 
-  // Light penalty for rocky/highland biome (harder terrain)
-  // Elevation-based (was a rocky/highland biome-name check before the
-  // biome-taxonomy rebuild) — elevation 3-4 was always the old
-  // highland/rocky band, and elevation is unchanged by that rebuild.
-  const terrainPenalty = cell.elevation >= 3 ? 2.0 : 0;
+  // Light penalty for rocky/mountain terrain (harder to build a road
+  // through). Was an `elevation >= 3` proxy before Phase 1 of the biome/
+  // terrain overhaul added a real `mountain` biome — checking the biome
+  // directly is both more accurate (a merely-elevated non-rocky tile no
+  // longer misfires) and immune to any future re-tuning of the elevation
+  // level count/thresholds.
+  const terrainPenalty = cell.biome === 'mountain' ? 2.0 : 0;
 
   return base + slope + terrainPenalty;
 }

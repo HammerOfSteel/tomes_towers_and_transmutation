@@ -63,6 +63,11 @@ describe('OverworldScene settlement rendering parity', () => {
     // given seed (even though the RNG streams themselves are unchanged) —
     // a different settlement count/composition for seed 1 is an expected
     // side effect of legitimately changing biome classification, not a bug.
+    // Shifted a third time when Phase 1 also widened the elevation-level
+    // count from 5 (0-4) to 8 (0-7): finer quantization of the same
+    // continuous elevation changes exactly which cells fall in each level
+    // band, which (like the mountain-biome change above) perturbs the
+    // settlement-candidate cell list's exact contents for a given seed.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadMeshes).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

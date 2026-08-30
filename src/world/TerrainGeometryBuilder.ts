@@ -12,15 +12,20 @@
 import type { WorldGrid, BiomeId } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 
-/** Biome vertex colours [r, g, b] for height levels 0–4 — kept for backward-compat callers
+/** Biome vertex colours [r, g, b] for height levels 0–7 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
- * BIOME_VARIANTS for patchiness, this array is variant index 0 of each level. */
+ * BIOME_VARIANTS for patchiness, this array is variant index 0 of each level. Levels 5-7
+ * (added in Phase 1 of the biome/terrain overhaul, widening from the original 5 levels to 8)
+ * continue the "higher = rockier/barer" progression above level 4's rocky upland. */
 export const BIOME: readonly [number, number, number][] = [
   [0.20, 0.26, 0.11],   // 0  bog / muddy path
   [0.26, 0.44, 0.16],   // 1  grass
   [0.20, 0.36, 0.13],   // 2  forest floor
   [0.35, 0.41, 0.26],   // 3  highland
   [0.44, 0.41, 0.30],   // 4  rocky upland
+  [0.42, 0.39, 0.34],   // 5  high slope
+  [0.48, 0.46, 0.42],   // 6  alpine ridge
+  [0.58, 0.56, 0.53],   // 7  peak / summit
 ];
 
 /**
@@ -42,6 +47,12 @@ export const BIOME_VARIANTS: readonly (readonly [number, number, number])[][] = 
   [[0.35, 0.41, 0.26], [0.32, 0.40, 0.24], [0.39, 0.38, 0.30]],
   // 4  rocky upland — variants: base, dry, pebbly
   [[0.44, 0.41, 0.30], [0.46, 0.40, 0.28], [0.41, 0.39, 0.34]],
+  // 5  high slope — variants: base, dry, pebbly
+  [[0.42, 0.39, 0.34], [0.45, 0.42, 0.37], [0.38, 0.36, 0.31]],
+  // 6  alpine ridge — variants: base, dry, pebbly
+  [[0.48, 0.46, 0.42], [0.51, 0.49, 0.45], [0.44, 0.42, 0.38]],
+  // 7  peak / summit — variants: base, dry, pebbly
+  [[0.58, 0.56, 0.53], [0.61, 0.59, 0.56], [0.54, 0.52, 0.49]],
 ];
 
 export const BIOME_RIVER: [number, number, number] = [0.18, 0.38, 0.62]; // blue channel
