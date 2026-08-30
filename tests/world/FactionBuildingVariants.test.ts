@@ -105,6 +105,52 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
   });
 });
 
+// Phase 2b increment 3 (settlement visual fidelity plan): the 3 signature
+// ward kinds (villa/chapel/shop) only cover a small slice of a real
+// settlement. WARD_TO_KIND (buildingToDungeonPlan.ts) also produces
+// 'house' (gateward/farm wards), 'terraced' (slum ward), 'inn', and
+// 'blacksmith' — kinds that appear in every settlement and, before this
+// phase, fell through to the generic shared-shape builder for 5 of the 8
+// reworked factions (only vulperia/elven/dwarven had house/terraced
+// coverage; none had inn/blacksmith), meaning the *bulk* of buildings in
+// a vulperia/slime/undead/orcish/vampire/fae/dwarven/elven settlement
+// still had no race-identity geometry at all. Each faction's villa
+// builder derives its footprint dynamically from `getFootprint(dna.
+// buildingKind, dna.size)` (verified case by case before reuse), so
+// reusing it for these additional kinds is safe and consistent with the
+// existing house/terraced precedent already set for vulperia/elven/
+// dwarven.
+describe('FACTION_BUILDING_VARIANTS — extended ward-kind coverage (house/terraced/inn/blacksmith)', () => {
+  const factions: Faction[] = ['vulperia', 'slime', 'undead_common', 'elven', 'dwarven', 'orcish', 'vampire', 'fae'];
+  const kinds: BuildingKind[] = ['house', 'terraced', 'inn', 'blacksmith'];
+
+  for (const faction of factions) {
+    for (const kind of kinds) {
+      it(`${faction}/${kind} has a bespoke variant that builds a non-empty group without throwing`, () => {
+        const builder = getFactionBuildingVariant(faction, kind);
+        expect(builder).not.toBeNull();
+        const g = builder!(makeDna(kind, faction));
+        expect(g).toBeInstanceOf(THREE.Group);
+        expect(countMeshes(g)).toBeGreaterThan(0);
+        expectAllVerticesFinite(g);
+      });
+    }
+  }
+
+  it('scales footprint correctly for the narrow terraced kind vs. the wide villa kind', () => {
+    // terraced (3x4) is narrower than villa (7x5) per KIND_FOOTPRINT —
+    // confirm the reused builder actually respects dna.buildingKind
+    // rather than silently always building at villa's footprint.
+    for (const faction of factions) {
+      const villaBox = new THREE.Box3().setFromObject(FACTION_BUILDING_VARIANTS[faction]!.villa!(makeDna('villa', faction, 3)));
+      const terracedBox = new THREE.Box3().setFromObject(FACTION_BUILDING_VARIANTS[faction]!.terraced!(makeDna('terraced', faction, 3)));
+      const villaSize = villaBox.getSize(new THREE.Vector3());
+      const terracedSize = terracedBox.getSize(new THREE.Vector3());
+      expect(terracedSize.x).toBeLessThan(villaSize.x);
+    }
+  });
+});
+
 describe('buildBuilding() dispatch — faction variant precedence', () => {
   it('uses the faction variant builder when one exists for (faction, kind)', () => {
     const withVariant = buildBuilding(makeDna('villa', 'slime', 5));

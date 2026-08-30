@@ -603,6 +603,85 @@ factions — not palette swaps.
 - The generic prop shape library (§4.2-4.4) for market/craftsmen/slum
   clutter — still valid as designed, composes with both Phase 2a and 2b.
 
+**Phase 2b increment 3 — DONE (extending ward-kind coverage beyond the 3
+signature buildings).** After all 7 non-human/non-slime factions finished
+their full block-kit rebuild (Phase 2e) and human got its greebling pass
+(§2e.10), direct inspection of `WARD_TO_KIND`
+(`src/buildingToDungeonPlan.ts`) revealed the real remaining gap behind
+increment 2's "still deferred" note above: it maps ward types to 7
+distinct `BuildingKind`s — `villa` (patriciate/merchant), `chapel`
+(church), `shop` (market/craftsmen), `house` (gateward/farm), `terraced`
+(slum), `inn` (inn), and `blacksmith` (smithy) — but
+`FACTION_BUILDING_VARIANTS` only covered `villa`/`chapel`/`shop` for
+5 of the 8 factions (slime, undead_common, orcish, vampire, fae), and
+only `villa`/`chapel`/`shop`/`house`/`terraced` (missing `inn`/
+`blacksmith`) even for the 3 that had partial extra coverage (vulperia,
+elven, dwarven). In practice this meant the *majority* of buildings in
+almost every non-human settlement (ordinary houses, row houses, inns,
+smithies) still fell through to the generic shared-shape default builder
+and only got a faction palette tint — the settlement's signature
+buildings (villa/chapel/shop) were bespoke, but most of what a player
+actually walks past was not.
+
+Fix: added `house`, `terraced`, `inn`, and `blacksmith` entries to all 8
+non-human factions in `FACTION_BUILDING_VARIANTS`, reusing each faction's
+already-built, already-tested villa builder (`buildVulperiaVilla`,
+`buildSlimeVilla`, `buildUndeadVilla`, `buildElvenVilla`,
+`buildDwarvenVilla`, `buildOrcishVilla`, `buildVampireVilla`,
+`buildFaeVilla`). This reuse is safe because every one of these builders
+derives its footprint dynamically via `getFootprint(dna.buildingKind,
+dna.size)` rather than assuming villa's fixed dimensions — verified case
+by case before wiring — so the same bespoke geometry (den mound, blob,
+ossuary spire, tree trunk, stone hall, lashed hut, gothic spire,
+toadstool stalk) now correctly scales down to a smithy's medium lot or a
+slum row house's narrow 3x4 footprint instead of only ever appearing at
+villa scale. This mirrors the exact pattern vulperia/elven/dwarven had
+already established for `house`/`terraced` in increment 1/2 — increment 3
+just closes the remaining gap consistently across all 8 factions and all
+4 missing kinds.
+
+**Tests (TDD, written first)**: new `describe('FACTION_BUILDING_VARIANTS
+— extended ward-kind coverage (house/terraced/inn/blacksmith)', ...)`
+block in `FactionBuildingVariants.test.ts` — 32 new tests (8 factions x 4
+kinds "builds a non-empty group without throwing" + 1 footprint-scaling
+sanity check confirming `terraced`'s bounding box is genuinely narrower
+than `villa`'s, not silently identical). Confirmed red phase first (27
+failures: `getFactionBuildingVariant` returned `null` for every
+previously-uncovered pair) before wiring the registry. Full
+`FactionBuildingVariants.test.ts` — 113/113 passed. Targeted suite
+(`FactionBuildingVariants.test.ts` + `FactionBlockProfiles.test.ts` +
+`BuildingBuilder.test.ts`) — 240/240 passed. Broader `tests/world/` suite
+— 939/940 passed (the 1 failure is the same pre-existing, unrelated
+`WaterMaterial.test.ts` alpha-regex issue noted elsewhere in this doc).
+`tsc --noEmit` — 145 errors, unchanged from the human-greebling-phase
+baseline (no new errors).
+
+Live verification: Playwright screenshots of the Settlement Lab (vampire,
+orcish, slime — three visually maximally-different factions — town tier,
+seed 3) at realistic wide camera distance, no teleporting/cropping.
+Confirmed every visible building in each screenshot is now the faction's
+bespoke geometry (gothic spires with blood-red glow accents throughout
+the vampire town; lashed huts with skull/tusk trophies throughout the
+orcish town; translucent glowing slime blobs throughout the slime town) —
+not a mix of 2-3 signature buildings surrounded by generic defaults as
+before. This is the first screenshot in the whole initiative where an
+entire settlement, not just its 3 anchor buildings, reads as fully
+race-authentic.
+
+**Still deferred (follow-up, separately scoped, lower priority than the
+above):**
+- Human bespoke `inn`/`blacksmith` coverage — human intentionally stays
+  on its shared-shape/greebling system per §2e.10's scoping decision, not
+  a candidate for this kind of villa-reuse fix.
+- The generic prop shape library (§4.2-4.4) for market/craftsmen/slum
+  clutter — still valid as designed, composes with both Phase 2a and 2b.
+- Each faction's `house`/`terraced`/`inn`/`blacksmith` currently reuses
+  the *exact same* villa silhouette at a different scale (e.g. a
+  vampire smithy is a smaller gothic spire, not a forge). This closes the
+  "no race identity at all" gap, which was the higher-priority problem,
+  but a future pass could differentiate these kinds further (e.g. an
+  actual forge-shaped orcish blacksmith) if requested.
+
 ### Phase 2d — Deep per-race building geometry pass (visual quality, not just distinctness)
 
 **Problem statement (direct user feedback after increment 2 shipped):**

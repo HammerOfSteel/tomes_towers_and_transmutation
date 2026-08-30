@@ -1357,16 +1357,40 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
     house:    buildVulperiaVilla,
     terraced: buildVulperiaVilla,
+    // Phase 2b increment 3: `inn` (inn ward) and `blacksmith` (smithy
+    // ward) are the two remaining WARD_TO_KIND-driven kinds that had no
+    // faction override at all (fell through to the generic default
+    // builder even here). Reusing the villa builder is safe — it derives
+    // its footprint dynamically from getFootprint(dna.buildingKind,
+    // dna.size), so it scales correctly to inn's larger lot and
+    // blacksmith's medium lot rather than assuming villa's fixed size.
+    inn:        buildVulperiaVilla,
+    blacksmith: buildVulperiaVilla,
   },
   slime: {
     villa:  buildSlimeVilla,
     chapel: buildSlimeChapel,
     shop:   buildSlimeShop,
+    // Phase 2b increment 3: house/terraced/inn/blacksmith previously had
+    // no slime override at all — every ordinary house, row house, inn,
+    // and smithy in a slime settlement fell through to the generic
+    // default builder, so most of the settlement had no slime identity.
+    // buildSlimeVilla is footprint-dynamic (getFootprint(dna.
+    // buildingKind, dna.size)), so reuse is safe across all four kinds.
+    house:      buildSlimeVilla,
+    terraced:   buildSlimeVilla,
+    inn:        buildSlimeVilla,
+    blacksmith: buildSlimeVilla,
   },
   undead_common: {
     villa:  buildUndeadVilla,
     chapel: buildUndeadChapel,
     shop:   buildUndeadShop,
+    // Phase 2b increment 3: same gap as slime above.
+    house:      buildUndeadVilla,
+    terraced:   buildUndeadVilla,
+    inn:        buildUndeadVilla,
+    blacksmith: buildUndeadVilla,
   },
   elven: {
     villa:    buildElvenVilla,
@@ -1383,6 +1407,9 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     // smaller kinds rather than assuming villa's fixed 7x5.
     house:    buildElvenVilla,
     terraced: buildElvenVilla,
+    // Phase 2b increment 3: inn/blacksmith had no elven override either.
+    inn:        buildElvenVilla,
+    blacksmith: buildElvenVilla,
   },
   dwarven: {
     villa:    buildDwarvenVilla,
@@ -1392,21 +1419,39 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
     house:    buildDwarvenVilla,
     terraced: buildDwarvenVilla,
+    // Phase 2b increment 3: inn/blacksmith had no dwarven override either.
+    inn:        buildDwarvenVilla,
+    blacksmith: buildDwarvenVilla,
   },
   orcish: {
     villa:  buildOrcishVilla,
     chapel: buildOrcishChapel,
     shop:   buildOrcishShop,
+    // Phase 2b increment 3: same gap as slime/undead above.
+    house:      buildOrcishVilla,
+    terraced:   buildOrcishVilla,
+    inn:        buildOrcishVilla,
+    blacksmith: buildOrcishVilla,
   },
   vampire: {
     villa:  buildVampireVilla,
     chapel: buildVampireChapel,
     shop:   buildVampireShop,
+    // Phase 2b increment 3: same gap as slime/undead above.
+    house:      buildVampireVilla,
+    terraced:   buildVampireVilla,
+    inn:        buildVampireVilla,
+    blacksmith: buildVampireVilla,
   },
   fae: {
     villa:  buildFaeVilla,
     chapel: buildFaeChapel,
     shop:   buildFaeShop,
+    // Phase 2b increment 3: same gap as slime/undead above.
+    house:      buildFaeVilla,
+    terraced:   buildFaeVilla,
+    inn:        buildFaeVilla,
+    blacksmith: buildFaeVilla,
   },
 };
 
