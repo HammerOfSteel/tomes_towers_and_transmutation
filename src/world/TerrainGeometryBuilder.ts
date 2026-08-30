@@ -9,7 +9,7 @@
  * at elevation edges/slopes (the old collider used a Rapier heightfield
  * that smoothly interpolated between samples instead of stepping).
  */
-import type { WorldGrid, BiomeId } from './WorldGrid';
+import type { WorldGrid, BiomeId, WorldCell } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 
@@ -143,6 +143,78 @@ export function cornerHeightJitter(cornerCol: number, cornerRow: number): number
   h = h ^ (h >>> 13);
   const unit = (h >>> 0) / 4294967296; // → [0, 1)
   return (unit * 2 - 1) * CORNER_JITTER_MAX; // → [-max, +max]
+}
+
+/** True for any tile that should never participate in ramp geometry —
+ *  neither as the tile being classified nor as a neighbor contributing to
+ *  a corner — so shorelines/riverbanks keep today's exact flat-carved +
+ *  vertical-wall look (ramps are a dry-land-only feature, see
+ *  docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md §2). */
+function _isWaterTile(cell: Pick<WorldCell, 'biome' | 'waterDepth'>): boolean {
+  return cell.biome === 'deep_ocean' || cell.biome === 'ocean' || cell.waterDepth > 0;
+}
+
+/** Whether ramp classification should even be attempted for this tile. */
+function _isRampEligible(cell: Pick<WorldCell, 'biome' | 'waterDepth'>): boolean {
+  return !_isWaterTile(cell);
+}
+
+/**
+ * Raw (unclamped) elevation for the grid corner at lattice point
+ * (cornerCol, cornerRow) — the minimum elevation among the up-to-4 tiles
+ * sharing that corner, matching cornerHeightJitter()'s existing lattice
+ * convention (corner (c,r) is tile (c,r)'s SW corner, tile (c-1,r)'s SE
+ * corner, tile (c,r-1)'s NW corner, tile (c-1,r-1)'s NE corner).
+ * Out-of-bounds and water-tile contributors are excluded (substituted
+ * with `selfElevation`) so map edges and shorelines never spuriously pull
+ * a corner down.
+ */
+function _rawCornerElevation(
+  wg: WorldGrid, cornerCol: number, cornerRow: number, selfElevation: number,
+): number {
+  let m = selfElevation;
+  for (const [dc, dr] of [[-1, -1], [0, -1], [-1, 0], [0, 0]] as const) {
+    const c = cornerCol + dc, r = cornerRow + dr;
+    if (c < 0 || c >= wg.width || r < 0 || r >= wg.height) continue;
+    const cell = wg.get(c, r);
+    if (_isWaterTile(cell)) continue;
+    m = Math.min(m, cell.elevation);
+  }
+  return m;
+}
+
+/**
+ * A tile's 4 corner elevation levels — `[sw, nw, ne, se]` — each clamped
+ * to at most 1 level below the tile's own elevation (see design spec §3).
+ */
+function _tileCornerLevels(wg: WorldGrid, col: number, row: number): [number, number, number, number] {
+  const selfElevation = wg.get(col, row).elevation;
+  const clamp = (raw: number) => Math.max(selfElevation - 1, Math.min(selfElevation, raw));
+  return [
+    clamp(_rawCornerElevation(wg, col,     row,     selfElevation)), // SW
+    clamp(_rawCornerElevation(wg, col,     row + 1, selfElevation)), // NW
+    clamp(_rawCornerElevation(wg, col + 1, row + 1, selfElevation)), // NE
+    clamp(_rawCornerElevation(wg, col + 1, row,     selfElevation)), // SE
+  ];
+}
+
+/** Which of a tile's 4 corners are one level below its own elevation. */
+function _lowCorners(
+  levels: readonly [number, number, number, number], selfElevation: number,
+): [boolean, boolean, boolean, boolean] {
+  return [
+    levels[0] < selfElevation,
+    levels[1] < selfElevation,
+    levels[2] < selfElevation,
+    levels[3] < selfElevation,
+  ];
+}
+
+/** Test-only export — exercises `_tileCornerLevels` directly. Removed once
+ *  Task 4 wires these helpers into `buildTerrainGeometryData()` and adds
+ *  end-to-end coverage through the public API instead. */
+export function _testOnlyTileCornerLevels(wg: WorldGrid, col: number, row: number): [number, number, number, number] {
+  return _tileCornerLevels(wg, col, row);
 }
 
 export interface RoadVariantGeometry {

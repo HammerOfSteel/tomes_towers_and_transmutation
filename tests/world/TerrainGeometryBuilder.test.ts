@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, _testOnlyTileCornerLevels } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
@@ -456,6 +456,49 @@ describe('buildTerrainGeometryData — river_ford tiles render as bridge decks (
     ];
     const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 2, 1, 0, 0, 2, 1, paths, 2);
     expect(Object.keys(data.roadGeometry).sort()).toEqual([BRIDGE_ROAD_VARIANT, 'dwarven']);
+  });
+});
+
+describe('corner-height derivation for ramp classification', () => {
+  it('gives all 4 corners the tile\'s own elevation when every neighbor matches', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 2 });
+    const levels = _testOnlyTileCornerLevels(wg, 1, 1);
+    expect(levels).toEqual([2, 2, 2, 2]);
+  });
+
+  it('pulls the shared corners down by exactly 1 level toward a lower west neighbor', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(0, 1, { elevation: 1 }); // west neighbor of tile (1,1)
+    const [sw, nw, ne, se] = _testOnlyTileCornerLevels(wg, 1, 1);
+    expect(sw).toBe(1);
+    expect(nw).toBe(1);
+    expect(ne).toBe(2);
+    expect(se).toBe(2);
+  });
+
+  it('clamps a 2-level-lower neighbor to only 1 level of ramp (residual handled by walls, not ramp)', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 3 });
+    wg.set(0, 1, { elevation: 1 }); // 2 levels lower than this tile's elevation 3
+    const [sw] = _testOnlyTileCornerLevels(wg, 1, 1);
+    expect(sw).toBe(2); // clamped to elevation-1, not the raw elevation 1
+  });
+
+  it('treats out-of-bounds neighbors as matching the tile\'s own elevation (no spurious edge-of-map ramp)', () => {
+    const wg = new WorldGrid(2, 2);
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) wg.set(c, r, { elevation: 4 });
+    const levels = _testOnlyTileCornerLevels(wg, 0, 0); // corner tile, 2 of its corners touch OOB
+    expect(levels).toEqual([4, 4, 4, 4]);
+  });
+
+  it('never lets a water-tile neighbor (ocean/river) pull a dry tile\'s corner down', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 3 });
+    wg.set(0, 1, { elevation: 1, biome: 'ocean', waterDepth: 1 }); // lower AND water
+    const levels = _testOnlyTileCornerLevels(wg, 1, 1);
+    expect(levels).toEqual([3, 3, 3, 3]); // water neighbor ignored entirely
   });
 });
 
