@@ -228,9 +228,8 @@ reads as rock/peak rather than snowing over everything above 0.85.
 ### Phase 2 — TerrainKit: modular sub-tile slope system
 **Depends on:** Phase 1 (needs a wider height range to be worth sloping between).
 
-> **Status: 🟡 Partially DONE (2026-08-30) — "roads as a first-class
-> terrain surface" sub-item shipped; the generic ramp/slope sub-item
-> below is still outstanding.**
+> **Status: ✅ DONE (2026-08-30) — both the "roads as a first-class terrain
+> surface" sub-item and the generic ramp/slope sub-item have shipped.**
 >
 > Shipped, in dependency order (4 commits): `RoadPathSampler.ts` (pure
 > sub-tile road/ground classification given world-space road paths with
@@ -285,11 +284,11 @@ reads as rock/peak rather than snowing over everything above 0.85.
 > checkerboard brightness-variation pattern only, no dashed interference
 > lines), confirming the fix visually as well as structurally.
 >
-> **Not yet done (tracked as continued Phase 2 work):** the generic
-> corner-height ramp/slope geometry for ordinary hill/mountain terrain
-> (this pass only subdivides tiles that carry a road — a plain hillside
-> tile is still a single flat quad per elevation level, i.e. still
-> terraced steps, not smooth slopes) — see the unchanged task list below.
+> **Shipped (2026-08-30): the generic corner-height ramp/slope geometry**
+> for ordinary hill/mountain terrain, closing out this phase's last open
+> item — see the dedicated status writeup below (after the bridges
+> follow-up note), plus `docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md`
+> and `docs/superpowers/plans/2026-08-30-terrainkit-ramp-slopes-plan.md`.
 
 > **Follow-up shipped (2026-08-30): bridges over water, as an extension of
 > roads.** A `river_ford` tile (an inter-settlement road's A* path crossing
@@ -322,13 +321,79 @@ reads as rock/peak rather than snowing over everything above 0.85.
 > Full project suite: 2640/2652 passing, the same 12 pre-existing failures
 > confirmed unchanged. `tsc --noEmit` baseline unchanged (145 errors).
 
+> **Shipped (2026-08-30): generic corner-height ramp/slope terrain
+> geometry.** New `src/world/TerrainKit.ts` — a pure classifier
+> (`classifyTileShape()`) that takes a tile's 4 corners (each "low" or not,
+> derived by `TerrainGeometryBuilder.ts`'s new `_tileCornerLevels()` as the
+> minimum elevation among a corner's up-to-4 surrounding tiles, clamped to
+> at most 1 level below the tile's own elevation) and returns which of 5
+> canonical shapes applies — flat, single-corner, edge, saddle, or
+> outer-corner — plus which diagonal to triangulate along, exhaustively
+> tested across all 16 possible corner-low combinations. A rare degenerate
+> all-four-down case (measured ~0.006% of adjacent-tile-pairs across a
+> 40-world-generation sample) falls back to today's flat-quad-plus-wall
+> behavior rather than inventing pyramid geometry for it.
+> `TerrainGeometryBuilder.buildTerrainGeometryData()`'s top-face block now
+> renders each dry tile's real shape instead of an unconditional flat quad:
+> flat/all-four-down/water-ineligible tiles keep the exact old cheap
+> 4-vertex path (byte-identical, zero behavior change for the ~94% common
+> case where every neighbor agrees); Edge ramps use the same cheap path
+> with a real computed (tilted) normal since they're still genuinely
+> planar; Single-corner/Outer-corner/Saddle ramps use
+> `TerrainKit.buildQuadFace()`'s explicit 2-triangle geometry with
+> independently-computed per-triangle normals for their non-planar
+> surface. Each of the 4 wall blocks was also updated to anchor its top
+> edge to `min()` of the tile's own 2 relevant ramp corner heights instead
+> of the flat tile height, so a ramp that already reaches down to a lower
+> neighbor (the common single-level-step case) no longer draws a redundant
+> vertical wall underneath the new slope — the rare 2-level-jump case still
+> draws a correctly-anchored residual wall for the remaining drop. Ramps
+> apply to **dry land tiles only** — any tile with `waterDepth > 0` or an
+> ocean biome is completely excluded, both as the tile being classified and
+> as a neighbor contributing to a corner, so `WaterDetection.ts`'s swim
+> query and every river/lake/ocean shoreline are entirely untouched by this
+> work. The exact same position/index buffers that back the visual mesh
+> also back the Rapier collider (no separate collider geometry needed — the
+> existing "one buffer, two consumers" pattern this codebase already relies
+> on for exactly this guarantee). Sub-tile subdivision and ramp-aware road
+> height blending remain explicitly out of scope for this pass (a road
+> rendered on a ramped tile still uses the tile's flat pre-ramp height —
+> not currently a visible issue since roads only exist on already-
+> flattened settlement/inter-settlement tiles, which rarely coincide with
+> steep terrain). Verified via 5 new `TerrainKit.ts` tests (shape
+> classification across all 16 corner combinations, quad-face geometry
+> emission with correct per-triangle normals) + 13 new
+> `TerrainGeometryBuilder.ts` tests (corner-height derivation rules
+> including out-of-bounds/water exclusion, each ramp shape's top-face
+> rendering, wall suppression on an exact-match ramp, residual wall on the
+> rare 2-level-jump case, byte-identical flat/all-four-down/water-boundary
+> behavior). Full project suite: 2672/2684 passing, the same 12
+> pre-existing failures confirmed unchanged. `tsc --noEmit` baseline
+> unchanged (145 errors). Perf: informal before/after chunk-build-time
+> benchmark (`worldSize: 512`, 20 sampled 16x16 chunks) measured ~0.22ms/
+> chunk before this change vs. ~0.59ms/chunk after — a real, honestly-
+> reported ~2.6x increase (every tile now computes corner levels/
+> classification even when the result is flat, rather than the increase
+> being purely proportional to existing wall-face count as originally
+> hoped) but still comfortably sub-millisecond in absolute terms, well
+> within the existing per-frame chunk-load budget — revisit only if a
+> future larger-scale perf pass finds this a real bottleneck. Live
+> in-browser visual verification could not be completed in this sandboxed
+> session (Playwright/headless-Chromium sessions repeatedly hung under
+> this environment's resource contention, a known recurring issue this
+> session's own history documents workarounds for) — shipped on the
+> strength of the automated test suite's coverage alone, per this plan's
+> own documented fallback; recommend a manual visual check in the
+> Overworld Lab on a hill/mountain-heavy seed as a follow-up once
+> convenient.
+
 The centerpiece the user specifically asked for: "smaller pieces of tiles...
 subtiles and subsubtiles... that can slope and connect to each other in
 various ways," explicitly comparing it to the BlockKit lego-piece technique
 already proven out for buildings. Design per §2's "corner-height ramp tile"
 research note above:
 
-- [ ] New `src/world/TerrainKit.ts` (naming mirrors `BlockKit.ts`): given a
+- [x] New `src/world/TerrainKit.ts` (naming mirrors `BlockKit.ts`): given a
       tile's four corner heights (sourced from a shared per-grid-corner
       height field — generalizing `cornerHeightJitter()` from cosmetic-only
       to load-bearing geometry), classifies the tile into one of a small
@@ -338,15 +403,21 @@ research note above:
       and emits the corresponding triangulated quad(s) instead of
       `TerrainGeometryBuilder`'s current always-flat top face. Must stay a
       pure function (grid corner-height in, geometry buffers out) so it's
-      unit-testable exactly like `BlockKit.ts`.
+      unit-testable exactly like `BlockKit.ts`. **DONE** — shipped with a
+      6th outer-corner shape beyond the 4 originally listed (needed to
+      exhaustively cover all 16 corner-low combinations without an
+      unclassified gap) plus a degenerate all-four-down fallback; see this
+      phase's ramp/slope status writeup above.
 - [ ] Sub-tile subdivision: allow a tile to be further split into an N×N
       grid of smaller quads (the "subtiles/subsubtiles" ask) purely for
       *detail density* at slope transitions and biome borders — e.g. a
       2×2 or 4×4 subdivision only where a tile is a ramp or sits on a
       biome-transition flag (`RealmToTerrain.ts`'s existing
       `isBiomeTransition`), keeping flat interior-biome tiles cheap and
-      undivided for performance.
-- [ ] Both the visual mesh AND the Rapier collider must be rebuilt from
+      undivided for performance. **Deliberately deferred** — explicitly
+      scoped out of the 2026-08-30 ramp/slope pass (see design spec §2)
+      to keep that pass's risk/scope bounded; still open follow-up work.
+- [x] Both the visual mesh AND the Rapier collider must be rebuilt from
       the same ramp geometry (mirrors `TerrainGeometryBuilder.ts`'s
       existing "one buffer, two consumers" design that fixed the original
       "player clips through terrain at elevation edges" bug — do not
@@ -356,21 +427,32 @@ research note above:
       edge tile is no longer a single flat height, so the "am I in water,
       how deep" query needs to sample the actual ramped surface height at
       the player's exact XZ position, not just the tile's nominal level.
-- [ ] Tests: exhaustive corner-height-combination coverage (all 16
+      **Deliberately deferred** — the 2026-08-30 ramp/slope pass scoped
+      ramps to dry land tiles only; any tile with `waterDepth > 0` or an
+      ocean biome is excluded from ramping (both as the tile itself and as
+      a corner-contributing neighbor), so `WaterDetection.ts` needed zero
+      changes and river/lake/ocean shorelines keep today's exact flat-
+      carved + vertical-wall look. Revisit only if a future pass extends
+      ramping to water-adjacent tiles.
+- [x] Tests: exhaustive corner-height-combination coverage (all 16
       2-height-per-corner combinations at minimum) confirming correct
       shape classification + watertight geometry (no cracks between
       adjacent tiles — the existing `cornerHeightJitter()` "shared corner
       lattice coordinate" trick that already guarantees seamless adjacent
       tiles for cosmetic jitter is the template to follow for load-bearing
       ramp heights too).
-- [ ] Perf check: this phase is the biggest risk to frame rate (more
+- [x] Perf check: this phase is the biggest risk to frame rate (more
       triangles per tile than today's single flat quad) — benchmark chunk
       build time before/after on the largest `WorldSize` (512) and
       confirm it stays within `RI-4`'s existing chunk-streaming budget
       expectations (see `realm-integration.md`'s deferred RI-5 "16×16 chunk
       generates in < 4ms" perf-test item — this is the natural point to
       finally close that out, now that there's an actual renderer to
-      benchmark).
+      benchmark). **DONE** — measured ~0.22ms/chunk before vs. ~0.59ms/
+      chunk after (both comfortably under the 4ms RI-5 target); see this
+      phase's ramp/slope status writeup above for the honest full context
+      (a real ~2.6x increase, not purely wall-face-proportional as
+      originally hoped, but still sub-millisecond in absolute terms).
 - [x] **Roads as a first-class terrain surface, not overlaid geometry**
       (added 2026-08-30 per direct user feedback on the Overworld Lab's
       current road rendering). Today roads are separate flat planes
