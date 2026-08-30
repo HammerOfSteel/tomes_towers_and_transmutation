@@ -105,3 +105,95 @@ describe('buildInterSettlementRoads — ordered per-edge paths', () => {
     expect(result.paths ?? []).toEqual([]);
   });
 });
+
+describe('buildInterSettlementRoads — L-shape fallback must never cross open water', () => {
+  function flatGrid(size: number): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) g.set(col, row, { elevation: 1, biome: 'grassland' });
+    }
+    return g;
+  }
+
+  /**
+   * Regression coverage for a reported visual bug: when two settlements are
+   * genuinely unreachable by land (e.g., separated by a full-width ocean
+   * strait, as happens on an archipelago/island-shaped realm), A* correctly
+   * returns [] (ocean/deep_ocean tiles cost Infinity in _moveCost, so they
+   * can never appear in any A*-found path) — but the code then fell back to
+   * _lShape(), a blind axis-aligned line with zero terrain awareness, which
+   * happily drew a "road" straight across the open sea. That tile then got
+   * marked feature:'road' by WorldGenerator (river-only fords aside, ocean
+   * tiles have no ford handling at all), rendering as an actual road/lamp-
+   * post-lined path floating over/under the water — visually broken, and a
+   * road that makes no narrative sense (no ferry/bridge, just pavement on
+   * the sea floor). Two settlements separated by an impassable strait
+   * should simply not get a road between them, not a nonsensical one.
+   */
+  it('skips a connecting edge entirely rather than crossing an impassable ocean strait', () => {
+    const grid = flatGrid(40);
+    // A full-height ocean band splits the grid into two separate landmasses.
+    for (let row = 0; row < 40; row++) {
+      for (let col = 15; col < 25; col++) {
+        grid.set(col, row, { biome: 'ocean' });
+      }
+    }
+    const settlements = [
+      { plan: { centerCol: 5,  centerRow: 20 } },
+      { plan: { centerCol: 35, centerRow: 20 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+
+    for (const t of result.tiles) {
+      const biome = grid.get(t.col, t.row).biome;
+      expect(biome).not.toBe('ocean');
+      expect(biome).not.toBe('deep_ocean');
+    }
+    for (const path of result.paths) {
+      for (const p of path) {
+        const biome = grid.get(p.col, p.row).biome;
+        expect(biome).not.toBe('ocean');
+        expect(biome).not.toBe('deep_ocean');
+      }
+    }
+    // The two islands are unreachable from each other by land — no road
+    // (real or fallback) should exist connecting them at all.
+    expect(result.tiles.length).toBe(0);
+    expect(result.paths.length).toBe(0);
+  });
+
+  it('still uses the L-shape fallback normally when it does NOT cross water (unaffected by the fix)', () => {
+    const grid = flatGrid(20);
+    // No water anywhere — A* may still occasionally fail to find a path in
+    // pathological cases, but the L-shape fallback here is entirely over
+    // land, so it must still be used (this isn't a "never fall back" fix,
+    // only a "never fall back across open water" fix).
+    const settlements = [
+      { plan: { centerCol: 2, centerRow: 2 } },
+      { plan: { centerCol: 17, centerRow: 17 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    expect(result.tiles.length).toBeGreaterThan(0);
+    expect(result.paths.length).toBe(1);
+  });
+
+  it('still connects settlements on the SAME landmass even when a separate impassable strait exists elsewhere on the map', () => {
+    const grid = flatGrid(40);
+    for (let row = 0; row < 40; row++) {
+      for (let col = 15; col < 25; col++) {
+        grid.set(col, row, { biome: 'ocean' });
+      }
+    }
+    const settlements = [
+      { plan: { centerCol: 2,  centerRow: 2 } },
+      { plan: { centerCol: 12, centerRow: 12 } }, // same landmass as above (col < 15)
+      { plan: { centerCol: 35, centerRow: 20 } },  // across the strait — unreachable
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    // At least the same-landmass pair must still be connected.
+    expect(result.tiles.length).toBeGreaterThan(0);
+    for (const t of result.tiles) {
+      expect(t.col).toBeLessThan(15); // no tile should have crossed onto/through the strait
+    }
+  });
+});

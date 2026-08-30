@@ -239,6 +239,26 @@ function _lShape(
   return pts;
 }
 
+/**
+ * True if any point in `path` lands on ocean/deep_ocean. `_moveCost()`
+ * already gives ocean/deep_ocean tiles an Infinite cost, so a real A*-found
+ * path (`raw.length > 1`) can never contain one — this check only ever
+ * matters for the blind, terrain-unaware `_lShape()` fallback below, which
+ * otherwise happily draws a straight line across open sea when A* fails to
+ * find any route at all (which only happens when two settlements are
+ * genuinely unreachable by land, e.g. separate islands on an archipelago/
+ * island-shaped realm) — see buildInterSettlementRoads()'s doc comment on
+ * why that fallback must be skipped rather than used in that case.
+ */
+function _pathCrossesWater(grid: WorldGrid, path: readonly { col: number; row: number }[]): boolean {
+  for (const { col, row } of path) {
+    if (col < 0 || col >= grid.width || row < 0 || row >= grid.height) continue;
+    const biome = grid.get(col, row).biome;
+    if (biome === 'ocean' || biome === 'deep_ocean') return true;
+  }
+  return false;
+}
+
 // ── MST (Prim's algorithm) ────────────────────────────────────────────────────
 
 type Centre = { col: number; row: number };
@@ -336,6 +356,18 @@ export function buildInterSettlementRoads(
     const a = centres[ai]!, b = centres[bi]!;
     const raw  = _aStar(grid, a.col, a.row, b.col, b.row);
     const full = raw.length > 1 ? raw : _lShape(a.col, a.row, b.col, b.row);
+
+    // A* only fails to find ANY path (raw.length <= 1) when the two
+    // settlements are genuinely unreachable by land — ocean/deep_ocean
+    // tiles cost Infinity in _moveCost, so A* itself can never route
+    // through them. The L-shape fallback has no such awareness at all, so
+    // if it would cross open water, that means this edge connects two
+    // settlements separated by a real strait/sea (e.g. an archipelago-
+    // shaped realm) — skip the edge entirely rather than drawing a
+    // nonsensical "road" straight across the ocean floor (see this
+    // function's test suite's "L-shape fallback must never cross open
+    // water" cases).
+    if (raw.length <= 1 && _pathCrossesWater(grid, full)) continue;
 
     // Ordered, un-deduplicated per-edge path — for road sub-tile rendering
     // (RoadPathSampler.ts), which needs a contiguous centerline, not a
