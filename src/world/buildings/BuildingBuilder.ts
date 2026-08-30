@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import type { BuildingDNA, BuildingKind } from './BuildingDNA';
 import { SIZE_FOOTPRINT, FLOOR_HEIGHT, STYLE_COLORS, getFootprint } from './BuildingDNA';
-import { pitchedRoof, hippedRoof, thatchedRoof } from './ModularSet';
+import { pitchedRoof, hippedRoof, thatchedRoof, windowBoxPlanter } from './ModularSet';
 import {
   stoneTexture, brickTexture, renderTexture,
   slateTexture, thatchTexture,
@@ -144,28 +144,54 @@ function addDoor(
 }
 
 // ── Chimney with pot + corbel ─────────────────────────────────────────────────
-
-function addChimney(
+// Phase 2e.10 human greebling: rebuilt as a stack of individually-visible
+// block courses (like the other 7 factions' masonry) instead of one long
+// smooth BoxGeometry shaft, so the chimney reads as built-up brick/stone
+// rather than a single extruded slab. `seed` (default 0, for callers that
+// don't have one handy) drives a small per-course size/colour jitter so
+// repeated chimneys on the same building don't look identical.
+export function addChimney(
   g: THREE.Group,
   cx: number, cy: number, cz: number,
+  seed = 0,
 ): void {
   const chiH   = FLOOR_HEIGHT * 0.55;
-  const chimMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#4a3828'), roughness: 0.92 });
+  const chimBase = new THREE.Color('#4a3828');
   const potMat  = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a2818'), roughness: 0.95 });
 
-  const shaft  = new THREE.Mesh(new THREE.BoxGeometry(0.75, chiH, 0.75), chimMat);
-  shaft.position.set(cx, cy + chiH / 2, cz);
-  shaft.castShadow = true;
+  const r = mulberry32((seed ^ 0x0C41_1234) >>> 0);
+  const courses = 3 + Math.floor(r() * 2); // 3..4 stacked block courses
+  const courseH = chiH / courses;
+  for (let i = 0; i < courses; i++) {
+    // Slight per-course footprint jitter (real brick courses are never
+    // perfectly uniform) and a touch of colour variance so the coursing
+    // reads visually, not just geometrically.
+    const jw = 0.75 + (r() - 0.5) * 0.06;
+    const jd = 0.75 + (r() - 0.5) * 0.06;
+    const shade = 0.92 + r() * 0.16;
+    const courseMat = new THREE.MeshStandardMaterial({
+      color: chimBase.clone().multiplyScalar(shade),
+      roughness: 0.92,
+    });
+    // Leave a hairline gap between courses so each block face is culled
+    // separately (reads as coursed masonry, not a seamless re-slice of one box).
+    const gap = 0.02;
+    const course = new THREE.Mesh(new THREE.BoxGeometry(jw, courseH - gap, jd), courseMat);
+    course.position.set(cx, cy + i * courseH + courseH / 2, cz);
+    course.castShadow = true;
+    g.add(course);
+  }
 
   // Corbel ledge
-  const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.95), chimMat);
+  const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.95),
+    new THREE.MeshStandardMaterial({ color: chimBase, roughness: 0.92 }));
   corbel.position.set(cx, cy + chiH - 0.07, cz);
 
   // Chimney pot
   const pot    = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 0.45, 6), potMat);
   pot.position.set(cx, cy + chiH + 0.22, cz);
 
-  g.add(shaft, corbel, pot);
+  g.add(corbel, pot);
 }
 
 // ── House / shop / inn / guild ────────────────────────────────────────────────
@@ -236,17 +262,49 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
       const lit = r() > 0.4;
       addWindow(g, wx, wy, frontZ,  0,          lit, tMat, winW, winH);
       addWindow(g, wx, wy, backZ,   Math.PI,    lit, tMat, winW, winH);
+
+      // Window-box planter (Phase 2e.10 human greebling) — only some
+      // windows, so it reads as organic decoration rather than a
+      // repeated stamp. Ground floor never reaches here (skipped above
+      // as the door bay), so this only ever lands on upper-floor
+      // windows for this front-facing loop; ground-floor coverage comes
+      // from the side-window loop below instead.
+      if (r() > 0.5) {
+        const planter = windowBoxPlanter(dna.colors, dna.seed ^ (wi * 7919) ^ (fl * 104729));
+        planter.position.set(wx, wy - winH / 2 - 0.11, frontZ + 0.14);
+        g.add(planter);
+      }
     }
   }
 
   // Side windows (1 per floor per side)
   const sideN = dna.size === 'large' || dna.size === 'medium' ? 2 : 1;
+  const sideWinH = 1.1;
   for (let fl = 0; fl < dna.floors; fl++) {
     const wy = plinthH + fl * FLOOR_HEIGHT + FLOOR_HEIGHT * 0.60;
     for (let wi = 0; wi < sideN; wi++) {
       const wz = (wi - (sideN - 1) / 2) * (d * 0.35);
-      addWindow(g, -(w / 2 + 0.04), wy, wz, -Math.PI / 2, r() > 0.4, tMat, 0.9, 1.1);
-      addWindow(g,  (w / 2 + 0.04), wy, wz,  Math.PI / 2, r() > 0.4, tMat, 0.9, 1.1);
+      addWindow(g, -(w / 2 + 0.04), wy, wz, -Math.PI / 2, r() > 0.4, tMat, 0.9, sideWinH);
+      addWindow(g,  (w / 2 + 0.04), wy, wz,  Math.PI / 2, r() > 0.4, tMat, 0.9, sideWinH);
+
+      // Ground-floor window-box planters (Phase 2e.10 human greebling) —
+      // these side sills reliably exist even on single-floor buildings,
+      // unlike the front face (whose one ground-floor bay is the door).
+      if (fl === 0) {
+        const py = wy - sideWinH / 2 - 0.11;
+        if (r() > 0.5) {
+          const planterW = windowBoxPlanter(dna.colors, dna.seed ^ (wi * 7919) ^ 0x51);
+          planterW.rotation.y = -Math.PI / 2;
+          planterW.position.set(-(w / 2 + 0.14), py, wz);
+          g.add(planterW);
+        }
+        if (r() > 0.5) {
+          const planterE = windowBoxPlanter(dna.colors, dna.seed ^ (wi * 7919) ^ 0xA3);
+          planterE.rotation.y = Math.PI / 2;
+          planterE.position.set(w / 2 + 0.14, py, wz);
+          g.add(planterE);
+        }
+      }
     }
   }
 
@@ -272,7 +330,7 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
   const chiCount = dna.style === 'arcane' ? 0 : (dna.size === 'tiny' ? (r() > 0.5 ? 1 : 0) : 1 + Math.floor(r() * 1.5));
   for (let i = 0; i < chiCount; i++) {
     const cx = (i === 0 ? -1 : 1) * (w * 0.24);
-    addChimney(g, cx, chimsY, 0);
+    addChimney(g, cx, chimsY, 0, dna.seed ^ i);
   }
 
   // ── Facade extras ──────────────────────────────────────────────────────────
@@ -493,7 +551,7 @@ function buildTerraced(dna: BuildingDNA): THREE.Group {
 
   // Chimney stack (rear-centred, tall)
   const ridgeH = w * 0.6;
-  addChimney(g, 0, roofY + ridgeH * 0.35, -d * 0.2);
+  addChimney(g, 0, roofY + ridgeH * 0.35, -d * 0.2, dna.seed);
 
   return g;
 }
@@ -556,7 +614,7 @@ function buildCottage(dna: BuildingDNA): THREE.Group {
   }
 
   // Chimney (through thatched roof — traditional)
-  addChimney(g, w * 0.25, roofY + (w + 0.6) * 0.75 * 0.38, 0);
+  addChimney(g, w * 0.25, roofY + (w + 0.6) * 0.75 * 0.38, 0, dna.seed);
 
   return g;
 }
@@ -652,7 +710,7 @@ function buildVilla(dna: BuildingDNA): THREE.Group {
 
   // Symmetrical chimney stacks either side
   for (const cx of [-w * 0.3, w * 0.3]) {
-    addChimney(g, cx, roofY + (w * 0.28) * 0.35, 0);
+    addChimney(g, cx, roofY + (w * 0.28) * 0.35, 0, dna.seed ^ (cx > 0 ? 1 : 2));
   }
 
   applyStyleOverlay(g, dna, w, d, roofY);
@@ -742,7 +800,7 @@ function buildTavern(dna: BuildingDNA): THREE.Group {
 
   // Multiple chimneys (tavern = lots of hearths)
   for (const cx of [-w * 0.28, 0, w * 0.28]) {
-    addChimney(g, cx, roofY + w * 0.42 * 0.38, 0);
+    addChimney(g, cx, roofY + w * 0.42 * 0.38, 0, dna.seed ^ (Math.sign(cx) + 2));
   }
 
   return g;
@@ -1203,7 +1261,7 @@ function buildApothecary(dna: BuildingDNA): THREE.Group {
   eave.position.y = roofY + 0.07; g.add(eave);
 
   // Single chimney (apothecary has a distillation hearth)
-  addChimney(g, w * 0.2, roofY + w * 0.55 * 0.38, 0);
+  addChimney(g, w * 0.2, roofY + w * 0.55 * 0.38, 0, dna.seed);
 
   return g;
 }

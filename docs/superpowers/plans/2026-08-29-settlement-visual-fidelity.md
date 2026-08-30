@@ -1577,6 +1577,71 @@ factions above are verified.
 confirmed slime's gelatinous-blob geometry is *correct* for that faction's
 nature and should not be converted to blocks.
 
+### Phase 2e.10 — Human: window-box planters + block-stack chimney (greebling pass) — ✅ DONE
+
+Confirmed via direct inspection that human's `ModularSet.ts`/`BuildingBuilder.ts`
+system was never part of the original "blob geometry" complaint (it already
+uses `BoxGeometry` wall panels + real `TextureFactory.ts` canvas textures),
+and that `TextureFactory.ts`'s existing slate/brick/stone canvases already
+have solid per-tile procedural variation — so the "roof-tile texture"
+bullet was already satisfied and the real net-new work was the two
+genuinely-missing greebles:
+
+1. **Window-box planters** — new `windowBoxPlanter(colors, seed)` in
+   `ModularSet.ts`: a wooden `BoxGeometry` trough (0.85 x 0.22 x 0.24) +
+   thin soil band + 3-5 seeded jittered foliage sphere blobs (4-color
+   palette) with occasional small flower accents (separate 4-color
+   palette), via `mulberry32` for determinism. Wired into
+   `buildHouseOrShop()` (house/shop/inn/guild — the most common human
+   archetype, previously the only one with no ground-level greebling;
+   cottage already has hanging flower baskets) at two attachment points:
+   upper-floor front windows (the front face's single window column is
+   always the ground-floor door bay per the existing hiraeth layout, so
+   front planters only ever land above floor 0), and ground-floor side
+   windows (which exist even on single-floor buildings, giving reliable
+   coverage for the common 1-floor house). Each eligible window gets an
+   independent ~50% chance so it reads as organic decoration, not a
+   repeated stamp.
+2. **Chimney rebuilt as a block stack** — `addChimney()` (now `export`ed,
+   `seed` parameter added) replaced its single smooth shaft `BoxGeometry`
+   with 3-4 individually-visible stacked block courses (per-course
+   footprint jitter +/-0.03, colour-shade jitter via `mulberry32`,
+   separated by a 0.02 hairline gap), keeping the existing corbel ledge
+   and chimney pot unchanged. All 6 call sites across `BuildingBuilder.ts`
+   (`buildHouseOrShop`, `buildCottage`, `buildVilla`, `buildTavern`,
+   `buildBlacksmith`, `buildApothecary`) updated to pass a per-call seed
+   derived from `dna.seed` (XORed with a loop index or `Math.sign(cx)`
+   where a structure has multiple chimneys, so each gets distinct jitter).
+
+**Tests (TDD, written first)**: new `tests/world/ModularSet.test.ts` (6
+tests: builds without throwing, includes trough+foliage meshes, trough
+uses `BoxGeometry`, bounding-box size sanity, determinism for a fixed
+seed, variety across seeds) — all passed on first implementation attempt.
+Two new `describe` blocks added to `tests/world/BuildingBuilder.test.ts`:
+"chimney: block-stack rebuild" (4 tests: multiple stacked courses not one
+smooth box, no single mesh spans >70% of total height, overall height
+stays within a reasonable band, determinism) and "window-box planters" (1
+test: at least one seed in a 30-seed spread attaches a recognizable
+0.85x0.22 planter trough to a house). Confirmed red phase first (5/5
+failed: `addChimney` not yet exported, planter not yet wired) before
+implementing. Full targeted suite (`ModularSet.test.ts` +
+`BuildingBuilder.test.ts`) — 79/79 passed. Broader `tests/world/` suite —
+906/907 passed (the 1 failure is the pre-existing, unrelated
+`WaterMaterial.test.ts` alpha-regex issue documented in this repo's known
+baseline; nothing under `world/buildings` regressed). `tsc --noEmit` — 145
+errors vs. a 148-error baseline measured on the same uncommitted diff
+reverted (i.e. no new errors introduced by this phase; all errors touching
+`BuildingBuilder.ts`/`ModularSet.ts` are pre-existing unused-variable
+warnings unrelated to this change).
+
+Live verification: started a dedicated dev server, used Playwright to
+screenshot the Settlement Lab (`sl_faction=human`, `sl_type=town`, seed 7)
+at a realistic camera distance, then walked closer for a tighter crop.
+Both greebles are visible in the screenshots — green window-box foliage
+sitting on brick sills below several windows, and faint but real
+horizontal coursing seams on the rebuilt chimneys (no longer one smooth
+shaft). Throwaway spec/config and screenshots cleaned up afterward.
+
 #### 2e.11 Rollout order & checkpoints
 
 Sequential, each gated on the shared checklist (§2e.2) passing before the

@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import type { BuildingColors, BuildingCondition } from './BuildingDNA';
+import { mulberry32 } from '@/core/prng';
 
 // ── Material factory ──────────────────────────────────────────────────────────
 
@@ -208,6 +209,58 @@ export function doorStep(mat: THREE.Material): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.2, 0.6), mat);
   mesh.position.set(0, 0.1, 0.3);
   return mesh;
+}
+
+// ── Window-box planter ────────────────────────────────────────────────────────
+// Phase 2e.10 human greebling — a small BlockKit-scale decorative cluster
+// (a built wooden trough + a handful of jittered foliage/flower blobs)
+// meant to sit just under a ground-floor window, centred at local origin
+// with the trough's *front* face at z=0 (caller offsets to the window).
+
+const FOLIAGE_PALETTE = ['#3a6b2e', '#4a7a38', '#5a8a44', '#2f5a26'];
+const FLOWER_PALETTE   = ['#c0405a', '#d0a030', '#c8c8d8', '#8a4ac0'];
+
+export function windowBoxPlanter(colors: BuildingColors, seed: number): THREE.Group {
+  const g = new THREE.Group();
+  const r = mulberry32(seed ^ 0xB0C0FF00);
+
+  const troughW = 0.85, troughH = 0.22, troughD = 0.24;
+  const troughMat = makeBuildingMat(colors.trim, 0.9);
+  const trough = new THREE.Mesh(new THREE.BoxGeometry(troughW, troughH, troughD), troughMat);
+  trough.castShadow = trough.receiveShadow = true;
+  g.add(trough);
+
+  // A thin soil band peeking over the trough rim, so foliage doesn't look
+  // like it floats directly on the wood lip.
+  const soil = new THREE.Mesh(
+    new THREE.BoxGeometry(troughW * 0.92, 0.05, troughD * 0.8),
+    makeBuildingMat('#3a2c1c', 0.95),
+  );
+  soil.position.y = troughH / 2 + 0.02;
+  g.add(soil);
+
+  const numFoliage = 3 + Math.floor(r() * 3); // 3..5 blobs
+  for (let i = 0; i < numFoliage; i++) {
+    const t = numFoliage === 1 ? 0.5 : i / (numFoliage - 1);
+    const fx = (t - 0.5) * troughW * 0.82 + (r() - 0.5) * 0.05;
+    const radius = 0.09 + r() * 0.06;
+    const foliageMat = makeBuildingMat(FOLIAGE_PALETTE[Math.floor(r() * FOLIAGE_PALETTE.length)]!, 0.95);
+    const blob = new THREE.Mesh(new THREE.SphereGeometry(radius, 6, 5), foliageMat);
+    blob.position.set(fx, troughH / 2 + radius * 0.65, (r() - 0.5) * 0.06);
+    blob.scale.y = 0.85 + r() * 0.3;
+    blob.castShadow = true;
+    g.add(blob);
+
+    // Occasional small flower accent poking out of a foliage blob.
+    if (r() > 0.45) {
+      const flowerMat = makeBuildingMat(FLOWER_PALETTE[Math.floor(r() * FLOWER_PALETTE.length)]!, 0.6);
+      const flower = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.32, 5, 4), flowerMat);
+      flower.position.set(fx + (r() - 0.5) * 0.04, troughH / 2 + radius * 1.4, (r() - 0.5) * 0.05);
+      g.add(flower);
+    }
+  }
+
+  return g;
 }
 
 // ── Sign ──────────────────────────────────────────────────────────────────────
