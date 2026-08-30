@@ -82,7 +82,17 @@ describe('OverworldScene terrain-chunk streaming — scatter/terrain alignment',
 
       const mesh = (chunkData as any).mesh as THREE.Mesh;
       mesh.geometry.computeBoundingBox();
-      const box = mesh.geometry.boundingBox!;
+      const box = mesh.geometry.boundingBox!.clone();
+      // Phase 4a (ground-texture-variant routing) moved covered biomes'
+      // top faces out of `mesh` into their own per-variant `groundMeshes`
+      // — union those into the same bounding box so a chunk whose ground
+      // is entirely a covered biome (the common case) doesn't collapse to
+      // a walls-only (or empty, for flat terrain) box.
+      const groundMeshes = (chunkData as any).groundMeshes as THREE.Mesh[];
+      for (const gm of groundMeshes) {
+        gm.geometry.computeBoundingBox();
+        box.union(gm.geometry.boundingBox!);
+      }
 
       const scatter = (chunkData as any).scatter as THREE.Group;
       for (const child of scatter.children) {

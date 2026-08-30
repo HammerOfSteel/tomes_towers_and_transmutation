@@ -66,6 +66,7 @@ import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from
 import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import type { RoadPathSegment } from '@/world/RoadPathSampler';
 import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
+import { terrainVariantTexture } from '@/world/TerrainTextures';
 import { chaikin } from '@/core/chaikin';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
@@ -153,6 +154,12 @@ interface TerrainChunkData {
    *  chunk's own load/unload/enter/exit lifecycle. See RoadPathSampler.ts /
    *  docs/superpowers/plans/2026-08-30-biome-terrain-overhaul.md Phase 2. */
   roadMeshes: THREE.Mesh[];
+  /** Textured ground surface meshes (one per ground-texture variant present
+   *  in this chunk) — built alongside roadMeshes from the same
+   *  buildTerrainGeometryData() call's groundGeometry output, sharing this
+   *  chunk's own load/unload/enter/exit lifecycle. See TerrainTextures.ts /
+   *  docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md. */
+  groundMeshes: THREE.Mesh[];
 }
 
 export class OverworldScene {
@@ -393,12 +400,13 @@ export class OverworldScene {
     // that used to double-create colliders for whatever chunks were already
     // loaded at scene-entry time) and just need re-enabling here, mirroring
     // the terrain trimesh body's own `setEnabled(true)` below.
-    for (const { mesh, body, scatter, colliders, roadMeshes } of this._terrainChunkData.values()) {
+    for (const { mesh, body, scatter, colliders, roadMeshes, groundMeshes } of this._terrainChunkData.values()) {
       this.scene.add(mesh);
       body?.setEnabled(true);
       this.scene.add(scatter);
       for (const c of colliders) c.setEnabled(true);
       for (const rm of roadMeshes) this.scene.add(rm);
+      for (const gm of groundMeshes) this.scene.add(gm);
     }
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
@@ -457,12 +465,13 @@ export class OverworldScene {
     // `enter()` (including a bare `enter()` with no scene.update() in
     // between, e.g. telescope remote-view mode) can cheaply restore them
     // without waiting for a chunk-streaming update() tick.
-    for (const { mesh, body, scatter, colliders, roadMeshes } of this._terrainChunkData.values()) {
+    for (const { mesh, body, scatter, colliders, roadMeshes, groundMeshes } of this._terrainChunkData.values()) {
       this.scene.remove(mesh);
       body?.setEnabled(false);
       this.scene.remove(scatter);
       for (const c of colliders) c.setEnabled(false);
       for (const rm of roadMeshes) this.scene.remove(rm);
+      for (const gm of groundMeshes) this.scene.remove(gm);
     }
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.remove(rm);
@@ -1108,7 +1117,7 @@ export class OverworldScene {
     // this terrain fix landed, placing trees/rocks outside their chunk's
     // actual terrain footprint).
     const { colStart, rowStart } = this._chunkGridOrigin(coord);
-    const { positions, normals, colors, indices, roadGeometry } = buildTerrainGeometryData(
+    const { positions, normals, colors, indices, roadGeometry, groundGeometry } = buildTerrainGeometryData(
       this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
       this._roadPaths,
     );
@@ -1145,6 +1154,28 @@ export class OverworldScene {
       roadMeshes.push(roadMesh);
     }
 
+    // Textured ground surface meshes — one per ground-texture variant
+    // present in this chunk. These fill exactly the tiles whose top face
+    // was routed to groundGeometry instead of the plain vertex-color base
+    // buffer above (see buildTerrainGeometryData()'s groundGeometry doc
+    // comment / TerrainTextures.ts), so a covered biome renders with real
+    // surface detail instead of a flat color.
+    const groundMeshes: THREE.Mesh[] = [];
+    for (const [variant, gg] of Object.entries(groundGeometry)) {
+      if (gg.indices.length === 0) continue;
+      const groundGeo = new THREE.BufferGeometry();
+      groundGeo.setAttribute('position', new THREE.Float32BufferAttribute(gg.positions, 3));
+      groundGeo.setAttribute('normal',   new THREE.Float32BufferAttribute(gg.normals, 3));
+      groundGeo.setAttribute('color',    new THREE.Float32BufferAttribute(gg.colors, 3));
+      groundGeo.setAttribute('uv',       new THREE.Float32BufferAttribute(gg.uvs, 2));
+      groundGeo.setIndex(gg.indices);
+      const groundMesh = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({
+        map: terrainVariantTexture(variant), vertexColors: true, roughness: 0.95, metalness: 0,
+      }));
+      if (this._isInScene) this.scene.add(groundMesh);
+      groundMeshes.push(groundMesh);
+    }
+
     // The physics collider must cover the WHOLE tile surface (ground holes
     // + road sub-tiles both), even though the two are rendered as separate
     // meshes/materials visually — merge every road variant's triangles
@@ -1157,6 +1188,11 @@ export class OverworldScene {
       const vertOffset = colliderPositions.length / 3;
       colliderPositions.push(...rg.positions);
       for (const i of rg.indices) colliderIndices.push(i + vertOffset);
+    }
+    for (const gg of Object.values(groundGeometry)) {
+      const vertOffset = colliderPositions.length / 3;
+      colliderPositions.push(...gg.positions);
+      for (const i of gg.indices) colliderIndices.push(i + vertOffset);
     }
 
     const body = (colliderIndices.length === 0)
@@ -1191,7 +1227,7 @@ export class OverworldScene {
       for (const c of colliders) c.setEnabled(false);
     }
 
-    const data: TerrainChunkData = { mesh, body, scatter, colliders, roadMeshes };
+    const data: TerrainChunkData = { mesh, body, scatter, colliders, roadMeshes, groundMeshes };
     this._terrainChunkData.set(`${coord.cx},${coord.cz}`, data);
     return data;
   }
@@ -1229,6 +1265,16 @@ export class OverworldScene {
       // disposed here — Material.dispose() only releases the material
       // itself, never textures it references.
       (rm.material as THREE.Material).dispose();
+    }
+
+    for (const gm of data.groundMeshes) {
+      this.scene.remove(gm);
+      gm.geometry.dispose();
+      // Same reasoning as roadMeshes above: the material is per-mesh and
+      // safe to dispose, but the texture it references is shared/cached
+      // across chunks (TerrainTextures.ts's own module-level canvas cache)
+      // and must NOT be disposed here.
+      (gm.material as THREE.Material).dispose();
     }
 
     this.scene.remove(data.scatter);
