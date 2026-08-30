@@ -16,6 +16,7 @@ import {
   earthTexture, graniteTexture, barkTexture, hideTexture,
   ashStoneTexture, obsidianTexture, toadstoolTexture,
 } from './buildings/FactionBlockTextures';
+import { BRIDGE_ROAD_VARIANT } from './RoadPathSampler';
 
 /** Variant key used for open inter-settlement roads, which aren't owned by
  *  any one race. Prefixed with an underscore so it can never collide with
@@ -43,6 +44,12 @@ export function roadVariantTexture(variant: string): THREE.CanvasTexture {
     case 'vampire':  tex = obsidianTexture(ROAD_TEXTURE_REPEAT, ROAD_TEXTURE_REPEAT); break;
     case 'fae':      tex = toadstoolTexture(ROAD_TEXTURE_REPEAT, ROAD_TEXTURE_REPEAT); break;
     case GENERIC_ROAD_VARIANT: tex = earthTexture(ROAD_TEXTURE_REPEAT * 2, ROAD_TEXTURE_REPEAT * 2); break;
+    // A bridge deck spanning a river ford — a universal wood-plank look
+    // (reuses barkTexture's vertical-grain canvas, already brown/striated
+    // enough to read as timber planking) regardless of which faction's
+    // road produced the crossing, since a river ford isn't owned by any
+    // one settlement. See BRIDGE_ROAD_VARIANT's doc comment.
+    case BRIDGE_ROAD_VARIANT: tex = barkTexture(ROAD_TEXTURE_REPEAT * 1.5, ROAD_TEXTURE_REPEAT * 3); break;
     // human, slime, and any unrecognized variant fall back to the existing
     // default cobblestone look (matches current pre-Phase-2 visuals).
     default:         tex = cobblestoneTexture(ROAD_TEXTURE_REPEAT, ROAD_TEXTURE_REPEAT); break;

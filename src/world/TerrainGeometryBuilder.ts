@@ -11,7 +11,7 @@
  */
 import type { WorldGrid, BiomeId } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
-import { computeTileRoadCoverage, type RoadPathSegment } from './RoadPathSampler';
+import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
@@ -303,10 +303,23 @@ export function buildTerrainGeometryData(
       // incomplete or doesn't quite reach this tile) — in that case we fall
       // through to the exact same single-quad behavior as before, so a gap
       // in the input data never produces a visible hole in the terrain.
-      const isRoadTile = cell.feature === 'road' || cell.feature === 'road_dirt';
-      const coverage = (isRoadTile && roadPaths.length > 0)
+      //
+      // `river_ford` tiles (a road/A* path crossing a river, re-tagged by
+      // WorldGenerator.applyRoadFords() per RI-3) get the same sub-tile
+      // treatment as an ordinary road so the crossing renders as a real
+      // bridge deck instead of a plain colored ground quad — see the
+      // BRIDGE_ROAD_VARIANT override just below.
+      const isRoadTile = cell.feature === 'road' || cell.feature === 'road_dirt' || cell.feature === 'river_ford';
+      const rawCoverage = (isRoadTile && roadPaths.length > 0)
         ? computeTileRoadCoverage(roadPaths, wx, wz, T, roadSubdivisions)
         : null;
+      // A ford isn't owned by any one settlement/faction, so every covered
+      // sub-tile always renders with the universal bridge-deck variant,
+      // regardless of which road's variant `computeTileRoadCoverage()`
+      // actually matched.
+      const coverage = (rawCoverage && cell.feature === 'river_ford')
+        ? rawCoverage.map(v => (v === null ? null : BRIDGE_ROAD_VARIANT))
+        : rawCoverage;
       const hasRoadCoverage = coverage !== null && coverage.some(vnt => vnt !== null);
 
       if (hasRoadCoverage) {

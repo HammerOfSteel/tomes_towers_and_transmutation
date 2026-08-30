@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
+import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 
 describe('roadVariantTexture', () => {
   it('returns a CanvasTexture for every known faction variant', () => {
@@ -11,6 +12,13 @@ describe('roadVariantTexture', () => {
 
   it('returns a CanvasTexture for the generic open-road variant', () => {
     expect(roadVariantTexture(GENERIC_ROAD_VARIANT)).toBeInstanceOf(THREE.CanvasTexture);
+  });
+
+  it('returns a distinct CanvasTexture for the bridge-deck variant', () => {
+    const bridge = roadVariantTexture(BRIDGE_ROAD_VARIANT);
+    expect(bridge).toBeInstanceOf(THREE.CanvasTexture);
+    expect(bridge.image).not.toBe(roadVariantTexture(GENERIC_ROAD_VARIANT).image);
+    expect(bridge.image).not.toBe(roadVariantTexture('vulperia').image);
   });
 
   it('falls back to a valid texture for unrecognized variants (human, slime, unknown)', () => {

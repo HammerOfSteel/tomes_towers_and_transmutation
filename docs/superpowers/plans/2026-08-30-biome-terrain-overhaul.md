@@ -291,6 +291,37 @@ reads as rock/peak rather than snowing over everything above 0.85.
 > tile is still a single flat quad per elevation level, i.e. still
 > terraced steps, not smooth slopes) — see the unchanged task list below.
 
+> **Follow-up shipped (2026-08-30): bridges over water, as an extension of
+> roads.** A `river_ford` tile (an inter-settlement road's A* path crossing
+> a river — already re-tagged `waterDepth: 0, walkable: true` by
+> `WorldGenerator.applyRoadFords()` per RI-3, unchanged) previously
+> rendered as a plain flat colored ground quad (the `BIOME_FORD` tint) with
+> zero road-surface treatment even though it only exists because a road
+> passed through it. Extended the same sub-tile road-as-terrain pipeline
+> above to also cover `river_ford` tiles: `isRoadTile` now includes
+> `river_ford`, and — since a river crossing isn't owned by any one
+> settlement/faction — every sub-tile it covers always renders with a new
+> universal `BRIDGE_ROAD_VARIANT` (`RoadPathSampler.ts`) regardless of
+> which road's own variant produced the crossing, textured with a
+> wood-plank look (`RoadTextures.ts`, reusing `barkTexture`'s vertical-grain
+> canvas — zero new art assets). No grid-data/walkability/swim-collision
+> semantics changed at all (still the exact same tested `river_ford`
+> behavior) — this is a rendering-only upgrade from "dry ford patch" to
+> "bridge deck," composing entirely through already-tested pure functions
+> (`applyRoadFords` → `_collectRoadPaths` → `computeTileRoadCoverage` →
+> `buildTerrainGeometryData`) with zero `OverworldScene.ts` changes needed,
+> since its road-mesh/collider-merge loop already iterates `roadGeometry`
+> generically by variant. Verified via 3 new `TerrainGeometryBuilder.ts`
+> tests (backward-compat with no path data, full coverage produces the
+> bridge variant, coexists correctly alongside an ordinary faction road
+> tile in the same call) + 1 new `RoadTextures.ts` test (distinct
+> canvas/texture from every other variant), plus an end-to-end sweep
+> (`buildWorldData` across 40 seeds, replicating `_collectRoadPaths()`'s
+> exact inter-road-path Chaikin-smoothing) confirming bridge-deck geometry
+> appears at every one of the 3 seeds that happened to generate a ford.
+> Full project suite: 2640/2652 passing, the same 12 pre-existing failures
+> confirmed unchanged. `tsc --noEmit` baseline unchanged (145 errors).
+
 The centerpiece the user specifically asked for: "smaller pieces of tiles...
 subtiles and subsubtiles... that can slope and connect to each other in
 various ways," explicitly comparing it to the BlockKit lego-piece technique

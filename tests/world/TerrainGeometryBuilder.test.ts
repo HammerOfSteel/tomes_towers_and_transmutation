@@ -3,6 +3,8 @@ import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
 import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
+import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 
 describe('buildTerrainGeometryData', () => {
   it('emits only top faces when all tiles are flat (no elevation steps)', () => {
@@ -407,6 +409,53 @@ describe('buildTerrainGeometryData — road sub-tile surface (roads as terrain t
     expect(allY.length).toBeGreaterThan(0);
     const min = Math.min(...allY), max = Math.max(...allY);
     expect(max - min).toBeLessThanOrEqual(0.06 * 2 + 1e-6); // within 2x CORNER_JITTER_MAX of each other
+  });
+});
+
+describe('buildTerrainGeometryData — river_ford tiles render as bridge decks (bridges over water)', () => {
+  it('keeps the old flat colored-quad ford rendering when no road path data reaches it (backward-compat)', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { feature: 'river_ford', waterDepth: 0 });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+    expect(data.positions).toHaveLength(4 * 3);
+    expect(Object.keys(data.roadGeometry)).toEqual([]);
+  });
+
+  it('renders a ford tile as a bridge-deck sub-tile surface (not a plain ground quad) when a road path covers it', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'river_ford', waterDepth: 0 });
+    // Tile spans world (-1,-1) to (1,1) at GHW=GHH=0, T=2 — a path straight
+    // through the middle with a generous width covers the whole tile.
+    // elevation stays 0 (matching the default out-of-bounds neighbours in
+    // this 1x1 grid) so no wall faces get added — isolates this assertion
+    // to the top-face road/ground split only.
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 10, variant: 'vulperia' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    // Fully covered — zero plain ground geometry for this tile, all of it
+    // moved into the bridge-deck buffer instead.
+    expect(data.positions).toHaveLength(0);
+    expect(Object.keys(data.roadGeometry)).toEqual([BRIDGE_ROAD_VARIANT]);
+    expect(data.roadGeometry[BRIDGE_ROAD_VARIANT]!.positions.length).toBeGreaterThan(0);
+  });
+
+  it('always uses the universal bridge variant for a ford, regardless of which faction/generic road produced the crossing', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 1, feature: 'river_ford', waterDepth: 0 });
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 10, variant: GENERIC_ROAD_VARIANT }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    expect(Object.keys(data.roadGeometry)).toEqual([BRIDGE_ROAD_VARIANT]);
+  });
+
+  it('does not affect an ordinary (non-ford) road tile\'s variant when both are present in the same call', () => {
+    const wg = new WorldGrid(2, 1);
+    wg.set(0, 0, { elevation: 1, feature: 'road' });
+    wg.set(1, 0, { elevation: 1, feature: 'river_ford', waterDepth: 0 });
+    const paths = [
+      { points: [{ x: -3, z: 0 }, { x: -1, z: 0 }], width: 10, variant: 'dwarven' },
+      { points: [{ x: 1, z: 0 }, { x: 3, z: 0 }], width: 10, variant: 'dwarven' },
+    ];
+    const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 2, 1, 0, 0, 2, 1, paths, 2);
+    expect(Object.keys(data.roadGeometry).sort()).toEqual([BRIDGE_ROAD_VARIANT, 'dwarven']);
   });
 });
 

@@ -20,6 +20,20 @@
  *     Chaikin-smoothed into a continuous curve by the caller.
  */
 
+/**
+ * Variant key used for a bridge deck — the sub-tile surface rendered where
+ * a road crosses water (currently: an inter-settlement road's A* path
+ * landing on a river tile, which `WorldGenerator.applyRoadFords()` already
+ * re-tags `feature: 'river_ford'`, per RI-3). A ford crossing isn't owned
+ * by any one settlement/faction, so it always uses this single universal
+ * variant regardless of which road produced it — see
+ * `TerrainGeometryBuilder.ts`'s `river_ford` coverage-override branch and
+ * `RoadTextures.ts`'s wood-plank texture for this variant. Prefixed with an
+ * underscore for the same reason as `GENERIC_ROAD_VARIANT` (RoadTextures.ts)
+ * — it can never collide with a real settlement faction string.
+ */
+export const BRIDGE_ROAD_VARIANT = '_bridge_deck';
+
 export interface RoadPathSegment {
   /** Centerline points in world-space (x, z world units). */
   points: readonly { x: number; z: number }[];
