@@ -55,7 +55,14 @@ describe('OverworldScene settlement rendering parity', () => {
     // wired in on top of the flat per-tile pavement squares, replacing the
     // "every road tile is an identical flat square" look with actual
     // road-shaped ribbons — an increase here is the intended fix, not a
-    // regression.
+    // regression. buildingGroups/buildingData also shifted again once Phase
+    // 1 of the biome/terrain overhaul added a real `mountain` RealmBiome:
+    // some high-elevation cells that used to classify as forest/taiga/etc.
+    // now classify as mountain instead, which perturbs the exact contents
+    // of RealmGenerator.ts's shuffled settlement-candidate cell list for a
+    // given seed (even though the RNG streams themselves are unchanged) —
+    // a different settlement count/composition for seed 1 is an expected
+    // side effect of legitimately changing biome classification, not a bug.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadMeshes).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

@@ -274,15 +274,15 @@ describe('buildTerrainGeometryData — biome-distinct colours', () => {
     expect(desertColor).not.toEqual(forestColor);
   });
 
-  it('covers all 7 non-water/beach biomes with a distinct BIOME_COLOR_VARIANTS entry', () => {
-    const landBiomes: BiomeId[] = ['desert', 'savanna', 'grassland', 'forest', 'taiga', 'tundra', 'snow'];
+  it('covers all 8 non-water/beach biomes with a distinct BIOME_COLOR_VARIANTS entry', () => {
+    const landBiomes: BiomeId[] = ['desert', 'savanna', 'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain'];
     const seen = new Set<string>();
     for (const biome of landBiomes) {
       const variants = BIOME_COLOR_VARIANTS[biome];
       expect(variants.length).toBeGreaterThanOrEqual(1);
       seen.add(JSON.stringify(variants[0]));
     }
-    // All 7 biomes must have a visually distinct primary colour from each other.
+    // All 8 biomes must have a visually distinct primary colour from each other.
     expect(seen.size).toBe(landBiomes.length);
   });
 

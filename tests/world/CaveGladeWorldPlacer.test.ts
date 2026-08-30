@@ -29,12 +29,12 @@ describe('placeCavesAndGlades (live WorldGrid)', () => {
     expect(glades.length).toBeLessThanOrEqual(DEFAULT_WORLD_GEN_CONFIG.gladeCount);
   });
 
-  it('every cave sits on a low (0) or high (3-4) elevation tile', () => {
+  it('every cave sits on a low (0) elevation tile or a mountain-biome tile', () => {
     const grid = freshGrid();
     const { caves } = placeCavesAndGlades(grid, DEFAULT_WORLD_GEN_CONFIG, SEED);
     for (const cave of caves) {
       const cell = grid.get(cave.col, cave.row);
-      expect(cell.elevation === 0 || cell.elevation >= 3).toBe(true);
+      expect(cell.elevation === 0 || cell.biome === 'mountain').toBe(true);
     }
   });
 

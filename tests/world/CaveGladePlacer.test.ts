@@ -60,12 +60,12 @@ describe('placeCavesAndGlades', () => {
     expect(result.glades.length).toBe(2);
   });
 
-  it('every cave sits on a high-elevation or tundra/taiga cell', () => {
+  it('every cave sits on a high-elevation, mountain, or tundra/taiga cell', () => {
     const grid = makeGrid();
     const result = placeCavesAndGlades(grid, { caveCount: 4, minSpacing: 1 });
     for (const cave of result.caves) {
       const cell = grid.cells[cave.y]![cave.x]!;
-      const eligible = cell.elevation >= CAVE_ELEVATION_THRESHOLD || cell.biome === 'tundra' || cell.biome === 'taiga';
+      const eligible = cell.elevation >= CAVE_ELEVATION_THRESHOLD || cell.biome === 'mountain' || cell.biome === 'tundra' || cell.biome === 'taiga';
       expect(eligible).toBe(true);
     }
   });

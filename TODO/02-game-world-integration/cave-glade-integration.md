@@ -86,17 +86,26 @@ with the settlement and dungeon integration work.
   `CaveEntranceBiome` + seed on every cave marker.
 
 ### CG-3b — Live `OverworldScene.ts` Renderer Wiring ✅ (this session)
-Unlike the Studio's `RealmData` (10 biomes, no literal "mountain/bog"), the
-live game's `WorldGrid` biome (`bog|grass|forest|highland|rocky|water`) is
-derived directly from elevation in `WorldGenerator.ts`, so it already matches
-the TODO's literal "mountain/bog for caves, forest for glades" spec with zero
-workaround needed. Built a second, `WorldGrid`-native placer alongside the
-Studio's pure module rather than forcing the two shapes together:
+Historical note (superseded): this originally said the live game's
+`WorldGrid` biome was `bog|grass|forest|highland|rocky|water`, derived
+directly from elevation, and thus already matched the TODO's literal
+"mountain/bog for caves, forest for glades" spec with zero workaround
+needed. That predates the P0 realm/terrain unification, which widened
+`WorldGrid.BiomeId` to match the Studio's 10-value taxonomy (no literal
+`bog`/`highland`/`rocky` names), and Phase 1 of the
+`2026-08-30-biome-terrain-overhaul.md` initiative, which added a real
+`mountain` biome to that taxonomy. `CaveGladeWorldPlacer.ts`'s cave
+eligibility now checks `elevation === 0` (still an elevation-band
+substitute for "bog", since no real bog biome exists) OR
+`biome === 'mountain'` (a real biome check, replacing the old
+`elevation >= 3` proxy). Built as a second, `WorldGrid`-native placer
+alongside the Studio's pure module rather than forcing the two shapes
+together:
 - [x] `src/world/CaveGladeWorldPlacer.ts` — `placeCavesAndGlades(grid, config,
       seed)`, mirrors `DungeonPlacer.ts`'s exact algorithm (Poisson-disk
       candidates, tower clear-zone exclusion, grid-cell marking to prevent
-      overlap with dungeons/settlements). Caves only on `bog|highland|rocky`,
-      glades only on `forest`.
+      overlap with dungeons/settlements). Caves on `elevation === 0` or
+      `biome === 'mountain'`, glades only on `forest`.
 - [x] `WorldGenConfig` — added `caveCount`/`gladeCount` (defaults 3/2)
 - [x] `WorldGrid` — `TileContent` union gained `cave_entrance`/`glade_entrance`
 - [x] `WorldData` — added `CaveEntry`/`GladeEntry` (id, seed, biome (caves

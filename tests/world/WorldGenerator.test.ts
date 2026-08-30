@@ -78,7 +78,7 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
     const grid = buildWorldGrid(4, cfg);
     const validBiomes = new Set([
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
     ]);
     for (let row = 0; row < grid.height; row++) {
       for (let col = 0; col < grid.width; col++) {
@@ -137,7 +137,7 @@ describe('buildWorldGrid — native realm resolution', () => {
     const grid = buildWorldGrid(777, config);
     const valid = new Set([
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
     ]);
     let sampled = 0;
     for (let row = 0; row < 128; row += 7) {

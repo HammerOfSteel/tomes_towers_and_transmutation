@@ -37,11 +37,11 @@ describe('WorldGrid — river_ford feature', () => {
   });
 });
 
-describe('WorldGrid — BiomeId taxonomy (10 values, matches RealmBiome)', () => {
+describe('WorldGrid — BiomeId taxonomy (11 values, matches RealmBiome)', () => {
   it('accepts every RealmBiome-aligned biome value via set()', () => {
     const biomes: BiomeId[] = [
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
     ];
     const wg = new WorldGrid(1, 1);
     for (const biome of biomes) {

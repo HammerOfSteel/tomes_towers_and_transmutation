@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateRealmData } from '@/world/RealmGenerator';
+import { generateRealmData, classifyBiome } from '@/world/RealmGenerator';
 
 describe('generateRealmData', () => {
   it('is deterministic for the same seed', () => {
@@ -26,7 +26,7 @@ describe('generateRealmData', () => {
     const realm = generateRealmData(7, 30, 20);
     const validBiomes = new Set([
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
     ]);
     for (const row of realm.cells) {
       for (const cell of row) {
@@ -59,5 +59,24 @@ describe('generateRealmData', () => {
   it('records the seed it was generated with', () => {
     const realm = generateRealmData(777);
     expect(realm.seed).toBe(777);
+  });
+});
+
+describe('classifyBiome — mountain biome (Phase 1)', () => {
+  it('classifies high elevation below the snow line as mountain, regardless of moisture/temperature', () => {
+    expect(classifyBiome(0.75, 0.1, 0.9)).toBe('mountain');  // dry + hot
+    expect(classifyBiome(0.78, 0.9, 0.1)).toBe('mountain');  // wet + cold
+    expect(classifyBiome(0.80, 0.5, 0.5)).toBe('mountain');  // mid moisture/temp
+  });
+
+  it('still classifies the very highest elevations as snow, not mountain', () => {
+    expect(classifyBiome(0.90, 0.5, 0.5)).toBe('snow');
+    expect(classifyBiome(0.99, 0.1, 0.9)).toBe('snow');
+  });
+
+  it('does not classify low/mid elevation as mountain regardless of moisture/temperature', () => {
+    expect(classifyBiome(0.10, 0.5, 0.5)).not.toBe('mountain'); // deep_ocean band
+    expect(classifyBiome(0.50, 0.1, 0.9)).not.toBe('mountain'); // desert-band elevation
+    expect(classifyBiome(0.65, 0.5, 0.5)).not.toBe('mountain'); // just below the mountain threshold
   });
 });

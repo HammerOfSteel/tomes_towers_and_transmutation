@@ -30,11 +30,16 @@ function realmName(rand: () => number): string {
   return NAME_PRE[Math.floor(rand() * NAME_PRE.length)]! + NAME_SUFF[Math.floor(rand() * NAME_SUFF.length)]!;
 }
 
-function classifyBiome(elev: number, moist: number, temp: number): RealmBiome {
+export function classifyBiome(elev: number, moist: number, temp: number): RealmBiome {
   if (elev < 0.28) return 'deep_ocean';
   if (elev < 0.35) return 'ocean';
   if (elev < 0.40) return 'beach';
   if (elev > 0.85) return 'snow';
+  // Rocky mountain slopes below the snowcap — reads as bare rock regardless
+  // of climate/moisture (real alpine zones are rugged whether temperate or
+  // arctic), so this check sits ahead of the temperature/moisture branches
+  // below rather than being folded into them.
+  if (elev > 0.70) return 'mountain';
   if (temp < 0.15) return 'tundra';
   if (temp < 0.30) return 'taiga';
   if (moist < 0.25) return 'desert';
@@ -217,7 +222,7 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   }
 
   // ── Dungeons ─────────────────────────────────────────────────────────────────
-  const DUNGEON_BIOMES = new Set<RealmBiome>(['grassland','forest','taiga','desert','savanna','tundra','snow']);
+  const DUNGEON_BIOMES = new Set<RealmBiome>(['grassland','forest','taiga','desert','savanna','tundra','snow','mountain']);
   const nDungeons = 3 + Math.floor(rand() * 4);
   const dungeons: { x: number; y: number }[] = [];
   const dungeonCands = [...validCells].filter(c =>

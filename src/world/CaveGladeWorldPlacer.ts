@@ -5,13 +5,13 @@
  * Mirrors `DungeonPlacer.ts`'s placement algorithm (Poisson-disk candidate
  * points, world-unit spacing, tower clear-zone, grid-cell marking) rather
  * than reusing the Studio-facing `CaveGladePlacer.ts` (RealmData-shaped
- * pure module) directly — the two operate on different grids:
- *   - `CaveGladePlacer.ts` works on `RealmTerrainInput`/`RealmBiome` (the
- *     Overworld Studio's realm-map preview data, which has no
- *     mountain/bog biome, hence its elevation-threshold deviation).
- *   - This module works on the live `WorldGrid`/`BiomeId`, which *does*
- *     have `bog`/`highland`/`rocky` biomes already — so cave placement
- *     here matches the original TODO spec exactly, no deviation needed.
+ * pure module) directly — the two operate on different grids, though both
+ * now share the same 10(+`mountain`)-value biome taxonomy (unified as of
+ * the P0 realm/terrain rebuild and Phase 1 of the biome/terrain overhaul,
+ * which added a real `mountain` BiomeId to both `RealmBiome` and
+ * `WorldGrid.BiomeId`) — cave eligibility here checks `biome === 'mountain'`
+ * directly rather than the old elevation-band proxy this module used before
+ * `mountain` existed.
  *
  * Both modules share the same `CaveEntranceBiome` taxonomy (crystal/lava/
  * ice/fungal/ancient, from `CaveGladePlacer.ts`) so `CaveEntranceBuilder.ts`
@@ -29,14 +29,15 @@ const T          = 2;    // world-units per tile (matches OverworldScene/Dungeon
 const SPACING_WU = 24;   // minimum world-unit distance between cave/glade entrances
 const FLAT_MULT  = 2.0;  // clear-zone around tower: FR × FLAT_MULT tiles
 
-/** Cave-eligible: elevation 0 (was "bog") or elevation 3-4 (was
- *  "highland/rocky") — the elevation bands the old biome names
- *  approximated. Elevation is unchanged by the biome-taxonomy rebuild
- *  (docs/superpowers/specs/2026-08-28-overworld-foundation-rebuild-design.md),
- *  so this stays a correct, low-risk substitution rather than an invented
- *  biome-name mapping. */
-function isCaveEligible(cell: { elevation: number; feature: string; content: string }): boolean {
-  return (cell.elevation === 0 || cell.elevation >= 3)
+/** Cave-eligible: elevation 0 ("bog" — no real bog biome exists yet in the
+ *  live taxonomy, so this stays an elevation-band substitute) OR the real
+ *  `mountain` biome (Phase 1 of the biome/terrain overhaul added a genuine
+ *  `mountain` BiomeId — this replaces the old `elevation >= 3` proxy for
+ *  "highland/rocky", which is a strictly more accurate rocky-terrain check
+ *  now that the biome itself exists, e.g. it no longer misfires on a
+ *  merely-elevated non-rocky tile). */
+function isCaveEligible(cell: { elevation: number; biome: string; feature: string; content: string }): boolean {
+  return (cell.elevation === 0 || cell.biome === 'mountain')
     && cell.feature === 'none' && cell.content === 'empty';
 }
 

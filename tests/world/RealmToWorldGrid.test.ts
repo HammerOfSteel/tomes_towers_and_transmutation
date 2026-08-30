@@ -15,7 +15,7 @@ describe('realmToWorldGrid — identity biome mapping', () => {
   it('preserves every RealmBiome value unchanged (no collapsing)', () => {
     const biomes: RealmCell['biome'][] = [
       'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-      'grassland', 'forest', 'taiga', 'tundra', 'snow',
+      'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
     ];
     const cells = [biomes.map(biome => ({ elevation: 0.5, moisture: 0.5, biome }))];
     const realm = fakeRealm(cells);

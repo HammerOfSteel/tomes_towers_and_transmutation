@@ -5,14 +5,20 @@
  * realm map, given the same `RealmTerrainInput` shape RI-1's
  * `realmToTerrain()` consumes (`RealmData.cells`/`W`/`H`/`seed`).
  *
- * Deviation from the spec: `RealmBiome` (the realm map's actual biome enum
- * — see `RealmToTerrain.ts`) has no `mountain` or `bog` biome ("Caves:
- * prefer mountain/bog/tundra biomes" in the spec). This module adapts that
- * intent to the biomes that actually exist: caves prefer high-elevation
- * cells (`elevation >= CAVE_ELEVATION_THRESHOLD`, the closest analogue to
+ * Historical deviation from the spec, now partially resolved: `RealmBiome`
+ * originally had no `mountain` or `bog` biome ("Caves: prefer mountain/bog/
+ * tundra biomes" in the spec), so this module adapted that intent to the
+ * biomes that existed at the time: high-elevation cells
+ * (`elevation >= CAVE_ELEVATION_THRESHOLD`, the closest analogue to
  * "mountain") or `tundra`/`taiga` cells (cold + often-wet, the closest
- * analogue to "bog"). Glades prefer `forest`/`taiga` biomes, matching the
- * spec directly.
+ * analogue to "bog"). Phase 1 of the biome/terrain overhaul added a real
+ * `mountain` `RealmBiome` value, so `isMountainOrBogLike()` now also checks
+ * `biome === 'mountain'` directly (catching cells whose elevation sits in
+ * the mountain-classification band but below the historical elevation
+ * threshold) — the elevation-threshold check is kept alongside it rather
+ * than replaced, since no real "bog" biome exists yet to fully retire the
+ * approximation. Glades prefer `forest`/`taiga` biomes, matching the spec
+ * directly.
  *
  * Like `DungeonSiteMetadata.ts`, this deliberately does **not** modify
  * `overworld-studio.ts`'s `RealmData` interface or `generateRealmData()` —
@@ -63,7 +69,7 @@ export interface PlaceCaveGladeOptions {
 const DEFAULT_MIN_SPACING = 4;
 
 function isMountainOrBogLike(cell: { elevation: number; biome: string }): boolean {
-  return cell.elevation >= CAVE_ELEVATION_THRESHOLD || cell.biome === 'tundra' || cell.biome === 'taiga';
+  return cell.elevation >= CAVE_ELEVATION_THRESHOLD || cell.biome === 'mountain' || cell.biome === 'tundra' || cell.biome === 'taiga';
 }
 
 function isForestLike(cell: { biome: string }): boolean {

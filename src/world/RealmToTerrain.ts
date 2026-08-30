@@ -51,6 +51,11 @@ export const BIOME_TILE_MAP: Readonly<Record<RealmBiome, BiomeTileMapping>> = {
   taiga:      { biome: 'forest_floor', variant: 'moss' },
   tundra:     { biome: 'tundra',       variant: 'frozen_ground' },
   snow:       { biome: 'tundra',       variant: 'snow' },
+  // Interim approximation (Phase 1 of the biome/terrain overhaul) — closest
+  // existing TileBiome/variant to bare mountain rock. A dedicated
+  // TileBiome for mountain terrain is Phase 8's job (full biome-taxonomy
+  // texture wiring), not this phase's.
+  mountain:   { biome: 'cave_rock',    variant: 'dry' },
 };
 
 /** Minimal structural shape this module needs from a realm cell — matches `RealmData.cells[y][x]`. */

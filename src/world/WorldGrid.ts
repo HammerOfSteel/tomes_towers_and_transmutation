@@ -15,7 +15,8 @@
 export type BiomeId =
   | 'deep_ocean' | 'ocean' | 'beach'
   | 'desert' | 'savanna' | 'grassland'
-  | 'forest' | 'taiga' | 'tundra' | 'snow';
+  | 'forest' | 'taiga' | 'tundra' | 'snow'
+  | 'mountain';
 
 /**
  * Feature = a geographic/man-made overlay on the tile (roads, rivers).

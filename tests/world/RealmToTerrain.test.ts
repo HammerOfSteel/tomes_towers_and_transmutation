@@ -13,7 +13,7 @@ import { validateTileDNA } from '@/procedural/TileDNA';
 
 const ALL_REALM_BIOMES: RealmBiome[] = [
   'deep_ocean', 'ocean', 'beach', 'desert', 'savanna',
-  'grassland', 'forest', 'taiga', 'tundra', 'snow',
+  'grassland', 'forest', 'taiga', 'tundra', 'snow', 'mountain',
 ];
 
 describe('BIOME_TILE_MAP', () => {

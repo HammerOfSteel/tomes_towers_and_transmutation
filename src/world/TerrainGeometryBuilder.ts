@@ -89,6 +89,11 @@ export const BIOME_COLOR_VARIANTS: Record<BiomeId, readonly (readonly [number, n
   taiga:      [[0.15, 0.28, 0.20], [0.13, 0.26, 0.24], [0.18, 0.30, 0.22]],
   tundra:     [[0.42, 0.44, 0.36], [0.46, 0.46, 0.40], [0.38, 0.40, 0.34]],
   snow:       [[0.88, 0.90, 0.92], [0.92, 0.93, 0.95], [0.82, 0.85, 0.88]],
+  // Bare rocky mountain slopes (Phase 1 of the biome/terrain overhaul) —
+  // warm grey-brown rock, deliberately distinct from tundra's cooler
+  // blue-grey and desert's tan so a mountain reads as its own biome rather
+  // than a recolored tundra/desert.
+  mountain:   [[0.40, 0.37, 0.33], [0.44, 0.40, 0.36], [0.34, 0.32, 0.29]],
 };
 
 /**

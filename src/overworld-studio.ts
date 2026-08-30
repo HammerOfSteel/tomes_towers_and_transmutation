@@ -2627,7 +2627,8 @@ function redrawCave() { if (currentCaveData) drawCaveGlade(currentCaveData, canv
 
 export type RealmBiome =
   | 'deep_ocean' | 'ocean' | 'beach'
-  | 'desert' | 'savanna' | 'grassland' | 'forest' | 'taiga' | 'tundra' | 'snow';
+  | 'desert' | 'savanna' | 'grassland' | 'forest' | 'taiga' | 'tundra' | 'snow'
+  | 'mountain';
 
 export interface RealmCell { elevation: number; moisture: number; biome: RealmBiome; }
 export interface RealmRiver { points: Vec2[]; }
@@ -2654,12 +2655,14 @@ const REALM_BIOME_COLOR: Record<RealmBiome, string> = {
   deep_ocean: '#304880', ocean: '#4060b0', beach: '#d4c880',
   desert: '#d8b060', savanna: '#a8c050', grassland: '#60a038',
   forest: '#2a7030', taiga: '#386858', tundra: '#708090', snow: '#c8d8e4',
+  mountain: '#8a7d6e',
 };
 
 const REALM_BIOME_LABEL: Record<RealmBiome, string> = {
   deep_ocean:'Deep Ocean', ocean:'Ocean', beach:'Coastline',
   desert:'Desert', savanna:'Savanna', grassland:'Grassland',
   forest:'Forest', taiga:'Taiga', tundra:'Tundra', snow:'Snowfield',
+  mountain:'Mountain',
 };
 
 const SETTLEMENT_SIZE_COLOR: Record<'village'|'town'|'city', string> = {
@@ -2967,6 +2970,7 @@ const PLANET_BIOME_RGB: Record<RealmBiome, readonly [number,number,number]> = {
   taiga:      [40,  88, 65],
   tundra:     [88,  108, 125],
   snow:       [218, 235, 248],
+  mountain:   [120, 108, 95],
 };
 
 export function drawRealmPlanet(data: RealmData, canvas: HTMLCanvasElement): void {
