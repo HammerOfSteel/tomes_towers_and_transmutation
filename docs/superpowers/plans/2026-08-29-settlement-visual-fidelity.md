@@ -2324,6 +2324,89 @@ undecayed/flat-topped tower. All throwaway diagnostic files
 (`tests/e2e/_tmp_undead_diag.spec.ts`, `tests/world/_tmp_undead_diag.test.ts`,
 `/tmp/undead_*.png`) were deleted after use.
 
+### Phase 2e.17 — BlockKit world-space UV + per-faction canvas textures — ✅ DONE
+
+Final backlog item of the Settlement Visual Fidelity initiative: replace flat
+per-material colors with real tileable procedural canvas textures on the 7
+reworked non-human races' primary structural materials (slime intentionally
+excluded — its translucent gel material stays untextured, confirmed earlier
+in the initiative).
+
+**UV design.** Considered and rejected per-block-local UV (every block
+sampling an identical small texture window — this would make adjacent
+identical blocks look like an obviously-stamped checkerboard once merged
+into one building mesh, a classic bad-procedural-texture tell). Instead
+`blockGeometry()` gained a `blockCoord?: [number, number, number]` option
+(defaulting to `[0,0,0]`, backward compatible) and now derives all UV from
+**world-space** position: side-quad `u` is the projection of world XZ onto
+the face's own in-plane tangent (perpendicular to its outward normal, so it
+naturally varies per wall orientation while staying continuous within one
+wall run) and `v` is world Y; top/bottom fan-cap UV is direct planar
+world X/Z. Both divide by a new `UV_TILE_WU = 1.5` constant (world units per
+texture tile — a tile spans ~3 blocks at `BLOCK_UNIT = 0.5`), giving visible
+cross-block variation without seams being obvious. `meshBlockGrid()`'s
+single `blockGeometry()` call site now passes `blockCoord: [bx, by, bz]`.
+TDD: 7 new tests in a `BlockKit.test.ts` UV-generation describe block plus 2
+more appended to the `meshBlockGrid` describe block (uv attribute
+existence/count/finiteness including topBevel, determinism incl.
+`blockCoord`, different `blockCoord` → different UV, per-block UV varies
+with world position after merge) — all 35 tests in the file pass (27
+pre-existing + 8 new, no regressions).
+
+**Textures.** New sibling module `src/world/buildings/FactionBlockTextures.ts`
+(not merged into the human `TextureFactory.ts`, since the design differs:
+small 256x256 tileable per-block swatches sampled via BlockKit's own
+world-space UV, not large wall-scale compositions needing caller-computed
+`repeat`). 7 lazily-cached canvas-generation functions, one per faction:
+`earthTexture` (packed dirt/clay/root squiggles — vulperia), `graniteTexture`
+(salt-and-pepper speckle + mortar grid — dwarven), `barkTexture` (vertical
+wood-grain striations + knots — elven), `hideTexture` (mottled hide patches
++ cross-stitch seams — orcish), `ashStoneTexture` (pale cracked stone + soot
++ hairline fractures — undead), `obsidianTexture` (near-black glossy base +
+streaks + blood-red veins — vampire), `toadstoolTexture` (mottled fungal
+skin + damp sheen — fae). Wired via `map:` into `FactionBuildingVariants.ts`
+palettes onto only the primary/structural material keys (vulperia `earth`;
+undead `ashstone`; elven `bark`; dwarven `stone`; orcish all 5 patch
+materials; vampire `obsidian`; fae `stalk`+`cap`), leaving accent/secondary
+materials (`facade`, glow materials, `iron`, `buttress`, `grass`, `leaf`,
+`ossuary`, `spore`) untextured as originally scoped. `mat()`'s existing
+`opts` spread meant no signature change was needed to add `map`.
+
+**Test-environment gotcha discovered and documented**: this project's
+jsdom vitest environment provides a non-functional canvas 2D context —
+`getContext('2d')` succeeds but draw calls (`fillRect`/`putImageData`) have
+no effect, and `getImageData()` always reads back all-zero pixels
+regardless of what was drawn. Verified via a throwaway smoke test. This
+means no test in this codebase can assert actual rendered pixel content —
+consistent with the pre-existing human `TextureFactory.ts` having zero test
+coverage. `FactionBlockTextures.test.ts`'s 35 tests instead assert
+structural conventions only (CanvasTexture instance, `RepeatWrapping`,
+`SRGBColorSpace`, default/override repeat, canvas caching). Also discovered
+`THREE.Texture.needsUpdate` is write-only (setter bumps `version`, no
+getter — reading it back is always `undefined`); tests assert `version > 0`
+instead.
+
+**Verification.** Targeted suites (`BlockKit.test.ts` +
+`FactionBlockTextures.test.ts` + `FactionBuildingVariants.test.ts` +
+`FactionBlockProfiles.test.ts` + `BuildingBuilder.test.ts`) — 310/310
+passed. `tsc --noEmit` — 145 errors, unchanged from baseline. Broader
+`tests/world/` suite — 982/983 passed (the one pre-existing unrelated
+`WaterMaterial.test.ts` failure, documented in an earlier phase as
+out-of-scope). Playwright screenshots of the Settlement Lab for all 7
+textured factions (dwarven, vampire, orcish, elven, undead, fae, vulperia —
+hit the same `sl_faction` studio-vs-registry-key gotcha documented in Phase
+2e.16 on the first undead attempt, corrected to the studio key `undead`) —
+all navigated/rendered with no console or page errors. Cropped/
+zoomed/brightened regions confirmed each faction's texture is genuinely
+rendering (not flat color or a black/undefined fallback): dwarven granite
+speckle, elven bark vertical grain, fae toadstool mottled speckle, vampire
+obsidian glossy streaks + blood-red veins, vulperia earthy base-band tone,
+orcish patchwork hide variation; undead ash-stone confirmed via the same
+proven code path though visually subtle against its intentionally
+near-black wall color and the Lab's dark ambient lighting. All throwaway
+Playwright spec/config (`tests/e2e/_tmp_texture_verify/`) and the dedicated
+port-5321 dev server were deleted/killed after use.
+
 ### Phase 3 — Iso camera occlusion (stretch, re-evaluate after Phase 1)
 Only pursue if Phase 1's spacing fix doesn't sufficiently resolve the
 "can't see the player" complaint on visual re-check.

@@ -158,14 +158,41 @@ export interface BlockGeometryOptions {
   topBevel?: boolean;       // roofline-cell bevel (frustum-shaped cap)
   topBevelInset?: number;   // world units, default 0.12 * BLOCK_UNIT
   topBevelDrop?: number;    // world units, default 0.12 * BLOCK_UNIT
+  /**
+   * This block's integer grid coordinates, used only to project a
+   * world-space UV (see `pushSideQuad`/`pushFanCap`) so palette textures
+   * read as continuous material across many blocks instead of an
+   * identical stamped swatch per cube. Defaults to the origin, which is
+   * still valid (every block just samples the same local UV window) —
+   * callers that don't care about cross-block texture continuity (e.g.
+   * direct unit tests) can omit it.
+   */
+  blockCoord?: [number, number, number];
 }
 
 function scaleTowardCenter(pts: [number, number][], factor: number): [number, number][] {
   return pts.map(([x, z]) => [x * factor, z * factor]);
 }
 
+/**
+ * Texture tiling period, in world units, for the world-space-projected UV
+ * generated below (see `blockGeometry()`'s module-level doc for why this
+ * projection exists). Chosen so a tile spans several blocks
+ * (`BLOCK_UNIT` = 0.5 WU each) rather than exactly one — a 1:1 mapping
+ * would make every block sample an *identical* texture swatch, which reads
+ * as an obviously-repeating checkerboard once merged across a whole
+ * building; spanning multiple blocks per tile lets a palette texture look
+ * like continuous material (grain, mortar lines, hide mottling, ...)
+ * running across the structure instead of a stamped, per-cube decal.
+ */
+const UV_TILE_WU = 1.5;
+
 /** Fan-triangulate a convex polygon (assumed wound consistently) at a fixed Y, non-indexed (flat shading). */
-function pushFanCap(positions: number[], normals: number[], pts: [number, number][], y: number, normalY: 1 | -1): void {
+function pushFanCap(
+  positions: number[], normals: number[], uvs: number[],
+  pts: [number, number][], y: number, normalY: 1 | -1,
+  worldOx: number, worldOz: number,
+): void {
   if (pts.length < 3) return;
   // The outline is wound clockwise as viewed from above (see the module-level
   // comment above buildOutlinePoints()). THREE.js treats a triangle as
@@ -183,15 +210,19 @@ function pushFanCap(positions: number[], normals: number[], pts: [number, number
     for (const [x, z] of tri) {
       positions.push(x, y, z);
       normals.push(0, normalY, 0);
+      // Planar top-down projection: world X/Z directly, scaled to the
+      // shared tiling period so cap faces line up with side-wall UVs.
+      uvs.push((worldOx + x) / UV_TILE_WU, (worldOz + z) / UV_TILE_WU);
     }
   }
 }
 
 /** Emit one quad (2 triangles) between two vertical edges of the outline at a given y-span, non-indexed. */
 function pushSideQuad(
-  positions: number[], normals: number[],
+  positions: number[], normals: number[], uvs: number[],
   p1: [number, number], p2: [number, number],
   yBottom: number, yTop: number,
+  worldOx: number, worldOy: number, worldOz: number,
 ): void {
   const [x1, z1] = p1, [x2, z2] = p2;
   // Outward normal: perpendicular to the (p1->p2) edge, pointing away from origin.
@@ -207,6 +238,21 @@ function pushSideQuad(
   const b: [number, number, number] = [x2, yBottom, z2];
   const c: [number, number, number] = [x2, yTop, z2];
   const d: [number, number, number] = [x1, yTop, z1];
+  // UV: tangential world-space coordinate (projection of world XZ onto the
+  // face's own in-plane tangent, perpendicular to its outward normal) for
+  // "u", world Y for "v" — a standard world-space planar wall mapping so
+  // texture grain/mortar lines run continuously along a wall instead of
+  // restarting at every block, while still varying face-to-face for
+  // differently-oriented walls (each face uses its own normal/tangent).
+  const tx = -nz, tz = nx;
+  const uvOf = (x: number, y: number, z: number): [number, number] => [
+    ((worldOx + x) * tx + (worldOz + z) * tz) / UV_TILE_WU,
+    (worldOy + y) / UV_TILE_WU,
+  ];
+  const uvA = uvOf(a[0], a[1], a[2]);
+  const uvB = uvOf(b[0], b[1], b[2]);
+  const uvC = uvOf(c[0], c[1], c[2]);
+  const uvD = uvOf(d[0], d[1], d[2]);
   // Reversed from the naive (a,b,c)/(a,c,d) strip order: THREE.js treats a
   // triangle as front-facing when its vertices read counter-clockwise as
   // viewed from the direction its normal points (the outward direction
@@ -215,10 +261,20 @@ function pushSideQuad(
   // outside and only visible from inside the building (the reported
   // "front of the building is see-through" bug). Swapping each triangle's
   // last two vertices reverses the winding without changing the quad shape.
-  for (const tri of [[a, c, b], [a, d, c]]) {
-    for (const v of tri) {
+  const triangles: Array<[[number, number, number], [number, number, number], [number, number, number]]> = [
+    [a, c, b], [a, d, c],
+  ];
+  const uvTriangles: Array<[[number, number], [number, number], [number, number]]> = [
+    [uvA, uvC, uvB], [uvA, uvD, uvC],
+  ];
+  for (let t = 0; t < triangles.length; t++) {
+    const tri = triangles[t]!, uvTri = uvTriangles[t]!;
+    for (let i = 0; i < 3; i++) {
+      const v = tri[i]!;
       positions.push(v[0], v[1], v[2]);
       normals.push(nx, 0, nz);
+      const uv = uvTri[i]!;
+      uvs.push(uv[0], uv[1]);
     }
   }
 }
@@ -238,10 +294,13 @@ export function blockGeometry(
   const r = opts.chamferRadius ?? 0.16 * BLOCK_UNIT;
   const inset = opts.topBevelInset ?? 0.12 * BLOCK_UNIT;
   const drop = opts.topBevelDrop ?? 0.12 * BLOCK_UNIT;
+  const [bx, by, bz] = opts.blockCoord ?? [0, 0, 0];
+  const worldOx = bx * BLOCK_UNIT, worldOy = by * BLOCK_UNIT, worldOz = bz * BLOCK_UNIT;
 
   const outline = buildOutlinePoints(flags, s, r);
   const positions: number[] = [];
   const normals: number[] = [];
+  const uvs: number[] = [];
 
   const n = outline.length;
   const wallTop = opts.topBevel && faces.U ? s - drop : s;
@@ -252,7 +311,7 @@ export function blockGeometry(
     const tag = cur.tagToNext;
     const visible = tag.endsWith('_diag') ? true : faces[tag as keyof FaceVisibility];
     if (!visible) continue;
-    pushSideQuad(positions, normals, cur.p, next.p, -s, wallTop);
+    pushSideQuad(positions, normals, uvs, cur.p, next.p, -s, wallTop, worldOx, worldOy, worldOz);
   }
 
   if (faces.U) {
@@ -276,24 +335,48 @@ export function blockGeometry(
         nx /= len; nz /= len;
         const midX = (outerA[0] + outerB[0]) / 2, midZ = (outerA[1] + outerB[1]) / 2;
         if (nx * midX + nz * midZ < 0) { nx = -nx; nz = -nz; }
+        // Same tangential world-space UV projection as pushSideQuad().
+        const tx = -nz, tz = nx;
+        const uvOf = (x: number, y: number, z: number): [number, number] => [
+          ((worldOx + x) * tx + (worldOz + z) * tz) / UV_TILE_WU,
+          (worldOy + y) / UV_TILE_WU,
+        ];
+        const uvA = uvOf(a[0], a[1], a[2]);
+        const uvB = uvOf(b[0], b[1], b[2]);
+        const uvC = uvOf(c[0], c[1], c[2]);
+        const uvD = uvOf(d[0], d[1], d[2]);
         // Reversed winding — see pushSideQuad()'s comment for why the naive
         // (a,b,c)/(a,c,d) order produces an inward-facing front face.
-        for (const tri of [[a, c, b], [a, d, c]]) {
-          for (const v of tri) { positions.push(v[0], v[1], v[2]); normals.push(nx, 0.3, nz); }
+        const triangles: Array<[[number, number, number], [number, number, number], [number, number, number]]> = [
+          [a, c, b], [a, d, c],
+        ];
+        const uvTriangles: Array<[[number, number], [number, number], [number, number]]> = [
+          [uvA, uvC, uvB], [uvA, uvD, uvC],
+        ];
+        for (let t = 0; t < triangles.length; t++) {
+          const tri = triangles[t]!, uvTri = uvTriangles[t]!;
+          for (let i2 = 0; i2 < 3; i2++) {
+            const v = tri[i2]!;
+            positions.push(v[0], v[1], v[2]);
+            normals.push(nx, 0.3, nz);
+            const uv = uvTri[i2]!;
+            uvs.push(uv[0], uv[1]);
+          }
         }
       }
-      pushFanCap(positions, normals, insetPts, s, 1);
+      pushFanCap(positions, normals, uvs, insetPts, s, 1, worldOx, worldOz);
     } else {
-      pushFanCap(positions, normals, outline.map(o => o.p), s, 1);
+      pushFanCap(positions, normals, uvs, outline.map(o => o.p), s, 1, worldOx, worldOz);
     }
   }
   if (faces.D) {
-    pushFanCap(positions, normals, outline.map(o => o.p), -s, -1);
+    pushFanCap(positions, normals, uvs, outline.map(o => o.p), -s, -1, worldOx, worldOz);
   }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   return geo;
 }
 
@@ -334,6 +417,7 @@ export function meshBlockGrid(
       topBevel: useTopBevel,
       topBevelInset: opts.topBevelInset,
       topBevelDrop: opts.topBevelDrop,
+      blockCoord: [bx, by, bz],
     });
     if (geo.attributes.position.count === 0) continue;
     const mat = palette[materialKey] ?? palette[Object.keys(palette)[0] ?? ''];

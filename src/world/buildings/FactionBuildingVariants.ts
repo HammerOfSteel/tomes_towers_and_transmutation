@@ -36,6 +36,7 @@ import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
+import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
 import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
@@ -209,7 +210,7 @@ function addBlockDenMound(
 ): void {
   const grid = buildVulperiaDenMoundGrid(seed, w, d, h, opts);
   const palette = {
-    earth:  mat(earthColor, { roughness: 0.98 }),
+    earth:  mat(earthColor, { roughness: 0.98, map: earthTexture() }),
     grass:  mat(grassColor, { roughness: 0.9 }),
     facade: mat(facadeColor, { roughness: 0.92 }),
   };
@@ -476,7 +477,7 @@ function addBlockUndeadSpire(
 ): void {
   const grid = buildUndeadTierGrid(seed, w, d, h, opts);
   const palette = {
-    ashstone: mat(wallColor, { roughness: 0.98 }),
+    ashstone: mat(wallColor, { roughness: 0.98, map: ashStoneTexture() }),
     ossuary:  mat('#d8d0b8', { roughness: 0.9 }),
     facade:   mat(doorColor, { roughness: 0.9 }),
     runeglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.9, roughness: 0.4 }),
@@ -659,7 +660,7 @@ function addBlockElvenTrunk(
 ): void {
   const grid = buildElvenTrunkGrid(seed, w, d, h, opts);
   const palette = {
-    bark:      mat(barkColor, { roughness: 0.9 }),
+    bark:      mat(barkColor, { roughness: 0.9, map: barkTexture() }),
     leaf:      mat(leafColor, { roughness: 0.75 }),
     facade:    mat(facadeColor, { roughness: 0.8 }),
     moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
@@ -831,7 +832,7 @@ function addBlockDwarvenHall(
 ): void {
   const grid = buildDwarvenHallGrid(seed, w, d, h, opts);
   const palette = {
-    stone:    mat(stoneColor, { roughness: 0.92 }),
+    stone:    mat(stoneColor, { roughness: 0.92, map: graniteTexture() }),
     buttress: mat(buttressColor, { roughness: 0.6, metalness: 0.25 }),
     facade:   mat(facadeColor, { roughness: 0.85, metalness: 0.15 }),
   };
@@ -973,11 +974,11 @@ function addBlockOrcishHut(
 ): void {
   const grid = buildOrcishHutGrid(seed, w, d, h, opts);
   const palette = {
-    patchA: mat(wallColor, { roughness: 0.92 }),
-    patchB: mat(trimColor, { roughness: 0.92 }),
-    patchC: mat('#c8ba94', { roughness: 0.88 }), // hardcoded pale bone/scrap patch (checked distinct from wallColor/trimColor: shifted lighter/greyer than the warm tan trim so it reads as a genuinely mismatched scavenged patch, not just a shade of the same brown)
-    roofpatchA: mat(roofColor, { roughness: 0.85 }),
-    roofpatchB: mat('#5a4a30', { roughness: 0.88 }), // hardcoded weathered-thatch/hide contrast patch
+    patchA: mat(wallColor, { roughness: 0.92, map: hideTexture() }),
+    patchB: mat(trimColor, { roughness: 0.92, map: hideTexture() }),
+    patchC: mat('#c8ba94', { roughness: 0.88, map: hideTexture() }), // hardcoded pale bone/scrap patch (checked distinct from wallColor/trimColor: shifted lighter/greyer than the warm tan trim so it reads as a genuinely mismatched scavenged patch, not just a shade of the same brown)
+    roofpatchA: mat(roofColor, { roughness: 0.85, map: hideTexture() }),
+    roofpatchB: mat('#5a4a30', { roughness: 0.88, map: hideTexture() }), // hardcoded weathered-thatch/hide contrast patch
     facade: mat(doorColor, { roughness: 0.8 }),
   };
   const mesh = meshBlockGrid(grid, palette, {
@@ -1104,7 +1105,7 @@ function addBlockVampireSpire(
 ): void {
   const grid = buildVampireSpireGrid(seed, w, d, h, opts);
   const palette = {
-    obsidian:  mat(wallColor, { roughness: 0.55, metalness: 0.1 }),
+    obsidian:  mat(wallColor, { roughness: 0.55, metalness: 0.1, map: obsidianTexture() }),
     iron:      mat('#3a3a42', { roughness: 0.45, metalness: 0.55 }),
     facade:    mat(doorColor, { roughness: 0.6 }),
     bloodglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#c81030'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.85, roughness: 0.35 }),
@@ -1250,8 +1251,8 @@ function addBlockFaeStalk(
 ): void {
   const grid = buildFaeStalkGrid(seed, w, d, h, opts);
   const palette = {
-    stalk:  mat(stalkColor, { roughness: 0.6 }),
-    cap:    mat(capColor, { roughness: 0.5 }),
+    stalk:  mat(stalkColor, { roughness: 0.6, map: toadstoolTexture() }),
+    cap:    mat(capColor, { roughness: 0.5, map: toadstoolTexture() }),
     facade: mat(doorColor, { roughness: 0.55 }),
     spore:  new THREE.MeshStandardMaterial({ color: new THREE.Color('#c8ffb0'), emissive: new THREE.Color('#a0ff70'), emissiveIntensity: 0.85, roughness: 0.35 }),
   };

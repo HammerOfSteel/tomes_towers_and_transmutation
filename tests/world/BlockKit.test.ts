@@ -219,6 +219,52 @@ describe('BlockKit — single-block geometry sanity', () => {
   });
 });
 
+describe('BlockKit — UV generation (per-block, world-space-projected, for palette textures)', () => {
+  const ALL_FLAGS = { NW: true, NE: true, SE: true, SW: true };
+  const ALL_FACES = { N: true, S: true, E: true, W: true, U: true, D: true };
+
+  it('every geometry carries a uv attribute with one [u,v] pair per vertex', () => {
+    const geo = blockGeometry(ALL_FLAGS, ALL_FACES, {});
+    expect(geo.attributes.uv).toBeDefined();
+    expect(geo.attributes.uv!.count).toBe(geo.attributes.position.count);
+  });
+
+  it('uv values are finite for a fully-chamfered isolated block (including diagonal chamfer faces and topBevel collar)', () => {
+    const geo = blockGeometry(ALL_FLAGS, ALL_FACES, { topBevel: true });
+    const uv = geo.attributes.uv!;
+    for (let i = 0; i < uv.count * 2; i++) {
+      expect(Number.isFinite(uv.array[i])).toBe(true);
+    }
+  });
+
+  it('a block with no faces visible produces an empty uv attribute matching empty position/normal', () => {
+    const geo = blockGeometry(
+      { NW: false, NE: false, SE: false, SW: false },
+      { N: false, S: false, E: false, W: false, U: false, D: false },
+      {},
+    );
+    expect(geo.attributes.uv!.count).toBe(0);
+  });
+
+  it('is deterministic: identical inputs (including blockCoord) produce identical uv data', () => {
+    const g1 = blockGeometry(ALL_FLAGS, ALL_FACES, { blockCoord: [3, 1, -2] });
+    const g2 = blockGeometry(ALL_FLAGS, ALL_FACES, { blockCoord: [3, 1, -2] });
+    expect(Array.from(g1.attributes.uv!.array)).toEqual(Array.from(g2.attributes.uv!.array));
+  });
+
+  it('two blocks at different blockCoord positions produce different uv data (no obvious per-block tile repetition)', () => {
+    const g1 = blockGeometry(ALL_FLAGS, ALL_FACES, { blockCoord: [0, 0, 0] });
+    const g2 = blockGeometry(ALL_FLAGS, ALL_FACES, { blockCoord: [4, 0, 0] });
+    expect(Array.from(g1.attributes.uv!.array)).not.toEqual(Array.from(g2.attributes.uv!.array));
+  });
+
+  it('omitting blockCoord defaults to origin (backward-compatible with existing local-only callers)', () => {
+    const g1 = blockGeometry(ALL_FLAGS, ALL_FACES, {});
+    const g2 = blockGeometry(ALL_FLAGS, ALL_FACES, { blockCoord: [0, 0, 0] });
+    expect(Array.from(g1.attributes.uv!.array)).toEqual(Array.from(g2.attributes.uv!.array));
+  });
+});
+
 describe('BlockKit — geometric (winding-based) normals must agree with the stored lighting normals', () => {
   // THREE.js backface culling (material.side, default THREE.FrontSide) uses
   // the triangle's *winding order* (screen-space vertex order), NOT the
@@ -383,5 +429,44 @@ describe('BlockKit — meshBlockGrid (full grid -> THREE.Group)', () => {
     organic.traverse((o) => { if (o instanceof THREE.Mesh) organicVerts += countVerts(o.geometry); });
     monumental.traverse((o) => { if (o instanceof THREE.Mesh) monumentalVerts += countVerts(o.geometry); });
     expect(monumentalVerts).toBeLessThan(organicVerts);
+  });
+
+  it('every merged mesh keeps a valid uv attribute matching its position count (so palette textures sample correctly post-merge)', () => {
+    const grid = createBlockGrid();
+    for (let bx = 0; bx < 3; bx++) {
+      for (let bz = 0; bz < 3; bz++) {
+        setBlock(grid, bx, 0, bz, 'earth');
+        setBlock(grid, bx, 1, bz, 'grass');
+      }
+    }
+    const group = meshBlockGrid(grid, samplePalette());
+    let checked = 0;
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        expect(o.geometry.attributes.uv).toBeDefined();
+        expect(o.geometry.attributes.uv!.count).toBe(o.geometry.attributes.position.count);
+        checked++;
+      }
+    });
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('per-block uv varies with world position (blocks far apart in the grid sample different parts of a tileable texture)', () => {
+    const grid = createBlockGrid();
+    setBlock(grid, 0, 0, 0, 'earth');
+    setBlock(grid, 10, 0, 0, 'earth');
+    const group = meshBlockGrid(grid, samplePalette());
+    const uvSets: number[][] = [];
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh) uvSets.push(Array.from(o.geometry.attributes.uv!.array));
+    });
+    // Both blocks share the same 'earth' material, so after merge-by-material
+    // they may end up combined into a single mesh; either way, confirm the
+    // uv range spans more than a single block-local tile (i.e. actually
+    // reflects the bx=10 offset rather than being locally-identical).
+    const allUv = uvSets.flat();
+    const uMax = Math.max(...allUv.filter((_, i) => i % 2 === 0));
+    const uMin = Math.min(...allUv.filter((_, i) => i % 2 === 0));
+    expect(uMax - uMin).toBeGreaterThan(1);
   });
 });
