@@ -587,12 +587,15 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // With the wall-anchoring fix (Task 5), the west wall is now correctly
     // suppressed too — the ramp already reaches exactly down to the west
     // neighbor's own height, leaving no gap. Expected contribution: just the
-    // 1 top face (planar Edge quad, 4 verts) = 12 normal floats total.
-    expect(data.normals).toHaveLength(12);
+    // 1 top face (planar Edge quad, 4 verts) = 12 normal floats total,
+    // landing in groundGeometry.grassland (default biome, covered) since
+    // there are no walls left to occupy the base buffer.
+    const normals = data.groundGeometry.grassland!.normals;
+    expect(normals).toHaveLength(12);
     // The top face's normal (first of the 4 verts) must be genuinely tilted
     // — not exactly (0,1,0) — confirming Task 4's real slope, while still
     // mostly upward-facing (not vertical like a wall).
-    const topFaceNy = data.normals[1]!;
+    const topFaceNy = normals[1]!;
     expect(topFaceNy).toBeLessThan(0.999);
     expect(topFaceNy).toBeGreaterThan(0);
   });
@@ -610,9 +613,11 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // face's geometry, avoiding any risk of an unrelated wall/flat-tile
     // normal elsewhere in a wider scan being mistaken for the ramp's own.
     const data = buildTerrainGeometryData(wg, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1);
-    expect(data.normals).toHaveLength(18); // 2 triangles x 3 verts x 3 floats — the non-planar path
-    const tri1Normal = [data.normals[0], data.normals[1], data.normals[2]];
-    const tri2Normal = [data.normals[9], data.normals[10], data.normals[11]];
+    // Non-planar shape, no walls -> lands entirely in groundGeometry.grassland.
+    const normals = data.groundGeometry.grassland!.normals;
+    expect(normals).toHaveLength(18); // 2 triangles x 3 verts x 3 floats — the non-planar path
+    const tri1Normal = [normals[0], normals[1], normals[2]];
+    const tri2Normal = [normals[9], normals[10], normals[11]];
     expect(tri1Normal).not.toEqual(tri2Normal);
   });
 
@@ -649,9 +654,13 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // (ny ~ 1) or a fully-vertical wall (ny ~ 0), never a value strictly
     // between the two, which would indicate a dry tile incorrectly ramping
     // toward the water boundary instead of keeping today's clean
-    // vertical-wall-into-water look.
-    for (let i = 0; i < data.normals.length; i += 3) {
-      const ny = data.normals[i + 1]!;
+    // vertical-wall-into-water look. Scans both the base buffer (walls +
+    // the ocean tile's own untextured top) and groundGeometry.grassland
+    // (every dry tile's top, since 'grassland' is a covered variant) so
+    // this still checks every emitted top face, not just walls.
+    const normals = allNormals(data);
+    for (let i = 0; i < normals.length; i += 3) {
+      const ny = normals[i + 1]!;
       const isFlat = Math.abs(ny - 1) < 0.01;
       const isWall = Math.abs(ny) < 0.01;
       expect(isFlat || isWall, `unexpected partial-tilt normal ny=${ny}`).toBe(true);
@@ -745,5 +754,32 @@ describe('buildTerrainGeometryData — ground texture variant routing (Phase 4a)
 
     expect(data.groundGeometry.ocean).toBeUndefined();
     expect(data.indices.length).toBe(6); // top face in the base buffer, as before
+  });
+});
+
+describe('buildTerrainGeometryData — ground texture variant routing for edge/ramp shapes (Phase 4a)', () => {
+  it('routes an edge-shaped (planar tilt) grassland tile into groundGeometry too', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { elevation: 3, biome: 'grassland' });
+    wg.set(0, 1, { elevation: 2, biome: 'grassland' }); // west neighbor of tile (1,1), 1 level lower
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
+    expect(data.groundGeometry.grassland).toBeDefined();
+    expect(data.groundGeometry.grassland!.normals).toHaveLength(12); // 1 planar quad, 4 verts
+    const topFaceNy = data.groundGeometry.grassland!.normals[1]!;
+    expect(topFaceNy).toBeLessThan(0.999); // genuinely tilted, not flat
+    expect(topFaceNy).toBeGreaterThan(0);
+  });
+
+  it('routes a single-corner (non-planar) grassland tile into groundGeometry too', () => {
+    const wg = new WorldGrid(4, 3);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 3, biome: 'grassland' });
+    wg.set(2, 2, { elevation: 2, biome: 'grassland' }); // isolates a single NE-corner dip on tile (1,1)
+    const data = buildTerrainGeometryData(wg, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1);
+    expect(data.groundGeometry.grassland).toBeDefined();
+    // Non-planar ramp shapes emit 6 vertices (2 explicit triangles) per tile.
+    expect(data.groundGeometry.grassland!.positions.length / 3).toBe(6);
+    const tri1Normal = data.groundGeometry.grassland!.normals.slice(0, 3);
+    const tri2Normal = data.groundGeometry.grassland!.normals.slice(9, 12);
+    expect(tri1Normal).not.toEqual(tri2Normal);
   });
 });

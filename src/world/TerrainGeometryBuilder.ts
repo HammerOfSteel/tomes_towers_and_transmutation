@@ -539,7 +539,12 @@ export function buildTerrainGeometryData(
         };
         const [v0, v1, v2, v3] = orderCornersForDiagonal(corners, diagonal);
         const n = triangleNormal(v0, v1, v2);
-        addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
+        const groundVariant = _groundTextureVariant(cell);
+        if (groundVariant !== null) {
+          addGroundFace(groundVariant, v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
+        } else {
+          addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
+        }
       } else {
         // single-corner / outer-corner / saddle: non-planar, 2 explicit
         // triangles with independently-computed per-triangle normals.
@@ -550,11 +555,25 @@ export function buildTerrainGeometryData(
           se: [wx1, seY + jSE, wz]  as [number, number, number],
         };
         const { positions: rampPos, normals: rampNrm } = buildQuadFace(corners, diagonal);
-        const base = pos.length / 3;
-        pos.push(...rampPos);
-        nrm.push(...rampNrm);
-        for (let i = 0; i < 6; i++) clr.push(tr, tg, tb);
-        idx.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
+        const groundVariant = _groundTextureVariant(cell);
+        if (groundVariant !== null) {
+          let geo = groundGeometry[groundVariant];
+          if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[groundVariant] = geo; }
+          const base = geo.positions.length / 3;
+          geo.positions.push(...rampPos);
+          geo.normals.push(...rampNrm);
+          for (let i = 0; i < 6; i++) geo.colors.push(tr, tg, tb);
+          for (let i = 0; i < rampPos.length; i += 3) {
+            geo.uvs.push(rampPos[i]! / GROUND_UV_TILE_WU, rampPos[i + 2]! / GROUND_UV_TILE_WU);
+          }
+          geo.indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
+        } else {
+          const base = pos.length / 3;
+          pos.push(...rampPos);
+          nrm.push(...rampNrm);
+          for (let i = 0; i < 6; i++) clr.push(tr, tg, tb);
+          idx.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
+        }
       }
 
       // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────
