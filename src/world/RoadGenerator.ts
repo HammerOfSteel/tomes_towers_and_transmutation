@@ -97,7 +97,7 @@ function _moveCost(
   const cell = grid.get(tc, tr);
 
   // Never cross water (lakes/sea)
-  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return Infinity;
+  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean' || cell.feature === 'lake') return Infinity;
 
   // Existing roads are cheap (promotes reuse / road merging)
   if (cell.feature === 'road') return base * 0.25;
@@ -253,8 +253,8 @@ function _lShape(
 function _pathCrossesWater(grid: WorldGrid, path: readonly { col: number; row: number }[]): boolean {
   for (const { col, row } of path) {
     if (col < 0 || col >= grid.width || row < 0 || row >= grid.height) continue;
-    const biome = grid.get(col, row).biome;
-    if (biome === 'ocean' || biome === 'deep_ocean') return true;
+    const cell = grid.get(col, row);
+    if (cell.biome === 'ocean' || cell.biome === 'deep_ocean' || cell.feature === 'lake') return true;
   }
   return false;
 }

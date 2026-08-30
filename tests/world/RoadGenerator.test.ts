@@ -197,3 +197,74 @@ describe('buildInterSettlementRoads — L-shape fallback must never cross open w
     }
   });
 });
+
+describe('buildInterSettlementRoads — lake avoidance (mirrors the ocean-crossing fix)', () => {
+  function flatGrid(size: number): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) g.set(col, row, { elevation: 1, biome: 'grassland' });
+    }
+    return g;
+  }
+
+  /**
+   * Lakes sit on ordinary land biomes (not a special lake BiomeId), so the
+   * ocean-only biome checks in _moveCost/_pathCrossesWater would not catch
+   * them — this mirrors the ocean-crossing regression test above, but with
+   * a `feature: 'lake'` band instead of a `biome: 'ocean'` band.
+   */
+  it('skips a connecting edge entirely rather than crossing an impassable lake', () => {
+    const grid = flatGrid(40);
+    for (let row = 0; row < 40; row++) {
+      for (let col = 15; col < 25; col++) {
+        grid.set(col, row, { feature: 'lake', walkable: false, waterDepth: 2.0 });
+      }
+    }
+    const settlements = [
+      { plan: { centerCol: 5,  centerRow: 20 } },
+      { plan: { centerCol: 35, centerRow: 20 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+
+    for (const t of result.tiles) {
+      expect(grid.get(t.col, t.row).feature).not.toBe('lake');
+    }
+    for (const path of result.paths) {
+      for (const p of path) {
+        expect(grid.get(p.col, p.row).feature).not.toBe('lake');
+      }
+    }
+    expect(result.tiles.length).toBe(0);
+    expect(result.paths.length).toBe(0);
+  });
+
+  it('still uses the L-shape fallback normally when it does NOT cross a lake (unaffected by the fix)', () => {
+    const grid = flatGrid(20);
+    const settlements = [
+      { plan: { centerCol: 2, centerRow: 2 } },
+      { plan: { centerCol: 17, centerRow: 17 } },
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    expect(result.tiles.length).toBeGreaterThan(0);
+    expect(result.paths.length).toBe(1);
+  });
+
+  it('still connects settlements on the SAME landmass even when a separate lake exists elsewhere on the map', () => {
+    const grid = flatGrid(40);
+    for (let row = 0; row < 40; row++) {
+      for (let col = 15; col < 25; col++) {
+        grid.set(col, row, { feature: 'lake', walkable: false, waterDepth: 2.0 });
+      }
+    }
+    const settlements = [
+      { plan: { centerCol: 2,  centerRow: 2 } },
+      { plan: { centerCol: 12, centerRow: 12 } }, // same landmass as above (col < 15)
+      { plan: { centerCol: 35, centerRow: 20 } },  // across the lake — unreachable
+    ];
+    const result = buildInterSettlementRoads(settlements, grid);
+    expect(result.tiles.length).toBeGreaterThan(0);
+    for (const t of result.tiles) {
+      expect(t.col).toBeLessThan(15); // no tile should have crossed onto/through the lake
+    }
+  });
+});
