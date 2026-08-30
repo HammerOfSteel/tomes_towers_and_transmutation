@@ -2687,7 +2687,7 @@ function realmLayout(data: RealmData, canvas: HTMLCanvasElement) {
 
 export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d')!;
-  const { cells, W, H, rivers, settlements, dungeons, towerX, towerY, seed } = data;
+  const { cells, W, H, rivers, lakes, settlements, dungeons, towerX, towerY, seed } = data;
   const CELL = Math.max(2, Math.min(
     Math.floor((canvas.width  - 4) / W),
     Math.floor((canvas.height - 4) / H)
@@ -2811,6 +2811,20 @@ export function drawRealm(data: RealmData, canvas: HTMLCanvasElement): void {
       }
     }
     ctx.setLineDash([]);
+  }
+
+  // ── Lakes ─────────────────────────────────────────────────────────────────
+  // Same fill-cell technique other biome tiles use — matches
+  // TerrainGeometryBuilder's BIOME_LAKE tone for Studio-preview/live-game
+  // visual consistency (see docs/superpowers/specs/2026-08-31-lakes-hydrology-unification-design.md §6).
+  ctx.fillStyle = '#336670';
+  for (const lake of lakes) {
+    for (const cell of lake.cells) {
+      ctx.fillRect(
+        offX + Math.floor(cell.x) * CELL, offY + Math.floor(cell.y) * CELL,
+        CELL, CELL,
+      );
+    }
   }
 
   // ── Rivers ────────────────────────────────────────────────────────────────
@@ -3471,7 +3485,7 @@ function generateRealmView(): void {
   _publishRealmDebugState();
   redrawRealm();
   const ms = (performance.now()-t0).toFixed(1);
-  genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${ms} ms`;
+  genTimeEl.textContent = `Realm  ·  ${W}×${H}  ·  ${currentRealmData.settlements.length} settlements  ·  ${currentRealmData.rivers.length} rivers  ·  ${currentRealmData.lakes.length} lakes  ·  ${ms} ms`;
 }
 
 
@@ -3669,6 +3683,7 @@ document.getElementById('btn-export-world-package')?.addEventListener('click', (
       tower: { x: currentRealmData.towerX, y: currentRealmData.towerY },
       cells: currentRealmData.cells,
       rivers: currentRealmData.rivers,
+      lakes: currentRealmData.lakes,
       settlements: currentRealmData.settlements,
       dungeons: currentRealmData.dungeons,
     },
