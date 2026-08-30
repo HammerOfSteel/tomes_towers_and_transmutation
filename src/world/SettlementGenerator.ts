@@ -235,9 +235,174 @@ export function planSettlement(
 
   const roads = rasterizeRoads(model.roads, centerCol, centerRow, centreX, centreY);
   const roadRibbons = buildRoadRibbons(model.roads, model.wards, centreX, centreY);
+  const clearedBuildings = resolveRoadClearanceViolations(buildings, roadRibbons, grid, centerCol, centerRow);
   const rand = mulberry32(seed ^ 0xBADC0DE);
   const population = type === 'city' ? 55 + Math.floor(rand() * 30) : type === 'town' ? 25 + Math.floor(rand() * 26) : 8 + Math.floor(rand() * 9);
-  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings, roads, roadRibbons, population, wardFeatures };
+  return { type, name: settlementName, faction: planFaction, centerCol, centerRow, buildings: clearedBuildings, roads, roadRibbons, population, wardFeatures };
+}
+
+/**
+ * Safety-net pass: fillWard()'s ward-filling strategies (SettlementModel-
+ * Generator.ts) place buildings using an abstract model-space placement
+ * grid that has no notion of a building's real, eventually-rendered
+ * footprint (getFootprint(), resolved only here from WARD_TO_KIND/
+ * WARD_TO_SIZE) or a road's real rendered width (RoadRibbon.width, also
+ * only resolved here in buildRoadRibbons()) — so fillWard()'s internal
+ * ROAD_CLEARANCE check (a flat, small distance from a building's *center*
+ * to a road's centerline) can let a large building (e.g. a patriciate
+ * ward's 7x5 'villa', a church ward's 4x8 'chapel') visually render on top
+ * of a nearby road. This pass runs after both buildings and roadRibbons
+ * have real data and, for any building whose real footprint still
+ * intrudes into a road ribbon's real band, searches for the nearest tile
+ * that is simultaneously valid terrain, clear of every other building,
+ * *and* clear of every road ribbon (findRoadClearSpot() — a version of
+ * snapBuildingTile()'s spiral search with road-clearance folded in as a
+ * first-class constraint, since resolving against terrain/buildings alone
+ * can walk a building right back onto a road it doesn't know exists). If
+ * no such tile exists nearby, the building is dropped — mirroring the
+ * existing "gracefully drops buildings when no valid tile exists"
+ * tolerance already used elsewhere in this file. See "keeps every
+ * building clear of every road ribbon band" in
+ * tests/levels/settlementGenerator.test.ts.
+ */
+function resolveRoadClearanceViolations(
+  buildings: PlacedBuilding[],
+  roadRibbons: RoadRibbon[],
+  grid: WorldGrid,
+  centerCol: number,
+  centerRow: number,
+): PlacedBuilding[] {
+  if (roadRibbons.length === 0) return buildings;
+  const resolved: PlacedBuilding[] = [];
+  for (let i = 0; i < buildings.length; i++) {
+    const b = buildings[i]!;
+    const kind = WARD_TO_KIND[b.wardType];
+    if (!kind) { resolved.push(b); continue; }
+    const size = b.isAnchor ? (WARD_TO_SIZE[b.wardType] ?? 'medium') : 'tiny';
+    const fp = getFootprint(kind, size);
+    const halfExtentTiles = Math.max(fp.w, fp.d) / 4; // world-units -> tile units (T=2), then half
+
+    const bx = b.col - centerCol + b.offsetX;
+    const bz = b.row - centerRow + b.offsetZ;
+    const push = worstRoadPush(bx, bz, halfExtentTiles, roadRibbons);
+    if (!push) { resolved.push(b); continue; }
+
+    // The push direction gives a good starting candidate for the search
+    // below (usually enough on its own), but correctness comes entirely
+    // from findRoadClearSpot()'s explicit per-candidate road-clearance
+    // check, not from this single push being exactly right.
+    const startCol = Math.round(centerCol + bx + push.x * push.deficit);
+    const startRow = Math.round(centerRow + bz + push.z * push.deficit);
+    const otherBuildings = buildings.filter((_, idx) => idx !== i);
+    const snapped = findRoadClearSpot(
+      grid, otherBuildings, startCol, startRow, b.wardType, b.isAnchor,
+      halfExtentTiles, roadRibbons, centerCol, centerRow,
+    );
+    if (!snapped) continue; // drop — no valid clear-of-road spot nearby
+    resolved.push({ ...b, col: snapped.col, row: snapped.row, offsetX: 0, offsetZ: 0 });
+  }
+  return resolved;
+}
+
+/** Headroom (in tile units) added above a ribbon's own half-width when
+ *  checking/resolving road-clearance violations, so a nudged building's
+ *  edge doesn't land flush against the road surface. */
+const ROAD_BAND_MARGIN_TILES = 0.1;
+
+/**
+ * Largest single road-clearance violation for a building centered at
+ * (bx, bz) — coordinates in fractional tile units relative to the
+ * settlement center, same frame as RoadRibbon.points — against every
+ * segment of every ribbon. Returns null when already clear of all of
+ * them. `x`/`z` is the unit push direction away from that worst
+ * violation's nearest ribbon point (or the segment's normal, if the
+ * building sits exactly on the centerline); `deficit` is how far to move
+ * along it to just clear that one segment (a starting point for
+ * findRoadClearSpot()'s search, not a guaranteed final answer, since
+ * clearing one segment doesn't guarantee clearing every other ribbon).
+ */
+function worstRoadPush(
+  bx: number, bz: number, halfExtentTiles: number, roadRibbons: RoadRibbon[],
+): { x: number; z: number; deficit: number } | null {
+  let worstDeficit = 0, pushX = 0, pushZ = 0;
+  for (const ribbon of roadRibbons) {
+    const halfWidthTiles = ribbon.width / 4;
+    const need = halfWidthTiles + halfExtentTiles + ROAD_BAND_MARGIN_TILES;
+    for (let p = 0; p < ribbon.points.length - 1; p++) {
+      const a = ribbon.points[p]!, c = ribbon.points[p + 1]!;
+      const dx = c.x - a.x, dz = c.z - a.z;
+      const len2 = dx * dx + dz * dz;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((bx - a.x) * dx + (bz - a.z) * dz) / len2)) : 0;
+      const nx = a.x + t * dx, nz = a.z + t * dz;
+      const ex = bx - nx, ez = bz - nz;
+      const dist = Math.hypot(ex, ez);
+      if (dist >= need) continue;
+      const deficit = need - dist;
+      if (deficit <= worstDeficit) continue;
+      worstDeficit = deficit;
+      if (dist < 1e-6) {
+        const segLen = Math.hypot(dx, dz) || 1;
+        pushX = -dz / segLen; pushZ = dx / segLen;
+      } else {
+        pushX = ex / dist; pushZ = ez / dist;
+      }
+    }
+  }
+  return worstDeficit > 0 ? { x: pushX, z: pushZ, deficit: worstDeficit } : null;
+}
+
+/** True when a building of the given half-extent centered at (bx, bz) —
+ *  fractional tile units relative to the settlement center — clears every
+ *  segment of every road ribbon by at least ROAD_BAND_MARGIN_TILES. */
+function isClearOfAllRoads(bx: number, bz: number, halfExtentTiles: number, roadRibbons: RoadRibbon[]): boolean {
+  for (const ribbon of roadRibbons) {
+    const halfWidthTiles = ribbon.width / 4;
+    const need = halfWidthTiles + halfExtentTiles + ROAD_BAND_MARGIN_TILES;
+    for (let p = 0; p < ribbon.points.length - 1; p++) {
+      const a = ribbon.points[p]!, c = ribbon.points[p + 1]!;
+      const dx = c.x - a.x, dz = c.z - a.z;
+      const len2 = dx * dx + dz * dz;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((bx - a.x) * dx + (bz - a.z) * dz) / len2)) : 0;
+      const nx = a.x + t * dx, nz = a.z + t * dz;
+      if (Math.hypot(bx - nx, bz - nz) < need) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Like snapBuildingTile() but with road-clearance folded in as a third,
+ * equally first-class constraint alongside valid terrain and no building
+ * overlap — a spiral search that only accepts a tile satisfying all three
+ * simultaneously, so it can never "fix" an overlap by walking the building
+ * back onto a road (which plain snapBuildingTile()'s search has no way to
+ * know about).
+ */
+function findRoadClearSpot(
+  grid: WorldGrid,
+  placed: PlacedBuilding[],
+  startCol: number,
+  startRow: number,
+  wardType: WardType,
+  isAnchor: boolean,
+  halfExtentTiles: number,
+  roadRibbons: RoadRibbon[],
+  centerCol: number,
+  centerRow: number,
+): { col: number; row: number } | null {
+  const ok = (col: number, row: number) =>
+    _valid(grid, col, row) &&
+    _noOverlap(placed, col, row, wardType, isAnchor) &&
+    isClearOfAllRoads(col - centerCol, row - centerRow, halfExtentTiles, roadRibbons);
+  if (ok(startCol, startRow)) return { col: startCol, row: startRow };
+  for (let r = 1; r <= MAX_BUILDING_SNAP_RADIUS; r++) {
+    for (const [dr, dc] of DIRS8) {
+      const nc = startCol + dc * r;
+      const nr = startRow + dr * r;
+      if (ok(nc, nr)) return { col: nc, row: nr };
+    }
+  }
+  return null;
 }
 
 /** Round an angle (radians) to the nearest cardinal direction (0/90/180/270°). */

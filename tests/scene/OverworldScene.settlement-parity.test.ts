@@ -79,6 +79,16 @@ describe('OverworldScene settlement rendering parity', () => {
     // settlement-street + inter-settlement-road *path segments* collected
     // at construction time (chunk-proximity-independent), not rendered
     // meshes.
+    // Shifted a fourth time (buildingGroups only) once planSettlement()
+    // gained a road-clearance safety net (resolveRoadClearanceViolations()
+    // in SettlementGenerator.ts, see tests/levels/settlementGenerator.
+    // test.ts's "keeps every building clear of every road ribbon band"):
+    // a handful of buildings that used to render on top of a road (their
+    // real, post-getFootprint() footprint intruding into the road
+    // ribbon's real rendered width) now get relocated or, when no clear
+    // nearby tile exists, dropped — an expected small reduction in count
+    // for a settlement whose layout happens to place buildings close to
+    // its roads, not a regression.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadPaths).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

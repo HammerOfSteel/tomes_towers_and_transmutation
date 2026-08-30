@@ -104,6 +104,51 @@ describe('planSettlement', () => {
     }
   });
 
+  it('keeps every building clear of every road ribbon band (no building sitting on a road)', () => {
+    // Regression coverage for a reported visual bug: once roads render as an
+    // accurate geometric band following the true ribbon centerline (see
+    // docs/superpowers/plans/2026-08-30-biome-terrain-overhaul.md Phase 2's
+    // "roads as a first-class terrain surface" work), a building placed too
+    // close to a road's *centerline* can visually sit on/inside the road's
+    // real rendered width even though it never overlapped the road's old
+    // tile-snapped footprint. Checks in the same tile-unit space
+    // fillWard()'s existing ROAD_CLEARANCE check operates in, but against
+    // each road ribbon's actual width-aware band instead of just a fixed
+    // per-point clearance radius, and against the building's real
+    // ward-derived footprint half-extent instead of assuming a point.
+    const cases: Array<['village' | 'town' | 'city', number]> = [];
+    for (const type of ['village', 'town', 'city'] as const) {
+      for (let seed = 1; seed <= 12; seed++) cases.push([type, seed]);
+    }
+    for (const [type, seed] of cases) {
+      const grid = flatGrid(160);
+      const plan = planSettlement(type, 80, 80, seed, grid, 'RoadClearance', 'human');
+      for (const b of plan.buildings) {
+        const kind = WARD_TO_KIND[b.wardType]!;
+        const size = b.isAnchor ? (WARD_TO_SIZE[b.wardType] ?? 'medium') : 'tiny';
+        const fp = getFootprint(kind, size);
+        // Conservative half-extent (not half-diagonal) in tile units — a
+        // building's own worst-case reach toward the road from its center.
+        const halfExtentTiles = Math.max(fp.w, fp.d) / 2 / 2; // /2 world-units-per-tile (T=2)
+        const bx = b.col + b.offsetX - plan.centerCol;
+        const bz = b.row + b.offsetZ - plan.centerRow;
+
+        for (const ribbon of plan.roadRibbons) {
+          const halfWidthTiles = (ribbon.width / 2) / 2; // T=2
+          for (let i = 0; i < ribbon.points.length - 1; i++) {
+            const a = ribbon.points[i]!, c = ribbon.points[i + 1]!;
+            const dx = c.x - a.x, dz = c.z - a.z;
+            const len2 = dx * dx + dz * dz;
+            const t = len2 > 0 ? Math.max(0, Math.min(1, ((bx - a.x) * dx + (bz - a.z) * dz) / len2)) : 0;
+            const ex = a.x + t * dx - bx, ez = a.z + t * dz - bz;
+            const dist = Math.hypot(ex, ez);
+            expect(dist).toBeGreaterThanOrEqual(halfWidthTiles + halfExtentTiles);
+          }
+        }
+      }
+    }
+  });
+
   it('snaps a building off invalid terrain onto the nearest valid tile', () => {
     const grid = flatGrid(128);
     const baseline = planSettlement('village', 64, 64, 777, grid, 'Snap', 'human');
