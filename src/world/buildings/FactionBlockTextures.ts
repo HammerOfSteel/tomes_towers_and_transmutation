@@ -45,7 +45,7 @@ let _toadstoolCanvas: HTMLCanvasElement | null = null;
 
 // ── Internal helper ───────────────────────────────────────────────────────────
 
-function _wrap(t: THREE.CanvasTexture, rx: number, ry: number): THREE.CanvasTexture {
+export function _wrap(t: THREE.CanvasTexture, rx: number, ry: number): THREE.CanvasTexture {
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(rx, ry);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -53,7 +53,7 @@ function _wrap(t: THREE.CanvasTexture, rx: number, ry: number): THREE.CanvasText
   return t;
 }
 
-function _jitterPixels(g: CanvasRenderingContext2D, size: number, amp: number, tint: [number, number, number] = [1, 1, 0.7]): void {
+export function _jitterPixels(g: CanvasRenderingContext2D, size: number, amp: number, tint: [number, number, number] = [1, 1, 0.7]): void {
   const img = g.getImageData(0, 0, size, size);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
