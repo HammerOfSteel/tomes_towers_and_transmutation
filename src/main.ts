@@ -350,10 +350,13 @@ async function main() {
     (player as unknown as { heal?: (n: number) => void }).heal?.(amount);
   };
 
-  function _makeOverworld(seed: number): OverworldScene {
+  function _makeOverworld(seed: number, configOverride?: Partial<WorldGenConfig>): OverworldScene {
     console.log('[_makeOverworld] START seed=' + seed);
     // Always re-read so changes made in the Settings modal are picked up.
-    worldGenConfig = loadWorldGenConfig();
+    // configOverride (Overworld Lab launch) layers on top WITHOUT calling
+    // saveWorldGenConfig() — a one-shot override, never persisted, so the
+    // player's own saved world-gen settings on disk are never touched.
+    worldGenConfig = { ...loadWorldGenConfig(), ...configOverride };
     const cfg       = { ...worldGenConfig, seed };
     console.log('[_makeOverworld] building world data...');
     const worldData = buildWorldData(seed, cfg);
@@ -394,7 +397,7 @@ async function main() {
     return ow;
   }
 
-  function switchToExterior(): void {
+  function switchToExterior(configOverride?: Partial<WorldGenConfig>): void {
     console.log('[switchToExterior] START gameMode=' + gameMode + ' overworld=' + !!overworld);
     // MUST unload dungeon first — onExitTrigger fires directly without
     // going through executeRoomSwap, so the room geometry + physics bodies
@@ -403,7 +406,7 @@ async function main() {
     console.log('[switchToExterior] dungeon unloaded');
     if (!overworld) {
       console.log('[switchToExterior] creating overworld...');
-      overworld = _makeOverworld(currentSeed);
+      overworld = _makeOverworld(currentSeed, configOverride);
       console.log('[switchToExterior] overworld created');
     }
     // Mark last visited dungeon as cleared (enter = cleared, simplification for now)
