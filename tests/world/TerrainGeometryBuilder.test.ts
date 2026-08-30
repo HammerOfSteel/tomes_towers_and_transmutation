@@ -327,3 +327,86 @@ describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
     expect(withDefaults.positions).toEqual(explicit.positions);
   });
 });
+
+describe('buildTerrainGeometryData — road sub-tile surface (roads as terrain tileset)', () => {
+  it('produces identical geometry to before when no road paths are given, even for a road-flagged tile', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 1, feature: 'road' });
+    const withoutPaths = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
+    const withEmptyPaths = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, []);
+    expect(withoutPaths.positions).toEqual(withEmptyPaths.positions);
+    expect(withoutPaths.indices).toEqual(withEmptyPaths.indices);
+    expect(Object.keys(withEmptyPaths.roadGeometry)).toEqual([]);
+  });
+
+  it('keeps a road-flagged tile as one flat quad when road path data is given but never actually reaches this tile', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    const farAwayPath = [{ points: [{ x: 1000, z: 1000 }, { x: 1001, z: 1001 }], width: 1, variant: 'dirt' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, farAwayPath);
+    // Falls back to the un-subdivided single-quad behavior: 4 verts, 6 indices.
+    expect(data.positions).toHaveLength(12);
+    expect(data.indices).toHaveLength(6);
+    expect(Object.keys(data.roadGeometry)).toEqual([]);
+  });
+
+  it('subdivides a road-flagged tile into ground+road sub-tiles when a path covers part of it', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    // Tile spans world (-1,-1) to (1,1) at GHW=GHH=0, T=2. A path straight
+    // down the middle (x=0) covers roughly half the tile's sub-tiles.
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 0.9, variant: 'cobblestone' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    // More than one quad now (subdivided): ground positions > 12 floats (4 verts).
+    expect(data.positions.length).toBeGreaterThan(12);
+    expect(Object.keys(data.roadGeometry)).toContain('cobblestone');
+    expect(data.roadGeometry['cobblestone']!.positions.length).toBeGreaterThan(0);
+    expect(data.roadGeometry['cobblestone']!.uvs.length).toBeGreaterThan(0);
+    // Every road quad has 4 UV pairs and 6 indices, matching its 4 positions.
+    const roadVertCount = data.roadGeometry['cobblestone']!.positions.length / 3;
+    expect(data.roadGeometry['cobblestone']!.uvs.length).toBe(roadVertCount * 2);
+    expect(data.roadGeometry['cobblestone']!.indices.length).toBe((roadVertCount / 4) * 6);
+  });
+
+  it('covers the full tile with road sub-tiles (zero ground sub-tiles) when the path spans the whole width', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 10, variant: 'dirt' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    // No ground geometry at all for this fully-road tile (and no walls, flat single tile).
+    expect(data.positions).toHaveLength(0);
+    const roadVertCount = data.roadGeometry['dirt']!.positions.length / 3;
+    expect(roadVertCount).toBe(4 * 4 * 4); // subdivisions^2 quads * 4 verts each
+  });
+
+  it('groups road sub-tile geometry by variant across multiple tiles', () => {
+    const wg = new WorldGrid(2, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    wg.set(1, 0, { elevation: 0, feature: 'road' });
+    const paths = [
+      { points: [{ x: -3, z: 0 }, { x: -1, z: 0 }], width: 10, variant: 'vulperia' },
+      { points: [{ x: 1, z: 0 }, { x: 3, z: 0 }], width: 10, variant: 'dwarven' },
+    ];
+    const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 2, 1, 0, 0, 2, 1, paths, 2);
+    expect(Object.keys(data.roadGeometry).sort()).toEqual(['dwarven', 'vulperia']);
+  });
+
+  it('road sub-tile top faces stay watertight with adjacent ground sub-tiles (no vertical gaps)', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 0.9, variant: 'cobblestone' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    // Collect all Y values from both ground and road buffers; since this tile
+    // has no jitter jump beyond CORNER_JITTER_MAX and no elevation step, all Y
+    // values should sit within a tight band around the tile's physical height.
+    const allY: number[] = [];
+    for (let i = 1; i < data.positions.length; i += 3) allY.push(data.positions[i]!);
+    for (let i = 1; i < data.roadGeometry['cobblestone']!.positions.length; i += 3) {
+      allY.push(data.roadGeometry['cobblestone']!.positions[i]!);
+    }
+    expect(allY.length).toBeGreaterThan(0);
+    const min = Math.min(...allY), max = Math.max(...allY);
+    expect(max - min).toBeLessThanOrEqual(0.06 * 2 + 1e-6); // within 2x CORNER_JITTER_MAX of each other
+  });
+});
+

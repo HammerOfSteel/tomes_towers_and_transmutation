@@ -11,6 +11,12 @@
  */
 import type { WorldGrid, BiomeId } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
+import { computeTileRoadCoverage, type RoadPathSegment } from './RoadPathSampler';
+
+/** World units per texture tile for road sub-tile UV — smaller than
+ *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
+ *  better with finer texture tiling. */
+const ROAD_UV_TILE_WU = 1.0;
 
 /** Biome vertex colours [r, g, b] for height levels 0–7 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
@@ -139,11 +145,29 @@ export function cornerHeightJitter(cornerCol: number, cornerRow: number): number
   return (unit * 2 - 1) * CORNER_JITTER_MAX; // → [-max, +max]
 }
 
+export interface RoadVariantGeometry {
+  positions: number[];
+  normals:   number[];
+  uvs:       number[];
+  indices:   number[];
+}
+
 export interface TerrainGeometryData {
   positions: number[];
   normals:   number[];
   colors:    number[];
   indices:   number[];
+  /** Road sub-tile surface geometry, grouped by texture/material variant
+   *  (e.g. a faction id for settlement streets, a generic id for open-road
+   *  stretches). Kept as a SEPARATE draw target rather than merged into
+   *  the ground buffers above — a road-covered sub-tile is simply never
+   *  emitted into the ground buffer at all (a literal hole), so a road
+   *  never occupies the same X/Z footprint as a ground quad at the same
+   *  time. This is what makes a road genuinely part of the terrain
+   *  surface instead of a competing overlay mesh, eliminating the
+   *  z-fighting failure mode categorically rather than just pushing the
+   *  overlay further away with a height offset. */
+  roadGeometry: Record<string, RoadVariantGeometry>;
 }
 
 /**
@@ -166,11 +190,34 @@ export function buildTerrainGeometryData(
   T: number, SH: number,
   colStart: number = 0, rowStart: number = 0,
   chunkW: number = GW, chunkH: number = GH,
+  roadPaths: readonly RoadPathSegment[] = [],
+  roadSubdivisions: number = 4,
 ): TerrainGeometryData {
   const pos: number[] = [];
   const nrm: number[] = [];
   const clr: number[] = [];
   const idx: number[] = [];
+  const roadGeometry: Record<string, RoadVariantGeometry> = {};
+
+  /** Append a quad face into a road-variant's own buffers (created lazily
+   *  on first use), with world-space-projected planar UV so the texture
+   *  reads as continuous across sub-tiles/tiles rather than stamped. */
+  const addRoadFace = (
+    variant: string,
+    v0: [number, number, number], v1: [number, number, number],
+    v2: [number, number, number], v3: [number, number, number],
+    nx: number, ny: number, nz: number,
+  ): void => {
+    let g = roadGeometry[variant];
+    if (!g) { g = { positions: [], normals: [], uvs: [], indices: [] }; roadGeometry[variant] = g; }
+    const base = g.positions.length / 3;
+    g.positions.push(...v0, ...v1, ...v2, ...v3);
+    g.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+    for (const [vx, , vz] of [v0, v1, v2, v3]) {
+      g.uvs.push(vx / ROAD_UV_TILE_WU, vz / ROAD_UV_TILE_WU);
+    }
+    g.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+  };
 
   /** Elevation *level* of a (possibly out-of-bounds) tile — used only for
    *  colour/variant lookups, which are keyed by the logical land level. */
@@ -248,10 +295,66 @@ export function buildTerrainGeometryData(
       const jNW = cornerHeightJitter(col,     row + 1);
       const jNE = cornerHeightJitter(col + 1, row + 1);
       const jSE = cornerHeightJitter(col + 1, row);
-      addFace(
-        [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
-        0, 1, 0,  tr, tg, tb,
-      );
+
+      // Road sub-tile surface: only attempted for tiles already flagged as
+      // carrying a road, and only when the caller actually supplied path
+      // data. `computeTileRoadCoverage()` can legitimately return "no
+      // coverage" even for a road-flagged tile (e.g. path data that's
+      // incomplete or doesn't quite reach this tile) — in that case we fall
+      // through to the exact same single-quad behavior as before, so a gap
+      // in the input data never produces a visible hole in the terrain.
+      const isRoadTile = cell.feature === 'road' || cell.feature === 'road_dirt';
+      const coverage = (isRoadTile && roadPaths.length > 0)
+        ? computeTileRoadCoverage(roadPaths, wx, wz, T, roadSubdivisions)
+        : null;
+      const hasRoadCoverage = coverage !== null && coverage.some(vnt => vnt !== null);
+
+      if (hasRoadCoverage) {
+        // Bilinearly interpolate the tile's 4 corner jitters across the
+        // sub-tile grid — keeps the same organic-but-seamless look as the
+        // un-subdivided case (adjacent tiles' shared corners still match
+        // exactly, since we're interpolating from the identical jitter
+        // values they'd compute too) without needing per-sub-tile jitter.
+        const heightAt = (u: number, w: number): number =>
+          jSW * (1 - u) * (1 - w) + jSE * u * (1 - w) + jNW * (1 - u) * w + jNE * u * w;
+
+        for (let sz = 0; sz < roadSubdivisions; sz++) {
+          for (let sx = 0; sx < roadSubdivisions; sx++) {
+            const variant = coverage![sz * roadSubdivisions + sx];
+            const u0 = sx / roadSubdivisions, u1 = (sx + 1) / roadSubdivisions;
+            const w0 = sz / roadSubdivisions, w1 = (sz + 1) / roadSubdivisions;
+            const px0 = wx + u0 * T, px1 = wx + u1 * T;
+            const pz0 = wz + w0 * T, pz1 = wz + w1 * T;
+            const ySW = wy + heightAt(u0, w0), yNW = wy + heightAt(u0, w1);
+            const yNE = wy + heightAt(u1, w1), ySE = wy + heightAt(u1, w0);
+            if (variant === null) {
+              // Ground sub-tile — same colour pipeline as the un-subdivided case.
+              addFace(
+                [px0, ySW, pz0], [px0, yNW, pz1], [px1, yNE, pz1], [px1, ySE, pz0],
+                0, 1, 0,  tr, tg, tb,
+              );
+            } else {
+              // Road sub-tile — a literal hole in the ground buffer above,
+              // filled by this separate, per-variant textured buffer
+              // instead. Same footprint and height as a ground sub-tile
+              // would have had here, so there is no seam and — critically
+              // — no second surface occupying the same space, which is
+              // what eliminates the z-fighting the previous overlay-mesh
+              // approach suffered from.
+              addRoadFace(
+                variant,
+                [px0, ySW, pz0], [px0, yNW, pz1], [px1, yNE, pz1], [px1, ySE, pz0],
+                0, 1, 0,
+              );
+            }
+          }
+        }
+      } else {
+        addFace(
+          [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
+          0, 1, 0,  tr, tg, tb,
+        );
+      }
 
       // ── SOUTH wall (+Z face, at wz1) ─────────────────────────────────
       // Wall faces compare *physical* (carved) height, not raw elevation
@@ -301,5 +404,5 @@ export function buildTerrainGeometryData(
     }
   }
 
-  return { positions: pos, normals: nrm, colors: clr, indices: idx };
+  return { positions: pos, normals: nrm, colors: clr, indices: idx, roadGeometry };
 }
