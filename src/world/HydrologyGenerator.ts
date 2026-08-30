@@ -27,6 +27,7 @@ import type { WorldGenConfig } from './WorldGenConfig';
 import { mulberry32 } from '@/core/prng';
 import { RIVER_DEPTH_WU } from './WaterDepthConfig';
 import { ELEVATION_LEVELS } from './RealmToWorldGrid';
+import { selectRiverSources, flowDownhill } from './RiverFlow';
 
 // Terminate river before it enters the flat tower zone
 const FLAT_MARGIN     = 1.8;
@@ -58,104 +59,21 @@ export function generateHydrology(
   const sourceMinR  = GHW * SOURCE_MIN_FRAC;
   const minSpacing  = GW * SOURCE_MIN_SPACING_FRAC;
 
-  // ── 1. Collect high-elevation rim candidates ───────────────────────────────
-  const candidates: { col: number; row: number }[] = [];
-  for (let row = 0; row < GH; row++) {
-    for (let col = 0; col < GW; col++) {
-      const dc = col - GHW, dr = row - GHH;
-      const tR = Math.sqrt(dc * dc + dr * dr);
-      if (tR >= sourceMinR && grid.get(col, row).elevation >= RIVER_SOURCE_MIN_LEVEL) {
-        candidates.push({ col, row });
-      }
-    }
-  }
+  // The actual source-selection and downhill-walk algorithm lives in the
+  // pure, grid-shape-agnostic RiverFlow.ts (shared with RealmGenerator.ts's
+  // Studio preview) — see
+  // docs/superpowers/specs/2026-08-31-lakes-hydrology-unification-design.md §2.
+  const elevationAt = (col: number, row: number) => grid.get(col, row).elevation;
+  const isRiver      = (col: number, row: number) => grid.get(col, row).feature === 'river';
 
-  if (candidates.length === 0) return;
+  const chosen = selectRiverSources(
+    GW, GH, elevationAt, RIVER_SOURCE_MIN_LEVEL, sourceMinR, minSpacing, config.riverCount, rand,
+  );
 
-  // ── 2. Shuffle & select well-spaced sources ────────────────────────────────
-  // Fisher-Yates shuffle
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    const tmp = candidates[i];
-    candidates[i] = candidates[j];
-    candidates[j] = tmp;
-  }
-
-  const chosen: { col: number; row: number }[] = [];
-  for (const s of candidates) {
-    if (chosen.length >= config.riverCount) break;
-    const tooClose = chosen.some(c => {
-      const dx = c.col - s.col, dz = c.row - s.row;
-      return Math.sqrt(dx * dx + dz * dz) < minSpacing;
-    });
-    if (!tooClose) chosen.push(s);
-  }
-
-  // ── 3. Flow each river downhill ────────────────────────────────────────────
   for (const source of chosen) {
-    const path = _flowDownhill(grid, source, GW, GH, GHW, GHH, terminateR);
+    const path = flowDownhill(source, GW, GH, elevationAt, isRiver, terminateR, MAX_STEPS);
     _markRiverPath(grid, path, GW, GH);
   }
-}
-
-// ── Internal: downhill flow ────────────────────────────────────────────────────
-
-function _flowDownhill(
-  grid:       WorldGrid,
-  source:     { col: number; row: number },
-  GW: number, GH: number,
-  GHW: number, GHH: number,
-  terminateR: number,
-): { col: number; row: number }[] {
-  const visited = new Set<number>();
-  const path: { col: number; row: number }[] = [source];
-  visited.add(source.row * GW + source.col);
-
-  let current = source;
-
-  for (let step = 0; step < MAX_STEPS; step++) {
-    const { col, row } = current;
-    const dc = col - GHW, dr = row - GHH;
-    const tR = Math.sqrt(dc * dc + dr * dr);
-
-    // Terminate at flat zone boundary
-    if (tR < terminateR) break;
-
-    // Terminate if already at bog level
-    if (grid.get(col, row).elevation === 0) break;
-
-    // Gather valid unvisited orthogonal neighbours
-    const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
-    const neighbours: { col: number; row: number; score: number }[] = [];
-
-    for (const [dc2, dr2] of DIRS) {
-      const nc = col + dc2;
-      const nr = row + dr2;
-      if (nc < 0 || nc >= GW || nr < 0 || nr >= GH) continue;
-      if (visited.has(nr * GW + nc)) continue;
-      const cell = grid.get(nc, nr);
-      if (cell.feature === 'river') continue; // don't cross another river
-
-      // Score: prefer low elevation, break ties by proximity to centre
-      const distToCenter = Math.sqrt((nc - GHW) ** 2 + (nr - GHH) ** 2);
-      neighbours.push({
-        col: nc, row: nr,
-        score: cell.elevation * 100 + distToCenter * 0.5,
-      });
-    }
-
-    if (neighbours.length === 0) break;
-
-    // Pick the best-scoring neighbour (lowest score = most downhill + most central)
-    neighbours.sort((a, b) => a.score - b.score);
-    const next = neighbours[0];
-
-    path.push({ col: next.col, row: next.row });
-    visited.add(next.row * GW + next.col);
-    current = next;
-  }
-
-  return path;
 }
 
 // ── Internal: mark river cells and banks ───────────────────────────────────────
