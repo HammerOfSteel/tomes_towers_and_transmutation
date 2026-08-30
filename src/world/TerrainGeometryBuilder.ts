@@ -13,11 +13,18 @@ import type { WorldGrid, BiomeId, WorldCell } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
+import { GROUND_TERRAIN_VARIANTS } from './TerrainTextures';
 
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
  *  better with finer texture tiling. */
 const ROAD_UV_TILE_WU = 1.0;
+
+/** World-space UV tiling period (WU) for ground textures — close to one
+ *  tile's own footprint (T=2 WU) so the texture shows real per-tile detail
+ *  without an obviously-repeating wallpaper look at typical camera
+ *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
+const GROUND_UV_TILE_WU = 2.5;
 
 /** Biome vertex colours [r, g, b] for height levels 0–7 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
@@ -221,6 +228,14 @@ export interface RoadVariantGeometry {
   indices:   number[];
 }
 
+/** One ground-texture variant's own geometry buffers — mirrors
+ *  RoadVariantGeometry, plus a `colors` array since ground needs
+ *  per-vertex color preserved for the tint-preserving `color * map`
+ *  multiply (roads don't carry per-vertex color today). */
+export interface GroundVariantGeometry {
+  positions: number[]; normals: number[]; colors: number[]; uvs: number[]; indices: number[];
+}
+
 export interface TerrainGeometryData {
   positions: number[];
   normals:   number[];
@@ -237,6 +252,13 @@ export interface TerrainGeometryData {
    *  z-fighting failure mode categorically rather than just pushing the
    *  overlay further away with a height offset. */
   roadGeometry: Record<string, RoadVariantGeometry>;
+  /** Ground (non-road, non-water) top-face surface geometry, grouped by
+   *  texture variant (e.g. 'grassland', 'forest') — see
+   *  docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md.
+   *  A tile whose biome/feature has a real texture routes its top face
+   *  here instead of the plain vertex-color base buffer above; everything
+   *  else (water, uncovered biomes) stays on the base buffer unchanged. */
+  groundGeometry: Record<string, GroundVariantGeometry>;
 }
 
 /**
@@ -267,6 +289,7 @@ export function buildTerrainGeometryData(
   const clr: number[] = [];
   const idx: number[] = [];
   const roadGeometry: Record<string, RoadVariantGeometry> = {};
+  const groundGeometry: Record<string, GroundVariantGeometry> = {};
 
   /** Append a quad face into a road-variant's own buffers (created lazily
    *  on first use), with world-space-projected planar UV so the texture
@@ -286,6 +309,41 @@ export function buildTerrainGeometryData(
       g.uvs.push(vx / ROAD_UV_TILE_WU, vz / ROAD_UV_TILE_WU);
     }
     g.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+  };
+
+  /** Ground-texture variant key for a cell, or null to keep today's
+   *  untextured vertex-color-only path. Priority order matches the
+   *  existing biomeRgb selection chain further down in this function —
+   *  see docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.2. */
+  const _groundTextureVariant = (cell: WorldCell): string | null => {
+    if (cell.biome === 'ocean' || cell.biome === 'deep_ocean') return null;
+    if (cell.feature === 'river' || cell.feature === 'lake' || cell.feature === 'river_ford') return null;
+    if (cell.feature === 'river_bank') return 'river_bank';
+    if (cell.biome === 'beach') return 'beach';
+    return (GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome) ? cell.biome : null;
+  };
+
+  /** Append a quad face into a ground-variant's own buffers (created lazily
+   *  on first use), with world-space-projected planar UV (same technique as
+   *  addRoadFace) plus the tile's vertex color preserved for the
+   *  tint-preserving color*map multiply. */
+  const addGroundFace = (
+    variant: string,
+    v0: [number, number, number], v1: [number, number, number],
+    v2: [number, number, number], v3: [number, number, number],
+    nx: number, ny: number, nz: number,
+    r: number, g: number, b: number,
+  ): void => {
+    let geo = groundGeometry[variant];
+    if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[variant] = geo; }
+    const base = geo.positions.length / 3;
+    geo.positions.push(...v0, ...v1, ...v2, ...v3);
+    geo.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+    geo.colors.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
+    for (const [vx, , vz] of [v0, v1, v2, v3]) {
+      geo.uvs.push(vx / GROUND_UV_TILE_WU, vz / GROUND_UV_TILE_WU);
+    }
+    geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
 
   /** Elevation *level* of a (possibly out-of-bounds) tile — used only for
@@ -457,10 +515,19 @@ export function buildTerrainGeometryData(
         }
       } else if (shape === 'flat' || shape === 'all-four-down' || !rampEligible) {
         // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
-        addFace(
-          [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
-          0, 1, 0,  tr, tg, tb,
-        );
+        const groundVariant = _groundTextureVariant(cell);
+        if (groundVariant !== null) {
+          addGroundFace(
+            groundVariant,
+            [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
+            0, 1, 0,  tr, tg, tb,
+          );
+        } else {
+          addFace(
+            [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
+            0, 1, 0,  tr, tg, tb,
+          );
+        }
       } else if (shape === 'edge') {
         // Genuinely tilted but still planar — cheap 4-vertex/1-normal path
         // with a REAL computed normal (an Edge ramp really is sloped).
@@ -543,5 +610,5 @@ export function buildTerrainGeometryData(
     }
   }
 
-  return { positions: pos, normals: nrm, colors: clr, indices: idx, roadGeometry };
+  return { positions: pos, normals: nrm, colors: clr, indices: idx, roadGeometry, groundGeometry };
 }

@@ -2,24 +2,50 @@ import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
 import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE } from '@/world/TerrainGeometryBuilder';
+import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 
+/**
+ * Phase 4a (ground-texture-variant routing) split each tile's top face
+ * across two possible buffers: the plain vertex-color base buffer (for
+ * uncovered biomes/features like ocean/river/lake/ford) or a per-variant
+ * `groundGeometry[variant]` buffer (for the 10 covered land biomes —
+ * including the default 'grassland' biome most bare `new WorldGrid(...)`
+ * fixtures implicitly use). Tests below whose real intent is "how much
+ * total geometry was emitted" (not "which specific buffer") use these
+ * helpers to combine both sources rather than assuming everything lands
+ * in the base buffer, exactly like before Phase 4a.
+ */
+function totalPositionsLength(data: TerrainGeometryData): number {
+  return data.positions.length + Object.values(data.groundGeometry).reduce((s, g) => s + g.positions.length, 0);
+}
+function totalIndicesLength(data: TerrainGeometryData): number {
+  return data.indices.length + Object.values(data.groundGeometry).reduce((s, g) => s + g.indices.length, 0);
+}
+function allNormals(data: TerrainGeometryData): number[] {
+  return [...data.normals, ...Object.values(data.groundGeometry).flatMap(g => g.normals)];
+}
+
 describe('buildTerrainGeometryData', () => {
   it('emits only top faces when all tiles are flat (no elevation steps)', () => {
     const wg = new WorldGrid(3, 1);
-    // All tiles default to elevation 0 — no edits needed.
+    // All tiles default to elevation 0 and biome 'grassland' — no edits needed.
 
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // 3 tiles × 1 top face × 4 verts × 3 floats = 36 position floats.
-    expect(data.positions).toHaveLength(36);
+    // 3 tiles × 1 top face × 4 verts × 3 floats = 36 position floats — all
+    // 3 land straight into groundGeometry.grassland (the default biome is
+    // covered), so the base buffer itself stays empty.
+    expect(totalPositionsLength(data)).toBe(36);
+    expect(data.positions).toHaveLength(0);
     // 3 tiles × 1 top face × 6 indices = 18.
-    expect(data.indices).toHaveLength(18);
+    expect(totalIndicesLength(data)).toBe(18);
     // Every face normal should be straight up (+Y) — no wall faces.
-    for (let i = 0; i < data.normals.length; i += 3) {
-      expect([data.normals[i], data.normals[i + 1], data.normals[i + 2]]).toEqual([0, 1, 0]);
+    const normals = allNormals(data);
+    for (let i = 0; i < normals.length; i += 3) {
+      expect([normals[i], normals[i + 1], normals[i + 2]]).toEqual([0, 1, 0]);
     }
   });
 
@@ -31,16 +57,21 @@ describe('buildTerrainGeometryData', () => {
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
     // Tile 0: top only (1 face). Tile 1 (raised): top + N + S + E + W (5 faces).
-    // Tile 2: top only (1 face). Total 7 faces × 4 verts × 3 floats = 84.
-    expect(data.positions).toHaveLength(84);
-    expect(data.indices).toHaveLength(42); // 7 faces × 6 indices
+    // Tile 2: top only (1 face). Total 7 faces × 4 verts × 3 floats = 84,
+    // split across the base buffer (walls only, 4 faces) and
+    // groundGeometry.grassland (all 3 tops, since 'grassland' is covered).
+    expect(totalPositionsLength(data)).toBe(84);
+    expect(data.positions).toHaveLength(4 * 4 * 3); // 4 wall faces
+    expect(data.groundGeometry.grassland!.positions).toHaveLength(3 * 4 * 3); // 3 top faces
+    expect(totalIndicesLength(data)).toBe(42); // 7 faces × 6 indices
 
     // Collect the set of distinct face normals present — should include
     // up, north, south, east, west (5 distinct normals; tiles 0 and 2
     // contribute only "up" again, so 5 distinct values total).
     const normalSet = new Set<string>();
-    for (let i = 0; i < data.normals.length; i += 3) {
-      normalSet.add(`${data.normals[i]},${data.normals[i + 1]},${data.normals[i + 2]}`);
+    const normals = allNormals(data);
+    for (let i = 0; i < normals.length; i += 3) {
+      normalSet.add(`${normals[i]},${normals[i + 1]},${normals[i + 2]}`);
     }
     expect(normalSet).toEqual(new Set(['0,1,0', '0,0,1', '0,0,-1', '1,0,0', '-1,0,0']));
   });
@@ -69,15 +100,18 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
     // Tile 0: top + east wall (2 faces). Tile 1 (river): top only (1 face).
-    // Tile 2: top + west wall (2 faces). Total 5 faces.
-    expect(data.positions).toHaveLength(5 * 4 * 3);
-    expect(data.indices).toHaveLength(5 * 6);
+    // Tile 2: top + west wall (2 faces). Total 5 faces, split across the
+    // base buffer (walls + the river's own untextured top face, since
+    // 'river' has no ground texture) and groundGeometry.grassland (tile0's
+    // and tile2's tops, since the default 'grassland' biome is covered).
+    expect(totalPositionsLength(data)).toBe(5 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(5 * 6);
 
     // The river tile's top face sits at y = -RIVER_DEPTH_WU (elevation 0 - depth).
-    // Face order: tile0 (top, east-wall), tile1 (top), tile2 (top, west-wall).
-    // Tile0's top face is the first 4 verts (indices 0-3); tile1's top face
-    // starts after tile0's 2 faces (8 verts in), i.e. position index 8*3=24.
-    const tile1TopY = data.positions[8 * 3 + 1]!;
+    // Base-buffer emission order per tile: tile0's east wall (4 verts),
+    // then tile1's own top face (river has no ground texture, so it stays
+    // on the base buffer exactly as before), then tile2's west wall.
+    const tile1TopY = data.positions[4 * 3 + 1]!;
     // Top faces get a small deterministic corner jitter (± up to 0.03 WU)
     // layered on top of the carved base height for visual variety — assert
     // against that documented bound rather than an exact value.
@@ -90,10 +124,11 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
     // All 3 tiles flat and flush -> only top faces, no walls (3 faces total).
-    expect(data.positions).toHaveLength(3 * 4 * 3);
-    expect(data.indices).toHaveLength(3 * 6);
-    for (let i = 0; i < data.normals.length; i += 3) {
-      expect([data.normals[i], data.normals[i + 1], data.normals[i + 2]]).toEqual([0, 1, 0]);
+    expect(totalPositionsLength(data)).toBe(3 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(3 * 6);
+    const normals = allNormals(data);
+    for (let i = 0; i < normals.length; i += 3) {
+      expect([normals[i], normals[i + 1], normals[i + 2]]).toEqual([0, 1, 0]);
     }
   });
 
@@ -117,11 +152,14 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
     // Same face-count shape as the river carving test: tile0 (top+east
-    // wall), tile1 lake (top only), tile2 (top+west wall) = 5 faces.
-    expect(data.positions).toHaveLength(5 * 4 * 3);
-    expect(data.indices).toHaveLength(5 * 6);
+    // wall), tile1 lake (top only), tile2 (top+west wall) = 5 faces, split
+    // across the base buffer (walls + the lake's own untextured top face)
+    // and groundGeometry.grassland (tile0/tile2's tops) — see the river
+    // carving test above for the full breakdown.
+    expect(totalPositionsLength(data)).toBe(5 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(5 * 6);
 
-    const tile1TopY = data.positions[8 * 3 + 1]!;
+    const tile1TopY = data.positions[4 * 3 + 1]!;
     expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 1);
   });
 
@@ -245,15 +283,18 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
   it('gives two adjacent flat cells identical Y at their shared corner (no seam)', () => {
     const wg = new WorldGrid(2, 1);
     const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 1, 1);
+    // Both tiles are flat and default-biome 'grassland' (covered), so both
+    // land in groundGeometry.grassland rather than the base buffer.
+    const positions = data.groundGeometry.grassland!.positions;
     // Tile 0 (col=0): verts at local (wx,wy,wz),(wx,wy,wz1),(wx1,wy,wz1),(wx1,wy,wz) → indices 0..3
     // Tile 1 (col=1): same layout, base index 4..7.
     // Tile 0's east edge (v2,v3 = wx1 corner) must match tile 1's west edge (v0,v1 = wx corner)
     // since tile0's wx1 === tile1's wx (adjacent tiles, T=1).
     const face0 = [0, 1, 2, 3].map(v => ({
-      x: data.positions[v * 3]!, y: data.positions[v * 3 + 1]!, z: data.positions[v * 3 + 2]!,
+      x: positions[v * 3]!, y: positions[v * 3 + 1]!, z: positions[v * 3 + 2]!,
     }));
     const face1 = [4, 5, 6, 7].map(v => ({
-      x: data.positions[v * 3]!, y: data.positions[v * 3 + 1]!, z: data.positions[v * 3 + 2]!,
+      x: positions[v * 3]!, y: positions[v * 3 + 1]!, z: positions[v * 3 + 2]!,
     }));
     // face0 v2 (wx1,wz1) should match face1 v1 (wx,wz1) in both x and y (same world point).
     expect(face0[2]!.x).toBeCloseTo(face1[1]!.x, 9);
@@ -344,8 +385,10 @@ describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
     const chunk = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1, /*colStart*/ 0, /*rowStart*/ 0, /*chunkW*/ 2, /*chunkH*/ 2);
 
     // Full grid emits 4x more top faces (4 quads = 16 verts each face type) than a quarter chunk.
-    expect(chunk.positions.length).toBeLessThan(full.positions.length);
-    expect(chunk.positions.length).toBeGreaterThan(0);
+    // All tiles are flat default-biome 'grassland' (covered), so every top
+    // face lands in groundGeometry.grassland rather than the base buffer.
+    expect(totalPositionsLength(chunk)).toBeLessThan(totalPositionsLength(full));
+    expect(totalPositionsLength(chunk)).toBeGreaterThan(0);
   });
 
   it('a chunk built at colStart/rowStart occupies the same world-space location as the equivalent slice of the full grid', () => {
@@ -353,11 +396,14 @@ describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 2 });
 
     const chunk = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1, 2, 2, 2, 2);
+    // All tiles are flat default-biome 'grassland' (covered), so the chunk's
+    // vertices land in groundGeometry.grassland rather than the base buffer.
+    const positions = chunk.groundGeometry.grassland!.positions;
     // Top-face Y for elevation 2 at SH=1 should be 2, regardless of chunking.
-    expect(chunk.positions[1]).toBe(chunk.positions[1]); // sanity: same array shape as before
+    expect(positions[1]).toBe(positions[1]); // sanity: same array shape as before
     // World X of the first vertex should reflect colStart=2, not 0.
     const wx = (2 - 1.5) * 2; // (col - GHW) * T for col=2
-    expect(chunk.positions[0]).toBeCloseTo(wx, 5);
+    expect(positions[0]).toBeCloseTo(wx, 5);
   });
 
   it('defaults to the whole grid when chunk params are omitted (back-compat)', () => {
@@ -384,9 +430,12 @@ describe('buildTerrainGeometryData — road sub-tile surface (roads as terrain t
     wg.set(0, 0, { elevation: 0, feature: 'road' });
     const farAwayPath = [{ points: [{ x: 1000, z: 1000 }, { x: 1001, z: 1001 }], width: 1, variant: 'dirt' }];
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, farAwayPath);
-    // Falls back to the un-subdivided single-quad behavior: 4 verts, 6 indices.
-    expect(data.positions).toHaveLength(12);
-    expect(data.indices).toHaveLength(6);
+    // Falls back to the un-subdivided single-quad behavior: 4 verts, 6
+    // indices — landing in groundGeometry.grassland (default biome,
+    // covered) rather than the base buffer, same as any other flat
+    // grassland tile once no road actually covers it.
+    expect(totalPositionsLength(data)).toBe(12);
+    expect(totalIndicesLength(data)).toBe(6);
     expect(Object.keys(data.roadGeometry)).toEqual([]);
   });
 
@@ -511,11 +560,14 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // whole-grid render, where the OUTER ring's out-of-bounds neighbors
     // default to elevation 0 and trigger real edge walls — pre-existing,
     // unrelated to this plan) this isolated tile has zero walls at all,
-    // exactly 1 flat top face.
+    // exactly 1 flat top face. It's default-biome 'grassland' (covered),
+    // so it lands in groundGeometry.grassland rather than the base buffer.
     const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
-    expect(data.positions.length).toBe(4 * 3); // 1 flat quad, 4 verts x 3 floats
-    for (let i = 0; i < data.normals.length; i += 3) {
-      expect([data.normals[i], data.normals[i + 1], data.normals[i + 2]]).toEqual([0, 1, 0]);
+    const positions = data.groundGeometry.grassland!.positions;
+    const normals = data.groundGeometry.grassland!.normals;
+    expect(positions.length).toBe(4 * 3); // 1 flat quad, 4 verts x 3 floats
+    for (let i = 0; i < normals.length; i += 3) {
+      expect([normals[i], normals[i + 1], normals[i + 2]]).toEqual([0, 1, 0]);
     }
   });
 
@@ -569,15 +621,18 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // tile 1 in a 1-row grid, both orthogonal neighbors 2 levels lower, and (with
     // height=1) the north/south neighbors are out-of-bounds, substituted as this
     // tile's own elevation — so tile 1 classifies as all-four-down and must render
-    // exactly like before: flat top face, full walls on both sides.
+    // exactly like before: flat top face, full walls on both sides. Split across
+    // the base buffer (4 wall faces) and groundGeometry.grassland (3 top faces,
+    // default biome covered) — see the earlier "emits 4 wall faces" test above.
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { elevation: 2 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
-    expect(data.positions).toHaveLength(84); // unchanged from the pre-existing test's expectation
-    expect(data.indices).toHaveLength(42);
+    expect(totalPositionsLength(data)).toBe(84); // unchanged from the pre-existing test's expectation
+    expect(totalIndicesLength(data)).toBe(42);
     const normalSet = new Set<string>();
-    for (let i = 0; i < data.normals.length; i += 3) {
-      normalSet.add(`${data.normals[i]},${data.normals[i + 1]},${data.normals[i + 2]}`);
+    const normals = allNormals(data);
+    for (let i = 0; i < normals.length; i += 3) {
+      normalSet.add(`${normals[i]},${normals[i + 1]},${normals[i + 2]}`);
     }
     expect(normalSet).toEqual(new Set(['0,1,0', '0,0,1', '0,0,-1', '1,0,0', '-1,0,0']));
   });
@@ -652,8 +707,43 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { elevation: 2 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
-    expect(data.positions).toHaveLength(84);
-    expect(data.indices).toHaveLength(42);
+    expect(totalPositionsLength(data)).toBe(84);
+    expect(totalIndicesLength(data)).toBe(42);
   });
 });
 
+
+describe('buildTerrainGeometryData — ground texture variant routing (Phase 4a)', () => {
+  it('routes a flat grassland tile into groundGeometry.grassland, not the base buffer', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'grassland', elevation: 0 });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+
+    expect(data.groundGeometry.grassland).toBeDefined();
+    expect(data.groundGeometry.grassland!.indices.length).toBe(6); // one quad = 2 triangles
+    // The base buffer must stay empty for this tile — no top face duplicated there.
+    expect(data.indices.length).toBe(0);
+  });
+
+  it('computes world-space-projected UV on the routed tile', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'grassland', elevation: 0 });
+    // T (tile size) = 2 in this call, so this tile spans world X/Z [0,2).
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
+    const uvs = data.groundGeometry.grassland!.uvs;
+    // 4 vertices x 2 floats = 8 values; just assert they vary across the
+    // tile's footprint (not all identical, which would mean UV is broken/flat).
+    const uSet = new Set<number>();
+    for (let i = 0; i < uvs.length; i += 2) uSet.add(uvs[i]!);
+    expect(uSet.size).toBeGreaterThan(1);
+  });
+
+  it('leaves an uncovered biome (ocean) on the untextured base buffer, byte-identical to today', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { biome: 'ocean', elevation: 0, waterDepth: 1.0 });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+
+    expect(data.groundGeometry.ocean).toBeUndefined();
+    expect(data.indices.length).toBe(6); // top face in the base buffer, as before
+  });
+});
