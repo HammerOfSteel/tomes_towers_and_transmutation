@@ -735,47 +735,95 @@ the exact technique just proven out for buildings this session
 (`BlockKit.ts`'s world-space-projected UV + `FactionBlockTextures.ts`'s
 per-material canvas swatches, `color * map` tint-preserving multiply).
 
-- [ ] New `src/world/TerrainTextures.ts` (sibling to
-      `FactionBlockTextures.ts`): tileable canvas textures per biome
-      (grass blade texture, forest leaf-litter/moss, desert sand/cracked
-      dune, tundra frost/frozen-ground, savanna dry-grass, taiga needle
-      litter, mountain bare rock, beach sand, swappable at low cost since
-      it's the same lazy-cache + `_wrap()` pattern already used twice now).
-      Extend the biome coverage to the full current 10(+`mountain`)-value
-      taxonomy per §1.6's finding, rather than reviving the narrower
-      4-biome `tile-designer.md` table as-is.
-- [ ] Also export a `roadTexture(biome)` per biome (worn cobblestone for
-      settlement streets, packed dirt/gravel for open-road stretches,
-      narrower trampled-earth for forest paths, hard sandy track for
-      desert, raised plank/corduroy treatment for bog/swamp crossings) —
-      feeds Phase 2's "roads as a first-class terrain surface" item, so
-      a road subtile picks its texture the same way a ground subtile
-      picks its biome texture, rather than being a separately-textured
-      overlay plane.
-- [ ] `TerrainGeometryBuilder.ts`: add world-space-projected `uv` output to
-      `buildTerrainGeometryData()` (same technique as `BlockKit.ts`'s
-      `blockGeometry()` — planar top-down UV for the flat/ramp top faces,
-      tangential UV for wall faces), and switch the terrain material from
-      vertex-color-only to `color * map` (vertex color keeps carrying the
-      per-cell variant tint/patchiness that already works well; the map
-      adds real surface detail on top, exactly mirroring the building
-      work's rationale).
-- [ ] Explicitly leave the currently-unused `TileBuilder.ts`/`TileDNA.ts`
-      Studio system as Studio-preview-only (do not attempt to force-unify
-      it with the live renderer's new texture system in this phase — that
-      would be a much larger refactor for uncertain benefit, since the two
-      systems solve different problems: one is a design-time single-tile
-      preview tool, the other is a live per-triangle-batch renderer).
-- [ ] Tests: same structural-only conventions established by
-      `FactionBlockTextures.test.ts` this session (jsdom canvas-stub
-      limitation applies equally here — do not attempt pixel-content
-      assertions, see that file's documented rationale). UV attribute
-      presence/determinism tests mirroring `BlockKit.test.ts`'s UV
-      describe block.
-- [ ] Live Playwright verification across multiple biomes/seeds, following
-      the same crop/zoom/brighten workflow used to verify the building
-      textures this session (dark ambient lighting made close inspection
-      necessary there too).
+**Ground-texture wiring ✅ DONE (2026-08-30)** — pulled forward ahead of
+Phase 4 at the user's request (bundled with a "make tiles look less
+blocky/patchwork" push). Design spec:
+`docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-30-ground-tile-texture-variety-plan.md`.
+
+- [x] New `src/world/TerrainTextures.ts` (sibling to
+      `FactionBlockTextures.ts`): tileable canvas textures for 10 covered
+      variants — `beach`, `desert`, `savanna`, `grassland`, `forest`,
+      `taiga`, `tundra`, `snow` (8 newly authored, same lazy-cache +
+      `_wrap()` pattern), plus `mountain`/`river_bank` reusing the
+      already-shipped `graniteTexture()`/`earthTexture()` as-is (bare rock
+      and packed dirt already read correctly at ground scale — no new
+      canvas needed). Ocean/deep_ocean/river/lake/river_ford stay on
+      today's solid-color treatment (under the water surface plane,
+      rarely fully visible) — an explicit, documented deferral, not an
+      oversight.
+- [x] `TerrainGeometryBuilder.ts`: new `groundGeometry` output (mirrors the
+      existing `roadGeometry` per-variant buffer pattern), with a
+      world-space-projected `uv` (same technique as `BlockKit.ts`) on all
+      3 top-face code paths (flat/all-four-down, edge, ramp). Vertex color
+      preserved per-vertex in `groundGeometry` too, so the material can use
+      `color * map` (vertex tint × texture) exactly like buildings/roads.
+      Walls stay vertex-color-only (explicitly deferred, see below).
+- [x] `OverworldScene._loadTerrainChunk()`: one small
+      `MeshStandardMaterial({map, vertexColors:true, ...})` mesh per
+      ground-texture variant present in a chunk (mirrors the existing
+      road-variant mesh loop — typically 1-4 extra draw calls per chunk,
+      since biome patches are usually much larger than one 16×16-tile
+      chunk). Physics collider merge extended to fold in every
+      `groundGeometry` variant's triangles alongside the existing
+      road-variant merge, plus full `TerrainChunkData` lifecycle wiring
+      (enter/exit visibility toggling, unload disposal) mirroring
+      `roadMeshes` exactly.
+- [x] Tests: new `TerrainTextures.test.ts` (4, structural-only per the
+      established `FactionBlockTextures.test.ts` convention), 7 new tests
+      in `TerrainGeometryBuilder.test.ts` (variant routing + UV
+      correctness for flat/edge/ramp shapes, uncovered-biome fallback).
+      **Important discovery during implementation**: the plan's
+      assumption that "every pre-existing test continues to pass
+      unchanged" was wrong for tests using a bare `new WorldGrid(...)`
+      with no explicit biome — `'grassland'` is the default biome AND one
+      of the 10 covered variants, so many pre-existing wall/corner-jitter/
+      chunk-sub-rectangle tests that implicitly relied on a flat tile's
+      top face landing in the base buffer needed updating (their real
+      testing intent — total geometry emitted, wall presence, corner-jitter
+      seam matching — was unaffected by *which* buffer a face lands in, so
+      these were fixed to sum across the base buffer and
+      `groundGeometry.grassland` rather than weakened). One test
+      (`OverworldScene.chunk-scatter-alignment.test.ts`) needed the same
+      treatment at the scene level — its terrain-mesh bounding-box check
+      only looked at `mesh` (the base buffer), missing the new
+      `groundMeshes`; fixed to union both. Full project suite: same 12
+      pre-existing baseline failures, zero regressions. `tsc --noEmit`
+      steady at 144.
+- [x] Perf check: chunk-build-time benchmark (64 mixed-biome 16×16 chunks
+      at worldSize 512, comparing a temporary pre-Phase-4a `git worktree`)
+      showed no measurable regression — both before (~0.53 ms/chunk avg)
+      and after (~0.55 ms/chunk avg) fall within normal run-to-run
+      measurement noise (~15-20% spread across repeated runs of the *same*
+      code), reported honestly rather than rounded to a false "improvement"
+      or downplayed as flat.
+- [x] Manual verification: live Playwright session against the dev server
+      confirmed the overworld loads, runs (`forceTick`), and renders with
+      zero console/page errors using the new textured ground meshes; full
+      visual screenshot capture repeatedly timed out under this sandbox's
+      documented WebGL-compositing resource contention (a recurring
+      environment limitation this session, unrelated to the code change)
+      even at 90s — reported honestly as an open follow-up rather than
+      claimed as done, per this project's established precedent (Phase 2
+      shipped the same way).
+
+**Deferred (documented, not started, tracked for a later pass):**
+- `roadTexture(biome)` — a per-biome (not just per-faction) road surface
+  texture set (worn cobblestone, packed dirt/gravel, forest trampled-earth,
+  desert hard sandy track, bog corduroy) was scoped in this section's
+  original bullet list but is a separate body of work from ground-texture
+  wiring; `RoadTextures.ts` still only varies by faction/generic/bridge.
+- Textured walls (vertical elevation-step faces) — stay vertex-color-only.
+- Biome-transition blending at borders — tracked under Phase 4 "organic
+  biome transitions", a natural follow-on once base ground textures exist.
+- Literal geometric sub-tile subdivision for ground (the road-style N×N
+  per-tile classification) — considered and explicitly rejected for this
+  pass (see the design spec §2) on performance grounds; texture-only
+  variety via world-space UV was judged sufficient for the "less blocky"
+  goal at a fraction of the geometry cost.
+- The Studio-preview-only `TileBuilder.ts`/`TileDNA.ts` system remains
+  unintegrated with the live renderer's new texture system, as originally
+  scoped (different problems, not worth force-unifying).
 
 ### Phase 9 (stretch, reassess after Phases 1-8) — World-package/ambient/reward-ecology follow-through
 **Depends on:** most of the above; lowest priority, only pursue if time remains.
