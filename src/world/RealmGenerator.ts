@@ -9,7 +9,7 @@
  * Studio page, which wires up DOM elements at module scope — unsafe to
  * import at runtime from game code). This file only takes `import type
  * {...}` from it (erased at compile time, zero runtime coupling), the
- * same pattern already used by `RealmToTerrain.ts` and `RealmRiverMesh.ts`.
+ * same pattern already used by `RealmToTerrain.ts`.
  */
 
 import { mulberry32 }    from '@/core/prng';

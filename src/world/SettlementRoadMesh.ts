@@ -15,7 +15,8 @@
  * (same category of pragmatic substitution as RI-3's ribbon-not-tube river
  * and SI-1's ring-not-ward layout).
  *
- * Same width-varying quad-strip-ribbon technique as `RealmRiverMesh.ts`,
+ * Same width-varying quad-strip-ribbon technique used elsewhere for
+ * settlement roads/ribbons (see `SettlementRenderer.ts`),
  * but flat width per segment (roads don't taper) with width chosen by
  * "importance" per SI-2: buildings that anchor a settlement (guild, inn,
  * tavern, chapel, well/plaza) get a 2 world-unit "main road"; everything
@@ -31,7 +32,7 @@ import * as THREE from 'three';
 import { cobblestoneTexture } from './buildings/TextureFactory';
 import { CORNER_JITTER_MAX } from './TerrainGeometryBuilder';
 import type { SettlementSpawnPlan, WorldPos2 } from './SettlementSpawner';
-import type { RiverHeightSampler } from './RealmRiverMesh';
+import type { RiverHeightSampler } from './HeightSampler';
 import type { BuildingKind } from './buildings/BuildingDNA';
 
 /** World-unit width of a "main road" — connects settlement-anchor buildings. */

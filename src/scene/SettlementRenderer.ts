@@ -178,7 +178,7 @@ export function renderSettlementPlan(
  * Build continuous quad-strip ribbon meshes from `plan.roadRibbons`
  * (RoadRibbon.points are fractional grid-tile units relative to the
  * settlement centre) — same width-varying quad-strip technique as
- * `SettlementRoadMesh.ts`/`RealmRiverMesh.ts`, textured with the existing
+ * `SettlementRoadMesh.ts`, textured with the existing
  * cobblestone canvas texture. One mesh per ribbon (a settlement typically
  * has a handful of roads, so per-ribbon meshes are fine without merging).
  */

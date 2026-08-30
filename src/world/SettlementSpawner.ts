@@ -34,7 +34,7 @@
 import type { RealmSettlement, SettlementFaction } from '@/overworld-studio';
 import { mulberry32 } from '@/core/prng';
 import { TERRAIN_TILE_SIZE } from './RealmToTerrain';
-import type { RiverHeightSampler } from './RealmRiverMesh';
+import type { RiverHeightSampler } from './HeightSampler';
 import {
   factionBuildingDna,
   getFootprint,
