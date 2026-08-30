@@ -13,6 +13,7 @@ import { WorldGrid }           from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
 import type { WorldData }      from './WorldData';
 import { generateHydrology }   from './HydrologyGenerator';
+import { generateLakes }       from './LakeGenerator';
 import { placeDungeons }       from './DungeonPlacer';
 import { placeSettlements }    from './SettlementPlacer';
 import { placeCavesAndGlades } from './CaveGladeWorldPlacer';
@@ -80,6 +81,10 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   // OW-2: carve rivers into the grid (unchanged — out of scope for P0,
   // see design spec's "Explicitly out of scope" section)
   generateHydrology(grid, config, seed);
+
+  // Phase 3: carve lakes — runs after rivers so lake source-selection's
+  // isBlocked() check correctly excludes tiles rivers already claimed.
+  generateLakes(grid, config, seed);
 
   return grid;
 }

@@ -89,6 +89,25 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
       }
     }
   });
+
+  it('produces at least one lake tile for at least one of several fixed seeds ' +
+     '(lake placement depends on finding a local-elevation-minimum away from ' +
+     'the tower flat-zone, so this is checked loosely across seeds rather than ' +
+     'guaranteed for every single one)', () => {
+    const seeds = [10, 11, 12, 13, 14];
+    let foundLake = false;
+    for (const seed of seeds) {
+      const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed, worldSize: 128 as const };
+      const grid = buildWorldGrid(seed, cfg);
+      for (let row = 0; row < grid.height && !foundLake; row++) {
+        for (let col = 0; col < grid.width && !foundLake; col++) {
+          if (grid.get(col, row).feature === 'lake') foundLake = true;
+        }
+      }
+      if (foundLake) break;
+    }
+    expect(foundLake).toBe(true);
+  });
 });
 
 describe('buildWorldData — realm-sourced settlements (P1 siting)', () => {
