@@ -42,7 +42,7 @@ import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
   type OverworldSettlementPreviewPayload,
 } from './overworld-studio/SettlementPreviewPayload';
-import { DEV_ROOM_LAUNCH_KEY, buildDevRoomLaunchUrl, buildSettlementLabLaunchUrl, type DevRoomId } from './overworld-studio/DevRoomHandoff';
+import { DEV_ROOM_LAUNCH_KEY, buildDevRoomLaunchUrl, buildSettlementLabLaunchUrl, buildOverworldLabLaunchUrl, type DevRoomId } from './overworld-studio/DevRoomHandoff';
 
 import * as THREE from 'three';
 
@@ -3589,6 +3589,31 @@ const ROUGHNESS_LABELS = (v: number) => v < 25 ? 'Flat' : v < 50 ? 'Rolling' : v
   const lbl = document.getElementById('realm-settlements-val');
   if (lbl) lbl.textContent = this.value;
   if (studioMode === 'realm') { currentRealmData = null; generateRealmView(); }
+});
+
+// ── Realm "Play in 3D" (Overworld Lab) ────────────────────────────────────────
+// Carries the Realm tab's exact seed/shape/climate/roughness/settlement-count
+// into the live game's exterior overworld boot, instead of the live game's
+// own independently-seeded default world — see DevRoomHandoff.ts's
+// buildOverworldLabLaunchUrl() and 2026-08-30-overworld-lab.md.
+document.getElementById('btn-play-in-3d-realm')?.addEventListener('click', () => {
+  if (!currentRealmData) { alert('Generate a realm first.'); return; }
+  const seed = parseInt(seedInput.value) || Date.now();
+  const size = parseInt((document.getElementById('realm-size') as HTMLInputElement)?.value ?? '2');
+  // Map the Studio's 1-5 realm-size preset to the closest square live
+  // WorldSize (128/256/512) — the live world grid is always square, while
+  // Studio realm sizes can be non-square (e.g. 96x72 at "M") — see the plan
+  // doc's "Known, deliberate approximation" note.
+  const REALM_SIZE_TO_WORLD_SIZE: Record<number, 128 | 256 | 512> = { 1: 128, 2: 128, 3: 256, 4: 256, 5: 512 };
+  const worldSize = REALM_SIZE_TO_WORLD_SIZE[size] ?? 128;
+  const nS        = parseInt((document.getElementById('realm-settlements') as HTMLInputElement)?.value ?? '6');
+  const shape     = (document.querySelector('#realm-shape-pills .pill.active') as HTMLElement)?.dataset.shape ?? 'island';
+  const climate   = (document.querySelector('#realm-climate-pills .pill.active') as HTMLElement)?.dataset.climate ?? 'temperate';
+  const roughness = parseFloat((document.getElementById('realm-roughness') as HTMLInputElement)?.value ?? '50') / 100;
+  _showToast(`✓ Opening Overworld Lab for realm seed ${seed}`);
+  window.open(buildOverworldLabLaunchUrl('/index.html', {
+    seed, worldSize, shape, climate, roughness, settlementCount: nS,
+  }), '_blank');
 });
 
 // ── Realm PNG export ──────────────────────────────────────────────────────────
