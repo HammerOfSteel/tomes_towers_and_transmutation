@@ -712,9 +712,10 @@ export class OverworldScene {
     }));
   }
 
-  /** First river/water-tile world position found by scanning the grid (or null).
-   *  For tests/dev-tooling only — used to locate a water tile deterministically
-   *  for visual verification without hardcoding seed-dependent coordinates. */
+  /** First river/lake/ocean water-tile world position found by scanning the
+   *  grid (or null). For tests/dev-tooling only — used to locate a water
+   *  tile deterministically for visual verification without hardcoding
+   *  seed-dependent coordinates. */
   findFirstWaterTile(): { x: number; z: number } | null {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     const centerCol = Math.round(GHW);
@@ -734,7 +735,7 @@ export class OverworldScene {
           const row = centerRow + dRow;
           if (col < 0 || col >= GW || row < 0 || row >= GH) continue;
           const cell = this._wg.get(col, row);
-          if (cell.feature !== 'river' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
+          if (cell.feature !== 'river' && cell.feature !== 'lake' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
           const wx = (col - GHW) * T;
           const wz = (row - GHH) * T;
           if (Math.sqrt(wx * wx + wz * wz) < 60) continue; // too close to tower courtyard
