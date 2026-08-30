@@ -49,8 +49,6 @@ import {
   type BuildingDNA,
   type Faction,
 } from '@/world/buildings/BuildingDNA';
-import { cobblestoneTexture }          from '@/world/buildings/TextureFactory';
-import { earthTexture }                from '@/world/buildings/FactionBlockTextures';
 import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
 import {
   OVERWORLD_SETTLEMENT_PREVIEW_KEY,
@@ -65,7 +63,10 @@ import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
-import { buildTerrainGeometryData, CORNER_JITTER_MAX } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import type { RoadPathSegment } from '@/world/RoadPathSampler';
+import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
+import { chaikin } from '@/core/chaikin';
 import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
@@ -85,13 +86,6 @@ const T   = 2;                // tile side length in world units (= interior cel
 // LEVEL_HEIGHT or the terrain mesh/collider and the swim water query would
 // silently disagree about tile heights.
 const SH  = LEVEL_HEIGHT;      // world-unit height increment per level
-
-/** Vertical offset above the terrain top face for flat road/pavement planes
- *  (settlement interior squares, inter-settlement dirt roads). Must clear
- *  TerrainGeometryBuilder's CORNER_JITTER_MAX or the plane can visibly clip
- *  through/under the jittered ground at random corners — kept in sync with
- *  SettlementRenderer.ts's own ROAD_HEIGHT_OFFSET (same formula). */
-const ROAD_HEIGHT_OFFSET = CORNER_JITTER_MAX + 0.02;
 
 /**
  * Task 13 final review (Important issue #4) — caps how many NEW chunks
@@ -153,6 +147,12 @@ interface TerrainChunkData {
   body: RAPIER.RigidBody | null;
   scatter: THREE.Group;
   colliders: RAPIER.RigidBody[];
+  /** Textured road sub-tile surface meshes (one per texture variant present
+   *  in this chunk) — built alongside the main terrain mesh from the same
+   *  buildTerrainGeometryData() call's roadGeometry output, sharing this
+   *  chunk's own load/unload/enter/exit lifecycle. See RoadPathSampler.ts /
+   *  docs/superpowers/plans/2026-08-30-biome-terrain-overhaul.md Phase 2. */
+  roadMeshes: THREE.Mesh[];
 }
 
 export class OverworldScene {
@@ -206,6 +206,13 @@ export class OverworldScene {
    *  rigid bodies in `_staticBodies`, including buildings', so they must be recreated on enter()). */
   private readonly _buildingColliderSpecs: Array<{ dna: BuildingDNA; pos: THREE.Vector3; rotationY: number }> = [];
   private _roadMeshes: THREE.Mesh[] = [];
+  /** World-space road centerlines (settlement streets + Chaikin-smoothed
+   *  inter-settlement roads) computed once at construction time and passed
+   *  to every per-chunk buildTerrainGeometryData() call, so a road bakes
+   *  directly into the terrain sub-tile surface instead of being rendered
+   *  as a separate overlay mesh (see RoadPathSampler.ts /
+   *  docs/superpowers/plans/2026-08-30-biome-terrain-overhaul.md Phase 2). */
+  private _roadPaths: RoadPathSegment[] = [];
   /** Settlement lamp-post props (post + lantern mesh) — decorative, no collider. */
   private _lampGroups: THREE.Group[] = [];
   /** Parallel array to _lampGroups — each lamp's point light, for per-frame intensity updates. */
@@ -301,6 +308,12 @@ export class OverworldScene {
 
     const rand = mulberry32(config.seed ^ 0xA5_F0_3C_12);
 
+    // Must run BEFORE the ChunkManager below — the very first chunk load
+    // (triggered synchronously a few lines down via flushPendingLoads())
+    // already needs road path data to bake settlement streets/inter-
+    // settlement roads into that chunk's terrain sub-tile surface.
+    this._roadPaths = this._collectRoadPaths(worldData);
+
     console.log('[OverworldScene] setting up terrain ChunkManager...');
     this._chunkManager = new ChunkManager<TerrainChunkData>(
       {
@@ -380,11 +393,12 @@ export class OverworldScene {
     // that used to double-create colliders for whatever chunks were already
     // loaded at scene-entry time) and just need re-enabling here, mirroring
     // the terrain trimesh body's own `setEnabled(true)` below.
-    for (const { mesh, body, scatter, colliders } of this._terrainChunkData.values()) {
+    for (const { mesh, body, scatter, colliders, roadMeshes } of this._terrainChunkData.values()) {
       this.scene.add(mesh);
       body?.setEnabled(true);
       this.scene.add(scatter);
       for (const c of colliders) c.setEnabled(true);
+      for (const rm of roadMeshes) this.scene.add(rm);
     }
 
     // Tower: treat as a tall capsule for the whole body (avoids cylinder API diff between Rapier versions)
@@ -443,11 +457,12 @@ export class OverworldScene {
     // `enter()` (including a bare `enter()` with no scene.update() in
     // between, e.g. telescope remote-view mode) can cheaply restore them
     // without waiting for a chunk-streaming update() tick.
-    for (const { mesh, body, scatter, colliders } of this._terrainChunkData.values()) {
+    for (const { mesh, body, scatter, colliders, roadMeshes } of this._terrainChunkData.values()) {
       this.scene.remove(mesh);
       body?.setEnabled(false);
       this.scene.remove(scatter);
       for (const c of colliders) c.setEnabled(false);
+      for (const rm of roadMeshes) this.scene.remove(rm);
     }
     if (this._waterMesh)  this.scene.remove(this._waterMesh);
     for (const rm of this._roadMeshes) this.scene.remove(rm);
@@ -990,6 +1005,63 @@ export class OverworldScene {
   // ── Private builders ──────────────────────────────────────────────────────
 
   /**
+   * Builds the world-space road centerlines fed to every per-chunk
+   * buildTerrainGeometryData() call — the data that lets a road bake
+   * directly into the terrain sub-tile surface (RoadPathSampler.ts)
+   * instead of rendering as a separate overlay mesh (the previous overlay
+   * approach was the root cause of the reported road z-fighting/flicker:
+   * two coincident planes competing for the same depth). Two sources:
+   *   - Settlement streets: each settlement's ward-model-derived
+   *     `plan.roadRibbons` (already a continuous, organically-curved
+   *     centerline), tagged with that settlement's own faction so
+   *     `RoadTextures.ts` can give each race's streets a distinct texture.
+   *   - Inter-settlement roads: `worldData.interRoadPaths`' per-edge tile
+   *     paths are Chaikin-smoothed (same corner-cutting technique already
+   *     used for river paths in RealmGenerator.ts) into an organic curve
+   *     instead of staying locked to the A* path's blocky tile-by-tile
+   *     turns, tagged with the generic (non-faction) open-road variant.
+   */
+  private _collectRoadPaths(worldData: WorldData): RoadPathSegment[] {
+    const { _GHW: GHW, _GHH: GHH } = this;
+    const paths: RoadPathSegment[] = [];
+
+    for (const entry of worldData.settlements ?? []) {
+      const { plan } = entry;
+      for (const ribbon of plan.roadRibbons) {
+        if (ribbon.points.length < 2) continue;
+        paths.push({
+          points: ribbon.points.map(p => ({
+            x: (p.x + plan.centerCol - GHW) * T,
+            z: (p.z + plan.centerRow - GHH) * T,
+          })),
+          width: ribbon.width,
+          variant: plan.faction,
+        });
+      }
+    }
+
+    const INTER_ROAD_WIDTH = 1.5;
+    for (const gridPath of worldData.interRoadPaths ?? []) {
+      if (gridPath.length < 2) continue;
+      // Chaikin-smooth in grid space first (matches RealmGenerator.ts's
+      // river-smoothing convention), then convert tile centers to world
+      // coordinates — turns the A*/L-shape path's blocky right-angle
+      // turns into an organic curve.
+      const smoothed = chaikin(gridPath.map(p => ({ x: p.col + 0.5, y: p.row + 0.5 })), 2);
+      paths.push({
+        points: smoothed.map(p => ({
+          x: (p.x - GHW) * T,
+          z: (p.y - GHH) * T,
+        })),
+        width: INTER_ROAD_WIDTH,
+        variant: GENERIC_ROAD_VARIANT,
+      });
+    }
+
+    return paths;
+  }
+
+  /**
    * ChunkManager `load` handler: builds one chunk's terrain mesh + Rapier
    * trimesh collider from the same buffers (guarantees they agree — see
    * TerrainGeometryBuilder.ts's header comment), adds the mesh to the
@@ -1035,8 +1107,9 @@ export class OverworldScene {
     // this terrain fix landed, placing trees/rocks outside their chunk's
     // actual terrain footprint).
     const { colStart, rowStart } = this._chunkGridOrigin(coord);
-    const { positions, normals, colors, indices } = buildTerrainGeometryData(
+    const { positions, normals, colors, indices, roadGeometry } = buildTerrainGeometryData(
       this._wg, GW, GH, GHW, GHH, T, SH, colStart, rowStart, CHUNK_SIZE, CHUNK_SIZE,
+      this._roadPaths,
     );
 
     const geo = new THREE.BufferGeometry();
@@ -1051,9 +1124,43 @@ export class OverworldScene {
     // `_isInScene` gating already used for buildings/enemies/ruins below.
     if (this._isInScene) this.scene.add(mesh);
 
-    const body = (indices.length === 0)
+    // Road sub-tile surface meshes — one per texture variant present in
+    // this chunk. These fill exactly the holes the ground mesh above left
+    // where a road sub-tile was classified as road instead of ground (see
+    // buildTerrainGeometryData()'s roadGeometry doc comment), so there is
+    // no second surface competing with the ground for the same footprint.
+    const roadMeshes: THREE.Mesh[] = [];
+    for (const [variant, rg] of Object.entries(roadGeometry)) {
+      if (rg.indices.length === 0) continue;
+      const roadGeo = new THREE.BufferGeometry();
+      roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(rg.positions, 3));
+      roadGeo.setAttribute('normal',   new THREE.Float32BufferAttribute(rg.normals, 3));
+      roadGeo.setAttribute('uv',       new THREE.Float32BufferAttribute(rg.uvs, 2));
+      roadGeo.setIndex(rg.indices);
+      const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({
+        map: roadVariantTexture(variant), roughness: 0.92, metalness: 0,
+      }));
+      if (this._isInScene) this.scene.add(roadMesh);
+      roadMeshes.push(roadMesh);
+    }
+
+    // The physics collider must cover the WHOLE tile surface (ground holes
+    // + road sub-tiles both), even though the two are rendered as separate
+    // meshes/materials visually — merge every road variant's triangles
+    // into the same trimesh buffer the ground alone would otherwise use,
+    // so walking over a road sub-tile can never fall through a "hole" that
+    // only exists in the ground mesh's own visual buffer.
+    const colliderPositions = positions.slice();
+    const colliderIndices   = indices.slice();
+    for (const rg of Object.values(roadGeometry)) {
+      const vertOffset = colliderPositions.length / 3;
+      colliderPositions.push(...rg.positions);
+      for (const i of rg.indices) colliderIndices.push(i + vertOffset);
+    }
+
+    const body = (colliderIndices.length === 0)
       ? null
-      : this.physics.createStaticTrimesh(new Float32Array(positions), new Uint32Array(indices));
+      : this.physics.createStaticTrimesh(new Float32Array(colliderPositions), new Uint32Array(colliderIndices));
     if (body && !this._isInScene) body.setEnabled(false);
 
     const scatter = this._buildChunkScatter(coord);
@@ -1083,7 +1190,7 @@ export class OverworldScene {
       for (const c of colliders) c.setEnabled(false);
     }
 
-    const data: TerrainChunkData = { mesh, body, scatter, colliders };
+    const data: TerrainChunkData = { mesh, body, scatter, colliders, roadMeshes };
     this._terrainChunkData.set(`${coord.cx},${coord.cz}`, data);
     return data;
   }
@@ -1111,6 +1218,17 @@ export class OverworldScene {
     if (data.body) this.physics.removeBody(data.body);
 
     for (const c of data.colliders) this.physics.removeBody(c);
+
+    for (const rm of data.roadMeshes) {
+      this.scene.remove(rm);
+      rm.geometry.dispose();
+      // The material instance is per-mesh (not shared) and safe to
+      // dispose; the texture it references IS shared/cached across many
+      // chunks (RoadTextures.ts's own module-level cache) and must NOT be
+      // disposed here — Material.dispose() only releases the material
+      // itself, never textures it references.
+      (rm.material as THREE.Material).dispose();
+    }
 
     this.scene.remove(data.scatter);
     data.scatter.traverse((obj) => {
@@ -2522,15 +2640,13 @@ export class OverworldScene {
       });
     }
 
-    // ── Settlement interior road tiles — flat instanced planes ────────────
-    // PlaneGeometry laid flat removes box-side seams; 8% oversizing fills gaps.
-    const sqTex  = cobblestoneTexture(2, 2);
-    const sqMat  = new THREE.MeshLambertMaterial({ map: sqTex, color: 0xb09878 });
-    const sqGeo  = new THREE.PlaneGeometry(T * 1.08, T * 1.08);
-    sqGeo.rotateX(-Math.PI / 2); // lie flat
-
-    const sqPositions: THREE.Vector3[] = [];
-    const sqSeen = new Set<string>();
+    // Settlement roads (streets + inter-settlement) are baked directly into
+    // the terrain sub-tile surface via `this._roadPaths`/`_collectRoadPaths()`
+    // (computed once at construction time, before terrain chunks first
+    // load) — see RoadPathSampler.ts / TerrainGeometryBuilder.ts's
+    // roadGeometry output and the plan doc's Phase 2 "roads as a first-
+    // class terrain surface" item. No separate road overlay geometry is
+    // built here anymore.
 
     for (const entry of settlements) {
       const { plan } = entry;
@@ -2556,28 +2672,6 @@ export class OverworldScene {
         this._buildingGroups.push(grp);
       }
 
-      // Collect road tiles — all at centre elevation for a flat pavement (parity
-      // with pre-refactor: road Y uses settlement-centre elevation, not per-tile).
-      const centreElev = this._wg.get(plan.centerCol, plan.centerRow).elevation;
-      for (const rt of result.roadTiles) {
-        const k = `${rt.col},${rt.row}`;
-        if (sqSeen.has(k)) continue;
-        sqSeen.add(k);
-        const wx = (rt.col - GHW) * T;
-        const wz = (rt.row - GHH) * T;
-        sqPositions.push(new THREE.Vector3(wx, centreElev * SH + ROAD_HEIGHT_OFFSET, wz));
-      }
-
-      // Continuous quad-strip street ribbons (real streets following the
-      // ward-model's road graph, width-varying main-road/alley) — layered on
-      // top of the flat pavement squares above, which still fill in plaza/
-      // ward-interior tiles the ribbons themselves don't cover. This is what
-      // turns the old "every road tile is an identical flat square" look
-      // into an actual road shape.
-      for (const rm of result.roadRibbonMeshes) {
-        this._roadMeshes.push(rm);
-      }
-
       for (const grp of result.lampGroups)   this._lampGroups.push(grp);
       for (const lt  of result.lampLights)   this._lampLights.push(lt);
 
@@ -2589,59 +2683,7 @@ export class OverworldScene {
       }
     }
 
-    if (sqPositions.length > 0) {
-      const im = new THREE.InstancedMesh(sqGeo, sqMat, sqPositions.length);
-      im.frustumCulled = false;
-      const mtx = new THREE.Matrix4();
-      for (let i = 0; i < sqPositions.length; i++) {
-        const p = sqPositions[i]!;
-        mtx.makeTranslation(p.x, p.y, p.z);
-        im.setMatrixAt(i, mtx);
-      }
-      im.instanceMatrix.needsUpdate = true;
-      this._roadMeshes.push(im);
-    }
-    sqGeo.dispose();
-
     this._buildStudioSettlementPreview();
-
-    // ── Inter-settlement roads — axis-aligned flat dirt tile planes ──────
-    const interRoads = worldData.interRoads ?? [];
-    if (interRoads.length > 0) {
-      const dirtGeo = new THREE.PlaneGeometry(T * 1.15, T * 1.15);
-      dirtGeo.rotateX(-Math.PI / 2);
-      // Textured (packed-earth canvas texture, same one used for vulperia's
-      // block-kit walls) instead of a flat solid color — was previously the
-      // most visibly "blocky" road surface in the game (a single flat brown
-      // tint with no surface detail at all).
-      const dirtMat  = new THREE.MeshStandardMaterial({ map: earthTexture(2, 2), color: 0x9a8060, roughness: 0.95 });
-      const dirtPos: THREE.Vector3[] = [];
-      const dirtSeen = new Set<string>();
-
-      for (const r of interRoads) {
-        const k = `${r.col},${r.row}`;
-        if (dirtSeen.has(k)) continue;
-        dirtSeen.add(k);
-        const wx = (r.col - GHW) * T;
-        const wz = (r.row - GHH) * T;
-        const wy = this._wg.get(r.col, r.row).elevation * SH + ROAD_HEIGHT_OFFSET;
-        dirtPos.push(new THREE.Vector3(wx, wy, wz));
-      }
-
-      if (dirtPos.length > 0) {
-        const im2 = new THREE.InstancedMesh(dirtGeo, dirtMat, dirtPos.length);
-        im2.frustumCulled = false;
-        const mtx2 = new THREE.Matrix4();
-        for (let i = 0; i < dirtPos.length; i++) {
-          const p = dirtPos[i]!;
-          mtx2.makeTranslation(p.x, p.y, p.z);
-          im2.setMatrixAt(i, mtx2);
-        }
-        im2.instanceMatrix.needsUpdate = true;
-        this._roadMeshes.push(im2);
-      }
-      dirtGeo.dispose();
-    }
   }
 
   // ── NPC spawning ──────────────────────────────────────────────────────────

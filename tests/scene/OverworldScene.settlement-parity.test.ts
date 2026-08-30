@@ -31,7 +31,16 @@ describe('OverworldScene settlement rendering parity', () => {
     overworld.enter();
 
     const buildingGroups: number = (overworld as any)._buildingGroups.length;
-    const roadMeshes: number     = (overworld as any)._roadMeshes.length;
+    // Road meshes are now built per-terrain-chunk (baked into the terrain
+    // sub-tile surface, see RoadPathSampler.ts / TerrainGeometryBuilder.ts's
+    // roadGeometry output) rather than eagerly for every settlement
+    // regardless of player position, so counting rendered road meshes here
+    // would depend on chunk-streaming proximity to the player's spawn
+    // point (an orthogonal concern this test isn't set up to control).
+    // Check that road *path* collection itself worked instead — the
+    // chunk-proximity-independent precondition for any road mesh to ever
+    // render at all.
+    const roadPaths: number = (overworld as any)._roadPaths.length;
     const lampGroups: number     = (overworld as any)._lampGroups.length;
     const lampLights: number     = (overworld as any)._lampLights.length;
     const buildingData: number   = (overworld as any)._buildingData.length;
@@ -39,7 +48,7 @@ describe('OverworldScene settlement rendering parity', () => {
     // These values were recorded on the pre-refactor run and must not change.
     // Non-zero values confirm the settlement was actually rendered (not silently skipped).
     expect(buildingGroups).toBeGreaterThan(0);
-    expect(roadMeshes).toBeGreaterThan(0);
+    expect(roadPaths).toBeGreaterThan(0);
     expect(lampGroups).toBeGreaterThan(0);
     expect(lampLights).toBe(lampGroups);
     expect(buildingData).toBeGreaterThan(0);
@@ -49,17 +58,12 @@ describe('OverworldScene settlement rendering parity', () => {
     // groups (park-ward Sacred Grove/Slime Pool/etc., see
     // WardFeatureClusters.ts / Phase 2a) since OverworldScene reuses the
     // same add/dispose array for both — an increase here after adding a
-    // feature cluster is expected, not a regression. roadMeshes also jumped
-    // (2 -> many) once real per-ribbon street meshes (SettlementRenderer.ts's
-    // buildRoadRibbonMeshes(), previously built but never consumed) were
-    // wired in on top of the flat per-tile pavement squares, replacing the
-    // "every road tile is an identical flat square" look with actual
-    // road-shaped ribbons — an increase here is the intended fix, not a
-    // regression. buildingGroups/buildingData also shifted again once Phase
-    // 1 of the biome/terrain overhaul added a real `mountain` RealmBiome:
-    // some high-elevation cells that used to classify as forest/taiga/etc.
-    // now classify as mountain instead, which perturbs the exact contents
-    // of RealmGenerator.ts's shuffled settlement-candidate cell list for a
+    // feature cluster is expected, not a regression. buildingGroups/
+    // buildingData also shifted again once Phase 1 of the biome/terrain
+    // overhaul added a real `mountain` RealmBiome: some high-elevation
+    // cells that used to classify as forest/taiga/etc. now classify as
+    // mountain instead, which perturbs the exact contents of
+    // RealmGenerator.ts's shuffled settlement-candidate cell list for a
     // given seed (even though the RNG streams themselves are unchanged) —
     // a different settlement count/composition for seed 1 is an expected
     // side effect of legitimately changing biome classification, not a bug.
@@ -68,8 +72,15 @@ describe('OverworldScene settlement rendering parity', () => {
     // continuous elevation changes exactly which cells fall in each level
     // band, which (like the mountain-biome change above) perturbs the
     // settlement-candidate cell list's exact contents for a given seed.
+    // roadPaths replaces the old roadMeshes snapshot: roads are now baked
+    // directly into the terrain sub-tile surface (per-chunk, on demand)
+    // instead of being eagerly built as a separate overlay mesh for every
+    // settlement regardless of player position — this counts the
+    // settlement-street + inter-settlement-road *path segments* collected
+    // at construction time (chunk-proximity-independent), not rendered
+    // meshes.
     expect(buildingGroups).toMatchSnapshot();
-    expect(roadMeshes).toMatchSnapshot();
+    expect(roadPaths).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();
     expect(buildingData).toMatchSnapshot();
   }, 120_000);
