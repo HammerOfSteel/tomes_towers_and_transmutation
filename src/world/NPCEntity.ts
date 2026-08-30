@@ -24,8 +24,9 @@ import type { SettlementEntry, DungeonEntry }   from './WorldData';
 import { generateQuest }                        from './QuestDef';
 import type { QuestDef, QuestContext }          from './QuestDef';
 import type { NpcRole, NpcDNA }                 from '@/npc-creator/types';
-import type { GameSpecies }                     from '@/procedural/ProceduralDNA';
 import { getDefaultNpcDna }                     from '@/npc-creator/defaults/NpcDefaults';
+import type { SettlementFaction }               from '@/overworld-studio';
+import { FACTION_TO_SPECIES }                   from './SettlementPopulator';
 
 // ── FSM state ─────────────────────────────────────────────────────────────────
 
@@ -83,28 +84,31 @@ const OLD_ROLE_TO_NEW_ROLE: Record<NPCRole, NpcRole> = {
   mysterious:       'mysterious',
 };
 
-// Flavor-preserving replacement for the old SUBRACES pool (human/elf/goblin/
-// orc/gnome/fae) — same structure/weighting, mapped onto the new GameSpecies
-// set: goblin→vulperia, orc→draconic, gnome→slime, fae→celestial.
-const NPC_SPECIES_POOL: GameSpecies[] = [
-  'human', 'human', 'human', 'elf', 'vulperia', 'draconic', 'slime', 'celestial',
-];
-
 /**
  * Build a new-system NpcDNA from the same seeded inputs the old npcDna()
  * used, so each NPC still looks consistent across sessions.
+ *
+ * `faction` pins the NPC's species to the settlement's own race
+ * (`FACTION_TO_SPECIES`, already used by the SI-3 `SettlementPopulator.ts`
+ * pipeline) instead of picking randomly from a fixed global species pool
+ * — a settlement should only ever be populated by its own race (a
+ * vulperia den's NPCs are always vulperia, an elven grove's are always
+ * elf, etc.), never a random mix. Per-NPC visual variety within a
+ * settlement still comes from the seeded color roll below, same as
+ * before — only the species selection changed.
  */
 export function toNpcDna(
   col:            number,
   row:            number,
   settlementSeed: number,
   role:           NPCRole,
+  faction:        SettlementFaction,
 ): NpcDNA {
   const seed = (col * 73856093) ^ (row * 19349663) ^ settlementSeed;
   const rand = mulberry32(seed);
 
   const newRole = OLD_ROLE_TO_NEW_ROLE[role] ?? 'citizen';
-  const species = NPC_SPECIES_POOL[Math.floor(rand() * NPC_SPECIES_POOL.length)] ?? 'human';
+  const species = FACTION_TO_SPECIES[faction] ?? 'human';
 
   const dna = getDefaultNpcDna(species, newRole, seed);
 
@@ -279,7 +283,7 @@ export class NPCEntity {
     const rand = mulberry32(this._seed | 1);
 
     // Build NPC rig from seeded DNA (new princess-rig-based visual system)
-    const dna  = toNpcDna(col, row, settlement.seed, role);
+    const dna  = toNpcDna(col, row, settlement.seed, role, settlement.plan.faction as SettlementFaction);
     this._rig  = buildNpcSync(dna);
 
     // Slight idle rotation offset so NPCs don't all face the same direction
