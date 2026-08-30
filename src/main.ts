@@ -89,7 +89,7 @@ import { ControlsOverlay }  from '@/ui/ControlsOverlay';
 import { ProceduralWalkController } from '@/rendering/ProceduralWalk';
 import { ProceduralBipedWalkController } from '@/rendering/ProceduralBipedWalk';
 import { OVERWORLD_SETTLEMENT_PREVIEW_KEY } from '@/overworld-studio/SettlementPreviewPayload';
-import { readPendingDevRoom, clearPendingDevRoom, readPendingSettlementLabParams } from '@/overworld-studio/DevRoomHandoff';
+import { readPendingDevRoom, clearPendingDevRoom, readPendingSettlementLabParams, readPendingOverworldLabParams } from '@/overworld-studio/DevRoomHandoff';
 
 async function main() {
   injectHudTheme();
@@ -1059,6 +1059,20 @@ async function main() {
     _sandboxUi?.setLocation('lab');
   }
 
+  /** Jump straight into the live exterior overworld using a Studio-Realm-
+   *  tab-carried-over WorldGenConfig override (Overworld Lab "Play in 3D"),
+   *  instead of the player's own saved world settings. Never persists the
+   *  override — see switchToExterior()'s configOverride parameter. Unlike
+   *  enterWaterLab()/enterSettlementLab(), this reuses the real live
+   *  OverworldScene/switchToExterior() pipeline as-is rather than a
+   *  bespoke isolated lab scene — see
+   *  docs/superpowers/plans/2026-08-30-overworld-lab.md for why. */
+  function enterOverworldLab(configOverride?: Partial<WorldGenConfig> & { seed: number }): void {
+    _exitCurrentSpecialMode();
+    currentSeed = configOverride?.seed ?? Math.floor(Math.random() * 0xFFFF_FFFF);
+    switchToExterior(configOverride);
+  }
+
   function _startDevPanelInGame(): void {
     mainMenu.hide();
     gameMode = 'interior';
@@ -1875,6 +1889,11 @@ async function main() {
        *  over-settlement handoff without going through the URL/localStorage
        *  round trip. */
       enterSettlementLab: (initialParams?: RegenParams) => enterSettlementLab(initialParams),
+      /** Jump straight into the Overworld Lab launch flow (for e2e tests).
+       *  Optionally pass a configOverride to test the "Play in 3D" carried-
+       *  over-realm handoff without going through the URL/localStorage
+       *  round trip. */
+      enterOverworldLab: (configOverride?: Partial<WorldGenConfig> & { seed: number }) => enterOverworldLab(configOverride),
       /** Perf diagnostic readout — draw stats + per-frame timing breakdown
        *  (see perfState/perfEl above). For automated perf profiling. */
       getPerfStats: () => ({
@@ -3433,6 +3452,30 @@ async function main() {
       _startDevPanelInGame();
       (window as any).__tttDevRoomStage = 'entering-settlement-lab';
       enterSettlementLab(readPendingSettlementLabParams() ?? undefined);
+      (window as any).__tttDevRoomStage = 'booted';
+      (window as any).__tttDevRoomBooted = true;
+      clearPendingDevRoom();
+    } catch (e) {
+      (window as any).__tttDevRoomStage = 'error';
+      (window as any).__tttDevRoomError = String(e);
+      console.error('[dev-room] boot failed:', e);
+    }
+  } else if (_pendingDevRoom === 'overworld-lab') {
+    try {
+      (window as any).__tttDevRoomStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttDevRoomStage = 'starting-game';
+      _startDevPanelInGame();
+      (window as any).__tttDevRoomStage = 'entering-overworld-lab';
+      const olParams = readPendingOverworldLabParams();
+      enterOverworldLab(olParams ? {
+        seed: olParams.seed,
+        worldSize: olParams.worldSize,
+        shape: olParams.shape as WorldGenConfig['shape'],
+        climate: olParams.climate as WorldGenConfig['climate'],
+        roughness: olParams.roughness,
+        settlementCount: olParams.settlementCount,
+      } : { seed: Math.floor(Math.random() * 0xFFFF_FFFF) });
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();
