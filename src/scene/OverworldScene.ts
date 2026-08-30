@@ -2736,7 +2736,7 @@ export class OverworldScene {
           for (const [dc, dr] of [[d,-dist],[d,dist],[-dist,d],[dist,d]] as [number,number][]) {
             const c2 = cc + dc, r2 = cr + dr;
             const cell = this._wg.get(c2, r2);
-            if (cell.feature === 'river' || cell.biome === 'ocean' || cell.biome === 'deep_ocean') {
+            if (cell.feature === 'river' || cell.feature === 'lake' || cell.biome === 'ocean' || cell.biome === 'deep_ocean') {
               nearRiverDir = Math.abs(dr) > Math.abs(dc)
                 ? (dr < 0 ? 'north' : 'south')
                 : (dc < 0 ? 'west'  : 'east');

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter } from '@/world/TerrainGeometryBuilder';
-import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE } from '@/world/TerrainGeometryBuilder';
+import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 
@@ -109,6 +109,44 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     const riverColor = [riverData.colors[0], riverData.colors[1], riverData.colors[2]];
     const fordColor  = [fordData.colors[0], fordData.colors[1], fordData.colors[2]];
     expect(fordColor).not.toEqual(riverColor);
+  });
+
+  it('carves a lake tile down by LAKE_DEPTH_WU, same carving math as a river at the same depth', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Same face-count shape as the river carving test: tile0 (top+east
+    // wall), tile1 lake (top only), tile2 (top+west wall) = 5 faces.
+    expect(data.positions).toHaveLength(5 * 4 * 3);
+    expect(data.indices).toHaveLength(5 * 6);
+
+    const tile1TopY = data.positions[8 * 3 + 1]!;
+    expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 1);
+  });
+
+  it('colors a lake tile distinctly from a river tile at the same depth', () => {
+    const lakeGrid = new WorldGrid(1, 1);
+    lakeGrid.set(0, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
+    const lakeData = buildTerrainGeometryData(lakeGrid, 1, 1, 0, 0, 1, 1);
+
+    const riverGrid = new WorldGrid(1, 1);
+    riverGrid.set(0, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
+    const riverData = buildTerrainGeometryData(riverGrid, 1, 1, 0, 0, 1, 1);
+
+    const lakeColor  = [lakeData.colors[0], lakeData.colors[1], lakeData.colors[2]];
+    const riverColor = [riverData.colors[0], riverData.colors[1], riverData.colors[2]];
+    expect(lakeColor).not.toEqual(riverColor);
+  });
+
+  it('uses the BIOME_LAKE palette for a lake tile', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+
+    const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
+    expect(r / g).toBeCloseTo(BIOME_LAKE[0] / BIOME_LAKE[1], 5);
+    expect(g / b).toBeCloseTo(BIOME_LAKE[1] / BIOME_LAKE[2], 5);
   });
 });
 

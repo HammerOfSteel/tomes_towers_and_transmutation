@@ -112,10 +112,9 @@ export function placeResourceNodes(worldData: WorldData): ResourceNodeRecord[] {
       if (biome === 'forest' || biome === 'taiga') {
         timberCandidates.push({ wx, wz, type: 'timber' });
       }
-      // No standalone lake/wetland biome or feature exists in the current
-      // taxonomy — river tiles (including banks/fords) are the closest
-      // current stand-in for "near water".
-      if (feature === 'river' || feature === 'river_bank' || feature === 'river_ford') {
+      // River tiles (including banks/fords) and lakes are the current
+      // "near water" essence-blossom siting condition.
+      if (feature === 'river' || feature === 'river_bank' || feature === 'river_ford' || feature === 'lake') {
         essenceCandidates.push({ wx, wz, type: 'essence' });
       }
     }

@@ -64,6 +64,9 @@ export const BIOME_VARIANTS: readonly (readonly [number, number, number])[][] = 
 
 export const BIOME_RIVER: [number, number, number] = [0.18, 0.38, 0.62]; // blue channel
 export const BIOME_WATER: [number, number, number] = [0.14, 0.26, 0.48]; // deep water
+/** Lake tint — a calmer, slightly greener blue than BIOME_RIVER, reading
+ *  as still water rather than flowing water. */
+export const BIOME_LAKE: [number, number, number] = [0.20, 0.40, 0.44];
 /** Shallow, walkable ford crossing — a pale wet-stone/sand tint distinct
  *  from both deep river blue and dry land, per RI-3's fords-are-visually-
  *  distinct requirement. */
@@ -339,6 +342,8 @@ export function buildTerrainGeometryData(
         biomeRgb = BIOME_SAND_VARIANTS[vi]!;
       } else if (cell.feature === 'river') {
         biomeRgb = BIOME_RIVER;
+      } else if (cell.feature === 'lake') {
+        biomeRgb = BIOME_LAKE;
       } else if (cell.feature === 'river_ford') {
         biomeRgb = BIOME_FORD;
       } else if (cell.feature === 'river_bank') {
