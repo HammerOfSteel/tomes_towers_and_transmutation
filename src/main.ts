@@ -1878,6 +1878,8 @@ async function main() {
       isPlayerVisible: () => player.group.visible,
       /** Whether the player is currently in swim mode (Water Lab / future deep-water use). */
       isPlayerSwimming: () => player.isSwimming,
+      /** Whether the player's lantern spell is currently toggled on. For tests. */
+      isLanternOn: () => player.isLanternOn,
       /** Teleport player to a specific world position (for tests). */
       teleportPlayer: (x: number, y: number, z: number) => {
         player.teleport(new THREE.Vector3(x, y, z));
@@ -3200,6 +3202,12 @@ async function main() {
                 if (!wasFlying) {
                   lighting.addSpellPulse(player.group.position, 0xffdd44);
                 }
+              },
+              onLanternToggle: () => {
+                // Toggle the carried lantern light + prop on/off
+                const wasOn = player.isLanternOn;
+                player.isLanternOn = !wasOn;
+                player.group.userData['_lanternToggle'] = player.isLanternOn;
               },
             },
           );
