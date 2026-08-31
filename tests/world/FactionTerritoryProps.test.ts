@@ -3,6 +3,7 @@ import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit
 import {
   buildVulperiaWarrenMoundGrid, buildVulperiaBurrowHoleGrid, buildVulperiaDenMarkerGrid,
   buildUndeadGravestoneGrid, buildUndeadBonePileGrid, buildUndeadCrumblingMoundGrid,
+  buildFaeSmallMushroomGrid, buildFaeLargeMushroomGrid, meshFaeMushroomRing,
 } from '@/world/buildings/FactionTerritoryProps';
 
 describe('vulperia territory props', () => {
@@ -111,5 +112,53 @@ describe('undead territory props', () => {
       expect(hasBlock(grid, bx!, 0, bz!)).toBe(true); // grounded, like the vulperia mound
     }
     expect(getMaterialKey(grid, 0, 0, 0)).not.toBe('earth'); // not vulperia's material
+  });
+});
+
+describe('fae territory props', () => {
+  it('small mushroom has a narrower stalk than its cap (classic toadstool silhouette)', () => {
+    const grid = buildFaeSmallMushroomGrid();
+    let stalkFootprint = 0, capFootprint = 0;
+    for (const k of grid.cells.keys()) {
+      const [, by] = k.split(',').map(Number);
+      if (by === 0) stalkFootprint++;
+      if (by === 2) capFootprint++; // cap is the top layer
+    }
+    expect(capFootprint).toBeGreaterThan(stalkFootprint);
+  });
+
+  it('small mushroom cap uses the toadstool material', () => {
+    const grid = buildFaeSmallMushroomGrid();
+    expect(getMaterialKey(grid, 0, 2, 0)).toBe('cap');
+  });
+
+  it('large mushroom is taller than the small mushroom', () => {
+    const small = buildFaeSmallMushroomGrid();
+    const large = buildFaeLargeMushroomGrid();
+    function maxHeight(g: typeof small): number {
+      let m = -Infinity;
+      for (const k of g.cells.keys()) { const [, by] = k.split(',').map(Number); m = Math.max(m, by!); }
+      return m;
+    }
+    expect(maxHeight(large)).toBeGreaterThan(maxHeight(small));
+  });
+
+  it('mushroom ring is a composite of multiple small-mushroom clones arranged in a circle', () => {
+    const ring = meshFaeMushroomRing(1);
+    // Each clone is its own child Group/Mesh subtree -- expect at least 5
+    // top-level children (the "5-6 small mushrooms" from the design).
+    expect(ring.children.length).toBeGreaterThanOrEqual(5);
+    // Confirm they're actually arranged in a circle, not stacked at the
+    // origin: at least two children have distinct (x, z) positions.
+    const positions = ring.children.map(c => `${c.position.x.toFixed(3)},${c.position.z.toFixed(3)}`);
+    expect(new Set(positions).size).toBeGreaterThan(1);
+  });
+
+  it('mushroom ring is deterministic for the same seed', () => {
+    const a = meshFaeMushroomRing(7);
+    const b = meshFaeMushroomRing(7);
+    const posA = a.children.map(c => `${c.position.x.toFixed(6)},${c.position.z.toFixed(6)}`);
+    const posB = b.children.map(c => `${c.position.x.toFixed(6)},${c.position.z.toFixed(6)}`);
+    expect(posA).toEqual(posB);
   });
 });
