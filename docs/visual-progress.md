@@ -115,6 +115,15 @@ improvements and post-processing.
 
 ---
 
+## Procedural Grass — Batch 1 (Grassland)
+
+Wind-animated 3D grass blades (bezier-curved instanced geometry, SSS/AO shading, distance
+fade) render within a 24-WU player-centered radius on grassland-biome tiles. Savanna/forest/
+taiga/tundra grass is a planned follow-up batch — see
+`docs/superpowers/specs/2026-08-31-procedural-grass-grassland-design.md`.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
