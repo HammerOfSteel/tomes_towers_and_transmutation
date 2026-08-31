@@ -1955,6 +1955,8 @@ async function main() {
       findFirstBiomeTile: (biome: BiomeId) => gameMode === 'exterior' ? (overworld?.findFirstBiomeTile(biome) ?? null) : null,
       /** Per-biome grass instanced-mesh debug info (exterior mode only). For tests. */
       getGrassDebugInfo: () => gameMode === 'exterior' ? (overworld?.getGrassDebugInfo() ?? null) : null,
+      /** Active ambient-wildlife creature count (exterior mode only). For tests. */
+      getActiveAmbientCreatureCount: () => gameMode === 'exterior' ? (overworld?.getActiveAmbientCreatureCount() ?? 0) : 0,
       /** Current renderer draw-call count (for tests — a lighter-weight, working alternative
        *  to the pre-existing but broken getPerfStats() hook below, which references an
        *  undefined `perfState`; not touched here since fixing it is a separate, unrelated
