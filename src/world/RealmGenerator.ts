@@ -80,6 +80,46 @@ export function _domainWarp(
   return { wx: nx + dx, wy: ny + dy };
 }
 
+const FACTIONS: SettlementFaction[] = ['human','elven','dwarven','orcish','vulperia','slime','vampire','undead','fae'];
+
+/** Each faction's preferred settlement biomes — used by pickFaction() to bias
+ *  (not hard-gate) which faction spawns at a given site. Every settlement-
+ *  eligible biome has at least 2 factions with affinity, so none is
+ *  "orphaned." See docs/superpowers/specs/2026-08-31-race-biome-affinity-design.md §3. */
+const BIOME_AFFINITY: Record<SettlementFaction, readonly RealmBiome[]> = {
+  elven:    ['forest', 'taiga'],
+  dwarven:  ['mountain', 'tundra'],
+  vulperia: ['grassland', 'savanna'],
+  vampire:  ['forest', 'mountain'],
+  undead:   ['tundra', 'mountain', 'desert'],
+  fae:      ['forest', 'grassland'],
+  orcish:   ['savanna', 'desert'],
+  slime:    ['grassland', 'forest'],
+  human:    ['grassland', 'forest'],
+};
+
+/** Weight multiplier applied to a faction whose BIOME_AFFINITY includes the
+ *  candidate cell's biome, relative to every other faction's baseline
+ *  weight of 1. Tunable via playtesting — not fixed in stone (see design
+ *  spec §7). */
+const AFFINITY_WEIGHT = 5;
+
+/** Weighted-random faction pick for a settlement candidate cell's biome —
+ *  every faction has a baseline weight of 1, boosted to AFFINITY_WEIGHT for
+ *  any faction whose BIOME_AFFINITY includes this biome. A bias, not a hard
+ *  rule: every faction stays reachable on every biome. Exported for direct
+ *  unit testing (same pattern as this file's own _domainWarp). */
+export function pickFaction(biome: RealmBiome, rand: () => number): SettlementFaction {
+  const weights = FACTIONS.map(f => BIOME_AFFINITY[f].includes(biome) ? AFFINITY_WEIGHT : 1);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = rand() * total;
+  for (let i = 0; i < FACTIONS.length; i++) {
+    roll -= weights[i]!;
+    if (roll < 0) return FACTIONS[i]!;
+  }
+  return FACTIONS[FACTIONS.length - 1]!; // floating-point fallback, never hit in practice
+}
+
 export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6, shape: RealmShape = 'island', climate: RealmClimate = 'temperate', roughness: number = 0.5): RealmData {
   const rand  = mulberry32(seed);
   const rand2 = mulberry32(seed ^ 0xDEADBEEF);
@@ -257,7 +297,6 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   const sv = [...validCells].sort(() => rand() - 0.5);
   const settlements: RealmSettlement[] = [];
   const MIN_DIST = Math.floor(Math.min(W,H) / (nSettlements + 2));
-  const FACTIONS: SettlementFaction[] = ['human','elven','dwarven','orcish','vulperia','slime','vampire','undead','fae'];
 
   for (const cell of sv) {
     if (settlements.length >= nSettlements) break;

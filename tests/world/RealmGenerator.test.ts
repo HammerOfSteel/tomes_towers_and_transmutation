@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { generateRealmData, classifyBiome, _domainWarp } from '@/world/RealmGenerator';
+import { generateRealmData, classifyBiome, _domainWarp, pickFaction } from '@/world/RealmGenerator';
 import { createNoise2D } from '@/core/SimplexNoise';
+import { mulberry32 } from '@/core/prng';
 
 describe('generateRealmData', () => {
   it('is deterministic for the same seed', () => {
@@ -189,6 +190,42 @@ describe('generateRealmData — domain warp wiring', () => {
         expect(realm.cells[row]![0]!.elevation).toBeGreaterThanOrEqual(0);
         expect(realm.cells[row]![realm.W - 1]!.elevation).toBeGreaterThanOrEqual(0);
       }
+    }
+  });
+});
+
+describe('pickFaction', () => {
+  it('is deterministic for the same rand sequence', () => {
+    const a = pickFaction('taiga', mulberry32(111));
+    const b = pickFaction('taiga', mulberry32(111));
+    expect(a).toBe(b);
+  });
+
+  it('picks the affinity faction for a single-affinity biome noticeably more often than uniform chance (~11%)', () => {
+    const rand = mulberry32(222);
+    let elvenCount = 0;
+    const TRIALS = 2000;
+    for (let i = 0; i < TRIALS; i++) {
+      if (pickFaction('taiga', rand) === 'elven') elvenCount++;
+    }
+    // Uniform baseline over 9 factions is ~11%; the weighted design (5x boost,
+    // only elven has taiga affinity) expects roughly 5/13 ≈ 38% — assert well
+    // above baseline with margin for RNG noise, not the exact expected value.
+    expect(elvenCount / TRIALS).toBeGreaterThan(0.25);
+  });
+
+  it('still picks a non-affinity faction sometimes (bias, not a hard rule)', () => {
+    const rand = mulberry32(333);
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) seen.add(pickFaction('taiga', rand));
+    expect(seen.size).toBeGreaterThan(1); // not exclusively elven
+  });
+
+  it('never returns a faction outside the known 9-faction set', () => {
+    const rand = mulberry32(444);
+    const valid = new Set(['human','elven','dwarven','orcish','vampire','undead','vulperia','slime','fae']);
+    for (let i = 0; i < 200; i++) {
+      expect(valid.has(pickFaction('grassland', rand))).toBe(true);
     }
   });
 });
