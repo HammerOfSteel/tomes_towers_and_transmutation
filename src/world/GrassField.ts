@@ -331,3 +331,97 @@ export function createGrassMaterial(): THREE.ShaderMaterial {
     `,
   });
 }
+
+// ── Wind system ───────────────────────────────────────────────────────────
+
+/** Drives the grass shader's wind uniforms over time — global sway + gusts. */
+export class WindSystem {
+  direction = new THREE.Vector2(1, 0.3).normalize();
+  baseStrength = 0.4;
+  gustStrength = 0.8;
+  gustFrequency = 0.3;
+  time = 0;
+
+  update(dt: number): void {
+    this.time += dt;
+  }
+}
+
+// ── GrassField ────────────────────────────────────────────────────────────
+
+/**
+ * Owns one persistent `THREE.InstancedMesh` of grass blades, rebuilt (in
+ * place — no reallocation) only when the player moves past
+ * `REBUILD_HYSTERESIS` from the last build center. Call `update()` once per
+ * frame with the player's world position, and `tickWind()` once per frame
+ * to animate the shader (cheap — uniform writes only, no CPU instance work).
+ */
+export class GrassField {
+  static readonly MAX_BLADES = 100_000; // see design spec §4's budget math
+
+  readonly mesh: THREE.InstancedMesh;
+  private readonly _material: THREE.ShaderMaterial;
+  private readonly _wind = new WindSystem();
+  private readonly _positionRotation: THREE.InstancedBufferAttribute;
+  private readonly _scaleAndVariation: THREE.InstancedBufferAttribute;
+  private _lastBuildX = Infinity;
+  private _lastBuildZ = Infinity;
+
+  constructor(private readonly _wg: WorldGrid, private readonly _seed: number) {
+    const geometry = createGrassBladeGeometry();
+    this._material = createGrassMaterial();
+
+    this._positionRotation = new THREE.InstancedBufferAttribute(
+      new Float32Array(GrassField.MAX_BLADES * 4), 4,
+    );
+    this._positionRotation.setUsage(THREE.DynamicDrawUsage);
+    this._scaleAndVariation = new THREE.InstancedBufferAttribute(
+      new Float32Array(GrassField.MAX_BLADES * 4), 4,
+    );
+    this._scaleAndVariation.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('aPositionRotation', this._positionRotation);
+    geometry.setAttribute('aScaleVariation', this._scaleAndVariation);
+
+    this.mesh = new THREE.InstancedMesh(geometry, this._material, GrassField.MAX_BLADES);
+    this.mesh.frustumCulled = false; // wind displacement can push blades outside static bounds
+    this.mesh.count = 0; // nothing placed until the first update()
+  }
+
+  /** Rebuild the instance buffer only once the player has moved past REBUILD_HYSTERESIS. */
+  update(playerX: number, playerZ: number): void {
+    const dx = playerX - this._lastBuildX;
+    const dz = playerZ - this._lastBuildZ;
+    if (Number.isFinite(this._lastBuildX) && Math.sqrt(dx * dx + dz * dz) < REBUILD_HYSTERESIS) {
+      return;
+    }
+    this._lastBuildX = playerX;
+    this._lastBuildZ = playerZ;
+
+    const placements = selectGrassPlacements(this._wg, playerX, playerZ, GRASS_RADIUS, this._seed);
+    const count = Math.min(placements.length, GrassField.MAX_BLADES);
+    const { positionRotation, scaleAndVariation } =
+      packGrassInstanceBuffers(placements.slice(0, count));
+
+    this._positionRotation.array.set(positionRotation);
+    this._scaleAndVariation.array.set(scaleAndVariation);
+    this._positionRotation.needsUpdate = true;
+    this._scaleAndVariation.needsUpdate = true;
+    this.mesh.count = count;
+  }
+
+  /** Per-frame, cheap — only updates shader uniforms, no CPU instance-data work. */
+  tickWind(dt: number): void {
+    this._wind.update(dt);
+    const u = this._material.uniforms;
+    u.uWindTime.value = this._wind.time;
+    (u.uWindDir.value as THREE.Vector2).copy(this._wind.direction);
+    u.uWindBase.value = this._wind.baseStrength;
+    u.uWindGust.value = this._wind.gustStrength;
+    u.uWindGustFreq.value = this._wind.gustFrequency;
+  }
+
+  dispose(): void {
+    this.mesh.geometry.dispose();
+    this._material.dispose();
+  }
+}

@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as THREE from 'three';
 import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
 import {
   selectGrassPlacements, packGrassInstanceBuffers,
   createGrassBladeGeometry, createGrassMaterial,
+  GrassField, REBUILD_HYSTERESIS,
 } from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
@@ -137,5 +139,65 @@ describe('createGrassMaterial', () => {
     expect(mat.uniforms.uWindTime.value).toBe(0);
     expect(mat.uniforms.uDryAmount.value).toBe(0);
     expect(mat.transparent).toBe(true);
+  });
+});
+
+describe('GrassField', () => {
+  function makeAllGrasslandGrid(size = 40): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) g.set(col, row, { elevation: 1, biome: 'grassland' });
+    }
+    return g;
+  }
+
+  it('places no blades before the first update() call', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    expect(field.mesh.count).toBe(0);
+  });
+
+  it('places blades on the first update() call', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    field.update(0, 0);
+    expect(field.mesh.count).toBeGreaterThan(0);
+  });
+
+  it('does not rebuild when the player moves less than REBUILD_HYSTERESIS', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    field.update(0, 0);
+    expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(0);
+    field.update(1, 1); // well under REBUILD_HYSTERESIS
+    expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(0); // unchanged
+  });
+
+  it('rebuilds once the player moves past REBUILD_HYSTERESIS', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    field.update(0, 0);
+    field.update(REBUILD_HYSTERESIS + 1, 0);
+    expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(REBUILD_HYSTERESIS + 1);
+  });
+
+  it('tickWind() advances the wind time uniform without needing an update() call', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
+    expect(material.uniforms.uWindTime.value).toBe(0);
+    field.tickWind(0.5);
+    expect(material.uniforms.uWindTime.value).toBeCloseTo(0.5);
+  });
+
+  it('dispose() disposes the mesh geometry and material', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    const geoDisposeSpy = vi.spyOn(field.mesh.geometry, 'dispose');
+    const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
+    const matDisposeSpy = vi.spyOn(material, 'dispose');
+    field.dispose();
+    expect(geoDisposeSpy).toHaveBeenCalled();
+    expect(matDisposeSpy).toHaveBeenCalled();
   });
 });
