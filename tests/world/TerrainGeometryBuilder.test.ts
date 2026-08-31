@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
@@ -236,6 +236,37 @@ describe('cornerHeightJitter', () => {
     const sharedCornerFromTileA = cornerHeightJitter(3, 3);
     const sharedCornerFromTileB = cornerHeightJitter(3, 3);
     expect(sharedCornerFromTileA).toBe(sharedCornerFromTileB);
+  });
+});
+
+describe('subTileBumpJitter', () => {
+  it('is deterministic for the same world coordinates', () => {
+    expect(subTileBumpJitter(12.5, -7.25)).toBe(subTileBumpJitter(12.5, -7.25));
+  });
+
+  it('stays within [-SUBTILE_BUMP_MAX, +SUBTILE_BUMP_MAX]', () => {
+    for (let i = -30; i < 30; i++) {
+      for (let j = -30; j < 30; j++) {
+        const v = subTileBumpJitter(i * 0.37, j * 0.53);
+        expect(v).toBeGreaterThanOrEqual(-SUBTILE_BUMP_MAX);
+        expect(v).toBeLessThanOrEqual(SUBTILE_BUMP_MAX);
+      }
+    }
+  });
+
+  it('produces more than one distinct value across many positions (not a constant)', () => {
+    const values = new Set<number>();
+    for (let i = -30; i < 30; i++) values.add(subTileBumpJitter(i * 0.41, i * -0.29));
+    expect(values.size).toBeGreaterThan(1);
+  });
+
+  it('gives two adjacent tiles sharing a sub-lattice point the identical bump there (seamless)', () => {
+    // The world point (10, 5) could be reached as a sub-tile corner from
+    // either side of a tile boundary — must always compute the same value
+    // regardless of which tile "owns" the lookup.
+    const a = subTileBumpJitter(10, 5);
+    const b = subTileBumpJitter(10, 5);
+    expect(a).toBe(b);
   });
 });
 

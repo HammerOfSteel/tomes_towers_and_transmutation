@@ -156,6 +156,31 @@ export function cornerHeightJitter(cornerCol: number, cornerRow: number): number
   return (unit * 2 - 1) * CORNER_JITTER_MAX; // → [-max, +max]
 }
 
+/** Max Y-offset (world units) applied to a sub-tile lattice point by subTileBumpJitter. */
+export const SUBTILE_BUMP_MAX = 0.06;
+
+/**
+ * Deterministic per-SUB-TILE-LATTICE-POINT small Y bump, in world units,
+ * within [-SUBTILE_BUMP_MAX, +SUBTILE_BUMP_MAX]. Keyed by absolute world
+ * position (not grid-corner integers, since sub-tile lattice points fall at
+ * fractional tile coordinates) — scaled and truncated to integers first
+ * (same convention as NatureAssetDNA.ts's hashIndex()) so the bit-mixing
+ * hash operates on well-defined 32-bit inputs. Because this is a pure
+ * function of world position, any two sub-tile quads referencing the same
+ * lattice point — adjacent sub-tiles within one tile, or adjacent tiles
+ * sharing a real corner — always compute the identical value there, so
+ * bumped sub-tile geometry never separates at a shared edge.
+ */
+export function subTileBumpJitter(worldX: number, worldZ: number): number {
+  const xi = Math.floor(worldX * 1000) | 0;
+  const zi = Math.floor(worldZ * 1000) | 0;
+  let h = (xi * 1274126177 + zi * 2654435761) | 0;
+  h = (h ^ (h >>> 15)) * 2246822519 | 0;
+  h = h ^ (h >>> 13);
+  const unit = (h >>> 0) / 4294967296; // → [0, 1)
+  return (unit * 2 - 1) * SUBTILE_BUMP_MAX; // → [-max, +max]
+}
+
 /** True for any tile that should never participate in ramp geometry —
  *  neither as the tile being classified nor as a neighbor contributing to
  *  a corner — so shorelines/riverbanks keep today's exact flat-carved +
