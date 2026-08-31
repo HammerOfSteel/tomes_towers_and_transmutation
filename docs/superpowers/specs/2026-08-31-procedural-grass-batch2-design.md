@@ -90,27 +90,38 @@ have no ready-made preset in that reference material, so their values are new, d
 same logic the skill applies elsewhere (shorter+sparser for shade-blocked/harsh biomes) and
 cross-checked against each biome's ground color above.
 
-| Biome | segments | width | height | curvature | density/unit² | baseColor | tipColor | dryAmount | maxBlades |
-|---|---|---|---|---|---|---|---|---|---|
-| grassland *(batch 1, unchanged)* | 4 | 0.06 | 0.9 | 0.28 | 35 | `0x3a7d2c` | `0x8bbf40` | 0 | 100,000 |
-| savanna | 4 | 0.05 | 0.8 | 0.2 | 15 | `0x9b8b4a` | `0xd4c078` | 0.6 | 44,000 |
-| tundra | 2 | 0.04 | 0.2 | 0.05 | 25 | `0x6b7d4a` | `0x8b9d5a` | 0.3 | 72,000 |
-| forest | 4 | 0.05 | 0.6 | 0.22 | 12 | `0x2e4a22` | `0x5a7d3a` | 0.1 | 35,000 |
-| taiga | 3 | 0.04 | 0.35 | 0.15 | 8 | `0x2f3d2c` | `0x4a5d42` | 0.15 | 24,000 |
+| Biome | segments | width | height | curvature | density/unit² | baseColor | tipColor | dryAmount | windBase | windGust | windGustFreq | maxBlades |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| grassland *(batch 1, unchanged)* | 4 | 0.06 | 0.9 | 0.28 | 35 | `0x3a7d2c` | `0x8bbf40` | 0 | 0.4 | 0.8 | 0.3 | 100,000 |
+| savanna | 4 | 0.05 | 0.8 | 0.2 | 15 | `0x9b8b4a` | `0xd4c078` | 0.6 | 0.3 | 0.5 | 0.3 | 44,000 |
+| tundra | 2 | 0.04 | 0.2 | 0.05 | 25 | `0x6b7d4a` | `0x8b9d5a` | 0.3 | 0.6 | 1.2 | 0.3 | 72,000 |
+| forest | 4 | 0.05 | 0.6 | 0.22 | 12 | `0x2e4a22` | `0x5a7d3a` | 0.1 | 0.25 | 0.4 | 0.25 | 35,000 |
+| taiga | 3 | 0.04 | 0.35 | 0.15 | 8 | `0x2f3d2c` | `0x4a5d42` | 0.15 | 0.2 | 0.35 | 0.25 | 24,000 |
 
-- **Savanna**: sparse, dry, sun-bleached — the skill's own `savanna` preset values verbatim.
-  `dryAmount: 0.6` (high) gives visible tan/gold dryness variation matching the arid ground tone.
+All 5 presets share the same `dryColor` (`0xc4a84b`, batch 1's existing "straw" tint) — only
+`dryAmount` (how visible that tint is) varies per biome; a distinct dry-tint hue per biome isn't
+worth the added tuning surface for a secondary variation effect.
+
+- **Savanna**: sparse, dry, sun-bleached — the skill's own `savanna` preset values verbatim
+  (including `windBase`/`windGust`). `dryAmount: 0.6` (high) gives visible tan/gold dryness
+  variation matching the arid ground tone.
 - **Tundra**: very short (`height: 0.2`), low-segment (2 — barely-curved stubby blades, cheapest
   to render), moderate density (hardy groundcover can form fairly continuous low mats even in a
-  harsh climate) — the skill's own `tundra` preset values verbatim.
+  harsh climate), and the strongest wind response of any preset (`windBase: 0.6`,
+  `windGust: 1.2`) — the skill's own `tundra` preset values verbatim, reflecting how exposed,
+  treeless tundra is typically the windiest of these biomes.
 - **Forest**: shorter and noticeably sparser than grassland (`density: 12` vs `35`) — canopy
   shade limits undergrowth, and forest tiles already carry the heaviest tree-scatter load in this
   game, so keeping forest floor grass light avoids compounding visual/GPU cost on already-busy
   tiles. Dark, cool-toned color family tied to the forest ground texture's `#3e5a2c`. Low
-  `dryAmount` (0.1) — forest floors don't dry out as visibly as open grassland/savanna.
+  `dryAmount` (0.1) — forest floors don't dry out as visibly as open grassland/savanna. Calmer
+  wind (`windBase: 0.25`, `windGust: 0.4`) than open grassland — a forest canopy blocks most
+  direct wind from reaching floor-level undergrowth.
 - **Taiga**: the sparsest and shortest of all four (`density: 8`, `height: 0.35`) — coniferous
   floor is dominated by needle-litter/moss, with only sparse grass/sedge tufts, matching real
-  taiga groundcover and this game's darkest, most saturated-shade ground texture (`#374a34`).
+  taiga groundcover and this game's darkest, most saturated-shade ground texture (`#374a34`). The
+  calmest wind of all 5 presets (`windBase: 0.2`, `windGust: 0.35`) — the densest, most sheltered
+  canopy of any of these biomes.
 
 **`maxBlades` sizing** (new — batch 1's flat `100_000` was sized specifically for grassland's
 density): `ceil(2304 * densityPerUnit2 * 1.25)`, rounded up to a clean thousand, where `2304` is
