@@ -57,6 +57,29 @@ function fbmR(noise: (x: number, y: number) => number, x: number, y: number, oct
   return (v / max + 1) / 2;
 }
 
+/** Broad, low-frequency displacement applied to a biome-sampling coordinate
+ *  before every noise lookup that feeds classifyBiome() — makes noise-
+ *  contour-shaped biome borders (coastlines, treelines, climate-zone
+ *  edges) read as organically wobbly instead of a perfect iso-contour.
+ *  Pure function of (nx, ny, roughness) plus the caller-supplied seeded
+ *  noiseW field — exported for direct unit testing (same pattern as
+ *  TerrainGeometryBuilder.ts's subTileBumpJitter/_subTileGroundVariant).
+ *  See docs/superpowers/specs/2026-08-31-organic-biome-transitions-design.md §3. */
+export function _domainWarp(
+  nx: number, ny: number, roughness: number,
+  noiseW: (x: number, y: number) => number,
+): { wx: number; wy: number } {
+  const WARP_FREQ = 0.6; // well below the elevation noise's own scale (1.8–3.0) — broad, sweeping wobble, not speckle
+  const warpAmount = 0.03 + roughness * 0.05; // 0.03–0.08, scales with the existing roughness knob
+  const dx = noiseW(nx * WARP_FREQ, ny * WARP_FREQ) * warpAmount;
+  // Offset sample point (not a different noise field) decorrelates dy from
+  // dx using the same single noiseW field — same "+offset for decorrelation"
+  // convention already used below for moisture (nx+5,ny+5) and temperature
+  // (nx+10,ny+10) sampling.
+  const dy = noiseW(nx * WARP_FREQ + 31.7, ny * WARP_FREQ + 47.3) * warpAmount;
+  return { wx: nx + dx, wy: ny + dy };
+}
+
 export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6, shape: RealmShape = 'island', climate: RealmClimate = 'temperate', roughness: number = 0.5): RealmData {
   const rand  = mulberry32(seed);
   const rand2 = mulberry32(seed ^ 0xDEADBEEF);
