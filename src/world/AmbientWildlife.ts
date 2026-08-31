@@ -260,6 +260,17 @@ export class AmbientCreature {
   }
 
   update(playerPos: THREE.Vector3, dt: number): void {
+    const dxLOD = this.root.position.x - playerPos.x;
+    const dzLOD = this.root.position.z - playerPos.z;
+    const distanceToPlayer = Math.sqrt(dxLOD * dxLOD + dzLOD * dzLOD);
+    if (computeAmbientLOD(distanceToPlayer) === 'far') {
+      // Frozen — skip the behavior tick and animation entirely. Position,
+      // rotation, and _behavior are left untouched so the creature resumes
+      // exactly where it was once the player is back in range (see design
+      // spec §3's accepted flee-state edge case for why this is safe).
+      return;
+    }
+
     this._behavior = tickAmbientBehavior(
       this._behavior,
       this.root.position.x, this.root.position.z,

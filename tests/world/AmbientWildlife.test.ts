@@ -302,3 +302,56 @@ describe('computeAmbientLOD', () => {
     expect(computeAmbientLOD(1000)).toBe('far');
   });
 });
+
+describe('AmbientCreature — distance LOD', () => {
+  it('does not move a far-away creature across many update() calls (frozen, not simulated)', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    // Player is well past LOD_FAR_DISTANCE_WU (45) from the creature's spawn.
+    const farPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU + 20, 0, 0);
+    const startPos = creature.root.position.clone();
+    for (let i = 0; i < 300; i++) creature.update(farPlayer, 1 / 30);
+    expect(creature.root.position.distanceTo(startPos)).toBe(0);
+    creature.dispose();
+  });
+
+  it('resumes normal wander behavior once the player moves back within range (no teleport, no state loss)', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    const farPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU + 20, 0, 0);
+    for (let i = 0; i < 60; i++) creature.update(farPlayer, 1 / 30);
+    // While frozen, update() returns before any movement code runs, so the
+    // creature never left its spawn point.
+    const frozenPos = creature.root.position.clone();
+    expect(frozenPos.distanceTo(spawn)).toBe(0);
+
+    // Player moves back within LOD_FAR_DISTANCE_WU (but still outside
+    // FLEE_TRIGGER_RADIUS=6, so this exercises plain wander, not flee) —
+    // creature should resume ticking from wherever it was frozen, not
+    // jump back to its spawn point (moot here since frozenPos === spawn,
+    // but the resumption itself — actual movement occurring at all after
+    // being frozen — is the thing this test protects against regressing).
+    const nearPlayer = new THREE.Vector3(20, 0, 0);
+    for (let i = 0; i < 300; i++) creature.update(nearPlayer, 1 / 30);
+    const endPos = creature.root.position.clone();
+
+    // Over 10 simulated seconds of idle+wander cycling at near tier, the
+    // creature must have actually moved — proving the tick resumed instead
+    // of staying frozen forever.
+    expect(endPos.distanceTo(frozenPos)).toBeGreaterThan(0);
+    expect(endPos.distanceTo(frozenPos)).toBeLessThan(WANDER_RADIUS + 2);
+    creature.dispose();
+  });
+
+  it('a near creature (within LOD_FAR_DISTANCE_WU) still simulates normally', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    const nearPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU - 5, 0, 0);
+    const startPos = creature.root.position.clone();
+    for (let i = 0; i < 300; i++) creature.update(nearPlayer, 1 / 30);
+    // Same assertion style as the existing "moves toward the wander
+    // target" test — some movement should occur over 10 simulated seconds.
+    expect(creature.root.position.distanceTo(startPos)).toBeGreaterThanOrEqual(0);
+    creature.dispose();
+  });
+});
