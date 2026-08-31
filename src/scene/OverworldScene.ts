@@ -83,6 +83,7 @@ import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import { GrassField, GRASS_PRESETS } from '@/world/GrassField';
+import { AmbientCreature, selectAmbientSpawnPoints, MAX_ACTIVE_AMBIENT_CREATURES } from '@/world/AmbientWildlife';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { renderSettlementPlan } from './SettlementRenderer';
 
@@ -168,6 +169,11 @@ interface TerrainChunkData {
    *  chunk's own load/unload/enter/exit lifecycle. See TerrainTextures.ts /
    *  docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md. */
   groundMeshes: THREE.Mesh[];
+  /** Peaceful ambient wildlife (rabbits/goats) spawned for this chunk — see
+   *  AmbientWildlife.ts / docs/superpowers/specs/2026-08-31-ambient-wildlife-design.md.
+   *  Unlike tree/rock/grass scatter, these need individual per-frame movement updates, so
+   *  they're tracked here (and in `_activeAmbientCreatures`) rather than merged into `scatter`. */
+  ambientCreatures: AmbientCreature[];
 }
 
 export class OverworldScene {
@@ -236,6 +242,10 @@ export class OverworldScene {
   private readonly _npcs: NPCEntity[] = [];
   /** Phase 7h — spatial hash for O(1) hostile-enemy proximity lookups. */
   private readonly _hostileHash = new SpatialHash<SlimeEnemy>(8);
+  /** Flat running list of every currently-loaded chunk's ambient creatures, mirroring
+   *  `_enemies` — appended to in `_loadTerrainChunk()`, spliced from in `_unloadTerrainChunk()`,
+   *  ticked once per frame in `update()`. Capped at MAX_ACTIVE_AMBIENT_CREATURES globally. */
+  private readonly _activeAmbientCreatures: AmbientCreature[] = [];
   /** Phase 7h.2 — one draw call for all slime bodies (128 slots; enemies never exceed that). */
   private readonly _slimeIM: THREE.InstancedMesh = createSlimeBodyIM(128);
   /** Procedural grass — one `GrassField` per `GRASS_PRESETS` entry (grassland/savanna/forest/
@@ -450,6 +460,7 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
     for (const gf of this._grassFields) this.scene.add(gf.mesh);
+    for (const c of this._activeAmbientCreatures) this.scene.add(c.root);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
     for (const gb of this._gladeEntranceBuilts) this.scene.add(gb.root);
@@ -505,6 +516,7 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
     for (const gf of this._grassFields) this.scene.remove(gf.mesh);
+    for (const c of this._activeAmbientCreatures) this.scene.remove(c.root);
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.remove(cb.root);
     for (const gb of this._gladeEntranceBuilts) this.scene.remove(gb.root);
@@ -601,6 +613,8 @@ export class OverworldScene {
       gf.tickWind(dt);
     }
 
+    for (const creature of this._activeAmbientCreatures) creature.update(pos, dt);
+
     // Tick resource node respawn timers
     for (let i = 0; i < this._respawnTimers.length; i++) {
       if (this._respawnTimers[i]! > 0) {
@@ -636,6 +650,8 @@ export class OverworldScene {
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
     for (const gf of this._grassFields) gf.dispose();
+    for (const c of this._activeAmbientCreatures) c.dispose();
+    this._activeAmbientCreatures.length = 0;
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
     for (const cb of this._caveEntranceBuilts)  cb.dispose();
     for (const gb of this._gladeEntranceBuilts) gb.dispose();
@@ -682,6 +698,11 @@ export class OverworldScene {
    *  so the prompt fires as the player approaches the door, not after clipping in. */
   nearTowerEntrance(pos: THREE.Vector3): boolean {
     return pos.x * pos.x + pos.z * pos.z < 6.5 * 6.5;
+  }
+
+  /** Number of currently-active ambient wildlife creatures (for tests/dev-tooling). */
+  getActiveAmbientCreatureCount(): number {
+    return this._activeAmbientCreatures.length;
   }
 
   /** Number of active static physics bodies (tower, buildings — terrain
@@ -1291,7 +1312,32 @@ export class OverworldScene {
       for (const c of colliders) c.setEnabled(false);
     }
 
-    const data: TerrainChunkData = { mesh, body, scatter, colliders, roadMeshes, groundMeshes };
+    // Ambient wildlife — chunk-scoped like scatter, but tracked individually (not merged into
+    // the static `scatter` group) since each creature needs its own per-frame movement update.
+    const ambientCreatures: AmbientCreature[] = [];
+    const chunkWorldSize = T * CHUNK_SIZE;
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
+    const spawnPoints = selectAmbientSpawnPoints(
+      this._wg, originX, originZ, chunkWorldSize,
+      (this._seed ^ 0x4A2E_1F87) ^ (coord.cx * 55871) ^ (coord.cz * 74653),
+    );
+    for (const sp of spawnPoints) {
+      if (this._activeAmbientCreatures.length >= MAX_ACTIVE_AMBIENT_CREATURES) break;
+      const spCol = Math.floor(sp.x / T + GHW);
+      const spRow = Math.floor(sp.z / T + GHH);
+      const spCell = this._wg.get(spCol, spRow);
+      const spawnPos = new THREE.Vector3(sp.x, spCell.elevation * SH, sp.z);
+      const creature = new AmbientCreature(
+        sp.species, spawnPos,
+        (this._seed ^ 0x1B7A_9E33) ^ Math.round(sp.x * 131) ^ Math.round(sp.z * 977),
+      );
+      if (this._isInScene) this.scene.add(creature.root);
+      ambientCreatures.push(creature);
+      this._activeAmbientCreatures.push(creature);
+    }
+
+    const data: TerrainChunkData = { mesh, body, scatter, colliders, roadMeshes, groundMeshes, ambientCreatures };
     this._terrainChunkData.set(`${coord.cx},${coord.cz}`, data);
     return data;
   }
@@ -1347,6 +1393,13 @@ export class OverworldScene {
         obj.geometry.dispose();
       }
     });
+
+    for (const creature of data.ambientCreatures) {
+      this.scene.remove(creature.root);
+      creature.dispose();
+      const idx = this._activeAmbientCreatures.indexOf(creature);
+      if (idx !== -1) this._activeAmbientCreatures.splice(idx, 1);
+    }
   }
 
   /** Create a fixed static rigid body with the given collider at (x, y, z),
