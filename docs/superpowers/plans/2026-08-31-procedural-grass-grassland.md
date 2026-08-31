@@ -315,8 +315,8 @@ describe('packGrassInstanceBuffers', () => {
     expect(positionRotation[1]).toBe(2);
     expect(positionRotation[2]).toBe(3);
     expect(positionRotation[3]).toBe(0.5);
-    expect(scaleAndVariation[4]).toBe(1.1);
-    expect(scaleAndVariation[7]).toBe(0.7);
+    expect(scaleAndVariation[4]).toBeCloseTo(1.1, 5);
+    expect(scaleAndVariation[7]).toBeCloseTo(0.7, 5);
   });
 
   it('returns empty arrays for an empty placements list', () => {
@@ -347,7 +347,6 @@ Expected: FAIL with "Failed to resolve import `@/world/GrassField`" (the file do
  * tree/rock scatter, so applying it across the full streamed terrain area
  * would blow the desktop instanced-mesh budget).
  */
-import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { isScatterAllowed } from '@/world/ScatterRules';
@@ -443,14 +442,16 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/world/GrassField.test.ts`
-Expected: PASS — all 8 tests.
+Expected: PASS — all 9 tests.
 
 - [ ] **Step 5: Check `tsc` baseline is unchanged**
 
 Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
-Expected: same count as Task 1 Step 1. Note: this file imports `* as THREE from 'three'` but
-doesn't use it yet in this task — that's fine, Tasks 3-4 use it in the same file, and an unused
-namespace import does not raise a TS6133 error (only unused named bindings do).
+Expected: same count as Task 1 Step 1. Note: this project's tsconfig has `noUnusedLocals`
+enabled, so an unused `import * as THREE from 'three';` WOULD raise a TS6133 error even though
+it's a namespace import — this task's code intentionally does NOT import THREE yet (it isn't
+used by the pure-logic functions added here); Task 3 adds the `import * as THREE from 'three';`
+line itself, at the point it first becomes used.
 
 - [ ] **Step 6: Commit**
 
@@ -544,9 +545,21 @@ describe('createGrassMaterial', () => {
 Run: `npx vitest run tests/world/GrassField.test.ts`
 Expected: FAIL — `createGrassBladeGeometry`/`createGrassMaterial` are not exported yet.
 
-- [ ] **Step 3: Append the geometry + material section to `GrassField.ts`**
+- [ ] **Step 3: Add the `THREE` import, then append the geometry + material section**
 
-Add to `src/world/GrassField.ts`, after `packGrassInstanceBuffers()`:
+First, add the `THREE` import at the top of `src/world/GrassField.ts` (this file didn't need it
+for Task 2's pure-logic functions, but the geometry/material code below does):
+
+```ts
+import { mulberry32 } from '@/core/prng';
+```
+becomes:
+```ts
+import * as THREE from 'three';
+import { mulberry32 } from '@/core/prng';
+```
+
+Then add to `src/world/GrassField.ts`, after `packGrassInstanceBuffers()`:
 
 ```ts
 // ── Blade geometry ────────────────────────────────────────────────────────
