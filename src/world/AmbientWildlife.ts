@@ -296,3 +296,23 @@ export class AmbientCreature {
     this._rig.dispose();
   }
 }
+
+// ── Distance LOD ──────────────────────────────────────────────────────────
+
+export type AmbientLODTier = 'near' | 'far';
+
+/**
+ * Distance (world units) beyond which an ambient creature is frozen (its
+ * behavior-FSM tick and skeletal animation are both skipped) instead of
+ * fully simulated. See docs/superpowers/specs/2026-08-31-ambient-wildlife-
+ * lod-design.md §3 for the exact rationale — comfortably past this game's
+ * tight isometric-camera view radius, and well outside FLEE_EXIT_RADIUS
+ * (9) so a fleeing creature always exits flee under normal player
+ * movement before ever reaching this threshold.
+ */
+export const LOD_FAR_DISTANCE_WU = 45;
+
+/** Pure distance -> LOD tier classification. No THREE.js dependency. */
+export function computeAmbientLOD(distanceToPlayer: number): AmbientLODTier {
+  return distanceToPlayer > LOD_FAR_DISTANCE_WU ? 'far' : 'near';
+}

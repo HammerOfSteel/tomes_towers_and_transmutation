@@ -7,7 +7,7 @@ import {
   WANDER_SPEED, FLEE_SPEED, IDLE_MIN_DWELL, IDLE_MAX_DWELL,
   MAX_ACTIVE_AMBIENT_CREATURES, AMBIENT_BASE_SPACING,
   selectAmbientSpawnPoints, tickAmbientBehavior, type AmbientBehaviorState,
-  AmbientCreature,
+  AmbientCreature, computeAmbientLOD, LOD_FAR_DISTANCE_WU,
 } from '@/world/AmbientWildlife';
 
 describe('AMBIENT_SPECIES', () => {
@@ -280,5 +280,25 @@ describe('AmbientCreature', () => {
   it('dispose() does not throw and can be called safely', () => {
     const creature = new AmbientCreature('goat', new THREE.Vector3(0, 0, 0), 3);
     expect(() => creature.dispose()).not.toThrow();
+  });
+});
+
+describe('computeAmbientLOD', () => {
+  it('returns "near" for a distance well inside the threshold', () => {
+    expect(computeAmbientLOD(0)).toBe('near');
+    expect(computeAmbientLOD(10)).toBe('near');
+    expect(computeAmbientLOD(LOD_FAR_DISTANCE_WU - 1)).toBe('near');
+  });
+
+  it('returns "near" exactly at the threshold (boundary is inclusive of near)', () => {
+    expect(computeAmbientLOD(LOD_FAR_DISTANCE_WU)).toBe('near');
+  });
+
+  it('returns "far" just past the threshold', () => {
+    expect(computeAmbientLOD(LOD_FAR_DISTANCE_WU + 0.001)).toBe('far');
+  });
+
+  it('returns "far" for a distance well past the threshold', () => {
+    expect(computeAmbientLOD(1000)).toBe('far');
   });
 });
