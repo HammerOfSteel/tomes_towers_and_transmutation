@@ -149,20 +149,12 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
 
 // ── Blade geometry ────────────────────────────────────────────────────────
 
-const BLADE_SEGMENTS  = 4;
-const BLADE_WIDTH      = 0.06;
-const BLADE_HEIGHT     = 0.9;
-const BLADE_CURVATURE  = 0.28;
 const FADE_START = GRASS_RADIUS - 10;
 const FADE_END   = GRASS_RADIUS - 2;
 
 /** Tapered, bezier-curved triangle-strip blade (see procedural-grass-threejs skill). */
-export function createGrassBladeGeometry(
-  segments = BLADE_SEGMENTS,
-  width = BLADE_WIDTH,
-  height = BLADE_HEIGHT,
-  curvature = BLADE_CURVATURE,
-): THREE.BufferGeometry {
+export function createGrassBladeGeometry(preset: GrassPreset): THREE.BufferGeometry {
+  const { segments, width, height, curvature } = preset;
   const vertCount = (segments + 1) * 2 + 1;
   const positions = new Float32Array(vertCount * 3);
   const uvs = new Float32Array(vertCount * 2);
@@ -213,23 +205,23 @@ export function createGrassBladeGeometry(
 // ── Shader material ───────────────────────────────────────────────────────
 
 /**
- * Wind-animated grass blade material. Uses Three.js's automatically-injected
- * built-ins (`position`, `normal`, `uv`, `modelMatrix`, `projectionMatrix`,
- * `viewMatrix`, `cameraPosition`) directly without redeclaring them — the
- * same convention already used by this project's `WaterMaterial.ts`
- * (confirmed working there: redeclaring these causes a GLSL "redefinition"
- * compile error, since `THREE.ShaderMaterial` always prepends them).
+ * Wind-animated grass blade material, tuned per `preset` (colors, dry-tint amount, wind
+ * response). Uses Three.js's automatically-injected built-ins (`position`, `normal`, `uv`,
+ * `modelMatrix`, `projectionMatrix`, `viewMatrix`, `cameraPosition`) directly without
+ * redeclaring them — the same convention already used by this project's `WaterMaterial.ts`
+ * (confirmed working there: redeclaring these causes a GLSL "redefinition" compile error,
+ * since `THREE.ShaderMaterial` always prepends them).
  */
-export function createGrassMaterial(): THREE.ShaderMaterial {
+export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: true,
     side: THREE.DoubleSide,
     uniforms: {
-      uBaseColor:    { value: new THREE.Color(0x3a7d2c) },
-      uTipColor:     { value: new THREE.Color(0x8bbf40) },
-      uDryColor:     { value: new THREE.Color(0xc4a84b) },
-      uDryAmount:    { value: 0 },
+      uBaseColor:    { value: new THREE.Color(preset.baseColor) },
+      uTipColor:     { value: new THREE.Color(preset.tipColor) },
+      uDryColor:     { value: new THREE.Color(preset.dryColor) },
+      uDryAmount:    { value: preset.dryAmount },
       uSssStrength:  { value: 0.5 },
       uAoStrength:   { value: 0.6 },
       uSunDir:       { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
@@ -237,9 +229,9 @@ export function createGrassMaterial(): THREE.ShaderMaterial {
       uAmbientColor: { value: new THREE.Color(0x4488aa) },
       uWindTime:     { value: 0 },
       uWindDir:      { value: new THREE.Vector2(1, 0.3).normalize() },
-      uWindBase:     { value: 0.4 },
-      uWindGust:     { value: 0.8 },
-      uWindGustFreq: { value: 0.3 },
+      uWindBase:     { value: preset.windBase },
+      uWindGust:     { value: preset.windGust },
+      uWindGustFreq: { value: preset.windGustFreq },
       uFadeStart:    { value: FADE_START },
       uFadeEnd:      { value: FADE_END },
       uFadeCenter:   { value: new THREE.Vector2(0, 0) },

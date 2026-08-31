@@ -131,7 +131,7 @@ describe('packGrassInstanceBuffers', () => {
 
 describe('createGrassBladeGeometry', () => {
   it('produces the expected vertex and index counts for the default tuning', () => {
-    const geo = createGrassBladeGeometry(4, 0.06, 0.9, 0.28);
+    const geo = createGrassBladeGeometry(GRASS_PRESETS.grassland);
     // (segments+1)*2 cross-section verts + 1 tip vertex = 5*2+1 = 11
     expect(geo.attributes.position.count).toBe(11);
     // segments*6 (2 tris per cross-section pair) + 3 (tip triangle) = 4*6+3 = 27
@@ -140,14 +140,14 @@ describe('createGrassBladeGeometry', () => {
   });
 
   it('computes vertex normals (non-zero normal attribute)', () => {
-    const geo = createGrassBladeGeometry(4, 0.06, 0.9, 0.28);
+    const geo = createGrassBladeGeometry(GRASS_PRESETS.grassland);
     expect(geo.attributes.normal).toBeDefined();
   });
 });
 
 describe('createGrassMaterial', () => {
   it('declares the custom instanced attributes and wind uniforms in the vertex shader', () => {
-    const mat = createGrassMaterial();
+    const mat = createGrassMaterial(GRASS_PRESETS.grassland);
     expect(mat.vertexShader).toContain('aPositionRotation');
     expect(mat.vertexShader).toContain('aScaleVariation');
     expect(mat.vertexShader).toContain('uWindTime');
@@ -163,25 +163,34 @@ describe('createGrassMaterial', () => {
     // direction that happened to reduce camera distance) ever rendered. The fade must be
     // computed from a world-space center (the player's position, passed in via uFadeCenter)
     // instead.
-    const mat = createGrassMaterial();
+    const mat = createGrassMaterial(GRASS_PRESETS.grassland);
     expect(mat.vertexShader).not.toContain('distance(cameraPosition, worldPos)');
     expect(mat.vertexShader).toMatch(/distance\(\s*worldPos\.xz\s*,\s*uFadeCenter\s*\)/);
   });
 
   it('declares the color/shading uniforms in the fragment shader', () => {
-    const mat = createGrassMaterial();
+    const mat = createGrassMaterial(GRASS_PRESETS.grassland);
     expect(mat.fragmentShader).toContain('uBaseColor');
     expect(mat.fragmentShader).toContain('uTipColor');
     expect(mat.fragmentShader).toContain('uSssStrength');
   });
 
   it('has sensible default uniform values', () => {
-    const mat = createGrassMaterial();
+    const mat = createGrassMaterial(GRASS_PRESETS.grassland);
     expect(mat.uniforms.uWindTime.value).toBe(0);
     expect(mat.uniforms.uDryAmount.value).toBe(0);
     expect(mat.transparent).toBe(true);
     expect((mat.uniforms.uFadeCenter.value as THREE.Vector2).x).toBe(0);
     expect((mat.uniforms.uFadeCenter.value as THREE.Vector2).y).toBe(0);
+  });
+
+  it('reflects the given preset\'s colors, not always the grassland defaults', () => {
+    const mat = createGrassMaterial(GRASS_PRESETS.savanna);
+    const baseColor = mat.uniforms.uBaseColor.value as THREE.Color;
+    const expected = new THREE.Color(GRASS_PRESETS.savanna.baseColor);
+    expect(baseColor.getHex()).toBe(expected.getHex());
+    expect(mat.uniforms.uDryAmount.value).toBe(GRASS_PRESETS.savanna.dryAmount);
+    expect(mat.uniforms.uWindBase.value).toBe(GRASS_PRESETS.savanna.windBase);
   });
 });
 
