@@ -708,7 +708,7 @@ Implementation plan: `docs/superpowers/plans/2026-08-31-race-biome-affinity-plan
       biomes/factions become reachable, perturbing the exact settlement list for that seed).
       `tsc --noEmit` steady at 144.
 
-### Phase 6 — Race-specific biome environment packs
+### Phase 6 — Race-specific biome environment packs 🔶 BATCH 1 DONE (2026-08-31)
 **Depends on:** Phase 5 (needs faction-biome affinity to exist for "near a settlement" placement to be meaningful), and reuses Phase 7/8's asset-variety and texture work once those land.
 
 This is the big thematic payoff the user is most excited about: unique
@@ -720,20 +720,56 @@ luminous mushroom rings and firefly-lit groves, etc. — extending the same
 "no shared assets between races" principle the settlement building work
 already established, out into the *land* around each settlement.
 
-- [ ] Design a small per-faction "territory dressing" prop list (3-5 unique
-      scatter props per faction, reusing/adapting geometry techniques
-      already proven in `FactionBuildingVariants.ts`/`BlockKit.ts` rather
-      than inventing a whole new asset pipeline).
-- [ ] A "territory radius" concept around each settlement (or reuse
-      whatever ward/settlement-radius data already exists) that biases
-      scatter placement within it toward that faction's prop list instead
-      of the generic biome-only scatter used everywhere else.
-- [ ] Explicitly requires research/planning per-race before implementation
-      — mirror the settlement-visual-fidelity initiative's own process
-      (research real-world/fantasy reference for each race's "territory"
-      concept, then design, then implement) rather than skipping straight
-      to code, since this is exactly the kind of step the user has
-      repeatedly pushed back on rushing.
+Design spec: `docs/superpowers/specs/2026-08-31-race-territory-dressing-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-31-race-territory-dressing-plan.md`.
+**Only the first implementation batch — vulperia, undead, fae — is done.** The remaining 6
+factions (elven, dwarven, orcish, vampire, slime, human) have a lightweight concept-only prop
+list (design spec §3) but no implementation yet; each needs its own short design/research pass
+before its own batch, mirroring exactly how the settlement building work itself rolled out.
+
+- [x] `src/world/TerritoryDressing.ts` — pure territory-radius (settlement boundary radius × 2.5)
+      and gradient placement-probability logic (up to 70% right at the settlement centre, fading
+      linearly to 0% at the territory edge — a bias, not a hard wall), plus `findTerritoryFaction()`
+      (nearest-settlement-wins for overlapping territories).
+- [x] `src/world/buildings/FactionTerritoryProps.ts` — vulperia (warren mound with a carved
+      burrow entrance, a smaller burrow-hole cluster, a bark-textured den marker — the first two
+      reuse `FactionBlockProfiles.ts`'s existing `buildVulperiaDenMoundGrid()` grounded-heightfield-
+      mound technique at scatter scale, no new geometry code needed), undead (a simple gravestone
+      slab, an irregular bone-pile marker, and a crumbling burial mound — deliberately reusing the
+      *same* mound technique as vulperia's warren mound but with `suppressChamfer` forced on and
+      an ash-stone palette, showing the shared block-kit engine producing a very different read
+      purely from chamfer settings + material), and fae (small/large luminous toadstools — a new,
+      genuinely scatter-scale mushroom grid, since the existing `buildFaeStalkGrid()` has an
+      8-block-level building-scale minimum height — plus a "mushroom ring" composite that clones
+      5-6 small mushrooms in a circle, mirroring the Fae Court building's own existing "ring of
+      smaller toadstools" pattern). All reuse existing `FactionBlockTextures.ts` textures
+      (`earthTexture`/`barkTexture`/`ashStoneTexture`/`toadstoolTexture`) already used by those
+      same factions' own buildings, so dressing visually matches the architecture it surrounds.
+- [x] `OverworldScene.ts`: `_settlementPositions` gained a `faction` field (populated at both
+      existing push sites); a small pool of pre-built prop variants per batch-1 faction is built
+      once at construction (`_buildTerritoryPropPool()`) and cloned (never rebuilt) at each
+      qualifying scatter point; `_buildChunkScatter()`'s tree/rock loops call a new
+      `_tryPlaceTerritoryProp()` helper that substitutes a territory prop instead of the normal
+      tree/rock when a point falls within a settlement's territory and the gradient roll hits.
+- [x] Tests: 9 `TerritoryDressing.ts` unit tests (probability bounds/monotonicity, nearest-
+      settlement-wins, empty-list safety), 14 `FactionTerritoryProps.ts` tests (burrow-gap
+      geometry, groundedness, relative sizing, material identity, mushroom-ring composite
+      structure/determinism) — all pure `BlockGrid`/mesh-structure inspection, no rendering
+      needed. Scene-level regression (chunk-scatter-alignment, chunk-terrain-alignment,
+      drawcall-batching, chunk-collider-streaming, settlement-parity) all pass unmodified — no
+      settlement-parity snapshot shift this time (territory dressing only changes scatter
+      content, not settlement generation itself). Full project suite: the same 12 pre-existing
+      baseline failures, zero new failures. `tsc --noEmit` steady at 144.
+- [x] **Honest perf note**: placing territory props (even a *modest* amount — the gradient
+      probability caps at 70% right at a settlement centre, fading to 0% at the territory edge)
+      adds real, measurable per-scene-load cost when many settlements/chunks are involved — one
+      pre-existing scene test's observed duration grew from ~5.7s to ~8.5s in a large
+      (worldSize=512) scenario, tipping past its previous default timeout; the test's own timeout
+      was extended (20s) to give solid margin rather than silently letting it flake. In isolation,
+      the added logic itself is cheap (~20ms one-time prop-pool build, ~2ms per 5000 territory
+      lookups measured directly) — the real cost is proportional to how many props actually get
+      placed across a scene with many settlements/chunks, not a hidden inefficiency in the new
+      code paths themselves.
 
 ### Phase 7 — Nature asset variety per biome
 **Depends on:** Phase 1, independent of most other phases (can run in parallel).

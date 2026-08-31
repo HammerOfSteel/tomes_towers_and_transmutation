@@ -42,6 +42,13 @@ import { buildBuilding }               from '@/world/buildings/BuildingBuilder';
 import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
 import { closestDistanceToBuildingFootprint } from '@/world/buildings/BuildingCollision';
 import { createWaterMaterial }          from '@/world/WaterMaterial';
+import type { SettlementFaction } from '@/overworld-studio';
+import { territoryPlacementProbability, findTerritoryFaction } from '@/world/TerritoryDressing';
+import {
+  meshVulperiaWarrenMound, meshVulperiaBurrowHole, meshVulperiaDenMarker,
+  meshUndeadGravestone, meshUndeadBonePile, meshUndeadCrumblingMound,
+  meshFaeSmallMushroom, meshFaeLargeMushroom, meshFaeMushroomRing,
+} from '@/world/buildings/FactionTerritoryProps';
 import {
   factionBuildingDna,
   getFootprint,
@@ -249,9 +256,17 @@ export class OverworldScene {
 
 
   /** Cached for fast-travel — populated in _buildSettlements(). */
-  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3; radius: number }> = [];
+  private readonly _settlementPositions: Array<{ name: string; worldPos: THREE.Vector3; radius: number; faction: SettlementFaction }> = [];
   /** SI-4: which settlement (index into _settlementPositions) the player was inside last frame, or -1. */
   private _settlementInsideIdx = -1;
+
+  /** Pre-built territory-dressing prop pool, one small set of variants per
+   *  faction with a batch-1 implementation (vulperia/undead/fae) — built
+   *  once at construction (see _buildTerritoryPropPool()), cloned (never
+   *  rebuilt) at each qualifying scatter point in _buildChunkScatter().
+   *  Phase 6 batch 1, see docs/superpowers/specs/2026-08-31-race-
+   *  territory-dressing-design.md §2.5. */
+  private readonly _territoryPropPool: Partial<Record<SettlementFaction, THREE.Group[]>> = {};
 
   // ── Resource nodes (Phase 7e) ─────────────────────────────────────────────
   private _resourceGroups:  THREE.Group[] = [];
@@ -362,6 +377,7 @@ export class OverworldScene {
     this._placeCaveGladeEntrances(worldData.caves ?? [], worldData.glades ?? []);
     console.log('[OverworldScene] _buildSettlements...');
     this._buildSettlements(worldData);
+    this._buildTerritoryPropPool();
     console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
     console.log('[OverworldScene] _buildResourceNodes...');
@@ -1324,6 +1340,30 @@ export class OverworldScene {
    *  `_buildChunkBeachDecor()`) — they don't need colliders, so they're
    *  just extra visual children tagged with their own `scatterKind`,
    *  ignored by the tree/rock collider loop above. */
+  /** Phase 6 batch 1: if (wx, wz) falls within a settlement's territory
+   *  (a faction with a prop pool in this batch — vulperia/undead/fae),
+   *  roll the distance-based gradient probability and, on a hit, return a
+   *  cloned territory-dressing prop instead of the caller's normal
+   *  tree/rock. Returns null (caller falls through to its normal scatter)
+   *  when outside every territory, when the roll misses, or when the
+   *  matched faction has no batch-1 prop pool yet. Cloning (not
+   *  rebuilding) the pooled THREE.Group keeps this cheap per scatter
+   *  point — see _buildTerritoryPropPool(). */
+  private _tryPlaceTerritoryProp(wx: number, wz: number, wy: number, rand: () => number): THREE.Group | null {
+    const match = findTerritoryFaction({ x: wx, z: wz }, this._settlementPositions);
+    if (!match) return null;
+    const pool = this._territoryPropPool[match.faction];
+    if (!pool || pool.length === 0) return null;
+    const probability = territoryPlacementProbability(match.distanceFromCenter, match.territoryRadius);
+    if (rand() >= probability) return null;
+    const template = pool[Math.floor(rand() * pool.length)]!;
+    const prop = template.clone();
+    prop.position.set(wx, wy, wz);
+    prop.rotation.y = rand() * Math.PI * 2;
+    prop.userData.scatterKind = 'territoryProp';
+    return prop;
+  }
+
   private _buildChunkScatter(coord: ChunkCoord): THREE.Group {
     const group = new THREE.Group();
     const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
@@ -1349,6 +1389,8 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
       if (!isScatterAllowed(cell, 'tree')) continue;
+      const territoryProp = this._tryPlaceTerritoryProp(wx, wz, cell.elevation * SH, rand);
+      if (territoryProp) { group.add(territoryProp); continue; }
       const tree = this._makeTree(rand, cell.biome, wx, wz);
       tree.position.set(wx, cell.elevation * SH, wz);
       tree.rotation.y = rand() * Math.PI * 2;
@@ -1366,6 +1408,8 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
       if (!isScatterAllowed(cell, 'rock')) continue;
+      const territoryProp = this._tryPlaceTerritoryProp(wx, wz, cell.elevation * SH, rand);
+      if (territoryProp) { group.add(territoryProp); continue; }
       const rock = this._makeRock(rand, wx, wz);
       rock.position.set(wx, cell.elevation * SH, wz);
       rock.userData.scatterKind = 'rock';
@@ -2868,6 +2912,7 @@ export class OverworldScene {
       name: `${payload.name} (Preview)`,
       worldPos: new THREE.Vector3(anchorWx, centreElev, anchorWz),
       radius: 16, // dev-preview only — no boundary-crossing gameplay hookup needed here
+      faction: payload.faction as SettlementFaction,
     });
 
     if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
@@ -2910,6 +2955,7 @@ export class OverworldScene {
         name:     plan.name,
         worldPos: new THREE.Vector3(wx, wy, wz),
         radius,
+        faction:  plan.faction as SettlementFaction,
       });
     }
 
@@ -2957,6 +3003,25 @@ export class OverworldScene {
     }
 
     this._buildStudioSettlementPreview();
+  }
+
+  /** Builds the small pre-built pool of territory-dressing prop variants
+   *  for every faction with a batch-1 implementation. Called once from
+   *  the constructor — see the call site added in the constructor's
+   *  init sequence just below _buildSettlements(). */
+  private _buildTerritoryPropPool(): void {
+    this._territoryPropPool.vulperia = [
+      meshVulperiaWarrenMound(1), meshVulperiaWarrenMound(2),
+      meshVulperiaBurrowHole(3), meshVulperiaDenMarker(),
+    ];
+    this._territoryPropPool.undead = [
+      meshUndeadGravestone(), meshUndeadBonePile(4),
+      meshUndeadBonePile(5), meshUndeadCrumblingMound(6),
+    ];
+    this._territoryPropPool.fae = [
+      meshFaeSmallMushroom(), meshFaeSmallMushroom(),
+      meshFaeLargeMushroom(), meshFaeMushroomRing(7),
+    ];
   }
 
   // ── NPC spawning ──────────────────────────────────────────────────────────

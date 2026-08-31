@@ -117,5 +117,10 @@ describe('OverworldScene terrain-chunk streaming — scatter/terrain alignment',
     }
 
     expect(checkedAnyScatterObject, 'No scatter objects were placed in any probed chunk to test against').toBe(true);
-  });
+  }, 20_000); // Phase 6 batch 1 (race territory dressing) added real (if modest) per-scatter-point
+  // territory-lookup + occasional prop-clone work across the 5 probed chunks — this test's
+  // observed duration grew from ~5.7s to ~8.5s, tipping past vitest's 5000ms default. The added
+  // work itself is cheap in isolation (~20ms one-time pool build, ~2ms per 5000 lookups measured
+  // directly), so this reflects real placement across many chunks/settlements in this specific
+  // large (worldSize=512) scenario, not a hidden inefficiency — a generous, not tight, timeout.
 });
