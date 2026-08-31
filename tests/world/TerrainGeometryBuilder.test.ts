@@ -122,10 +122,13 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     // on the base buffer exactly as before — unaffected by sub-tile
     // subdivision), then tile2's west wall.
     const tile1TopY = data.positions[4 * 3 + 1]!;
-    // Top faces get a small deterministic corner jitter (± up to 0.03 WU)
-    // layered on top of the carved base height for visual variety — assert
-    // against that documented bound rather than an exact value.
-    expect(tile1TopY).toBeCloseTo(-RIVER_DEPTH_WU, 1);
+    // Top faces get a small deterministic corner bump (± up to
+    // SUBTILE_BUMP_MAX = 0.06 WU, since 2026-09-01's seam fix — see
+    // subTileBumpJitter()) layered on top of the carved base height for
+    // visual variety — assert against that documented bound (precision 0
+    // -> tolerance 0.5, safely covering the ±0.06 bump) rather than an
+    // exact value.
+    expect(tile1TopY).toBeCloseTo(-RIVER_DEPTH_WU, 0);
   });
 
   it('does not carve a river_ford tile (waterDepth 0) — sits flush with neighbours', () => {
@@ -172,7 +175,9 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     expect(totalIndicesLength(data)).toBe(3 * 6 + 2 * 16 * 6);
 
     const tile1TopY = data.positions[4 * 3 + 1]!;
-    expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 1);
+    // Precision 0 -> tolerance 0.5, safely covers the ±SUBTILE_BUMP_MAX
+    // (0.06 WU) bump now applied here — see the river carving test above.
+    expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 0);
   });
 
   it('colors a lake tile distinctly from a river tile at the same depth', () => {
@@ -379,27 +384,43 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
   });
 
   it('gives two adjacent flat cells identical Y at their shared corner (no seam)', () => {
-    const wg = new WorldGrid(2, 1);
-    const data = buildTerrainGeometryData(wg, 2, 1, 1, 0, 1, 1);
-    // Both tiles are flat and default-biome 'grassland' (covered), so both
-    // land in groundGeometry.grassland rather than the base buffer.
-    const positions = data.groundGeometry.grassland!.positions;
-    // Tile 0 (col=0): verts at local (wx,wy,wz),(wx,wy,wz1),(wx1,wy,wz1),(wx1,wy,wz) → indices 0..3
-    // Tile 1 (col=1): same layout, base index 4..7.
-    // Tile 0's east edge (v2,v3 = wx1 corner) must match tile 1's west edge (v0,v1 = wx corner)
-    // since tile0's wx1 === tile1's wx (adjacent tiles, T=1).
-    const face0 = [0, 1, 2, 3].map(v => ({
-      x: positions[v * 3]!, y: positions[v * 3 + 1]!, z: positions[v * 3 + 2]!,
-    }));
-    const face1 = [4, 5, 6, 7].map(v => ({
-      x: positions[v * 3]!, y: positions[v * 3 + 1]!, z: positions[v * 3 + 2]!,
-    }));
-    // face0 v2 (wx1,wz1) should match face1 v1 (wx,wz1) in both x and y (same world point).
-    expect(face0[2]!.x).toBeCloseTo(face1[1]!.x, 9);
-    expect(face0[2]!.y).toBeCloseTo(face1[1]!.y, 9);
-    // face0 v3 (wx1,wz) should match face1 v0 (wx,wz) in both x and y.
-    expect(face0[3]!.x).toBeCloseTo(face1[0]!.x, 9);
-    expect(face0[3]!.y).toBeCloseTo(face1[0]!.y, 9);
+    const wg = new WorldGrid(4, 3);
+    // 4x3, all 'mountain' (not the default 'grassland') — has no
+    // MICRO_PATCH_VARIANTS entry, so none of either tile's 16 sub-tiles
+    // can get redirected to a different groundGeometry buffer. Rendering
+    // the two MIDDLE tiles (cols 1-2 of 0-3) at the middle row means every
+    // side of both tiles — north, south, AND the outer west/east side
+    // neighboring the un-rendered but in-bounds cols 0/3 — is also
+    // 'mountain' (matching, not an out-of-bounds default 'grassland'), so
+    // no border-pull can trigger on any edge — keeping this test's fixed
+    // vertex-index arithmetic below valid.
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { biome: 'mountain' });
+    const data = buildTerrainGeometryData(wg, 4, 3, 1.5, 1, 1, 1, 1, 1, 2, 1);
+    // Both tiles are flat and covered ('mountain'), so both land in
+    // groundGeometry.mountain rather than the base buffer, each emitting
+    // GROUND_SUBDIVISIONS^2=16 sub-tile quads (see the ground sub-tile
+    // system's own describe block further below for the emission-order
+    // breakdown: sz outer loop, sx inner loop, 4 verts SW/NW/NE/SE per quad).
+    const positions = data.groundGeometry.mountain!.positions;
+    expect(positions.length / 3).toBe(32 * 4); // sanity: no sub-tiles redirected elsewhere
+    // Tile 0 occupies quads 0-15 (48 verts); its east-facing outermost
+    // sub-tile column is sx=3 — quad 3 (sz=0, base vertex 12) and quad 15
+    // (sz=3, base vertex 60). Tile 1 occupies quads 16-31 (starting at
+    // vertex 64); its west-facing outermost column is sx=0 — quad 16
+    // (sz=0, base vertex 64) and quad 28 (sz=3, base vertex 112).
+    const v = (i: number) => ({ x: positions[i * 3]!, y: positions[i * 3 + 1]!, z: positions[i * 3 + 2]! });
+    // Tile 0's sub-tile (3,0) SE (local vertex 3) shares tile 1's sub-tile
+    // (0,0) SW (local vertex 0) — both at the tiles' shared south corner.
+    const tile0_q3_SE = v(12 + 3);
+    const tile1_q0_SW = v(64 + 0);
+    // Tile 0's sub-tile (3,3) NE (local vertex 2) shares tile 1's sub-tile
+    // (0,3) NW (local vertex 1) — both at the tiles' shared north corner.
+    const tile0_q15_NE = v(60 + 2);
+    const tile1_q28_NW = v(112 + 1);
+    expect(tile0_q3_SE.x).toBeCloseTo(tile1_q0_SW.x, 9);
+    expect(tile0_q3_SE.y).toBeCloseTo(tile1_q0_SW.y, 9);
+    expect(tile0_q15_NE.x).toBeCloseTo(tile1_q28_NW.x, 9);
+    expect(tile0_q15_NE.y).toBeCloseTo(tile1_q28_NW.y, 9);
   });
 });
 
@@ -961,5 +982,60 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
     const data = buildTerrainGeometryData(wg, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1);
     // Still exactly 1 shape's worth (6 verts, 2 triangles) — not 16 sub-tiles.
     expect(data.groundGeometry.grassland!.positions.length / 3).toBe(6);
+  });
+
+  it('gives a subdivided (covered, flat) tile and its adjacent NON-subdivided (uncovered, flat) tile the identical Y at their shared corner — no seam', () => {
+    // Regression test for a real reported bug: subdivided flat/edge tiles
+    // bake subTileBumpJitter() into their own real corners too, but
+    // non-subdivided paths (uncovered biomes, ramp shapes, road sub-tiles)
+    // were still using the OLD cornerHeightJitter() at their corners — a
+    // different hash function AND a different amplitude (±0.03 vs ±0.06),
+    // so two tiles sharing a corner via different code paths disagreed,
+    // producing a small visible gap ("ground tiles are a tiny bit
+    // disconnected on raise and slopes").
+    const wg = new WorldGrid(3, 3);
+    // 'mountain' surrounding tile (1,1) on all sides EXCEPT east, so tile
+    // (1,1)'s own north/south/west border-pull checks never trigger
+    // (their neighbor variant always equals its own) — isolates this test
+    // to purely the east-edge seam, with no risk of an unrelated
+    // border-pull redirecting some of its 16 sub-tiles into a different
+    // groundGeometry buffer and shifting vertex-index arithmetic. 'mountain'
+    // also has no MICRO_PATCH_VARIANTS entry, ruling out micro-patch
+    // redirects too.
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { biome: 'mountain' });
+    // Tile (2,1): 'ocean' biome, waterDepth 0 (no carving, so its physical
+    // height stays 0 too, matching tile (1,1) — no wall, purely a
+    // texture-routing difference) — 'ocean' is never ramp-eligible, so it
+    // takes the flat branch's UNCOVERED fallback (still
+    // cornerHeightJitter-based before the fix).
+    wg.set(2, 1, { biome: 'ocean', waterDepth: 0 });
+    // Render only tiles (1,1) and (2,1) — the shared edge under test.
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 1, 1, 1, 1, 2, 1);
+
+    // Tile (1,1)'s east-facing outermost sub-tile column (sx=3, the last
+    // of N=4) sits exactly on the shared boundary with tile (2,1). Its
+    // NE/SE corners must match tile (2,1)'s own NW/SW corner Y — tile
+    // (2,1) is unsubdivided, so its single quad's SW/NW vertices sit at
+    // that same shared boundary.
+    const groundVerts = data.groundGeometry.mountain!.positions;
+    // Sub-tile (sx=3, sz=0) is the 4th quad in the sz=0 row (quads 0-3) —
+    // base vertex index 3 * 4 verts = 12; NE is local vertex 2, SE is
+    // local vertex 3 within that quad (SW,NW,NE,SE order).
+    const q3SE_y = groundVerts[(12 + 3) * 3 + 1]!; // sub-tile (3,0) SE — z=0 edge
+    // Sub-tile (sx=3, sz=3) is the last quad overall (quad 15) — NE is
+    // local vertex 2 within it.
+    const q15NE_y = groundVerts[(60 + 2) * 3 + 1]!; // sub-tile (3,3) NE — z=1 edge
+
+    // Tile (2,1) (ocean, uncovered, unsubdivided) lands in the base
+    // buffer as a single quad: SW, NW, NE, SE.
+    const baseVerts = data.positions;
+    const tile2_1_SW_y = baseVerts[0 * 3 + 1]!;
+    const tile2_1_NW_y = baseVerts[1 * 3 + 1]!;
+
+    // Tile (1,1)'s sub-tile (3,0)'s SE corner (its own south-east real
+    // corner) is shared with tile (2,1)'s SW. Sub-tile (3,3)'s NE (its
+    // own north-east real corner) is shared with tile (2,1)'s NW.
+    expect(q3SE_y).toBeCloseTo(tile2_1_SW_y, 9);
+    expect(q15NE_y).toBeCloseTo(tile2_1_NW_y, 9);
   });
 });

@@ -584,14 +584,23 @@ export function buildTerrainGeometryData(
       const tr = rb * v, tg = gb * v, tb = bb * v;
 
       // ── TOP face (normal +Y) ─────────────────────────────────────────
-      // Small per-corner jitter added on top of the flat elevation height gives the
-      // ground an organic, non-uniform look while keeping wall faces (collision-critical)
-      // perfectly flat. Corner coordinates are grid-lattice points shared by neighbouring
-      // tiles, so adjacent tiles' shared edges/corners always agree (no seams).
-      const jSW = cornerHeightJitter(col,     row);
-      const jNW = cornerHeightJitter(col,     row + 1);
-      const jNE = cornerHeightJitter(col + 1, row + 1);
-      const jSE = cornerHeightJitter(col + 1, row);
+      // Small per-corner jitter/bump added on top of the flat elevation
+      // height gives the ground an organic, non-uniform look while
+      // keeping wall faces (collision-critical) perfectly flat. Keyed by
+      // absolute WORLD position (not grid-lattice integers) via the same
+      // subTileBumpJitter() used by the subdivided flat/edge path's own
+      // real corners (see emitGroundSubTiles below) — this is what
+      // guarantees a subdivided tile and an adjacent non-subdivided one
+      // (ramp shape, uncovered biome, or a road-covered tile's heightAt()
+      // interpolation just below) always agree at any shared corner,
+      // never seaming. (Previously keyed by cornerHeightJitter(col,row)
+      // grid integers — a different hash AND a smaller amplitude than
+      // subTileBumpJitter, which caused a small but real gap wherever a
+      // subdivided tile bordered a non-subdivided one — fixed 2026-09-01.)
+      const jSW = subTileBumpJitter(wx,  wz);
+      const jNW = subTileBumpJitter(wx,  wz1);
+      const jNE = subTileBumpJitter(wx1, wz1);
+      const jSE = subTileBumpJitter(wx1, wz);
 
       // Ramp classification (see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md):
       // a dry tile's 4 corners derive from its real neighbors' elevation levels
