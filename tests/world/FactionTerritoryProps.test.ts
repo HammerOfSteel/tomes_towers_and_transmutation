@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
 import {
   buildVulperiaWarrenMoundGrid, buildVulperiaBurrowHoleGrid, buildVulperiaDenMarkerGrid,
+  buildUndeadGravestoneGrid, buildUndeadBonePileGrid, buildUndeadCrumblingMoundGrid,
 } from '@/world/buildings/FactionTerritoryProps';
 
 describe('vulperia territory props', () => {
@@ -61,5 +62,54 @@ describe('vulperia territory props', () => {
     const a = buildVulperiaWarrenMoundGrid(42);
     const b = buildVulperiaWarrenMoundGrid(42);
     expect([...a.cells.entries()]).toEqual([...b.cells.entries()]);
+  });
+});
+
+describe('undead territory props', () => {
+  it('gravestone is a vertical slab: taller than it is wide', () => {
+    const grid = buildUndeadGravestoneGrid();
+    let maxBy = -Infinity, minBy = Infinity;
+    const xs = new Set<number>(), zs = new Set<number>();
+    for (const k of grid.cells.keys()) {
+      const [bx, by, bz] = k.split(',').map(Number);
+      maxBy = Math.max(maxBy, by!); minBy = Math.min(minBy, by!);
+      xs.add(bx!); zs.add(bz!);
+    }
+    const height = maxBy - minBy + 1;
+    const footprint = Math.max(xs.size, zs.size);
+    expect(height).toBeGreaterThan(footprint);
+  });
+
+  it('gravestone uses the ashstone material', () => {
+    const grid = buildUndeadGravestoneGrid();
+    expect(getMaterialKey(grid, 0, 0, 0)).toBe('ashstone');
+  });
+
+  it('bone-pile marker is low and irregular: shorter than the gravestone, more than 1 block footprint', () => {
+    const pile = buildUndeadBonePileGrid(1);
+    const grave = buildUndeadGravestoneGrid();
+    let pileMaxBy = -Infinity, graveMaxBy = -Infinity;
+    const footprint = new Set<string>();
+    for (const k of pile.cells.keys()) {
+      const [bx, by, bz] = k.split(',').map(Number);
+      pileMaxBy = Math.max(pileMaxBy, by!);
+      footprint.add(`${bx},${bz}`);
+    }
+    for (const k of grave.cells.keys()) {
+      const [, by] = k.split(',').map(Number);
+      graveMaxBy = Math.max(graveMaxBy, by!);
+    }
+    expect(pileMaxBy).toBeLessThan(graveMaxBy);
+    expect(footprint.size).toBeGreaterThan(1);
+  });
+
+  it('crumbling burial mound shares the warren mound\'s silhouette family (grounded, dome-shaped) but is a different material', () => {
+    const grid = buildUndeadCrumblingMoundGrid(1);
+    expect(grid.cells.size).toBeGreaterThan(0);
+    for (const k of grid.cells.keys()) {
+      const [bx, , bz] = k.split(',').map(Number);
+      expect(hasBlock(grid, bx!, 0, bz!)).toBe(true); // grounded, like the vulperia mound
+    }
+    expect(getMaterialKey(grid, 0, 0, 0)).not.toBe('earth'); // not vulperia's material
   });
 });

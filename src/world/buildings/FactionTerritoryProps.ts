@@ -9,10 +9,10 @@
  */
 import * as THREE from 'three';
 import {
-  createBlockGrid, setBlock, meshBlockGrid, type BlockGrid,
+  createBlockGrid, setBlock, meshBlockGrid, type BlockGrid, type MeshBlockGridOptions,
 } from './BlockKit';
 import { buildVulperiaDenMoundGrid } from './FactionBlockProfiles';
-import { earthTexture, barkTexture } from './FactionBlockTextures';
+import { earthTexture, barkTexture, ashStoneTexture } from './FactionBlockTextures';
 
 function mat(color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.85, metalness: 0, ...opts });
@@ -67,4 +67,62 @@ export function meshVulperiaDenMarker(): THREE.Group {
   const grid = buildVulperiaDenMarkerGrid();
   const palette = { bark: mat('#5a4530', { map: barkTexture() }), woven: mat('#8a6d3f') };
   return meshBlockGrid(grid, palette, {});
+}
+
+// ── Undead ────────────────────────────────────────────────────────────────────
+
+/** Upright ashstone slab, ~1x3x1 blocks -- taller than wide, reading as a
+ *  simple standing tombstone. Fixed shape (no seed needed). */
+export function buildUndeadGravestoneGrid(): BlockGrid {
+  const grid = createBlockGrid();
+  setBlock(grid, 0, 0, 0, 'ashstone');
+  setBlock(grid, 0, 1, 0, 'ashstone');
+  setBlock(grid, 0, 2, 0, 'ashstone');
+  return grid;
+}
+
+/** Low, irregular 2x2 footprint pile, one block tall except a single
+ *  randomly-chosen corner raised to 2 -- a scattered bone-pile read
+ *  rather than a neat stack. */
+export function buildUndeadBonePileGrid(seed: number): BlockGrid {
+  const grid = createBlockGrid();
+  const corners: [number, number][] = [[0, 0], [1, 0], [0, 1], [1, 1]];
+  for (const [bx, bz] of corners) setBlock(grid, bx, 0, bz, 'bone');
+  const raised = corners[Math.abs(seed) % corners.length]!;
+  setBlock(grid, raised[0], 1, raised[1], 'bone');
+  return grid;
+}
+
+/** Same grounded heightfield-mound technique as the vulperia warren mound
+ *  (buildVulperiaDenMoundGrid) -- deliberately reusing the shared engine
+ *  to show a very different read purely from chamfer settings (forced
+ *  jagged, see meshUndeadCrumblingMound's suppressChamfer) and palette
+ *  (ashstone, not earth) alone. No facade -- a decayed mound, not a
+ *  proper burrow. */
+export function buildUndeadCrumblingMoundGrid(seed: number): BlockGrid {
+  return buildVulperiaDenMoundGrid(seed, 2.2, 2, 1.1, { facade: false, jitter: 0.3 });
+}
+
+export function meshUndeadGravestone(): THREE.Group {
+  const grid = buildUndeadGravestoneGrid();
+  const palette = { ashstone: mat('#8a8a85', { map: ashStoneTexture() }) };
+  return meshBlockGrid(grid, palette, {});
+}
+
+export function meshUndeadBonePile(seed: number): THREE.Group {
+  const grid = buildUndeadBonePileGrid(seed);
+  const palette = { bone: mat('#d8d0b8') };
+  return meshBlockGrid(grid, palette, {});
+}
+
+export function meshUndeadCrumblingMound(seed: number): THREE.Group {
+  const grid = buildUndeadCrumblingMoundGrid(seed);
+  const palette = { earth: mat('#6b6b60', { map: ashStoneTexture() }), grass: mat('#5a5a50') };
+  // Force every edge sharp -- a decayed, broken silhouette rather than
+  // the vulperia mound's soft organic chamfering (same suppressChamfer
+  // mechanism FactionBuildingVariants.ts already uses for undead's
+  // "deliberate decay" spire, see FactionBlockProfiles.ts's
+  // buildUndeadTierGrid doc comment).
+  const opts: MeshBlockGridOptions = { suppressChamfer: () => true };
+  return meshBlockGrid(grid, palette, opts);
 }
