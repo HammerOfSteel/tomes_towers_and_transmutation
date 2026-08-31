@@ -709,23 +709,65 @@ Closes §1.4's "trees/rocks look the same everywhere" finding for the
 *generic* (non-faction-territory) case — every biome should have its own
 flora silhouette even far from any settlement.
 
-- [ ] `NatureAssetDNA.ts`'s `pickTreeArchetype()`/`pickRockArchetype()`:
-      add biome as an input, with real per-biome archetype sets (desert:
-      cactus/dead scrub, forest: existing conifer/deciduous, tundra:
-      sparse bare/frost-crusted, savanna: acacia-style flat-canopy, taiga:
-      dense conifer, mountain: sparse alpine scrub/bare rock outcrops) —
-      not necessarily new geometry for every single biome on day one, but
-      at minimum correct *selection* so no biome silently reuses another's
-      look by accident, with net-new geometry prioritized for the biomes
-      that read most wrong today (desert and tundra having forest-style
-      trees is the most visually jarring gap).
-- [ ] Grass clumps currently have "2 variants (short/tall)" per
-      `tile-designer.md`'s TV-2 table but no per-biome hookup either —
-      same treatment.
-- [ ] Tests: archetype selection is a pure function of (position, biome)
-      — same position+biome always yields the same archetype (determinism
-      preserved), different biome at the same position yields a different
-      archetype where the biome's archetype set differs.
+**Tree archetype biome-correctness ✅ DONE (2026-08-30)** — pulled forward
+ahead of the rest of Phase 4 at the user's request (bundled with the
+ground-texture push). Design spec:
+`docs/superpowers/specs/2026-08-30-nature-asset-biome-correctness-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-30-nature-asset-biome-correctness-plan.md`.
+
+- [x] `NatureAssetDNA.ts`'s `pickTreeArchetype()`: added a `biome: BiomeId`
+      parameter and a per-biome archetype table (`grassland`:
+      deciduous/sparse, `forest`: conifer/deciduous, `taiga`: conifer-only,
+      `tundra`/`mountain`/`snow`: sparse-only, `desert`: the new `cactus`
+      archetype, `savanna`: the new `acacia` archetype) — each biome only
+      ever picks from its own correct set via the existing deterministic
+      hash technique, closing the "pine tree next to oak tree regardless
+      of biome" mismatch. `pickRockArchetype()` deliberately left
+      unchanged — a boulder/slab/cluster doesn't read as "wrong" in any
+      biome the way a pine tree does in a desert (see design spec §2).
+- [x] 2 new tree archetypes in `OverworldScene.ts`, same simple-primitive
+      style as the existing 3: `_buildCactusTree()` (a saguaro-style
+      vertical-cylinder trunk with 0-2 shorter cylinder "arms") and
+      `_buildAcaciaTree()` (a short gnarled trunk topped by a single wide,
+      shallow "umbrella" canopy cone) — closing the roadmap's two
+      most-cited gaps (desert, savanna).
+- [x] Related bug fixed alongside (discovered during investigation):
+      `ScatterRules.ts`'s `isScatterAllowed()` only excluded
+      ocean/deep_ocean **biome** tiles from tree/bush/rock placement, never
+      checking `waterDepth > 0` — since Phase 3's lakes sit on ordinary
+      land biomes (not a special water biome), trees/rocks could spawn
+      directly inside a river or lake. Fixed with a generic
+      `waterDepth > 0` check, mirroring the same signal already used by
+      `WaterDetection.ts`/`TerrainGeometryBuilder.ts`.
+- [x] Tests: `NatureAssetDNA.test.ts` updated for the new `(biome, wx, wz)`
+      signature — determinism, "only picks from the biome's own allowed
+      set" (the key new correctness property), "different biome at the
+      same position yields a different archetype where the sets differ".
+      New `ScatterRules.test.ts` case for the river/lake exclusion. Full
+      project suite: same 12 pre-existing baseline failures on a clean
+      targeted run of every directly-affected test file (79/79 passing);
+      a full whole-suite run showed 3 additional failures, but all 3 were
+      confirmed to be **timeouts** (not assertion failures) on tests that
+      don't even touch the changed code (`WorldGenerator.test.ts`,
+      `ResourceNodePlacer.test.ts`) — reproducible resource-contention
+      artifacts of running the entire 165-file suite in parallel under
+      this sandbox's load, not regressions (each passes cleanly with
+      margin to spare in isolation). `tsc --noEmit` steady at 144.
+- [x] Manual verification attempted via the established Playwright + dev
+      server workflow across 5 seeds; the browser session hung
+      indefinitely (6+ minutes with no response) under this sandbox's
+      documented resource-contention pattern and was abandoned per this
+      project's established fallback — shipped on the strength of the
+      automated test coverage above, matching the same precedent set by
+      Phases 2/3/4a when live verification was unavailable.
+
+**Deferred (documented, not started):** grass clumps (the roadmap's
+"2-variant short/tall" note refers to the Studio-only `TileDNA`/
+`TileBuilder` system, not wired into the live game today — a larger,
+separate effort to wire a new live scatter category); rock archetype
+biome-differentiation; bush archetype variety; further snow/tundra/beach
+tree tuning beyond reusing the `sparse` archetype (see design spec §2/§5
+for the full reasoning on each).
 
 ### Phase 8 — Ground texture wiring
 **Depends on:** nothing structurally, but sequence *after* Phase 2 if that lands, since sub-tile ramp geometry changes vertex layout/UV needs (texturing a flat single-quad tile vs. a multi-triangle ramp tile calls for slightly different UV emission, similar to how `BlockKit.ts`'s UV work had to account for both flat faces and the beveled `topBevel` collar band in one pass).
