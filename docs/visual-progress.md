@@ -130,7 +130,10 @@ character — see `docs/superpowers/specs/2026-08-31-procedural-grass-grassland-
 Peaceful, chunk-scoped ambient wildlife — rabbits (forest/grassland/taiga) and goats
 (mountain) — wander near their spawn point and flee when the player approaches. No combat, no
 health, purely cosmetic. Birds/flight are a planned follow-up batch — see
-`docs/superpowers/specs/2026-08-31-ambient-wildlife-design.md`.
+`docs/superpowers/specs/2026-08-31-ambient-wildlife-design.md`. Creatures beyond 45 WU
+of the player are frozen (no behavior tick, no animation) instead of fully simulated —
+see `docs/superpowers/specs/2026-08-31-ambient-wildlife-lod-design.md` (Phase 9's
+"chunk-manager LOD polish" stretch item).
 
 ---
 
