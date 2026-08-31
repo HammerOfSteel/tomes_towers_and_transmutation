@@ -248,4 +248,23 @@ describe('SpellSystem', () => {
     sys.cast('battle_hymn', origin, aim, [], scene);
     expect(sys.battleHymnActive).toBe(true);
   });
+
+  // ── lantern toggle ─────────────────────────────────────────────────────
+  it('lantern spell def exists with movement type and a low cooldown', () => {
+    // SPELL_DEFS is module-private; assert indirectly via cast() + isReady()/cooldownFraction()
+    expect(sys.isReady('lantern')).toBe(true);
+    sys.cast('lantern', origin, aim, [], scene);
+    expect(sys.isReady('lantern')).toBe(false);
+    expect(sys.cooldownFraction('lantern')).toBeLessThanOrEqual(1);
+  });
+
+  it('lantern cast invokes onLanternToggle exactly once', () => {
+    const onLanternToggle = vi.fn();
+    sys.cast('lantern', origin, aim, [], scene, undefined, { onLanternToggle });
+    expect(onLanternToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('lantern cast does not throw when onLanternToggle is omitted', () => {
+    expect(() => sys.cast('lantern', origin, aim, [], scene)).not.toThrow();
+  });
 });

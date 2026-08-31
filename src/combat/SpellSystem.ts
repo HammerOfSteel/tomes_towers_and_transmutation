@@ -43,6 +43,7 @@ const SPELL_DEFS: Record<string, SpellDef> = {
   blink:        { type: 'movement',   color: 0xaa44ff, emissive: 0x660099, damage: 0, speed: 0,  radius: 0,    cooldown: 8  },
   levitate:     { type: 'movement',   color: 0x88ddff, emissive: 0x224455, damage: 0, speed: 0,  radius: 0,    cooldown: 1  },
   fly:          { type: 'movement',   color: 0xffdd44, emissive: 0x886600, damage: 0, speed: 0,  radius: 0,    cooldown: 12 },
+  lantern:      { type: 'movement',   color: 0xffaa55, emissive: 0xcc7733, damage: 0, speed: 0,  radius: 0,    cooldown: 0.3 },
 };
 
 const FALLBACK_DEF = SPELL_DEFS.magic_bolt;
@@ -69,6 +70,8 @@ export interface CastOptions {
   onLevitateToggle?: () => void;
   /** Fly burst: launch player in facing direction for given duration/speed. */
   onFlyBurst?: (facingAngle: number) => void;
+  /** Lantern: toggle the player's carried light on/off. */
+  onLanternToggle?: () => void;
 }
 
 // ── Projectile — comet with glowing core + additive trail ─────────────────────
@@ -1519,6 +1522,10 @@ export class SpellSystem {
       // Burst of speed in facing direction
       this._addSpark(origin, def.color, 5.0, scene);
       opts.onFlyBurst?.(0 /* facingAngle from player */);
+    } else if (spellId === 'lantern') {
+      // Toggle the player's carried lantern light on/off
+      this._addSpark(origin, def.color, 2.0, scene);
+      opts.onLanternToggle?.();
     }
   }
 
