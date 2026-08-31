@@ -19,7 +19,6 @@ import type { WorldGrid } from '@/world/WorldGrid';
 // ── Tunables (see design spec §4/§6) ────────────────────────────────────────
 export const GRASS_RADIUS = 24;          // world units, player-centered
 export const REBUILD_HYSTERESIS = 8;     // world units of player movement before rebuild
-const DENSITY_PER_UNIT2 = 35;            // meadow preset — blades per world-unit²
 
 // ── Per-biome presets (batch 2 — see design spec §3) ────────────────────────
 
@@ -72,12 +71,14 @@ export interface GrassPlacement {
 
 /**
  * Scatter grass blade placements within a `radius`-WU square window centered
- * on `(centerX, centerZ)`, restricted to `grassland`-biome tiles that pass
+ * on `(centerX, centerZ)`, restricted to tiles matching `biome` that pass
  * `isScatterAllowed(cell, 'grass')`. Deterministic for a fixed `seed`.
  *
  * Map-edge guard: `WorldGrid.get()` returns a default cell (which reports
  * `biome: 'grassland'`!) for out-of-bounds col/row — so this function checks
  * bounds itself before calling `.get()`, rather than trusting that fallback.
+ * This guard matters for every `biome` value, not just `'grassland'` — an
+ * out-of-bounds candidate must never be treated as a match for ANY biome.
  */
 export function selectGrassPlacements(
   wg: WorldGrid,
@@ -85,9 +86,11 @@ export function selectGrassPlacements(
   centerZ: number,
   radius: number,
   seed: number,
+  biome: GrassBiome,
+  densityPerUnit2: number,
 ): GrassPlacement[] {
   const rand = mulberry32(seed);
-  const gridStep = 1 / Math.sqrt(DENSITY_PER_UNIT2);
+  const gridStep = 1 / Math.sqrt(densityPerUnit2);
   const halfW = (wg.width - 1) / 2;
   const halfH = (wg.height - 1) / 2;
   const placements: GrassPlacement[] = [];
@@ -102,7 +105,7 @@ export function selectGrassPlacements(
       if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) continue;
 
       const cell = wg.get(col, row);
-      if (cell.biome !== 'grassland') continue;
+      if (cell.biome !== biome) continue;
       if (!isScatterAllowed(cell, 'grass')) continue;
 
       placements.push({

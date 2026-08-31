@@ -18,13 +18,13 @@ function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
 describe('selectGrassPlacements', () => {
   it('returns 0 placements for a window with no grassland cells', () => {
     const wg = makeAllBiomeGrid(40, 'desert');
-    const placements = selectGrassPlacements(wg, 0, 0, 24, 1);
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
     expect(placements.length).toBe(0);
   });
 
   it('returns placements for an all-grassland window', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
-    const placements = selectGrassPlacements(wg, 0, 0, 24, 1);
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
     expect(placements.length).toBeGreaterThan(0);
   });
 
@@ -35,7 +35,7 @@ describe('selectGrassPlacements', () => {
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) wg.set(col, row, { feature: 'road' });
     }
-    const placements = selectGrassPlacements(wg, 0, 0, 24, 1);
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
     expect(placements.length).toBe(0);
   });
 
@@ -46,7 +46,7 @@ describe('selectGrassPlacements', () => {
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) wg.set(col, row, { content: 'tree' });
     }
-    const placements = selectGrassPlacements(wg, 0, 0, 24, 1);
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
     expect(placements.length).toBe(0);
   });
 
@@ -57,7 +57,7 @@ describe('selectGrassPlacements', () => {
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) wg.set(col, row, { waterDepth: 1.5 });
     }
-    const placements = selectGrassPlacements(wg, 0, 0, 24, 1);
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
     expect(placements.length).toBe(0);
   });
 
@@ -66,15 +66,42 @@ describe('selectGrassPlacements', () => {
     // produce 0 placements, even though .get() on out-of-bounds col/row returns
     // a default cell reporting biome: 'grassland'.
     const wg = makeAllBiomeGrid(4, 'grassland');
-    const placements = selectGrassPlacements(wg, 500, 500, 24, 1);
+    const placements = selectGrassPlacements(wg, 500, 500, 24, 1, 'grassland', 35);
     expect(placements.length).toBe(0);
   });
 
   it('is deterministic for a fixed seed', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
-    const a = selectGrassPlacements(wg, 0, 0, 24, 7);
-    const b = selectGrassPlacements(wg, 0, 0, 24, 7);
+    const a = selectGrassPlacements(wg, 0, 0, 24, 7, 'grassland', 35);
+    const b = selectGrassPlacements(wg, 0, 0, 24, 7, 'grassland', 35);
     expect(a).toEqual(b);
+  });
+
+  it('filters by the given biome — an all-savanna grid produces 0 placements when queried for grassland', () => {
+    const wg = makeAllBiomeGrid(40, 'savanna');
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'grassland', 35);
+    expect(placements.length).toBe(0);
+  });
+
+  it('filters by the given biome — an all-savanna grid produces placements when queried for savanna', () => {
+    const wg = makeAllBiomeGrid(40, 'savanna');
+    const placements = selectGrassPlacements(wg, 0, 0, 24, 1, 'savanna', 15);
+    expect(placements.length).toBeGreaterThan(0);
+  });
+
+  it('never cross-bleeds between any two of the 5 grass-bearing biomes (full N×N isolation matrix)', () => {
+    const biomes = ['grassland', 'savanna', 'tundra', 'forest', 'taiga'] as const;
+    for (const gridBiome of biomes) {
+      const wg = makeAllBiomeGrid(40, gridBiome);
+      for (const queryBiome of biomes) {
+        const placements = selectGrassPlacements(wg, 0, 0, 24, 1, queryBiome, 20);
+        if (queryBiome === gridBiome) {
+          expect(placements.length).toBeGreaterThan(0);
+        } else {
+          expect(placements.length).toBe(0);
+        }
+      }
+    }
   });
 });
 
