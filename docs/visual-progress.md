@@ -115,12 +115,13 @@ improvements and post-processing.
 
 ---
 
-## Procedural Grass — Batch 1 (Grassland)
+## Procedural Grass — Batch 1+2 (Grassland, Savanna, Forest, Taiga, Tundra)
 
 Wind-animated 3D grass blades (bezier-curved instanced geometry, SSS/AO shading, distance
-fade) render within a 24-WU player-centered radius on grassland-biome tiles. Savanna/forest/
-taiga/tundra grass is a planned follow-up batch — see
-`docs/superpowers/specs/2026-08-31-procedural-grass-grassland-design.md`.
+fade) render within a 24-WU player-centered radius on all 5 grass-bearing biomes, each with
+its own preset (blade dimensions, color, density, wind response) tuned to that biome's
+character — see `docs/superpowers/specs/2026-08-31-procedural-grass-grassland-design.md`
+(batch 1) and `docs/superpowers/specs/2026-08-31-procedural-grass-batch2-design.md` (batch 2).
 
 ---
 
