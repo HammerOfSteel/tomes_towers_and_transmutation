@@ -125,6 +125,15 @@ character — see `docs/superpowers/specs/2026-08-31-procedural-grass-grassland-
 
 ---
 
+## Ambient Wildlife — Phase 9 Batch 1 (Rabbits, Goats)
+
+Peaceful, chunk-scoped ambient wildlife — rabbits (forest/grassland/taiga) and goats
+(mountain) — wander near their spawn point and flee when the player approaches. No combat, no
+health, purely cosmetic. Birds/flight are a planned follow-up batch — see
+`docs/superpowers/specs/2026-08-31-ambient-wildlife-design.md`.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
