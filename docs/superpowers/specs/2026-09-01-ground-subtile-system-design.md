@@ -76,8 +76,22 @@ function subTileBumpJitter(latticeX: number, latticeZ: number): number {
 }
 ```
 
-Final sub-tile corner height = `wy + bilinearY(u, w) - wy_base_offset` (bilinear already includes
-the tile's own base height via swY etc.) `+ subTileBumpJitter(worldX, worldZ)`.
+Final sub-tile corner height = `bilinearY(u, w)` (using the tile's raw `swY`/`nwY`/`neY`/`seY`,
+**not** the old jitter-added `swY + jSW` style values) `+ subTileBumpJitter(worldX, worldZ)`,
+evaluated uniformly across the whole `(N+1)×(N+1)` sub-lattice **including the tile's own 4 real
+corners**. Since `subTileBumpJitter()` is a pure function of absolute world position (same
+technique as `cornerHeightJitter()`), any two quads that reference the same world lattice point
+— whether adjacent sub-tiles within one tile, or adjacent tiles sharing a real corner — always
+compute the identical value there, so this stays seamless everywhere without needing a special
+case at tile boundaries.
+
+**This replaces (does not layer with) the old per-tile-corner `cornerHeightJitter()` call for
+tiles that get sub-tile treatment** — the new bump operates at strictly finer resolution (25
+lattice points per tile vs. 4 shared corners) and serves the exact same "seamless small height
+variation" purpose, so keeping both would just be two independent random offsets compounding for
+no added expressiveness. Tiles that don't get sub-tile treatment (ramp shapes, water/uncovered
+biomes) keep using `cornerHeightJitter()` exactly as before — this pass touches nothing about
+how those tiles compute height.
 
 **Collider inclusion:** since `groundGeometry`'s buffers already feed directly into the physics
 collider merge (Phase 4a's Task 4), baking the bump directly into these same position values
