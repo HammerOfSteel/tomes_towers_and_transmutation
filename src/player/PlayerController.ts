@@ -309,6 +309,15 @@ export class PlayerController {
    * Toggles on/off. Separate from flyMode (dev cheat).
    */
   flySpellMode = false;
+  /**
+   * Lantern spell — toggles a warm point light + visible held-lantern prop.
+   * True on/off toggle, mirrors flySpellMode's userData-flag plumbing.
+   */
+  isLanternOn = false;
+  /** Lantern light, attached as a child of `group`, fixed hip-height offset. */
+  private readonly _lanternLight = new THREE.PointLight(0xffaa55, 1.1, 6);
+  /** Small visible lantern prop (cage + glow), attached alongside the light. */
+  private readonly _lanternProp = PlayerController.buildLanternProp();
 
   // Direct sub-mesh references (squash/stretch applied here, NOT on group)
   private readonly bodyMesh: THREE.Mesh;
@@ -699,6 +708,14 @@ export class PlayerController {
     // Attach cloud-puff levitate effect (hidden until buff is active)
     this.group.add(this._levitateEffect.group);
 
+    // Attach lantern light + prop (hidden until the lantern spell is toggled on)
+    this._lanternLight.position.set(0.4, 1.0, 0.3); // fixed hip-height offset, tunable
+    this._lanternProp.position.copy(this._lanternLight.position);
+    this._lanternLight.visible = false;
+    this._lanternProp.visible = false;
+    this.group.add(this._lanternLight);
+    this.group.add(this._lanternProp);
+
     // Swim glow light — parented near chest height, off by default (see field doc).
     this._swimGlowLight.position.set(0, CAPSULE_HALF_HEIGHT, 0);
     this.group.add(this._swimGlowLight);
@@ -773,6 +790,13 @@ export class PlayerController {
     if (typeof this.group.userData['_flySpellMode'] === 'boolean') {
       this.flySpellMode = this.group.userData['_flySpellMode'] as boolean;
       delete this.group.userData['_flySpellMode'];
+    }
+    // Lantern spell toggle
+    if (typeof this.group.userData['_lanternToggle'] === 'boolean') {
+      this.isLanternOn = this.group.userData['_lanternToggle'] as boolean;
+      delete this.group.userData['_lanternToggle'];
+      this._lanternLight.visible = this.isLanternOn;
+      this._lanternProp.visible = this.isLanternOn;
     }
 
     // ── LEVITATE MODE (buff active + space held — hover with bob + cloud puffs) ──
@@ -1379,6 +1403,20 @@ export class PlayerController {
     mesh.rotation.x = -Math.PI / 2;
     mesh.renderOrder = 1;
     return mesh;
+  }
+
+  /** Small primitive-composition lantern prop: hollow "cage" + emissive "flame" sphere. */
+  private static buildLanternProp(): THREE.Group {
+    const g = new THREE.Group();
+    const cageMat = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.6, metalness: 0.4 });
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: 0xffcc66, emissive: 0xffaa44, emissiveIntensity: 1.2, roughness: 0.4,
+    });
+    // openEnded: true gives a hollow "cage" look — the glow sphere shows through top/bottom.
+    const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.18, 8, 1, true), cageMat);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), glowMat);
+    g.add(cage, glow);
+    return g;
   }
 }
 
