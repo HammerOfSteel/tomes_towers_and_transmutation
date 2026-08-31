@@ -289,7 +289,7 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   }
 
   // ── Settlements ──────────────────────────────────────────────────────────────
-  const VALID = new Set<RealmBiome>(['grassland','forest','savanna','taiga','desert']);
+  const VALID = new Set<RealmBiome>(['grassland','forest','savanna','taiga','desert','tundra','mountain']);
   const validCells: Vec2[] = [];
   for (let y = 4; y < H-4; y++) for (let x = 4; x < W-4; x++)
     if (VALID.has(cells[y]![x]!.biome)) validCells.push({ x, y });
@@ -306,7 +306,9 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
       const b = cells[cell.y]![cell.x]!.biome;
       const sz: 'village'|'town'|'city' = td > MIN_DIST*2.5 && (b==='forest'||b==='grassland') ? 'city'
                                         : td > MIN_DIST*1.2 ? 'town' : 'village';
-      const faction = FACTIONS[Math.floor(rand() * FACTIONS.length)]!;
+      // Biased (not hard-gated) by the cell's biome — Phase 5, see
+      // docs/superpowers/specs/2026-08-31-race-biome-affinity-design.md.
+      const faction = pickFaction(b, rand);
       settlements.push({ x: cell.x, y: cell.y, name: realmName(rand), size: sz, faction });
     }
   }

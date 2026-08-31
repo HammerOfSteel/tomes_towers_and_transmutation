@@ -229,3 +229,35 @@ describe('pickFaction', () => {
     }
   });
 });
+
+describe('generateRealmData — race/faction biome affinity (Phase 5)', () => {
+  it('sites settlements on mountain and tundra biomes too (previously excluded)', () => {
+    const seenBiomes = new Set<string>();
+    for (let seed = 0; seed < 60; seed++) {
+      const realm = generateRealmData(seed, 96, 72, 12, 'island', 'temperate', 0.5);
+      for (const s of realm.settlements) seenBiomes.add(realm.cells[s.y]![s.x]!.biome);
+    }
+    expect(seenBiomes.has('mountain') || seenBiomes.has('tundra')).toBe(true);
+  });
+
+  it('biases taiga-sited settlements toward elven, noticeably above uniform chance (~11%)', () => {
+    const taigaFactions: string[] = [];
+    // nSettlements=30 (well above the default 6) packs many more candidate
+    // sites into each generated world — MIN_DIST shrinks as nSettlements
+    // grows, so more, closer-packed settlements fit — which yields enough
+    // taiga-sited samples from far fewer world generations than scaling
+    // the seed loop alone would need (empirically ~30 samples per 1000
+    // seeds here, vs needing 4000+ seeds at the default settlement count).
+    for (let seed = 0; seed < 1000; seed++) {
+      const realm = generateRealmData(seed, 96, 72, 30, 'island', 'temperate', 0.5);
+      for (const s of realm.settlements) {
+        if (realm.cells[s.y]![s.x]!.biome === 'taiga') taigaFactions.push(s.faction);
+      }
+    }
+    // Needs a large-enough sample for the proportion check to be meaningful —
+    // if this floor isn't met in practice, raise the seed loop count above.
+    expect(taigaFactions.length).toBeGreaterThan(19);
+    const elvenRatio = taigaFactions.filter(f => f === 'elven').length / taigaFactions.length;
+    expect(elvenRatio).toBeGreaterThan(0.20); // well above the ~11% (1/9) uniform baseline
+  }, 30_000); // ~1000 world generations — a genuinely slow statistical test, given headroom above its observed ~7s runtime
+});
