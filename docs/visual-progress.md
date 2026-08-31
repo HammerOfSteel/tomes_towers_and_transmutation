@@ -137,6 +137,16 @@ see `docs/superpowers/specs/2026-08-31-ambient-wildlife-lod-design.md` (Phase 9'
 
 ---
 
+## Overworld Editor — Paint Mode (Dev Tool)
+
+The dev-only Overworld Editor (`\` to open, dev mode only) can now paint
+trees and rocks by click-and-drag instead of single-click-only placement
+— select "Paint: Trees" (`6`) or "Paint: Rocks" (`7`) and drag across the
+ground. Not player-facing. See
+`docs/superpowers/specs/2026-08-31-overworld-editor-paint-mode-design.md`.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
