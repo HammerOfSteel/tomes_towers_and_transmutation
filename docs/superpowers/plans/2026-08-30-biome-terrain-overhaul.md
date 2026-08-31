@@ -618,30 +618,52 @@ bridges (a road physically spanning a river/lake) — a road that would need
 to cross a lake is skipped entirely, same as the ocean-crossing fix; fords
 remain the only river-crossing mechanism.
 
-### Phase 4 — Organic biome transitions
+### Phase 4 — Organic biome transitions ✅ DONE (2026-08-31)
 **Depends on:** Phase 1, independent of Phases 2/3.
 
 Implements §2's domain-warping research note so biome borders read as
 naturally uneven coastlines/tree-lines rather than a perfect noise
-iso-contour, plus gives `RealmToTerrain.ts`'s already-computed but
-currently-unused `isBiomeTransition` flag an actual renderer treatment.
+iso-contour. Design spec: `docs/superpowers/specs/2026-08-31-organic-biome-transitions-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-31-organic-biome-transitions-plan.md`.
 
-- [ ] Add a second, low-frequency noise field in `RealmGenerator.ts`
-      that perturbs the `(nx, ny)` sample coordinate fed into
-      `classifyBiome()` by a small amount — the border between e.g.
-      grassland and forest becomes a noisy, organic line instead of a
-      perfect contour, with zero change to the classification thresholds
-      themselves.
-- [ ] Give `TerrainGeometryBuilder.ts` (or Phase 2's `TerrainKit.ts`, if
-      landed first) an actual transition-tile treatment for cells flagged
-      `isBiomeTransition` — at minimum a blended color-variant pick that
-      samples from *both* neighboring biomes' variant tables rather than
-      only the cell's own, so the seam has a visible few-tile gradient
-      instead of a hard color cut.
-- [ ] Tests: determinism (same seed → same warped borders), a "border
-      length/perimeter is longer than the pre-warp version" sanity check
-      (confirms warping is actually doing something rather than a no-op),
-      transition-tile blended-color assertions.
+- [x] Added `_domainWarp(nx, ny, roughness, noiseW)` to `RealmGenerator.ts` — a new low-frequency
+      `noiseW` field (seeded `seed ^ 0xFEEDFACE`) produces a bounded `(wx, wy)` displacement
+      (`0.03 + roughness*0.05` amplitude, `0.6` frequency — well below the elevation noise's own
+      1.8–3.0 scale) fed into every noise lookup that drives `classifyBiome()`: continent mask,
+      elevation, ridge, moisture, and temperature-noise. `classifyBiome()`'s thresholds and the
+      latitude term (`latT`, which represents real map position, not a noise-sample target) are
+      completely untouched. Since `WorldGenerator.ts`'s live `buildWorldGrid()` calls this exact
+      same `generateRealmData()` Overworld Studio uses (the Studio↔live parity gap was already
+      closed in an earlier phase), this change automatically benefits both, no dual
+      implementation needed.
+- [x] **Scope note:** the roadmap's original second bullet ("give `isBiomeTransition` an actual
+      blended-color rendering treatment") was found, during design, to already be effectively
+      delivered by the ground sub-tile system shipped 2026-09-01 —
+      `_subTileGroundVariant()`'s border-dithering already pulls a tile's outermost sub-tiles
+      toward a differing neighbor's own texture variant at biome borders, live in the game. Not
+      re-built here to avoid a redundant second mechanism.
+- [x] **Bug found and fixed during implementation:** the `'island'` shape's mask
+      (`Math.min(nx, 1-nx, ny, 1-ny) * 4.2`) was only ever non-negative before warping because
+      unwarped `nx`/`ny` are always in `[0,1)` by construction — but a warped `(wx, wy)` can land
+      slightly outside `[0,1]` near map edges, which `Math.min()` then returns directly as a
+      small negative value, propagating into a slightly negative `elevation`. Fixed by clamping
+      `mVal` to `>= 0` (previously only clamped `<= 1`). Caught by the pre-existing "every cell
+      has a valid elevation" test; a dedicated regression test (checking the full edge/corner
+      ring of several `roughness=1` island realms across 5 seeds) was added to lock this in.
+- [x] Tests: 4 `_domainWarp()` unit tests (determinism, bounded displacement, non-degenerate,
+      decorrelated axes), 1 wiring test (confirms the real generation path's output differs from
+      what the pre-warp formula would have produced at the same cell — proves the warp is
+      actually wired in, not just correct in isolation), 1 edge-case regression test (above).
+      Pre-existing determinism/settlement/tower/dungeon tests kept passing unmodified. One
+      pre-existing snapshot test (`OverworldScene.settlement-parity.test.ts`, seed 1) legitimately
+      shifted — its own comments already document this exact pattern happening 4 prior times
+      (mountain biome, elevation quantization, road-clearance safety net), since changing which
+      cells classify as which biome for a given seed perturbs the settlement-candidate cell list;
+      updated the snapshot and documented the shift inline, matching the file's own established
+      convention. Full project suite: same 12 pre-existing baseline failures + 1 already-
+      documented sandbox-contention timeout flake (`OverworldScene.chunk-scatter-alignment.test.ts`,
+      confirmed clean in isolation), zero real regressions. `tsc --noEmit` steady at 144. The
+      512×512 perf budget (3s) stayed comfortably met (~310ms).
 
 ### Phase 5 — Race/faction biome affinity for settlements, dungeons, caves
 **Depends on:** Phase 1 (needs `mountain` to exist for e.g. dwarven/vampire affinity to mean anything).

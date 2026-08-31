@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 1`] = `203`;
+exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 1`] = `212`;
 
 exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 2`] = `23`;
 
-exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 3`] = `140`;
+exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 3`] = `141`;
 
-exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 4`] = `57`;
+exports[`OverworldScene settlement rendering parity > produces the same building/road/lamp counts before and after the SettlementRenderer refactor (seed 1) 4`] = `61`;

@@ -90,6 +90,7 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   const noiseM = createNoise2D(seed ^ 0xDEADBEEF);
   const noiseT = createNoise2D(seed ^ 0xC0FFEE);
   const noiseR = createNoise2D(seed ^ 0xBADF00D);   // ridge/continent noise
+  const noiseW = createNoise2D(seed ^ 0xFEEDFACE);  // domain-warp field (Phase 4)
 
   // ── Continent mask per world shape ──────────────────────────────────────────
   type MaskFn = (nx: number, ny: number) => number;
@@ -152,20 +153,34 @@ export function generateRealmData(seed: number, W = 96, H = 72, nSettlements = 6
   const cells: RealmCell[][] = Array.from({ length: H }, (_, cy) =>
     Array.from({ length: W }, (_, cx) => {
       const nx = cx / W, ny = cy / H;
+      const { wx, wy } = _domainWarp(nx, ny, roughness, noiseW);
 
-      // Elevation: continent mask + fBm noise
-      const mVal   = Math.min(1, mask(nx, ny));
-      const noise  = fbmR(noiseE, nx, ny, oct, scale);
-      const ridge  = Math.abs(fbmR(noiseR, nx*1.3, ny*1.3, 3, 3.0) - 0.5) * 2;
+      // Elevation: continent mask + fBm noise — sampled at the warped
+      // coordinate so coastlines/mountain edges read as organically
+      // wobbly instead of a perfect noise-contour (Phase 4). mVal is
+      // explicitly clamped to >= 0 (not just <= 1 as before): unwarped
+      // nx/ny were always in [0,1) by construction, so the 'island'
+      // shape's mask (Math.min(nx, 1-nx, ny, 1-ny) * 4.2) could never go
+      // negative — but a warped (wx, wy) can land slightly outside [0,1]
+      // near map edges, and Math.min there directly returns that negative
+      // value, which would otherwise propagate into a slightly negative
+      // elevation.
+      const mVal   = Math.max(0, Math.min(1, mask(wx, wy)));
+      const noise  = fbmR(noiseE, wx, wy, oct, scale);
+      const ridge  = Math.abs(fbmR(noiseR, wx*1.3, wy*1.3, 3, 3.0) - 0.5) * 2;
       const elev   = Math.min(1, mVal * (noise * 0.75 + ridge * 0.25 * roughness + 0.2));
 
-      // Moisture
-      const moist  = fbmR(noiseM, nx+5, ny+5, 3, 1.8);
+      // Moisture — also sampled at the warped coordinate.
+      const moist  = fbmR(noiseM, wx+5, wy+5, 3, 1.8);
 
-      // Temperature: latitude + elevation + climate bias + noise jitter
+      // Temperature: latitude keeps the TRUE (unwarped) ny — it
+      // represents the cell's real map position for climate banding, not
+      // a noise-sample target, so warping it would be physically
+      // meaningless. elvT is derived from the already-warped elev, so it
+      // inherits the organic wobble; tNoise is sampled at the warped coordinate.
       const latT   = 1 - Math.abs(ny - 0.5) * 1.5;
       const elvT   = 1 - Math.max(0, elev - 0.4) * 2.0;
-      const tNoise = fbmR(noiseT, nx+10, ny+10, 2, 1.2) * 0.12;
+      const tNoise = fbmR(noiseT, wx+10, wy+10, 2, 1.2) * 0.12;
       const temp   = Math.max(0, Math.min(1, latT*0.65 + elvT*0.35 + tNoise + climateBias));
 
       return { elevation: elev, moisture: moist, biome: classifyBiome(elev, moist, temp) };

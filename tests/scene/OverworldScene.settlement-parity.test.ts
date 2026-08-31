@@ -89,6 +89,15 @@ describe('OverworldScene settlement rendering parity', () => {
     // nearby tile exists, dropped — an expected small reduction in count
     // for a settlement whose layout happens to place buildings close to
     // its roads, not a regression.
+    // Shifted a fifth time (buildingGroups 203->212, lampGroups 140->141,
+    // buildingData 57->61) once RealmGenerator.ts's Phase 4 domain-warp
+    // (_domainWarp(), see docs/superpowers/specs/2026-08-31-organic-biome-
+    // transitions-design.md) landed: warping the biome-classification
+    // sample coordinate perturbs exactly which cells classify as which
+    // biome/elevation for a given seed (same underlying mechanism as the
+    // mountain-biome and elevation-quantization shifts noted above), which
+    // again perturbs RealmGenerator.ts's settlement-candidate cell list
+    // for seed 1 — a different settlement layout/composition, not a bug.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadPaths).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

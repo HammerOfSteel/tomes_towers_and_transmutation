@@ -169,4 +169,26 @@ describe('generateRealmData — domain warp wiring', () => {
     const actualElev = realm.cells[cy]![cx]!.elevation;
     expect(actualElev).not.toBeCloseTo(unwarpedElev, 6);
   });
+
+  it('never produces a negative elevation for edge-adjacent cells under warp (island shape)', () => {
+    // Regression test: the 'island' shape's mask (Math.min(nx, 1-nx, ny,
+    // 1-ny) * 4.2) was only ever non-negative before warping because
+    // unwarped nx/ny are always in [0,1) by construction — but a warped
+    // (wx, wy) can land slightly outside [0,1] near map edges, which
+    // Math.min() then returns directly as a small negative mVal,
+    // propagating into a slightly negative elevation unless clamped.
+    // Exercise many seeds/positions across the full edge/corner ring of a
+    // few different-sized 'island' realms to catch this reliably.
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const realm = generateRealmData(seed, 40, 30, 6, 'island', 'temperate', 1); // roughness=1 -> max warp amplitude
+      for (let col = 0; col < realm.W; col++) {
+        expect(realm.cells[0]![col]!.elevation).toBeGreaterThanOrEqual(0);
+        expect(realm.cells[realm.H - 1]![col]!.elevation).toBeGreaterThanOrEqual(0);
+      }
+      for (let row = 0; row < realm.H; row++) {
+        expect(realm.cells[row]![0]!.elevation).toBeGreaterThanOrEqual(0);
+        expect(realm.cells[row]![realm.W - 1]!.elevation).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
 });
