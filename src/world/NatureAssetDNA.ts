@@ -9,6 +9,8 @@
  * produces the same-looking forest, no per-frame or per-load randomness.
  */
 
+import type { BiomeId } from './WorldGrid';
+
 /** Deterministic hash of two floating-point world coordinates → integer bucket in [0, count). */
 export function hashIndex(a: number, b: number, count: number): number {
   // Coordinates are world-space floats (can be fractional/negative) — scale and
@@ -23,15 +25,36 @@ export function hashIndex(a: number, b: number, count: number): number {
   return unsigned % count;
 }
 
-export type TreeArchetype = 'conifer' | 'deciduous' | 'sparse';
+export type TreeArchetype = 'conifer' | 'deciduous' | 'sparse' | 'cactus' | 'acacia';
 export type RockArchetype = 'boulder' | 'slab' | 'cluster';
 
-const TREE_ARCHETYPES: readonly TreeArchetype[] = ['conifer', 'deciduous', 'sparse'];
 const ROCK_ARCHETYPES: readonly RockArchetype[] = ['boulder', 'slab', 'cluster'];
 
-/** Deterministic tree archetype for a tree placed at world position (wx, wz). */
-export function pickTreeArchetype(wx: number, wz: number): TreeArchetype {
-  return TREE_ARCHETYPES[hashIndex(wx, wz, TREE_ARCHETYPES.length)]!;
+/** Which archetypes each biome is allowed to pick from — closes the "pine
+ *  tree next to oak tree regardless of biome" mismatch (see
+ *  docs/superpowers/specs/2026-08-30-nature-asset-biome-correctness-design.md §3.1).
+ *  `beach`/`ocean`/`deep_ocean` are never actually reached in practice
+ *  (ScatterRules.ts's isScatterAllowed() already excludes trees from these
+ *  biomes) — included only so the table is total over BiomeId. */
+const BIOME_TREE_ARCHETYPES: Record<BiomeId, readonly TreeArchetype[]> = {
+  grassland:  ['deciduous', 'sparse'],
+  forest:     ['conifer', 'deciduous'],
+  taiga:      ['conifer'],
+  tundra:     ['sparse'],
+  mountain:   ['sparse'],
+  snow:       ['sparse'],
+  desert:     ['cactus'],
+  savanna:    ['acacia'],
+  beach:      ['sparse'],
+  ocean:      ['sparse'],
+  deep_ocean: ['sparse'],
+};
+
+/** Deterministic tree archetype for a tree placed at world position (wx, wz),
+ *  restricted to the archetypes allowed for `biome`. */
+export function pickTreeArchetype(biome: BiomeId, wx: number, wz: number): TreeArchetype {
+  const set = BIOME_TREE_ARCHETYPES[biome];
+  return set[hashIndex(wx, wz, set.length)]!;
 }
 
 /** Deterministic rock archetype for a rock placed at world position (wx, wz). */
