@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
-import { selectGrassPlacements, packGrassInstanceBuffers } from '@/world/GrassField';
+import {
+  selectGrassPlacements, packGrassInstanceBuffers,
+  createGrassBladeGeometry, createGrassMaterial,
+} from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
   const g = new WorldGrid(size, size);
@@ -94,5 +97,45 @@ describe('packGrassInstanceBuffers', () => {
     const { positionRotation, scaleAndVariation } = packGrassInstanceBuffers([]);
     expect(positionRotation.length).toBe(0);
     expect(scaleAndVariation.length).toBe(0);
+  });
+});
+
+describe('createGrassBladeGeometry', () => {
+  it('produces the expected vertex and index counts for the default tuning', () => {
+    const geo = createGrassBladeGeometry(4, 0.06, 0.9, 0.28);
+    // (segments+1)*2 cross-section verts + 1 tip vertex = 5*2+1 = 11
+    expect(geo.attributes.position.count).toBe(11);
+    // segments*6 (2 tris per cross-section pair) + 3 (tip triangle) = 4*6+3 = 27
+    expect(geo.index).not.toBeNull();
+    expect(geo.index!.count).toBe(27);
+  });
+
+  it('computes vertex normals (non-zero normal attribute)', () => {
+    const geo = createGrassBladeGeometry(4, 0.06, 0.9, 0.28);
+    expect(geo.attributes.normal).toBeDefined();
+  });
+});
+
+describe('createGrassMaterial', () => {
+  it('declares the custom instanced attributes and wind uniforms in the vertex shader', () => {
+    const mat = createGrassMaterial();
+    expect(mat.vertexShader).toContain('aPositionRotation');
+    expect(mat.vertexShader).toContain('aScaleVariation');
+    expect(mat.vertexShader).toContain('uWindTime');
+    expect(mat.vertexShader).toContain('uFadeStart');
+  });
+
+  it('declares the color/shading uniforms in the fragment shader', () => {
+    const mat = createGrassMaterial();
+    expect(mat.fragmentShader).toContain('uBaseColor');
+    expect(mat.fragmentShader).toContain('uTipColor');
+    expect(mat.fragmentShader).toContain('uSssStrength');
+  });
+
+  it('has sensible default uniform values', () => {
+    const mat = createGrassMaterial();
+    expect(mat.uniforms.uWindTime.value).toBe(0);
+    expect(mat.uniforms.uDryAmount.value).toBe(0);
+    expect(mat.transparent).toBe(true);
   });
 });
