@@ -27,6 +27,7 @@
  */
 
 import * as THREE from 'three';
+import { shouldPlaceBrushPoint } from '@/editor/BrushPainting';
 
 // ── Public data types (consumed by OverworldScene.applyEditorLayout) ──────────
 
@@ -36,6 +37,8 @@ export type OWToolKind =
   | 'resource_ore'
   | 'resource_timber'
   | 'resource_essence'
+  | 'paint_tree'
+  | 'paint_rock'
   | 'erase';
 
 export interface OWEnemyCamp {
@@ -60,7 +63,20 @@ export interface OWResourceNode {
   type: 'ore' | 'timber' | 'essence';
 }
 
-export type OWLayoutItem = OWEnemyCamp | OWBuildingEntrance | OWResourceNode;
+/**
+ * A single brush-painted scatter prop (tree or rock). Painted via
+ * click-drag with the paint_tree/paint_rock tools — see BrushPainting.ts
+ * for the spacing logic that decides how many of these a single drag
+ * stroke produces.
+ */
+export interface OWScatterProp {
+  kind: 'scatter_prop';
+  wx: number;
+  wz: number;
+  propType: 'tree' | 'rock';
+}
+
+export type OWLayoutItem = OWEnemyCamp | OWBuildingEntrance | OWResourceNode | OWScatterProp;
 
 export interface OWLayout {
   version: 1;
@@ -75,6 +91,8 @@ const TOOL_COLOR: Record<OWToolKind, number> = {
   resource_ore:       0xffaa22,
   resource_timber:    0x44bb44,
   resource_essence:   0xcc66ff,
+  paint_tree:         0x2f9e44,
+  paint_rock:         0x8a8a8a,
   erase:              0xff2200,
 };
 
@@ -84,6 +102,8 @@ const TOOL_LABEL: Record<OWToolKind, string> = {
   resource_ore:       'Resource: Ore',
   resource_timber:    'Resource: Timber',
   resource_essence:   'Resource: Essence',
+  paint_tree:         'Paint: Trees',
+  paint_rock:         'Paint: Rocks',
   erase:              'Erase',
 };
 
@@ -93,12 +113,15 @@ const HOTKEYS: Partial<Record<string, OWToolKind>> = {
   '3': 'resource_ore',
   '4': 'resource_timber',
   '5': 'resource_essence',
+  '6': 'paint_tree',
+  '7': 'paint_rock',
   'e': 'erase',
   'E': 'erase',
 };
 
 const MARKER_RADIUS = 1.2;
 const ERASE_RADIUS  = 4.0;
+const PAINT_BRUSH_SPACING_WU = 3.0;
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +157,10 @@ export class OverworldEditor {
   private readonly _raycaster = new THREE.Raycaster();
   private readonly _mouse     = new THREE.Vector2(-9999, -9999);
 
+  // Brush-stroke state (paint_tree / paint_rock tools only)
+  private _isPointerDown = false;
+  private _lastBrushPoint: { x: number; z: number } | null = null;
+
   // UI
   private readonly _panel: HTMLDivElement;
   private readonly _toolBtns = new Map<OWToolKind, HTMLButtonElement>();
@@ -165,6 +192,8 @@ export class OverworldEditor {
     this._canvas.addEventListener('click',       this._onClick);
     this._canvas.addEventListener('contextmenu', this._onRightClick);
     this._canvas.addEventListener('mousemove',   this._onMouseMove);
+    this._canvas.addEventListener('mousedown',   this._onPointerDown);
+    this._canvas.addEventListener('mouseup',     this._onPointerUp);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -234,6 +263,8 @@ export class OverworldEditor {
     this._canvas.removeEventListener('click',       this._onClick);
     this._canvas.removeEventListener('contextmenu', this._onRightClick);
     this._canvas.removeEventListener('mousemove',   this._onMouseMove);
+    this._canvas.removeEventListener('mousedown',   this._onPointerDown);
+    this._canvas.removeEventListener('mouseup',     this._onPointerUp);
     this._panel.remove();
     this._hoverMesh.geometry.dispose();
     (this._hoverMesh.material as THREE.Material).dispose();
@@ -284,10 +315,43 @@ export class OverworldEditor {
       ((e.clientX - rect.left) / rect.width)  * 2 - 1,
       -((e.clientY - rect.top)  / rect.height) * 2 + 1,
     );
+
+    if (!this._active || !this._isPointerDown) return;
+    if (this._tool !== 'paint_tree' && this._tool !== 'paint_rock') return;
+    const hit = this._raycast();
+    if (!hit) return;
+    const candidate = { x: hit.x, z: hit.z };
+    if (shouldPlaceBrushPoint(this._lastBrushPoint, candidate, PAINT_BRUSH_SPACING_WU)) {
+      this._placeItem(hit.x, hit.z);
+      this._lastBrushPoint = candidate;
+    }
+  };
+
+  private readonly _onPointerDown = (_e: MouseEvent): void => {
+    this._isPointerDown = true;
+    if (!this._active) return;
+    if (this._tool !== 'paint_tree' && this._tool !== 'paint_rock') return;
+    // Place the first point of the stroke immediately, so a plain click
+    // (mousedown + mouseup with no drag in between) still places exactly
+    // one item — matching every other tool's existing single-click
+    // behavior.
+    const hit = this._raycast();
+    if (!hit) return;
+    this._placeItem(hit.x, hit.z);
+    this._lastBrushPoint = { x: hit.x, z: hit.z };
+  };
+
+  private readonly _onPointerUp = (_e: MouseEvent): void => {
+    this._isPointerDown = false;
+    this._lastBrushPoint = null;
   };
 
   private readonly _onClick = (_e: MouseEvent): void => {
     if (!this._active) return;
+    // paint_tree/paint_rock placement is handled entirely by
+    // _onPointerDown/_onMouseMove (so drag-painting works) — skip here to
+    // avoid placing a duplicate item on the plain-click case.
+    if (this._tool === 'paint_tree' || this._tool === 'paint_rock') return;
     const hit = this._raycast();
     if (!hit) return;
 
@@ -326,6 +390,12 @@ export class OverworldEditor {
       case 'resource_essence':
         item = { kind: 'resource_node', wx, wz, type: 'essence' };
         break;
+      case 'paint_tree':
+        item = { kind: 'scatter_prop', wx, wz, propType: 'tree' };
+        break;
+      case 'paint_rock':
+        item = { kind: 'scatter_prop', wx, wz, propType: 'rock' };
+        break;
       default:
         return;
     }
@@ -354,6 +424,9 @@ export class OverworldEditor {
       if (item.type === 'ore')     return TOOL_COLOR.resource_ore;
       if (item.type === 'timber')  return TOOL_COLOR.resource_timber;
       return TOOL_COLOR.resource_essence;
+    }
+    if (item.kind === 'scatter_prop') {
+      return item.propType === 'tree' ? TOOL_COLOR.paint_tree : TOOL_COLOR.paint_rock;
     }
     return 0xffffff;
   }
@@ -429,8 +502,9 @@ export class OverworldEditor {
     const camps     = this._items.filter(i => i.kind === 'enemy_camp').length;
     const buildings = this._items.filter(i => i.kind === 'building_entrance').length;
     const nodes     = this._items.filter(i => i.kind === 'resource_node').length;
+    const props     = this._items.filter(i => i.kind === 'scatter_prop').length;
     this._statusEl.textContent =
-      `Camps: ${camps}  Entrances: ${buildings}  Nodes: ${nodes}`;
+      `Camps: ${camps}  Entrances: ${buildings}  Nodes: ${nodes}  Props: ${props}`;
   }
 
   private _buildPanel(): HTMLDivElement {
@@ -454,9 +528,10 @@ export class OverworldEditor {
     const tools: OWToolKind[] = [
       'enemy_camp', 'building_entrance',
       'resource_ore', 'resource_timber', 'resource_essence',
+      'paint_tree', 'paint_rock',
       'erase',
     ];
-    const hotkeys = ['1', '2', '3', '4', '5', 'E'];
+    const hotkeys = ['1', '2', '3', '4', '5', '6', '7', 'E'];
 
     const toolRow = document.createElement('div');
     toolRow.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
@@ -483,7 +558,7 @@ export class OverworldEditor {
     const statusEl = document.createElement('span');
     statusEl.id = 'ow-ed-status';
     statusEl.style.cssText = 'color:#aaa;font-size:11px;';
-    statusEl.textContent = 'Camps: 0  Entrances: 0  Nodes: 0';
+    statusEl.textContent = 'Camps: 0  Entrances: 0  Nodes: 0  Props: 0';
     panel.appendChild(statusEl);
 
     // Action buttons row
@@ -509,6 +584,7 @@ export class OverworldEditor {
     help.style.cssText = 'color:#666;font-size:10px;margin-top:4px;line-height:1.4;';
     help.innerHTML =
       'Left-click: place &nbsp; Right-click: erase<br>' +
+      'Paint tools: click-drag to scatter<br>' +
       'Press <b style="color:#aaa">\\</b> to close editor';
     panel.appendChild(help);
 
