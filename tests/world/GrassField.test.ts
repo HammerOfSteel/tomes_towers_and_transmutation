@@ -205,20 +205,20 @@ describe('GrassField', () => {
 
   it('places no blades before the first update() call', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     expect(field.mesh.count).toBe(0);
   });
 
   it('places blades on the first update() call', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     field.update(0, 0);
     expect(field.mesh.count).toBeGreaterThan(0);
   });
 
   it('does not rebuild when the player moves less than REBUILD_HYSTERESIS', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     field.update(0, 0);
     expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(0);
     field.update(1, 1); // well under REBUILD_HYSTERESIS
@@ -227,7 +227,7 @@ describe('GrassField', () => {
 
   it('rebuilds once the player moves past REBUILD_HYSTERESIS', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     field.update(0, 0);
     field.update(REBUILD_HYSTERESIS + 1, 0);
     expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(REBUILD_HYSTERESIS + 1);
@@ -235,7 +235,7 @@ describe('GrassField', () => {
 
   it('updates the fade-center uniform to the current player position on every update() call, even when the instance buffer does not rebuild (regression: fade must track the player continuously, not just at rebuild boundaries, or grass fades out near the player between rebuilds)', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
 
     field.update(0, 0);
@@ -251,7 +251,7 @@ describe('GrassField', () => {
 
   it('tickWind() advances the wind time uniform without needing an update() call', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
     expect(material.uniforms.uWindTime.value).toBe(0);
     field.tickWind(0.5);
@@ -260,13 +260,34 @@ describe('GrassField', () => {
 
   it('dispose() disposes the mesh geometry and material', () => {
     const wg = makeAllGrasslandGrid();
-    const field = new GrassField(wg, 42);
+    const field = new GrassField(wg, 42, GRASS_PRESETS.grassland);
     const geoDisposeSpy = vi.spyOn(field.mesh.geometry, 'dispose');
     const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
     const matDisposeSpy = vi.spyOn(material, 'dispose');
     field.dispose();
     expect(geoDisposeSpy).toHaveBeenCalled();
     expect(matDisposeSpy).toHaveBeenCalled();
+  });
+
+  it('places blades using a non-grassland preset (tundra) on an all-tundra grid', () => {
+    const wg = makeAllBiomeGrid(40, 'tundra');
+    const field = new GrassField(wg, 42, GRASS_PRESETS.tundra);
+    field.update(0, 0);
+    expect(field.mesh.count).toBeGreaterThan(0);
+  });
+
+  it('does NOT place blades using the tundra preset on an all-grassland grid (no cross-biome bleed)', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42, GRASS_PRESETS.tundra);
+    field.update(0, 0);
+    expect(field.mesh.count).toBe(0);
+  });
+
+  it('exposes the constructor-supplied preset as a public readonly field', () => {
+    const wg = makeAllBiomeGrid(40, 'tundra');
+    const field = new GrassField(wg, 42, GRASS_PRESETS.tundra);
+    expect(field.preset.biome).toBe('tundra');
+    expect(field.preset.maxBlades).toBe(GRASS_PRESETS.tundra.maxBlades);
   });
 });
 

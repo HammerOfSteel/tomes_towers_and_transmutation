@@ -1,11 +1,15 @@
 /**
- * GrassField.ts — procedural 3D grass blades for the live OverworldScene
- * (batch 1 — grassland biome only; see
- * docs/superpowers/specs/2026-08-31-procedural-grass-grassland-design.md).
+ * GrassField.ts — procedural 3D grass blades for the live OverworldScene.
+ * Batch 1 shipped `grassland` only (see
+ * docs/superpowers/specs/2026-08-31-procedural-grass-grassland-design.md); batch 2 generalized
+ * every function here to take a `GrassPreset`, extending coverage to `savanna`/`forest`/
+ * `taiga`/`tundra` too (see
+ * docs/superpowers/specs/2026-08-31-procedural-grass-batch2-design.md). `OverworldScene` owns
+ * one `GrassField` instance per `GRASS_PRESETS` entry.
  *
  * Renders wind-animated instanced grass blades within a small player-
  * centered radius (NOT tied to the ChunkManager's much larger terrain-
- * streaming radius — see the design spec's "Placement Radius" section for
+ * streaming radius — see the batch 1 design spec's "Placement Radius" section for
  * why: grass density is 1-2 orders of magnitude higher per unit area than
  * tree/rock scatter, so applying it across the full streamed terrain area
  * would blow the desktop instanced-mesh budget).
@@ -393,15 +397,14 @@ export class WindSystem {
 // ── GrassField ────────────────────────────────────────────────────────────
 
 /**
- * Owns one persistent `THREE.InstancedMesh` of grass blades, rebuilt (in
- * place — no reallocation) only when the player moves past
- * `REBUILD_HYSTERESIS` from the last build center. Call `update()` once per
- * frame with the player's world position, and `tickWind()` once per frame
- * to animate the shader (cheap — uniform writes only, no CPU instance work).
+ * Owns one persistent `THREE.InstancedMesh` of grass blades for ONE `GrassPreset`/biome,
+ * rebuilt (in place — no reallocation) only when the player moves past `REBUILD_HYSTERESIS`
+ * from the last build center. `OverworldScene` owns one `GrassField` per grass-bearing biome
+ * (see `GRASS_PRESETS`), not one shared instance across biomes. Call `update()` once per frame
+ * with the player's world position, and `tickWind()` once per frame to animate the shader
+ * (cheap — uniform writes only, no CPU instance work).
  */
 export class GrassField {
-  static readonly MAX_BLADES = 100_000; // see design spec §4's budget math
-
   readonly mesh: THREE.InstancedMesh;
   private readonly _material: THREE.ShaderMaterial;
   private readonly _wind = new WindSystem();
@@ -410,22 +413,26 @@ export class GrassField {
   private _lastBuildX = Infinity;
   private _lastBuildZ = Infinity;
 
-  constructor(private readonly _wg: WorldGrid, private readonly _seed: number) {
-    const geometry = createGrassBladeGeometry();
-    this._material = createGrassMaterial();
+  constructor(
+    private readonly _wg: WorldGrid,
+    private readonly _seed: number,
+    readonly preset: GrassPreset,
+  ) {
+    const geometry = createGrassBladeGeometry(preset);
+    this._material = createGrassMaterial(preset);
 
     this._positionRotation = new THREE.InstancedBufferAttribute(
-      new Float32Array(GrassField.MAX_BLADES * 4), 4,
+      new Float32Array(preset.maxBlades * 4), 4,
     );
     this._positionRotation.setUsage(THREE.DynamicDrawUsage);
     this._scaleAndVariation = new THREE.InstancedBufferAttribute(
-      new Float32Array(GrassField.MAX_BLADES * 4), 4,
+      new Float32Array(preset.maxBlades * 4), 4,
     );
     this._scaleAndVariation.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aPositionRotation', this._positionRotation);
     geometry.setAttribute('aScaleVariation', this._scaleAndVariation);
 
-    this.mesh = new THREE.InstancedMesh(geometry, this._material, GrassField.MAX_BLADES);
+    this.mesh = new THREE.InstancedMesh(geometry, this._material, preset.maxBlades);
     this.mesh.frustumCulled = false; // wind displacement can push blades outside static bounds
     this.mesh.count = 0; // nothing placed until the first update()
   }
@@ -445,8 +452,11 @@ export class GrassField {
     this._lastBuildX = playerX;
     this._lastBuildZ = playerZ;
 
-    const placements = selectGrassPlacements(this._wg, playerX, playerZ, GRASS_RADIUS, this._seed);
-    const count = Math.min(placements.length, GrassField.MAX_BLADES);
+    const placements = selectGrassPlacements(
+      this._wg, playerX, playerZ, GRASS_RADIUS, this._seed,
+      this.preset.biome, this.preset.densityPerUnit2,
+    );
+    const count = Math.min(placements.length, this.preset.maxBlades);
     const { positionRotation, scaleAndVariation } =
       packGrassInstanceBuffers(placements.slice(0, count));
 
