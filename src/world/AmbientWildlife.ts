@@ -130,3 +130,87 @@ export function selectAmbientSpawnPoints(
   }
   return points;
 }
+
+// ── Behavior FSM ──────────────────────────────────────────────────────────
+
+export type AmbientState = 'idle' | 'wander' | 'flee';
+
+export interface AmbientBehaviorState {
+  state: AmbientState;
+  targetX: number;
+  targetZ: number;
+  /** Only meaningful while state === 'idle' — counts down to the next wander transition. */
+  dwellTimer: number;
+}
+
+const ARRIVAL_THRESHOLD = 0.3; // world units — "close enough" to a wander/flee target
+const FLEE_TARGET_DISTANCE = 10; // world units to flee away from the player, in the away direction
+
+/**
+ * Pure idle/wander/flee state transition — no THREE.js dependency, so it's fully testable with
+ * plain numbers. The caller (AmbientCreature, Task 4) is responsible for actually moving
+ * (ownX, ownZ) toward (targetX, targetZ) each frame at a state-appropriate speed and for
+ * selecting the matching animation state; this function only decides WHAT the next state/target
+ * should be, not how movement happens.
+ */
+export function tickAmbientBehavior(
+  prev: AmbientBehaviorState,
+  ownX: number, ownZ: number,
+  spawnX: number, spawnZ: number,
+  playerX: number, playerZ: number,
+  dt: number,
+  rand: () => number,
+): AmbientBehaviorState {
+  const dxPlayer = ownX - playerX;
+  const dzPlayer = ownZ - playerZ;
+  const playerDist = Math.sqrt(dxPlayer * dxPlayer + dzPlayer * dzPlayer);
+
+  if (prev.state === 'flee') {
+    if (playerDist > FLEE_EXIT_RADIUS) {
+      return {
+        state: 'idle', targetX: prev.targetX, targetZ: prev.targetZ,
+        dwellTimer: IDLE_MIN_DWELL + rand() * (IDLE_MAX_DWELL - IDLE_MIN_DWELL),
+      };
+    }
+    return prev; // still within the hysteresis band — keep fleeing toward the existing target
+  }
+
+  if (playerDist < FLEE_TRIGGER_RADIUS) {
+    // Flee directly away from the player's current position.
+    const awayLen = playerDist > 1e-6 ? playerDist : 1;
+    const awayX = dxPlayer / awayLen;
+    const awayZ = dzPlayer / awayLen;
+    return {
+      state: 'flee',
+      targetX: ownX + awayX * FLEE_TARGET_DISTANCE,
+      targetZ: ownZ + awayZ * FLEE_TARGET_DISTANCE,
+      dwellTimer: 0,
+    };
+  }
+
+  if (prev.state === 'idle') {
+    const dwellTimer = prev.dwellTimer - dt;
+    if (dwellTimer > 0) return { ...prev, dwellTimer };
+    // Dwell expired — pick a new wander target within WANDER_RADIUS of the spawn point.
+    const angle = rand() * Math.PI * 2;
+    const dist = rand() * WANDER_RADIUS;
+    return {
+      state: 'wander',
+      targetX: spawnX + Math.cos(angle) * dist,
+      targetZ: spawnZ + Math.sin(angle) * dist,
+      dwellTimer: 0,
+    };
+  }
+
+  // prev.state === 'wander'
+  const dxTarget = prev.targetX - ownX;
+  const dzTarget = prev.targetZ - ownZ;
+  const targetDist = Math.sqrt(dxTarget * dxTarget + dzTarget * dzTarget);
+  if (targetDist <= ARRIVAL_THRESHOLD) {
+    return {
+      state: 'idle', targetX: prev.targetX, targetZ: prev.targetZ,
+      dwellTimer: IDLE_MIN_DWELL + rand() * (IDLE_MAX_DWELL - IDLE_MIN_DWELL),
+    };
+  }
+  return prev; // still en route — keep the same target
+}

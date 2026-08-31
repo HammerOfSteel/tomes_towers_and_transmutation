@@ -5,7 +5,7 @@ import {
   WANDER_RADIUS, FLEE_TRIGGER_RADIUS, FLEE_EXIT_RADIUS,
   WANDER_SPEED, FLEE_SPEED, IDLE_MIN_DWELL, IDLE_MAX_DWELL,
   MAX_ACTIVE_AMBIENT_CREATURES, AMBIENT_BASE_SPACING,
-  selectAmbientSpawnPoints,
+  selectAmbientSpawnPoints, tickAmbientBehavior, type AmbientBehaviorState,
 } from '@/world/AmbientWildlife';
 
 describe('AMBIENT_SPECIES', () => {
@@ -139,6 +139,94 @@ describe('selectAmbientSpawnPoints', () => {
     const wg = makeAllBiomeGrid(100, 'forest');
     const a = selectAmbientSpawnPoints(wg, -20, -20, 40, 3);
     const b = selectAmbientSpawnPoints(wg, -20, -20, 40, 3);
+    expect(a).toEqual(b);
+  });
+});
+
+describe('tickAmbientBehavior', () => {
+  const FAR_PLAYER = { x: 1000, z: 1000 }; // always outside flee range unless a test moves it
+
+  function initialIdleState(): AmbientBehaviorState {
+    return { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 3 };
+  }
+
+  it('stays idle while the dwell timer has not expired', () => {
+    const rand = () => 0.5;
+    const prev = initialIdleState();
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    expect(next.state).toBe('idle');
+    expect(next.dwellTimer).toBeCloseTo(2, 5);
+  });
+
+  it('transitions idle -> wander once the dwell timer expires, picking a target within WANDER_RADIUS of spawn', () => {
+    const rand = () => 0.5; // deterministic mid-range value
+    const prev: AmbientBehaviorState = { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 0.5 };
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    expect(next.state).toBe('wander');
+    const dist = Math.sqrt(next.targetX ** 2 + next.targetZ ** 2);
+    expect(dist).toBeLessThanOrEqual(WANDER_RADIUS + 1e-6);
+  });
+
+  it('transitions wander -> idle once the creature arrives at its target, with a new dwell timer in [IDLE_MIN_DWELL, IDLE_MAX_DWELL]', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'wander', targetX: 1, targetZ: 0, dwellTimer: 0 };
+    // ownX=1, ownZ=0 — already at the target (arrival threshold satisfied)
+    const next = tickAmbientBehavior(prev, 1, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    expect(next.state).toBe('idle');
+    expect(next.dwellTimer).toBeGreaterThanOrEqual(IDLE_MIN_DWELL);
+    expect(next.dwellTimer).toBeLessThanOrEqual(IDLE_MAX_DWELL);
+  });
+
+  it('stays wander while still far from its target', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'wander', targetX: 8, targetZ: 0, dwellTimer: 0 };
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    expect(next.state).toBe('wander');
+    expect(next.targetX).toBe(8); // target unchanged while still en route
+    expect(next.targetZ).toBe(0);
+  });
+
+  it('enters flee from idle when the player is within FLEE_TRIGGER_RADIUS', () => {
+    const rand = () => 0.5;
+    const prev = initialIdleState();
+    // own at (0,0), player at (3,0) — distance 3 < FLEE_TRIGGER_RADIUS (6)
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, 3, 0, 1, rand);
+    expect(next.state).toBe('flee');
+    // Flee target should be in the direction AWAY from the player (negative X, since player is at +X)
+    expect(next.targetX).toBeLessThan(0);
+  });
+
+  it('enters flee from wander when the player is within FLEE_TRIGGER_RADIUS', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'wander', targetX: 8, targetZ: 0, dwellTimer: 0 };
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, 3, 0, 1, rand);
+    expect(next.state).toBe('flee');
+  });
+
+  it('stays flee while the player is still within FLEE_EXIT_RADIUS (hysteresis band)', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'flee', targetX: -5, targetZ: 0, dwellTimer: 0 };
+    // own at (0,0), player at (8,0) — distance 8 is beyond FLEE_TRIGGER_RADIUS (6) but still
+    // within FLEE_EXIT_RADIUS (9), so must stay fleeing (hysteresis, no flicker).
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, 8, 0, 1, rand);
+    expect(next.state).toBe('flee');
+  });
+
+  it('exits flee back to idle once the player is beyond FLEE_EXIT_RADIUS', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'flee', targetX: -5, targetZ: 0, dwellTimer: 0 };
+    // own at (0,0), player at (10,0) — distance 10 > FLEE_EXIT_RADIUS (9)
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, 10, 0, 1, rand);
+    expect(next.state).toBe('idle');
+    expect(next.dwellTimer).toBeGreaterThanOrEqual(IDLE_MIN_DWELL);
+    expect(next.dwellTimer).toBeLessThanOrEqual(IDLE_MAX_DWELL);
+  });
+
+  it('is deterministic for a fixed rand function', () => {
+    const rand = () => 0.3;
+    const prev: AmbientBehaviorState = { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 0.1 };
+    const a = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    const b = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
     expect(a).toEqual(b);
   });
 });
