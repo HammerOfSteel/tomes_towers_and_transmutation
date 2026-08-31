@@ -1949,6 +1949,10 @@ async function main() {
       findFordTile: () => gameMode === 'exterior' ? (overworld?.findFirstFordTile() ?? null) : null,
       /** Water mesh debug info (exterior mode only). For tests. */
       getWaterMeshDebugInfo: () => gameMode === 'exterior' ? (overworld?.getWaterMeshDebugInfo() ?? null) : null,
+      /** First grassland-biome tile world position (exterior mode only). For tests. */
+      findFirstGrasslandTile: () => gameMode === 'exterior' ? (overworld?.findFirstGrasslandTile() ?? null) : null,
+      /** Grass instanced-mesh debug info (exterior mode only). For tests. */
+      getGrassDebugInfo: () => gameMode === 'exterior' ? (overworld?.getGrassDebugInfo() ?? null) : null,
       /** Raw cell data at a world position (exterior mode only). For tests. */
       debugCellAt: (x: number, z: number) => gameMode === 'exterior' ? (overworld?.debugCellAt(x, z) ?? null) : null,
       /** Name + species of the active princess rig (null if none). For tests. */
