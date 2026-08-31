@@ -49,7 +49,7 @@ describe('pickTreeArchetype', () => {
       tundra: ['sparse'],
       mountain: ['sparse'],
       snow: ['sparse'],
-      desert: ['cactus'],
+      desert: ['cactus', 'joshuatree'],
       savanna: ['acacia'],
     };
     for (const [biome, set] of Object.entries(allowed)) {
@@ -66,10 +66,20 @@ describe('pickTreeArchetype', () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
+  it('desert is mostly cactus with occasional joshuatree (both appear, cactus more often)', () => {
+    const counts: Record<string, number> = { cactus: 0, joshuatree: 0 };
+    for (let i = -40; i < 40; i++) {
+      const a = pickTreeArchetype('desert', i * 2.7, -i * 4.1);
+      counts[a] = (counts[a] ?? 0) + 1;
+    }
+    expect(counts.cactus).toBeGreaterThan(0);
+    expect(counts.joshuatree).toBeGreaterThan(0);
+    expect(counts.cactus).toBeGreaterThan(counts.joshuatree); // "sparse" trees, cactus dominates
+  });
+
   it('always picks the single allowed archetype for a uniform biome', () => {
     for (let i = -20; i < 20; i++) {
       expect(pickTreeArchetype('taiga', i * 3.3, -i * 1.9)).toBe('conifer');
-      expect(pickTreeArchetype('desert', i * 3.3, -i * 1.9)).toBe('cactus');
       expect(pickTreeArchetype('savanna', i * 3.3, -i * 1.9)).toBe('acacia');
     }
   });
@@ -77,7 +87,7 @@ describe('pickTreeArchetype', () => {
   it('a different biome at the same position can yield a different archetype', () => {
     // Same coordinates, biomes whose sets don't overlap at all.
     expect(pickTreeArchetype('taiga', 5, 5)).toBe('conifer');
-    expect(pickTreeArchetype('desert', 5, 5)).toBe('cactus');
+    expect(pickTreeArchetype('savanna', 5, 5)).toBe('acacia');
   });
 });
 

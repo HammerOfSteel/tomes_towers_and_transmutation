@@ -25,7 +25,7 @@ export function hashIndex(a: number, b: number, count: number): number {
   return unsigned % count;
 }
 
-export type TreeArchetype = 'conifer' | 'deciduous' | 'sparse' | 'cactus' | 'acacia';
+export type TreeArchetype = 'conifer' | 'deciduous' | 'sparse' | 'cactus' | 'acacia' | 'joshuatree';
 export type RockArchetype = 'boulder' | 'slab' | 'cluster';
 
 const ROCK_ARCHETYPES: readonly RockArchetype[] = ['boulder', 'slab', 'cluster'];
@@ -35,7 +35,11 @@ const ROCK_ARCHETYPES: readonly RockArchetype[] = ['boulder', 'slab', 'cluster']
  *  docs/superpowers/specs/2026-08-30-nature-asset-biome-correctness-design.md §3.1).
  *  `beach`/`ocean`/`deep_ocean` are never actually reached in practice
  *  (ScatterRules.ts's isScatterAllowed() already excludes trees from these
- *  biomes) — included only so the table is total over BiomeId. */
+ *  biomes) — included only so the table is total over BiomeId.
+ *  `desert` repeats `'cactus'` 3x so it dominates the pick (cacti are the
+ *  primary desert flora); `'joshuatree'` appears roughly 1-in-4 for the
+ *  occasional sparse, leafless tree (see the 2026-08-31 tuning addendum in
+ *  the design spec). */
 const BIOME_TREE_ARCHETYPES: Record<BiomeId, readonly TreeArchetype[]> = {
   grassland:  ['deciduous', 'sparse'],
   forest:     ['conifer', 'deciduous'],
@@ -43,7 +47,7 @@ const BIOME_TREE_ARCHETYPES: Record<BiomeId, readonly TreeArchetype[]> = {
   tundra:     ['sparse'],
   mountain:   ['sparse'],
   snow:       ['sparse'],
-  desert:     ['cactus'],
+  desert:     ['cactus', 'cactus', 'cactus', 'joshuatree'],
   savanna:    ['acacia'],
   beach:      ['sparse'],
   ocean:      ['sparse'],

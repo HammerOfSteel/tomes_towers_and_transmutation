@@ -68,7 +68,7 @@ import type { RoadPathSegment } from '@/world/RoadPathSampler';
 import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 import { terrainVariantTexture } from '@/world/TerrainTextures';
 import { chaikin } from '@/core/chaikin';
-import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
+import { pickTreeArchetype, pickRockArchetype, hashIndex } from '@/world/NatureAssetDNA';
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
 import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager';
@@ -1677,10 +1677,11 @@ export class OverworldScene {
 
   private _makeTree(rand: () => number, biome: BiomeId, wx: number, wz: number): THREE.Group {
     const archetype = pickTreeArchetype(biome, wx, wz);
-    if (archetype === 'deciduous') return this._buildDeciduousTree(rand);
-    if (archetype === 'sparse')    return this._buildSparseTree(rand);
-    if (archetype === 'cactus')    return this._buildCactusTree(rand);
-    if (archetype === 'acacia')    return this._buildAcaciaTree(rand);
+    if (archetype === 'deciduous')  return this._buildDeciduousTree(rand);
+    if (archetype === 'sparse')     return this._buildSparseTree(rand);
+    if (archetype === 'cactus')     return this._buildCactusTree(rand, wx, wz);
+    if (archetype === 'acacia')     return this._buildAcaciaTree(rand);
+    if (archetype === 'joshuatree') return this._buildJoshuaTree(rand);
     return this._buildConiferTree(rand);
   }
 
@@ -1810,15 +1811,24 @@ export class OverworldScene {
     return g;
   }
 
+  /** Dispatches to one of 3 cactus silhouettes, deterministically chosen
+   *  per-position (independent of the archetype-selection hash) — desert's
+   *  primary flora, per NatureAssetDNA.ts's BIOME_TREE_ARCHETYPES. */
+  private _buildCactusTree(rand: () => number, wx: number, wz: number): THREE.Group {
+    const variant = (['saguaro', 'barrel', 'pricklypear'] as const)[hashIndex(wx, wz, 3)]!;
+    if (variant === 'barrel')      return this._buildBarrelCactus(rand);
+    if (variant === 'pricklypear') return this._buildPricklyPearCactus(rand);
+    return this._buildSaguaroCactus(rand);
+  }
+
   /** Saguaro-style cactus — a vertical trunk cylinder with 0-2 shorter
-   *  vertical "arm" cylinders offset to either side. Desert's tree
-   *  archetype (see NatureAssetDNA.ts's BIOME_TREE_ARCHETYPES). */
-  private _buildCactusTree(rand: () => number): THREE.Group {
+   *  vertical "arm" cylinders offset to either side. */
+  private _buildSaguaroCactus(rand: () => number): THREE.Group {
     const g = new THREE.Group();
     const trunkH = 1.6 + rand() * 1.4;
     const trunkR = 0.16 + rand() * 0.07;
     const mat = this._pooledMaterial(
-      'cactus',
+      'cactus-saguaro',
       [0x3f7d32, 0x3f7d32 + 0x010100, 0x3f7d32 + 0x020200, 0x3f7d32 + 0x030300],
       rand,
       0.16,
@@ -1843,22 +1853,82 @@ export class OverworldScene {
     return g;
   }
 
-  /** Short gnarled trunk topped by a single wide, shallow "umbrella" canopy
-   *  — savanna's tree archetype, distinct from conifer's tall narrow cone
+  /** Short, squat, ribbed-reading barrel cactus — a single wide cylinder
+   *  body with a rounded dome cap, no arms. */
+  private _buildBarrelCactus(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const r = 0.32 + rand() * 0.18;
+    const h = r * (1.3 + rand() * 0.6);
+    const mat = this._pooledMaterial(
+      'cactus-barrel',
+      [0x4a8a3a, 0x4a8a3a + 0x010100, 0x4a8a3a + 0x020200, 0x4a8a3a + 0x030300],
+      rand,
+      0.14,
+    );
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.88, r, h, 10), mat);
+    body.position.y = h / 2;
+    g.add(body);
+
+    // Rounded dome cap so the top doesn't read as a flat-cut cylinder.
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 0.88, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+    cap.position.y = h;
+    g.add(cap);
+
+    return g;
+  }
+
+  /** Prickly-pear-style cactus — a chain of 2-4 flattened oval "paddle"
+   *  pads branching upward and outward from the base. */
+  private _buildPricklyPearCactus(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const mat = this._pooledMaterial(
+      'cactus-pad',
+      [0x3f8a3a, 0x3f8a3a + 0x010100, 0x3f8a3a + 0x020200, 0x3f8a3a + 0x030300],
+      rand,
+      0.15,
+    );
+
+    const padCount = 2 + Math.floor(rand() * 3);
+    let px = 0, py = 0.05, pz = 0;
+    for (let i = 0; i < padCount; i++) {
+      const padW = 0.38 + rand() * 0.22;
+      const padH = 0.42 + rand() * 0.22;
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(padW, 8, 6), mat);
+      pad.scale.set(1, padH / padW, 0.26); // flatten into an oval paddle
+      const angle = rand() * Math.PI * 2;
+      const lean = 0.14 + rand() * 0.22;
+      px += Math.cos(angle) * lean;
+      pz += Math.sin(angle) * lean;
+      py += padH * 0.65;
+      pad.position.set(px, py, pz);
+      pad.rotation.y = angle;
+      pad.rotation.z = (rand() - 0.5) * 0.4;
+      g.add(pad);
+    }
+
+    return g;
+  }
+
+  /** Short gnarled trunk topped by a wide, flat-topped "umbrella" canopy —
+   *  savanna's tree archetype, distinct from conifer's tall narrow cone
    *  stack and deciduous's rounded lumpy canopy (see NatureAssetDNA.ts's
-   *  BIOME_TREE_ARCHETYPES). */
+   *  BIOME_TREE_ARCHETYPES). Built from several vertically-flattened
+   *  overlapping blobs arranged in a wide ring (same overlapping-blob
+   *  technique as _buildDeciduousTree(), squashed and ring-arranged
+   *  instead of clustered) so the canopy has real rounded volume at its
+   *  silhouette edges instead of a flat cone's hard, pancake-like edge. */
   private _buildAcaciaTree(rand: () => number): THREE.Group {
     const g = new THREE.Group();
-    const trunkH = 1.4 + rand() * 0.8;
+    const trunkH = 1.3 + rand() * 0.7;
     const trunkR = 0.10 + rand() * 0.05;
-    const canopyR = 1.6 + rand() * 0.9;
-    const canopyH = 0.5 + rand() * 0.25;
 
     const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(trunkR * 0.6, trunkR, trunkH, 6),
+      new THREE.CylinderGeometry(trunkR * 0.55, trunkR, trunkH, 6),
       this._pooledMaterial('acacia-trunk', [0x4a3820, 0x4a3820 + 0x010100], rand),
     );
     trunk.position.y = trunkH / 2;
+    trunk.rotation.z = (rand() - 0.5) * 0.25; // slight gnarled lean
     g.add(trunk);
 
     const canopyMat = this._pooledMaterial(
@@ -1867,9 +1937,98 @@ export class OverworldScene {
       rand,
       0.2,
     );
-    const canopy = new THREE.Mesh(new THREE.ConeGeometry(canopyR, canopyH, 8), canopyMat);
-    canopy.position.y = trunkH + canopyH * 0.3;
-    g.add(canopy);
+
+    const canopyY = trunkH + 0.15;
+    const ringR = 0.85 + rand() * 0.5;
+    const blobCount = 5 + Math.floor(rand() * 2);
+    for (let i = 0; i < blobCount; i++) {
+      const radius = 0.55 + rand() * 0.35;
+      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 0), canopyMat);
+      blob.scale.set(1, 0.38, 1); // squash vertically -> flat umbrella look
+      const angle = (i / blobCount) * Math.PI * 2 + rand() * 0.4;
+      blob.position.set(
+        Math.cos(angle) * ringR,
+        canopyY + rand() * 0.1,
+        Math.sin(angle) * ringR,
+      );
+      g.add(blob);
+    }
+    // Center blob fills the middle so the ring doesn't read as a hollow donut.
+    const centerBlob = new THREE.Mesh(new THREE.IcosahedronGeometry(ringR * 0.7, 0), canopyMat);
+    centerBlob.scale.set(1, 0.4, 1);
+    centerBlob.position.y = canopyY;
+    g.add(centerBlob);
+
+    return g;
+  }
+
+  /** Joshua-tree-style sparse desert tree — a twisted, leafless trunk with
+   *  1-3 upward-angled branch arms, each ending in a spiky yucca-like
+   *  tuft (radiating thin cones, no rounded "leaf" canopy mass at all).
+   *  Desert's occasional tall-tree archetype, per NatureAssetDNA.ts's
+   *  BIOME_TREE_ARCHETYPES (cactus dominates; this appears ~1-in-4). */
+  private _buildJoshuaTree(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const trunkH = 1.2 + rand() * 1.0;
+    const trunkR = 0.14 + rand() * 0.05;
+    const trunkMat = this._pooledMaterial(
+      'joshuatree-trunk',
+      [0x6b5a3a, 0x6b5a3a + 0x010100, 0x6b5a3a + 0x020200, 0x6b5a3a + 0x030300],
+      rand,
+      0.15,
+    );
+    const spikeMat = this._pooledMaterial(
+      'joshuatree-spike',
+      [0x4a6b3a, 0x4a6b3a + 0x010100, 0x4a6b3a + 0x020200],
+      rand,
+      0.12,
+    );
+
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.85, trunkR, trunkH, 6), trunkMat);
+    trunk.position.y = trunkH / 2;
+    trunk.rotation.z = (rand() - 0.5) * 0.25;
+    g.add(trunk);
+
+    // Radiating thin cone "spikes" around a tuft point — no rounded
+    // canopy mass, matching the "no leafs" yucca-spike look. `parent`
+    // receives the spikes as children so they automatically inherit
+    // whatever position/rotation the caller already applied to it.
+    const addSpikyTuft = (parent: THREE.Object3D, atLocalY: number, scale: number): void => {
+      const spikeCount = 7 + Math.floor(rand() * 5);
+      for (let s = 0; s < spikeCount; s++) {
+        const spikeLen = (0.16 + rand() * 0.12) * scale;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.022 * scale, spikeLen, 4), spikeMat);
+        const sAngle = (s / spikeCount) * Math.PI * 2 + rand() * 0.3;
+        const sTilt = 0.35 + rand() * 0.55;
+        spike.position.y = atLocalY + spikeLen * 0.4 * Math.cos(sTilt);
+        spike.rotation.z = Math.cos(sAngle) * sTilt;
+        spike.rotation.x = Math.sin(sAngle) * sTilt;
+        parent.add(spike);
+      }
+    };
+
+    // Main trunk crown tuft.
+    addSpikyTuft(g, trunkH, 1.0);
+
+    // 1-3 branch arms, each its own tilted Group (so its local +Y points
+    // "up the branch"), with its own spiky tuft parented directly to it.
+    const branchCount = 1 + Math.floor(rand() * 3);
+    for (let i = 0; i < branchCount; i++) {
+      const branchLen = 0.5 + rand() * 0.5;
+      const branchR = trunkR * 0.6;
+      const branchGroup = new THREE.Group();
+      branchGroup.position.y = trunkH * (0.45 + rand() * 0.4);
+      const angle = (i / branchCount) * Math.PI * 2 + rand() * 0.8;
+      branchGroup.rotation.y = angle;
+      branchGroup.rotation.z = 0.5 + rand() * 0.5;
+
+      const branch = new THREE.Mesh(new THREE.CylinderGeometry(branchR * 0.7, branchR, branchLen, 5), trunkMat);
+      branch.position.y = branchLen / 2;
+      branchGroup.add(branch);
+
+      addSpikyTuft(branchGroup, branchLen, 0.8 + rand() * 0.3);
+      g.add(branchGroup);
+    }
 
     return g;
   }
