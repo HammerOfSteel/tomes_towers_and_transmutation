@@ -8,7 +8,10 @@
  * (CreatureDNA/buildCreature/animateCreature) already used for the player, enemies, and NPCs.
  */
 import { dnaForArchetype, type CreatureDNA } from '@/creatures/CreatureDNA';
-import type { BiomeId } from '@/world/WorldGrid';
+import { mulberry32 } from '@/core/prng';
+import { poissonDisk } from '@/core/poissonDisk';
+import { isScatterAllowed } from '@/world/ScatterRules';
+import type { WorldGrid, BiomeId } from '@/world/WorldGrid';
 
 // ── Species ───────────────────────────────────────────────────────────────
 
@@ -79,3 +82,51 @@ export const IDLE_MIN_DWELL = 2;             // seconds
 export const IDLE_MAX_DWELL = 5;             // seconds
 export const MAX_ACTIVE_AMBIENT_CREATURES = 24;
 export const AMBIENT_BASE_SPACING = 40;      // world units, single per-chunk Poisson-disk pass
+
+// ── Placement ─────────────────────────────────────────────────────────────
+
+export interface AmbientSpawnPoint {
+  x: number;
+  z: number;
+  species: AmbientSpecies;
+}
+
+/**
+ * Scatter ambient-wildlife spawn points within a `chunkWorldSize`×`chunkWorldSize` WU square
+ * whose corner is at world `(originX, originZ)` — mirrors `OverworldScene.ts`'s
+ * `_buildChunkScatter()` tree/rock loop structure exactly (same Poisson-disk + per-candidate
+ * biome/isScatterAllowed gating), but at a single `AMBIENT_BASE_SPACING` and with an additional
+ * per-biome probability-thinning step (see this plan's Global Constraints) instead of scatter's
+ * per-kind fixed spacing. Deterministic for a fixed `seed`.
+ */
+export function selectAmbientSpawnPoints(
+  wg: WorldGrid,
+  originX: number,
+  originZ: number,
+  chunkWorldSize: number,
+  seed: number,
+): AmbientSpawnPoint[] {
+  const rand = mulberry32(seed);
+  const halfW = (wg.width - 1) / 2;
+  const halfH = (wg.height - 1) / 2;
+  const points: AmbientSpawnPoint[] = [];
+
+  const candidates = poissonDisk(chunkWorldSize, chunkWorldSize, AMBIENT_BASE_SPACING, rand);
+  for (const [px, pz] of candidates) {
+    const x = originX + px;
+    const z = originZ + pz;
+
+    const col = Math.floor(x / wg.tileUnit + halfW);
+    const row = Math.floor(z / wg.tileUnit + halfH);
+    if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) continue;
+
+    const cell = wg.get(col, row);
+    const rule = AMBIENT_BIOME_RULES[cell.biome];
+    if (!rule) continue;
+    if (!isScatterAllowed(cell, 'ambient')) continue;
+    if (rand() > rule.keepProbability) continue;
+
+    points.push({ x, z, species: rule.species });
+  }
+  return points;
+}

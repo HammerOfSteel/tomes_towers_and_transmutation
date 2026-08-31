@@ -20,14 +20,14 @@ function makeCell(overrides: Partial<WorldCell> = {}): WorldCell {
 describe('isScatterAllowed', () => {
   it('allows every scatter kind on a plain empty grass cell', () => {
     const cell = makeCell();
-    for (const kind of ['tree', 'bush', 'rock', 'camp', 'ruin', 'grass'] as const) {
+    for (const kind of ['tree', 'bush', 'rock', 'camp', 'ruin', 'grass', 'ambient'] as const) {
       expect(isScatterAllowed(cell, kind)).toBe(true);
     }
   });
 
   it('disallows every scatter kind on a water-biome cell', () => {
     const cell = makeCell({ biome: 'ocean', waterDepth: 2.5 });
-    for (const kind of ['tree', 'bush', 'rock', 'camp', 'ruin', 'grass'] as const) {
+    for (const kind of ['tree', 'bush', 'rock', 'camp', 'ruin', 'grass', 'ambient'] as const) {
       expect(isScatterAllowed(cell, kind)).toBe(false);
     }
   });
@@ -54,26 +54,28 @@ describe('isScatterAllowed', () => {
   it('disallows every scatter kind on a road tile', () => {
     for (const feature of ['road', 'road_dirt'] as const) {
       const cell = makeCell({ feature });
-      for (const kind of ['tree', 'bush', 'rock', 'grass'] as const) {
+      for (const kind of ['tree', 'bush', 'rock', 'grass', 'ambient'] as const) {
         expect(isScatterAllowed(cell, kind)).toBe(false);
       }
     }
   });
 
-  it('disallows tree/bush/rock/grass on a non-empty content cell (building, entrance, etc.)', () => {
+  it('disallows tree/bush/rock/grass/ambient on a non-empty content cell (building, entrance, etc.)', () => {
     const cell = makeCell({ content: 'building' });
     expect(isScatterAllowed(cell, 'tree')).toBe(false);
     expect(isScatterAllowed(cell, 'bush')).toBe(false);
     expect(isScatterAllowed(cell, 'rock')).toBe(false);
     expect(isScatterAllowed(cell, 'grass')).toBe(false);
+    expect(isScatterAllowed(cell, 'ambient')).toBe(false);
   });
 
-  it('disallows tree/bush/rock/grass inside a settlement zone', () => {
+  it('disallows tree/bush/rock/grass/ambient inside a settlement zone', () => {
     const cell = makeCell({ settlementId: 3 });
     expect(isScatterAllowed(cell, 'tree')).toBe(false);
     expect(isScatterAllowed(cell, 'bush')).toBe(false);
     expect(isScatterAllowed(cell, 'rock')).toBe(false);
     expect(isScatterAllowed(cell, 'grass')).toBe(false);
+    expect(isScatterAllowed(cell, 'ambient')).toBe(false);
   });
 });
 
