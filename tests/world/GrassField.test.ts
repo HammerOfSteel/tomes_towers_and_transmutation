@@ -4,7 +4,7 @@ import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
 import {
   selectGrassPlacements, packGrassInstanceBuffers,
   createGrassBladeGeometry, createGrassMaterial,
-  GrassField, REBUILD_HYSTERESIS,
+  GrassField, REBUILD_HYSTERESIS, GRASS_PRESETS,
 } from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
@@ -231,5 +231,40 @@ describe('GrassField', () => {
     field.dispose();
     expect(geoDisposeSpy).toHaveBeenCalled();
     expect(matDisposeSpy).toHaveBeenCalled();
+  });
+});
+
+describe('GRASS_PRESETS', () => {
+  const EXPECTED_BIOMES = ['grassland', 'savanna', 'tundra', 'forest', 'taiga'] as const;
+
+  it('has exactly the 5 expected biome keys', () => {
+    expect(Object.keys(GRASS_PRESETS).sort()).toEqual([...EXPECTED_BIOMES].sort());
+  });
+
+  it('each preset\'s biome field matches its own key', () => {
+    for (const key of EXPECTED_BIOMES) {
+      expect(GRASS_PRESETS[key].biome).toBe(key);
+    }
+  });
+
+  it('each preset has a positive density and maxBlades', () => {
+    for (const key of EXPECTED_BIOMES) {
+      expect(GRASS_PRESETS[key].densityPerUnit2).toBeGreaterThan(0);
+      expect(GRASS_PRESETS[key].maxBlades).toBeGreaterThan(0);
+    }
+  });
+
+  it('maxBlades for the 4 new biomes follows ceil(2304 * density * 1.25) rounded up to the ' +
+     'nearest 1000 (grassland is unchanged from batch 1 and intentionally excluded from this ' +
+     'formula check — see the next test)', () => {
+    for (const key of ['savanna', 'tundra', 'forest', 'taiga'] as const) {
+      const density = GRASS_PRESETS[key].densityPerUnit2;
+      const expected = Math.ceil((2304 * density * 1.25) / 1000) * 1000;
+      expect(GRASS_PRESETS[key].maxBlades).toBe(expected);
+    }
+  });
+
+  it('grassland maxBlades remains 100_000 (unchanged from batch 1)', () => {
+    expect(GRASS_PRESETS.grassland.maxBlades).toBe(100_000);
   });
 });

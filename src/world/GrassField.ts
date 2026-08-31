@@ -21,6 +21,48 @@ export const GRASS_RADIUS = 24;          // world units, player-centered
 export const REBUILD_HYSTERESIS = 8;     // world units of player movement before rebuild
 const DENSITY_PER_UNIT2 = 35;            // meadow preset — blades per world-unit²
 
+// ── Per-biome presets (batch 2 — see design spec §3) ────────────────────────
+
+/** The 5 biomes this system places grass on. Other `BiomeId` values never get grass. */
+export type GrassBiome = 'grassland' | 'savanna' | 'tundra' | 'forest' | 'taiga';
+
+export interface GrassPreset {
+  biome: GrassBiome;
+  segments: number; width: number; height: number; curvature: number;
+  baseColor: number; tipColor: number; dryColor: number; dryAmount: number;
+  densityPerUnit2: number;
+  windBase: number; windGust: number; windGustFreq: number;
+  maxBlades: number; // see design spec §3's "maxBlades sizing" formula
+}
+
+export const GRASS_PRESETS: Record<GrassBiome, GrassPreset> = {
+  grassland: {
+    biome: 'grassland', segments: 4, width: 0.06, height: 0.9, curvature: 0.28,
+    baseColor: 0x3a7d2c, tipColor: 0x8bbf40, dryColor: 0xc4a84b, dryAmount: 0,
+    densityPerUnit2: 35, windBase: 0.4, windGust: 0.8, windGustFreq: 0.3, maxBlades: 100_000,
+  },
+  savanna: {
+    biome: 'savanna', segments: 4, width: 0.05, height: 0.8, curvature: 0.2,
+    baseColor: 0x9b8b4a, tipColor: 0xd4c078, dryColor: 0xc4a84b, dryAmount: 0.6,
+    densityPerUnit2: 15, windBase: 0.3, windGust: 0.5, windGustFreq: 0.3, maxBlades: 44_000,
+  },
+  tundra: {
+    biome: 'tundra', segments: 2, width: 0.04, height: 0.2, curvature: 0.05,
+    baseColor: 0x6b7d4a, tipColor: 0x8b9d5a, dryColor: 0xc4a84b, dryAmount: 0.3,
+    densityPerUnit2: 25, windBase: 0.6, windGust: 1.2, windGustFreq: 0.3, maxBlades: 72_000,
+  },
+  forest: {
+    biome: 'forest', segments: 4, width: 0.05, height: 0.6, curvature: 0.22,
+    baseColor: 0x2e4a22, tipColor: 0x5a7d3a, dryColor: 0xc4a84b, dryAmount: 0.1,
+    densityPerUnit2: 12, windBase: 0.25, windGust: 0.4, windGustFreq: 0.25, maxBlades: 35_000,
+  },
+  taiga: {
+    biome: 'taiga', segments: 3, width: 0.04, height: 0.35, curvature: 0.15,
+    baseColor: 0x2f3d2c, tipColor: 0x4a5d42, dryColor: 0xc4a84b, dryAmount: 0.15,
+    densityPerUnit2: 8, windBase: 0.2, windGust: 0.35, windGustFreq: 0.25, maxBlades: 24_000,
+  },
+};
+
 // ── Placement ─────────────────────────────────────────────────────────────
 
 export interface GrassPlacement {
