@@ -13,7 +13,7 @@
  */
 import type { WorldCell } from './WorldGrid';
 
-export type ScatterKind = 'tree' | 'bush' | 'rock' | 'camp' | 'ruin';
+export type ScatterKind = 'tree' | 'bush' | 'rock' | 'camp' | 'ruin' | 'grass';
 
 /**
  * Returns whether a scatter object of the given kind may be placed on
@@ -33,7 +33,7 @@ export function isScatterAllowed(cell: WorldCell, kind: ScatterKind): boolean {
   if (cell.waterDepth > 0) return false;
   if (cell.settlementId > 0) return false;
 
-  if (kind === 'tree' || kind === 'bush' || kind === 'rock') {
+  if (kind === 'tree' || kind === 'bush' || kind === 'rock' || kind === 'grass') {
     if (cell.feature === 'road' || cell.feature === 'road_dirt') return false;
     if (cell.content !== 'empty') return false;
   }
