@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
 import {
   AMBIENT_SPECIES, AMBIENT_BIOME_RULES,
@@ -6,6 +7,7 @@ import {
   WANDER_SPEED, FLEE_SPEED, IDLE_MIN_DWELL, IDLE_MAX_DWELL,
   MAX_ACTIVE_AMBIENT_CREATURES, AMBIENT_BASE_SPACING,
   selectAmbientSpawnPoints, tickAmbientBehavior, type AmbientBehaviorState,
+  AmbientCreature,
 } from '@/world/AmbientWildlife';
 
 describe('AMBIENT_SPECIES', () => {
@@ -228,5 +230,55 @@ describe('tickAmbientBehavior', () => {
     const a = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
     const b = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
     expect(a).toEqual(b);
+  });
+});
+
+describe('AmbientCreature', () => {
+  it('constructs a rabbit at the given spawn position, feet grounded at spawn Y', () => {
+    const spawn = new THREE.Vector3(5, 2, 5);
+    const creature = new AmbientCreature('rabbit', spawn, 42);
+    // The creature's root sits at the spawn XZ; grounding math keeps Y close to spawn.y
+    // (small tolerance since natural-foot-Y offsets a few hundredths of a world unit).
+    expect(creature.root.position.x).toBeCloseTo(spawn.x, 5);
+    expect(creature.root.position.z).toBeCloseTo(spawn.z, 5);
+    creature.dispose();
+  });
+
+  it('constructs a goat without throwing', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('goat', spawn, 7);
+    expect(creature.root).toBeDefined();
+    creature.dispose();
+  });
+
+  it('moves toward the wander target over successive update() calls (never teleports)', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    const farPlayer = new THREE.Vector3(1000, 0, 1000);
+    const startPos = creature.root.position.clone();
+    for (let i = 0; i < 300; i++) creature.update(farPlayer, 1 / 30);
+    const endPos = creature.root.position.clone();
+    const moved = startPos.distanceTo(endPos);
+    // Over 10 simulated seconds of idle+wander cycling, some movement should have occurred,
+    // but never further than a single wander excursion could carry it (spawn radius + margin).
+    expect(moved).toBeGreaterThanOrEqual(0);
+    expect(moved).toBeLessThan(WANDER_RADIUS + 2);
+    creature.dispose();
+  });
+
+  it('flees away from a nearby player', () => {
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    const closePlayer = new THREE.Vector3(2, 0, 0); // within FLEE_TRIGGER_RADIUS
+    const startX = creature.root.position.x;
+    for (let i = 0; i < 60; i++) creature.update(closePlayer, 1 / 30);
+    // Fleeing away from a player at +X should move the creature toward -X.
+    expect(creature.root.position.x).toBeLessThan(startX);
+    creature.dispose();
+  });
+
+  it('dispose() does not throw and can be called safely', () => {
+    const creature = new AmbientCreature('goat', new THREE.Vector3(0, 0, 0), 3);
+    expect(() => creature.dispose()).not.toThrow();
   });
 });

@@ -7,7 +7,10 @@
  * fleeing when approached. Reuses the same procedural creature-rig system
  * (CreatureDNA/buildCreature/animateCreature) already used for the player, enemies, and NPCs.
  */
+import * as THREE from 'three';
 import { dnaForArchetype, type CreatureDNA } from '@/creatures/CreatureDNA';
+import { buildCreature, computeQuadNaturalFootY, type CreatureRig } from '@/creatures/CreatureBuilder';
+import { animateCreature } from '@/creatures/CreatureAnimator';
 import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import { isScatterAllowed } from '@/world/ScatterRules';
@@ -213,4 +216,83 @@ export function tickAmbientBehavior(
     };
   }
   return prev; // still en route — keep the same target
+}
+
+// ── AmbientCreature ───────────────────────────────────────────────────────
+
+/**
+ * One peaceful, wandering ambient creature — owns a CreatureRig, a pure AmbientBehaviorState,
+ * and its own seeded PRNG (for wander-target/dwell-timer randomness, deterministic per
+ * creature). No physics body, no collider, no health — purely decorative.
+ */
+export class AmbientCreature {
+  readonly root: THREE.Group;
+  private readonly _rig: CreatureRig;
+  private readonly _rand: () => number;
+  private readonly _spawnX: number;
+  private readonly _spawnZ: number;
+  private _behavior: AmbientBehaviorState;
+  private _animTime = 0;
+
+  constructor(species: AmbientSpecies, spawnPosition: THREE.Vector3, seed: number) {
+    const def = AMBIENT_SPECIES[species];
+    this._rig = buildCreature(def.dna);
+    this._rig.root.scale.setScalar(def.dna.proportions.global);
+
+    // Foot-grounding: computeQuadNaturalFootY() returns an UNSCALED local offset (see this
+    // task's plan-level rationale comment) — must be multiplied by the same global scale
+    // applied above, unlike PlayerController.ts's usage (safe there only because the player's
+    // own scale sits at/near 1.0).
+    const footY = computeQuadNaturalFootY(this._rig) * def.dna.proportions.global;
+    this._rig.root.position.y = -footY;
+
+    this.root = new THREE.Group();
+    this.root.add(this._rig.root);
+    this.root.position.set(spawnPosition.x, spawnPosition.y, spawnPosition.z);
+
+    this._spawnX = spawnPosition.x;
+    this._spawnZ = spawnPosition.z;
+    this._rand = mulberry32(seed);
+    this._behavior = {
+      state: 'idle', targetX: spawnPosition.x, targetZ: spawnPosition.z,
+      dwellTimer: IDLE_MIN_DWELL + this._rand() * (IDLE_MAX_DWELL - IDLE_MIN_DWELL),
+    };
+  }
+
+  update(playerPos: THREE.Vector3, dt: number): void {
+    this._behavior = tickAmbientBehavior(
+      this._behavior,
+      this.root.position.x, this.root.position.z,
+      this._spawnX, this._spawnZ,
+      playerPos.x, playerPos.z,
+      dt, this._rand,
+    );
+
+    const speed = this._behavior.state === 'flee' ? FLEE_SPEED
+      : this._behavior.state === 'wander' ? WANDER_SPEED
+      : 0;
+
+    if (speed > 0) {
+      const dx = this._behavior.targetX - this.root.position.x;
+      const dz = this._behavior.targetZ - this.root.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > 1e-6) {
+        const step = Math.min(speed * dt, dist);
+        this.root.position.x += (dx / dist) * step;
+        this.root.position.z += (dz / dist) * step;
+        this.root.rotation.y = Math.atan2(dx, dz);
+      }
+    }
+
+    this._animTime += dt;
+    animateCreature(this._rig, {
+      state: this._behavior.state === 'idle' ? 'idle' : 'walk',
+      time: this._animTime,
+      velocity: speed,
+    });
+  }
+
+  dispose(): void {
+    this._rig.dispose();
+  }
 }
