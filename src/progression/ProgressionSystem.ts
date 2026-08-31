@@ -77,8 +77,8 @@ const BASE_MODS: TalentModifiers = {
 export class ProgressionSystem {
   private readonly _readBooks = new Set<string>();
   private readonly _unlockedSpells = new Set<string>();
-  /** 4 equipped spell slots (0–3). Slot 0 always holds magic_bolt. */
-  private readonly _equippedSlots: (string | null)[] = ['magic_bolt', null, null, null];
+  /** 4 equipped spell slots (0–3). Slot 0 always holds magic_bolt, slot 1 holds lantern. */
+  private readonly _equippedSlots: (string | null)[] = ['magic_bolt', 'lantern', null, null];
 
   // ── XP / levelling ────────────────────────────────────────────────────
   private _xp = 0;
@@ -98,6 +98,9 @@ export class ProgressionSystem {
   constructor() {
     // magic_bolt is the starter spell — always unlocked, no book required.
     this._unlockedSpells.add('magic_bolt');
+    // lantern is a default utility spell — always unlocked and pre-equipped in slot 1,
+    // no book/loot required (matches magic_bolt's direct-seed treatment above).
+    this._unlockedSpells.add('lantern');
   }
 
   // ── XP & Levelling ────────────────────────────────────────────────────
