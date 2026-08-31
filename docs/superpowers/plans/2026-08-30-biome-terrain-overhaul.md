@@ -859,13 +859,105 @@ Implementation plan: `docs/superpowers/plans/2026-08-30-ground-tile-texture-vari
 - Biome-transition blending at borders — tracked under Phase 4 "organic
   biome transitions", a natural follow-on once base ground textures exist.
 - Literal geometric sub-tile subdivision for ground (the road-style N×N
-  per-tile classification) — considered and explicitly rejected for this
-  pass (see the design spec §2) on performance grounds; texture-only
-  variety via world-space UV was judged sufficient for the "less blocky"
-  goal at a fraction of the geometry cost.
+  per-tile classification) — considered and explicitly rejected for the
+  *initial* ground-texture-wiring pass (see the design spec §2) on
+  performance grounds; texture-only variety via world-space UV was judged
+  sufficient for the "less blocky" goal at a fraction of the geometry cost.
+  **Revisited and shipped as a follow-up pass, see below.**
 - The Studio-preview-only `TileBuilder.ts`/`TileDNA.ts` system remains
   unintegrated with the live renderer's new texture system, as originally
   scoped (different problems, not worth force-unifying).
+
+**Ground sub-tile system (bumps + micro-patches) ✅ DONE (2026-09-01)** —
+follow-up pass, requested after live feedback that ground still read as
+patchwork-blocky at typical camera distance despite Phase 4a's texture
+variety. Design spec: `docs/superpowers/specs/2026-09-01-ground-subtile-system-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-09-01-ground-subtile-system-plan.md`.
+Reverses the earlier "texture-only, no subdivision" call above — the user
+explicitly chose literal geometric sub-tile subdivision this time,
+accepting a real performance cost, after being shown that subdividing an
+already-planar quad delivers zero texture benefit by itself (world-space
+UV is already GPU-interpolated per-fragment regardless of triangle count)
+— real value only comes from genuine per-sub-tile height variation or
+discrete per-sub-tile material switching, so this pass adds both.
+
+- [x] `subTileBumpJitter(worldX, worldZ)` — new seamless per-lattice-point
+      height bump (±0.06 WU, double the old per-tile `cornerHeightJitter`'s
+      ±0.03 WU), keyed by absolute world position (same bit-mixing hash
+      technique, scaled/truncated to integers first) so any two sub-tile
+      quads sharing a lattice point — adjacent sub-tiles within one tile,
+      or adjacent tiles sharing a real corner — always agree, never seaming.
+- [x] `_subTileGroundVariant(...)` — per-sub-tile texture variant
+      resolution: border dithering (S→N→E→W priority order, ~40% pull
+      probability, restricted to the outermost sub-tile row/column facing
+      a differing neighbor) then a low-probability (~6%) micro-patch swap
+      via a `MICRO_PATCH_VARIANTS` table reusing Phase 4a's existing 10
+      textures (grassland→river_bank, forest/taiga→mountain,
+      savanna→desert, tundra→snow), else the tile's own variant.
+- [x] `emitGroundSubTiles()` wired into the flat/all-four-down and edge
+      top-face branches only — a 4×4 sub-tile grid (`GROUND_SUBDIVISIONS`,
+      matching roads' existing `N=4` convention) replacing each single
+      quad, each sub-tile's height bilinearly interpolated from the tile's
+      real (pre-jitter) corner heights plus the new bump. **Explicitly
+      scoped out, unchanged**: ramp shapes (single-corner/outer-corner/
+      saddle, ~6% of tiles) stay non-subdivided since their 2-triangle
+      diagonal-split geometry from Phase 2 is genuinely non-planar (bilinear
+      interpolation of 4 corners would only be an approximation there, not
+      exact) — confirmed with the user as a deliberate boundary keeping
+      this pass 100% additive to already-shipped Phase 2 code. Tiles with
+      partial road coverage are also unaffected (already have their own
+      dedicated road/ground sub-tile path from an earlier phase).
+- [x] Tests: 4 new tests for `subTileBumpJitter` (determinism, bounded
+      range, non-constant, cross-lookup seamlessness), 5 new tests for
+      `_subTileGroundVariant` (own-variant fallback, outermost-row/column-
+      only border pulls, no-pull-toward-same-variant, determinism,
+      micro-patch rate bounds), 4 new tests in the wiring task (16×
+      sub-tile count for an isolated flat tile, shared-edge seamlessness
+      by exact vertex index, border-pull presence across a multi-tile
+      boundary, ramp-shape exclusion). **Migration**: every pre-existing
+      test whose fixture was a flat/edge covered-biome tile (commonly the
+      default `'grassland'` biome) needed its expected face/vertex counts
+      multiplied by 16 (`GROUND_SUBDIVISIONS²`) — larger blast radius than
+      Phase 4a's own migration but the same underlying technique (sum
+      across buffers via `totalPositionsLength()`/`totalIndicesLength()`/
+      `allNormals()` where the test's real intent was total geometry, not
+      a specific buffer). **A second, more subtle migration issue emerged**:
+      several exact per-variant-buffer assertions (not just per-tile-shape
+      counts) broke because `'grassland'`'s micro-patch entry
+      (`river_bank`) can legitimately redirect a handful of a tile's 16
+      sub-tiles to a different buffer even with no differing neighbor —
+      this is the *intended* texture variety working, not a bug, so those
+      assertions were fixed to sum across every `groundGeometry` variant
+      rather than assuming zero patches ever fire. Full project suite:
+      same 12 pre-existing baseline failures + the same 2 already-documented
+      sandbox-contention timeout flakes (`OverworldScene.chunk-scatter-alignment.test.ts`,
+      `ResourceNodePlacer.test.ts` — both re-confirmed passing cleanly in
+      isolation), zero real regressions. `tsc --noEmit` steady at 144.
+- [x] Perf check: same temporary-`git worktree` methodology as every prior
+      phase, benchmarking a realistic mixed-biome 16×16 chunk (8 biomes,
+      elevation variety for edge/ramp shapes, a river cutting through).
+      **Real, substantial cost as expected and explicitly accepted by the
+      user** — chunk-build time went from ~0.49 ms avg (baseline, pre-this-pass)
+      to ~1.97-2.0 ms avg (with the sub-tile system), a consistent ~4×
+      increase confirmed across repeated runs on both sides. Reported
+      honestly per this project's established precedent — not rounded
+      favorably or downplayed. Still fast in absolute terms for a
+      per-chunk-load (not per-frame) cost; the user was told upfront this
+      would be a real, larger cost than Phase 4a's and explicitly said "no
+      time constraints, take your time."
+- [x] Manual verification: live Playwright session against the dev server
+      confirmed the overworld generates, starts, switches to the exterior
+      scene, and runs (`forceTick(60)`) with **zero console/page errors**;
+      the `goExterior()` screenshot captured successfully and shows
+      visible ground texture dithering (small tan/reddish micro-patches in
+      the grass) at the starting settlement. A second post-tick screenshot
+      attempt repeatedly timed out under this sandbox's documented
+      WebGL-compositing resource contention (same recurring environment
+      limitation flagged in every prior phase, unrelated to this code
+      change) — reported honestly as an open follow-up (fine per-sub-tile
+      bump detail at 0.06 WU amplitude was not independently confirmed
+      visually beyond the one successful screenshot) rather than claimed
+      as fully verified.
 
 ### Phase 9 (stretch, reassess after Phases 1-8) — World-package/ambient/reward-ecology follow-through
 **Depends on:** most of the above; lowest priority, only pursue if time remains.
