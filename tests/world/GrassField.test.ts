@@ -125,6 +125,20 @@ describe('createGrassMaterial', () => {
     expect(mat.vertexShader).toContain('aScaleVariation');
     expect(mat.vertexShader).toContain('uWindTime');
     expect(mat.vertexShader).toContain('uFadeStart');
+    expect(mat.vertexShader).toContain('uFadeCenter');
+  });
+
+  it('computes the distance fade from uFadeCenter (a world XZ position), not from cameraPosition', () => {
+    // Regression test: the fade used to measure distance from the actual camera, but this
+    // game's isometric camera sits at a large fixed offset (~28 WU, see CameraRig.ts's
+    // ISO_OFFSET) from the player — so grass right at the player's feet was always beyond
+    // FADE_END and got fully discarded, while only a narrow sliver of blades (in the one
+    // direction that happened to reduce camera distance) ever rendered. The fade must be
+    // computed from a world-space center (the player's position, passed in via uFadeCenter)
+    // instead.
+    const mat = createGrassMaterial();
+    expect(mat.vertexShader).not.toContain('distance(cameraPosition, worldPos)');
+    expect(mat.vertexShader).toMatch(/distance\(\s*worldPos\.xz\s*,\s*uFadeCenter\s*\)/);
   });
 
   it('declares the color/shading uniforms in the fragment shader', () => {
@@ -139,6 +153,8 @@ describe('createGrassMaterial', () => {
     expect(mat.uniforms.uWindTime.value).toBe(0);
     expect(mat.uniforms.uDryAmount.value).toBe(0);
     expect(mat.transparent).toBe(true);
+    expect((mat.uniforms.uFadeCenter.value as THREE.Vector2).x).toBe(0);
+    expect((mat.uniforms.uFadeCenter.value as THREE.Vector2).y).toBe(0);
   });
 });
 
@@ -179,6 +195,22 @@ describe('GrassField', () => {
     field.update(0, 0);
     field.update(REBUILD_HYSTERESIS + 1, 0);
     expect((field as unknown as { _lastBuildX: number })._lastBuildX).toBe(REBUILD_HYSTERESIS + 1);
+  });
+
+  it('updates the fade-center uniform to the current player position on every update() call, even when the instance buffer does not rebuild (regression: fade must track the player continuously, not just at rebuild boundaries, or grass fades out near the player between rebuilds)', () => {
+    const wg = makeAllGrasslandGrid();
+    const field = new GrassField(wg, 42);
+    const material = (field as unknown as { _material: THREE.ShaderMaterial })._material;
+
+    field.update(0, 0);
+    expect((material.uniforms.uFadeCenter.value as THREE.Vector2).x).toBe(0);
+    expect((material.uniforms.uFadeCenter.value as THREE.Vector2).y).toBe(0);
+
+    // Move less than REBUILD_HYSTERESIS — instance buffer does NOT rebuild, but the fade
+    // center must still update every frame so the fade radius tracks the player smoothly.
+    field.update(2, 3);
+    expect((material.uniforms.uFadeCenter.value as THREE.Vector2).x).toBe(2);
+    expect((material.uniforms.uFadeCenter.value as THREE.Vector2).y).toBe(3);
   });
 
   it('tickWind() advances the wind time uniform without needing an update() call', () => {

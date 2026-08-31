@@ -197,6 +197,7 @@ export function createGrassMaterial(): THREE.ShaderMaterial {
       uWindGustFreq: { value: 0.3 },
       uFadeStart:    { value: FADE_START },
       uFadeEnd:      { value: FADE_END },
+      uFadeCenter:   { value: new THREE.Vector2(0, 0) },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aPositionRotation; // xyz = world pos, w = Y rotation
@@ -209,6 +210,11 @@ export function createGrassMaterial(): THREE.ShaderMaterial {
       uniform float uWindGustFreq;
       uniform float uFadeStart;
       uniform float uFadeEnd;
+      uniform vec2  uFadeCenter; // world XZ position to fade distance from (the player,
+                                  // NOT cameraPosition — this game's fixed isometric camera
+                                  // sits ~28 WU from the player (see CameraRig.ts's
+                                  // ISO_OFFSET), so fading by camera distance made grass
+                                  // right at the player's feet always fully discard).
 
       varying vec2  vUv;
       varying vec3  vNormal;
@@ -281,7 +287,7 @@ export function createGrassMaterial(): THREE.ShaderMaterial {
         vNormal.xz += windOffsetXZ * 0.3;
         vNormal = normalize(vNormal);
 
-        float dist = distance(cameraPosition, worldPos);
+        float dist = distance(worldPos.xz, uFadeCenter);
         vFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
 
         gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
@@ -387,8 +393,13 @@ export class GrassField {
     this.mesh.count = 0; // nothing placed until the first update()
   }
 
-  /** Rebuild the instance buffer only once the player has moved past REBUILD_HYSTERESIS. */
+  /** Rebuild the instance buffer only once the player has moved past REBUILD_HYSTERESIS.
+   *  Updates the fade-center uniform every call regardless (see uFadeCenter's shader doc
+   *  comment) so the visual fade radius tracks the player continuously, not just at
+   *  rebuild boundaries. */
   update(playerX: number, playerZ: number): void {
+    (this._material.uniforms.uFadeCenter.value as THREE.Vector2).set(playerX, playerZ);
+
     const dx = playerX - this._lastBuildX;
     const dz = playerZ - this._lastBuildZ;
     if (Number.isFinite(this._lastBuildX) && Math.sqrt(dx * dx + dz * dz) < REBUILD_HYSTERESIS) {
