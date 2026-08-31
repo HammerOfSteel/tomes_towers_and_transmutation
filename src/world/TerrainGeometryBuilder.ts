@@ -26,6 +26,89 @@ const ROAD_UV_TILE_WU = 1.0;
  *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
 const GROUND_UV_TILE_WU = 2.5;
 
+/** Probability (per independent roll) that an outermost-row/column
+ *  sub-tile pulls toward a differing neighbor's variant instead of its
+ *  own — see design spec §3.3. */
+const BORDER_PULL_PROBABILITY = 0.40;
+
+/** Probability that a sub-tile swaps to a micro-patch variant, for
+ *  biomes that have one mapped. */
+const MICRO_PATCH_PROBABILITY = 0.06;
+
+/** Which "micro-patch" texture variant occasionally interrupts a biome's
+ *  own ground texture — reuses the 10 variants already shipped in Phase
+ *  4a, no new content. Biomes not listed have no micro-patch (already
+ *  read as fairly uniform — mountain/snow/desert/beach/river_bank). See
+ *  docs/superpowers/specs/2026-09-01-ground-subtile-system-design.md §3.3. */
+const MICRO_PATCH_VARIANTS: Partial<Record<BiomeId, readonly string[]>> = {
+  grassland: ['river_bank'],
+  forest:    ['mountain'],
+  savanna:   ['desert'],
+  taiga:     ['mountain'],
+  tundra:    ['snow'],
+};
+
+/** Deterministic pseudo-random unit value [0, 1) for a world position,
+ *  offset by `salt` so multiple independent rolls at the same position
+ *  (one per border direction, one for micro-patch selection) don't
+ *  correlate with each other. */
+function _subTileRoll(worldX: number, worldZ: number, salt: number): number {
+  const xi = Math.floor(worldX * 1000) | 0;
+  const zi = Math.floor(worldZ * 1000) | 0;
+  let h = (xi * 374761393 + zi * 668265263 + salt * 2246822519) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967296;
+}
+
+/** Resolves which texture variant one ground sub-tile should render with
+ *  — border dithering (pull toward a differing orthogonal neighbor's
+ *  variant, only for the outermost sub-tile row/column touching that
+ *  edge) checked in a fixed S/N/E/W priority order, then an occasional
+ *  low-probability micro-patch swap, else the tile's own variant. Pure
+ *  function — the caller resolves neighbor cells/variants and passes
+ *  them in. Exported (like cornerHeightJitter/cellVariantIndex) for
+ *  direct unit testing. */
+export function _subTileGroundVariant(
+  ownVariant: string,
+  neighborVariant: { south: string | null; north: string | null; east: string | null; west: string | null },
+  sx: number, sz: number, subdivisions: number,
+  ownBiome: BiomeId,
+  subWorldX: number, subWorldZ: number,
+): string {
+  const isOutermostSouth = sz === subdivisions - 1;
+  const isOutermostNorth = sz === 0;
+  const isOutermostEast  = sx === subdivisions - 1;
+  const isOutermostWest  = sx === 0;
+
+  if (isOutermostSouth && neighborVariant.south !== null && neighborVariant.south !== ownVariant) {
+    if (_subTileRoll(subWorldX, subWorldZ, 1) < BORDER_PULL_PROBABILITY) return neighborVariant.south;
+  }
+  if (isOutermostNorth && neighborVariant.north !== null && neighborVariant.north !== ownVariant) {
+    if (_subTileRoll(subWorldX, subWorldZ, 2) < BORDER_PULL_PROBABILITY) return neighborVariant.north;
+  }
+  if (isOutermostEast && neighborVariant.east !== null && neighborVariant.east !== ownVariant) {
+    if (_subTileRoll(subWorldX, subWorldZ, 3) < BORDER_PULL_PROBABILITY) return neighborVariant.east;
+  }
+  if (isOutermostWest && neighborVariant.west !== null && neighborVariant.west !== ownVariant) {
+    if (_subTileRoll(subWorldX, subWorldZ, 4) < BORDER_PULL_PROBABILITY) return neighborVariant.west;
+  }
+
+  const microPatches = MICRO_PATCH_VARIANTS[ownBiome];
+  if (microPatches && microPatches.length > 0) {
+    if (_subTileRoll(subWorldX, subWorldZ, 5) < MICRO_PATCH_PROBABILITY) {
+      const idx = Math.min(
+        Math.floor(_subTileRoll(subWorldX, subWorldZ, 6) * microPatches.length),
+        microPatches.length - 1,
+      );
+      return microPatches[idx]!;
+    }
+  }
+
+  return ownVariant;
+}
+
+
 /** Biome vertex colours [r, g, b] for height levels 0–7 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
  * BIOME_VARIANTS for patchiness, this array is variant index 0 of each level. Levels 5-7

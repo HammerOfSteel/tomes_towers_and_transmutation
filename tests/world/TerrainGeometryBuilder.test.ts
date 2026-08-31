@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
@@ -267,6 +267,61 @@ describe('subTileBumpJitter', () => {
     const a = subTileBumpJitter(10, 5);
     const b = subTileBumpJitter(10, 5);
     expect(a).toBe(b);
+  });
+});
+
+describe('_subTileGroundVariant', () => {
+  const noNeighbors = { south: null, north: null, east: null, west: null };
+
+  it('returns the tile\'s own variant when no neighbor differs and no micro-patch is defined', () => {
+    // 'mountain' has no MICRO_PATCH_VARIANTS entry (see design spec §3.3).
+    for (let sx = 0; sx < 4; sx++) {
+      for (let sz = 0; sz < 4; sz++) {
+        const v = _subTileGroundVariant('mountain', noNeighbors, sx, sz, 4, 'mountain', sx * 3.1, sz * 2.7);
+        expect(v).toBe('mountain');
+      }
+    }
+  });
+
+  it('only pulls toward a differing neighbor variant for the outermost sub-tile row/column touching that edge', () => {
+    // South neighbor differs; only sz === 3 (the outermost south-facing row, N=4) may ever pull.
+    const neighbors = { ...noNeighbors, south: 'desert' };
+    let sawPullAtInterior = false;
+    for (let sx = 0; sx < 4; sx++) {
+      for (let sz = 0; sz < 3; sz++) { // sz 0,1,2 — never the outermost south row
+        const v = _subTileGroundVariant('mountain', neighbors, sx, sz, 4, 'mountain', sx * 5.3 + 1, sz * 4.1 + 1);
+        if (v === 'desert') sawPullAtInterior = true;
+      }
+    }
+    expect(sawPullAtInterior).toBe(false);
+  });
+
+  it('never pulls toward a neighbor whose variant equals its own', () => {
+    const neighbors = { ...noNeighbors, south: 'mountain' }; // same as own variant
+    for (let sx = 0; sx < 4; sx++) {
+      const v = _subTileGroundVariant('mountain', neighbors, sx, 3, 4, 'mountain', sx * 7.7, 99);
+      expect(v).toBe('mountain');
+    }
+  });
+
+  it('is deterministic for the same inputs', () => {
+    const neighbors = { ...noNeighbors, east: 'forest' };
+    const a = _subTileGroundVariant('grassland', neighbors, 3, 1, 4, 'grassland', 12.3, 45.6);
+    const b = _subTileGroundVariant('grassland', neighbors, 3, 1, 4, 'grassland', 12.3, 45.6);
+    expect(a).toBe(b);
+  });
+
+  it('occasionally applies a micro-patch variant for a biome with one mapped, at a low rate', () => {
+    // 'grassland' maps to ['river_bank'] (see design spec §3.3's MICRO_PATCH_VARIANTS table).
+    let patchCount = 0;
+    const total = 400;
+    for (let i = 0; i < total; i++) {
+      const v = _subTileGroundVariant('grassland', noNeighbors, 1, 1, 4, 'grassland', i * 3.7, i * -2.9);
+      if (v === 'river_bank') patchCount++;
+      else expect(v).toBe('grassland');
+    }
+    expect(patchCount).toBeGreaterThan(0);
+    expect(patchCount).toBeLessThan(total * 0.25); // low rate, not dominant
   });
 });
 
