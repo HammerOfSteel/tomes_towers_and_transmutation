@@ -118,3 +118,30 @@ ordinary land biome it happens to sit on.
 
 See §2's "explicitly out of scope" list — rock/bush archetype variety, grass clumps, and further
 snow/tundra/beach tree tuning are all deferred, not silently dropped.
+
+## 6. Addendum (2026-08-31): live-tested tuning based on direct visual feedback
+
+After shipping and live-testing §3.2's `_buildAcaciaTree()` and desert's single `cactus`
+archetype, the user reported two concrete issues, both addressed directly (implemented via the
+same TDD discipline, no new design questions — the feedback itself was the spec):
+
+- **Acacia crown too flat.** The original single flat `ConeGeometry` canopy read as a pancake
+  rather than a rounded umbrella. Reworked to several vertically-squashed (`scale.set(1, 0.38,
+  1)`) overlapping `IcosahedronGeometry` blobs arranged in a wide ring plus a center-filling
+  blob — the same "overlapping blobs" technique `_buildDeciduousTree()` already used for its
+  rounded canopy, just squashed flat and ring-arranged instead of clustered — giving the
+  silhouette real rounded volume at its edges instead of a cone's hard flat-topped edge.
+- **Desert needs more cactus variety, and any taller "tree" should be sparse and leafless
+  (Joshua-tree style), not a normal leafy tree.** Added 2 more cactus silhouettes — `barrel`
+  (a short squat cylinder with a rounded dome cap) and `pricklypear` (2-4 flattened oval
+  "paddle" pads chained upward and outward) — alongside the existing `saguaro`, chosen via a
+  deterministic per-position hash independent of the biome-archetype pick. Added a genuinely new
+  `TreeArchetype` value, `joshuatree`: a twisted trunk with 1-3 branch arms, each ending in a
+  radiating spiky yucca-like tuft (thin cones only — no rounded icosahedron/sphere "leaf" mass
+  anywhere on the tree, unlike `sparse`'s icosahedron foliage fragments, which is why `sparse`
+  itself wasn't reused for this). `BIOME_TREE_ARCHETYPES.desert` became `['cactus', 'cactus',
+  'cactus', 'joshuatree']` — repeating `'cactus'` in the array is the existing project
+  convention for weighting a `hashIndex()`-based pick (already used implicitly by grassland's/
+  forest's 2-entry sets), giving desert roughly a 3:1 cactus-to-Joshua-tree ratio matching "if
+  there are trees they are sparse" (i.e., rare relative to the ever-present cacti).
+
