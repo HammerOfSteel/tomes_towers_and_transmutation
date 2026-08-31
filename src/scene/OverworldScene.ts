@@ -82,7 +82,7 @@ import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager'
 import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed } from '@/world/ScatterRules';
-import { GrassField } from '@/world/GrassField';
+import { GrassField, GRASS_PRESETS } from '@/world/GrassField';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { renderSettlementPlan } from './SettlementRenderer';
 
@@ -238,10 +238,11 @@ export class OverworldScene {
   private readonly _hostileHash = new SpatialHash<SlimeEnemy>(8);
   /** Phase 7h.2 — one draw call for all slime bodies (128 slots; enemies never exceed that). */
   private readonly _slimeIM: THREE.InstancedMesh = createSlimeBodyIM(128);
-  /** Procedural grass (batch 1 — grassland biome only). Built in the constructor once
-   *  `this._wg`/`this._seed` are set (needs both, so it can't be a field initializer default
-   *  like `_slimeIM` above, which has no such dependency). */
-  private _grassField!: GrassField;
+  /** Procedural grass — one `GrassField` per `GRASS_PRESETS` entry (grassland/savanna/forest/
+   *  taiga/tundra, see batch 2's design spec). Built in the constructor once `this._wg`/
+   *  `this._seed` are set (needs both, so it can't be a field initializer default like
+   *  `_slimeIM` above, which has no such dependency). */
+  private _grassFields!: GrassField[];
 
   // ── Asset-upgraded geometry (added async after construction) ──────────────
   /** River tile GLBs replacing the procedural water mesh. */
@@ -383,7 +384,9 @@ export class OverworldScene {
     console.log('[OverworldScene] _buildSettlements...');
     this._buildSettlements(worldData);
     this._buildTerritoryPropPool();
-    this._grassField = new GrassField(this._wg, this._seed);
+    this._grassFields = Object.values(GRASS_PRESETS).map(
+      preset => new GrassField(this._wg, this._seed, preset),
+    );
     console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
     console.log('[OverworldScene] _buildResourceNodes...');
@@ -446,7 +449,7 @@ export class OverworldScene {
     for (const ru of this._ruins)        this.scene.add(ru);
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
-    this.scene.add(this._grassField.mesh);
+    for (const gf of this._grassFields) this.scene.add(gf.mesh);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
     for (const gb of this._gladeEntranceBuilts) this.scene.add(gb.root);
@@ -501,7 +504,7 @@ export class OverworldScene {
     for (const ru of this._ruins)        this.scene.remove(ru);
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
-    this.scene.remove(this._grassField.mesh);
+    for (const gf of this._grassFields) this.scene.remove(gf.mesh);
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.remove(cb.root);
     for (const gb of this._gladeEntranceBuilts) this.scene.remove(gb.root);
@@ -589,10 +592,14 @@ export class OverworldScene {
     // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
     this._syncSlimeIM();
 
-    // Procedural grass (batch 1): rebuild the instance buffer only when the
-    // player has moved past REBUILD_HYSTERESIS; tick wind uniforms every frame.
-    this._grassField.update(pos.x, pos.z);
-    this._grassField.tickWind(dt);
+    // Procedural grass (batch 2: 5 biome presets): rebuild each field's instance buffer
+    // only when the player has moved past REBUILD_HYSTERESIS; tick wind uniforms every
+    // frame. A given tile is only ever one biome, so at most one field actually places
+    // blades near the player at a time — the others just do a cheap no-op update() call.
+    for (const gf of this._grassFields) {
+      gf.update(pos.x, pos.z);
+      gf.tickWind(dt);
+    }
 
     // Tick resource node respawn timers
     for (let i = 0; i < this._respawnTimers.length; i++) {
@@ -628,7 +635,7 @@ export class OverworldScene {
     for (const npc of this._npcs)          npc.dispose();
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
-    this._grassField.dispose();
+    for (const gf of this._grassFields) gf.dispose();
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
     for (const cb of this._caveEntranceBuilts)  cb.dispose();
     for (const gb of this._gladeEntranceBuilts) gb.dispose();
@@ -805,25 +812,30 @@ export class OverworldScene {
     return null;
   }
 
-  /** First grassland-biome tile found by scanning the grid (or null). For tests/dev-tooling
-   *  verification of the procedural grass system — mirrors `findFirstFordTile()`. */
-  findFirstGrasslandTile(): { x: number; z: number } | null {
+  /** First tile of the given biome found by scanning the grid (or null). For tests/dev-tooling
+   *  verification of the procedural grass system (batch 2 — generalized from the batch-1-only
+   *  `findFirstGrasslandTile()`) — mirrors `findFirstFordTile()`. */
+  findFirstBiomeTile(biome: BiomeId): { x: number; z: number } | null {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
     for (let row = 0; row < GH; row++) {
       for (let col = 0; col < GW; col++) {
-        if (this._wg.get(col, row).biome !== 'grassland') continue;
+        if (this._wg.get(col, row).biome !== biome) continue;
         return { x: (col - GHW) * T, z: (row - GHH) * T };
       }
     }
     return null;
   }
 
-  /** Debug/dev-tooling only: grass instanced-mesh blade count + scene membership
-   *  (for verification scripts). Mirrors `getWaterMeshDebugInfo()`. */
-  getGrassDebugInfo(): { bladeCount: number; inScene: boolean } {
+  /** Debug/dev-tooling only: per-biome grass instanced-mesh blade counts + scene membership
+   *  (for verification scripts). Mirrors `getWaterMeshDebugInfo()`. `bladeCounts` is keyed by
+   *  biome name (one entry per `GRASS_PRESETS` biome, e.g. `{ grassland: 8207, savanna: 0,
+   *  tundra: 0, forest: 0, taiga: 0 }` when the player stands on a grassland tile). */
+  getGrassDebugInfo(): { bladeCounts: Record<string, number>; inScene: boolean } {
+    const bladeCounts: Record<string, number> = {};
+    for (const gf of this._grassFields) bladeCounts[gf.preset.biome] = gf.mesh.count;
     return {
-      bladeCount: this._grassField.mesh.count,
-      inScene: this.scene.children.includes(this._grassField.mesh),
+      bladeCounts,
+      inScene: this._grassFields.every(gf => this.scene.children.includes(gf.mesh)),
     };
   }
 

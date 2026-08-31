@@ -46,6 +46,7 @@ import type { RegenParams } from '@/scene/SettlementLabScene';
 import { OverworldEditor } from '@/editor/OverworldEditor';
 import { OWMinimap }      from '@/ui/OWMinimap';
 import { loadWorldGenConfig, type WorldGenConfig } from '@/world/WorldGenConfig';
+import type { BiomeId } from '@/world/WorldGrid';
 import { buildWorldData } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
@@ -1949,9 +1950,10 @@ async function main() {
       findFordTile: () => gameMode === 'exterior' ? (overworld?.findFirstFordTile() ?? null) : null,
       /** Water mesh debug info (exterior mode only). For tests. */
       getWaterMeshDebugInfo: () => gameMode === 'exterior' ? (overworld?.getWaterMeshDebugInfo() ?? null) : null,
-      /** First grassland-biome tile world position (exterior mode only). For tests. */
-      findFirstGrasslandTile: () => gameMode === 'exterior' ? (overworld?.findFirstGrasslandTile() ?? null) : null,
-      /** Grass instanced-mesh debug info (exterior mode only). For tests. */
+      /** First tile of the given biome world position (exterior mode only). For tests.
+       *  Generalized from batch 1's grassland-only `findFirstGrasslandTile` hook. */
+      findFirstBiomeTile: (biome: BiomeId) => gameMode === 'exterior' ? (overworld?.findFirstBiomeTile(biome) ?? null) : null,
+      /** Per-biome grass instanced-mesh debug info (exterior mode only). For tests. */
       getGrassDebugInfo: () => gameMode === 'exterior' ? (overworld?.getGrassDebugInfo() ?? null) : null,
       /** Current renderer draw-call count (for tests — a lighter-weight, working alternative
        *  to the pre-existing but broken getPerfStats() hook below, which references an

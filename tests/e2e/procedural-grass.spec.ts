@@ -32,7 +32,7 @@ test.describe('Procedural grass (grassland batch 1)', () => {
     await startGame(page);
     await goExterior(page);
 
-    const tile = await page.evaluate(() => (window as any).__game.findFirstGrasslandTile());
+    const tile = await page.evaluate(() => (window as any).__game.findFirstBiomeTile('grassland'));
     expect(tile, 'No grassland tile found in generated overworld').toBeTruthy();
 
     await teleportPlayer(page, (tile as { x: number; z: number }).x, 5, (tile as { x: number; z: number }).z);
@@ -44,7 +44,7 @@ test.describe('Procedural grass (grassland batch 1)', () => {
 
     const grassInfo = await page.evaluate(() => (window as any).__game.getGrassDebugInfo());
     expect(grassInfo.inScene, 'Grass mesh not in scene').toBe(true);
-    expect(grassInfo.bladeCount, 'No grass blades placed on a grassland tile').toBeGreaterThan(0);
+    expect(grassInfo.bladeCounts.grassland, 'No grass blades placed on a grassland tile').toBeGreaterThan(0);
 
     // Regression guard against the "un-merged scatter caused sub-7fps" class of bug this
     // project has hit before (see OverworldScene.ts's mergeGroupMeshesByMaterial() comment) —
