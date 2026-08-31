@@ -93,7 +93,17 @@ export function placeSettlements(
     const cell = grid.get(col, row);
     if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
     if (cell.feature === 'river')                  return false;
-    if (cell.elevation < 1 || cell.elevation > 2)  return false;
+    // Elevation gate is biome-conditional: 'mountain' is only ever
+    // classified at a high elevation (RealmGenerator.ts's classifyBiome()
+    // requires elev > 0.70, quantizing to level 5 or 6 — see
+    // RealmToWorldGrid.ts's quantizeElevation()), so the original [1,2]
+    // band would silently reject every mountain-biome cell. Every other
+    // biome keeps the exact original [1,2] gate, unchanged (Phase 5, see
+    // docs/superpowers/specs/2026-08-31-race-biome-affinity-design.md §5).
+    const elevOk = cell.biome === 'mountain'
+      ? (cell.elevation >= 5 && cell.elevation <= 6)
+      : (cell.elevation >= 1 && cell.elevation <= 2);
+    if (!elevOk)                                    return false;
     if (cell.content !== 'empty')                  return false;
     return true;
   }

@@ -98,6 +98,15 @@ describe('OverworldScene settlement rendering parity', () => {
     // mountain-biome and elevation-quantization shifts noted above), which
     // again perturbs RealmGenerator.ts's settlement-candidate cell list
     // for seed 1 — a different settlement layout/composition, not a bug.
+    // Shifted a sixth time (buildingGroups 212->251, lampGroups 141->140,
+    // buildingData 61->63) once RealmGenerator.ts's Phase 5 race/faction
+    // biome affinity (pickFaction(), see docs/superpowers/specs/2026-08-31-
+    // race-biome-affinity-design.md) landed: settlements can now be sited
+    // on mountain/tundra biomes (previously excluded), and faction
+    // assignment is now biased by biome instead of uniform-random — both
+    // change which/how-many settlements land for seed 1 and which
+    // faction's building set each one renders with, again a different
+    // settlement layout/composition, not a bug.
     expect(buildingGroups).toMatchSnapshot();
     expect(roadPaths).toMatchSnapshot();
     expect(lampGroups).toMatchSnapshot();

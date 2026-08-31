@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
+import type { BiomeId } from '@/world/WorldGrid';
 import { generateSettlementName } from '@/world/SettlementNameGenerator';
 import { planSettlement, applySettlementToGrid, PARAMS_BY_TYPE, type PlacedBuilding } from '@/world/SettlementGenerator';
 import type { LayoutType } from '@/world/SettlementModelGenerator';
@@ -15,6 +16,16 @@ function flatGrid(size = 64): WorldGrid {
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
       g.set(col, row, { elevation: 1, biome: 'grass', content: 'empty', feature: 'none', walkable: true });
+    }
+  }
+  return g;
+}
+
+function biomeGrid(size: number, biome: BiomeId, elevation: number): WorldGrid {
+  const g = new WorldGrid(size, size);
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
+      g.set(col, row, { elevation, biome, content: 'empty', feature: 'none', walkable: true });
     }
   }
   return g;
@@ -405,5 +416,31 @@ describe('placeSettlements', () => {
       expect(e.plan.type).toBe(src!.size);
       expect(e.plan.faction).toBe(src!.faction);
     }
+  });
+});
+
+describe('placeSettlements — race/faction biome affinity (Phase 5)', () => {
+  it('can site a settlement on mountain-biome terrain at the mountain elevation band (5-6)', () => {
+    const g = biomeGrid(128, 'mountain', 5);
+    const entries = placeSettlements(g, BASE_CONFIG, 42);
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it('still rejects mountain-biome terrain outside its own elevation band (even under the new gate)', () => {
+    const g = biomeGrid(128, 'mountain', 3); // valid biome, wrong elevation
+    const entries = placeSettlements(g, BASE_CONFIG, 42);
+    expect(entries.length).toBe(0);
+  });
+
+  it('can site a settlement on tundra-biome terrain within the existing elevation band (1-2)', () => {
+    const g = biomeGrid(128, 'tundra', 1);
+    const entries = placeSettlements(g, BASE_CONFIG, 42);
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it('keeps every non-mountain biome at the original elevation gate (1-2) — regression', () => {
+    const g = biomeGrid(128, 'grassland', 3); // outside [1,2] — must still be rejected exactly as before
+    const entries = placeSettlements(g, BASE_CONFIG, 42);
+    expect(entries.length).toBe(0);
   });
 });

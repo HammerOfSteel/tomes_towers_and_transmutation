@@ -665,37 +665,48 @@ Implementation plan: `docs/superpowers/plans/2026-08-31-organic-biome-transition
       confirmed clean in isolation), zero real regressions. `tsc --noEmit` steady at 144. The
       512×512 perf budget (3s) stayed comfortably met (~310ms).
 
-### Phase 5 — Race/faction biome affinity for settlements, dungeons, caves
+### Phase 5 — Race/faction biome affinity for settlements, dungeons, caves ✅ DONE (2026-08-31)
 **Depends on:** Phase 1 (needs `mountain` to exist for e.g. dwarven/vampire affinity to mean anything).
 
 Closes §1.4's finding. Gives each faction a preferred biome set so a
 settlement's surroundings actually make thematic sense with its race —
 directly extending the "each race gets a distinct, thematic settlement"
 work from `2026-08-29-settlement-visual-fidelity.md` out into the terrain
-around it. Suggested starting affinities (tune via playtesting, not fixed
-in stone): elven → forest/taiga; dwarven → mountain/tundra; vulperia →
-grassland/savanna (matches the existing "den" theme fitting open
-warm-toned terrain); vampire → forest/mountain (dark, remote); undead →
-tundra/mountain/desert (desolate); fae → forest/grassland (whimsical,
-lush); orcish → savanna/desert (harsh, exposed); slime → grassland/forest
-(least picky, matches its adaptable theme); human → grassland/forest
-(baseline, least restrictive, matches its default/neutral thematic role).
+around it. Design spec: `docs/superpowers/specs/2026-08-31-race-biome-affinity-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-08-31-race-biome-affinity-plan.md`.
 
-- [ ] `RealmGenerator.ts`'s settlement-siting loop: replace
-      `FACTIONS[Math.floor(rand() * FACTIONS.length)]` with a
-      biome-weighted choice — a candidate cell's *actual* biome should bias
-      (not rigidly force, to keep some variety/surprise) which faction
-      spawns there.
-- [ ] Similarly bias (not hard-gate) dungeon eligibility by whichever
-      faction subtheme a dungeon roughly represents, if the dungeon system
-      has any race-flavor concept already (check `DungeonGenerator.ts`
-      before assuming it does — if dungeons are faction-agnostic today,
-      this sub-item may be out of scope / deferred).
-- [ ] Tests: statistical test over many seeds confirming e.g. elven
-      settlements land on forest/taiga tiles noticeably more often than
-      chance, while still occasionally appearing elsewhere (bias, not a
-      hard rule — avoids a "why is there never an elf town in the
-      grassland" complaint from the opposite direction).
+- [x] `RealmGenerator.ts` gained a module-scope `BIOME_AFFINITY` table (elven→forest/taiga,
+      dwarven→mountain/tundra, vulperia→grassland/savanna, vampire→forest/mountain,
+      undead→tundra/mountain/desert, fae→forest/grassland, orcish→savanna/desert,
+      slime→grassland/forest, human→grassland/forest — every settlement-eligible biome has ≥2
+      factions with affinity, none orphaned) and a `pickFaction(biome, rand)` weighted-random
+      helper (baseline weight 1, ×5 for an affinity match) replacing the settlement-siting loop's
+      uniform `FACTIONS[Math.floor(rand() * FACTIONS.length)]` pick — a bias, not a hard rule,
+      every faction stays reachable everywhere.
+- [x] **Two pre-existing constraints found and resolved during design** (confirmed by direct code
+      read, not assumed): `RealmGenerator.ts`'s settlement-eligible `VALID` biome set excluded
+      `mountain`/`tundra` entirely (unrelated to any earlier phase) — expanded to include both.
+      Separately, `SettlementPlacer.ts` (the live-game siting step) had its own elevation gate
+      (`[1, 2]` only) that would silently reject every mountain-biome cell regardless of the
+      `VALID` fix, since `mountain` only ever classifies at elevation level 5-6 — relaxed
+      narrowly, only for `cell.biome === 'mountain'`, leaving every other biome's `[1, 2]` gate
+      byte-identical.
+- [x] **Dungeon/cave affinity confirmed out of scope**, per the roadmap's own stated fallback:
+      direct code read of `DungeonPlacer.ts`/`CaveGladePlacer.ts`/`CaveGladeWorldPlacer.ts`
+      confirmed zero faction/race concept exists anywhere in either system today — introducing
+      one would be a separate, much larger undertaking, not part of this pass.
+- [x] Tests: 4 `pickFaction()` unit tests (determinism, affinity bias, bias-not-hard-rule,
+      always-valid-output), 2 `generateRealmData()`-level statistical/wiring tests (mountain/
+      tundra now sited at all; taiga-sited settlements measurably favor elven — a
+      `nSettlements=30` density trick keeps this fast, ~7s for enough samples instead of 30s+),
+      4 `SettlementPlacer.ts` regression tests (mountain now sitable at its own elevation band,
+      still rejected outside it, tundra sitable, every other biome's original `[1, 2]` gate
+      unchanged). Full project suite: same 12 pre-existing baseline failures + 1 already-
+      documented sandbox-contention timeout flake (confirmed clean in isolation), zero real
+      regressions. One legitimate settlement-parity snapshot shift (seed 1 — same established
+      pattern as every prior phase's own shift, documented inline in that test's history: new
+      biomes/factions become reachable, perturbing the exact settlement list for that seed).
+      `tsc --noEmit` steady at 144.
 
 ### Phase 6 — Race-specific biome environment packs
 **Depends on:** Phase 5 (needs faction-biome affinity to exist for "near a settlement" placement to be meaningful), and reuses Phase 7/8's asset-variety and texture work once those land.
