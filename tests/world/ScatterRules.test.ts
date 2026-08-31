@@ -88,4 +88,14 @@ describe('isScatterAllowed — widened biome taxonomy', () => {
     expect(isScatterAllowed(cell, 'tree')).toBe(false);
     expect(isScatterAllowed(cell, 'bush')).toBe(false);
   });
+
+  it('disallows tree/bush/rock on a river/lake tile even though it sits on an ordinary land biome', () => {
+    const riverCell = makeCell({ biome: 'grassland', feature: 'river', waterDepth: 2.0, walkable: false });
+    const lakeCell  = makeCell({ biome: 'forest',    feature: 'lake',  waterDepth: 2.0, walkable: false });
+    for (const cell of [riverCell, lakeCell]) {
+      expect(isScatterAllowed(cell, 'tree')).toBe(false);
+      expect(isScatterAllowed(cell, 'bush')).toBe(false);
+      expect(isScatterAllowed(cell, 'rock')).toBe(false);
+    }
+  });
 });

@@ -25,6 +25,12 @@ export type ScatterKind = 'tree' | 'bush' | 'rock' | 'camp' | 'ruin';
  */
 export function isScatterAllowed(cell: WorldCell, kind: ScatterKind): boolean {
   if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
+  // A river/lake tile sits on an ordinary land biome (not a special water
+  // biome, since Phase 3's lakes) — waterDepth is the generic "is this
+  // actually water" signal already used elsewhere (WaterDetection.ts,
+  // TerrainGeometryBuilder.ts), so check it directly rather than
+  // enumerating feature==='river'/'lake' by name.
+  if (cell.waterDepth > 0) return false;
   if (cell.settlementId > 0) return false;
 
   if (kind === 'tree' || kind === 'bush' || kind === 'rock') {
