@@ -26,6 +26,11 @@ const ROAD_UV_TILE_WU = 1.0;
  *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
 const GROUND_UV_TILE_WU = 2.5;
 
+/** Sub-tile grid resolution for ground tiles — same N=4 convention roads
+ *  already established (RoadPathSampler.ts's roadSubdivisions default),
+ *  for consistency rather than a new magic number. */
+const GROUND_SUBDIVISIONS = 4;
+
 /** Probability (per independent roll) that an outermost-row/column
  *  sub-tile pulls toward a differing neighbor's variant instead of its
  *  own — see design spec §3.3. */
@@ -454,6 +459,61 @@ export function buildTerrainGeometryData(
     geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
 
+  /** Emits one flat/edge-shaped tile's top face as a GROUND_SUBDIVISIONS×
+   *  GROUND_SUBDIVISIONS sub-tile grid instead of a single quad — each
+   *  sub-tile's height is bilinearly interpolated from the tile's own 4
+   *  corner heights (exact, since flat/edge shapes are already planar)
+   *  plus subTileBumpJitter(), and each sub-tile independently resolves
+   *  its own texture variant via _subTileGroundVariant(). Shares one
+   *  normal across every sub-tile (matching the parent shape's own
+   *  already-computed normal — flat's fixed up-normal, or edge's real
+   *  tilted normal), consistent with how the pre-existing per-tile jitter
+   *  already never perturbs the normal either. See
+   *  docs/superpowers/specs/2026-09-01-ground-subtile-system-design.md. */
+  const emitGroundSubTiles = (
+    col: number, row: number, cell: WorldCell, groundVariant: string,
+    swY: number, nwY: number, neY: number, seY: number,
+    nx: number, ny: number, nz: number,
+    wxTile: number, wzTile: number,
+    tr: number, tg: number, tb: number,
+  ): void => {
+    const N = GROUND_SUBDIVISIONS;
+    const heightAt = (u: number, w: number): number =>
+      swY * (1 - u) * (1 - w) + seY * u * (1 - w) + nwY * (1 - u) * w + neY * u * w;
+
+    const neighborVariant = {
+      south: _groundTextureVariant(wg.get(col, row + 1)),
+      north: _groundTextureVariant(wg.get(col, row - 1)),
+      east:  _groundTextureVariant(wg.get(col + 1, row)),
+      west:  _groundTextureVariant(wg.get(col - 1, row)),
+    };
+
+    for (let sz = 0; sz < N; sz++) {
+      for (let sx = 0; sx < N; sx++) {
+        const u0 = sx / N, u1 = (sx + 1) / N;
+        const w0 = sz / N, w1 = (sz + 1) / N;
+        const px0 = wxTile + u0 * T, px1 = wxTile + u1 * T;
+        const pz0 = wzTile + w0 * T, pz1 = wzTile + w1 * T;
+
+        const ySW = heightAt(u0, w0) + subTileBumpJitter(px0, pz0);
+        const yNW = heightAt(u0, w1) + subTileBumpJitter(px0, pz1);
+        const yNE = heightAt(u1, w1) + subTileBumpJitter(px1, pz1);
+        const ySE = heightAt(u1, w0) + subTileBumpJitter(px1, pz0);
+
+        const subCenterX = (px0 + px1) / 2, subCenterZ = (pz0 + pz1) / 2;
+        const variant = _subTileGroundVariant(
+          groundVariant, neighborVariant, sx, sz, N, cell.biome, subCenterX, subCenterZ,
+        );
+
+        addGroundFace(
+          variant,
+          [px0, ySW, pz0], [px0, yNW, pz1], [px1, yNE, pz1], [px1, ySE, pz0],
+          nx, ny, nz, tr, tg, tb,
+        );
+      }
+    }
+  };
+
   /** Elevation *level* of a (possibly out-of-bounds) tile — used only for
    *  colour/variant lookups, which are keyed by the logical land level. */
   const lvl = (c: number, r: number): number => wg.get(c, r).elevation;
@@ -625,11 +685,7 @@ export function buildTerrainGeometryData(
         // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
         const groundVariant = _groundTextureVariant(cell);
         if (groundVariant !== null) {
-          addGroundFace(
-            groundVariant,
-            [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
-            0, 1, 0,  tr, tg, tb,
-          );
+          emitGroundSubTiles(col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb);
         } else {
           addFace(
             [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
@@ -649,7 +705,12 @@ export function buildTerrainGeometryData(
         const n = triangleNormal(v0, v1, v2);
         const groundVariant = _groundTextureVariant(cell);
         if (groundVariant !== null) {
-          addGroundFace(groundVariant, v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
+          // NOTE: emitGroundSubTiles interpolates from the tile's raw
+          // (pre-jitter) swY/nwY/neY/seY, not the jittered v0..v3 corners
+          // computed just above for the non-subdivided fallback path —
+          // this is intentional (see design spec §3.2: the new bump
+          // replaces, not layers with, the old per-tile jitter).
+          emitGroundSubTiles(col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb);
         } else {
           addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
         }

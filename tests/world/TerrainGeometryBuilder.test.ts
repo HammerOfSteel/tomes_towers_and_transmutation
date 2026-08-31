@@ -35,13 +35,14 @@ describe('buildTerrainGeometryData', () => {
 
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // 3 tiles × 1 top face × 4 verts × 3 floats = 36 position floats — all
-    // 3 land straight into groundGeometry.grassland (the default biome is
-    // covered), so the base buffer itself stays empty.
-    expect(totalPositionsLength(data)).toBe(36);
+    // 3 tiles × GROUND_SUBDIVISIONS^2=16 sub-tile quads × 4 verts × 3 floats
+    // = 576 position floats — all 3 land straight into
+    // groundGeometry.grassland (the default biome is covered), so the
+    // base buffer itself stays empty.
+    expect(totalPositionsLength(data)).toBe(576);
     expect(data.positions).toHaveLength(0);
-    // 3 tiles × 1 top face × 6 indices = 18.
-    expect(totalIndicesLength(data)).toBe(18);
+    // 3 tiles × 16 sub-tiles × 6 indices = 288.
+    expect(totalIndicesLength(data)).toBe(288);
     // Every face normal should be straight up (+Y) — no wall faces.
     const normals = allNormals(data);
     for (let i = 0; i < normals.length; i += 3) {
@@ -56,14 +57,19 @@ describe('buildTerrainGeometryData', () => {
 
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // Tile 0: top only (1 face). Tile 1 (raised): top + N + S + E + W (5 faces).
-    // Tile 2: top only (1 face). Total 7 faces × 4 verts × 3 floats = 84,
-    // split across the base buffer (walls only, 4 faces) and
-    // groundGeometry.grassland (all 3 tops, since 'grassland' is covered).
-    expect(totalPositionsLength(data)).toBe(84);
+    // Tile 0: top (16 sub-tiles). Tile 1 (raised): top (16 sub-tiles) + N + S
+    // + E + W (4 unsubdivided wall faces — walls are never subdivided).
+    // Tile 2: top (16 sub-tiles). Walls land in the base buffer (4 faces ×
+    // 4 verts × 3 = 48); all 3 tiles' tops land in groundGeometry, split
+    // across grassland and its micro-patch variant (river_bank) since a
+    // handful of the 48 total sub-tiles may occasionally patch — sum
+    // across every covered variant rather than assuming all 48 stayed in
+    // grassland specifically. Total (walls + all covered tops) = 624.
+    expect(totalPositionsLength(data)).toBe(624);
     expect(data.positions).toHaveLength(4 * 4 * 3); // 4 wall faces
-    expect(data.groundGeometry.grassland!.positions).toHaveLength(3 * 4 * 3); // 3 top faces
-    expect(totalIndicesLength(data)).toBe(42); // 7 faces × 6 indices
+    const totalGroundPositions = Object.values(data.groundGeometry).reduce((s, g) => s + g.positions.length, 0);
+    expect(totalGroundPositions).toBe(3 * 16 * 4 * 3); // 3 tiles' top faces, subdivided
+    expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6); // 4 wall faces + 48 sub-tile top faces, × 6 indices each
 
     // Collect the set of distinct face normals present — should include
     // up, north, south, east, west (5 distinct normals; tiles 0 and 2
@@ -99,18 +105,22 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     // Use SH=1 so physical height in WU is directly comparable to depth.
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // Tile 0: top + east wall (2 faces). Tile 1 (river): top only (1 face).
-    // Tile 2: top + west wall (2 faces). Total 5 faces, split across the
-    // base buffer (walls + the river's own untextured top face, since
-    // 'river' has no ground texture) and groundGeometry.grassland (tile0's
-    // and tile2's tops, since the default 'grassland' biome is covered).
-    expect(totalPositionsLength(data)).toBe(5 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(5 * 6);
+    // Tile 0 (grassland, covered → subdivided): east wall (1 unsubdivided
+    // face, base buffer) + top (16 sub-tiles, groundGeometry.grassland).
+    // Tile 1 (river — uncovered, _groundTextureVariant returns null, so
+    // it stays on the un-subdivided base-buffer path exactly as before):
+    // top only (1 face, base buffer). Tile 2 (grassland): west wall (1
+    // face, base buffer) + top (16 sub-tiles, groundGeometry.grassland).
+    // Base buffer: 3 unsubdivided faces (36 positions, 18 indices).
+    // groundGeometry.grassland: 32 sub-tile quads (384 positions, 192 indices).
+    expect(totalPositionsLength(data)).toBe(3 * 4 * 3 + 2 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(3 * 6 + 2 * 16 * 6);
 
     // The river tile's top face sits at y = -RIVER_DEPTH_WU (elevation 0 - depth).
     // Base-buffer emission order per tile: tile0's east wall (4 verts),
     // then tile1's own top face (river has no ground texture, so it stays
-    // on the base buffer exactly as before), then tile2's west wall.
+    // on the base buffer exactly as before — unaffected by sub-tile
+    // subdivision), then tile2's west wall.
     const tile1TopY = data.positions[4 * 3 + 1]!;
     // Top faces get a small deterministic corner jitter (± up to 0.03 WU)
     // layered on top of the carved base height for visual variety — assert
@@ -123,9 +133,12 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     wg.set(1, 0, { feature: 'river_ford', waterDepth: 0 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // All 3 tiles flat and flush -> only top faces, no walls (3 faces total).
-    expect(totalPositionsLength(data)).toBe(3 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(3 * 6);
+    // All 3 tiles flat and flush -> only top faces, no walls. Tile 1
+    // (river_ford — uncovered, same as river/lake) stays as 1 unsubdivided
+    // face in the base buffer; tiles 0 and 2 (grassland, covered) are
+    // each subdivided into 16 sub-tiles in groundGeometry.grassland.
+    expect(totalPositionsLength(data)).toBe(1 * 4 * 3 + 2 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(1 * 6 + 2 * 16 * 6);
     const normals = allNormals(data);
     for (let i = 0; i < normals.length; i += 3) {
       expect([normals[i], normals[i + 1], normals[i + 2]]).toEqual([0, 1, 0]);
@@ -151,13 +164,12 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     wg.set(1, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // Same face-count shape as the river carving test: tile0 (top+east
-    // wall), tile1 lake (top only), tile2 (top+west wall) = 5 faces, split
-    // across the base buffer (walls + the lake's own untextured top face)
-    // and groundGeometry.grassland (tile0/tile2's tops) — see the river
-    // carving test above for the full breakdown.
-    expect(totalPositionsLength(data)).toBe(5 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(5 * 6);
+    // Same shape as the river carving test above: tile0 (east wall +
+    // subdivided top), tile1 lake (uncovered, top only, unsubdivided),
+    // tile2 (west wall + subdivided top) — see that test's comment for
+    // the full breakdown.
+    expect(totalPositionsLength(data)).toBe(3 * 4 * 3 + 2 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(3 * 6 + 2 * 16 * 6);
 
     const tile1TopY = data.positions[4 * 3 + 1]!;
     expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 1);
@@ -516,12 +528,12 @@ describe('buildTerrainGeometryData — road sub-tile surface (roads as terrain t
     wg.set(0, 0, { elevation: 0, feature: 'road' });
     const farAwayPath = [{ points: [{ x: 1000, z: 1000 }, { x: 1001, z: 1001 }], width: 1, variant: 'dirt' }];
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, farAwayPath);
-    // Falls back to the un-subdivided single-quad behavior: 4 verts, 6
-    // indices — landing in groundGeometry.grassland (default biome,
-    // covered) rather than the base buffer, same as any other flat
+    // Falls back to the flat/all-four-down branch (no road coverage) —
+    // landing in groundGeometry.grassland (default biome, covered) as a
+    // GROUND_SUBDIVISIONS^2=16 sub-tile grid, same as any other flat
     // grassland tile once no road actually covers it.
-    expect(totalPositionsLength(data)).toBe(12);
-    expect(totalIndicesLength(data)).toBe(6);
+    expect(totalPositionsLength(data)).toBe(16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(16 * 6);
     expect(Object.keys(data.roadGeometry)).toEqual([]);
   });
 
@@ -649,11 +661,16 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // exactly 1 flat top face. It's default-biome 'grassland' (covered),
     // so it lands in groundGeometry.grassland rather than the base buffer.
     const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
-    const positions = data.groundGeometry.grassland!.positions;
-    const normals = data.groundGeometry.grassland!.normals;
-    expect(positions.length).toBe(4 * 3); // 1 flat quad, 4 verts x 3 floats
-    for (let i = 0; i < normals.length; i += 3) {
-      expect([normals[i], normals[i + 1], normals[i + 2]]).toEqual([0, 1, 0]);
+    // 'grassland' has a micro-patch entry (river_bank) — a handful of the
+    // 16 sub-tiles may occasionally land in groundGeometry.river_bank
+    // instead, by design (real texture variety). Sum across every covered
+    // variant rather than assuming all 16 stayed in grassland specifically.
+    const allGround = Object.values(data.groundGeometry);
+    const totalPositions = allGround.reduce((s, g) => s + g.positions.length, 0);
+    const totalNormals = allGround.flatMap(g => g.normals);
+    expect(totalPositions).toBe(16 * 4 * 3); // subdivided flat quad: 16 sub-tiles x 4 verts x 3 floats
+    for (let i = 0; i < totalNormals.length; i += 3) {
+      expect([totalNormals[i], totalNormals[i + 1], totalNormals[i + 2]]).toEqual([0, 1, 0]);
     }
   });
 
@@ -672,16 +689,24 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // west side); its north/south/east neighbors all match its own elevation.
     // With the wall-anchoring fix (Task 5), the west wall is now correctly
     // suppressed too — the ramp already reaches exactly down to the west
-    // neighbor's own height, leaving no gap. Expected contribution: just the
-    // 1 top face (planar Edge quad, 4 verts) = 12 normal floats total,
-    // landing in groundGeometry.grassland (default biome, covered) since
-    // there are no walls left to occupy the base buffer.
-    const normals = data.groundGeometry.grassland!.normals;
-    expect(normals).toHaveLength(12);
-    // The top face's normal (first of the 4 verts) must be genuinely tilted
-    // — not exactly (0,1,0) — confirming Task 4's real slope, while still
-    // mostly upward-facing (not vertical like a wall).
-    const topFaceNy = normals[1]!;
+    // neighbor's own height, leaving no gap. Expected contribution: just
+    // the 1 top face, now emitted as a GROUND_SUBDIVISIONS^2=16 sub-tile
+    // grid (16 sub-tile quads x 4 verts x 3 floats = 192 normal floats),
+    // landing in groundGeometry (default biome 'grassland' is covered)
+    // since there are no walls left to occupy the base buffer. 'grassland'
+    // has a micro-patch entry (river_bank) — a handful of the 16 sub-tiles
+    // may occasionally land in groundGeometry.river_bank instead, by
+    // design, so sum across every covered variant rather than assuming
+    // all 16 stayed in grassland specifically.
+    const allNormalsHere = Object.values(data.groundGeometry).flatMap(g => g.normals);
+    expect(allNormalsHere).toHaveLength(16 * 4 * 3);
+    // The top face's normal (first of the 4 verts, of whichever sub-tile
+    // buffer it landed in) must be genuinely tilted — not exactly (0,1,0)
+    // — confirming Task 4's real slope, while still mostly upward-facing
+    // (not vertical like a wall). Every sub-tile of this tile shares the
+    // identical parent normal regardless of which texture variant it
+    // resolved to, so the first emitted normal is representative of all.
+    const topFaceNy = allNormalsHere[1]!;
     expect(topFaceNy).toBeLessThan(0.999);
     expect(topFaceNy).toBeGreaterThan(0);
   });
@@ -718,8 +743,8 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { elevation: 2 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
-    expect(totalPositionsLength(data)).toBe(84); // unchanged from the pre-existing test's expectation
-    expect(totalIndicesLength(data)).toBe(42);
+    expect(totalPositionsLength(data)).toBe(624); // unchanged shape, updated for sub-tile subdivision (see "emits 4 wall faces" test above)
+    expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6);
     const normalSet = new Set<string>();
     const normals = allNormals(data);
     for (let i = 0; i < normals.length; i += 3) {
@@ -802,8 +827,8 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { elevation: 2 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
-    expect(totalPositionsLength(data)).toBe(84);
-    expect(totalIndicesLength(data)).toBe(42);
+    expect(totalPositionsLength(data)).toBe(624);
+    expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6);
   });
 });
 
@@ -814,8 +839,15 @@ describe('buildTerrainGeometryData — ground texture variant routing (Phase 4a)
     wg.set(0, 0, { biome: 'grassland', elevation: 0 });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
 
+    // 'grassland' has a micro-patch entry (river_bank, see MICRO_PATCH_VARIANTS)
+    // — a handful of the 16 sub-tiles may occasionally land in
+    // groundGeometry.river_bank instead, by design (real texture variety).
+    // Assert the *total* covered-biome indices sum to 16 sub-tiles' worth,
+    // and that grassland itself got at least some of them.
     expect(data.groundGeometry.grassland).toBeDefined();
-    expect(data.groundGeometry.grassland!.indices.length).toBe(6); // one quad = 2 triangles
+    expect(data.groundGeometry.grassland!.indices.length).toBeGreaterThan(0);
+    const totalCoveredIndices = Object.values(data.groundGeometry).reduce((s, g) => s + g.indices.length, 0);
+    expect(totalCoveredIndices).toBe(16 * 6); // 16 sub-tiles x 2 triangles x 3 indices
     // The base buffer must stay empty for this tile — no top face duplicated there.
     expect(data.indices.length).toBe(0);
   });
@@ -850,7 +882,11 @@ describe('buildTerrainGeometryData — ground texture variant routing for edge/r
     wg.set(0, 1, { elevation: 2, biome: 'grassland' }); // west neighbor of tile (1,1), 1 level lower
     const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
     expect(data.groundGeometry.grassland).toBeDefined();
-    expect(data.groundGeometry.grassland!.normals).toHaveLength(12); // 1 planar quad, 4 verts
+    // 'grassland' has a micro-patch entry (river_bank) — a handful of the
+    // 16 sub-tiles may occasionally land in groundGeometry.river_bank
+    // instead, by design. Assert the total across all covered variants.
+    const totalNormals = Object.values(data.groundGeometry).reduce((s, g) => s + g.normals.length, 0);
+    expect(totalNormals).toBe(16 * 4 * 3); // 16 sub-tiles x 4 verts x 3 floats
     const topFaceNy = data.groundGeometry.grassland!.normals[1]!;
     expect(topFaceNy).toBeLessThan(0.999); // genuinely tilted, not flat
     expect(topFaceNy).toBeGreaterThan(0);
@@ -867,5 +903,63 @@ describe('buildTerrainGeometryData — ground texture variant routing for edge/r
     const tri1Normal = data.groundGeometry.grassland!.normals.slice(0, 3);
     const tri2Normal = data.groundGeometry.grassland!.normals.slice(9, 12);
     expect(tri1Normal).not.toEqual(tri2Normal);
+  });
+});
+
+describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () => {
+  it('emits GROUND_SUBDIVISIONS^2 sub-tile quads for a flat covered-biome tile with no differing neighbors', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { biome: 'mountain', elevation: 1 });
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
+    // 'mountain' has no MICRO_PATCH_VARIANTS entry and no differing
+    // neighbor here, so every sub-tile should resolve to 'mountain' itself.
+    expect(data.groundGeometry.mountain!.indices).toHaveLength(16 * 6);
+    expect(Object.keys(data.groundGeometry)).toEqual(['mountain']);
+  });
+
+  it('gives adjacent sub-tiles within the same tile seamless shared-edge heights (bump is consistent)', () => {
+    const wg = new WorldGrid(3, 3);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { biome: 'mountain', elevation: 1 });
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 1, 1, 1, 1, 1);
+    const p = data.groundGeometry.mountain!.positions;
+    // Emission order: sz outer loop, sx inner loop, 4 verts (SW,NW,NE,SE)
+    // per sub-tile quad. Quad 0 = sub-tile (sx=0,sz=0): verts 0(SW),1(NW),
+    // 2(NE),3(SE). Quad 1 = sub-tile (sx=1,sz=0): verts 4(SW),5(NW),6(NE),
+    // 7(SE) — immediately east of quad 0. Quad0's east edge (NE,SE) must
+    // exactly match quad1's west edge (NW,SW): same world lattice points,
+    // so the shared bump value must agree.
+    const v = (i: number) => ({ x: p[i * 3]!, y: p[i * 3 + 1]!, z: p[i * 3 + 2]! });
+    const q0NE = v(2), q0SE = v(3);
+    const q1NW = v(5), q1SW = v(4);
+    expect(q0NE.x).toBeCloseTo(q1NW.x, 9);
+    expect(q0NE.y).toBeCloseTo(q1NW.y, 9);
+    expect(q0NE.z).toBeCloseTo(q1NW.z, 9);
+    expect(q0SE.x).toBeCloseTo(q1SW.x, 9);
+    expect(q0SE.y).toBeCloseTo(q1SW.y, 9);
+    expect(q0SE.z).toBeCloseTo(q1SW.z, 9);
+  });
+
+  it('pulls border sub-tiles toward a differently-textured neighbor sometimes, concentrated near the shared edge', () => {
+    // 6 mountain/desert tile-pairs along a shared north-south edge = 24
+    // independent per-sub-tile 40% border-pull rolls (N=4 each) — makes
+    // "zero pulls succeed" astronomically unlikely (0.6^24 ≈ 0.0005%),
+    // unlike testing a single tile-pair (0.6^4 ≈ 13% flake risk).
+    const wg = new WorldGrid(2, 6);
+    for (let r = 0; r < 6; r++) {
+      wg.set(0, r, { biome: 'mountain', elevation: 1 });
+      wg.set(1, r, { biome: 'desert', elevation: 1 });
+    }
+    const data = buildTerrainGeometryData(wg, 2, 6, 0.5, 2.5, 2, 1);
+    const desertPulledIn = data.groundGeometry.desert?.indices.length ?? 0;
+    expect(desertPulledIn).toBeGreaterThan(0);
+  });
+
+  it('never subdivides a ramp-shaped (non-planar) tile — unaffected by this pass', () => {
+    const wg = new WorldGrid(4, 4);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 3, biome: 'grassland' });
+    wg.set(2, 2, { elevation: 2, biome: 'grassland' }); // isolates a single-corner dip on tile (1,1), same fixture as the existing single-corner test
+    const data = buildTerrainGeometryData(wg, 4, 4, 1, 1, 2, 1, 1, 1, 1, 1);
+    // Still exactly 1 shape's worth (6 verts, 2 triangles) — not 16 sub-tiles.
+    expect(data.groundGeometry.grassland!.positions.length / 3).toBe(6);
   });
 });
