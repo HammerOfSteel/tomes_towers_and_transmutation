@@ -1262,6 +1262,13 @@ Change to:
       findFirstGrasslandTile: () => gameMode === 'exterior' ? (overworld?.findFirstGrasslandTile() ?? null) : null,
       /** Grass instanced-mesh debug info (exterior mode only). For tests. */
       getGrassDebugInfo: () => gameMode === 'exterior' ? (overworld?.getGrassDebugInfo() ?? null) : null,
+      /** Current renderer draw-call count (for tests — a lighter-weight, working alternative
+       *  to the pre-existing but broken getPerfStats() hook below, which references an
+       *  undefined `perfState` (never declared anywhere in this file — a pre-existing,
+       *  unrelated bug discovered while writing this task's e2e spec; NOT fixed here, since a
+       *  proper fix would mean wiring real per-frame physics/update/render timing tracking, a
+       *  separate larger effort out of this batch's scope). */
+      getDrawCallCount: () => renderer.info.render.calls,
 ```
 
 - [ ] **Step 2: Check `tsc` baseline is unchanged**
@@ -1334,9 +1341,12 @@ test.describe('Procedural grass (grassland batch 1)', () => {
     // Regression guard against the "un-merged scatter caused sub-7fps" class of bug this
     // project has hit before (see OverworldScene.ts's mergeGroupMeshesByMaterial() comment) —
     // grass is one InstancedMesh (1 draw call), so total draw calls should stay well bounded
-    // even with the rest of a loaded overworld scene's geometry.
-    const perf = await page.evaluate(() => (window as any).__game.getPerfStats());
-    expect(perf.drawCalls, `Unexpectedly high draw call count: ${perf.drawCalls}`).toBeLessThan(500);
+    // even with the rest of a loaded overworld scene's geometry. Uses getDrawCallCount()
+    // rather than the pre-existing getPerfStats() hook, which throws (references an
+    // undefined `perfState` — a separate, unrelated pre-existing bug discovered while writing
+    // this spec; not fixed here since it's out of this batch's scope).
+    const drawCalls = await page.evaluate(() => (window as any).__game.getDrawCallCount());
+    expect(drawCalls, `Unexpectedly high draw call count: ${drawCalls}`).toBeLessThan(500);
   });
 });
 ```

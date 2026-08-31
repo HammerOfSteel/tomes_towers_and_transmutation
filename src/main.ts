@@ -1953,6 +1953,12 @@ async function main() {
       findFirstGrasslandTile: () => gameMode === 'exterior' ? (overworld?.findFirstGrasslandTile() ?? null) : null,
       /** Grass instanced-mesh debug info (exterior mode only). For tests. */
       getGrassDebugInfo: () => gameMode === 'exterior' ? (overworld?.getGrassDebugInfo() ?? null) : null,
+      /** Current renderer draw-call count (for tests — a lighter-weight, working alternative
+       *  to the pre-existing but broken getPerfStats() hook below, which references an
+       *  undefined `perfState`; not touched here since fixing it is a separate, unrelated
+       *  larger effort — see docs/superpowers/plans/2026-08-31-procedural-grass-grassland.md
+       *  Task 5 for how this was discovered). */
+      getDrawCallCount: () => renderer.info.render.calls,
       /** Raw cell data at a world position (exterior mode only). For tests. */
       debugCellAt: (x: number, z: number) => gameMode === 'exterior' ? (overworld?.debugCellAt(x, z) ?? null) : null,
       /** Name + species of the active princess rig (null if none). For tests. */
