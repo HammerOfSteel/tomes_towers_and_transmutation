@@ -34,7 +34,7 @@ import { SlimeEnemy, createSlimeBodyIM } from '@/enemy/SlimeEnemy';
 import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import RAPIER from '@dimforge/rapier3d-compat';
-import type { WorldGrid }              from '@/world/WorldGrid';
+import type { WorldGrid, BiomeId }     from '@/world/WorldGrid';
 import type { WorldData, DungeonEntry, CaveEntry, GladeEntry } from '@/world/WorldData';
 import type { EntranceMeshKey }        from '@/world/DungeonType';
 import { DUNGEON_TYPE_CONFIGS }         from '@/world/DungeonType';
@@ -1349,7 +1349,7 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
       if (!isScatterAllowed(cell, 'tree')) continue;
-      const tree = this._makeTree(rand, wx, wz);
+      const tree = this._makeTree(rand, cell.biome, wx, wz);
       tree.position.set(wx, cell.elevation * SH, wz);
       tree.rotation.y = rand() * Math.PI * 2;
       tree.userData.scatterKind = 'tree';
@@ -1675,10 +1675,12 @@ export class OverworldScene {
     return pool[Math.floor(rand() * pool.length)]!;
   }
 
-  private _makeTree(rand: () => number, wx: number, wz: number): THREE.Group {
-    const archetype = pickTreeArchetype(wx, wz);
+  private _makeTree(rand: () => number, biome: BiomeId, wx: number, wz: number): THREE.Group {
+    const archetype = pickTreeArchetype(biome, wx, wz);
     if (archetype === 'deciduous') return this._buildDeciduousTree(rand);
     if (archetype === 'sparse')    return this._buildSparseTree(rand);
+    if (archetype === 'cactus')    return this._buildCactusTree(rand);
+    if (archetype === 'acacia')    return this._buildAcaciaTree(rand);
     return this._buildConiferTree(rand);
   }
 
@@ -1804,6 +1806,70 @@ export class OverworldScene {
       );
       g.add(frag);
     }
+
+    return g;
+  }
+
+  /** Saguaro-style cactus — a vertical trunk cylinder with 0-2 shorter
+   *  vertical "arm" cylinders offset to either side. Desert's tree
+   *  archetype (see NatureAssetDNA.ts's BIOME_TREE_ARCHETYPES). */
+  private _buildCactusTree(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const trunkH = 1.6 + rand() * 1.4;
+    const trunkR = 0.16 + rand() * 0.07;
+    const mat = this._pooledMaterial(
+      'cactus',
+      [0x3f7d32, 0x3f7d32 + 0x010100, 0x3f7d32 + 0x020200, 0x3f7d32 + 0x030300],
+      rand,
+      0.16,
+    );
+
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR, trunkR * 1.1, trunkH, 8), mat);
+    trunk.position.y = trunkH / 2;
+    g.add(trunk);
+
+    // 0-2 short vertical side arms, a classic saguaro silhouette.
+    const armCount = Math.floor(rand() * 3);
+    for (let i = 0; i < armCount; i++) {
+      const armH = 0.5 + rand() * 0.5;
+      const armR = trunkR * 0.7;
+      const side = i % 2 === 0 ? 1 : -1;
+      const armY = trunkH * (0.35 + rand() * 0.35);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(armR, armR * 1.05, armH, 6), mat);
+      arm.position.set(side * (trunkR + armR + 0.02), armY + armH / 2, 0);
+      g.add(arm);
+    }
+
+    return g;
+  }
+
+  /** Short gnarled trunk topped by a single wide, shallow "umbrella" canopy
+   *  — savanna's tree archetype, distinct from conifer's tall narrow cone
+   *  stack and deciduous's rounded lumpy canopy (see NatureAssetDNA.ts's
+   *  BIOME_TREE_ARCHETYPES). */
+  private _buildAcaciaTree(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    const trunkH = 1.4 + rand() * 0.8;
+    const trunkR = 0.10 + rand() * 0.05;
+    const canopyR = 1.6 + rand() * 0.9;
+    const canopyH = 0.5 + rand() * 0.25;
+
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(trunkR * 0.6, trunkR, trunkH, 6),
+      this._pooledMaterial('acacia-trunk', [0x4a3820, 0x4a3820 + 0x010100], rand),
+    );
+    trunk.position.y = trunkH / 2;
+    g.add(trunk);
+
+    const canopyMat = this._pooledMaterial(
+      'acacia-canopy',
+      [0x5c7a2e, 0x5c7a2e + 0x010100, 0x5c7a2e + 0x020200, 0x5c7a2e + 0x030300],
+      rand,
+      0.2,
+    );
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(canopyR, canopyH, 8), canopyMat);
+    canopy.position.y = trunkH + canopyH * 0.3;
+    g.add(canopy);
 
     return g;
   }
