@@ -214,6 +214,11 @@ export class OverworldScene {
   private readonly _waterMaterial: THREE.ShaderMaterial | null;
   private readonly _ruins:          THREE.Group[] = [];
   private readonly _enemies:        SlimeEnemy[]  = [];
+  /** Trees/rocks placed via the dev-only OverworldEditor's paint_tree/
+   *  paint_rock tools (applyEditorLayout()'s 'scatter_prop' case) — no
+   *  chunk-streaming lifecycle, mirrors the existing editor-placed
+   *  enemy_camp/resource_node bookkeeping style exactly. */
+  private readonly _editorScatterProps: THREE.Group[] = [];
   private readonly _dungeonGroups:  THREE.Group[] = [];
   /** CG-1/CG-2 — built entrance props (Three.js group + dispose + optional particle update). */
   private readonly _caveEntranceBuilts:  BuiltCaveEntrance[]  = [];
@@ -1011,8 +1016,37 @@ export class OverworldScene {
         case 'resource_node':
           this._addEditorResourceNode(item.wx, item.wz, item.type);
           break;
+        case 'scatter_prop':
+          this._spawnEditorScatterProp(item.wx, item.wz, item.propType);
+          break;
       }
     }
+  }
+
+  /**
+   * Spawn a single real tree/rock at (wx, wz), painted via the dev-only
+   * OverworldEditor's paint_tree/paint_rock tools. Reuses the same
+   * single-object builders (_makeTree/_makeRock) and elevation-aware
+   * positioning convention as the procedural chunk-scatter builder
+   * (_buildChunkScatter()) — a seeded rand keyed off position, matching
+   * _spawnEditorCamp()'s existing pattern, so re-applying the same layout
+   * always reproduces the same tree/rock variant deterministically.
+   */
+  private _spawnEditorScatterProp(wx: number, wz: number, propType: 'tree' | 'rock'): void {
+    const rand = mulberry32(
+      (Math.round(wx * 100) ^ Math.round(wz * 100)) >>> 0,
+    );
+    const { col, row } = this._wg.worldToGrid(wx, wz);
+    const cell = this._wg.get(col, row);
+
+    const grp = propType === 'tree'
+      ? this._makeTree(rand, cell.biome, wx, wz)
+      : this._makeRock(rand, wx, wz);
+    grp.position.set(wx, cell.elevation * SH, wz);
+    if (propType === 'tree') grp.rotation.y = rand() * Math.PI * 2;
+
+    this._editorScatterProps.push(grp);
+    if (this._isInScene) this.scene.add(grp);
   }
 
   /** Spawn `count` SlimeEnemies in a loose ring around (wx, wz). */
