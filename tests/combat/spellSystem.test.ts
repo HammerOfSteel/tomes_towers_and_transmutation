@@ -267,4 +267,36 @@ describe('SpellSystem', () => {
   it('lantern cast does not throw when onLanternToggle is omitted', () => {
     expect(() => sys.cast('lantern', origin, aim, [], scene)).not.toThrow();
   });
+
+  // ── time_warp toggle ─────────────────────────────────────────────────────
+  it('time_warp spell def exists with movement type and a 45s cooldown', () => {
+    expect(sys.isReady('time_warp')).toBe(true);
+    sys.cast('time_warp', origin, aim, [], scene);
+    expect(sys.isReady('time_warp')).toBe(false);
+    expect(sys.cooldownRemaining('time_warp')).toBeCloseTo(45, 5);
+  });
+
+  it('time_warp cast invokes onTimeSkip exactly once', () => {
+    const onTimeSkip = vi.fn();
+    sys.cast('time_warp', origin, aim, [], scene, undefined, { onTimeSkip });
+    expect(onTimeSkip).toHaveBeenCalledTimes(1);
+  });
+
+  it('time_warp cast does not throw when onTimeSkip is omitted', () => {
+    expect(() => sys.cast('time_warp', origin, aim, [], scene)).not.toThrow();
+  });
+
+  it('time_warp cast does not also invoke unrelated movement callbacks', () => {
+    const onBlink = vi.fn();
+    const onLevitateToggle = vi.fn();
+    const onFlyBurst = vi.fn();
+    const onLanternToggle = vi.fn();
+    sys.cast('time_warp', origin, aim, [], scene, undefined, {
+      onBlink, onLevitateToggle, onFlyBurst, onLanternToggle,
+    });
+    expect(onBlink).not.toHaveBeenCalled();
+    expect(onLevitateToggle).not.toHaveBeenCalled();
+    expect(onFlyBurst).not.toHaveBeenCalled();
+    expect(onLanternToggle).not.toHaveBeenCalled();
+  });
 });
