@@ -483,12 +483,21 @@ export function buildTerrainGeometryData(
   /** Ground-texture variant key for a cell, or null to keep today's
    *  untextured vertex-color-only path. Priority order matches the
    *  existing biomeRgb selection chain further down in this function —
-   *  see docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.2. */
+   *  see docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.2.
+   *  Water tiles (ocean/deep_ocean/river/lake) route into their own floor texture
+   *  variants (river_floor/lake_floor/ocean_floor) instead of returning null — this
+   *  is what gives the water floor real texture AND the same bump-jittered,
+   *  border-dithered sub-tile treatment every land biome already has (see design
+   *  spec docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md
+   *  §2a) — `river_ford` is intentionally excluded (a dry, walkable road crossing,
+   *  not a submerged floor) and keeps its existing null/flat-quad behavior. */
   const _groundTextureVariant = (cell: WorldCell): string | null => {
-    if (cell.biome === 'ocean' || cell.biome === 'deep_ocean') return null;
-    if (cell.feature === 'river' || cell.feature === 'lake' || cell.feature === 'river_ford') return null;
-    if (cell.feature === 'river_bank') return 'river_bank';
-    if (cell.biome === 'beach') return 'beach';
+    if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return 'ocean_floor';
+    if (cell.feature === 'river')       return 'river_floor';
+    if (cell.feature === 'lake')        return 'lake_floor';
+    if (cell.feature === 'river_ford')  return null;
+    if (cell.feature === 'river_bank')  return 'river_bank';
+    if (cell.biome === 'beach')         return 'beach';
     return (GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome) ? cell.biome : null;
   };
 

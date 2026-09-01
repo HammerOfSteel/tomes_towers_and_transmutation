@@ -13,10 +13,10 @@ describe('terrainVariantTexture', () => {
     }
   });
 
-  it('lists exactly the 10 spec-covered variants', () => {
+  it('lists exactly the 13 spec-covered variants (10 land + 3 water floor)', () => {
     expect([...GROUND_TERRAIN_VARIANTS].sort()).toEqual([
-      'beach', 'desert', 'forest', 'grassland', 'mountain',
-      'river_bank', 'savanna', 'snow', 'taiga', 'tundra',
+      'beach', 'desert', 'forest', 'grassland', 'lake_floor', 'mountain',
+      'ocean_floor', 'river_bank', 'river_floor', 'savanna', 'snow', 'taiga', 'tundra',
     ]);
   });
 

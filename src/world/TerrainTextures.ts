@@ -17,6 +17,7 @@ import { _wrap, _jitterPixels, earthTexture, graniteTexture } from './buildings/
 export const GROUND_TERRAIN_VARIANTS = [
   'beach', 'desert', 'savanna', 'grassland', 'forest',
   'taiga', 'tundra', 'snow', 'mountain', 'river_bank',
+  'river_floor', 'lake_floor', 'ocean_floor',
 ] as const;
 
 const _canvases = new Map<string, HTMLCanvasElement>();
@@ -169,6 +170,73 @@ function _buildSnowCanvas(): HTMLCanvasElement {
   return c;
 }
 
+/** Sandy/pebbly riverbed, with subtle current-ripple streaks along one axis to
+ *  suggest flowing (not still) water — the vertex-color RIVER/BIOME_WATER tint
+ *  multiplies over this in the fragment stage, same as every other variant. */
+function _buildRiverFloorCanvas(): HTMLCanvasElement {
+  const { c, g } = _newCanvas();
+  g.fillStyle = '#c2a877';
+  g.fillRect(0, 0, 256, 256);
+  _jitterPixels(g, 256, 16, [1, 0.95, 0.8]);
+  // Current-ripple streaks — mostly horizontal, suggesting flow direction.
+  g.strokeStyle = 'rgba(150,120,80,0.25)';
+  g.lineWidth = 1.5;
+  for (let i = 0; i < 30; i++) {
+    const y = Math.random() * 256;
+    const x0 = Math.random() * 256;
+    g.beginPath();
+    g.moveTo(x0, y);
+    g.lineTo(x0 + 20 + Math.random() * 30, y + (Math.random() - 0.5) * 4);
+    g.stroke();
+  }
+  // Small rounded pebbles.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    g.fillStyle = `rgba(110,95,70,${0.25 + Math.random() * 0.2})`;
+    g.beginPath();
+    g.arc(x, y, 1.5 + Math.random() * 2.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+/** Silty/muddy lakebed — darker, calmer than a river floor (still water, no
+ *  directional streaks), with occasional sediment/algae patches. */
+function _buildLakeFloorCanvas(): HTMLCanvasElement {
+  const { c, g } = _newCanvas();
+  g.fillStyle = '#5c5230';
+  g.fillRect(0, 0, 256, 256);
+  _jitterPixels(g, 256, 14, [0.85, 0.9, 0.6]);
+  for (let i = 0; i < 24; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    g.fillStyle = `rgba(70,80,45,${0.15 + Math.random() * 0.2})`;
+    g.beginPath();
+    g.ellipse(x, y, 5 + Math.random() * 7, 4 + Math.random() * 5, Math.random() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+/** Pale sandy ocean floor with light shell/rock fleck detail — the existing
+ *  BIOME_WATER_SHALLOW/BIOME_WATER vertex tint (already computed per-tile via the
+ *  existing shallow/deep depth threshold) differentiates shallow vs. deep ocean
+ *  floor color for free via the same tint*map multiply every variant already uses,
+ *  so this single texture serves both depth bands. */
+function _buildOceanFloorCanvas(): HTMLCanvasElement {
+  const { c, g } = _newCanvas();
+  g.fillStyle = '#d8cf9e';
+  g.fillRect(0, 0, 256, 256);
+  _jitterPixels(g, 256, 14, [1, 1, 0.9]);
+  for (let i = 0; i < 20; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    g.fillStyle = `rgba(235,228,200,${0.2 + Math.random() * 0.2})`;
+    g.beginPath();
+    g.arc(x, y, 1 + Math.random() * 2, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
 function _canvasFor(variant: string): HTMLCanvasElement {
   const cached = _canvases.get(variant);
   if (cached) return cached;
@@ -182,6 +250,9 @@ function _canvasFor(variant: string): HTMLCanvasElement {
     case 'taiga':     c = _buildTaigaCanvas(); break;
     case 'tundra':    c = _buildTundraCanvas(); break;
     case 'snow':      c = _buildSnowCanvas(); break;
+    case 'river_floor': c = _buildRiverFloorCanvas(); break;
+    case 'lake_floor':  c = _buildLakeFloorCanvas(); break;
+    case 'ocean_floor': c = _buildOceanFloorCanvas(); break;
     default:          c = _buildGrasslandCanvas(); break; // unreachable via terrainVariantTexture's own switch, kept for type safety
   }
   _canvases.set(variant, c);

@@ -209,6 +209,18 @@ dropped otherwise-healthy settlements that were merely *near* water rather than
 actually overlapping it — see the design spec for the full empirical reasoning.
 `docs/superpowers/specs/2026-09-01-settlement-placement-validation-design.md`.
 
+Water (rivers/lakes/sea) floors previously rendered as a flat, single-color quad per
+tile — water was explicitly excluded from the ground biome sub-tile system shipped
+earlier. Removed that exclusion: river/lake/ocean tiles now route into 3 new real
+tileable textures (`river_floor`, `lake_floor`, `ocean_floor`) through the exact same
+sub-tile pipeline every land biome already uses, which also gives the water floor the
+same per-sub-tile height bump (no longer a perfectly flat plane) and — as a free side
+effect — border-dithering at the coastline, so a beach/riverbank's texture now
+gradually blends toward the water floor right at the waterline instead of stopping
+at a hard edge. Literal shoreline edge-LINE reshaping (the tile-grid-aligned zigzag
+boundary shape itself) and underwater props are explicitly scoped out of this pass —
+see the design spec for why. `docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md`.
+
 ---
 
 ## Asset Pack Reference

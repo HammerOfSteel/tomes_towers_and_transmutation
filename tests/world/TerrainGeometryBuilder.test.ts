@@ -91,14 +91,39 @@ describe('buildTerrainGeometryData', () => {
     // Water tint uses BIOME_WATER = [0.14, 0.26, 0.48] with a brightness
     // variation factor `v` applied uniformly to r/g/b — check the ratio
     // between channels matches the water palette's ratio, which is
-    // biome-specific and distinct from any BIOME[] land level.
-    const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
+    // biome-specific and distinct from any BIOME[] land level. Deep ocean
+    // now routes into groundGeometry.ocean_floor (2026-09-01 water floor
+    // texture variety) rather than the untextured base buffer.
+    const colors = data.groundGeometry.ocean_floor!.colors;
+    const [r, g, b] = [colors[0]!, colors[1]!, colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
     expect(g / b).toBeCloseTo(0.26 / 0.48, 5);
   });
 });
 
 describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
+  /** Collects the Y values of every vertex (across the base buffer and every
+   *  groundGeometry variant buffer) whose X falls within [xMin, xMax) — used to
+   *  isolate one specific tile's own geometry by world position rather than by
+   *  which texture-variant buffer it happened to land in, since border-dithering
+   *  can redirect a tile's own outermost sub-tiles into a NEIGHBOR's variant
+   *  buffer (correctly keeping that sub-tile's own height, just borrowing the
+   *  neighbor's texture) — and can just as easily pull a NEIGHBOR's own
+   *  sub-tiles into THIS tile's variant buffer. Buffer membership alone is
+   *  therefore not a reliable way to isolate "this specific tile's height". */
+  function yValuesInXRange(data: TerrainGeometryData, xMin: number, xMax: number): number[] {
+    const ys: number[] = [];
+    const scan = (positions: number[]) => {
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i]!;
+        if (x >= xMin && x < xMax) ys.push(positions[i + 1]!);
+      }
+    };
+    scan(data.positions);
+    for (const g of Object.values(data.groundGeometry)) scan(g.positions);
+    return ys;
+  }
+
   it('carves a river tile between two land tiles down by RIVER_DEPTH_WU and walls the banks', () => {
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
@@ -107,28 +132,30 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
 
     // Tile 0 (grassland, covered → subdivided): east wall (1 unsubdivided
     // face, base buffer) + top (16 sub-tiles, groundGeometry.grassland).
-    // Tile 1 (river — uncovered, _groundTextureVariant returns null, so
-    // it stays on the un-subdivided base-buffer path exactly as before):
-    // top only (1 face, base buffer). Tile 2 (grassland): west wall (1
-    // face, base buffer) + top (16 sub-tiles, groundGeometry.grassland).
-    // Base buffer: 3 unsubdivided faces (36 positions, 18 indices).
-    // groundGeometry.grassland: 32 sub-tile quads (384 positions, 192 indices).
-    expect(totalPositionsLength(data)).toBe(3 * 4 * 3 + 2 * 16 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(3 * 6 + 2 * 16 * 6);
+    // Tile 1 (river — now COVERED via 2026-09-01's water floor texture
+    // variety, routes to groundGeometry.river_floor instead of the base
+    // buffer): top (16 sub-tiles — border-dithering may redirect a few of
+    // its outermost sub-tiles toward the neighboring grassland's variant,
+    // same as any other biome boundary, but the TOTAL sub-tile count for
+    // this tile stays 16 regardless of which buffer each one lands in).
+    // Tile 2 (grassland): west wall (1 face, base buffer) + top (16
+    // sub-tiles, groundGeometry.grassland).
+    // Base buffer: 2 unsubdivided wall faces only (24 positions, 12 indices).
+    // Combined groundGeometry buffers: 48 sub-tile quads total (576 positions,
+    // 288 indices) — split across grassland/river_floor/river_bank
+    // (micro-patch) depending on border-dither/micro-patch rolls.
+    expect(totalPositionsLength(data)).toBe(2 * 4 * 3 + 3 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(2 * 6 + 3 * 16 * 6);
 
     // The river tile's top face sits at y = -RIVER_DEPTH_WU (elevation 0 - depth).
-    // Base-buffer emission order per tile: tile0's east wall (4 verts),
-    // then tile1's own top face (river has no ground texture, so it stays
-    // on the base buffer exactly as before — unaffected by sub-tile
-    // subdivision), then tile2's west wall.
-    const tile1TopY = data.positions[4 * 3 + 1]!;
-    // Top faces get a small deterministic corner bump (± up to
-    // SUBTILE_BUMP_MAX = 0.06 WU, since 2026-09-01's seam fix — see
-    // subTileBumpJitter()) layered on top of the carved base height for
-    // visual variety — assert against that documented bound (precision 0
-    // -> tolerance 0.5, safely covering the ±0.06 bump) rather than an
-    // exact value.
-    expect(tile1TopY).toBeCloseTo(-RIVER_DEPTH_WU, 0);
+    // Tile 1 spans world X in [0, 1) at this call's GHW=1/T=1 — a strictly interior
+    // sub-range (0.01, 0.99) isolates its own top-face geometry by X position while
+    // excluding wall-face vertices that sit exactly AT the shared tile boundary
+    // (x=0/x=1, shared with tile0's east wall / tile2's west wall) — see
+    // yValuesInXRange's doc comment for why buffer membership alone can't be used.
+    const tile1Ys = yValuesInXRange(data, 0.01, 0.99);
+    expect(tile1Ys.length).toBeGreaterThan(0);
+    for (const y of tile1Ys) expect(y).toBeCloseTo(-RIVER_DEPTH_WU, 0);
   });
 
   it('does not carve a river_ford tile (waterDepth 0) — sits flush with neighbours', () => {
@@ -167,17 +194,20 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     wg.set(1, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // Same shape as the river carving test above: tile0 (east wall +
-    // subdivided top), tile1 lake (uncovered, top only, unsubdivided),
-    // tile2 (west wall + subdivided top) — see that test's comment for
+    // Same shape as the river carving test above, except the middle tile now
+    // routes to groundGeometry.lake_floor instead of river_floor: tile0 (east
+    // wall + subdivided top), tile1 lake (covered, subdivided top only, no
+    // wall), tile2 (west wall + subdivided top) — see that test's comment for
     // the full breakdown.
-    expect(totalPositionsLength(data)).toBe(3 * 4 * 3 + 2 * 16 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(3 * 6 + 2 * 16 * 6);
+    expect(totalPositionsLength(data)).toBe(2 * 4 * 3 + 3 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(2 * 6 + 3 * 16 * 6);
 
-    const tile1TopY = data.positions[4 * 3 + 1]!;
-    // Precision 0 -> tolerance 0.5, safely covers the ±SUBTILE_BUMP_MAX
-    // (0.06 WU) bump now applied here — see the river carving test above.
-    expect(tile1TopY).toBeCloseTo(-LAKE_DEPTH_WU, 0);
+    // Tile 1 spans world X in [0, 1) at this call's GHW=1/T=1 — see the river
+    // carving test above's yValuesInXRange doc comment for why isolating by
+    // world position (not buffer membership) is necessary here.
+    const tile1Ys = yValuesInXRange(data, 0.01, 0.99);
+    expect(tile1Ys.length).toBeGreaterThan(0);
+    for (const y of tile1Ys) expect(y).toBeCloseTo(-LAKE_DEPTH_WU, 0);
   });
 
   it('colors a lake tile distinctly from a river tile at the same depth', () => {
@@ -189,8 +219,10 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     riverGrid.set(0, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
     const riverData = buildTerrainGeometryData(riverGrid, 1, 1, 0, 0, 1, 1);
 
-    const lakeColor  = [lakeData.colors[0], lakeData.colors[1], lakeData.colors[2]];
-    const riverColor = [riverData.colors[0], riverData.colors[1], riverData.colors[2]];
+    const lakeColors  = lakeData.groundGeometry.lake_floor!.colors;
+    const riverColors = riverData.groundGeometry.river_floor!.colors;
+    const lakeColor  = [lakeColors[0], lakeColors[1], lakeColors[2]];
+    const riverColor = [riverColors[0], riverColors[1], riverColors[2]];
     expect(lakeColor).not.toEqual(riverColor);
   });
 
@@ -199,7 +231,8 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     wg.set(0, 0, { feature: 'lake', waterDepth: LAKE_DEPTH_WU, walkable: false });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
 
-    const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
+    const colors = data.groundGeometry.lake_floor!.colors;
+    const [r, g, b] = [colors[0]!, colors[1]!, colors[2]!];
     expect(r / g).toBeCloseTo(BIOME_LAKE[0] / BIOME_LAKE[1], 5);
     expect(g / b).toBeCloseTo(BIOME_LAKE[1] / BIOME_LAKE[2], 5);
   });
@@ -439,7 +472,8 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
     const wg = new WorldGrid(1, 1);
     wg.set(0, 0, { biome: 'deep_ocean', waterDepth: OCEAN_DEEP_DEPTH_WU });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
-    const [r, g, b] = [data.colors[0]!, data.colors[1]!, data.colors[2]!];
+    const colors = data.groundGeometry.ocean_floor!.colors;
+    const [r, g, b] = [colors[0]!, colors[1]!, colors[2]!];
     expect(r / g).toBeCloseTo(0.14 / 0.26, 5);
     expect(g / b).toBeCloseTo(0.26 / 0.48, 5);
   });
@@ -523,10 +557,14 @@ describe('buildTerrainGeometryData — shallow vs deep water tint (RI-3 shorelin
     deepGrid.set(0, 0, { biome: 'deep_ocean', waterDepth: OCEAN_DEEP_DEPTH_WU });
     const deepData = buildTerrainGeometryData(deepGrid, 1, 1, 0, 0, 1, 1);
 
+    // Both ocean/deep_ocean now route into groundGeometry.ocean_floor (2026-09-01
+    // water floor texture variety) instead of the untextured base buffer.
+    const shallowColors = shallowData.groundGeometry.ocean_floor!.colors;
+    const deepColors = deepData.groundGeometry.ocean_floor!.colors;
     // Sum of RGB channels as a simple brightness proxy — shallow should
     // read visibly lighter than deep.
-    const shallowBrightness = shallowData.colors[0]! + shallowData.colors[1]! + shallowData.colors[2]!;
-    const deepBrightness    = deepData.colors[0]!    + deepData.colors[1]!    + deepData.colors[2]!;
+    const shallowBrightness = shallowColors[0]! + shallowColors[1]! + shallowColors[2]!;
+    const deepBrightness    = deepColors[0]!    + deepColors[1]!    + deepColors[2]!;
     expect(shallowBrightness).toBeGreaterThan(deepBrightness);
   });
 });
@@ -562,8 +600,11 @@ describe('buildTerrainGeometryData — biome-distinct colours', () => {
   it('ocean/beach tiles still use the existing water/sand colour tables (unchanged)', () => {
     const wg = new WorldGrid(1, 1);
     wg.set(0, 0, { biome: 'deep_ocean', elevation: 0, waterDepth: 2.5 });
-    const { colors } = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
-    // Deep water uses BIOME_WATER (darker blue), not a land palette.
+    const { groundGeometry } = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1);
+    // Deep water uses BIOME_WATER (darker blue), not a land palette. Now routes into
+    // groundGeometry.ocean_floor (2026-09-01 water floor texture variety) instead of
+    // the base buffer, but the underlying color TABLE is unchanged.
+    const colors = groundGeometry.ocean_floor!.colors;
     expect(colors[2]).toBeGreaterThan(colors[1]!); // blue channel dominant
   });
 });
@@ -1000,13 +1041,24 @@ describe('buildTerrainGeometryData — ground texture variant routing (Phase 4a)
     expect(uSet.size).toBeGreaterThan(1);
   });
 
-  it('leaves an uncovered biome (ocean) on the untextured base buffer, byte-identical to today', () => {
+  it('leaves a genuinely uncovered feature (river_ford) on the untextured base buffer, byte-identical to today', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { feature: 'river_ford', elevation: 0, waterDepth: 0 });
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
+
+    expect(data.groundGeometry.river_ford).toBeUndefined();
+    expect(data.indices.length).toBe(6); // top face in the base buffer, as before
+  });
+
+  it('routes ocean (previously uncovered) into groundGeometry.ocean_floor as of 2026-09-01 water floor texture variety', () => {
     const wg = new WorldGrid(1, 1);
     wg.set(0, 0, { biome: 'ocean', elevation: 0, waterDepth: 1.0 });
     const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 1, 1);
 
-    expect(data.groundGeometry.ocean).toBeUndefined();
-    expect(data.indices.length).toBe(6); // top face in the base buffer, as before
+    expect(data.groundGeometry.ocean_floor).toBeDefined();
+    expect(data.groundGeometry.ocean_floor!.indices.length).toBeGreaterThan(0);
+    // The base buffer must stay empty for this tile — no top face duplicated there.
+    expect(data.indices.length).toBe(0);
   });
 });
 
@@ -1089,6 +1141,29 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
     expect(desertPulledIn).toBeGreaterThan(0);
   });
 
+  it('pulls beach sub-tiles toward the water floor variant at a real shoreline (2026-09-01 water floor texture variety)', () => {
+    // Same statistical-reliability approach as the mountain/desert test above —
+    // 6 beach/ocean tile-pairs along a shared edge, so "zero pulls succeed" is
+    // astronomically unlikely. Confirms water tiles now participate in the same
+    // border-dithering border-softening every other biome boundary already had
+    // (they used to be `null`/uncovered, so border-dithering never touched them
+    // at all) — see design spec
+    // docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md §2a.
+    const wg = new WorldGrid(2, 6);
+    for (let r = 0; r < 6; r++) {
+      wg.set(0, r, { biome: 'beach', elevation: 1 });
+      wg.set(1, r, { biome: 'ocean', elevation: 1, waterDepth: 1 });
+    }
+    const data = buildTerrainGeometryData(wg, 2, 6, 0.5, 2.5, 2, 1);
+    // Border-dithering can pull sub-tiles either direction (beach donating some
+    // of its own outermost sub-tiles to ocean_floor, or vice versa) — the
+    // reliable signal that dithering occurred at all is that ocean_floor's
+    // total index count differs from the "zero dithering" baseline of exactly
+    // 6 tiles x 16 sub-tiles x 6 indices, not a directional greater-than check.
+    const oceanFloorIndices = data.groundGeometry.ocean_floor?.indices.length ?? 0;
+    expect(oceanFloorIndices).not.toBe(6 * 16 * 6);
+  });
+
   it('never subdivides a ramp-shaped (non-planar) tile — unaffected by this pass', () => {
     const wg = new WorldGrid(4, 4);
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) wg.set(c, r, { elevation: 3, biome: 'grassland' });
@@ -1117,12 +1192,14 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
     // also has no MICRO_PATCH_VARIANTS entry, ruling out micro-patch
     // redirects too.
     for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) wg.set(c, r, { biome: 'mountain' });
-    // Tile (2,1): 'ocean' biome, waterDepth 0 (no carving, so its physical
+    // Tile (2,1): 'river_ford' feature, waterDepth 0 (no carving, so its physical
     // height stays 0 too, matching tile (1,1) — no wall, purely a
-    // texture-routing difference) — 'ocean' is never ramp-eligible, so it
-    // takes the flat branch's UNCOVERED fallback (still
-    // cornerHeightJitter-based before the fix).
-    wg.set(2, 1, { biome: 'ocean', waterDepth: 0 });
+    // texture-routing difference) — river_ford is intentionally the one
+    // remaining uncovered feature after 2026-09-01's water floor texture
+    // variety pass (a dry, walkable road crossing, not a submerged floor), so
+    // it still takes the flat branch's UNCOVERED fallback (still
+    // cornerHeightJitter-based before the original fix this test guards).
+    wg.set(2, 1, { feature: 'river_ford', waterDepth: 0 });
     // Render only tiles (1,1) and (2,1) — the shared edge under test.
     const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 1, 1, 1, 1, 2, 1);
 
@@ -1140,7 +1217,7 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
     // local vertex 2 within it.
     const q15NE_y = groundVerts[(60 + 2) * 3 + 1]!; // sub-tile (3,3) NE — z=1 edge
 
-    // Tile (2,1) (ocean, uncovered, unsubdivided) lands in the base
+    // Tile (2,1) (river_ford, uncovered, unsubdivided) lands in the base
     // buffer as a single quad: SW, NW, NE, SE.
     const baseVerts = data.positions;
     const tile2_1_SW_y = baseVerts[0 * 3 + 1]!;
