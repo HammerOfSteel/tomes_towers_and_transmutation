@@ -155,7 +155,13 @@ export class TimeSkipUI {
 
     this._elapsed += dt;
     const t = Math.min(this._elapsed / WARP_DURATION, 1);
-    TimeSystem.instance.setHour(_lerpHourForward(this._fromHour, this._toHour, _easeInOut(t)));
+    // Write the hour field directly for intermediate frames — setHour()'s
+    // synchronous localStorage write is fine for a single call, but this
+    // runs every frame for ~2.5s (~150 calls at 60fps); hammering
+    // localStorage.setItem() that often caused a measurable render-loop
+    // stall in live testing. Nobody needs a mid-warp value to survive a
+    // crash/reload, so only the final landing value (below) is persisted.
+    TimeSystem.instance.hour = _lerpHourForward(this._fromHour, this._toHour, _easeInOut(t));
 
     // Spin fastest at the midpoint of the warp, slowest at the ends —
     // matches the ease-in/out "spinning up, then settling" feel.
