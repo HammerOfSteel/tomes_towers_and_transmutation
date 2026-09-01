@@ -79,9 +79,9 @@ import { pickTreeArchetype, pickRockArchetype, hashIndex } from '@/world/NatureA
 import { makeMottledCanvasTexture } from '@/world/NatureAssetBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
 import { ChunkManager, CHUNK_SIZE, type ChunkCoord } from '@/world/ChunkManager';
-import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU, physicalHeightWU } from '@/world/WaterDepthConfig';
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
-import { isScatterAllowed } from '@/world/ScatterRules';
+import { isScatterAllowed, isWaterDecorAllowed, isNearWaterTile } from '@/world/ScatterRules';
 import { GrassField, GRASS_PRESETS } from '@/world/GrassField';
 import { AmbientCreature, selectAmbientSpawnPoints, MAX_ACTIVE_AMBIENT_CREATURES } from '@/world/AmbientWildlife';
 import { TrampleMap } from '@/world/GrassTrample';
@@ -1562,6 +1562,7 @@ export class OverworldScene {
 
     this._buildChunkBushes(coord, group);
     this._buildChunkBeachDecor(coord, group);
+    this._buildChunkWaterDecor(coord, group);
 
     // Collapse every individual tree/rock/bush/decor Mesh in this chunk into
     // a handful of merged per-material meshes — see `mergeGroupMeshesByMaterial()`.
@@ -2450,6 +2451,145 @@ export class OverworldScene {
       piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
       piece.scale.set(1, 0.5 + rand() * 0.3, 0.8 + rand() * 0.3);
       g.add(piece);
+    }
+    return g;
+  }
+
+  /**
+   * Scatters shoreline reeds (any dry tile adjacent to river/lake/ocean water,
+   * excluding beach which already has its own decor) and underwater rock/seaweed
+   * props (any actually-submerged tile) — see design spec
+   * docs/superpowers/specs/2026-09-01-water-riverbank-decor-props-design.md. Two
+   * independent poissonDisk passes (reeds denser, matching `_buildChunkBeachDecor()`'s
+   * own narrow-strip reasoning; underwater props sparser, since open water is a much
+   * larger area than a bank strip and a dense pass would read as cluttered), each with
+   * its own seed salt so their point sets don't correlate with any other scatter pass
+   * this chunk already runs. Purely decorative (no collider), reusing `_pooledMaterial()`
+   * and folded into the same `mergeGroupMeshesByMaterial(group)` pass as everything else
+   * in `_buildChunkScatter()`.
+   */
+  private _buildChunkWaterDecor(coord: ChunkCoord, group: THREE.Group): void {
+    const { _GHW: GHW, _GHH: GHH } = this;
+    const chunkWorldSize = T * CHUNK_SIZE;
+    const { colStart, rowStart } = this._chunkGridOrigin(coord);
+    const originX = (colStart - GHW) * T;
+    const originZ = (rowStart - GHH) * T;
+
+    const reedRand = mulberry32((this._seed ^ 0x2B81_4F6D) ^ (coord.cx * 65599) ^ (coord.cz * 96179));
+    const reedPts = poissonDisk(chunkWorldSize, chunkWorldSize, 2.4, reedRand);
+    for (const [px, pz] of reedPts) {
+      const wx = originX + px;
+      const wz = originZ + pz;
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+      if (!isWaterDecorAllowed(cell, 'reed')) continue;
+      if (!isNearWaterTile(this._wg, c, r)) continue;
+      const reed = this._makeReedCluster(reedRand);
+      reed.position.set(wx, cell.elevation * SH, wz);
+      reed.rotation.y = reedRand() * Math.PI * 2;
+      reed.userData.scatterKind = 'decor';
+      group.add(reed);
+    }
+
+    const waterRand = mulberry32((this._seed ^ 0x71DA_2C93) ^ (coord.cx * 54983) ^ (coord.cz * 41729));
+    // Denser than the original 5 WU spacing (now 3.5) — the isometric camera's steep
+    // top-down angle makes thin vertical props (seaweed) present a much smaller visible
+    // footprint than trees/rocks do at the same angle, so a higher population density is
+    // needed for the water floor to actually read as "populated" rather than empty.
+    const waterPts = poissonDisk(chunkWorldSize, chunkWorldSize, 3.5, waterRand);
+    for (const [px, pz] of waterPts) {
+      const wx = originX + px;
+      const wz = originZ + pz;
+      const c = Math.floor(wx / T + GHW);
+      const r = Math.floor(wz / T + GHH);
+      const cell = this._wg.get(c, r);
+      if (!isWaterDecorAllowed(cell, 'underwater')) continue;
+      const prop = waterRand() < 0.5 ? this._makeUnderwaterRocks(waterRand) : this._makeSeaweed(waterRand);
+      prop.position.set(wx, physicalHeightWU(cell, SH), wz);
+      prop.rotation.y = waterRand() * Math.PI * 2;
+      prop.userData.scatterKind = 'decor';
+      group.add(prop);
+    }
+  }
+
+  private _makeReedCluster(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    // Cool, wet green — distinct from dune grass's dry tan-green (0x9a9660).
+    const mat = this._pooledMaterial(
+      'reeds',
+      [0x4a6a3a, 0x4a6a3a + 0x030602, 0x4a6a3a + 0x060c04, 0x4a6a3a + 0x091206],
+      rand,
+      0.20,
+    );
+    const bladeCount = 4 + Math.floor(rand() * 4); // 4..7 blades, denser/taller than dune grass
+    for (let i = 0; i < bladeCount; i++) {
+      const h = 0.55 + rand() * 0.5;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.03, h, 4), mat);
+      const angle = (i / bladeCount) * Math.PI * 2 + rand() * 0.4;
+      const spread = 0.05 + rand() * 0.08;
+      blade.position.set(Math.cos(angle) * spread, h / 2, Math.sin(angle) * spread);
+      blade.rotation.z = (rand() - 0.5) * 0.25;
+      g.add(blade);
+    }
+    return g;
+  }
+
+  private _makeUnderwaterRocks(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    // Darker, more saturated than beach pebbles (0x8a8478) — a wet, algae-tinged look.
+    // Sized up somewhat from the original beach-pebbles proportions (0.08-0.18 radius) —
+    // the isometric camera's steep top-down angle already reads chunky rock silhouettes
+    // reasonably well (unlike thin blade props), so this is mostly about making sure a
+    // cluster reads as a real cluster rather than a barely-visible speck at typical
+    // camera distance from the water surface.
+    const mat = this._pooledMaterial(
+      'underwater-rocks',
+      [0x3a4038, 0x3a4038 + 0x020402, 0x3a4038 + 0x040804, 0x3a4038 + 0x060c06],
+      rand,
+      0.12,
+    );
+    const pieceCount = 3 + Math.floor(rand() * 3); // 3..5 pieces
+    for (let i = 0; i < pieceCount; i++) {
+      const pr = 0.16 + rand() * 0.18;
+      const piece = new THREE.Mesh(new THREE.DodecahedronGeometry(pr, 0), mat);
+      const angle = rand() * Math.PI * 2;
+      const spread = rand() * 0.28;
+      piece.position.set(Math.cos(angle) * spread, pr * 0.5, Math.sin(angle) * spread);
+      piece.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+      piece.scale.set(1, 0.5 + rand() * 0.3, 0.8 + rand() * 0.3);
+      g.add(piece);
+    }
+    return g;
+  }
+
+  private _makeSeaweed(rand: () => number): THREE.Group {
+    const g = new THREE.Group();
+    // Brownish-green, distinct from both reeds and land grass — reads as
+    // submerged plant matter rather than anything growing in open air.
+    const mat = this._pooledMaterial(
+      'seaweed',
+      [0x3a5030, 0x3a5030 + 0x040602, 0x3a5030 + 0x080c04],
+      rand,
+      0.18,
+    );
+    const bladeCount = 3 + Math.floor(rand() * 2); // 3..4 blades — a fuller clump
+    for (let i = 0; i < bladeCount; i++) {
+      const h = 0.7 + rand() * 0.8;
+      // A gently curved blade: a thin box, tilted and twisted, rather than a
+      // straight cone — reads more like a soft underwater plant swaying in
+      // place than a rigid land blade. Widened from an original 0.05 to 0.13 —
+      // a viewer looking almost straight down (this game's isometric camera)
+      // sees very little of a thin vertical blade's length, so the blade's
+      // WIDTH is what actually determines its visible footprint from that
+      // angle; too thin and the whole clump reads as barely-there specks.
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.13, h, 0.03), mat);
+      const angle = (i / bladeCount) * Math.PI * 2 + rand() * 0.6;
+      const spread = 0.04 + rand() * 0.08;
+      blade.position.set(Math.cos(angle) * spread, h / 2, Math.sin(angle) * spread);
+      blade.rotation.z = (rand() - 0.5) * 0.5;
+      blade.rotation.y = rand() * Math.PI * 2;
+      g.add(blade);
     }
     return g;
   }

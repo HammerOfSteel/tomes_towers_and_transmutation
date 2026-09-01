@@ -11,7 +11,7 @@
  * ocean band (it quantizes to elevation === 1, same as ordinary dry
  * land). This module is the single, testable source of truth instead.
  */
-import type { WorldCell } from './WorldGrid';
+import type { WorldCell, WorldGrid } from './WorldGrid';
 
 export type ScatterKind = 'tree' | 'bush' | 'rock' | 'camp' | 'ruin' | 'grass' | 'ambient';
 
@@ -45,3 +45,50 @@ export function isScatterAllowed(cell: WorldCell, kind: ScatterKind): boolean {
 
   return true;
 }
+
+/** Decor kinds that are specifically FOR water/water-adjacent tiles — the exact
+ *  inverse concern from `isScatterAllowed()` above, which unconditionally
+ *  excludes every one of ITS kinds from any water tile. Kept as a separate
+ *  function rather than a new `ScatterKind` case: folding a "wants water"
+ *  exception into `isScatterAllowed()` would undermine its whole reason for
+ *  existing (a single airtight "never on water" guarantee for every kind it
+ *  already covers) with a confusing, easy-to-misread special case. */
+export type WaterDecorKind = 'reed' | 'underwater';
+
+/**
+ * Returns whether a water/water-adjacent decorative prop (shoreline reeds,
+ * underwater rocks/seaweed) may be placed on `cell`. `'reed'` is for any DRY
+ * tile — river, lake, or ocean shoreline alike, not just `river_bank`-tagged
+ * tiles (only river tiles get that specific feature tag; lakes/oceans don't,
+ * per `HydrologyGenerator.ts`) — excluding `beach` biome, which already has
+ * its own decor (`_buildChunkBeachDecor()`'s driftwood/dune-grass/pebbles).
+ * Actual shoreline ADJACENCY (is this dry tile actually next to water?) is a
+ * grid-neighbor question this per-cell function can't answer alone — see
+ * `isNearWaterTile()`, which the caller combines with this check. `'underwater'`
+ * is for any actually-submerged tile (`waterDepth > 0` — river, lake, ocean,
+ * deep_ocean alike), the one intentional exception to every other scatter
+ * kind's water exclusion.
+ */
+export function isWaterDecorAllowed(cell: WorldCell, kind: WaterDecorKind): boolean {
+  if (cell.settlementId > 0) return false;
+  if (cell.content !== 'empty') return false;
+  if (kind === 'reed') return cell.waterDepth === 0 && cell.biome !== 'beach';
+  return cell.waterDepth > 0; // 'underwater'
+}
+
+/** True if the tile at (col, row) has at least one orthogonal neighbor that's
+ *  actually submerged (`waterDepth > 0`) — the shoreline-adjacency half of
+ *  reed placement that `isWaterDecorAllowed()` can't determine from a single
+ *  cell alone. Out-of-bounds neighbors are skipped (not counted either way),
+ *  matching the same map-edge-safety convention used elsewhere (e.g.
+ *  `GrassField.ts`'s `computeEdgeBlend()`). */
+export function isNearWaterTile(wg: WorldGrid, col: number, row: number): boolean {
+  const deltas: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dc, dr] of deltas) {
+    const c = col + dc, r = row + dr;
+    if (c < 0 || c >= wg.width || r < 0 || r >= wg.height) continue;
+    if (wg.get(c, r).waterDepth > 0) return true;
+  }
+  return false;
+}
+

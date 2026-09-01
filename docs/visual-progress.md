@@ -221,6 +221,20 @@ at a hard edge. Literal shoreline edge-LINE reshaping (the tile-grid-aligned zig
 boundary shape itself) and underwater props are explicitly scoped out of this pass —
 see the design spec for why. `docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md`.
 
+**Follow-up** (user feedback: still "no more assets and blocky" — the subtle 2D floor
+texture alone, blended at 28-45% alpha through a tinted, semi-transparent water
+surface, wasn't perceptible enough on its own): added real 3D decorative props —
+shoreline reeds on any dry tile adjacent to river/lake/ocean water (not just
+`river_bank`-tagged tiles, since only rivers get that specific tag; excludes beach,
+which already has its own driftwood/dune-grass/pebbles decor), plus underwater rock
+clusters and seaweed scattered directly on the submerged floor. Reuses
+`_buildChunkBeachDecor()`'s exact proven pattern end-to-end. Also brightened the
+lantern spell's light (intensity 1.1→3.5, distance 6→11, decay 2→1.5) after feedback
+that it was "much too weak to do much of anything at night" — physically-correct
+inverse-square falloff is fine for decorative lamp-post atmosphere but far too dim for
+a light meant to be the player's primary way of seeing in the dark.
+See `docs/superpowers/specs/2026-09-01-water-riverbank-decor-props-design.md`.
+
 ---
 
 ## Asset Pack Reference
