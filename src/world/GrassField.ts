@@ -305,8 +305,10 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       uTrampleHalfLife: { value: TRAMPLE_DECAY_HALF_LIFE_S },
     },
     vertexShader: /* glsl */ `
-      attribute vec4 aPositionRotation; // xyz = world pos, w = Y rotation
-      attribute vec4 aScaleVariation;   // x = scaleX, y = scaleY, z = tilt, w = colorVar
+      attribute vec4  aPositionRotation; // xyz = world pos, w = Y rotation
+      attribute vec4  aScaleVariation;   // x = scaleX, y = scaleY, z = tilt, w = colorVar
+      attribute float aEdgeBlend;        // 0 = interior, 1 = at a biome boundary — see
+                                          // GrassPlacement.edgeBlend's doc comment.
 
       uniform float uWindTime;
       uniform vec2  uWindDir;
@@ -342,6 +344,7 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       varying vec3  vWorldPos;
       varying float vColorVar;
       varying float vFade;
+      varying float vEdgeBlend;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -379,6 +382,7 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       void main() {
         vUv = uv;
         vColorVar = aScaleVariation.w;
+        vEdgeBlend = aEdgeBlend;
 
         // Trampled-grass trail crush amount for this blade — computed from its planted
         // ROOT position (aPositionRotation.xz, NOT the wind-swayed per-vertex worldPos
@@ -456,13 +460,19 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       varying vec3  vWorldPos;
       varying float vColorVar;
       varying float vFade;
+      varying float vEdgeBlend;
 
       void main() {
         if (vFade < 0.01) discard;
 
         float heightT = vUv.y;
         vec3 color = mix(uBaseColor, uTipColor, heightT);
-        color = mix(color, uDryColor, vColorVar * uDryAmount);
+        // Blades near a biome boundary (vEdgeBlend -> 1) are pulled toward the shared
+        // uDryColor regardless of their own random vColorVar roll — max(), not a plain
+        // multiply, so the boundary pull is reliable rather than only affecting blades
+        // that also happened to roll a high vColorVar. See design spec
+        // docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md §2.
+        color = mix(color, uDryColor, max(vColorVar * uDryAmount, vEdgeBlend));
         color *= 1.0 + (vColorVar - 0.5) * 0.15;
 
         float ao = mix(1.0 - uAoStrength, 1.0, smoothstep(0.0, 0.3, heightT));
@@ -523,6 +533,7 @@ export class GrassField {
   private readonly _wind = new WindSystem();
   private readonly _positionRotation: THREE.InstancedBufferAttribute;
   private readonly _scaleAndVariation: THREE.InstancedBufferAttribute;
+  private readonly _edgeBlend: THREE.InstancedBufferAttribute;
   private _lastBuildX = Infinity;
   private _lastBuildZ = Infinity;
 
@@ -551,8 +562,13 @@ export class GrassField {
       new Float32Array(preset.maxBlades * 4), 4,
     );
     this._scaleAndVariation.setUsage(THREE.DynamicDrawUsage);
+    this._edgeBlend = new THREE.InstancedBufferAttribute(
+      new Float32Array(preset.maxBlades), 1,
+    );
+    this._edgeBlend.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aPositionRotation', this._positionRotation);
     geometry.setAttribute('aScaleVariation', this._scaleAndVariation);
+    geometry.setAttribute('aEdgeBlend', this._edgeBlend);
 
     this.mesh = new THREE.InstancedMesh(geometry, this._material, preset.maxBlades);
     this.mesh.frustumCulled = false; // wind displacement can push blades outside static bounds
@@ -579,13 +595,15 @@ export class GrassField {
       this.preset.biome, this.preset.densityPerUnit2,
     );
     const count = Math.min(placements.length, this.preset.maxBlades);
-    const { positionRotation, scaleAndVariation } =
+    const { positionRotation, scaleAndVariation, edgeBlend } =
       packGrassInstanceBuffers(placements.slice(0, count));
 
     this._positionRotation.array.set(positionRotation);
     this._scaleAndVariation.array.set(scaleAndVariation);
+    this._edgeBlend.array.set(edgeBlend);
     this._positionRotation.needsUpdate = true;
     this._scaleAndVariation.needsUpdate = true;
+    this._edgeBlend.needsUpdate = true;
     this.mesh.count = count;
   }
 
