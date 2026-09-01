@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { isScatterAllowed } from '@/world/ScatterRules';
+import { TRAMPLE_MAP_WORLD_SIZE, FALLBACK_TRAMPLE_TEXTURE, type TrampleMap } from '@/world/GrassTrample';
 import type { WorldGrid } from '@/world/WorldGrid';
 
 // ── Tunables (see design spec §4/§6) ────────────────────────────────────────
@@ -244,6 +245,9 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       uFadeStart:    { value: FADE_START },
       uFadeEnd:      { value: FADE_END },
       uFadeCenter:   { value: new THREE.Vector2(0, 0) },
+      uTrampleMap:       { value: FALLBACK_TRAMPLE_TEXTURE },
+      uTrampleCenter:    { value: new THREE.Vector2(0, 0) },
+      uTrampleWorldSize: { value: TRAMPLE_MAP_WORLD_SIZE },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aPositionRotation; // xyz = world pos, w = Y rotation
@@ -264,6 +268,9 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
                                   // sits ~28 WU from the player (see CameraRig.ts's
                                   // ISO_OFFSET), so fading by camera distance made grass
                                   // right at the player's feet always fully discard).
+      uniform sampler2D uTrampleMap;
+      uniform vec2      uTrampleCenter;
+      uniform float     uTrampleWorldSize;
 
       varying vec2  vUv;
       varying vec3  vNormal;
@@ -308,6 +315,15 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
         vUv = uv;
         vColorVar = aScaleVariation.w;
 
+        // Sample the trample map ONCE per blade using its planted ROOT position (NOT the
+        // wind-swayed per-vertex worldPos below) so every vertex of one blade agrees on how
+        // "crushed" it is — see docs/superpowers/specs/2026-09-01-trampled-grass-trail-design.md §4.3.
+        vec2 trampleUV = (aPositionRotation.xz - uTrampleCenter) / uTrampleWorldSize + 0.5;
+        float crush = 0.0;
+        if (trampleUV.x >= 0.0 && trampleUV.x <= 1.0 && trampleUV.y >= 0.0 && trampleUV.y <= 1.0) {
+          crush = texture2D(uTrampleMap, trampleUV).r;
+        }
+
         vec3 pos = position;
         pos.x *= aScaleVariation.x;
         pos.y *= aScaleVariation.y;
@@ -328,10 +344,16 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
         rotated.y = pos.y;
         rotated.z = pos.x * sinR + pos.z * cosR;
 
+        // Flatten toward the ground proportional to how trampled this blade currently is
+        // — the same VERTEX.y *= (1 - crush) formula verified in two independent real
+        // Godot grass shaders (see the design spec's §2 research notes).
+        rotated.y *= (1.0 - crush);
+
         vec3 worldPos = rotated + aPositionRotation.xyz;
 
         float heightFactor = uv.y;
-        vec2 windOffsetXZ = computeWind(worldPos, heightFactor);
+        // A fully-crushed blade is pinned down and doesn't sway in the wind.
+        vec2 windOffsetXZ = computeWind(worldPos, heightFactor) * (1.0 - crush);
         worldPos.x += windOffsetXZ.x;
         worldPos.z += windOffsetXZ.y;
 
@@ -436,9 +458,13 @@ export class GrassField {
     private readonly _wg: WorldGrid,
     private readonly _seed: number,
     readonly preset: GrassPreset,
+    private readonly _trampleMap?: TrampleMap,
   ) {
     const geometry = createGrassBladeGeometry(preset);
     this._material = createGrassMaterial(preset);
+    if (this._trampleMap) {
+      this._material.uniforms.uTrampleMap.value = this._trampleMap.texture;
+    }
 
     this._positionRotation = new THREE.InstancedBufferAttribute(
       new Float32Array(preset.maxBlades * 4), 4,
@@ -462,6 +488,10 @@ export class GrassField {
    *  rebuild boundaries. */
   update(playerX: number, playerZ: number): void {
     (this._material.uniforms.uFadeCenter.value as THREE.Vector2).set(playerX, playerZ);
+    if (this._trampleMap) {
+      const c = this._trampleMap.getCenter();
+      (this._material.uniforms.uTrampleCenter.value as THREE.Vector2).set(c.x, c.z);
+    }
 
     const dx = playerX - this._lastBuildX;
     const dz = playerZ - this._lastBuildZ;
