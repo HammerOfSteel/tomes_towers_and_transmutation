@@ -156,6 +156,20 @@ ambient wildlife/enemies don't yet leave trails. Also fixed grass being roughly 
 tall, and a real bug where wind sway silently used the same fixed values for all 5
 biomes instead of each biome's own tuned preset.
 
+A follow-up fix replaced the trample effect's GPU sampling technique after it caused a
+severe FPS regression on real hardware (a vertex texture fetch — a well-known
+performance trap, invisible in automated testing) — see
+`docs/superpowers/specs/2026-09-01-trample-vtf-perf-fix.md`.
+
+---
+
+## Grass Biome-Boundary Blending
+
+Grass now thins out gradually and shifts toward a shared warm dry-tint near biome
+boundaries (e.g. grassland meeting savanna) instead of stopping in a hard wall with a
+stark color jump — see
+`docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md`.
+
 ---
 
 ## Asset Pack Reference
