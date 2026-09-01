@@ -15,6 +15,7 @@ import { mulberry32 } from '@/core/prng';
 import { poissonDisk } from '@/core/poissonDisk';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import type { WorldGrid, BiomeId } from '@/world/WorldGrid';
+import { getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
 
 // ── Species ───────────────────────────────────────────────────────────────
 
@@ -259,13 +260,13 @@ export class AmbientCreature {
     };
   }
 
-  update(playerPos: THREE.Vector3, dt: number): void {
+  update(wg: WorldGrid, playerPos: THREE.Vector3, dt: number): void {
     const dxLOD = this.root.position.x - playerPos.x;
     const dzLOD = this.root.position.z - playerPos.z;
     const distanceToPlayer = Math.sqrt(dxLOD * dxLOD + dzLOD * dzLOD);
     if (computeAmbientLOD(distanceToPlayer) === 'far') {
-      // Frozen — skip the behavior tick and animation entirely. Position,
-      // rotation, and _behavior are left untouched so the creature resumes
+      // Frozen — skip the behavior tick, animation, and height re-query entirely.
+      // Position, rotation, and _behavior are left untouched so the creature resumes
       // exactly where it was once the player is back in range (see design
       // spec §3's accepted flee-state edge case for why this is safe).
       return;
@@ -294,6 +295,13 @@ export class AmbientCreature {
         this.root.rotation.y = Math.atan2(dx, dz);
       }
     }
+
+    // Re-query the terrain's real surface height every tick (not just at spawn) — see
+    // getTerrainHeightAt()'s doc comment. Fixes creatures visually clipping through
+    // raised terrain or floating above lowered terrain as they wander across a tile
+    // boundary with an elevation change, matching how the player's own physics-based
+    // height following works.
+    this.root.position.y = getTerrainHeightAt(wg, this.root.position.x, this.root.position.z);
 
     this._animTime += dt;
     animateCreature(this._rig, {

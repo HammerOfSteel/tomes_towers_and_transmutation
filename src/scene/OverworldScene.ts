@@ -70,7 +70,7 @@ import type { ResourceNodeRecord }      from '@/world/ResourceNodePlacer';
 import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
-import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
 import type { RoadPathSegment } from '@/world/RoadPathSampler';
 import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 import { terrainVariantTexture } from '@/world/TerrainTextures';
@@ -628,7 +628,7 @@ export class OverworldScene {
       gf.tickWind(dt);
     }
 
-    for (const creature of this._activeAmbientCreatures) creature.update(pos, dt);
+    for (const creature of this._activeAmbientCreatures) creature.update(this._wg, pos, dt);
 
     // Tick resource node respawn timers
     for (let i = 0; i < this._respawnTimers.length; i++) {
@@ -1369,10 +1369,7 @@ export class OverworldScene {
     );
     for (const sp of spawnPoints) {
       if (this._activeAmbientCreatures.length >= MAX_ACTIVE_AMBIENT_CREATURES) break;
-      const spCol = Math.floor(sp.x / T + GHW);
-      const spRow = Math.floor(sp.z / T + GHH);
-      const spCell = this._wg.get(spCol, spRow);
-      const spawnPos = new THREE.Vector3(sp.x, spCell.elevation * SH, sp.z);
+      const spawnPos = new THREE.Vector3(sp.x, getTerrainHeightAt(this._wg, sp.x, sp.z), sp.z);
       const creature = new AmbientCreature(
         sp.species, spawnPos,
         (this._seed ^ 0x1B7A_9E33) ^ Math.round(sp.x * 131) ^ Math.round(sp.z * 977),

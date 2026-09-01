@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
-import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU } from '@/world/WaterDepthConfig';
+import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 
@@ -284,6 +284,39 @@ describe('subTileBumpJitter', () => {
     const a = subTileBumpJitter(10, 5);
     const b = subTileBumpJitter(10, 5);
     expect(a).toBe(b);
+  });
+});
+
+describe('getTerrainHeightAt', () => {
+  it('returns the physical (elevation minus waterDepth) height for a dry flat tile, plus its bump', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 1, { elevation: 4, waterDepth: 0 });
+    const { wx, wz } = wg.gridToWorld(1, 1);
+    const expected = 4 * LEVEL_HEIGHT + subTileBumpJitter(wx, wz);
+    expect(getTerrainHeightAt(wg, wx, wz)).toBeCloseTo(expected, 10);
+  });
+
+  it('subtracts waterDepth via physicalHeightWU (matches the rendered/collided carve)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 1, { elevation: 4, waterDepth: RIVER_DEPTH_WU });
+    const { wx, wz } = wg.gridToWorld(1, 1);
+    const expected = (4 * LEVEL_HEIGHT - RIVER_DEPTH_WU) + subTileBumpJitter(wx, wz);
+    expect(getTerrainHeightAt(wg, wx, wz)).toBeCloseTo(expected, 10);
+  });
+
+  it('is deterministic for the same world coordinates', () => {
+    const wg = new WorldGrid(3, 3);
+    expect(getTerrainHeightAt(wg, 1.25, -0.75)).toBe(getTerrainHeightAt(wg, 1.25, -0.75));
+  });
+
+  it('tracks a different value across a tile boundary where elevation changes (does not freeze at one tile\'s height)', () => {
+    const wg = new WorldGrid(5, 1);
+    wg.set(0, 0, { elevation: 1, waterDepth: 0 });
+    wg.set(1, 0, { elevation: 1, waterDepth: 0 });
+    wg.set(2, 0, { elevation: 5, waterDepth: 0 }); // a step up, far from the bump's ±0.06 WU range
+    const low = wg.gridToWorld(1, 0);
+    const high = wg.gridToWorld(2, 0);
+    expect(getTerrainHeightAt(wg, high.wx, high.wz)).toBeGreaterThan(getTerrainHeightAt(wg, low.wx, low.wz) + 1);
   });
 });
 

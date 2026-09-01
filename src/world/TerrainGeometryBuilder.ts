@@ -269,6 +269,29 @@ export function subTileBumpJitter(worldX: number, worldZ: number): number {
   return (unit * 2 - 1) * SUBTILE_BUMP_MAX; // → [-max, +max]
 }
 
+/**
+ * General-purpose "what world-space Y should something standing at (wx, wz) rest at"
+ * query — the same surface height the rendered/collided terrain mesh presents at that
+ * point for flat/edge tiles: `physicalHeightWU()`'s carved elevation plus the seamless
+ * per-sub-tile-lattice-point bump (`subTileBumpJitter()`), so anything using this
+ * function tracks the visible bumpy ground surface instead of a stale/coarser value.
+ *
+ * Ramp tiles (~6% of tiles, single-corner/outer-corner/saddle shapes — see
+ * `TerrainKit.ts`) are NOT interpolated here; this returns the tile's flat carved
+ * height regardless of ramp shape, same as the ground sub-tile system itself does for
+ * non-ramp tiles (ramps are intentionally excluded from both bump jitter and this
+ * query — see docs/superpowers/specs/2026-09-01-ground-subtile-system-design.md §2).
+ * Good enough for cosmetic uses (e.g. ambient wildlife, which never spawns on ramp-
+ * heavy terrain per `AmbientWildlife.ts`'s land-biome-only spawn rules) that don't
+ * need pixel-perfect ramp-slope precision the way the player's real physics collider
+ * does.
+ */
+export function getTerrainHeightAt(wg: WorldGrid, worldX: number, worldZ: number): number {
+  const { col, row } = wg.worldToGrid(worldX, worldZ);
+  const cell = wg.get(col, row);
+  return physicalHeightWU(cell) + subTileBumpJitter(worldX, worldZ);
+}
+
 /** True for any tile that should never participate in ramp geometry —
  *  neither as the tile being classified nor as a neighbor contributing to
  *  a corner — so shorelines/riverbanks keep today's exact flat-carved +

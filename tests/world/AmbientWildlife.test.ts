@@ -10,6 +10,10 @@ import {
   AmbientCreature, computeAmbientLOD, LOD_FAR_DISTANCE_WU,
 } from '@/world/AmbientWildlife';
 
+// Default WorldGrid (all elevation 0, biome grassland, waterDepth 0) used by every
+// AmbientCreature.update() call below — getTerrainHeightAt() needs a grid to query.
+const TEST_WG = new WorldGrid(9, 9);
+
 describe('AMBIENT_SPECIES', () => {
   it('has exactly rabbit and goat', () => {
     expect(Object.keys(AMBIENT_SPECIES).sort()).toEqual(['goat', 'rabbit']);
@@ -256,7 +260,7 @@ describe('AmbientCreature', () => {
     const creature = new AmbientCreature('rabbit', spawn, 1);
     const farPlayer = new THREE.Vector3(1000, 0, 1000);
     const startPos = creature.root.position.clone();
-    for (let i = 0; i < 300; i++) creature.update(farPlayer, 1 / 30);
+    for (let i = 0; i < 300; i++) creature.update(TEST_WG, farPlayer, 1 / 30);
     const endPos = creature.root.position.clone();
     const moved = startPos.distanceTo(endPos);
     // Over 10 simulated seconds of idle+wander cycling, some movement should have occurred,
@@ -271,7 +275,7 @@ describe('AmbientCreature', () => {
     const creature = new AmbientCreature('rabbit', spawn, 1);
     const closePlayer = new THREE.Vector3(2, 0, 0); // within FLEE_TRIGGER_RADIUS
     const startX = creature.root.position.x;
-    for (let i = 0; i < 60; i++) creature.update(closePlayer, 1 / 30);
+    for (let i = 0; i < 60; i++) creature.update(TEST_WG, closePlayer, 1 / 30);
     // Fleeing away from a player at +X should move the creature toward -X.
     expect(creature.root.position.x).toBeLessThan(startX);
     creature.dispose();
@@ -310,7 +314,7 @@ describe('AmbientCreature — distance LOD', () => {
     // Player is well past LOD_FAR_DISTANCE_WU (45) from the creature's spawn.
     const farPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU + 20, 0, 0);
     const startPos = creature.root.position.clone();
-    for (let i = 0; i < 300; i++) creature.update(farPlayer, 1 / 30);
+    for (let i = 0; i < 300; i++) creature.update(TEST_WG, farPlayer, 1 / 30);
     expect(creature.root.position.distanceTo(startPos)).toBe(0);
     creature.dispose();
   });
@@ -319,7 +323,7 @@ describe('AmbientCreature — distance LOD', () => {
     const spawn = new THREE.Vector3(0, 0, 0);
     const creature = new AmbientCreature('rabbit', spawn, 1);
     const farPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU + 20, 0, 0);
-    for (let i = 0; i < 60; i++) creature.update(farPlayer, 1 / 30);
+    for (let i = 0; i < 60; i++) creature.update(TEST_WG, farPlayer, 1 / 30);
     // While frozen, update() returns before any movement code runs, so the
     // creature never left its spawn point.
     const frozenPos = creature.root.position.clone();
@@ -332,7 +336,7 @@ describe('AmbientCreature — distance LOD', () => {
     // but the resumption itself — actual movement occurring at all after
     // being frozen — is the thing this test protects against regressing).
     const nearPlayer = new THREE.Vector3(20, 0, 0);
-    for (let i = 0; i < 300; i++) creature.update(nearPlayer, 1 / 30);
+    for (let i = 0; i < 300; i++) creature.update(TEST_WG, nearPlayer, 1 / 30);
     const endPos = creature.root.position.clone();
 
     // Over 10 simulated seconds of idle+wander cycling at near tier, the
@@ -348,7 +352,7 @@ describe('AmbientCreature — distance LOD', () => {
     const creature = new AmbientCreature('rabbit', spawn, 1);
     const nearPlayer = new THREE.Vector3(LOD_FAR_DISTANCE_WU - 5, 0, 0);
     const startPos = creature.root.position.clone();
-    for (let i = 0; i < 300; i++) creature.update(nearPlayer, 1 / 30);
+    for (let i = 0; i < 300; i++) creature.update(TEST_WG, nearPlayer, 1 / 30);
     // Same assertion style as the existing "moves toward the wander
     // target" test — some movement should occur over 10 simulated seconds.
     expect(creature.root.position.distanceTo(startPos)).toBeGreaterThanOrEqual(0);
