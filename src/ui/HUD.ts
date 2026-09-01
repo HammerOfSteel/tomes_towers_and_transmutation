@@ -303,6 +303,7 @@ const SPELL_GLYPH: Record<string, string> = {
   void_rift:    '🌀',
   battle_hymn:  '🎵',
   mass_animate: '💀',
+  time_warp:    '⏳',
 };
 const SPELL_LABEL: Record<string, string> = {
   magic_bolt:   'Magic Bolt',
@@ -313,6 +314,7 @@ const SPELL_LABEL: Record<string, string> = {
   void_rift:    'Void Rift',
   battle_hymn:  'Battle Hymn',
   mass_animate: 'Mass Animate',
+  time_warp:    'Time Warp',
 };
 const SPELL_DESC: Record<string, string> = {
   magic_bolt:   'A focused bolt of arcane energy.\nRight-click to cast.',
@@ -323,6 +325,7 @@ const SPELL_DESC: Record<string, string> = {
   void_rift:    'Stationary DoT zone at cursor point.\n3 dmg/s for 8s · 2u radius. 12s cooldown.',
   battle_hymn:  'Aura buff: minions deal +50% damage for 12s.\nGold ring follows you. 20s cooldown.',
   mass_animate: 'Raises dead enemy corpses as temporary minions.\n[Gated: Conductor tier 2] 30s cooldown.',
+  time_warp:    'Warp the clock to dawn, noon, dusk, or midnight.\nChoose from a bottom panel. 45s cooldown.',
 };
 
 // ── HUD class ─────────────────────────────────────────────────────────────
