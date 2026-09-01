@@ -95,18 +95,20 @@ class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
 
    Esc cancels (closes the strip, no time change — cooldown was already
    charged at cast time per above).
-   **Correction made during plan-writing:** re-reading `TamingGame`'s
-   actual wiring in `main.ts` shows it does **not** freeze player
-   movement at all — `tamingGame.active` only gates *re-triggering* a new
-   taming encounter via the interact key (`main.ts` ~line 2988); the
-   player can walk around freely while the song strip is up, and that
-   `overworld.update(dt, ...)`'s the whole time. That's part of what
-   makes it feel non-modal/charming rather than a jarring interruption.
-   `TimeSkipUI` follows the same precedent: no movement freeze. The only
-   gate is `!timeSkipUI.active` added alongside the existing
-   `!tamingGame.active` check on the interact key and on the spell-cast
-   dispatch (so the player can't open a second picker or queue another
-   cast while one is already open/animating).
+   **Correction made during plan-writing (round 2):** re-reading
+   `TamingGame`'s actual wiring in `main.ts` shows it does **not** freeze
+   player movement at all, and `tamingGame.active` is checked in exactly
+   one place — gating *re-triggering* a new taming encounter via the
+   interact key (`main.ts` ~line 2988) — nowhere near spell-casting. The
+   player can walk around and cast other spells freely while the song
+   strip is up. That's part of what makes it feel non-modal/charming
+   rather than a jarring interruption. `TimeSkipUI` follows the same
+   precedent exactly: **no movement freeze, and no new input-gate checks
+   anywhere in `main.ts`.** Re-casting `time_warp` itself while the
+   picker/animation is already active is already prevented by the
+   ordinary 45 s cooldown (`SpellSystem.isReady()` returns false and
+   `cast()` short-circuits) — no `timeSkipUI.active` gate is needed for
+   that, and nothing else needs protecting.
 3. **Confirm → time-vortex VFX + accelerated clock.** On picking a preset,
    the strip closes and a new 3D VFX plays centred above the player: a
    spinning rune ring (reusing the existing additive-blended,
@@ -116,14 +118,17 @@ class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
    literal reuse of that geometry (a torus-ring "song circle" wouldn't
    read as time-themed).
    Over a fixed **2.5 real-second** window, `TimeSkipUI` advances
-   `TimeSystem.instance.hour` from its current value forward (wrapping
-   past 24 if needed — the clock only ever moves forward, matching how a
-   real clock/hourglass works, so no "undo NPC state" question ever
-   arises) toward the chosen target hour, eased (ease-in/out) rather than
-   linear for a "spinning up, then settling" feel. Each animation frame
-   also calls `_dayNight.update(hour)` exactly as the main loop's own
-   per-frame call would, so the sky/lighting visibly race through phases
-   live.
+   `TimeSystem.instance.hour` (via the new `setHour()`) from its current
+   value forward (wrapping past 24 if needed — the clock only ever moves
+   forward, matching how a real clock/hourglass works, so no "undo NPC
+   state" question ever arises) toward the chosen target hour, eased
+   (ease-in/out) rather than linear for a "spinning up, then settling"
+   feel. `TimeSkipUI` itself never touches `DayNightSystem` — as long as
+   `timeSkipUI.update(dt)` runs immediately before the main loop's
+   existing `_dayNight.update(TimeSystem.instance.hour)` call each frame
+   (see "New code surface" below), that unchanged line naturally picks up
+   the newly-warped hour the same frame, so the sky/lighting visibly race
+   through phases live with no `DayNightSystem` changes at all.
    As with step 2, movement is not frozen during this window — matching
    `TamingGame`'s precedent, the world stays fully live while the sky
    races through phases.
@@ -156,12 +161,16 @@ class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
   non-debug unlock path anywhere in the codebase today, a pre-existing
   gap; giving `time_warp` the same treatment as those would make it
   just as unreachable in a normal playthrough, which defeats the point
-  of building it). Not auto-equipped into a default slot — the player
-  equips it into slot 2 or 3 themselves, same as any other unlocked
-  spell.
-- `src/main.ts`: also add `'time_warp'` to the two existing debug
-  "grant all spells" id lists (~lines 685 and 1226) for QA/testing
-  convenience, matching every other non-default spell already there.
+  of building it). Also pre-equip it into slot 2 of the default
+  `_equippedSlots` array (`['magic_bolt', 'lantern', 'time_warp', null]`
+  — slot 2 is currently unused/`null` by default) so the player can cast
+  it immediately without first visiting the `SpellBook.ts` equip UI to
+  discover and assign it manually.
+- `src/main.ts`: **not** added to the two debug "grant all spells" id
+  lists (~lines 685 and 1226) — those lists exist to grant spells that
+  otherwise require a book/talent/loot unlock; `lantern` is absent from
+  them for the same reason (already unlocked by default), and
+  `time_warp` gets identical treatment.
 - `src/ui/HUD.ts`: add a `time_warp` entry to the existing `SPELL_GLYPH` /
   `SPELL_LABEL` / `SPELL_DESC` tables (glyph `⏳`, label "Time Warp") so
   it renders properly in the hotbar tooltip, matching the "cute UI" ask.
@@ -170,12 +179,14 @@ class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
   gap, left alone as out of scope for this feature.)
 - `src/main.ts`: instantiate `TimeSkipUI` once at startup (mirroring
   `tamingGame`), wire `time_warp`'s `onTimeSkip` callback to
-  `timeSkipUI.begin(player.group.position)`, call `timeSkipUI.update(dt)`
-  each frame, and add `!timeSkipUI.active` alongside the existing
-  `!tamingGame.active` checks that gate the interact key and the
-  spell-cast dispatch — preventing a second picker/cast while one is
-  already open or animating (movement itself is never gated — see the
-  "Correction made during plan-writing" note in the Flow section above).
+  `timeSkipUI.begin(player.group.position)`, and call
+  `timeSkipUI.update(dt)` **immediately after** `TimeSystem.instance.
+  update(dt)` and **before** `_dayNight.update(TimeSystem.instance.hour)`
+  in the exterior-mode frame loop — ordering matters so a warped hour is
+  reflected in the same frame's lighting update (see the Flow section's
+  step 3 above). No input-gate changes anywhere else — see the
+  "Correction made during plan-writing (round 2)" note in the Flow
+  section above for why none are needed.
 
 ### Cooldown
 
