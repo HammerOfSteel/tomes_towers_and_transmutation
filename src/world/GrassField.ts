@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { isScatterAllowed } from '@/world/ScatterRules';
-import { TRAMPLE_MAP_WORLD_SIZE, FALLBACK_TRAMPLE_TEXTURE, type TrampleMap } from '@/world/GrassTrample';
+import { MAX_TRAMPLE_STAMPS, TRAMPLE_STAMP_RADIUS, TRAMPLE_DECAY_HALF_LIFE_S, FALLBACK_STAMP_POSITIONS, FALLBACK_STAMP_AGES, type TrampleMap } from '@/world/GrassTrample';
 import type { WorldGrid } from '@/world/WorldGrid';
 
 // ── Tunables (see design spec §4/§6) ────────────────────────────────────────
@@ -245,9 +245,10 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       uFadeStart:    { value: FADE_START },
       uFadeEnd:      { value: FADE_END },
       uFadeCenter:   { value: new THREE.Vector2(0, 0) },
-      uTrampleMap:       { value: FALLBACK_TRAMPLE_TEXTURE },
-      uTrampleCenter:    { value: new THREE.Vector2(0, 0) },
-      uTrampleWorldSize: { value: TRAMPLE_MAP_WORLD_SIZE },
+      uTrampleStampPos: { value: FALLBACK_STAMP_POSITIONS },
+      uTrampleStampAge: { value: FALLBACK_STAMP_AGES },
+      uTrampleRadius:   { value: TRAMPLE_STAMP_RADIUS },
+      uTrampleHalfLife: { value: TRAMPLE_DECAY_HALF_LIFE_S },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aPositionRotation; // xyz = world pos, w = Y rotation
@@ -268,9 +269,19 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
                                   // sits ~28 WU from the player (see CameraRig.ts's
                                   // ISO_OFFSET), so fading by camera distance made grass
                                   // right at the player's feet always fully discard).
-      uniform sampler2D uTrampleMap;
-      uniform vec2      uTrampleCenter;
-      uniform float     uTrampleWorldSize;
+      // Trampled-grass trail: a small fixed-size array of recent footstep "stamps"
+      // (world position + age), evaluated via plain ALU math below — deliberately NOT a
+      // sampler2D texture. An earlier version of this feature sampled a spatial texture
+      // here in the VERTEX shader (a "vertex texture fetch" / VTF) — a well-known real-
+      // GPU performance trap, since far fewer texture units typically serve the vertex
+      // stage than the fragment stage. With up to ~100,000 blade instances × ~11
+      // vertices each, that meant millions of VTF calls per frame, causing a severe FPS
+      // regression on real hardware (invisible in this project's software-rendered test
+      // environment). See docs/superpowers/specs/2026-09-01-trample-vtf-perf-fix.md.
+      uniform vec2  uTrampleStampPos[${MAX_TRAMPLE_STAMPS}];
+      uniform float uTrampleStampAge[${MAX_TRAMPLE_STAMPS}];
+      uniform float uTrampleRadius;
+      uniform float uTrampleHalfLife;
 
       varying vec2  vUv;
       varying vec3  vNormal;
@@ -315,13 +326,20 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
         vUv = uv;
         vColorVar = aScaleVariation.w;
 
-        // Sample the trample map ONCE per blade using its planted ROOT position (NOT the
-        // wind-swayed per-vertex worldPos below) so every vertex of one blade agrees on how
-        // "crushed" it is — see docs/superpowers/specs/2026-09-01-trampled-grass-trail-design.md §4.3.
-        vec2 trampleUV = (aPositionRotation.xz - uTrampleCenter) / uTrampleWorldSize + 0.5;
+        // Trampled-grass trail crush amount for this blade — computed from its planted
+        // ROOT position (aPositionRotation.xz, NOT the wind-swayed per-vertex worldPos
+        // below) so every vertex of one blade agrees on how "crushed" it is. Pure ALU
+        // (distance + pow), no texture — see this file's uTrampleStampPos doc comment
+        // above and docs/superpowers/specs/2026-09-01-trample-vtf-perf-fix.md. Mirrors
+        // GrassTrample.ts's computeCrushAt() exactly (kept in sync manually; that JS
+        // function is the unit-tested reference this GLSL loop must match).
         float crush = 0.0;
-        if (trampleUV.x >= 0.0 && trampleUV.x <= 1.0 && trampleUV.y >= 0.0 && trampleUV.y <= 1.0) {
-          crush = texture2D(uTrampleMap, trampleUV).r;
+        for (int i = 0; i < ${MAX_TRAMPLE_STAMPS}; i++) {
+          vec2 stampPos = uTrampleStampPos[i];
+          float dist = distance(aPositionRotation.xz, stampPos);
+          float falloff = max(0.0, 1.0 - dist / uTrampleRadius);
+          float decay = pow(0.5, uTrampleStampAge[i] / uTrampleHalfLife);
+          crush = max(crush, falloff * decay);
         }
 
         vec3 pos = position;
@@ -458,12 +476,17 @@ export class GrassField {
     private readonly _wg: WorldGrid,
     private readonly _seed: number,
     readonly preset: GrassPreset,
-    private readonly _trampleMap?: TrampleMap,
+    trampleMap?: TrampleMap,
   ) {
     const geometry = createGrassBladeGeometry(preset);
     this._material = createGrassMaterial(preset);
-    if (this._trampleMap) {
-      this._material.uniforms.uTrampleMap.value = this._trampleMap.texture;
+    if (trampleMap) {
+      // Assigned ONCE, by reference — TrampleMap mutates these same typed arrays in
+      // place every update() call, so this GrassField automatically sees fresh stamp
+      // data every frame without needing to refresh a uniform here itself (unlike the
+      // old texture-based design's per-frame uTrampleCenter refresh, no longer needed).
+      this._material.uniforms.uTrampleStampPos.value = trampleMap.stampPositions;
+      this._material.uniforms.uTrampleStampAge.value = trampleMap.stampAges;
     }
 
     this._positionRotation = new THREE.InstancedBufferAttribute(
@@ -488,10 +511,6 @@ export class GrassField {
    *  rebuild boundaries. */
   update(playerX: number, playerZ: number): void {
     (this._material.uniforms.uFadeCenter.value as THREE.Vector2).set(playerX, playerZ);
-    if (this._trampleMap) {
-      const c = this._trampleMap.getCenter();
-      (this._material.uniforms.uTrampleCenter.value as THREE.Vector2).set(c.x, c.z);
-    }
 
     const dx = playerX - this._lastBuildX;
     const dz = playerZ - this._lastBuildZ;
