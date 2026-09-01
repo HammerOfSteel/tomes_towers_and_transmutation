@@ -77,8 +77,10 @@ const BASE_MODS: TalentModifiers = {
 export class ProgressionSystem {
   private readonly _readBooks = new Set<string>();
   private readonly _unlockedSpells = new Set<string>();
-  /** 4 equipped spell slots (0–3). Slot 0 always holds magic_bolt, slot 1 holds lantern. */
-  private readonly _equippedSlots: (string | null)[] = ['magic_bolt', 'lantern', null, null];
+  /** 4 equipped spell slots (0–3). Slot 0 always holds magic_bolt, slot 1
+   *  holds lantern, slot 2 holds time_warp — all three are default utility
+   *  spells granted with no book/loot requirement. */
+  private readonly _equippedSlots: (string | null)[] = ['magic_bolt', 'lantern', 'time_warp', null];
 
   // ── XP / levelling ────────────────────────────────────────────────────
   private _xp = 0;
@@ -101,6 +103,13 @@ export class ProgressionSystem {
     // lantern is a default utility spell — always unlocked and pre-equipped in slot 1,
     // no book/loot required (matches magic_bolt's direct-seed treatment above).
     this._unlockedSpells.add('lantern');
+    // time_warp is a default utility spell — always unlocked and pre-equipped
+    // in slot 2, same treatment as lantern (see design spec
+    // docs/superpowers/specs/2026-09-01-timeskip-spell-design.md for why:
+    // blink/levitate/fly have no real non-debug unlock path today, and
+    // giving time_warp that same treatment would make it just as
+    // unreachable in a normal playthrough).
+    this._unlockedSpells.add('time_warp');
   }
 
   // ── XP & Levelling ────────────────────────────────────────────────────
