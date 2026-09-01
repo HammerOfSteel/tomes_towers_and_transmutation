@@ -147,6 +147,17 @@ ground. Not player-facing. See
 
 ---
 
+## Trampled-Grass Trail
+
+Walking through grass now visibly flattens it, leaving a soft trail that fades back to
+upright over a few seconds (a decaying "trample" grid sampled by the grass shader — see
+`docs/superpowers/specs/2026-09-01-trampled-grass-trail-design.md`). Player-only for now;
+ambient wildlife/enemies don't yet leave trails. Also fixed grass being roughly 2x too
+tall, and a real bug where wind sway silently used the same fixed values for all 5
+biomes instead of each biome's own tuned preset.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
