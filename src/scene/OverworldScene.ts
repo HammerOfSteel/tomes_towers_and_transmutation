@@ -84,6 +84,7 @@ import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/
 import { isScatterAllowed } from '@/world/ScatterRules';
 import { GrassField, GRASS_PRESETS } from '@/world/GrassField';
 import { AmbientCreature, selectAmbientSpawnPoints, MAX_ACTIVE_AMBIENT_CREATURES } from '@/world/AmbientWildlife';
+import { TrampleMap } from '@/world/GrassTrample';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { renderSettlementPlan } from './SettlementRenderer';
 
@@ -251,6 +252,10 @@ export class OverworldScene {
    *  `_enemies` — appended to in `_loadTerrainChunk()`, spliced from in `_unloadTerrainChunk()`,
    *  ticked once per frame in `update()`. Capped at MAX_ACTIVE_AMBIENT_CREATURES globally. */
   private readonly _activeAmbientCreatures: AmbientCreature[] = [];
+  /** Shared, single trampled-grass trail grid sampled by every GrassField below — one
+   *  instance, not one per biome, so a trail reads continuously as the player crosses
+   *  biome boundaries. See docs/superpowers/specs/2026-09-01-trampled-grass-trail-design.md. */
+  private readonly _trampleMap = new TrampleMap();
   /** Phase 7h.2 — one draw call for all slime bodies (128 slots; enemies never exceed that). */
   private readonly _slimeIM: THREE.InstancedMesh = createSlimeBodyIM(128);
   /** Procedural grass — one `GrassField` per `GRASS_PRESETS` entry (grassland/savanna/forest/
@@ -400,7 +405,7 @@ export class OverworldScene {
     this._buildSettlements(worldData);
     this._buildTerritoryPropPool();
     this._grassFields = Object.values(GRASS_PRESETS).map(
-      preset => new GrassField(this._wg, this._seed, preset),
+      preset => new GrassField(this._wg, this._seed, preset, this._trampleMap),
     );
     console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
@@ -609,6 +614,11 @@ export class OverworldScene {
     // Phase 7h.2: sync all slime body matrices/colours into the InstancedMesh
     this._syncSlimeIM();
 
+    // Trampled-grass trail: tick the shared grid BEFORE the grass fields' own update()
+    // calls below, so their uTrampleCenter refresh reads this frame's (possibly just-
+    // recentered) center, not the previous frame's stale one.
+    this._trampleMap.update(pos.x, pos.z, dt);
+
     // Procedural grass (batch 2: 5 biome presets): rebuild each field's instance buffer
     // only when the player has moved past REBUILD_HYSTERESIS; tick wind uniforms every
     // frame. A given tile is only ever one biome, so at most one field actually places
@@ -655,6 +665,7 @@ export class OverworldScene {
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
     for (const gf of this._grassFields) gf.dispose();
+    this._trampleMap.dispose();
     for (const c of this._activeAmbientCreatures) c.dispose();
     this._activeAmbientCreatures.length = 0;
     for (const dg of this._dungeonGroups) this._freeGroup(dg);
