@@ -130,6 +130,43 @@ export function selectGrassPlacements(
   return placements;
 }
 
+/** World-unit radius `computeEdgeBlend()` samples at, to decide whether a grass
+ *  placement candidate sits near a biome boundary. ~1 tile — a modest transition
+ *  band, so only the outermost ring of a biome's footprint is affected. See design
+ *  spec docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md §2. */
+export const EDGE_BAND_WU = 2.5;
+
+const EDGE_SAMPLE_DIRECTIONS: ReadonlyArray<[number, number]> = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
+  [Math.SQRT1_2, -Math.SQRT1_2], [-Math.SQRT1_2, -Math.SQRT1_2],
+];
+
+/**
+ * Samples 8 neighbor points around (x, z) at `bandWidthWU` distance (N/S/E/W and the
+ * 4 diagonals) and returns the fraction (0..1) that resolve to a DIFFERENT biome than
+ * `biome` — 0 deep inside a uniform biome, up to 1 if completely surrounded by
+ * something else (e.g. a thin sliver or a corner). Out-of-grid-bounds samples are
+ * skipped entirely (not counted as "different"), so the map's outer edge never falsely
+ * reads as a biome transition.
+ */
+export function computeEdgeBlend(
+  wg: WorldGrid, x: number, z: number, biome: GrassBiome, bandWidthWU: number,
+): number {
+  const halfW = (wg.width - 1) / 2;
+  const halfH = (wg.height - 1) / 2;
+  let different = 0;
+  for (const [dx, dz] of EDGE_SAMPLE_DIRECTIONS) {
+    const sx = x + dx * bandWidthWU;
+    const sz = z + dz * bandWidthWU;
+    const col = Math.floor(sx / wg.tileUnit + halfW);
+    const row = Math.floor(sz / wg.tileUnit + halfH);
+    if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) continue;
+    if (wg.get(col, row).biome !== biome) different++;
+  }
+  return different / EDGE_SAMPLE_DIRECTIONS.length;
+}
+
 // ── Instance-buffer packing ──────────────────────────────────────────────
 
 export interface GrassInstanceBuffers {

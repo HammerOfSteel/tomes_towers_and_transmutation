@@ -5,6 +5,7 @@ import {
   selectGrassPlacements, packGrassInstanceBuffers,
   createGrassBladeGeometry, createGrassMaterial,
   GrassField, REBUILD_HYSTERESIS, GRASS_PRESETS,
+  computeEdgeBlend, EDGE_BAND_WU,
 } from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
@@ -323,5 +324,55 @@ describe('GRASS_PRESETS', () => {
 
   it('grassland maxBlades remains 100_000 (unchanged from batch 1)', () => {
     expect(GRASS_PRESETS.grassland.maxBlades).toBe(100_000);
+  });
+});
+
+describe('computeEdgeBlend', () => {
+  function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
+    const g = new WorldGrid(size, size);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) g.set(col, row, { elevation: 1, biome });
+    }
+    return g;
+  }
+
+  it('returns 0 deep inside a uniform biome (all 8 neighbors match)', () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    expect(computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU)).toBe(0);
+  });
+
+  it('returns 1 when completely surrounded by a different biome', () => {
+    const wg = makeAllBiomeGrid(40, 'savanna');
+    // Query as if this candidate were 'grassland' — every one of the 8 sampled
+    // neighbors is actually 'savanna', so all 8 count as "different".
+    expect(computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU)).toBe(1);
+  });
+
+  it('returns a partial fraction when only some neighbors differ', () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    // Overwrite the whole right half of the grid to 'savanna' so exactly the
+    // eastward-leaning samples (E, NE, SE) differ, out of the 8 total.
+    for (let row = 0; row < 40; row++) {
+      for (let col = 20; col < 40; col++) wg.set(col, row, { biome: 'savanna' });
+    }
+    const blend = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
+    expect(blend).toBeGreaterThan(0);
+    expect(blend).toBeLessThan(1);
+  });
+
+  it('skips out-of-bounds neighbors instead of counting them as different (map edge is not a false transition)', () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    // (0,0) in world space is the grid's exact center (WorldGrid centers world (0,0)
+    // at its middle column/row) — to reach an actual grid EDGE, query far to one side.
+    const { wx, wz } = wg.gridToWorld(0, 20); // leftmost column, middle row
+    const blend = computeEdgeBlend(wg, wx, wz, 'grassland', EDGE_BAND_WU);
+    expect(blend).toBe(0); // every actual (in-bounds) neighbor is still 'grassland'
+  });
+
+  it('is deterministic (same inputs, same output)', () => {
+    const wg = makeAllBiomeGrid(40, 'forest');
+    const a = computeEdgeBlend(wg, 5, 5, 'forest', EDGE_BAND_WU);
+    const b = computeEdgeBlend(wg, 5, 5, 'forest', EDGE_BAND_WU);
+    expect(a).toBe(b);
   });
 });
