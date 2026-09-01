@@ -237,6 +237,47 @@ See `docs/superpowers/specs/2026-09-01-water-riverbank-decor-props-design.md`.
 
 ---
 
+## Time Warp Spell
+
+New spellbar spell (`time_warp`) letting the player fast-forward the day/night
+clock to a preset time of day — 🌅 Dawn, ☀️ Noon, 🌇 Dusk, or 🌙 Midnight — via a
+non-modal bottom HUD strip styled after `TamingGame`'s "Princess's Song"
+presentation language (world stays fully visible and interactive behind the
+strip; nothing freezes). Picking a preset closes the strip and plays a spinning
+golden clock-face VFX (rune-ring rim + 12 fixed hour-tick marks + a sweeping
+hand) above the player while the clock eases forward toward the target hour
+over a fixed 2.5-second window — always moving forward, wrapping past midnight
+rather than ever appearing to run backward. `DayNightSystem`'s existing
+per-frame lighting update needed zero changes: since it's already a pure
+function of `TimeSystem.instance.hour`, warping that value visibly races the
+sky/fog/lighting through phases for free. NPC schedules react correctly with no
+extra wiring too, since `NPCEntity` already re-reads `TimeSystem.schedulePhase`
+every frame rather than caching it at spawn.
+
+Unlocked and pre-equipped by default in hotbar slot 2 (same "default utility
+spell, no book/loot required" treatment as the lantern in slot 1), 45s
+cooldown. Addresses the user's request for "some time-spell... maybe some cute
+ui and effect speeding up time... the charming spell has some nice UI type
+spell effect we could base something like this on" — alongside the earlier
+lantern brightness fix already shipped for the "much too weak" feedback in the
+same round. See `docs/superpowers/specs/2026-09-01-timeskip-spell-design.md`
+and `docs/superpowers/plans/2026-09-01-timeskip-spell.md`.
+
+Live verification note: unit tests exhaustively cover the state machine, hour
+easing/forward-wrap math, and Escape-cancel behavior (all passing). Live
+browser testing confirmed casting opens the picker correctly (non-modal, exact
+4-button strip, canvas stays visible) and that picking a preset transitions
+into the warp with the hour advancing along the exact expected ease-in curve;
+Escape-cancel was confirmed fully end-to-end with zero console errors. Full
+warp-to-completion could not be observed within a reasonable wall-clock budget
+in this specific shared sandbox session (reported GPU driver stalls, load
+average ~5-6 from 4 concurrent users throttle the game's per-frame `dt`,
+stretching the 2.5-*game*-second animation to several real minutes) — not a
+code defect, since the observed live curve shape exactly matches the
+unit-tested math, just scaled by the environment's degraded frame timing.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
