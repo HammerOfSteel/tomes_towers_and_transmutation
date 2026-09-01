@@ -5,7 +5,7 @@ import {
   selectGrassPlacements, packGrassInstanceBuffers,
   createGrassBladeGeometry, createGrassMaterial,
   GrassField, REBUILD_HYSTERESIS, GRASS_PRESETS,
-  computeEdgeBlend, EDGE_BAND_WU, type GrassPlacement,
+  computeEdgeBlend, EDGE_BAND_WU, averageColor, type GrassPlacement,
 } from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
@@ -131,13 +131,42 @@ describe('selectGrassPlacements', () => {
     // placements (thinned by the density-fade probability check).
     expect(boundary.length).toBeLessThan(interior.length);
   });
+
+  it("defaults neighborColor to the blade's own averaged color for a fully-interior placement", () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    const placements = selectGrassPlacements(wg, 0, 0, 10, 1, 'grassland', 35);
+    expect(placements.length).toBeGreaterThan(0);
+    const preset = GRASS_PRESETS.grassland;
+    const ownAvg = averageColor(preset.baseColor, preset.tipColor);
+    for (const p of placements) {
+      expect(p.neighborColor.r).toBeCloseTo(ownAvg.r, 5);
+      expect(p.neighborColor.g).toBeCloseTo(ownAvg.g, 5);
+      expect(p.neighborColor.b).toBeCloseTo(ownAvg.b, 5);
+    }
+  });
+
+  it("blends boundary placements toward the actual neighboring biome's averaged color, not a generic tan", () => {
+    const wg = makeAllBiomeGrid(60, 'grassland');
+    for (let row = 0; row < 60; row++) {
+      for (let col = 30; col < 60; col++) wg.set(col, row, { biome: 'forest' });
+    }
+    const placements = selectGrassPlacements(wg, -5, 0, 10, 7, 'grassland', 35);
+    const forestAvg = averageColor(GRASS_PRESETS.forest.baseColor, GRASS_PRESETS.forest.tipColor);
+    const nearBoundary = placements.filter(p => p.edgeBlend > 0.5);
+    expect(nearBoundary.length).toBeGreaterThan(0);
+    for (const p of nearBoundary) {
+      expect(p.neighborColor.r).toBeCloseTo(forestAvg.r, 2);
+      expect(p.neighborColor.g).toBeCloseTo(forestAvg.g, 2);
+      expect(p.neighborColor.b).toBeCloseTo(forestAvg.b, 2);
+    }
+  });
 });
 
 describe('packGrassInstanceBuffers', () => {
   it('packs N placements into Float32Arrays of length N*4, at the expected offsets', () => {
     const placements = [
-      { x: 1, y: 2, z: 3, rotation: 0.5, scaleX: 0.8, scaleY: 0.9, tilt: 0.1, colorVar: 0.4, edgeBlend: 0 },
-      { x: 4, y: 5, z: 6, rotation: 1.5, scaleX: 1.1, scaleY: 1.2, tilt: -0.1, colorVar: 0.7, edgeBlend: 0 },
+      { x: 1, y: 2, z: 3, rotation: 0.5, scaleX: 0.8, scaleY: 0.9, tilt: 0.1, colorVar: 0.4, edgeBlend: 0, neighborColor: { r: 0, g: 0, b: 0 } },
+      { x: 4, y: 5, z: 6, rotation: 1.5, scaleX: 1.1, scaleY: 1.2, tilt: -0.1, colorVar: 0.7, edgeBlend: 0, neighborColor: { r: 0, g: 0, b: 0 } },
     ];
     const { positionRotation, scaleAndVariation } = packGrassInstanceBuffers(placements);
     expect(positionRotation.length).toBe(8);
@@ -158,13 +187,26 @@ describe('packGrassInstanceBuffers', () => {
 
   it('carries each placement\'s edgeBlend value through into a same-length Float32Array', () => {
     const placements: GrassPlacement[] = [
-      { x: 0, y: 0, z: 0, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0 },
-      { x: 1, y: 0, z: 1, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0.75 },
+      { x: 0, y: 0, z: 0, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0, neighborColor: { r: 0, g: 0, b: 0 } },
+      { x: 1, y: 0, z: 1, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0.75, neighborColor: { r: 0, g: 0, b: 0 } },
     ];
     const { edgeBlend } = packGrassInstanceBuffers(placements);
     expect(edgeBlend.length).toBe(2);
     expect(edgeBlend[0]).toBe(0);
     expect(edgeBlend[1]).toBeCloseTo(0.75, 5);
+  });
+
+  it('packs neighborColor into a Float32Array of length N*3, r/g/b in order', () => {
+    const placements: GrassPlacement[] = [
+      { x: 0, y: 0, z: 0, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0.5,
+        neighborColor: { r: 0.1, g: 0.2, b: 0.3 } },
+      { x: 0, y: 0, z: 0, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0,
+        neighborColor: { r: 0.4, g: 0.5, b: 0.6 } },
+    ];
+    const { neighborColor } = packGrassInstanceBuffers(placements);
+    expect(neighborColor.length).toBe(6);
+    const expected = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+    for (let i = 0; i < expected.length; i++) expect(neighborColor[i]).toBeCloseTo(expected[i]!, 5);
   });
 });
 
@@ -363,6 +405,11 @@ describe('GRASS_PRESETS', () => {
   it('grassland maxBlades remains 100_000 (unchanged from batch 1)', () => {
     expect(GRASS_PRESETS.grassland.maxBlades).toBe(100_000);
   });
+
+  it('savanna is sparser and shorter than before (distinct dry-biome look)', () => {
+    expect(GRASS_PRESETS.savanna.densityPerUnit2).toBe(9);
+    expect(GRASS_PRESETS.savanna.height).toBe(0.28);
+  });
 });
 
 describe('computeEdgeBlend', () => {
@@ -374,43 +421,61 @@ describe('computeEdgeBlend', () => {
     return g;
   }
 
-  it('returns 0 deep inside a uniform biome (all 8 neighbors match)', () => {
+  it('returns blend 0 and neighborBiome null deep inside a uniform biome', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
-    expect(computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU)).toBe(0);
+    const result = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
+    expect(result.blend).toBe(0);
+    expect(result.neighborBiome).toBeNull();
   });
 
-  it('returns 1 when completely surrounded by a different biome', () => {
+  it('returns blend 1 and the correct neighborBiome when completely surrounded by a different biome', () => {
     const wg = makeAllBiomeGrid(40, 'savanna');
-    // Query as if this candidate were 'grassland' — every one of the 8 sampled
-    // neighbors is actually 'savanna', so all 8 count as "different".
-    expect(computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU)).toBe(1);
+    const result = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
+    expect(result.blend).toBe(1);
+    expect(result.neighborBiome).toBe('savanna');
   });
 
-  it('returns a partial fraction when only some neighbors differ', () => {
+  it('returns a partial fraction when the boundary is partway into the search band', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
-    // Overwrite the whole right half of the grid to 'savanna' so exactly the
-    // eastward-leaning samples (E, NE, SE) differ, out of the 8 total.
+    // Right half 'savanna' — boundary sits 1 WU east of the query point (see the
+    // original v1 test's window-math comment for the col/world-x derivation).
     for (let row = 0; row < 40; row++) {
       for (let col = 20; col < 40; col++) wg.set(col, row, { biome: 'savanna' });
     }
-    const blend = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
-    expect(blend).toBeGreaterThan(0);
-    expect(blend).toBeLessThan(1);
+    const result = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
+    expect(result.blend).toBeGreaterThan(0);
+    expect(result.blend).toBeLessThan(1);
+    expect(result.neighborBiome).toBe('savanna');
   });
 
-  it('skips out-of-bounds neighbors instead of counting them as different (map edge is not a false transition)', () => {
+  it('reaches further than the old 2.5 WU band — finds a boundary 5 WU away', () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    // For a 40x40 grid, halfW=(40-1)/2=19.5 and tileUnit=2, so col=22 begins at world
+    // x=(22-19.5)*2=5.0 — querying from (0,0) puts the boundary exactly 5 WU east,
+    // still within the new EDGE_BAND_WU=8 reach but outside v1's old EDGE_BAND_WU=2.5,
+    // proving the widened band actually matters.
+    for (let row = 0; row < 40; row++) {
+      for (let col = 22; col < 40; col++) wg.set(col, row, { biome: 'forest' });
+    }
+    const result = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
+    expect(result.blend).toBeGreaterThan(0);
+    expect(result.neighborBiome).toBe('forest');
+  });
+
+  it('skips out-of-bounds neighbors instead of counting them as a boundary (map edge is not a false transition)', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
     // (0,0) in world space is the grid's exact center (WorldGrid centers world (0,0)
     // at its middle column/row) — to reach an actual grid EDGE, query far to one side.
     const { wx, wz } = wg.gridToWorld(0, 20); // leftmost column, middle row
-    const blend = computeEdgeBlend(wg, wx, wz, 'grassland', EDGE_BAND_WU);
-    expect(blend).toBe(0); // every actual (in-bounds) neighbor is still 'grassland'
+    const result = computeEdgeBlend(wg, wx, wz, 'grassland', EDGE_BAND_WU);
+    expect(result.blend).toBe(0);
+    expect(result.neighborBiome).toBeNull();
   });
 
   it('is deterministic (same inputs, same output)', () => {
     const wg = makeAllBiomeGrid(40, 'forest');
     const a = computeEdgeBlend(wg, 5, 5, 'forest', EDGE_BAND_WU);
     const b = computeEdgeBlend(wg, 5, 5, 'forest', EDGE_BAND_WU);
-    expect(a).toBe(b);
+    expect(a).toEqual(b);
   });
 });

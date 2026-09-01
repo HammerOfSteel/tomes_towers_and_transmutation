@@ -1,6 +1,6 @@
 # Grass Boundary-Blend v2 + Savanna Distinctiveness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Fix v1's two remaining gaps (see design spec
 `docs/superpowers/specs/2026-09-01-grass-boundary-blend-v2-design.md`): the boundary
@@ -58,7 +58,7 @@ session's established pattern for GLSL work — jsdom/vitest cannot render real 
   x: number, z: number, biome: GrassBiome, bandWidthWU: number): { blend: number;
   neighborBiome: GrassBiome | null }`. Consumed by Task 2.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Replace the existing `describe('computeEdgeBlend', ...)` block (the one using
 `makeAllBiomeGrid`) with:
@@ -102,12 +102,14 @@ describe('computeEdgeBlend', () => {
 
   it('reaches further than the old 2.5 WU band — finds a boundary 5 WU away', () => {
     const wg = makeAllBiomeGrid(40, 'grassland');
-    // Boundary further out this time — still within the new EDGE_BAND_WU=8 reach but
-    // outside v1's old EDGE_BAND_WU=2.5, proving the widened band actually matters.
+    // For a 40x40 grid, halfW=(40-1)/2=19.5 and tileUnit=2, so col=22 begins at world
+    // x=(22-19.5)*2=5.0 — querying from (0,0) puts the boundary exactly 5 WU east,
+    // still within the new EDGE_BAND_WU=8 reach but outside v1's old EDGE_BAND_WU=2.5,
+    // proving the widened band actually matters.
     for (let row = 0; row < 40; row++) {
       for (let col = 22; col < 40; col++) wg.set(col, row, { biome: 'forest' });
     }
-    const result = computeEdgeBlend(wg, -4, 0, 'grassland', EDGE_BAND_WU);
+    const result = computeEdgeBlend(wg, 0, 0, 'grassland', EDGE_BAND_WU);
     expect(result.blend).toBeGreaterThan(0);
     expect(result.neighborBiome).toBe('forest');
   });
@@ -133,7 +135,7 @@ Run `npx vitest run tests/world/GrassField.test.ts` — confirm these new/change
 assertions fail (old implementation still returns a bare number, so `.blend`/
 `.neighborBiome` access will fail or be `undefined`).
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 In `src/world/GrassField.ts`, replace the `EDGE_BAND_WU` constant and the
 `computeEdgeBlend` function with:
@@ -200,7 +202,7 @@ export function computeEdgeBlend(
 }
 ```
 
-- [ ] **Step 3: Run tests, confirm they pass**
+- [x] **Step 3: Run tests, confirm they pass**
 
 `npx vitest run tests/world/GrassField.test.ts` — expect the `computeEdgeBlend` block
 green. Other blocks (`selectGrassPlacements`, etc.) will now fail to COMPILE (tsc error:
@@ -224,7 +226,7 @@ Task 2, which fixes the call site immediately after).
 - Produces: `GrassPlacement.neighborColor: { r: number; g: number; b: number }` (0..1
   floats). Consumed by Task 3.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to the existing `describe('selectGrassPlacements', ...)` block:
 
@@ -276,7 +278,7 @@ import.)
 Run `npx vitest run tests/world/GrassField.test.ts` — confirm these new tests fail
 (field doesn't exist yet).
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 In `src/world/GrassField.ts`:
 
@@ -357,7 +359,7 @@ cast is a type-level assumption, not a runtime guarantee — this guard is what 
 the "neighbor is a non-grass biome" non-goal (design spec §2b) actually safe at
 runtime instead of just documented.
 
-- [ ] **Step 3: Run tests, confirm they pass**
+- [x] **Step 3: Run tests, confirm they pass**
 
 `npx vitest run tests/world/GrassField.test.ts`. Also run `npx tsc --noEmit` — expect
 new errors ONLY in `packGrassInstanceBuffers()`'s existing test literals (which
@@ -377,7 +379,7 @@ the v1 plan handled the same situation for `edgeBlend`). Confirm `tsc` is clean 
 - Produces: `GrassInstanceBuffers.neighborColor: Float32Array` (3 components/instance).
   Consumed by Task 4.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `describe('packGrassInstanceBuffers', ...)`:
 
@@ -391,14 +393,19 @@ it('packs neighborColor into a Float32Array of length N*3, r/g/b in order', () =
   ];
   const { neighborColor } = packGrassInstanceBuffers(placements);
   expect(neighborColor.length).toBe(6);
-  expect([...neighborColor]).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+  const expected = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+  for (let i = 0; i < expected.length; i++) expect(neighborColor[i]).toBeCloseTo(expected[i]!, 5);
 });
 ```
+
+(Note: Float32Array storage introduces float32 rounding, so compare element-by-element
+with `toBeCloseTo` rather than a single `toEqual` against the raw double-precision
+literal array.)
 
 Run `npx vitest run tests/world/GrassField.test.ts` — confirm it fails (field doesn't
 exist on the returned object yet).
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 In `GrassInstanceBuffers`, add `neighborColor: Float32Array;` (with a doc comment
 matching the existing `edgeBlend` field's style). In `packGrassInstanceBuffers()`, add:
@@ -417,7 +424,7 @@ and inside the existing per-placement loop, add:
 
 and include `neighborColor` in the function's returned object.
 
-- [ ] **Step 3: Run tests, confirm they pass**
+- [x] **Step 3: Run tests, confirm they pass**
 
 `npx vitest run tests/world/GrassField.test.ts` and `npx tsc --noEmit` both clean.
 
@@ -434,7 +441,7 @@ and include `neighborColor` in the function's returned object.
 - Consumes: Task 3's `neighborColor` buffer.
 - No new exports — this task wires existing pieces into the live shader/mesh and ships.
 
-- [ ] **Step 1: Savanna preset test (write failing first)**
+- [x] **Step 1: Savanna preset test (write failing first)**
 
 Add near the existing `it('grassland maxBlades remains 100_000 ...')` test:
 
@@ -447,18 +454,18 @@ it('savanna is sparser and shorter than before (distinct dry-biome look)', () =>
 
 Run, confirm it fails.
 
-- [ ] **Step 2: Update the savanna preset**
+- [x] **Step 2: Update the savanna preset**
 
 In `GRASS_PRESETS.savanna`, change `densityPerUnit2: 15` → `9` and `height: 0.4` →
-`0.28`. Leave every other field (colors, width, curvature, wind, maxBlades) unchanged.
-Run the test from Step 1, confirm it passes. Run the FULL `GrassField.test.ts` suite —
-confirm nothing else regresses (`maxBlades` sizing note in the design spec's non-goals
-means no other savanna field needs adjustment for this density change; if any existing
-test asserts an exact savanna blade COUNT at a fixed seed/window, note that the new
-lower density will shrink that count — update the expected number in that test to
-match the new deterministic output, don't loosen the assertion).
+`0.28`. Leave every other field (colors, width, curvature, wind) unchanged, EXCEPT
+`maxBlades`: the existing `'maxBlades for the 4 new biomes follows ceil(2304 *
+density * 1.25)...'` test recomputes the expected value from each preset's CURRENT
+`densityPerUnit2`, so changing density without updating `maxBlades` in lockstep
+breaks that pre-existing test — `ceil(2304 * 9 * 1.25 / 1000) * 1000 = 26_000`
+(down from `44_000`, which was density 15's value). Run the test from Step 1, confirm
+it passes. Run the FULL `GrassField.test.ts` suite — confirm nothing else regresses.
 
-- [ ] **Step 3: Wire `aNeighborColor` into the vertex + fragment shader**
+- [x] **Step 3: Wire `aNeighborColor` into the vertex + fragment shader**
 
 In `createGrassMaterial()`'s vertex shader, add the attribute and varying:
 
@@ -505,7 +512,7 @@ with the two split lines from the design spec §2b:
         color = mix(color, vNeighborColor, vEdgeBlend);
 ```
 
-- [ ] **Step 4: Register the new instanced attribute in the `GrassField` class**
+- [x] **Step 4: Register the new instanced attribute in the `GrassField` class**
 
 Find where `_edgeBlend: THREE.InstancedBufferAttribute` is declared/constructed/
 updated in the `GrassField` class (constructor and `update()`), and add a parallel
@@ -514,14 +521,14 @@ pattern (construction, `mesh.geometry.setAttribute('aNeighborColor', ...)`, and 
 `update()` method's per-rebuild upload of the new array from
 `packGrassInstanceBuffers()`'s `neighborColor` output).
 
-- [ ] **Step 5: Full regression pass**
+- [x] **Step 5: Full regression pass**
 
 Run `npx vitest run tests/world/GrassField.test.ts tests/scene/OverworldScene*.test.ts`
 — all green. Run `npx tsc --noEmit` — clean. Run the FULL test suite
 (`npx vitest run`) — compare failure count against this session's established 12-
 failure baseline; investigate anything beyond that baseline before proceeding.
 
-- [ ] **Step 6: Real-browser shader verification**
+- [x] **Step 6: Real-browser shader verification**
 
 Start the dev server, load the game in a real (or headless-but-real-WebGL, not
 jsdom) browser, switch to exterior, and confirm zero console/page errors (shader
@@ -532,7 +539,7 @@ extends further and trends toward the actual neighboring biome's hue rather than
 generic tan smear, (b) savanna reads visibly sparser/shorter than grassland when
 viewed side by side.
 
-- [ ] **Step 7: Update `docs/visual-progress.md` and ship**
+- [x] **Step 7: Update `docs/visual-progress.md` and ship**
 
 Add a short section (or amend the existing "Grass Biome-Boundary Blending" section)
 noting the v2 fix: wider ray-marched band, real neighbor-color blending, and savanna's

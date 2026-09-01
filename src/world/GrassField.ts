@@ -19,7 +19,7 @@ import { mulberry32 } from '@/core/prng';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import { MAX_TRAMPLE_STAMPS, TRAMPLE_STAMP_RADIUS, TRAMPLE_DECAY_HALF_LIFE_S, FALLBACK_STAMP_POSITIONS, FALLBACK_STAMP_AGES, type TrampleMap } from '@/world/GrassTrample';
-import type { WorldGrid } from '@/world/WorldGrid';
+import type { WorldGrid, BiomeId } from '@/world/WorldGrid';
 
 // ── Tunables (see design spec §4/§6) ────────────────────────────────────────
 export const GRASS_RADIUS = 24;          // world units, player-centered
@@ -50,9 +50,9 @@ export const GRASS_PRESETS: Record<GrassBiome, GrassPreset> = {
     densityPerUnit2: 35, windBase: 0.12, windGust: 0.22, windGustFreq: 0.3, maxBlades: 100_000,
   },
   savanna: {
-    biome: 'savanna', segments: 4, width: 0.05, height: 0.4, curvature: 0.1,
+    biome: 'savanna', segments: 4, width: 0.05, height: 0.28, curvature: 0.1,
     baseColor: 0x9b8b4a, tipColor: 0xd4c078, dryColor: 0xc4a84b, dryAmount: 0.6,
-    densityPerUnit2: 15, windBase: 0.14, windGust: 0.24, windGustFreq: 0.3, maxBlades: 44_000,
+    densityPerUnit2: 9, windBase: 0.14, windGust: 0.24, windGustFreq: 0.3, maxBlades: 26_000,
   },
   tundra: {
     biome: 'tundra', segments: 2, width: 0.04, height: 0.1, curvature: 0.025,
@@ -78,8 +78,24 @@ export interface GrassPlacement {
   rotation: number; scaleX: number; scaleY: number; tilt: number; colorVar: number;
   /** 0 (deep in this biome's interior) to 1 (right at a boundary with another biome)
    *  — see computeEdgeBlend(). Drives both this function's own density-fade thinning
-   *  below AND the shader's dry-tint color blend (GrassField class, further down). */
+   *  below AND the shader's neighbor-color blend (GrassField class, further down). */
   edgeBlend: number;
+  /** Averaged (base+tip)/2 color of the nearest different biome within
+   *  `EDGE_BAND_WU` (or this blade's own averaged color when interior/no grass-
+   *  bearing neighbor was found) — see `averageColor()`. Blended in via `edgeBlend`
+   *  in the fragment shader so boundary blades trend toward their actual neighbor's
+   *  hue instead of a generic shared tan. */
+  neighborColor: { r: number; g: number; b: number };
+}
+
+/** Cheap single-tone stand-in for a preset's full base→tip gradient, used only for the
+ *  boundary neighbor-color blend (see GrassPlacement.neighborColor) — a full per-vertex
+ *  neighbor base/tip gradient was rejected as unnecessary complexity for a thin edge
+ *  band; see design spec docs/superpowers/specs/2026-09-01-grass-boundary-blend-v2-design.md §2b. */
+export function averageColor(hexA: number, hexB: number): { r: number; g: number; b: number } {
+  const a = new THREE.Color(hexA);
+  const b = new THREE.Color(hexB);
+  return { r: (a.r + b.r) / 2, g: (a.g + b.g) / 2, b: (a.b + b.b) / 2 };
 }
 
 /**
@@ -121,11 +137,23 @@ export function selectGrassPlacements(
       if (cell.biome !== biome) continue;
       if (!isScatterAllowed(cell, 'grass')) continue;
 
-      const edgeBlend = computeEdgeBlend(wg, x, z, biome, EDGE_BAND_WU);
+      const { blend: edgeBlend, neighborBiome } = computeEdgeBlend(wg, x, z, biome, EDGE_BAND_WU);
       // Density fade: thin placements near a boundary instead of a hard second cutoff
       // line — never fully to 0 (a thin residual chance keeps a few sparse blades
       // right at the seam) — see design spec §2, point 1.
       if (edgeBlend > 0 && rand() > 1 - edgeBlend * 0.85) continue;
+
+      const preset = GRASS_PRESETS[biome];
+      // neighborBiome is typed GrassBiome|null already, but WorldGrid cells can hold
+      // any BiomeId at runtime — this guard is what makes "neighbor is a non-grass
+      // biome" (e.g. beach/desert, which has no preset) an actually-safe fallback
+      // instead of just a documented assumption. See design spec §2b.
+      const neighborPreset = neighborBiome && neighborBiome in GRASS_PRESETS
+        ? GRASS_PRESETS[neighborBiome as GrassBiome]
+        : null;
+      const neighborColor = neighborPreset
+        ? averageColor(neighborPreset.baseColor, neighborPreset.tipColor)
+        : averageColor(preset.baseColor, preset.tipColor);
 
       placements.push({
         x, y: cell.elevation * LEVEL_HEIGHT, z,
@@ -135,17 +163,24 @@ export function selectGrassPlacements(
         tilt: (rand() - 0.5) * 0.3,
         colorVar: rand(),
         edgeBlend,
+        neighborColor,
       });
     }
   }
   return placements;
 }
 
-/** World-unit radius `computeEdgeBlend()` samples at, to decide whether a grass
- *  placement candidate sits near a biome boundary. ~1 tile — a modest transition
- *  band, so only the outermost ring of a biome's footprint is affected. See design
- *  spec docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md §2. */
-export const EDGE_BAND_WU = 2.5;
+/** World-unit max reach `computeEdgeBlend()` ray-marches when searching for a nearby
+ *  biome boundary. ~4 tiles — wide enough that the resulting blend is visible as a
+ *  gradient over a few real steps of player movement, not a snap, while still leaving
+ *  most of a biome's interior fully saturated. Widened from an earlier 2.5 WU
+ *  single-fixed-distance version that was too narrow to read as gradual — see design
+ *  spec docs/superpowers/specs/2026-09-01-grass-boundary-blend-v2-design.md §2a. */
+export const EDGE_BAND_WU = 8;
+
+/** Ray-march step size (1 grid tile) — bounds `computeEdgeBlend()`'s per-candidate
+ *  cost to at most 8 directions × (EDGE_BAND_WU / EDGE_RAY_STEP_WU) `wg.get()` calls. */
+export const EDGE_RAY_STEP_WU = 1;
 
 const EDGE_SAMPLE_DIRECTIONS: ReadonlyArray<[number, number]> = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
@@ -154,28 +189,47 @@ const EDGE_SAMPLE_DIRECTIONS: ReadonlyArray<[number, number]> = [
 ];
 
 /**
- * Samples 8 neighbor points around (x, z) at `bandWidthWU` distance (N/S/E/W and the
- * 4 diagonals) and returns the fraction (0..1) that resolve to a DIFFERENT biome than
- * `biome` — 0 deep inside a uniform biome, up to 1 if completely surrounded by
- * something else (e.g. a thin sliver or a corner). Out-of-grid-bounds samples are
- * skipped entirely (not counted as "different"), so the map's outer edge never falsely
- * reads as a biome transition.
+ * Ray-marches 8 directions (N/S/E/W and the 4 diagonals) out to `bandWidthWU`,
+ * looking for the nearest point that resolves to a DIFFERENT biome than `biome`.
+ * Returns a smooth 0 (no boundary within range) to 1 (right at/inside a boundary)
+ * `blend` signal plus the specific `neighborBiome` found (or `null` if none/interior)
+ * — the neighbor identity drives the color blend in `selectGrassPlacements()` (see
+ * `GrassPlacement.neighborColor`). Out-of-grid-bounds samples stop that direction's
+ * march without counting as a boundary, so the map's outer edge never falsely reads
+ * as a biome transition.
  */
 export function computeEdgeBlend(
   wg: WorldGrid, x: number, z: number, biome: GrassBiome, bandWidthWU: number,
-): number {
+): { blend: number; neighborBiome: GrassBiome | null } {
   const halfW = (wg.width - 1) / 2;
   const halfH = (wg.height - 1) / 2;
-  let different = 0;
-  for (const [dx, dz] of EDGE_SAMPLE_DIRECTIONS) {
-    const sx = x + dx * bandWidthWU;
-    const sz = z + dz * bandWidthWU;
+
+  const biomeAt = (sx: number, sz: number): BiomeId | null => {
     const col = Math.floor(sx / wg.tileUnit + halfW);
     const row = Math.floor(sz / wg.tileUnit + halfH);
-    if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) continue;
-    if (wg.get(col, row).biome !== biome) different++;
+    if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) return null;
+    return wg.get(col, row).biome;
+  };
+
+  // Distance-0 case: the candidate's own cell already differs — trivially at the
+  // boundary, e.g. jitter placed it just over a cell line.
+  const own = biomeAt(x, z);
+  if (own !== null && own !== biome) return { blend: 1, neighborBiome: own as GrassBiome };
+
+  let nearestDist = Infinity;
+  let nearestBiome: GrassBiome | null = null;
+  for (const [dx, dz] of EDGE_SAMPLE_DIRECTIONS) {
+    for (let t = EDGE_RAY_STEP_WU; t <= bandWidthWU; t += EDGE_RAY_STEP_WU) {
+      const b = biomeAt(x + dx * t, z + dz * t);
+      if (b === null) break; // ran off the grid this direction — stop, don't count
+      if (b !== biome) {
+        if (t < nearestDist) { nearestDist = t; nearestBiome = b as GrassBiome; }
+        break;
+      }
+    }
   }
-  return different / EDGE_SAMPLE_DIRECTIONS.length;
+  if (nearestDist === Infinity) return { blend: 0, neighborBiome: null };
+  return { blend: Math.max(0, 1 - nearestDist / bandWidthWU), neighborBiome: nearestBiome };
 }
 
 // ── Instance-buffer packing ──────────────────────────────────────────────
@@ -187,6 +241,8 @@ export interface GrassInstanceBuffers {
    *  array (not packed into an unused positionRotation/scaleAndVariation channel — all
    *  8 of those are already spoken for) since it's a new, independent per-instance value. */
   edgeBlend: Float32Array;
+  /** 3 components (r, g, b) per blade — see GrassPlacement.neighborColor's doc comment. */
+  neighborColor: Float32Array;
 }
 
 /** Pack placements into the Float32Arrays the shader's instanced attributes expect. */
@@ -195,6 +251,7 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
   const positionRotation = new Float32Array(count * 4);
   const scaleAndVariation = new Float32Array(count * 4);
   const edgeBlend = new Float32Array(count);
+  const neighborColor = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const p = placements[i]!;
     positionRotation[i * 4]     = p.x;
@@ -206,8 +263,11 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
     scaleAndVariation[i * 4 + 2] = p.tilt;
     scaleAndVariation[i * 4 + 3] = p.colorVar;
     edgeBlend[i] = p.edgeBlend;
+    neighborColor[i * 3]     = p.neighborColor.r;
+    neighborColor[i * 3 + 1] = p.neighborColor.g;
+    neighborColor[i * 3 + 2] = p.neighborColor.b;
   }
-  return { positionRotation, scaleAndVariation, edgeBlend };
+  return { positionRotation, scaleAndVariation, edgeBlend, neighborColor };
 }
 
 // ── Blade geometry ────────────────────────────────────────────────────────
@@ -309,6 +369,9 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       attribute vec4  aScaleVariation;   // x = scaleX, y = scaleY, z = tilt, w = colorVar
       attribute float aEdgeBlend;        // 0 = interior, 1 = at a biome boundary — see
                                           // GrassPlacement.edgeBlend's doc comment.
+      attribute vec3  aNeighborColor;    // averaged base/tip color of the nearest
+                                          // different biome within EDGE_BAND_WU — see
+                                          // GrassPlacement.neighborColor's doc comment.
 
       uniform float uWindTime;
       uniform vec2  uWindDir;
@@ -345,6 +408,7 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       varying float vColorVar;
       varying float vFade;
       varying float vEdgeBlend;
+      varying vec3  vNeighborColor;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -383,6 +447,7 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
         vUv = uv;
         vColorVar = aScaleVariation.w;
         vEdgeBlend = aEdgeBlend;
+        vNeighborColor = aNeighborColor;
 
         // Trampled-grass trail crush amount for this blade — computed from its planted
         // ROOT position (aPositionRotation.xz, NOT the wind-swayed per-vertex worldPos
@@ -461,18 +526,22 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       varying float vColorVar;
       varying float vFade;
       varying float vEdgeBlend;
+      varying vec3  vNeighborColor;
 
       void main() {
         if (vFade < 0.01) discard;
 
         float heightT = vUv.y;
         vec3 color = mix(uBaseColor, uTipColor, heightT);
-        // Blades near a biome boundary (vEdgeBlend -> 1) are pulled toward the shared
-        // uDryColor regardless of their own random vColorVar roll — max(), not a plain
-        // multiply, so the boundary pull is reliable rather than only affecting blades
-        // that also happened to roll a high vColorVar. See design spec
-        // docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md §2.
-        color = mix(color, uDryColor, max(vColorVar * uDryAmount, vEdgeBlend));
+        // Interior dry-tint variance (unrelated to biome edges) — small random dry
+        // patches within a single biome's own territory, exactly as before this change.
+        color = mix(color, uDryColor, vColorVar * uDryAmount);
+        // Near a biome boundary (vEdgeBlend -> 1), blend toward the ACTUAL neighboring
+        // biome's own grass color instead of a generic shared tan — a true, continuous
+        // hue gradient between whichever two biomes meet here (e.g. grassland's green
+        // fading into forest's dark green) rather than a muddy shared-tan seam. See
+        // design spec docs/superpowers/specs/2026-09-01-grass-boundary-blend-v2-design.md §2b.
+        color = mix(color, vNeighborColor, vEdgeBlend);
         color *= 1.0 + (vColorVar - 0.5) * 0.15;
 
         float ao = mix(1.0 - uAoStrength, 1.0, smoothstep(0.0, 0.3, heightT));
@@ -534,6 +603,7 @@ export class GrassField {
   private readonly _positionRotation: THREE.InstancedBufferAttribute;
   private readonly _scaleAndVariation: THREE.InstancedBufferAttribute;
   private readonly _edgeBlend: THREE.InstancedBufferAttribute;
+  private readonly _neighborColor: THREE.InstancedBufferAttribute;
   private _lastBuildX = Infinity;
   private _lastBuildZ = Infinity;
 
@@ -566,9 +636,14 @@ export class GrassField {
       new Float32Array(preset.maxBlades), 1,
     );
     this._edgeBlend.setUsage(THREE.DynamicDrawUsage);
+    this._neighborColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(preset.maxBlades * 3), 3,
+    );
+    this._neighborColor.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aPositionRotation', this._positionRotation);
     geometry.setAttribute('aScaleVariation', this._scaleAndVariation);
     geometry.setAttribute('aEdgeBlend', this._edgeBlend);
+    geometry.setAttribute('aNeighborColor', this._neighborColor);
 
     this.mesh = new THREE.InstancedMesh(geometry, this._material, preset.maxBlades);
     this.mesh.frustumCulled = false; // wind displacement can push blades outside static bounds
@@ -595,15 +670,17 @@ export class GrassField {
       this.preset.biome, this.preset.densityPerUnit2,
     );
     const count = Math.min(placements.length, this.preset.maxBlades);
-    const { positionRotation, scaleAndVariation, edgeBlend } =
+    const { positionRotation, scaleAndVariation, edgeBlend, neighborColor } =
       packGrassInstanceBuffers(placements.slice(0, count));
 
     this._positionRotation.array.set(positionRotation);
     this._scaleAndVariation.array.set(scaleAndVariation);
     this._edgeBlend.array.set(edgeBlend);
+    this._neighborColor.array.set(neighborColor);
     this._positionRotation.needsUpdate = true;
     this._scaleAndVariation.needsUpdate = true;
     this._edgeBlend.needsUpdate = true;
+    this._neighborColor.needsUpdate = true;
     this.mesh.count = count;
   }
 

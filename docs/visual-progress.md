@@ -170,6 +170,18 @@ boundaries (e.g. grassland meeting savanna) instead of stopping in a hard wall w
 stark color jump — see
 `docs/superpowers/specs/2026-09-01-grass-biome-boundary-blending-design.md`.
 
+**v2 follow-up** (user feedback: the boundary was still too narrow/abrupt and the
+shared-tan push didn't meaningfully soften a bright grassland vs. near-black forest
+seam): `computeEdgeBlend()` now ray-marches out to a much wider `EDGE_BAND_WU` (8 WU,
+up from 2.5) and identifies the SPECIFIC neighboring biome rather than just a 0..1
+fraction. Grass blades near a boundary now blend toward that actual neighbor's own
+averaged grass color instead of a generic tan, giving a true, continuous hue gradient
+between whichever two biomes meet (e.g. grassland's green fading into forest's dark
+green). Savanna was also made visibly sparser and shorter (`densityPerUnit2: 15→9`,
+`height: 0.4→0.28`) so it reads as its own distinct dry-grass biome instead of looking
+like a slightly-yellower grassland. See
+`docs/superpowers/specs/2026-09-01-grass-boundary-blend-v2-design.md`.
+
 ---
 
 ## Asset Pack Reference
