@@ -34,35 +34,39 @@ export interface GrassPreset {
   segments: number; width: number; height: number; curvature: number;
   baseColor: number; tipColor: number; dryColor: number; dryAmount: number;
   densityPerUnit2: number;
+  /** windBase/windGust are fractions of this preset's own `height` (not absolute world
+   *  units) — the shader multiplies the final wind offset by `height` itself (see
+   *  `uBladeHeight` in `createGrassMaterial()`), so a blade's sway always scales with its
+   *  own size instead of being a fixed WU displacement that could dwarf a short blade. */
   windBase: number; windGust: number; windGustFreq: number;
   maxBlades: number; // see design spec §3's "maxBlades sizing" formula
 }
 
 export const GRASS_PRESETS: Record<GrassBiome, GrassPreset> = {
   grassland: {
-    biome: 'grassland', segments: 4, width: 0.06, height: 0.9, curvature: 0.28,
+    biome: 'grassland', segments: 4, width: 0.06, height: 0.45, curvature: 0.14,
     baseColor: 0x3a7d2c, tipColor: 0x8bbf40, dryColor: 0xc4a84b, dryAmount: 0,
-    densityPerUnit2: 35, windBase: 0.4, windGust: 0.8, windGustFreq: 0.3, maxBlades: 100_000,
+    densityPerUnit2: 35, windBase: 0.12, windGust: 0.22, windGustFreq: 0.3, maxBlades: 100_000,
   },
   savanna: {
-    biome: 'savanna', segments: 4, width: 0.05, height: 0.8, curvature: 0.2,
+    biome: 'savanna', segments: 4, width: 0.05, height: 0.4, curvature: 0.1,
     baseColor: 0x9b8b4a, tipColor: 0xd4c078, dryColor: 0xc4a84b, dryAmount: 0.6,
-    densityPerUnit2: 15, windBase: 0.3, windGust: 0.5, windGustFreq: 0.3, maxBlades: 44_000,
+    densityPerUnit2: 15, windBase: 0.14, windGust: 0.24, windGustFreq: 0.3, maxBlades: 44_000,
   },
   tundra: {
-    biome: 'tundra', segments: 2, width: 0.04, height: 0.2, curvature: 0.05,
+    biome: 'tundra', segments: 2, width: 0.04, height: 0.1, curvature: 0.025,
     baseColor: 0x6b7d4a, tipColor: 0x8b9d5a, dryColor: 0xc4a84b, dryAmount: 0.3,
-    densityPerUnit2: 25, windBase: 0.6, windGust: 1.2, windGustFreq: 0.3, maxBlades: 72_000,
+    densityPerUnit2: 25, windBase: 0.2, windGust: 0.3, windGustFreq: 0.3, maxBlades: 72_000,
   },
   forest: {
-    biome: 'forest', segments: 4, width: 0.05, height: 0.6, curvature: 0.22,
+    biome: 'forest', segments: 4, width: 0.05, height: 0.3, curvature: 0.11,
     baseColor: 0x2e4a22, tipColor: 0x5a7d3a, dryColor: 0xc4a84b, dryAmount: 0.1,
-    densityPerUnit2: 12, windBase: 0.25, windGust: 0.4, windGustFreq: 0.25, maxBlades: 35_000,
+    densityPerUnit2: 12, windBase: 0.08, windGust: 0.15, windGustFreq: 0.25, maxBlades: 35_000,
   },
   taiga: {
-    biome: 'taiga', segments: 3, width: 0.04, height: 0.35, curvature: 0.15,
+    biome: 'taiga', segments: 3, width: 0.04, height: 0.175, curvature: 0.075,
     baseColor: 0x2f3d2c, tipColor: 0x4a5d42, dryColor: 0xc4a84b, dryAmount: 0.15,
-    densityPerUnit2: 8, windBase: 0.2, windGust: 0.35, windGustFreq: 0.25, maxBlades: 24_000,
+    densityPerUnit2: 8, windBase: 0.1, windGust: 0.18, windGustFreq: 0.25, maxBlades: 24_000,
   },
 };
 
@@ -236,6 +240,7 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       uWindBase:     { value: preset.windBase },
       uWindGust:     { value: preset.windGust },
       uWindGustFreq: { value: preset.windGustFreq },
+      uBladeHeight:  { value: preset.height },
       uFadeStart:    { value: FADE_START },
       uFadeEnd:      { value: FADE_END },
       uFadeCenter:   { value: new THREE.Vector2(0, 0) },
@@ -249,6 +254,9 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
       uniform float uWindBase;
       uniform float uWindGust;
       uniform float uWindGustFreq;
+      uniform float uBladeHeight; // world units — see GrassPreset.windBase/windGust doc:
+                                    // wind offset is computed as a fraction of this blade's
+                                    // own height, not a fixed absolute displacement.
       uniform float uFadeStart;
       uniform float uFadeEnd;
       uniform vec2  uFadeCenter; // world XZ position to fade distance from (the player,
@@ -286,10 +294,14 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
 
         float bladeHash = hash(worldPos.xz * 10.0);
         float turbPhase = uWindTime * 3.0 + bladeHash * 6.28;
-        vec2 turbulence = vec2(sin(turbPhase), cos(turbPhase * 0.7)) * 0.1;
+        vec2 turbulence = vec2(sin(turbPhase), cos(turbPhase * 0.7)) * 0.05;
 
         float h2 = heightFactor * heightFactor;
-        return (globalSway + gustSway + turbulence) * h2;
+        // windBase/windGust/turbulence above are fractions of the blade's own height (see
+        // GrassPreset doc) — multiplying by uBladeHeight converts to an absolute world-unit
+        // offset, so sway always scales with how tall THIS preset's blade actually is instead
+        // of a fixed WU amount that would dwarf a short blade (e.g. tundra).
+        return (globalSway + gustSway + turbulence) * h2 * uBladeHeight;
       }
 
       void main() {
@@ -381,12 +393,19 @@ export function createGrassMaterial(preset: GrassPreset): THREE.ShaderMaterial {
 
 // ── Wind system ───────────────────────────────────────────────────────────
 
-/** Drives the grass shader's wind uniforms over time — global sway + gusts. */
+/**
+ * Drives the shared, time-varying parts of the grass shader's wind — the clock and the
+ * global wind direction (both meant to be the SAME across every biome's GrassField so
+ * they all sway in sync with one wind). Deliberately does NOT own baseStrength/gustStrength/
+ * gustFrequency: those are genuinely per-preset (see `GrassPreset.windBase`/`windGust`/
+ * `windGustFreq`), set once on the material in `createGrassMaterial()` and left untouched by
+ * `tickWind()` — a prior version of this class duplicated fixed 0.4/0.8/0.3 defaults here and
+ * `tickWind()` blindly overwrote every biome's own tuned uWindBase/uWindGust/uWindGustFreq with
+ * them every frame, silently discarding all 5 presets' per-biome wind tuning after the very
+ * first tick (bug found + fixed alongside the height/wind-scale tuning pass).
+ */
 export class WindSystem {
   direction = new THREE.Vector2(1, 0.3).normalize();
-  baseStrength = 0.4;
-  gustStrength = 0.8;
-  gustFrequency = 0.3;
   time = 0;
 
   update(dt: number): void {
@@ -467,15 +486,16 @@ export class GrassField {
     this.mesh.count = count;
   }
 
-  /** Per-frame, cheap — only updates shader uniforms, no CPU instance-data work. */
+  /** Per-frame, cheap — only updates shader uniforms, no CPU instance-data work.
+   *  Only touches uWindTime/uWindDir (the shared wind clock/direction) — uWindBase/
+   *  uWindGust/uWindGustFreq/uBladeHeight are per-preset and were already set once in
+   *  createGrassMaterial()'s constructor call; they must NOT be overwritten here (see
+   *  WindSystem's doc comment for the bug this used to cause). */
   tickWind(dt: number): void {
     this._wind.update(dt);
     const u = this._material.uniforms;
     u.uWindTime.value = this._wind.time;
     (u.uWindDir.value as THREE.Vector2).copy(this._wind.direction);
-    u.uWindBase.value = this._wind.baseStrength;
-    u.uWindGust.value = this._wind.gustStrength;
-    u.uWindGustFreq.value = this._wind.gustFrequency;
   }
 
   dispose(): void {
