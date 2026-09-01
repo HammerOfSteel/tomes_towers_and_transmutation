@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   decayFactor, worldToTrampleCell, stampInto, shouldRecenter, shiftGrid,
+  TrampleMap, FALLBACK_TRAMPLE_TEXTURE, TRAMPLE_MAP_WORLD_SIZE,
 } from '@/world/GrassTrample';
 
 describe('decayFactor', () => {
@@ -121,5 +122,46 @@ describe('shiftGrid', () => {
   it('a zero shift returns the grid unchanged', () => {
     const result = shiftGrid(makeGrid(), 3, 0, 0);
     expect(Array.from(result)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+});
+
+describe('FALLBACK_TRAMPLE_TEXTURE', () => {
+  it('is a 1x1 texture (a harmless always-black default for GrassField instances with no TrampleMap)', () => {
+    expect(FALLBACK_TRAMPLE_TEXTURE.image.width).toBe(1);
+    expect(FALLBACK_TRAMPLE_TEXTURE.image.height).toBe(1);
+  });
+});
+
+describe('TrampleMap', () => {
+  it('constructs with a worldSize matching TRAMPLE_MAP_WORLD_SIZE and a center at the origin', () => {
+    const map = new TrampleMap();
+    expect(map.worldSize).toBe(TRAMPLE_MAP_WORLD_SIZE);
+    expect(map.getCenter()).toEqual({ x: 0, z: 0 });
+    map.dispose();
+  });
+
+  it('update() does not throw across many frames of simulated player movement', () => {
+    const map = new TrampleMap();
+    let x = 0, z = 0;
+    for (let i = 0; i < 200; i++) {
+      x += 0.3; z += 0.1; // simulate walking
+      expect(() => map.update(x, z, 1 / 30)).not.toThrow();
+    }
+    map.dispose();
+  });
+
+  it('recenters after the player has moved past TRAMPLE_RECENTER_THRESHOLD_WU', () => {
+    const map = new TrampleMap();
+    map.update(0, 0, 1 / 30);
+    expect(map.getCenter()).toEqual({ x: 0, z: 0 });
+    map.update(20, 0, 1 / 30); // 20 > 12 WU threshold
+    const center = map.getCenter();
+    expect(center.x).toBeGreaterThan(0); // recentered toward the player
+    map.dispose();
+  });
+
+  it('dispose() does not throw and can be called safely', () => {
+    const map = new TrampleMap();
+    expect(() => map.dispose()).not.toThrow();
   });
 });

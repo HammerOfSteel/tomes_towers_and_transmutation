@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 /**
  * GrassTrample.ts — a decaying, player-trampled-grass "trail" grid, sampled by
  * GrassField.ts's shader to flatten recently-walked-on blades. See
@@ -114,4 +116,99 @@ export function shiftGrid(
     }
   }
   return result;
+}
+
+// ── TrampleMap (THREE.js wrapper — not unit-tested beyond construction smoke checks;
+// the actual shader-visible flattening is verified manually, see this feature's plan
+// Task 5) ───────────────────────────────────────────────────────────────────────────
+
+/** Shared, always-black 1x1 fallback for any GrassField constructed without a real
+ *  TrampleMap (e.g. this file's own direct-construction tests) — sampling it always
+ *  returns 0 ("never trampled"), a harmless no-op. */
+export const FALLBACK_TRAMPLE_TEXTURE = new THREE.DataTexture(
+  new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType,
+);
+FALLBACK_TRAMPLE_TEXTURE.needsUpdate = true;
+
+/**
+ * Owns the decaying player-trample grid and pushes it into a THREE.DataTexture every
+ * `update()` call — mutate the backing Uint8Array + flag needsUpdate, exactly like
+ * GrassField's own instanced attribute buffers, so no extra GPU render pass or
+ * THREE.WebGLRenderer reference is ever needed (see this file's own doc comment / the
+ * design spec §3 for why).
+ */
+export class TrampleMap {
+  readonly texture: THREE.DataTexture;
+  readonly worldSize = TRAMPLE_MAP_WORLD_SIZE;
+
+  private readonly _grid = new Float32Array(TRAMPLE_MAP_RESOLUTION * TRAMPLE_MAP_RESOLUTION);
+  private readonly _textureData = new Uint8Array(TRAMPLE_MAP_RESOLUTION * TRAMPLE_MAP_RESOLUTION * 4);
+  private readonly _cellWorldSize = TRAMPLE_MAP_WORLD_SIZE / TRAMPLE_MAP_RESOLUTION;
+  private _centerX = 0;
+  private _centerZ = 0;
+
+  constructor() {
+    this.texture = new THREE.DataTexture(
+      this._textureData, TRAMPLE_MAP_RESOLUTION, TRAMPLE_MAP_RESOLUTION,
+      THREE.RGBAFormat, THREE.UnsignedByteType,
+    );
+    this.texture.generateMipmaps = false;
+    this.texture.minFilter = THREE.LinearFilter;
+    this.texture.magFilter = THREE.LinearFilter;
+    this.texture.wrapS = THREE.ClampToEdgeWrapping;
+    this.texture.wrapT = THREE.ClampToEdgeWrapping;
+    this.texture.needsUpdate = true;
+  }
+
+  getCenter(): { x: number; z: number } {
+    return { x: this._centerX, z: this._centerZ };
+  }
+
+  /** Call once per frame with the player's current world position. */
+  update(playerX: number, playerZ: number, dt: number): void {
+    // 1. Age every existing trample value.
+    const decay = decayFactor(dt, TRAMPLE_DECAY_HALF_LIFE_S);
+    for (let i = 0; i < this._grid.length; i++) this._grid[i] *= decay;
+
+    // 2. Recenter (shifting existing data, not discarding it) if the player has wandered
+    // far enough. Snap the new center to a whole number of cells so the grid-to-world
+    // mapping stays exact (at most half a cell — 0.375 WU — off from the player's literal
+    // position, imperceptible for this soft-blob effect).
+    const dx = playerX - this._centerX;
+    const dz = playerZ - this._centerZ;
+    if (shouldRecenter(dx, dz, TRAMPLE_RECENTER_THRESHOLD_WU)) {
+      const shiftCols = Math.round(dx / this._cellWorldSize);
+      const shiftRows = Math.round(dz / this._cellWorldSize);
+      const shifted = shiftGrid(this._grid, TRAMPLE_MAP_RESOLUTION, shiftCols, shiftRows);
+      this._grid.set(shifted);
+      this._centerX += shiftCols * this._cellWorldSize;
+      this._centerZ += shiftRows * this._cellWorldSize;
+    }
+
+    // 3. Stamp the player's current position (after decay/recenter, so a brand-new
+    // footprint isn't immediately aged within the same frame it was placed).
+    const cell = worldToTrampleCell(
+      playerX, playerZ, this._centerX, this._centerZ,
+      TRAMPLE_MAP_WORLD_SIZE, TRAMPLE_MAP_RESOLUTION,
+    );
+    if (cell) {
+      stampInto(
+        this._grid, TRAMPLE_MAP_RESOLUTION, this._cellWorldSize,
+        cell.col, cell.row, TRAMPLE_STAMP_RADIUS,
+      );
+    }
+
+    // 4. Push the float grid into the GPU-visible Uint8 texture.
+    for (let i = 0; i < this._grid.length; i++) {
+      this._textureData[i * 4] = Math.round(Math.min(1, this._grid[i]) * 255);
+      this._textureData[i * 4 + 1] = 0;
+      this._textureData[i * 4 + 2] = 0;
+      this._textureData[i * 4 + 3] = 255;
+    }
+    this.texture.needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.texture.dispose();
+  }
 }
