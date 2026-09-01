@@ -5,7 +5,7 @@ import {
   selectGrassPlacements, packGrassInstanceBuffers,
   createGrassBladeGeometry, createGrassMaterial,
   GrassField, REBUILD_HYSTERESIS, GRASS_PRESETS,
-  computeEdgeBlend, EDGE_BAND_WU,
+  computeEdgeBlend, EDGE_BAND_WU, type GrassPlacement,
 } from '@/world/GrassField';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId): WorldGrid {
@@ -154,6 +154,17 @@ describe('packGrassInstanceBuffers', () => {
     const { positionRotation, scaleAndVariation } = packGrassInstanceBuffers([]);
     expect(positionRotation.length).toBe(0);
     expect(scaleAndVariation.length).toBe(0);
+  });
+
+  it('carries each placement\'s edgeBlend value through into a same-length Float32Array', () => {
+    const placements: GrassPlacement[] = [
+      { x: 0, y: 0, z: 0, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0 },
+      { x: 1, y: 0, z: 1, rotation: 0, scaleX: 1, scaleY: 1, tilt: 0, colorVar: 0, edgeBlend: 0.75 },
+    ];
+    const { edgeBlend } = packGrassInstanceBuffers(placements);
+    expect(edgeBlend.length).toBe(2);
+    expect(edgeBlend[0]).toBe(0);
+    expect(edgeBlend[1]).toBeCloseTo(0.75, 5);
   });
 });
 

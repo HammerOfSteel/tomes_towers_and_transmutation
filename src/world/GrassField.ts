@@ -183,6 +183,10 @@ export function computeEdgeBlend(
 export interface GrassInstanceBuffers {
   positionRotation: Float32Array;
   scaleAndVariation: Float32Array;
+  /** 1 component per blade — see GrassPlacement.edgeBlend's doc comment. Its own typed
+   *  array (not packed into an unused positionRotation/scaleAndVariation channel — all
+   *  8 of those are already spoken for) since it's a new, independent per-instance value. */
+  edgeBlend: Float32Array;
 }
 
 /** Pack placements into the Float32Arrays the shader's instanced attributes expect. */
@@ -190,6 +194,7 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
   const count = placements.length;
   const positionRotation = new Float32Array(count * 4);
   const scaleAndVariation = new Float32Array(count * 4);
+  const edgeBlend = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const p = placements[i]!;
     positionRotation[i * 4]     = p.x;
@@ -200,8 +205,9 @@ export function packGrassInstanceBuffers(placements: GrassPlacement[]): GrassIns
     scaleAndVariation[i * 4 + 1] = p.scaleY;
     scaleAndVariation[i * 4 + 2] = p.tilt;
     scaleAndVariation[i * 4 + 3] = p.colorVar;
+    edgeBlend[i] = p.edgeBlend;
   }
-  return { positionRotation, scaleAndVariation };
+  return { positionRotation, scaleAndVariation, edgeBlend };
 }
 
 // ── Blade geometry ────────────────────────────────────────────────────────
