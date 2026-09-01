@@ -16,7 +16,7 @@
 import { mulberry32 } from '@/core/prng';
 import type { SettlementFaction } from '@/overworld-studio';
 import { generateSettlementName } from './SettlementNameGenerator';
-import type { WorldGrid } from './WorldGrid';
+import type { WorldGrid, WorldCell } from './WorldGrid';
 import { buildSettlement, fillWard, OccupancyGrid, type GeneratorParams, type LayoutType, type Road, type SettlementType as ModelSettlementType, type WardType, type Ward } from './SettlementModelGenerator';
 import { WARD_TO_KIND, WARD_TO_SIZE } from '@/buildingToDungeonPlan';
 import { getFootprint } from './buildings/BuildingDNA';
@@ -24,6 +24,29 @@ import { getFootprint } from './buildings/BuildingDNA';
 // ── Public types ───────────────────────────────────────────────────────────────
 
 export type SettlementType = ModelSettlementType;
+
+/** Settlement "outskirts zone" radius (grid tiles) by type — the disc used both to
+ *  mark the nature-spawn-exclusion zone and (a large fraction of) the elevation-
+ *  flattening zone in `applySettlementToGrid()`, AND by `SettlementPlacer.ts`'s
+ *  pre-placement area-suitability scan (`isSuitableArea()`) — a single shared source
+ *  so the two can never silently drift out of sync with each other. */
+export const SETTLEMENT_ZONE_RADIUS: Record<SettlementType, number> = {
+  city: 16, town: 12, village: 8,
+};
+
+/** True for any tile that should block building/road/settlement-site placement for
+ *  water reasons — a strict superset of the ad-hoc biome/feature checks previously
+ *  scattered across `_valid()`/`SettlementPlacer.ts`'s `isValidTile()` (which never
+ *  checked `feature === 'lake'` at all — lakes could previously be built on/through
+ *  entirely unblocked). The `waterDepth > 0` clause is a defensive safety net for any
+ *  water tile not caught by the biome/feature checks; `river_ford` tiles correctly stay
+ *  valid (`waterDepth === 0`, walkable by design). See design spec
+ *  docs/superpowers/specs/2026-09-01-settlement-placement-validation-design.md §2a. */
+export function isWaterCell(cell: Pick<WorldCell, 'biome' | 'feature' | 'waterDepth'>): boolean {
+  return cell.biome === 'deep_ocean' || cell.biome === 'ocean'
+    || cell.feature === 'river' || cell.feature === 'lake'
+    || cell.waterDepth > 0;
+}
 
 export interface PlacedBuilding {
   wardType: WardType;
@@ -233,7 +256,16 @@ export function planSettlement(
     });
   }
 
-  const roads = rasterizeRoads(model.roads, centerCol, centerRow, centreX, centreY);
+  const rawRoads = rasterizeRoads(model.roads, centerCol, centerRow, centreX, centreY);
+  // Filter out any rasterized road tile that would land on water — rasterizeRoads()
+  // itself has no WorldGrid access (it's a pure geometric center-line/dilation pass),
+  // so this is the one place a road tile's final grid position is checked before it's
+  // ever painted as feature:'road'. A narrow, single-purpose filter (not a full
+  // _valid() call, which also rejects bounds-edge/dungeon-entrance/low-elevation tiles
+  // that may be legitimately correct for an existing road to cross) — only water is
+  // newly excluded here. See design spec
+  // docs/superpowers/specs/2026-09-01-settlement-placement-validation-design.md §2d.
+  const roads = rawRoads.filter(r => !isWaterCell(grid.get(r.col, r.row)));
   const roadRibbons = buildRoadRibbons(model.roads, model.wards, centreX, centreY);
   const clearedBuildings = resolveRoadClearanceViolations(buildings, roadRibbons, grid, centerCol, centerRow);
   const rand = mulberry32(seed ^ 0xBADC0DE);
@@ -478,7 +510,7 @@ export function applySettlementToGrid(
   const cc = plan.centerCol, cr = plan.centerRow;
 
   // ── 1. Mark outskirts zone (prevents nature spawning inside settlement) ────
-  const zoneR = plan.type === 'city' ? 16 : plan.type === 'town' ? 12 : 8;
+  const zoneR = SETTLEMENT_ZONE_RADIUS[plan.type];
   for (let dc = -zoneR; dc <= zoneR; dc++) {
     for (let dr = -zoneR; dr <= zoneR; dr++) {
       if (dc * dc + dr * dr > zoneR * zoneR) continue;
@@ -490,16 +522,23 @@ export function applySettlementToGrid(
   }
 
   // ── 2. Flatten inner zone to a consistent elevation plateau ────────────────
-  //   Find the modal elevation of all non-water/river tiles inside the inner
-  //   radius, then snap everything to it.  This gives buildings + roads a
-  //   seamless flat ground plane and removes height-step seams in the pavement.
-  const innerR  = Math.round(zoneR * 0.60);
+  //   Find the modal elevation of all non-water tiles inside the inner radius,
+  //   then snap everything to it.  This gives buildings + roads a seamless flat
+  //   ground plane and removes height-step seams in the pavement. Widened from an
+  //   original 0.60 to 0.90 (a ~2.25x larger flattened AREA, since area scales with
+  //   radius^2) so buildings/roads placed anywhere in the settlement's footprint
+  //   (not just its innermost 60%) sit on consistent ground — see design spec
+  //   docs/superpowers/specs/2026-09-01-settlement-placement-validation-design.md §2c.
+  //   A ~10% outer fringe stays unflattened for a natural falloff back to
+  //   surrounding terrain instead of an abrupt plateau-to-raw-terrain cliff right at
+  //   the zone boundary.
+  const innerR  = Math.round(zoneR * 0.90);
   const elevMap = new Map<number, number>();
   for (let dc = -innerR; dc <= innerR; dc++) {
     for (let dr = -innerR; dr <= innerR; dr++) {
       if (dc * dc + dr * dr > innerR * innerR) continue;
       const cell = grid.get(cc + dc, cr + dr);
-      if (cell.biome !== 'deep_ocean' && cell.biome !== 'ocean' && cell.feature !== 'river') {
+      if (!isWaterCell(cell)) {
         elevMap.set(cell.elevation, (elevMap.get(cell.elevation) ?? 0) + 1);
       }
     }
@@ -514,7 +553,7 @@ export function applySettlementToGrid(
       if (dc * dc + dr * dr > innerR * innerR) continue;
       const c = cc + dc, r = cr + dr;
       const cell = grid.get(c, r);
-      if (cell.biome !== 'deep_ocean' && cell.biome !== 'ocean' && cell.feature !== 'river') {
+      if (!isWaterCell(cell)) {
         grid.set(c, r, { elevation: targetElev });
       }
     }
@@ -543,8 +582,7 @@ export function applySettlementToGrid(
 function _valid(grid: WorldGrid, col: number, row: number): boolean {
   if (col < 1 || col >= grid.width - 1 || row < 1 || row >= grid.height - 1) return false;
   const cell = grid.get(col, row);
-  if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
-  if (cell.feature === 'river') return false;
+  if (isWaterCell(cell)) return false;
   if (cell.content === 'dungeon_entrance') return false;
   if (cell.elevation < 1) return false;
   return true;

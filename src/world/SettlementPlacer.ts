@@ -23,7 +23,7 @@
 
 import type { WorldGrid }      from './WorldGrid';
 import type { WorldGenConfig } from './WorldGenConfig';
-import { planSettlement, applySettlementToGrid } from './SettlementGenerator';
+import { planSettlement, applySettlementToGrid, isWaterCell } from './SettlementGenerator';
 import type { SettlementPlan, SettlementType }   from './SettlementGenerator';
 import { generateRealmData }   from './RealmGenerator';
 
@@ -91,8 +91,7 @@ export function placeSettlements(
     if (tR < innerR || tR > outerR) return false;
 
     const cell = grid.get(col, row);
-    if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return false;
-    if (cell.feature === 'river')                  return false;
+    if (isWaterCell(cell))                          return false;
     // Elevation gate is biome-conditional: 'mountain' is only ever
     // classified at a high elevation (RealmGenerator.ts's classifyBiome()
     // requires elev > 0.70, quantizing to level 5 or 6 — see

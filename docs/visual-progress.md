@@ -199,6 +199,16 @@ new per-sub-tile vertex-color brightness tint (`roadSubTileTint()`) for subtle
 worn/dusty patch variety on top of each road's existing texture. See
 `docs/superpowers/specs/2026-09-01-road-subtile-reuse-design.md`.
 
+Settlement buildings/roads occasionally landed in rivers or at odd heights. Root
+causes: lake tiles were never checked at all by placement validation (only ocean/river
+were), rasterized road tiles were painted onto the grid with zero water check, and
+elevation flattening only covered the inner 60% of a settlement's zone radius. Fixed
+all three; a fourth attempted fix (rejecting entire settlement SITES with too much
+water in their footprint) was tried, then reverted after live testing showed it
+dropped otherwise-healthy settlements that were merely *near* water rather than
+actually overlapping it — see the design spec for the full empirical reasoning.
+`docs/superpowers/specs/2026-09-01-settlement-placement-validation-design.md`.
+
 ---
 
 ## Asset Pack Reference

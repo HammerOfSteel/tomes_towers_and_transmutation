@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
 import { generateSettlementName } from '@/world/SettlementNameGenerator';
-import { planSettlement, applySettlementToGrid, PARAMS_BY_TYPE, type PlacedBuilding } from '@/world/SettlementGenerator';
+import { planSettlement, applySettlementToGrid, PARAMS_BY_TYPE, isWaterCell, SETTLEMENT_ZONE_RADIUS, type PlacedBuilding } from '@/world/SettlementGenerator';
 import type { LayoutType } from '@/world/SettlementModelGenerator';
 import { placeSettlements } from '@/world/SettlementPlacer';
 import type { WorldGenConfig } from '@/world/WorldGenConfig';
@@ -177,6 +177,19 @@ describe('planSettlement', () => {
     expect(moved!.col === target.col && moved!.row === target.row).toBe(false);
     expect(grid.get(moved!.col, moved!.row).biome).not.toBe('ocean');
     expect(grid.get(moved!.col, moved!.row).content).not.toBe('dungeon_entrance');
+  });
+
+  it('filters a rasterized road tile off a river instead of painting a road across it', () => {
+    const grid = flatGrid(128);
+    const baseline = planSettlement('town', 64, 64, 0xB0A7, grid, 'RoadWater', 'human');
+    expect(baseline.roads.length).toBeGreaterThan(0);
+    const target = baseline.roads[0]!;
+    grid.set(target.col, target.row, { feature: 'river' });
+    const replanned = planSettlement('town', 64, 64, 0xB0A7, grid, 'RoadWater', 'human');
+    // The exact same deterministic road geometry is produced (rasterizeRoads() has no
+    // grid access, so it can't have changed) — only this one tile is filtered out.
+    expect(replanned.roads.some(r => r.col === target.col && r.row === target.row)).toBe(false);
+    expect(replanned.roads.length).toBe(baseline.roads.length - 1);
   });
 
   it('drops buildings gracefully when no valid tile exists in range', () => {
@@ -364,6 +377,32 @@ describe('planSettlement', () => {
   });
 });
 
+describe('isWaterCell', () => {
+  const dryCell = { biome: 'grassland' as const, feature: 'none' as const, waterDepth: 0 };
+
+  it('flags ocean and deep_ocean biomes as water', () => {
+    expect(isWaterCell({ ...dryCell, biome: 'ocean' })).toBe(true);
+    expect(isWaterCell({ ...dryCell, biome: 'deep_ocean' })).toBe(true);
+  });
+
+  it('flags river and lake features as water (lake was previously never checked at all)', () => {
+    expect(isWaterCell({ ...dryCell, feature: 'river' })).toBe(true);
+    expect(isWaterCell({ ...dryCell, feature: 'lake' })).toBe(true);
+  });
+
+  it('flags any positive waterDepth as water, regardless of biome/feature (defensive safety net)', () => {
+    expect(isWaterCell({ ...dryCell, waterDepth: 2 })).toBe(true);
+  });
+
+  it('does not flag a plain dry land cell', () => {
+    expect(isWaterCell(dryCell)).toBe(false);
+  });
+
+  it('does not flag a walkable river_ford crossing (waterDepth 0 by design)', () => {
+    expect(isWaterCell({ ...dryCell, feature: 'river_ford', waterDepth: 0 })).toBe(false);
+  });
+});
+
 describe('buildingHalfExtents (via overlap padding)', () => {
   it('pads inn/patriciate-sized anchors using their real WARD_TO_SIZE, not an ad-hoc guess', () => {
     // Build two adjacent inn anchors close enough to violate correct
@@ -396,6 +435,30 @@ describe('applySettlementToGrid', () => {
       expect(grid.get(r.col, r.row).feature).toBe('road');
     }
   });
+
+  it('flattens a tile at radius 6 for a village (zoneR=8) — inside the widened 90% inner radius (7) but outside the old 60% radius (5)', () => {
+    const grid = flatGrid(128);
+    const cc = 64, cr = 64;
+    expect(SETTLEMENT_ZONE_RADIUS.village).toBe(8);
+    grid.set(cc + 6, cr, { elevation: 3 }); // radius 6 from center, off the dominant elevation 1
+    const plan = planSettlement('village', cc, cr, 0xF1A7, grid, 'FlattenWiden', 'human');
+    applySettlementToGrid(plan, grid, 1);
+    // Under the old innerR=round(8*0.6)=5, this radius-6 tile would have been
+    // left untouched at elevation 3; under the new innerR=round(8*0.9)=7, it
+    // falls inside the flattening disc and must snap to the modal elevation (1).
+    expect(grid.get(cc + 6, cr).elevation).toBe(1);
+  });
+
+  it('still excludes lake tiles from elevation flattening (not just ocean/river)', () => {
+    const grid = flatGrid(128);
+    const cc = 64, cr = 64;
+    grid.set(cc + 2, cr, { feature: 'lake', elevation: 3 });
+    const plan = planSettlement('village', cc, cr, 0xF1A7, grid, 'FlattenLake', 'human');
+    applySettlementToGrid(plan, grid, 1);
+    // A lake tile inside the inner zone must keep its own elevation, not get
+    // snapped to the settlement's modal (flattened) elevation.
+    expect(grid.get(cc + 2, cr).elevation).toBe(3);
+  });
 });
 
 describe('placeSettlements', () => {
@@ -416,6 +479,19 @@ describe('placeSettlements', () => {
       expect(e.plan.type).toBe(src!.size);
       expect(e.plan.faction).toBe(src!.faction);
     }
+  });
+
+  it('never sites a settlement\'s center on a lake tile (previously unchecked — only ocean/river blocked a site)', () => {
+    // A grid entirely covered in 'lake' would previously have passed isValidTile()'s
+    // water check unconditionally (only biome ocean/deep_ocean and feature river were
+    // ever tested) — every settlement must now be dropped instead of silently sited on
+    // a lake.
+    const g = flatGrid(128);
+    for (let row = 0; row < 128; row++) {
+      for (let col = 0; col < 128; col++) g.set(col, row, { feature: 'lake' });
+    }
+    const entries = placeSettlements(g, BASE_CONFIG, 42);
+    expect(entries.length).toBe(0);
   });
 });
 
