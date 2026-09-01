@@ -65,13 +65,16 @@ starts** — anything here can still change.
 
 ### Integration: a real spellbar spell
 
-Add a new spell, `time_warp`, of a new `SpellDef.type: 'timeskip'`. It's
-equipped/cast exactly like `blink`/`fly`/`lantern` — no new input paths.
-Casting it does not immediately do the effect; instead `SpellSystem.cast()`
-recognizes the `timeskip` type and invokes a new `CastOptions.onTimeSkip()`
-callback, handing control to a new dedicated class, `TimeSkipUI`
-(`src/interactables/TimeSkipUI.ts`), mirroring `TamingGame`'s shape
-(`begin()` / `update(dt)` / `active` / `onComplete`).
+Add a new spell, `time_warp`, reusing the existing `SpellDef.type:
+'movement'` bucket (the same one `blink`/`levitate`/`fly`/`lantern`
+already use for non-damage, spellId-keyed special behaviour, dispatched
+through `SpellSystem`'s private `_fireMovement()`). It's equipped/cast
+exactly like those — no new input paths, no new `SpellType` variant.
+Casting it does not immediately do the effect; instead `_fireMovement()`
+recognizes `spellId === 'time_warp'` and invokes a new
+`CastOptions.onTimeSkip()` callback, handing control to a new dedicated
+class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
+`TamingGame`'s shape (`begin()` / `update(dt)` / `active` / `close()`).
 
 ### Flow
 
@@ -92,10 +95,18 @@ callback, handing control to a new dedicated class, `TimeSkipUI`
 
    Esc cancels (closes the strip, no time change — cooldown was already
    charged at cast time per above).
-   While the strip is open, player movement/attack/cast input is frozen
-   via a new `timeSkipUI.active` gate added alongside the existing
-   `bookReader.isOpen` / `telescopeView.active` / `tamingGame.active`
-   checks in `main.ts`.
+   **Correction made during plan-writing:** re-reading `TamingGame`'s
+   actual wiring in `main.ts` shows it does **not** freeze player
+   movement at all — `tamingGame.active` only gates *re-triggering* a new
+   taming encounter via the interact key (`main.ts` ~line 2988); the
+   player can walk around freely while the song strip is up, and that
+   `overworld.update(dt, ...)`'s the whole time. That's part of what
+   makes it feel non-modal/charming rather than a jarring interruption.
+   `TimeSkipUI` follows the same precedent: no movement freeze. The only
+   gate is `!timeSkipUI.active` added alongside the existing
+   `!tamingGame.active` check on the interact key and on the spell-cast
+   dispatch (so the player can't open a second picker or queue another
+   cast while one is already open/animating).
 3. **Confirm → time-vortex VFX + accelerated clock.** On picking a preset,
    the strip closes and a new 3D VFX plays centred above the player: a
    spinning rune ring (reusing the existing additive-blended,
@@ -113,10 +124,9 @@ callback, handing control to a new dedicated class, `TimeSkipUI`
    also calls `_dayNight.update(hour)` exactly as the main loop's own
    per-frame call would, so the sky/lighting visibly race through phases
    live.
-   Player input stays frozen for this whole 2.5 s window (same gate as
-   step 2) — short enough to not feel like a real interruption, and
-   avoids the weirdness of being attacked while the world is visibly
-   time-lapsing.
+   As with step 2, movement is not frozen during this window — matching
+   `TamingGame`'s precedent, the world stays fully live while the sky
+   races through phases.
 4. **Land.** `hour` is set to the exact target (no floating-point drift
    from the eased animation), `TimeSystem`'s existing `localStorage`
    persistence path is invoked immediately (rather than waiting for its
@@ -131,18 +141,41 @@ callback, handing control to a new dedicated class, `TimeSkipUI`
   the only change to `TimeSystem` itself; the animation/easing logic is a
   presentation concern and lives in `TimeSkipUI`, not here.
 - `src/combat/SpellSystem.ts`: add `time_warp` to `SPELL_DEFS` (`type:
-  'timeskip'`, cooldown 45 s — see below); add `onTimeSkip?: () => void`
-  to `CastOptions`; `cast()` invokes it for `timeskip`-type spells instead
-  of the projectile/aoe/etc. paths.
+  'movement'`, cooldown 45 s — see below); add `onTimeSkip?: () => void`
+  to `CastOptions`; `_fireMovement()` invokes it for
+  `spellId === 'time_warp'` instead of the blink/levitate/fly/lantern
+  branches.
 - `src/interactables/TimeSkipUI.ts` (new): the bottom-strip picker, the
   time-vortex VFX, and the eased `hour` advancement — same shape/pattern
   as `TamingGame` (`begin(origin: THREE.Vector3)`, `update(dt)`, `active`,
-  `onComplete`).
+  `close()`).
+- `src/progression/ProgressionSystem.ts`: add `time_warp` to the
+  always-unlocked set in the constructor, next to `magic_bolt` and
+  `lantern` (same "default utility spell, no book/loot required"
+  treatment as `lantern` — `blink`/`levitate`/`fly` have no real,
+  non-debug unlock path anywhere in the codebase today, a pre-existing
+  gap; giving `time_warp` the same treatment as those would make it
+  just as unreachable in a normal playthrough, which defeats the point
+  of building it). Not auto-equipped into a default slot — the player
+  equips it into slot 2 or 3 themselves, same as any other unlocked
+  spell.
+- `src/main.ts`: also add `'time_warp'` to the two existing debug
+  "grant all spells" id lists (~lines 685 and 1226) for QA/testing
+  convenience, matching every other non-default spell already there.
+- `src/ui/HUD.ts`: add a `time_warp` entry to the existing `SPELL_GLYPH` /
+  `SPELL_LABEL` / `SPELL_DESC` tables (glyph `⏳`, label "Time Warp") so
+  it renders properly in the hotbar tooltip, matching the "cute UI" ask.
+  (Note: `blink`/`levitate`/`fly`/`lantern` are currently *not* in these
+  tables and fall back to a generic `✦` glyph/raw id — a pre-existing
+  gap, left alone as out of scope for this feature.)
 - `src/main.ts`: instantiate `TimeSkipUI` once at startup (mirroring
   `tamingGame`), wire `time_warp`'s `onTimeSkip` callback to
   `timeSkipUI.begin(player.group.position)`, call `timeSkipUI.update(dt)`
-  each frame, and add `!timeSkipUI.active` to the existing input-gate
-  checks (movement/attack/cast/interact) alongside the other three.
+  each frame, and add `!timeSkipUI.active` alongside the existing
+  `!tamingGame.active` checks that gate the interact key and the
+  spell-cast dispatch — preventing a second picker/cast while one is
+  already open or animating (movement itself is never gated — see the
+  "Correction made during plan-writing" note in the Flow section above).
 
 ### Cooldown
 
@@ -176,18 +209,20 @@ not a real cost).
   correctly (including from e.g. 23 forward-wrapping to 1), writes
   through to `localStorage` immediately (not probabilistically).
 - `SpellSystem.test.ts`: extend for `time_warp` — present in `SPELL_DEFS`
-  with `type: 'timeskip'`; `cast()` invokes `onTimeSkip` and does not
-  fall through to projectile/aoe paths; cooldown gates a second cast
+  with `type: 'movement'`; `cast()`/`_fireMovement()` invokes `onTimeSkip`
+  for `spellId === 'time_warp'` and does not fall through to the
+  blink/levitate/fly/lantern branches; cooldown gates a second cast
   within 45 s.
 - `TimeSkipUI.test.ts` (new): `begin()` sets `active`; picking a preset
   drives `TimeSystem.instance.hour` from current toward the target over
-  the animation window (test with fake timers / manual `update(dt)`
-  stepping, mirroring `TamingGame.test.ts`'s existing pattern if one
-  exists); Esc cancels without changing `hour`; forward-wrap case (e.g.
-  current hour 22, target 6) never regresses backward mid-animation.
+  the animation window (test via manual `update(dt)` stepping — the same
+  approach `tamingGame.test.ts` uses, no fake timers needed since the
+  class takes `dt` explicitly); Esc cancels without changing `hour`;
+  forward-wrap case (e.g. current hour 22, target 6) never regresses
+  backward mid-animation.
 - Manual playtest (required, no unverified completion claim): cast the
-  spell, confirm the bottom strip appears without blocking the 3D view,
-  pick each of the 4 presets and confirm the sky/lighting visibly race
-  through phases and land correctly, confirm player input is frozen only
-  during the strip+animation and resumes correctly after, confirm NPCs'
-  behaviour reacts to the new `schedulePhase` shortly after landing.
+  spell, confirm the bottom strip appears without blocking the 3D view
+  and the player can still walk around while it's up, pick each of the 4
+  presets and confirm the sky/lighting visibly race through phases and
+  land correctly, confirm NPCs' behaviour reacts to the new
+  `schedulePhase` shortly after landing.
