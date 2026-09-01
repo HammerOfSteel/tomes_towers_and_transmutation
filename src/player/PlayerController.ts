@@ -314,8 +314,20 @@ export class PlayerController {
    * True on/off toggle, mirrors flySpellMode's userData-flag plumbing.
    */
   isLanternOn = false;
-  /** Lantern light, attached as a child of `group`, fixed hip-height offset. */
-  private readonly _lanternLight = new THREE.PointLight(0xffaa55, 1.1, 6);
+  /** Lantern light, attached as a child of `group`, fixed hip-height offset.
+   *  Intensity/distance/decay tuned (up from an original 1.1/6/default-decay-2)
+   *  after user feedback that the lantern was "much too weak to do much of
+   *  anything at night" — at decay=2 (physically-correct inverse-square
+   *  falloff, three.js's default), 1.1 intensity had already dropped to a
+   *  small fraction of its value within just 1-2 WU, nowhere near enough to
+   *  actually light the player's way while exploring in the dark. A lower
+   *  decay=1.5 (a common non-physical "torchlight" convention in games —
+   *  strict physical falloff reads as unrealistically dim for a light meant
+   *  to be the player's primary visibility tool, not decorative atmosphere
+   *  like the settlement lamp-posts/tower windows, which intentionally keep
+   *  decay=2/lower intensity since they're just ambient scenery) combined
+   *  with higher intensity/distance gives a genuinely useful lit radius. */
+  private readonly _lanternLight = new THREE.PointLight(0xffaa55, 3.5, 11, 1.5);
   /** Small visible lantern prop (cage + glow), attached alongside the light. */
   private readonly _lanternProp = PlayerController.buildLanternProp();
 
