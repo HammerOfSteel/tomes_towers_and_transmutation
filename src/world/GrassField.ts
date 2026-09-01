@@ -76,6 +76,10 @@ export const GRASS_PRESETS: Record<GrassBiome, GrassPreset> = {
 export interface GrassPlacement {
   x: number; y: number; z: number;
   rotation: number; scaleX: number; scaleY: number; tilt: number; colorVar: number;
+  /** 0 (deep in this biome's interior) to 1 (right at a boundary with another biome)
+   *  — see computeEdgeBlend(). Drives both this function's own density-fade thinning
+   *  below AND the shader's dry-tint color blend (GrassField class, further down). */
+  edgeBlend: number;
 }
 
 /**
@@ -117,6 +121,12 @@ export function selectGrassPlacements(
       if (cell.biome !== biome) continue;
       if (!isScatterAllowed(cell, 'grass')) continue;
 
+      const edgeBlend = computeEdgeBlend(wg, x, z, biome, EDGE_BAND_WU);
+      // Density fade: thin placements near a boundary instead of a hard second cutoff
+      // line — never fully to 0 (a thin residual chance keeps a few sparse blades
+      // right at the seam) — see design spec §2, point 1.
+      if (edgeBlend > 0 && rand() > 1 - edgeBlend * 0.85) continue;
+
       placements.push({
         x, y: cell.elevation * LEVEL_HEIGHT, z,
         rotation: rand() * Math.PI * 2,
@@ -124,6 +134,7 @@ export function selectGrassPlacements(
         scaleY: 0.6 + rand() * 0.8,
         tilt: (rand() - 0.5) * 0.3,
         colorVar: rand(),
+        edgeBlend,
       });
     }
   }

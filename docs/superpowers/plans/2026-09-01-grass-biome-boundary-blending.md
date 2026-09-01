@@ -237,14 +237,17 @@ closing `});`) and add these two new tests just before it:
   it('thins placements near a biome boundary compared to an identical all-one-biome control', () => {
     const interiorGrid = makeAllBiomeGrid(60, 'grassland');
     const boundaryGrid = makeAllBiomeGrid(60, 'grassland');
-    // Make the right half of the boundary grid a different biome, so every candidate
-    // in the window below (centered near that seam) has some nonzero edgeBlend.
+    // Make the right half of the boundary grid a different biome. For a 60x60 grid,
+    // halfW=(60-1)/2=29.5 and tileUnit=2, so col=30 begins at world x=1.0 — the query
+    // window below (centered at x=-5, radius=10, covering x in [-15,5]) straddles that
+    // exact seam, so its outer (rightmost) band of candidates sits within EDGE_BAND_WU
+    // of the boundary.
     for (let row = 0; row < 60; row++) {
       for (let col = 30; col < 60; col++) boundaryGrid.set(col, row, { biome: 'savanna' });
     }
     const seed = 7;
-    const interior = selectGrassPlacements(interiorGrid, -20, 0, 10, seed, 'grassland', 35);
-    const boundary = selectGrassPlacements(boundaryGrid, -20, 0, 10, seed, 'grassland', 35);
+    const interior = selectGrassPlacements(interiorGrid, -5, 0, 10, seed, 'grassland', 35);
+    const boundary = selectGrassPlacements(boundaryGrid, -5, 0, 10, seed, 'grassland', 35);
     // Same window, same seed, same biome match rate going in — the only difference is
     // proximity to the boundary — so the boundary run must end up with fewer kept
     // placements (thinned by the density-fade probability check).

@@ -104,13 +104,40 @@ describe('selectGrassPlacements', () => {
       }
     }
   });
+
+  it('attaches an edgeBlend field to every placement (0 for a fully-interior window)', () => {
+    const wg = makeAllBiomeGrid(40, 'grassland');
+    const placements = selectGrassPlacements(wg, 0, 0, 10, 1, 'grassland', 35);
+    expect(placements.length).toBeGreaterThan(0);
+    for (const p of placements) expect(p.edgeBlend).toBe(0);
+  });
+
+  it('thins placements near a biome boundary compared to an identical all-one-biome control', () => {
+    const interiorGrid = makeAllBiomeGrid(60, 'grassland');
+    const boundaryGrid = makeAllBiomeGrid(60, 'grassland');
+    // Make the right half of the boundary grid a different biome. For a 60x60 grid,
+    // halfW=(60-1)/2=29.5 and tileUnit=2, so col=30 begins at world x=1.0 — the query
+    // window below (centered at x=-5, radius=10, covering x in [-15,5]) straddles that
+    // exact seam, so its outer (rightmost) band of candidates sits within EDGE_BAND_WU
+    // of the boundary.
+    for (let row = 0; row < 60; row++) {
+      for (let col = 30; col < 60; col++) boundaryGrid.set(col, row, { biome: 'savanna' });
+    }
+    const seed = 7;
+    const interior = selectGrassPlacements(interiorGrid, -5, 0, 10, seed, 'grassland', 35);
+    const boundary = selectGrassPlacements(boundaryGrid, -5, 0, 10, seed, 'grassland', 35);
+    // Same window, same seed, same biome match rate going in — the only difference is
+    // proximity to the boundary — so the boundary run must end up with fewer kept
+    // placements (thinned by the density-fade probability check).
+    expect(boundary.length).toBeLessThan(interior.length);
+  });
 });
 
 describe('packGrassInstanceBuffers', () => {
   it('packs N placements into Float32Arrays of length N*4, at the expected offsets', () => {
     const placements = [
-      { x: 1, y: 2, z: 3, rotation: 0.5, scaleX: 0.8, scaleY: 0.9, tilt: 0.1, colorVar: 0.4 },
-      { x: 4, y: 5, z: 6, rotation: 1.5, scaleX: 1.1, scaleY: 1.2, tilt: -0.1, colorVar: 0.7 },
+      { x: 1, y: 2, z: 3, rotation: 0.5, scaleX: 0.8, scaleY: 0.9, tilt: 0.1, colorVar: 0.4, edgeBlend: 0 },
+      { x: 4, y: 5, z: 6, rotation: 1.5, scaleX: 1.1, scaleY: 1.2, tilt: -0.1, colorVar: 0.7, edgeBlend: 0 },
     ];
     const { positionRotation, scaleAndVariation } = packGrassInstanceBuffers(placements);
     expect(positionRotation.length).toBe(8);
