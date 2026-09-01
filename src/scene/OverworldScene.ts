@@ -1275,10 +1275,11 @@ export class OverworldScene {
       const roadGeo = new THREE.BufferGeometry();
       roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(rg.positions, 3));
       roadGeo.setAttribute('normal',   new THREE.Float32BufferAttribute(rg.normals, 3));
+      roadGeo.setAttribute('color',    new THREE.Float32BufferAttribute(rg.colors, 3));
       roadGeo.setAttribute('uv',       new THREE.Float32BufferAttribute(rg.uvs, 2));
       roadGeo.setIndex(rg.indices);
       const roadMesh = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({
-        map: roadVariantTexture(variant), roughness: 0.92, metalness: 0,
+        map: roadVariantTexture(variant), vertexColors: true, roughness: 0.92, metalness: 0,
       }));
       if (this._isInScene) this.scene.add(roadMesh);
       roadMeshes.push(roadMesh);

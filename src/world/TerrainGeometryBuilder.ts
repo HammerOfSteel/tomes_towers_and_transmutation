@@ -113,6 +113,30 @@ export function _subTileGroundVariant(
   return ownVariant;
 }
 
+/** Multiplier range for per-road-sub-tile vertex-color tint variation — a
+ *  subtle brightness swing (not a hue/color shift) simulating worn/dusty
+ *  patches along an otherwise-uniform road texture. Slightly biased toward
+ *  darkening (min further from 1.0 than max) since a real dirt/stone road
+ *  wears darker more often than it brightens. Same "vertex color × map"
+ *  technique ground tiles already use (see addGroundFace's tr/tg/tb), just
+ *  applied at road sub-tile granularity via `roadSubTileTint()` instead of
+ *  the biome-lookup color ground tiles use — a road's texture map already
+ *  supplies its own color, so only a brightness scalar is needed here. */
+export const ROAD_TINT_MIN = 0.86;
+export const ROAD_TINT_MAX = 1.06;
+
+/** Deterministic per-road-sub-tile brightness tint in [ROAD_TINT_MIN,
+ *  ROAD_TINT_MAX], keyed by world position (via `_subTileRoll`'s existing
+ *  salted hash — salt 20, distinct from every ground salt 1-6 above so the
+ *  two systems' rolls never correlate). Multiplied against white (1,1,1)
+ *  and passed as this sub-tile's vertex color; a genuine hue-varying
+ *  micro-patch system (like ground's MICRO_PATCH_VARIANTS) is deferred —
+ *  see docs/superpowers/specs/2026-09-01-road-subtile-reuse-design.md. */
+export function roadSubTileTint(worldX: number, worldZ: number): number {
+  const roll = _subTileRoll(worldX, worldZ, 20);
+  return ROAD_TINT_MIN + roll * (ROAD_TINT_MAX - ROAD_TINT_MIN);
+}
+
 
 /** Biome vertex colours [r, g, b] for height levels 0–7 — kept for backward-compat callers
  * that only need the "primary" look; internally buildTerrainGeometryData now picks from
@@ -357,17 +381,22 @@ function _lowCorners(
   ];
 }
 
+/** One road-variant's own geometry buffers. `colors` carries a per-vertex
+ *  brightness tint (see `roadSubTileTint()`) multiplied against the road's
+ *  single tiled texture — the same "vertex color × map" technique ground
+ *  tiles already use, giving otherwise-uniform road stretches subtle
+ *  worn/dusty patch variety without any new texture content. */
 export interface RoadVariantGeometry {
   positions: number[];
   normals:   number[];
+  colors:    number[];
   uvs:       number[];
   indices:   number[];
 }
 
 /** One ground-texture variant's own geometry buffers — mirrors
- *  RoadVariantGeometry, plus a `colors` array since ground needs
- *  per-vertex color preserved for the tint-preserving `color * map`
- *  multiply (roads don't carry per-vertex color today). */
+ *  RoadVariantGeometry (both now carry per-vertex `colors` for the
+ *  tint-preserving `color * map` multiply). */
 export interface GroundVariantGeometry {
   positions: number[]; normals: number[]; colors: number[]; uvs: number[]; indices: number[];
 }
@@ -429,18 +458,22 @@ export function buildTerrainGeometryData(
 
   /** Append a quad face into a road-variant's own buffers (created lazily
    *  on first use), with world-space-projected planar UV so the texture
-   *  reads as continuous across sub-tiles/tiles rather than stamped. */
+   *  reads as continuous across sub-tiles/tiles rather than stamped, plus
+   *  a per-vertex brightness tint (see `roadSubTileTint()`) for subtle
+   *  worn/dusty patch variety on top of the shared texture. */
   const addRoadFace = (
     variant: string,
     v0: [number, number, number], v1: [number, number, number],
     v2: [number, number, number], v3: [number, number, number],
     nx: number, ny: number, nz: number,
+    tint: number,
   ): void => {
     let g = roadGeometry[variant];
-    if (!g) { g = { positions: [], normals: [], uvs: [], indices: [] }; roadGeometry[variant] = g; }
+    if (!g) { g = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; roadGeometry[variant] = g; }
     const base = g.positions.length / 3;
     g.positions.push(...v0, ...v1, ...v2, ...v3);
     g.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+    g.colors.push(tint, tint, tint,  tint, tint, tint,  tint, tint, tint,  tint, tint, tint);
     for (const [vx, , vz] of [v0, v1, v2, v3]) {
       g.uvs.push(vx / ROAD_UV_TILE_WU, vz / ROAD_UV_TILE_WU);
     }
@@ -674,14 +707,16 @@ export function buildTerrainGeometryData(
       const hasRoadCoverage = coverage !== null && coverage.some(vnt => vnt !== null);
 
       if (hasRoadCoverage) {
-        // Bilinearly interpolate the tile's 4 corner jitters across the
-        // sub-tile grid — keeps the same organic-but-seamless look as the
-        // un-subdivided case (adjacent tiles' shared corners still match
-        // exactly, since we're interpolating from the identical jitter
-        // values they'd compute too) without needing per-sub-tile jitter.
-        const heightAt = (u: number, w: number): number =>
-          jSW * (1 - u) * (1 - w) + jSE * u * (1 - w) + jNW * (1 - u) * w + jNE * u * w;
-
+        // Per-sub-tile-lattice-point bump (subTileBumpJitter, keyed by absolute world
+        // position) instead of the old bilinear interpolation of just the tile's 4 real
+        // corners — matches emitGroundSubTiles()'s exact technique for flat tiles (road
+        // sub-tiles are never ramp-eligible, so `wy` alone is this tile's whole flat
+        // height, same as heightAt() collapsing to a constant for a flat tile there).
+        // Being the SAME pure function of world position as ground's own bump keeps
+        // road/ground sub-tile boundaries seamless (identical value at any shared
+        // lattice point) while giving straight road stretches real surface roughness
+        // instead of a perfectly smooth interpolated plane. See design spec
+        // docs/superpowers/specs/2026-09-01-road-subtile-reuse-design.md §2a.
         for (let sz = 0; sz < roadSubdivisions; sz++) {
           for (let sx = 0; sx < roadSubdivisions; sx++) {
             const variant = coverage![sz * roadSubdivisions + sx];
@@ -689,8 +724,8 @@ export function buildTerrainGeometryData(
             const w0 = sz / roadSubdivisions, w1 = (sz + 1) / roadSubdivisions;
             const px0 = wx + u0 * T, px1 = wx + u1 * T;
             const pz0 = wz + w0 * T, pz1 = wz + w1 * T;
-            const ySW = wy + heightAt(u0, w0), yNW = wy + heightAt(u0, w1);
-            const yNE = wy + heightAt(u1, w1), ySE = wy + heightAt(u1, w0);
+            const ySW = wy + subTileBumpJitter(px0, pz0), yNW = wy + subTileBumpJitter(px0, pz1);
+            const yNE = wy + subTileBumpJitter(px1, pz1), ySE = wy + subTileBumpJitter(px1, pz0);
             if (variant === null) {
               // Ground sub-tile — same colour pipeline as the un-subdivided case.
               addFace(
@@ -704,11 +739,18 @@ export function buildTerrainGeometryData(
               // would have had here, so there is no seam and — critically
               // — no second surface occupying the same space, which is
               // what eliminates the z-fighting the previous overlay-mesh
-              // approach suffered from.
+              // approach suffered from. A per-sub-tile brightness tint
+              // (roadSubTileTint(), keyed by this sub-tile's own center —
+              // same convention as ground's border-dither/micro-patch rolls
+              // further up) gives an otherwise-uniform road texture subtle
+              // worn/dusty patch variety instead of reading as one flat
+              // "drawn line". See design spec §2b.
+              const subCenterX = (px0 + px1) / 2, subCenterZ = (pz0 + pz1) / 2;
               addRoadFace(
                 variant,
                 [px0, ySW, pz0], [px0, yNW, pz1], [px1, yNE, pz1], [px1, ySE, pz0],
                 0, 1, 0,
+                roadSubTileTint(subCenterX, subCenterZ),
               );
             }
           }

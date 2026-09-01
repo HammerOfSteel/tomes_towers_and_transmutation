@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
@@ -375,6 +375,46 @@ describe('_subTileGroundVariant', () => {
   });
 });
 
+describe('roadSubTileTint', () => {
+  it('is deterministic for the same world coordinates', () => {
+    expect(roadSubTileTint(12.5, -7.25)).toBe(roadSubTileTint(12.5, -7.25));
+  });
+
+  it('stays within [ROAD_TINT_MIN, ROAD_TINT_MAX]', () => {
+    for (let i = -20; i < 20; i++) {
+      for (let j = -20; j < 20; j++) {
+        const v = roadSubTileTint(i * 0.61, j * 0.83);
+        expect(v).toBeGreaterThanOrEqual(ROAD_TINT_MIN);
+        expect(v).toBeLessThanOrEqual(ROAD_TINT_MAX);
+      }
+    }
+  });
+
+  it('produces more than one distinct value across many positions (not a constant)', () => {
+    const values = new Set<number>();
+    for (let i = -20; i < 20; i++) values.add(roadSubTileTint(i * 0.47, i * -0.31));
+    expect(values.size).toBeGreaterThan(1);
+  });
+
+  it('does not correlate with subTileBumpJitter at the same position (independent salted rolls)', () => {
+    // Not a strict mathematical proof of independence, just a smoke check that the two
+    // don't happen to be the same underlying roll reused (which would defeat having a
+    // dedicated salt=20) — pick a handful of positions and confirm the two sequences
+    // aren't simply rescaled copies of each other.
+    const bumps: number[] = [];
+    const tints: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      bumps.push(subTileBumpJitter(i * 1.3, i * -0.9));
+      tints.push(roadSubTileTint(i * 1.3, i * -0.9));
+    }
+    const bumpOrder = [...bumps].sort((a, b) => a - b);
+    const tintOrder = [...tints].sort((a, b) => a - b);
+    const bumpRanks = bumps.map(v => bumpOrder.indexOf(v));
+    const tintRanks = tints.map(v => tintOrder.indexOf(v));
+    expect(bumpRanks).not.toEqual(tintRanks);
+  });
+});
+
 describe('buildTerrainGeometryData — variant color and corner jitter', () => {
   it('gives different plain land cells at the same elevation level visibly different colors sometimes', () => {
     // A 6x6 flat grid at elevation 1 (grass level) — with only single-level BIOME colors
@@ -607,6 +647,47 @@ describe('buildTerrainGeometryData — road sub-tile surface (roads as terrain t
     const roadVertCount = data.roadGeometry['cobblestone']!.positions.length / 3;
     expect(data.roadGeometry['cobblestone']!.uvs.length).toBe(roadVertCount * 2);
     expect(data.roadGeometry['cobblestone']!.indices.length).toBe((roadVertCount / 4) * 6);
+  });
+
+  it('gives each road sub-tile a per-vertex brightness tint within [ROAD_TINT_MIN, ROAD_TINT_MAX], not all identical', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 10, variant: 'dirt' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    const colors = data.roadGeometry['dirt']!.colors;
+    // Same length as positions (1 tint value repeated across r/g/b, per vertex).
+    expect(colors.length).toBe(data.roadGeometry['dirt']!.positions.length);
+    const distinctTints = new Set<number>();
+    for (let i = 0; i < colors.length; i += 3) {
+      const r = colors[i]!, g = colors[i + 1]!, b = colors[i + 2]!;
+      expect(r).toBe(g); expect(g).toBe(b); // pure brightness tint, not a hue shift
+      expect(r).toBeGreaterThanOrEqual(ROAD_TINT_MIN);
+      expect(r).toBeLessThanOrEqual(ROAD_TINT_MAX);
+      distinctTints.add(r);
+    }
+    expect(distinctTints.size).toBeGreaterThan(1); // real per-sub-tile variety, not one flat tint
+  });
+
+  it('gives an interior road sub-tile corner the exact subTileBumpJitter() value at that world point (independent per-lattice-point bump, not a bilinear blend of the tile\'s 4 real corners)', () => {
+    const wg = new WorldGrid(1, 1);
+    wg.set(0, 0, { elevation: 0, feature: 'road' });
+    const path = [{ points: [{ x: 0, z: -10 }, { x: 0, z: 10 }], width: 10, variant: 'dirt' }];
+    const data = buildTerrainGeometryData(wg, 1, 1, 0, 0, 2, 1, 0, 0, 1, 1, path, 4);
+    // Tile spans world (-1,-1) to (1,1); sub-tile (sx=1, sz=1)'s SW corner sits at an
+    // INTERIOR lattice point (0.5, 0.5) -- not one of the tile's 4 real corners. Under the
+    // old bilinear-interpolation-of-4-corners implementation this point's height would be
+    // some blend of jSW/jNW/jNE/jSE; under the new implementation it's sampled directly,
+    // so it must exactly equal wy(=0) + subTileBumpJitter(0.5, 0.5).
+    const expectedY = subTileBumpJitter(0.5, 0.5);
+    const positions = data.roadGeometry['dirt']!.positions;
+    let found = false;
+    for (let i = 0; i < positions.length; i += 3) {
+      if (positions[i] === 0.5 && positions[i + 2] === 0.5) {
+        expect(positions[i + 1]).toBeCloseTo(expectedY, 10);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
   });
 
   it('covers the full tile with road sub-tiles (zero ground sub-tiles) when the path spans the whole width', () => {

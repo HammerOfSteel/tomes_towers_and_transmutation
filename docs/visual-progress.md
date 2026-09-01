@@ -184,6 +184,23 @@ like a slightly-yellower grassland. See
 
 ---
 
+## Nature/Terrain Polish Round (wildlife, roads)
+
+Continuing feedback after grass boundary blending: ambient wildlife (rabbits, goats)
+previously froze their height at spawn and visually clipped through/floated above
+terrain as they wandered — fixed with a new `getTerrainHeightAt()` query, re-evaluated
+every frame, matching the player's own continuous terrain-following.
+
+Intercity/settlement roads previously looked flat and "like a drawn line" on straight
+stretches (turns already looked good). Reused the ground biome sub-tile system's two
+techniques directly: per-sub-tile-lattice-point height bump (`subTileBumpJitter()`,
+same function ground tiles use) instead of a smoothly interpolated flat plane, and a
+new per-sub-tile vertex-color brightness tint (`roadSubTileTint()`) for subtle
+worn/dusty patch variety on top of each road's existing texture. See
+`docs/superpowers/specs/2026-09-01-road-subtile-reuse-design.md`.
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:
