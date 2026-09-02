@@ -28,6 +28,24 @@ describe('octagonPoints', () => {
   it('is deterministic', () => {
     expect(octagonPoints(2)).toEqual(octagonPoints(2));
   });
+
+  it('vertexScales scales only the specified corner, leaving others at the base radius', () => {
+    const base = octagonPoints(2);
+    const scales = [1, 1, 1.3, 1, 1, 1, 1, 1];
+    const scaled = octagonPoints(2, scales);
+    expect(Math.hypot(scaled[2]![0], scaled[2]![1])).toBeCloseTo(2 * 1.3, 9);
+    for (const i of [0, 1, 3, 4, 5, 6, 7]) {
+      expect(scaled[i]).toEqual(base[i]);
+    }
+  });
+
+  it('omitting vertexScales reproduces the exact unscaled output', () => {
+    expect(octagonPoints(2)).toEqual(octagonPoints(2, undefined));
+  });
+
+  it('a vertexScales array with an incorrect length throws', () => {
+    expect(() => octagonPoints(2, [1, 1, 1])).toThrow();
+  });
 });
 
 describe('octagonFaces', () => {
@@ -64,6 +82,17 @@ describe('octagonFaces', () => {
       const apothem = radius * Math.cos(Math.PI / 8);
       expect(apothem * Math.sin(face.normalAngle)).toBeCloseTo(midX, 9);
       expect(apothem * Math.cos(face.normalAngle)).toBeCloseTo(midZ, 9);
+    }
+  });
+
+  it('vertexScales threads through to face endpoints matching the scaled octagonPoints output', () => {
+    const radius = 2;
+    const scales = [1, 1.2, 1, 1, 0.8, 1, 1, 1];
+    const pts = octagonPoints(radius, scales);
+    const faces = octagonFaces(radius, scales);
+    for (let i = 0; i < 8; i++) {
+      expect(faces[i]!.a).toEqual(pts[i]);
+      expect(faces[i]!.b).toEqual(pts[(i + 1) % 8]);
     }
   });
 });

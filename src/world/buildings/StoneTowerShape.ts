@@ -17,12 +17,27 @@
 const SIDES = 8;
 
 /** Returns the 8 corner points of a regular octagon of the given
- * circumradius, as [x, z] pairs. Point 0 is at local +Z (angle 0). */
-export function octagonPoints(radius: number): [number, number][] {
+ * circumradius, as [x, z] pairs. Point 0 is at local +Z (angle 0).
+ *
+ * `vertexScales`, when given, must have exactly `SIDES` (8) entries —
+ * one multiplier per corner, applied to `radius` for that corner only,
+ * letting a caller (StoneTowerSilhouette.ts's per-floor jitter) perturb
+ * individual corners away from a perfect regular octagon. Omitted (or
+ * `undefined`) reproduces the exact regular-octagon output below,
+ * unchanged — this keeps every existing caller/test (which never pass
+ * this new parameter) byte-for-byte backward compatible. A wrong-length
+ * array throws rather than being silently ignored or clamped, since a
+ * mismatched length is a caller bug (e.g. forgetting a corner), not
+ * organic/expected input. */
+export function octagonPoints(radius: number, vertexScales?: number[]): [number, number][] {
+  if (vertexScales !== undefined && vertexScales.length !== SIDES) {
+    throw new Error(`octagonPoints: vertexScales must have exactly ${SIDES} entries, got ${vertexScales.length}`);
+  }
   const pts: [number, number][] = [];
   for (let i = 0; i < SIDES; i++) {
     const angle = (i / SIDES) * Math.PI * 2;
-    pts.push([radius * Math.sin(angle), radius * Math.cos(angle)]);
+    const r = vertexScales !== undefined ? radius * vertexScales[i]! : radius;
+    pts.push([r * Math.sin(angle), r * Math.cos(angle)]);
   }
   return pts;
 }
@@ -37,9 +52,11 @@ export interface OctagonFace {
 }
 
 /** Returns the 8 faces of a regular octagon of the given circumradius,
- * in the same winding order as octagonPoints(). */
-export function octagonFaces(radius: number): OctagonFace[] {
-  const pts = octagonPoints(radius);
+ * in the same winding order as octagonPoints(). `vertexScales` is
+ * forwarded verbatim to the underlying `octagonPoints()` call — see its
+ * doc comment. */
+export function octagonFaces(radius: number, vertexScales?: number[]): OctagonFace[] {
+  const pts = octagonPoints(radius, vertexScales);
   const faces: OctagonFace[] = [];
   for (let i = 0; i < SIDES; i++) {
     const a = pts[i]!;
