@@ -154,6 +154,29 @@ established, not a speculative "might be nice" addition.
   at the previously-missed mirror-image notches, with no visual
   regression at the already-handled corners.
 
+## Live verification finding (2026-09-02)
+
+Ran both the old and new detection logic side-by-side (old logic
+reimplemented inline, matching the pre-fix code exactly) against every
+room in `generateTower(seed)`'s output, across 50 seeds. **Result: the
+old and new logic produced byte-identical pilaster counts and positions
+for every room, every seed tried — the previously-missed mirror-image
+`inner_corner` sub-case never actually occurs in any currently-generated
+tower chamber.** This is recorded transparently rather than glossed over:
+the fix is proven **correct** by the targeted unit tests (a minimal
+hand-constructed 3-tile configuration directly demonstrates the old code
+misses a case the new code catches), but its real-world visual impact on
+*currently-shipped* room geometry is not confirmed to be observable —
+likely because `TowerGenerator.ts`'s specific circular-chamber
+rasterization approach happens to only ever produce the previously-
+handled sub-case's winding, not its mirror. The fix is still worth
+keeping: it makes the classification correct *by construction* rather
+than "correct by coincidence of what's been generated so far," and any
+future room-shape change (a new hand-authored blueprint, a generator
+tweak, or Phase 3's eventual settlement-plot work if it ever touches
+interior spaces) could readily produce the previously-missed
+configuration.
+
 ## Explicitly out of scope
 
 - Procedural dungeon room-shape/layout generation (rejected above).
