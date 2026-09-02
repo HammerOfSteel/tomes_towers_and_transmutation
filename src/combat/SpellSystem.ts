@@ -44,6 +44,7 @@ const SPELL_DEFS: Record<string, SpellDef> = {
   levitate:     { type: 'movement',   color: 0x88ddff, emissive: 0x224455, damage: 0, speed: 0,  radius: 0,    cooldown: 1  },
   fly:          { type: 'movement',   color: 0xffdd44, emissive: 0x886600, damage: 0, speed: 0,  radius: 0,    cooldown: 12 },
   lantern:      { type: 'movement',   color: 0xffaa55, emissive: 0xcc7733, damage: 0, speed: 0,  radius: 0,    cooldown: 0.3 },
+  time_warp:    { type: 'movement',   color: 0xffd27a, emissive: 0x7a5a1a, damage: 0, speed: 0,  radius: 0,    cooldown: 45 },
 };
 
 const FALLBACK_DEF = SPELL_DEFS.magic_bolt;
@@ -72,6 +73,9 @@ export interface CastOptions {
   onFlyBurst?: (facingAngle: number) => void;
   /** Lantern: toggle the player's carried light on/off. */
   onLanternToggle?: () => void;
+  /** Time Warp: open the time-of-day picker. TimeSkipUI owns all VFX and
+   *  clock advancement from here — this spell has none of its own. */
+  onTimeSkip?: () => void;
 }
 
 // ── Projectile — comet with glowing core + additive trail ─────────────────────
@@ -1526,6 +1530,10 @@ export class SpellSystem {
       // Toggle the player's carried lantern light on/off
       this._addSpark(origin, def.color, 2.0, scene);
       opts.onLanternToggle?.();
+    } else if (spellId === 'time_warp') {
+      // No spark burst here — TimeSkipUI builds its own time-vortex VFX
+      // once the picker opens, so this would just be visual clutter.
+      opts.onTimeSkip?.();
     }
   }
 

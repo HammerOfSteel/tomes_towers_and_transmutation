@@ -1,0 +1,239 @@
+# Time-skip spell ("Chronomancer's Hourglass") — design spec
+
+Status: drafted autonomously (user unavailable mid-brainstorm — see
+"Autonomous decisions" note below). Ready for user review before
+implementation begins.
+
+## Origin
+
+User feedback: "Maybe we can have some time-spell that I can use to
+forward time to specific time of day effecting the day-night cycle etc.
+maybe some cute ui and effect speeding up time until the time chosen etc,
+the charming spell (singing to enemies to tame them) has some nice UI
+type spell effect we could base something like this on."
+
+## Autonomous decisions note
+
+Mid-brainstorm the user became unavailable for interactive Q&A (autopilot
+mode). Per the "decide, don't ask" directive, the open design questions
+below were resolved with reasonable, documented assumptions rather than
+left blank. **The user should review this whole spec before implementation
+starts** — anything here can still change.
+
+## Investigation findings
+
+- The user's "charming spell" reference is `TamingGame`
+  (`src/interactables/TamingGame.ts`, "The Princess's Song") — a 3-round
+  word-picking mini-game for taming fleeing slimes. It is **not** a
+  spellbar spell: it's triggered by the interact key near a fleeing slime
+  (`main.ts` ~line 2988), and gates other input via a `tamingGame.active`
+  flag (same pattern as `bookReader.isOpen` / `telescopeView.active`).
+  Its presentation style is what's charming: **no modal overlay** — the
+  world stays fully visible, a **bottom HUD strip** offers a small set of
+  themed buttons, a **3D VFX** (counter-rotating torus rings + orbiting
+  rune spheres + light beam) plays at the target's position, and
+  **floating reaction text** drifts up from world-space. That's the
+  visual language to borrow — not the word-picking scoring mechanic
+  itself, which doesn't map to "pick a time of day."
+- Real spells (`magic_bolt`, `lantern`, `blink`, `fly`, ...) live in
+  `SPELL_DEFS` (`src/combat/SpellSystem.ts`) and are equipped to slots
+  (`ProgressionSystem`), instant-cast on keypress/right-click via
+  `spells.cast(...)`, with special non-damage behaviour wired through
+  `CastOptions` callbacks (`onBlink`, `onLevitateToggle`, `onFlyBurst`,
+  `onLanternToggle`). This is the natural home for a spell the user calls
+  a "time-spell."
+- `TimeSystem` (`src/world/TimeSystem.ts`) is a tiny singleton: `hour` is
+  a plain public `number` field (0–23), persisted to `localStorage`.
+  `schedulePhase` (used by `NPCEntity.ts` in two places, both re-read
+  every frame — confirmed, not cached at spawn) is a pure getter derived
+  from `hour`. Nothing needs to be told "time jumped" — NPCs will simply
+  see the new `schedulePhase` on their very next update.
+- `DayNightSystem.update(hour)` (`src/rendering/DayNightSystem.ts`) is
+  a **pure function of `hour`** — no internal momentum/state. Driving
+  `hour` through a range across several animation frames and calling
+  `_dayNight.update(hour)` each frame (exactly as the main loop already
+  does every frame) will visibly race the sky/fog/lighting through phases
+  with no changes needed to `DayNightSystem` itself.
+- There is no sun/moon disc mesh in the scene — day/night is conveyed
+  purely through lighting/sky/fog colour, so the "speeding up time" effect
+  needs its own VFX to sell the passage of time (no celestial body to
+  visibly whip across the sky "for free").
+- `SPELL_DEFS` has no mana/resource field — spells are cooldown-gated
+  only. No new resource system is needed for this spell.
+
+## Approach
+
+### Integration: a real spellbar spell
+
+Add a new spell, `time_warp`, reusing the existing `SpellDef.type:
+'movement'` bucket (the same one `blink`/`levitate`/`fly`/`lantern`
+already use for non-damage, spellId-keyed special behaviour, dispatched
+through `SpellSystem`'s private `_fireMovement()`). It's equipped/cast
+exactly like those — no new input paths, no new `SpellType` variant.
+Casting it does not immediately do the effect; instead `_fireMovement()`
+recognizes `spellId === 'time_warp'` and invokes a new
+`CastOptions.onTimeSkip()` callback, handing control to a new dedicated
+class, `TimeSkipUI` (`src/interactables/TimeSkipUI.ts`), mirroring
+`TamingGame`'s shape (`begin()` / `update(dt)` / `active` / `close()`).
+
+### Flow
+
+1. **Cast.** Player presses the spell's slot key. `SpellSystem.cast()`
+   starts the spell's cooldown (same as every other spell — see
+   "Cooldown" below for why casting always consumes it, even if the
+   player then cancels) and calls `onTimeSkip()`.
+2. **Pick a time (non-modal bottom strip).** `TimeSkipUI.begin()` shows a
+   bottom HUD strip — same visual family as `TamingGame`'s (dark glass
+   panel, runic border, world still fully visible) — with 4 preset
+   buttons matching `DayNightSystem`'s actual phase anchors:
+   - 🌅 Dawn (6:00)
+   - ☀️ Noon (12:00)
+   - 🌇 Dusk (19:00) — chosen because hour 19 lands exactly on
+     `DayNightSystem`'s pure-dusk blend point (`t=0` in the dusk→night
+     branch), giving the most saturated "dusk" look of any candidate hour.
+   - 🌙 Midnight (0:00)
+
+   Esc cancels (closes the strip, no time change — cooldown was already
+   charged at cast time per above).
+   **Correction made during plan-writing (round 2):** re-reading
+   `TamingGame`'s actual wiring in `main.ts` shows it does **not** freeze
+   player movement at all, and `tamingGame.active` is checked in exactly
+   one place — gating *re-triggering* a new taming encounter via the
+   interact key (`main.ts` ~line 2988) — nowhere near spell-casting. The
+   player can walk around and cast other spells freely while the song
+   strip is up. That's part of what makes it feel non-modal/charming
+   rather than a jarring interruption. `TimeSkipUI` follows the same
+   precedent exactly: **no movement freeze, and no new input-gate checks
+   anywhere in `main.ts`.** Re-casting `time_warp` itself while the
+   picker/animation is already active is already prevented by the
+   ordinary 45 s cooldown (`SpellSystem.isReady()` returns false and
+   `cast()` short-circuits) — no `timeSkipUI.active` gate is needed for
+   that, and nothing else needs protecting.
+3. **Confirm → time-vortex VFX + accelerated clock.** On picking a preset,
+   the strip closes and a new 3D VFX plays centred above the player: a
+   spinning rune ring (reusing the existing additive-blended,
+   deterministic-PRNG particle conventions already used elsewhere in
+   `SpellSystem.ts`) with orbiting hourglass-sand particles — thematically
+   an "hourglass/clock" analogue to the song-circle's torus rings, not a
+   literal reuse of that geometry (a torus-ring "song circle" wouldn't
+   read as time-themed).
+   Over a fixed **2.5 real-second** window, `TimeSkipUI` advances
+   `TimeSystem.instance.hour` (via the new `setHour()`) from its current
+   value forward (wrapping past 24 if needed — the clock only ever moves
+   forward, matching how a real clock/hourglass works, so no "undo NPC
+   state" question ever arises) toward the chosen target hour, eased
+   (ease-in/out) rather than linear for a "spinning up, then settling"
+   feel. `TimeSkipUI` itself never touches `DayNightSystem` — as long as
+   `timeSkipUI.update(dt)` runs immediately before the main loop's
+   existing `_dayNight.update(TimeSystem.instance.hour)` call each frame
+   (see "New code surface" below), that unchanged line naturally picks up
+   the newly-warped hour the same frame, so the sky/lighting visibly race
+   through phases live with no `DayNightSystem` changes at all.
+   As with step 2, movement is not frozen during this window — matching
+   `TamingGame`'s precedent, the world stays fully live while the sky
+   races through phases.
+4. **Land.** `hour` is set to the exact target (no floating-point drift
+   from the eased animation), `TimeSystem`'s existing `localStorage`
+   persistence path is invoked immediately (rather than waiting for its
+   normal probabilistic per-frame write), input unlocked, and a short
+   `_storyToast` plays (matching the existing toast component/style used
+   elsewhere in `main.ts`), e.g. "Time flows to dusk...".
+
+### New code surface
+
+- `src/world/TimeSystem.ts`: add `setHour(h: number): void` — clamps/wraps
+  into `[0, 24)` and writes through to `localStorage` immediately. This is
+  the only change to `TimeSystem` itself; the animation/easing logic is a
+  presentation concern and lives in `TimeSkipUI`, not here.
+- `src/combat/SpellSystem.ts`: add `time_warp` to `SPELL_DEFS` (`type:
+  'movement'`, cooldown 45 s — see below); add `onTimeSkip?: () => void`
+  to `CastOptions`; `_fireMovement()` invokes it for
+  `spellId === 'time_warp'` instead of the blink/levitate/fly/lantern
+  branches.
+- `src/interactables/TimeSkipUI.ts` (new): the bottom-strip picker, the
+  time-vortex VFX, and the eased `hour` advancement — same shape/pattern
+  as `TamingGame` (`begin(origin: THREE.Vector3)`, `update(dt)`, `active`,
+  `close()`).
+- `src/progression/ProgressionSystem.ts`: add `time_warp` to the
+  always-unlocked set in the constructor, next to `magic_bolt` and
+  `lantern` (same "default utility spell, no book/loot required"
+  treatment as `lantern` — `blink`/`levitate`/`fly` have no real,
+  non-debug unlock path anywhere in the codebase today, a pre-existing
+  gap; giving `time_warp` the same treatment as those would make it
+  just as unreachable in a normal playthrough, which defeats the point
+  of building it). Also pre-equip it into slot 2 of the default
+  `_equippedSlots` array (`['magic_bolt', 'lantern', 'time_warp', null]`
+  — slot 2 is currently unused/`null` by default) so the player can cast
+  it immediately without first visiting the `SpellBook.ts` equip UI to
+  discover and assign it manually.
+- `src/main.ts`: **not** added to the two debug "grant all spells" id
+  lists (~lines 685 and 1226) — those lists exist to grant spells that
+  otherwise require a book/talent/loot unlock; `lantern` is absent from
+  them for the same reason (already unlocked by default), and
+  `time_warp` gets identical treatment.
+- `src/ui/HUD.ts`: add a `time_warp` entry to the existing `SPELL_GLYPH` /
+  `SPELL_LABEL` / `SPELL_DESC` tables (glyph `⏳`, label "Time Warp") so
+  it renders properly in the hotbar tooltip, matching the "cute UI" ask.
+  (Note: `blink`/`levitate`/`fly`/`lantern` are currently *not* in these
+  tables and fall back to a generic `✦` glyph/raw id — a pre-existing
+  gap, left alone as out of scope for this feature.)
+- `src/main.ts`: instantiate `TimeSkipUI` once at startup (mirroring
+  `tamingGame`), wire `time_warp`'s `onTimeSkip` callback to
+  `timeSkipUI.begin(player.group.position)`, and call
+  `timeSkipUI.update(dt)` **immediately after** `TimeSystem.instance.
+  update(dt)` and **before** `_dayNight.update(TimeSystem.instance.hour)`
+  in the exterior-mode frame loop — ordering matters so a warped hour is
+  reflected in the same frame's lighting update (see the Flow section's
+  step 3 above). No input-gate changes anywhere else — see the
+  "Correction made during plan-writing (round 2)" note in the Flow
+  section above for why none are needed.
+
+### Cooldown
+
+45 seconds — deliberately on the long end of the existing spell roster
+(`fly`: 12 s, `nova_burst`: 15 s) since this is a powerful utility effect,
+not a combat tool. **Casting always consumes the cooldown, even if the
+player then cancels the picker with Esc** — this matches how every other
+spell already charges its cooldown at cast time in `SpellSystem.cast()`,
+and avoids adding new "refund on cancel" plumbing for a low-stakes edge
+case (a 45 s cooldown makes accidental cancels a minor, rare annoyance,
+not a real cost).
+
+### Explicitly out of scope
+
+- No rewinding time (only forward — see above for why this sidesteps a
+  whole class of "undo NPC state" questions).
+- No free-form hour slider/dial — 4 presets only, matching the "cute UI"
+  ask and mirroring `TamingGame`'s existing 4-button convention. A slider
+  can be considered later if the user wants finer control.
+- No new resource/mana cost system — cooldown-gated only, like every
+  other spell.
+- No interaction with quests/story beats tied to specific times of day —
+  none currently exist in the codebase to interact with.
+- No changes to the normal passive time flow (`REAL_TO_GAME_RATIO`,
+  `TimeSystem.update(dt)`) — the spell only calls the new `setHour()`
+  during its own animation window.
+
+## Testing plan
+
+- `TimeSystem.test.ts`: extend for `setHour()` — wraps `[0,24)`
+  correctly (including from e.g. 23 forward-wrapping to 1), writes
+  through to `localStorage` immediately (not probabilistically).
+- `SpellSystem.test.ts`: extend for `time_warp` — present in `SPELL_DEFS`
+  with `type: 'movement'`; `cast()`/`_fireMovement()` invokes `onTimeSkip`
+  for `spellId === 'time_warp'` and does not fall through to the
+  blink/levitate/fly/lantern branches; cooldown gates a second cast
+  within 45 s.
+- `TimeSkipUI.test.ts` (new): `begin()` sets `active`; picking a preset
+  drives `TimeSystem.instance.hour` from current toward the target over
+  the animation window (test via manual `update(dt)` stepping — the same
+  approach `tamingGame.test.ts` uses, no fake timers needed since the
+  class takes `dt` explicitly); Esc cancels without changing `hour`;
+  forward-wrap case (e.g. current hour 22, target 6) never regresses
+  backward mid-animation.
+- Manual playtest (required, no unverified completion claim): cast the
+  spell, confirm the bottom strip appears without blocking the 3D view
+  and the player can still walk around while it's up, pick each of the 4
+  presets and confirm the sky/lighting visibly race through phases and
+  land correctly, confirm NPCs' behaviour reacts to the new
+  `schedulePhase` shortly after landing.

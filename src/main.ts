@@ -50,6 +50,7 @@ import type { BiomeId } from '@/world/WorldGrid';
 import { buildWorldData } from '@/world/WorldGenerator';
 import { PartyManager } from '@/combat/PartyManager';
 import { TamingGame } from '@/interactables/TamingGame';
+import { TimeSkipUI } from '@/interactables/TimeSkipUI';
 import { generateGreenhouse } from '@/levels/GreenhouseGenerator';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import type { EnemyRig } from '@/enemy/EnemyLoader';
@@ -344,6 +345,8 @@ async function main() {
   })();
   const party = new PartyManager(20);
   const tamingGame = new TamingGame(scene, cameraRig.camera);
+  const timeSkipUI = new TimeSkipUI(scene);
+  timeSkipUI.onToast = (text) => { _storyToast(text, 'beat'); };
   /** Phase 7g — persistent base building. Scene is reused for both modes. */
   const baseScene = new BaseScene(scene);
   baseScene.onFountainHeal = (_pos, _radius, amount) => {
@@ -2770,6 +2773,8 @@ async function main() {
       } else if (gameMode === 'exterior' && overworld) {
         owEditor?.update();
         TimeSystem.instance.update(dt);
+        timeSkipUI.update(dt); // must run before _dayNight.update() below, so a
+                                // warped hour is reflected the same frame
         _dayNight.update(TimeSystem.instance.hour);
         hud.setTime(TimeSystem.instance.formatted);
         // NS4: night-touched boon — apply damage boost at night (hours 18–6)
@@ -3222,6 +3227,12 @@ async function main() {
                 const wasOn = player.isLanternOn;
                 player.isLanternOn = !wasOn;
                 player.group.userData['_lanternToggle'] = player.isLanternOn;
+              },
+              onTimeSkip: () => {
+                // Opens the non-modal bottom-strip time-of-day picker.
+                // TimeSkipUI owns everything from here — VFX, the eased
+                // clock advancement, and the completion toast.
+                timeSkipUI.begin(player.group.position);
               },
             },
           );

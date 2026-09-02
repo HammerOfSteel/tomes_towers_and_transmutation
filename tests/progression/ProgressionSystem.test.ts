@@ -35,7 +35,7 @@ describe('ProgressionSystem', () => {
     ps.markRead('lib__lectern__0', 'flame_dart');
     ps.markRead('lib__lectern__0', 'flame_dart');
     // magic_bolt is pre-unlocked, flame_dart was just unlocked
-    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt']);
+    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt', 'time_warp']);
   });
 
   it('does not unlock spell if already read (no re-trigger)', () => {
@@ -49,14 +49,14 @@ describe('ProgressionSystem', () => {
 
   it('does not unlock spell when no spellUnlock arg is passed', () => {
     ps.markRead('lib__bookshelf__0');
-    // magic_bolt and lantern are both pre-unlocked from constructor
-    expect(ps.getUnlockedSpells()).toEqual(['lantern', 'magic_bolt']);
+    // magic_bolt, lantern, and time_warp are all pre-unlocked from constructor
+    expect(ps.getUnlockedSpells()).toEqual(['lantern', 'magic_bolt', 'time_warp']);
   });
 
   it('multiple distinct spells can be unlocked from different books', () => {
     ps.markRead('lib__lectern__0', 'flame_dart');
     ps.markRead('lib__lectern__1', 'magic_bolt'); // already pre-unlocked, no double-add
-    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt']);
+    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt', 'time_warp']);
   });
 
   // ── hasRead ────────────────────────────────────────────────────────────────
@@ -94,17 +94,22 @@ describe('ProgressionSystem', () => {
   it('getUnlockedSpells returns sorted list', () => {
     ps.markRead('b', 'magic_bolt'); // already pre-unlocked
     ps.markRead('a', 'flame_dart');
-    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt']);
+    expect(ps.getUnlockedSpells()).toEqual(['flame_dart', 'lantern', 'magic_bolt', 'time_warp']);
   });
 
-  it('getUnlockedSpells returns [lantern, magic_bolt] on fresh instance (starter spells)', () => {
-    expect(ps.getUnlockedSpells()).toEqual(['lantern', 'magic_bolt']);
+  it('getUnlockedSpells returns [lantern, magic_bolt, time_warp] on fresh instance (starter spells)', () => {
+    expect(ps.getUnlockedSpells()).toEqual(['lantern', 'magic_bolt', 'time_warp']);
   });
 
   // ── lantern default equip ────────────────────────────────────────────────
 
   it('lantern is unlocked and equipped in slot 1 by default on a fresh instance', () => {
     expect(ps.isSpellUnlocked('lantern')).toBe(true);
-    expect(ps.getEquippedSlots()).toEqual(['magic_bolt', 'lantern', null, null]);
+    expect(ps.getEquippedSlots()).toEqual(['magic_bolt', 'lantern', 'time_warp', null]);
+  });
+
+  it('time_warp is unlocked and equipped in slot 2 by default on a fresh instance', () => {
+    expect(ps.isSpellUnlocked('time_warp')).toBe(true);
+    expect(ps.getEquippedSlots()).toEqual(['magic_bolt', 'lantern', 'time_warp', null]);
   });
 });

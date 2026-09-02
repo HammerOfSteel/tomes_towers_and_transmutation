@@ -33,6 +33,20 @@ export class TimeSystem {
     this.hour = isFinite(saved) ? saved % 24 : 8; // default: 8 am
   }
 
+  /**
+   * Set the clock to an exact hour, wrapping into [0, 24). Unlike `update()`,
+   * this writes through to localStorage immediately — used by TimeSkipUI's
+   * fast-forward animation, which needs every intermediate frame (and
+   * definitely the final landing value) persisted without waiting on the
+   * probabilistic write in `update()`.
+   */
+  setHour(h: number): void {
+    let wrapped = h % 24;
+    if (wrapped < 0) wrapped += 24;
+    this.hour = wrapped;
+    localStorage.setItem(LS_KEY, String(this.hour));
+  }
+
   /** Advance the clock by `dt` real seconds. */
   update(dt: number): void {
     // Convert real seconds to in-game hours
