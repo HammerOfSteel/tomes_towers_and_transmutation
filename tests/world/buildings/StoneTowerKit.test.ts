@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildTowerBase, type StoneTowerPalette } from '@/world/buildings/StoneTowerKit';
+import { buildTowerBase, buildTowerWallRing, type StoneTowerPalette } from '@/world/buildings/StoneTowerKit';
 
 function hasNaN(group: THREE.Group): boolean {
   let bad = false;
@@ -55,5 +55,31 @@ describe('buildTowerBase', () => {
       const g = buildTowerBase(2, 0.6, seed, makePalette());
       expect(hasNaN(g)).toBe(false);
     }
+  });
+});
+
+describe('buildTowerWallRing', () => {
+  it('produces valid, non-NaN geometry with a window', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
+    expect(countVerts(g)).toBeGreaterThan(0);
+    expect(hasNaN(g)).toBe(false);
+  });
+
+  it('produces valid, non-NaN geometry without a window', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
+    expect(countVerts(g)).toBeGreaterThan(0);
+    expect(hasNaN(g)).toBe(false);
+  });
+
+  it('a windowed ring has more geometry than a plain one at the same seed', () => {
+    const withWindow = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
+    const plain = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
+    expect(countVerts(withWindow)).toBeGreaterThan(countVerts(plain));
+  });
+
+  it('is deterministic for the same seed/hasWindow', () => {
+    const g1 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
+    const g2 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
+    expect(countVerts(g1)).toBe(countVerts(g2));
   });
 });

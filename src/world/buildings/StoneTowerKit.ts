@@ -67,3 +67,56 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
 
   return g;
 }
+
+/**
+ * One floor's wall ring: the shaft surface (whichever strategy is
+ * active) plus an optional pointed-arch window insert (with a small
+ * moonstone accent at its point, matching elven's existing palette
+ * conventions) and sparse seed-driven vine growth -- kept sparse so the
+ * stone still reads as the primary material, not overwhelmed by
+ * foliage.
+ */
+export function buildTowerWallRing(
+  radius: number, ringHeight: number, seed: number, palette: StoneTowerPalette, hasWindow: boolean,
+): THREE.Group {
+  const g = new THREE.Group();
+  const wall = buildWallSurface(WALL_STRATEGY, radius, ringHeight, seed, palette.stone);
+  g.add(wall);
+
+  const rand = mulberry32(seed ^ 0x714D0);
+
+  if (hasWindow) {
+    const archBodyH = ringHeight * 0.35;
+    const archBodyW = radius * 0.3;
+    const archPointH = archBodyH * 0.5;
+    const glassMat = new THREE.MeshStandardMaterial({ color: '#1a2a1a', roughness: 0.4 });
+    const archBody = new THREE.Mesh(new THREE.BoxGeometry(archBodyW, archBodyH, 0.06), glassMat);
+    archBody.position.set(0, ringHeight * 0.5, radius * 0.99);
+    g.add(archBody);
+    const archPoint = new THREE.Mesh(new THREE.ConeGeometry(archBodyW * 0.5, archPointH, 3), palette.moonstone);
+    archPoint.position.set(0, ringHeight * 0.5 + archBodyH / 2 + archPointH / 2, radius * 0.99);
+    archPoint.rotation.y = Math.PI / 4;
+    g.add(archPoint);
+  }
+
+  if (rand() < 0.5) {
+    const vineAng = rand() * Math.PI * 2;
+    const vineLen = ringHeight * (0.4 + rand() * 0.4);
+    const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, vineLen, 5), palette.bark);
+    vine.position.set(Math.sin(vineAng) * radius * 1.01, vineLen / 2, Math.cos(vineAng) * radius * 1.01);
+    vine.rotation.y = vineAng;
+    vine.castShadow = true;
+    g.add(vine);
+    for (let i = 0; i < 3; i++) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.08 + rand() * 0.04, 6, 5), palette.leaf);
+      leaf.position.set(
+        Math.sin(vineAng) * radius * 1.05,
+        vineLen * (0.3 + i * 0.3),
+        Math.cos(vineAng) * radius * 1.05,
+      );
+      g.add(leaf);
+    }
+  }
+
+  return g;
+}
