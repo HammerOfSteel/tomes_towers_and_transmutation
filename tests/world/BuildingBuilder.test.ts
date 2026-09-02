@@ -298,4 +298,32 @@ describe('buildHouseOrShop — rounded corner posts', () => {
     });
     expect(hasNaN).toBe(false);
   });
+
+  // Regression test for a real bug found only via live visual QA (not by
+  // any of the tests above, which all still passed): the first attempt
+  // at this fix added the rounded corner post but left the front/back/
+  // side wall panels spanning the *entire* w/d, so the panels' own still-
+  // sharp corner (farther from the post's center than any point on the
+  // post's own rounded rim) stuck out past the post and fully occluded
+  // it — mathematically present, completely invisible in the actual
+  // game. This test checks the wall panel meshes directly (identified by
+  // BoxGeometry height === wallH, which uniquely selects the 4 wall
+  // panels + the interior "core shadow volume" box): none of their
+  // width/depth parameters should still equal the untrimmed w/d.
+  it('wall panel boxes are narrower than the full w/d (actually cut back at the corners, not just visually covered by a post)', () => {
+    const size = 'medium';
+    const inst = buildBuilding(makeDna('house', { size }));
+    const { w, d } = getFootprint('house', size);
+    const wallH = FLOOR_HEIGHT * 1; // makeDna default floors: 1
+    let checkedAny = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !(o.geometry instanceof THREE.BoxGeometry)) return;
+      const { width, height, depth } = o.geometry.parameters;
+      if (Math.abs(height - wallH) > 1e-6) return; // only wallH-tall boxes (wall panels + core)
+      checkedAny = true;
+      expect(width).toBeLessThan(w - 0.05);
+      expect(depth).toBeLessThan(d - 0.05);
+    });
+    expect(checkedAny).toBe(true); // sanity: found at least one wallH-height box to check
+  });
 });

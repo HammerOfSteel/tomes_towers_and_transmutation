@@ -204,6 +204,15 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
   const wallH    = FLOOR_HEIGHT * dna.floors;
   const plinthH  = 0.35;
   const r        = mulberry32(dna.seed ^ 0xABCD_EF01);
+  // Rounded corner post radius (see addRoundedCornerPosts() below). Chosen
+  // large enough to read as a genuinely rounded corner at normal camera
+  // distance (0.14, matching the wall's own half-thickness, was tried
+  // first but proved visually imperceptible — see docs/superpowers/specs/
+  // 2026-09-02-rounded-building-corners-design.md's "2026-09-02 follow-up"
+  // note), while staying safely smaller than half of the narrowest
+  // footprint dimension across all sizes (tiny/small are 3 WU wide/deep,
+  // so half is 1.5 WU) to leave comfortable room for doors/windows.
+  const CORNER_RADIUS = 0.6;
 
   const wMat = wallStd(dna, w, d);
   const rMat = roofStd(dna, w, d);
@@ -221,11 +230,20 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
   // ── Four wall panels (separate so UV scales correctly) ─────────────────────
   const yMid = plinthH + wallH / 2;
 
+  // Panel length along their own long axis stops CORNER_RADIUS short of
+  // each true corner (instead of the old L-joint-only trim of half the
+  // perpendicular wall's thickness), so each panel's end exactly meets
+  // the rounded corner post's tangent point below, with no sharp box
+  // corner left sticking out past the post's curved surface (which is
+  // what made the post invisible/occluded in the very first version of
+  // this fix — the panels used to span the *full* w/d, so the post,
+  // being inset by its radius, sat entirely hidden behind the still-
+  // sharp panel corners).
   for (const [px, pz, ry, pw, pd] of [
-    [0,      d / 2 - 0.14,  0,           w,    0.28],
-    [0,     -d / 2 + 0.14,  0,           w,    0.28],
-    [-w/2+0.14,  0,  Math.PI / 2,        0.28,  d - 0.28],
-    [ w/2-0.14,  0,  Math.PI / 2,        0.28,  d - 0.28],
+    [0,      d / 2 - 0.14,  0,           w - 2 * CORNER_RADIUS,    0.28],
+    [0,     -d / 2 + 0.14,  0,           w - 2 * CORNER_RADIUS,    0.28],
+    [-w/2+0.14,  0,  Math.PI / 2,        0.28,  d - 2 * CORNER_RADIUS],
+    [ w/2-0.14,  0,  Math.PI / 2,        0.28,  d - 2 * CORNER_RADIUS],
   ] as [number, number, number, number, number][]) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(pw > 0.3 ? pw : pd, wallH, pw > 0.3 ? 0.28 : pw), wMat.clone());
     panel.rotation.y = ry;
@@ -234,13 +252,11 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
     g.add(panel);
   }
 
-  // Rounded corner posts — round the sharp seam between the front/back and
-  // side wall panels above without touching those panels. Radius 0.14
-  // matches the panels' own half-thickness (0.28 / 2) exactly, so the
-  // post's curved outer surface is tangent to both adjacent wall faces
-  // with no gap or overlap. See docs/superpowers/specs/
+  // Rounded corner posts — fill the CORNER_RADIUS-wide gap now left at
+  // each corner by the shortened wall panels above with a genuinely
+  // curved (not flat-chamfered) surface. See docs/superpowers/specs/
   // 2026-09-02-rounded-building-corners-design.md (§A2).
-  addRoundedCornerPosts(g, w, d, plinthH, wallH, 0.14, wMat.clone());
+  addRoundedCornerPosts(g, w, d, plinthH, wallH, CORNER_RADIUS, wMat.clone());
 
   // Core shadow volume
   const core = new THREE.Mesh(

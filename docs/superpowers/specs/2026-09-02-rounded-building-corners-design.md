@@ -129,16 +129,37 @@ directly equals the segment count actually drawn across the quarter arc
 in three.js's `CylinderGeometry` (it does not scale down proportionally
 for a partial `thetaLength`), so it's set to `8` straight segments per
 quarter — comparably smooth to A1's default 3-segment/4-point chamfer
-arc, for a larger, more visually prominent standalone feature. Radius
-fixed at `0.14` in the call site (matching
-`buildHouseOrShop`'s existing wall-panel half-thickness exactly, so the
-post is exactly tangent to both wall outer faces with no gap or overlap).
-Height/yBase match the existing wall panels' span (`plinthH` to
-`plinthH + wallH`) — the plinth's own (larger, `w+0.5` × `d+0.5`) corner
-stays sharp, since it's a ground-course architectural detail (a course
-line, not a smooth silhouette edge) and rounding it would require a
-second, differently-sized post purely for the plinth band — out of scope
-for this pass.
+arc, for a larger, more visually prominent standalone feature.
+
+**2026-09-02 correction (found via live visual verification, before this
+spec was ever marked complete):** the first implementation attempt used
+`radius = 0.14` (matching the wall panels' own half-thickness) **without
+also shortening the wall panels themselves**. This was a real bug, not
+just a subtlety: the wall panels still spanned the *entire* `w`/`d`
+(reaching all the way to the true, sharp corner), and a sharp box corner
+is geometrically *farther* from the post's center than any point on the
+post's own rounded rim (distance `radius * sqrt(2)` vs. exactly `radius`)
+— so the still-sharp panel corners stuck out past the post and fully
+occluded it. The post contributed vertices and passed every unit test
+(tangency, no-NaN, determinism) but was **completely invisible** in the
+live game, which only a before/after screenshot comparison (not the unit
+tests) caught. Fixed by shortening the front/back panels' width to
+`w - 2*radius` and the left/right panels' depth to `d - 2*radius` (they
+now stop exactly at the post's tangent points instead of continuing to
+the true corner), which is the same principle `BlockKit.ts`'s own outline
+construction already follows (straight edges run only between tangent
+points, never to the sharp corner). Separately, `radius = 0.14` itself
+proved too small to read as "rounded" rather than "imperceptible" at the
+game's isometric camera distance even after the occlusion fix — bumped
+to `radius = 0.6` (still comfortably under half of the smallest footprint
+dimension, 1.5 WU for `tiny`/`small`, leaving room for door/window
+layout) after a diagnostic pass at an exaggerated `1.1` confirmed the
+mechanism itself was correct. Height/yBase still match the existing wall
+panels' span (`plinthH` to `plinthH + wallH`) — the plinth's own (larger,
+`w+0.5` × `d+0.5`) corner stays sharp, since it's a ground-course
+architectural detail (a course line, not a smooth silhouette edge) and
+rounding it would require a second, differently-sized post purely for
+the plinth band — out of scope for this pass.
 
 Wired into `buildHouseOrShop()` only (covers `house`/`shop`/`inn`/`guild`
 — the generic default/human fallback). **Deliberately not** wired into
