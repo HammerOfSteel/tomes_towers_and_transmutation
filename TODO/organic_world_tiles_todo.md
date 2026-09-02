@@ -532,6 +532,75 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit POC) ✅ POC shipped 2026-09-02
+
+**Goal:** move past "stacking blocks looks okayish" toward a genuinely
+researched, modular "kit of parts" construction method per race,
+starting with one proof-of-concept (an elven tower) before rolling the
+same research → design → plan → implement cycle out to the other
+races (order: Elven, Dwarves, Orcish, Vampire, Undead, Vulperia, Fae,
+Slime, Human — Slime/Human last, since those already look best).
+
+- [x] **6.1 — Research**: real-world tower construction (coursing,
+  battered bases, quoins, conical shingle roofs) + procedural building
+  generation techniques in games/research (shape grammars/CGA shape,
+  and — the far more common game-industry answer, matching the user's
+  tabletop-terrain-kit reference image — modular "kit of parts" systems:
+  a small set of pieces sharing one socket/cross-section, stacked in
+  any order). See `docs/superpowers/specs/
+  2026-09-02-elven-stone-tower-kit-design.md`'s "Research summary."
+- [x] **6.2 — Design + POC plan**: an octagonal cross-section "ring
+  stack" (base/plinth, wall rings, roof cap), with two directly-compared
+  wall-surface strategies — a cheap textured prism vs. real per-course
+  block geometry (`StoneTowerShape.ts`, `StoneTowerWallSurface.ts`,
+  `StoneTowerRoofCap.ts`, `StoneTowerKit.ts`) — per the user's explicit
+  preference for real geometry over a flat texture illusion (past
+  texture-only attempts in this project reportedly looked "too basic").
+  **Measured, not assumed**: one wall ring (radius 2, height 2.9) is 32
+  triangles/0.05ms textured vs. 1728 triangles/3.65ms real-geometry —
+  ~54x more triangles but merged into a single draw call via the
+  existing `mergeGroupMeshesByMaterial()`, well within normal
+  per-building poly budgets for a one-time procedural-generation cost.
+  Hybrid stone + living-tree decoration (root tendrils, vines, a
+  living-canopy roof-cap variant) per the user's "complement, don't
+  replace" direction for elven's existing tree-trunk architecture.
+- [x] **6.3 — Live-wired**: `FACTION_BUILDING_VARIANTS['elven']` now
+  overrides `watchtower`/`tower` (both previously unstyled/generic) with
+  `buildElvenStoneTower`.
+- [x] **6.4 — Live verification — real finding, not a rubber stamp**:
+  attempted verification via Overworld Studio's Settlement Lab as
+  planned, and found `watchtower`/`tower` are **not currently reachable
+  through the live ward-based settlement generator at all** —
+  `WARD_TO_KIND` (`src/buildingToDungeonPlan.ts`, the map every
+  settlement ward's building kind actually comes from) has no entry for
+  either kind, for any faction, so no settlement generated via
+  `planSettlement()`/the Settlement Lab currently places one. (A
+  separate, unrelated `SettlementSpawner.ts` module has its own
+  `watchtower` entry for a `'city'`-type building list, but that's a
+  different, simpler realm-map placement system, not what the Settlement
+  Lab renders.) Verified instead via `showroom.html`'s `spawnBuilding()`
+  dev tool (given a small, backward-compatible `faction` parameter for
+  this) — confirmed no errors and, visually, both roof-cap variants
+  (classic cone and living canopy) and the real block-geometry wall
+  surface (individually visible protruding stone courses, not a flat
+  texture) render correctly.
+- [ ] **6.5 — Make the tower actually reachable in a live settlement,
+  then get the user's verdict, then roll out to the next race**: needs
+  either a `WARD_TO_KIND` entry pointing some ward type at
+  `watchtower`/`tower` (cross-faction change, out of this POC's
+  elven-only scope — needs its own small design decision about which
+  ward and whether other factions should get a matching override first)
+  or a different placement mechanism (e.g. a landmark/gate slot outside
+  the normal ward-fill loop). **Not started.** Once reachable, get the
+  user's own visual verdict via the Settlement Lab before committing to
+  a rollout order/pace for the remaining races.
+
+**Non-goal for this phase**: applying lessons learned here back to
+terrain/nature tile-connection — explicitly a *future* step the user
+named, after all races' buildings are done.
+
+---
+
 ## Cross-cutting notes for whoever picks this up
 
 - **Every phase should go through brainstorming → design spec → writing-plans → TDD
