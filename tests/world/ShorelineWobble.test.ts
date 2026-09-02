@@ -30,7 +30,7 @@ describe('shorelineEdgeOffsets', () => {
     for (let i = 0; i < 20; i++) {
       const x0 = i * 2, z0 = i * 3.7;
       const offsets = shorelineEdgeOffsets(x0, z0, x0 + 2, z0);
-      for (const o of offsets) expect(Math.abs(o)).toBeLessThanOrEqual(0.18);
+      for (const o of offsets) expect(Math.abs(o)).toBeLessThanOrEqual(0.4);
     }
   });
 

@@ -26,9 +26,15 @@ import type { WorldGrid } from './WorldGrid';
 export const SHORELINE_WOBBLE_SUBDIVISIONS = 4;
 
 /** Max perpendicular displacement (world units) applied to an interior edge
- *  point. Kept well under half a sub-tile (0.25 WU) so wobbled segments can
- *  never double back on themselves or cross a neighboring segment. */
-const SHORE_WOBBLE_AMPLITUDE_WU = 0.18;
+ *  point. Live verification at the original 0.18 WU showed the wobble was
+ *  real (confirmed via direct water-mesh vertex inspection) but visually
+ *  too subtle to read as an improvement at typical camera distance — bumped
+ *  to 0.4, still safely under a full sub-tile width (0.5 WU) so wobbled
+ *  segments can't cross a neighboring one (the low SHORE_WOBBLE_FREQUENCY
+ *  below means adjacent interior points sample strongly-correlated noise
+ *  values, so they don't swing to opposite extremes and self-intersect
+ *  even at this larger amplitude). */
+const SHORE_WOBBLE_AMPLITUDE_WU = 0.4;
 
 /** Low-frequency domain scale — a full noise wave spans several tiles, so
  *  the wobble reads as a slow, flowing curve rather than jittery per-point
