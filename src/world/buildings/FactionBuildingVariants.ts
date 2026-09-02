@@ -38,6 +38,7 @@ import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
 import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
 import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { buildElvenStoneTower } from './StoneTowerKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -1411,6 +1412,18 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     // Phase 2b increment 3: inn/blacksmith had no elven override either.
     inn:        buildElvenVilla,
     blacksmith: buildElvenVilla,
+    // Phase 6 POC (docs/superpowers/specs/
+    // 2026-09-02-elven-stone-tower-kit-design.md): watchtower/tower had
+    // NO elven override at all (fell through to the generic square
+    // box-stacked builder, purely a safety choice for this POC -- no
+    // existing elven look to risk regressing). The new octagon-
+    // cross-section stone-tower kit (hybrid stone + living-tree
+    // architecture, "brick-by-brick" real geometry per the user's
+    // explicit preference) lands here first, before any other elven
+    // kind, as the proof-of-concept for the same technique applied
+    // race-by-race in future rounds.
+    watchtower: buildElvenStoneTower,
+    tower:      buildElvenStoneTower,
   },
   dwarven: {
     villa:    buildDwarvenVilla,

@@ -861,3 +861,57 @@ describe('Fae — BlockKit toadstool stalk with scalloped flared cap (not a cyli
     expect(sumA).not.toBe(sumC);
   });
 });
+
+describe('elven watchtower/tower -- stone-tower kit POC', () => {
+  it('elven watchtower resolves to a distinct builder from the generic default', () => {
+    const inst = buildBuilding(makeDna('watchtower', 'elven', 5));
+    // Generic buildWatchtower() has a fixed square footprint; the elven
+    // stone tower is built from an octagon cross-section -- a reliable,
+    // cheap way to prove a *different* builder actually ran without
+    // depending on exact vertex counts.
+    let elvenHasCylinderOrCone = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh && (o.geometry instanceof THREE.CylinderGeometry || o.geometry instanceof THREE.ConeGeometry)) {
+        elvenHasCylinderOrCone = true;
+      }
+    });
+    expect(elvenHasCylinderOrCone).toBe(true);
+  });
+
+  it('the generic (no-faction) watchtower does NOT use a cylinder/cone shaft (proves elven genuinely differs from the fallback)', () => {
+    const generic = buildBuilding(makeDna('watchtower', undefined, 5));
+    let genericHasCylinderOrCone = false;
+    generic.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh && (o.geometry instanceof THREE.CylinderGeometry || o.geometry instanceof THREE.ConeGeometry)) {
+        genericHasCylinderOrCone = true;
+      }
+    });
+    expect(genericHasCylinderOrCone).toBe(false);
+  });
+
+  it('elven tower kind also resolves to the stone-tower builder', () => {
+    const inst = buildBuilding(makeDna('tower', 'elven', 3));
+    expect(inst.exteriorGroup.children.length).toBeGreaterThan(0);
+    let hasCylinderOrCone = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh && (o.geometry instanceof THREE.CylinderGeometry || o.geometry instanceof THREE.ConeGeometry)) {
+        hasCylinderOrCone = true;
+      }
+    });
+    expect(hasCylinderOrCone).toBe(true);
+  });
+
+  it('other elven kinds are untouched (still resolve to the existing tree-trunk builders)', () => {
+    const villa = buildBuilding(makeDna('villa', 'elven', 5));
+    let hasCylinderOrConeInVilla = false;
+    villa.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh && (o.geometry instanceof THREE.CylinderGeometry || o.geometry instanceof THREE.ConeGeometry)) {
+        hasCylinderOrConeInVilla = true;
+      }
+    });
+    // The tree-trunk builder (BlockKit-meshed, non-indexed custom
+    // geometry) never produces a raw CylinderGeometry/ConeGeometry --
+    // confirms villa's builder is unchanged by this task.
+    expect(hasCylinderOrConeInVilla).toBe(false);
+  });
+});
