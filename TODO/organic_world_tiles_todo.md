@@ -1,6 +1,6 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0 shipped (2026-09-02), Phases 1-5 not yet started.**
+> **Status: 🚧 Phase 0 and Phase 1 shipped (2026-09-02), Phases 2-5 not yet started.**
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -204,14 +204,14 @@ whenever picked up, without needing to re-derive or re-test the case-table math 
 
 ---
 
-## Phase 1 — Real dual-grid shorelines (supersede `ShorelineWobble.ts`)
+## Phase 1 — Real dual-grid shorelines ✅ Shipped 2026-09-02
 
 **Goal:** replace (or substantially augment) this session's noise-wobble shoreline fix with
 genuine corner-typed marching squares, so coastlines can show real coves/points/peninsulas
 (not just a wobbly line) and the "still a bit blocky" sea feedback (this session's most
 recent message) gets a structural fix rather than another amplitude tweak.
 
-- [ ] **1.1 — Design spec** (via brainstorming skill — this is genuinely new, risky geometry
+- [x] **1.1 — Design spec** (via brainstorming skill — this is genuinely new, risky geometry
   work, same rigor as `2026-09-02-shoreline-edge-smoothing-design.md`): decide the corner
   field's resolution (tile corners only, or sub-tile-lattice corners for finer shapes —
   recommend starting at tile-corner resolution, since that's a smaller, safer first step
@@ -221,26 +221,51 @@ recent message) gets a structural fix rather than another amplitude tweak.
   interacts with/replaces `ShorelineWobble.ts` (recommend: keep `ShorelineWobble.ts`'s
   interior-point-noise as a *secondary* fine-detail layer on top of the coarser dual-grid
   shape, rather than deleting it — the two are complementary, not redundant, once the dual-
-  grid provides the actual coastline topology).
-- [ ] **1.2 — Author the 6 canonical shoreline meshes** (or procedural-generate them from
-  the same `addFace`/`addGroundFace` primitives `TerrainGeometryBuilder.ts` already uses,
-  parameterized by the case table's mask) for: empty (all water), outer_corner (small point
-  of land jutting into water), edge (straight coast), diagonal/saddle (a strait/ford-like
-  pinch — this is the case classic marching squares gets wrong without special-casing, and
-  where this project's existing `river_ford` concept may be directly relevant), inner_corner
-  (a cove), full (all land).
-- [ ] **1.3 — Wire into `TerrainGeometryBuilder.ts`**: same 3 call sites `ShorelineWobble.ts`
+  grid provides the actual coastline topology). Shipped as
+  `docs/superpowers/specs/2026-09-02-dual-grid-shoreline-corners-design.md` — a corner is
+  simply the direct land/water classification of the tile in that diagonal direction (no
+  voting needed, per Phase 0's own worked example), and `ShorelineWobble.ts` stays completely
+  unmodified as the fine-detail layer, exactly as recommended.
+- [x] **1.2 — Author the 6 canonical shoreline meshes** — **implemented differently than
+  originally scoped, and documented as such**: rather than 6 hand-authored/procedural mesh
+  pieces, shipped as a per-vertex **displacement** (`shorelineCornerPull()` in the new
+  `ShorelineCornerField.ts`) that pulls a shared `WorldGrid` vertex toward whichever of its 4
+  surrounding tiles is the lone "odd one out" (the case table's `outer_corner`/`inner_corner`
+  shapes) — chamfering that tile's corner inward, which produces the same real coves/points/
+  peninsulas the 6-mesh approach targeted, without a topology change (see design spec's
+  "Chosen approach" and "Rejected alternatives" for why this was preferred: far lower risk to
+  collision-critical code for an equivalent visual result at this project's camera distance).
+  The `diagonal`/saddle case (the classic marching-squares ambiguity) is left at zero pull —
+  a genuine fix needs an actual topology split, out of scope for this pass, documented as a
+  known limitation rather than guessed at.
+- [x] **1.3 — Wire into `TerrainGeometryBuilder.ts`**: same 3 call sites `ShorelineWobble.ts`
   already touches (top-surface sub-tile emission, wall faces, water-surface mesh) now
-  consult the case table instead of (or in addition to) the noise wobble.
-- [ ] **1.4 — Regression tests**: mirror this session's shoreline-wobble test rigor exactly
+  consult the case table instead of (or in addition to) the noise wobble. Shipped in
+  `TerrainGeometryBuilder.ts` and `WaterMeshBuilder.ts` — a diagonal-adjacency corner-
+  consistency bug was found and fixed during implementation (corner pull must be applied
+  regardless of whether the specific edge being rendered is itself directly water-adjacent,
+  or two tiles sharing a corner could disagree and open a gap — see design spec).
+- [x] **1.4 — Regression tests**: mirror this session's shoreline-wobble test rigor exactly
   (determinism, chunk-boundary continuity via shared corner values, collider-follows-visual-
   mesh sanity, no leakage into land-elevation walls) — this phase touches the same
   collision-critical shared buffers `TerrainGeometryBuilder.ts`'s header comment warns about.
-- [ ] **1.5 — Live verification**: screenshot before/after at a real lake/river/sea edge;
+  18 new tests in `ShorelineCornerField.test.ts`, plus updated/added tests in
+  `TerrainGeometryBuilder.test.ts` and `WaterMeshBuilder.test.ts` (including a dedicated
+  diagonal-adjacency-consistency test and a cross-module land/water-mesh-agreement test).
+  Full suite + `tsc --noEmit` confirmed zero new failures/errors vs. a freshly-established
+  mission-start baseline (146 tsc errors; 13 pre-existing/flaky vitest failures, re-confirmed
+  identical on a clean baseline checkout run in the same session).
+- [x] **1.5 — Live verification**: screenshot before/after at a real lake/river/sea edge;
   this time the shape change should be dramatically more visible than the wobble amplitude
   tuning was (real coves/points, not a subtle jiggle), so a screenshot comparison should be
   sufffient verification on its own this time, unlike the wobble which needed raw vertex
-  inspection to confirm.
+  inspection to confirm. **Manual browser screenshot verification wasn't completable this
+  pass** (character-creation UI navigation issue in this session's tooling); substituted with
+  a rigorous automated live-verification pass instead — see design spec's "Live verification
+  findings" for a full, transparent account, including a real e2e swim-trigger anomaly that
+  was investigated (not dismissed) and traced to environment/browser timing rather than a
+  demonstrated code regression, via a controlled deterministic reproduction using the actual
+  production classes. Flagged for the user's own manual live check on this branch.
 
 **Risk note:** this is the highest-value phase for directly answering "the sea is still a
 bit blocky," but it's also a genuine geometry rewrite of collision-critical code. Budget for
