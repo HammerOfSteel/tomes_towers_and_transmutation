@@ -104,11 +104,18 @@ recommended):
   `outer_corner` or `inner_corner` (exactly 1 of the 4 differs from the
   other 3); in that case, returns a displacement of
   `SHORELINE_CORNER_PULL_WU` (both axes) **toward** that lone/"minority"
-  tile's diagonal direction. The minority tile's position is read
-  directly off the case table's own `steps` (its canonical mask always
-  puts the minority corner at index 0 — `NW` — so the raw position is
-  simply `steps % 4`; verified by hand for both `outer_corner` and
-  `inner_corner`'s canonical masks).
+  tile's diagonal direction. The minority tile's position is found
+  directly in the RAW (un-rotated) 4-corner config passed to the case
+  table — `config.indexOf(1)` for `outer_corner` (the lone land corner),
+  `config.indexOf(0)` for `inner_corner` (the lone water corner) — **not**
+  derived from the case table's canonical mask + `steps` rotation count:
+  an earlier draft assumed both labels' canonical mask puts the minority
+  corner at index 0 (`NW`), which is only true for `inner_corner`
+  (canonical `[0,1,1,1]`); `outer_corner`'s actual canonical mask is
+  `[0,0,0,1]` (lexicographically smaller than `[1,0,0,0]`), putting its
+  minority corner at index 3 (`SW`) instead — a real bug caught by this
+  phase's own TDD tests (the "isolated peninsula" case), fixed before
+  this spec's first commit landed.
 - `SHORELINE_CORNER_PULL_WU = 0.5` — chosen so the per-axis pull is
   clearly larger than the existing 0.4 WU noise amplitude (a "real shape
   change", per the roadmap's own framing) while its diagonal magnitude

@@ -243,13 +243,16 @@ export function shorelineCornerPull(wg: WorldGrid, gx: number, gz: number): read
   const tile = _caseTable.tiles[found.tile]!;
   if (tile.label !== 'outer_corner' && tile.label !== 'inner_corner') return [0, 0];
 
-  // The canonical mask for both outer_corner ([1,0,0,0]) and inner_corner
-  // ([0,1,1,1]) always puts the "odd one out" corner at index 0 (NW) — so
-  // its position in the RAW (un-rotated) config is simply `steps` (see
-  // DualGridCaseTable.ts's rotateMask(): applying it once always moves
-  // canonical index k to raw index (k+1) mod 4, so after `steps`
-  // applications, index 0 lands at raw index `steps mod 4`).
-  const minorityIndex = found.steps % 4;
+  // Find the "odd one out" directly in the RAW (un-rotated) config: for
+  // outer_corner it's the lone land (1) corner; for inner_corner it's the
+  // lone water (0) corner. (Deliberately not derived from the case
+  // table's canonical mask + `steps` — the canonical mask's minority
+  // corner sits at a DIFFERENT index for outer_corner (index 3 / SW,
+  // since [0,0,0,1] is lexicographically smaller than [1,0,0,0]) than for
+  // inner_corner (index 0 / NW, since [0,1,1,1] is smallest) so a single
+  // "steps % 4" formula shared between both labels was wrong.)
+  const minorityValue = tile.label === 'outer_corner' ? 1 : 0;
+  const minorityIndex = config.indexOf(minorityValue);
   const [dirX, dirZ] = CORNER_DIRS[minorityIndex]!;
   return [dirX * SHORELINE_CORNER_PULL_WU, dirZ * SHORELINE_CORNER_PULL_WU];
 }
