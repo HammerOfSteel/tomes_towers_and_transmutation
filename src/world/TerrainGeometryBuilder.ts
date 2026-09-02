@@ -14,6 +14,13 @@ import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
 import { GROUND_TERRAIN_VARIANTS } from './TerrainTextures';
+import { waterAdjacency, shorelineEdgePoints, type WaterAdjacency } from './ShorelineWobble';
+
+/** Shared "no water neighbor" constant — passed at call sites deliberately
+ *  excluded from shoreline wobble (e.g. the genuinely-tilted 'edge' shape
+ *  path; water tiles are never ramp-eligible, so this keeps that path
+ *  byte-identical to before rather than needing its own gating logic). */
+const NO_WATER_ADJACENCY: WaterAdjacency = { north: false, south: false, east: false, west: false };
 
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
@@ -541,6 +548,7 @@ export function buildTerrainGeometryData(
     nx: number, ny: number, nz: number,
     wxTile: number, wzTile: number,
     tr: number, tg: number, tb: number,
+    adjacency: WaterAdjacency,
   ): void => {
     const N = GROUND_SUBDIVISIONS;
     const heightAt = (u: number, w: number): number =>
@@ -553,26 +561,64 @@ export function buildTerrainGeometryData(
       west:  _groundTextureVariant(wg.get(col - 1, row)),
     };
 
+    const wxTile1 = wxTile + T, wzTile1 = wzTile + T;
+    // Shoreline wobble points for each water-adjacent edge (null when that
+    // side has no water neighbor). Endpoint ordering follows
+    // ShorelineWobble.ts's documented convention: horizontal edges
+    // west-first, vertical edges north-first — lattice index i (0..N) is
+    // the i-th sub-tile boundary point along that edge.
+    const southPts = adjacency.south ? shorelineEdgePoints(wxTile, wzTile1, wxTile1, wzTile1) : null;
+    const northPts = adjacency.north ? shorelineEdgePoints(wxTile, wzTile,  wxTile1, wzTile)  : null;
+    const eastPts  = adjacency.east  ? shorelineEdgePoints(wxTile1, wzTile, wxTile1, wzTile1) : null;
+    const westPts  = adjacency.west  ? shorelineEdgePoints(wxTile,  wzTile, wxTile,  wzTile1) : null;
+
     for (let sz = 0; sz < N; sz++) {
       for (let sx = 0; sx < N; sx++) {
         const u0 = sx / N, u1 = (sx + 1) / N;
         const w0 = sz / N, w1 = (sz + 1) / N;
-        const px0 = wxTile + u0 * T, px1 = wxTile + u1 * T;
-        const pz0 = wzTile + w0 * T, pz1 = wzTile + w1 * T;
+        const regPx0 = wxTile + u0 * T, regPx1 = wxTile + u1 * T;
+        const regPz0 = wzTile + w0 * T, regPz1 = wzTile + w1 * T;
 
-        const ySW = heightAt(u0, w0) + subTileBumpJitter(px0, pz0);
-        const yNW = heightAt(u0, w1) + subTileBumpJitter(px0, pz1);
-        const yNE = heightAt(u1, w1) + subTileBumpJitter(px1, pz1);
-        const ySE = heightAt(u1, w0) + subTileBumpJitter(px1, pz0);
+        // This sub-tile's 4 corners, named by their (u, w) lattice position.
+        // Each starts at the regular grid position and is independently
+        // overridden only where it actually sits on a water-adjacent tile
+        // boundary — interior corners (and every corner of a tile with no
+        // water neighbor) are completely untouched. A corner in an actual
+        // tile CORNER (e.g. sx=N-1 and sz=N-1 both true — a "peninsula tip"
+        // water-adjacent on two sides at once) can pick up both an X wobble
+        // (east/west edge) and a Z wobble (north/south edge) independently;
+        // they never conflict, since X and Z are separate coordinates.
+        let x00 = regPx0, z00 = regPz0; // corner at (u0, w0)
+        let x01 = regPx0, z01 = regPz1; // corner at (u0, w1)
+        let x11 = regPx1, z11 = regPz1; // corner at (u1, w1)
+        let x10 = regPx1, z10 = regPz0; // corner at (u1, w0)
 
-        const subCenterX = (px0 + px1) / 2, subCenterZ = (pz0 + pz1) / 2;
+        if (northPts && sz === 0)     { z00 = northPts[sx]![1];     z10 = northPts[sx + 1]![1]; }
+        if (southPts && sz === N - 1) { z01 = southPts[sx]![1];     z11 = southPts[sx + 1]![1]; }
+        if (westPts  && sx === 0)     { x00 = westPts[sz]![0];      x01 = westPts[sz + 1]![0]; }
+        if (eastPts  && sx === N - 1) { x10 = eastPts[sz]![0];      x11 = eastPts[sz + 1]![0]; }
+
+        // Heights and the sub-tile-variant lookup stay keyed by the
+        // REGULAR (unwobbled) grid position, deliberately — subTileBumpJitter()
+        // is keyed by absolute world position specifically so adjacent
+        // tiles agree at shared lattice points (see the existing comment
+        // above jSW/jNW); wobbling that lookup key would break agreement
+        // with the unwobbled neighboring interior sub-tiles. Only the
+        // wobbled corners' horizontal (x, z) position changes above —
+        // height and texture-variant selection are unaffected.
+        const ySW = heightAt(u0, w0) + subTileBumpJitter(regPx0, regPz0);
+        const yNW = heightAt(u0, w1) + subTileBumpJitter(regPx0, regPz1);
+        const yNE = heightAt(u1, w1) + subTileBumpJitter(regPx1, regPz1);
+        const ySE = heightAt(u1, w0) + subTileBumpJitter(regPx1, regPz0);
+
+        const subCenterX = (regPx0 + regPx1) / 2, subCenterZ = (regPz0 + regPz1) / 2;
         const variant = _subTileGroundVariant(
           groundVariant, neighborVariant, sx, sz, N, cell.biome, subCenterX, subCenterZ,
         );
 
         addGroundFace(
           variant,
-          [px0, ySW, pz0], [px0, yNW, pz1], [px1, yNE, pz1], [px1, ySE, pz0],
+          [x00, ySW, z00], [x01, yNW, z01], [x11, yNE, z11], [x10, ySE, z10],
           nx, ny, nz, tr, tg, tb,
         );
       }
@@ -768,7 +814,10 @@ export function buildTerrainGeometryData(
         // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
         const groundVariant = _groundTextureVariant(cell);
         if (groundVariant !== null) {
-          emitGroundSubTiles(col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb);
+          emitGroundSubTiles(
+            col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb,
+            waterAdjacency(wg, col, row),
+          );
         } else {
           addFace(
             [wx, wy + jSW, wz], [wx, wy + jNW, wz1], [wx1, wy + jNE, wz1], [wx1, wy + jSE, wz],
@@ -792,8 +841,17 @@ export function buildTerrainGeometryData(
           // (pre-jitter) swY/nwY/neY/seY, not the jittered v0..v3 corners
           // computed just above for the non-subdivided fallback path —
           // this is intentional (see design spec §3.2: the new bump
-          // replaces, not layers with, the old per-tile jitter).
-          emitGroundSubTiles(col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb);
+          // replaces, not layers with, the old per-tile jitter). Shoreline
+          // wobble is deliberately NOT applied here — water tiles are
+          // never ramp-eligible (a genuinely tilted 'edge' shape is
+          // unrelated to water adjacency), and this pass's scope is
+          // limited to the flat-shape case above (see design spec's
+          // "Global Constraints"), so this passes the shared all-false
+          // constant to keep this path byte-identical to before.
+          emitGroundSubTiles(
+            col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb,
+            NO_WATER_ADJACENCY,
+          );
         } else {
           addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
         }
