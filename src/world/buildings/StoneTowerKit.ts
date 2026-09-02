@@ -15,6 +15,7 @@ import { barkTexture, ashlarTexture } from './FactionBlockTextures';
 import { slateTexture } from './TextureFactory';
 import { WALL_STRATEGY, buildWallSurface } from './StoneTowerWallSurface';
 import { buildTowerRoofCap } from './StoneTowerRoofCap';
+import { pickSilhouetteProfile, buildFloorTransforms, buildFloorVertexScales } from './StoneTowerSilhouette';
 
 /** Local material helper -- mirrors FactionBuildingVariants.ts's own
  * `mat()` (not imported directly to avoid a circular import, since that
@@ -80,12 +81,24 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
  * conventions) and sparse seed-driven vine growth -- kept sparse so the
  * stone still reads as the primary material, not overwhelmed by
  * foliage.
+ *
+ * `vertexScales`/`offsetX`/`offsetZ`/`rotationOffset` (all optional,
+ * from StoneTowerSilhouette.ts's per-floor jitter/drift/profile math)
+ * let a floor's ring be perturbed away from a perfectly centered,
+ * unjittered regular octagon -- `vertexScales` reaches the wall
+ * surface itself (see buildWallSurface()'s doc comment), while
+ * `offsetX`/`offsetZ`/`rotationOffset` are applied to the RETURNED
+ * GROUP's own position/rotation, so the window/vine decoration above
+ * (already positioned relative to this group's local origin) moves
+ * and rotates along with the wall for free. Omitted, all four
+ * reproduce the exact prior (centered, unjittered) behaviour.
  */
 export function buildTowerWallRing(
   radius: number, ringHeight: number, seed: number, palette: StoneTowerPalette, hasWindow: boolean,
+  vertexScales?: number[], offsetX = 0, offsetZ = 0, rotationOffset = 0,
 ): THREE.Group {
   const g = new THREE.Group();
-  const wall = buildWallSurface(WALL_STRATEGY, radius, ringHeight, seed, palette.stone);
+  const wall = buildWallSurface(WALL_STRATEGY, radius, ringHeight, seed, palette.stone, vertexScales);
   g.add(wall);
 
   const rand = mulberry32(seed ^ 0x714D0);
@@ -123,6 +136,10 @@ export function buildTowerWallRing(
     }
   }
 
+  g.position.x = offsetX;
+  g.position.z = offsetZ;
+  g.rotation.y = rotationOffset;
+
   return g;
 }
 
@@ -139,6 +156,17 @@ export function buildTowerWallRing(
  * following `dna.floors` -- towers are a fixed-tall archetype, the same
  * precedent the generic buildWatchtower() already sets with its own
  * `Math.max(4, dna.floors)` override.
+ *
+ * Shape variety (docs/superpowers/specs/
+ * 2026-09-02-elven-stone-tower-variety-design.md): one of 4 named
+ * silhouette profiles is picked once per tower by seed
+ * (pickSilhouetteProfile), giving each floor a `radiusScale`/
+ * `offsetX`/`offsetZ`/`rotationOffset` curve on top of per-floor,
+ * per-vertex octagon jitter (buildFloorVertexScales) -- so no two
+ * towers (and no two floors of the same tower) share an identical
+ * outline, and different seeds can produce genuinely different
+ * *kinds* of tower (tapering/tiered/leaning/waisted), not just a
+ * uniformly-scaled repeat of one shape.
  */
 export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   const { w, d } = getFootprint(dna.buildingKind, dna.size);
@@ -148,6 +176,10 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   const ringHeight = FLOOR_HEIGHT * 0.9;
   const plinthHeight = 0.6;
   const coneHeight = radius * 2.2;
+
+  const profile = pickSilhouetteProfile(dna.seed);
+  const transforms = buildFloorTransforms(profile, dna.seed, floors);
+  const floorVertexScales = buildFloorVertexScales(dna.seed, floors);
 
   const palette: StoneTowerPalette = {
     stone:     mat(dna.colors.walls, { roughness: 0.85, map: ashlarTexture(Math.max(1, radius / 1.5), Math.max(1, ringHeight / 1.5)) }),
@@ -162,18 +194,33 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   g.add(base);
 
   let y = plinthHeight;
+  let lastCombinedRadius = radius;
+  let lastOffsetX = 0, lastOffsetZ = 0;
   for (let fl = 0; fl < floors; fl++) {
     const hasWindow = fl > 0 && rand() < 0.7;
-    const ringRadius = radius * (1 - fl * 0.015); // very slight taper per floor
-    const ring = buildTowerWallRing(ringRadius, ringHeight, dna.seed ^ (0x9E1E ^ fl), palette, hasWindow);
+    const microTaper = 1 - fl * 0.015; // pre-existing very slight per-floor taper
+    const transform = transforms[fl]!;
+    const combinedRadius = radius * transform.radiusScale * microTaper;
+    const offsetX = transform.offsetX * radius;
+    const offsetZ = transform.offsetZ * radius;
+    const ring = buildTowerWallRing(
+      combinedRadius, ringHeight, dna.seed ^ (0x9E1E ^ fl), palette, hasWindow,
+      floorVertexScales[fl], offsetX, offsetZ, transform.rotationOffset,
+    );
     ring.position.y = y;
     g.add(ring);
     y += ringHeight;
+    lastCombinedRadius = combinedRadius;
+    lastOffsetX = offsetX;
+    lastOffsetZ = offsetZ;
   }
 
-  const roofRadius = radius * (1 - (floors - 1) * 0.015);
-  const roof = buildTowerRoofCap(dna.seed ^ 0x800F, roofRadius, coneHeight, palette);
-  roof.position.y = y;
+  // Roof cap follows the LAST floor's actual combined radius/offset (not
+  // the original base radius) so it sits flush against wherever the top
+  // floor really ended up, rather than floating relative to a stale
+  // base-radius/base-position assumption.
+  const roof = buildTowerRoofCap(dna.seed ^ 0x800F, lastCombinedRadius, coneHeight, palette);
+  roof.position.set(lastOffsetX, y, lastOffsetZ);
   g.add(roof);
 
   return g;

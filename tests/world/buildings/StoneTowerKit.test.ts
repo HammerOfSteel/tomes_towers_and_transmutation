@@ -84,6 +84,42 @@ describe('buildTowerWallRing', () => {
     const g2 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
     expect(countVerts(g1)).toBe(countVerts(g2));
   });
+
+  it('omitting the new optional params (vertexScales/offset/rotation) leaves the group at local origin with zero rotation', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
+    expect(g.position.x).toBe(0);
+    expect(g.position.z).toBe(0);
+    expect(g.rotation.y).toBe(0);
+  });
+
+  it('offsetX/offsetZ move the returned group to that local position', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), false, undefined, 0.3, -0.5, 0);
+    expect(g.position.x).toBeCloseTo(0.3, 9);
+    expect(g.position.z).toBeCloseTo(-0.5, 9);
+  });
+
+  it('rotationOffset rotates the returned group about Y', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), false, undefined, 0, 0, 0.4);
+    expect(g.rotation.y).toBeCloseTo(0.4, 9);
+  });
+
+  it('vertexScales perturbs the wall geometry (measurably different bounding radius vs. an unscaled ring)', () => {
+    function maxRadialExtent(group: THREE.Group): number {
+      let maxR = 0;
+      group.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          const pos = o.geometry.attributes.position;
+          for (let i = 0; i < pos.count; i++) {
+            maxR = Math.max(maxR, Math.hypot(pos.getX(i), pos.getZ(i)));
+          }
+        }
+      });
+      return maxR;
+    }
+    const base = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
+    const scaled = buildTowerWallRing(2, 2.9, 42, makePalette(), false, [1, 1, 1.3, 1, 1, 1, 1, 1]);
+    expect(maxRadialExtent(scaled)).toBeGreaterThan(maxRadialExtent(base));
+  });
 });
 
 function makeTowerDna(kind: 'watchtower' | 'tower', overrides: Partial<BuildingDNA> = {}): BuildingDNA {
@@ -138,5 +174,43 @@ describe('buildElvenStoneTower', () => {
     const height = box.max.y - box.min.y;
     const width = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
     expect(height).toBeGreaterThan(width);
+  });
+
+  it('is deterministic for the same seed (silhouette-profile variety does not break reproducibility)', () => {
+    const g1 = buildElvenStoneTower(makeTowerDna('tower', { seed: 314 }));
+    const g2 = buildElvenStoneTower(makeTowerDna('tower', { seed: 314 }));
+    const box1 = new THREE.Box3().setFromObject(g1);
+    const box2 = new THREE.Box3().setFromObject(g2);
+    expect(countVerts(g1)).toBe(countVerts(g2));
+    expect(box1.min.toArray()).toEqual(box2.min.toArray());
+    expect(box1.max.toArray()).toEqual(box2.max.toArray());
+  });
+
+  it("different seeds produce measurably different floor-ring shapes/positions (the actual fix for 'towers only vary by height/roof')", () => {
+    // Extract floor 0's ring group (children: [0]=base, [1..floors]=rings, [last]=roof)
+    // and compare its world-space bounding box across several seeds --
+    // proves the per-floor silhouette/jitter actually reaches the built
+    // geometry, not just internal math that never gets used.
+    const boxSignatures = new Set<string>();
+    for (let seed = 0; seed < 8; seed++) {
+      const g = buildElvenStoneTower(makeTowerDna('tower', { seed }));
+      const floorRing = g.children[1]!;
+      const box = new THREE.Box3().setFromObject(floorRing);
+      boxSignatures.add(JSON.stringify([box.min.toArray().map(n => +n.toFixed(4)), box.max.toArray().map(n => +n.toFixed(4))]));
+    }
+    // Overwhelmingly unlikely all 8 seeds coincidentally produce an
+    // identical floor-0 ring bounding box unless variety isn't wired in.
+    expect(boxSignatures.size).toBeGreaterThan(1);
+  });
+
+  it('every silhouette profile produces valid, non-NaN geometry across the realistic floor-count range', () => {
+    // pickSilhouetteProfile is seed-driven and not directly overridable
+    // here, so sweep enough seeds to exercise all 4 profiles at least
+    // once (StoneTowerSilhouette.test.ts already proves the seed space
+    // covers all 4 within far fewer than 100 draws).
+    for (let seed = 0; seed < 100; seed++) {
+      const g = buildElvenStoneTower(makeTowerDna('tower', { seed }));
+      expect(hasNaN(g)).toBe(false);
+    }
   });
 });
