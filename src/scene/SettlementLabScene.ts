@@ -23,9 +23,10 @@ import {
   type SettlementRenderResult,
 } from '@/scene/SettlementRenderer';
 import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
-import { getFootprint, FLOOR_HEIGHT } from '@/world/buildings/BuildingDNA';
+import { getFootprint, FLOOR_HEIGHT, type BuildingKind } from '@/world/buildings/BuildingDNA';
+import { BUILDING_CREATOR_KINDS } from '@/world/buildings/buildingCreatorState';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
-import { SettlementLabPanel } from '@/ui/SettlementLabPanel';
+import { SettlementLabPanel, KIND_OVERRIDE_ALL } from '@/ui/SettlementLabPanel';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,10 @@ export interface RegenParams {
   type:    string;
   faction: string;
   layout:  string;
+  /** Optional dev/test-only BuildingKind override — see
+   *  SettlementLabPanel's KIND_OVERRIDE_ALL doc comment. Omitted or equal
+   *  to KIND_OVERRIDE_ALL means "no override" (normal ward-driven mix). */
+  kindOverride?: string;
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
@@ -132,6 +137,7 @@ export class SettlementLabScene {
       ? initialParams.faction : 'human';
     const layout  = initialParams && LAYOUTS.includes(initialParams.layout as LayoutType)
       ? initialParams.layout : 'auto';
+    const kindOverride = initialParams?.kindOverride ?? KIND_OVERRIDE_ALL;
 
     // ── Panel ────────────────────────────────────────────────────────────────
     this._panel = new SettlementLabPanel({
@@ -139,15 +145,17 @@ export class SettlementLabScene {
       settlementTypes: SETTLEMENT_TYPES,
       factions:        STUDIO_FACTIONS,
       layouts:         LAYOUTS,
+      buildingKinds:   [...BUILDING_CREATOR_KINDS],
       initialType:     type,
       initialFaction:  faction,
       initialLayout:   layout,
+      initialKindOverride: kindOverride,
       onRegenerate:    (params) => this._regenerate(params),
     });
     document.body.appendChild(this._panel.rootEl);
 
     // ── Initial settlement ────────────────────────────────────────────────
-    this._regenerate({ seed, type, faction, layout });
+    this._regenerate({ seed, type, faction, layout, kindOverride });
   }
 
   exit(): void {
@@ -209,6 +217,17 @@ export class SettlementLabScene {
     const ghw = centerCol; // grid-half-width passed to renderSettlementPlan
     const ghh = centerRow; // grid-half-height
 
+    // Resolve the panel's kind-override selection to a real BuildingKind,
+    // or undefined for "no override" (KIND_OVERRIDE_ALL sentinel, or an
+    // unrecognised value). See BuildingTypeMap.createSettlementBuildingDna's
+    // doc comment for why forcing every building to one kind is safe here.
+    const forceBuildingKind: BuildingKind | undefined =
+      params.kindOverride !== undefined
+      && params.kindOverride !== KIND_OVERRIDE_ALL
+      && (BUILDING_CREATOR_KINDS as readonly string[]).includes(params.kindOverride)
+        ? (params.kindOverride as BuildingKind)
+        : undefined;
+
     const result = renderSettlementPlan(plan, grid, ghw, ghh, {
       registerBuildingCollider: (dna, pos, rotationY) => {
         const fp    = getFootprint(dna.buildingKind, dna.size);
@@ -225,6 +244,7 @@ export class SettlementLabScene {
         this._buildingBodies.push(body);
       },
       mapFaction: mapStudioFactionToRuntimeFaction,
+      forceBuildingKind,
     });
 
     this._renderResult = result;
@@ -253,7 +273,8 @@ export class SettlementLabScene {
       `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
       `features: ${result.featureGroups.length}`,
-    ].join('  |  ');
+      forceBuildingKind ? `kind override: ${forceBuildingKind}` : null,
+    ].filter((s): s is string => s !== null).join('  |  ');
     this._panel.setReadout(readout);
   }
 

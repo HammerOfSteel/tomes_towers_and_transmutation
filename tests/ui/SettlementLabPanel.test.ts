@@ -182,4 +182,97 @@ describe('SettlementLabPanel', () => {
 
     panel.dispose();
   });
+
+  it('kind-select defaults to the "all" sentinel when buildingKinds is omitted', () => {
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      onRegenerate: vi.fn(),
+    });
+
+    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
+    expect(Array.from(kindSelect.options).map((o) => o.value)).toEqual(['all']);
+    expect(kindSelect.value).toBe('all');
+
+    panel.dispose();
+  });
+
+  it('kind-select offers the "all" sentinel plus every provided buildingKinds option', () => {
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      buildingKinds: ['house', 'tower', 'watchtower'],
+      onRegenerate: vi.fn(),
+    });
+
+    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
+    expect(Array.from(kindSelect.options).map((o) => o.value)).toEqual(['all', 'house', 'tower', 'watchtower']);
+
+    panel.dispose();
+  });
+
+  it('preselects kind-select from initialKindOverride when present in buildingKinds', () => {
+    const onRegenerate = vi.fn();
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      buildingKinds: ['house', 'tower', 'watchtower'],
+      initialKindOverride: 'watchtower',
+      onRegenerate,
+    });
+
+    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
+    expect(kindSelect.value).toBe('watchtower');
+
+    const button = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
+    button.click();
+    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ kindOverride: 'watchtower' }));
+
+    panel.dispose();
+  });
+
+  it('falls back to the "all" sentinel when initialKindOverride is not in buildingKinds', () => {
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      buildingKinds: ['house', 'tower'],
+      initialKindOverride: 'not-a-real-kind',
+      onRegenerate: vi.fn(),
+    });
+
+    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
+    expect(kindSelect.value).toBe('all');
+
+    panel.dispose();
+  });
+
+  it('calls onRegenerate with kindOverride reflecting the selected dropdown value', () => {
+    const onRegenerate = vi.fn();
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      buildingKinds: ['house', 'tower'],
+      onRegenerate,
+    });
+    document.body.appendChild(panel.rootEl);
+
+    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
+    kindSelect.value = 'tower';
+    const button = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
+    button.click();
+
+    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ kindOverride: 'tower' }));
+
+    panel.dispose();
+  });
 });
