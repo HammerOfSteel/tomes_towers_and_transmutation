@@ -127,13 +127,28 @@ itself or poke through an adjacent segment.
   other has `waterDepth === 0`. Water-water and land-land internal edges
   are completely untouched (zero risk, zero visual change) — this keeps
   the change's footprint limited to exactly the boundary tiles the
-  complaint is about.
-- **Visual only.** `PhysicsWorld`'s collider, `WaterDetection.ts`'s swim
-  query, and settlement/road placement's `isWaterCell()` all keep using
-  the existing tile-grid `waterDepth`/`feature` classification, completely
-  unchanged — none of them are touched by this spec. The wobble is at
-  most ~0.2 WU (a tenth of a tile), imperceptible as a gameplay
-  discrepancy in practice.
+  complaint is about. General land-elevation walls (the intentional
+  "blocky-step" look between two dry plateaus, per
+  `TerrainGeometryBuilder.ts`'s own header comment) are a separate,
+  unrelated code path through the same wall-emitting function and are
+  gated out explicitly — only walls where the lower neighbour is
+  classified as water get the wobble.
+- **Revised during plan-writing:** `TerrainGeometryBuilder.ts`'s own
+  header comment confirms its output buffers back **both** the visual
+  mesh and the Rapier physics trimesh collider *from the same data* (by
+  design — this is what guarantees they can never disagree). So
+  reshaping the wall/top-surface boundary here makes the **physical
+  collider follow the new wobbly line automatically**, for free, with no
+  separate mismatch to worry about — this is a pure improvement over the
+  original "visual only" framing above, not a new risk. The one thing
+  that stays exactly as coarse as today is the *logical* tile-grid
+  classification used by `WaterDetection.ts`'s swim query and
+  `isWaterCell()` (settlement/road placement) — those ask "which grid
+  tile is this world position in," not "what does the mesh look like
+  here," so they're unaffected either way. The residual, still-accepted
+  mismatch is therefore between "which tile the game logically thinks
+  you're standing in" and "the wobbled physical surface," bounded by the
+  ~0.2 WU amplitude — imperceptible in practice.
 - Ocean shorelines, lake shorelines, and river banks are all in scope —
   the same shared utility handles all three, since they're all just
   "water tile adjacent to land tile" at the mesh-generation level.
