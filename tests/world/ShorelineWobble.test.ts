@@ -4,7 +4,9 @@ import {
   SHORELINE_WOBBLE_SUBDIVISIONS,
   shorelineEdgeOffsets,
   shorelineEdgePoints,
+  waterAdjacency,
 } from '@/world/ShorelineWobble';
+import { WorldGrid } from '@/world/WorldGrid';
 
 describe('shorelineEdgeOffsets', () => {
   it('returns SHORELINE_WOBBLE_SUBDIVISIONS + 1 offsets', () => {
@@ -62,5 +64,50 @@ describe('shorelineEdgePoints', () => {
     const pts = shorelineEdgePoints(3, 8, 5, 8);
     expect(pts[0]).toEqual([3, 8]);
     expect(pts[pts.length - 1]).toEqual([5, 8]);
+  });
+});
+
+describe('waterAdjacency', () => {
+  it('detects a wet neighbor to the south (row + 1)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 2, { waterDepth: 2.0 }); // south of (1,1)
+    const adj = waterAdjacency(wg, 1, 1);
+    expect(adj).toEqual({ north: false, south: true, east: false, west: false });
+  });
+
+  it('detects wet neighbors on multiple sides at once (a peninsula tip)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 2, { waterDepth: 2.0 }); // south
+    wg.set(2, 1, { waterDepth: 2.0 }); // east
+    const adj = waterAdjacency(wg, 1, 1);
+    expect(adj).toEqual({ north: false, south: true, east: true, west: false });
+  });
+
+  it('returns all-false when this cell is itself wet', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 1, { waterDepth: 2.0 });
+    wg.set(1, 2, { waterDepth: 0 });
+    const adj = waterAdjacency(wg, 1, 1);
+    expect(adj).toEqual({ north: false, south: false, east: false, west: false });
+  });
+
+  it('returns all-false when every neighbor is dry', () => {
+    const wg = new WorldGrid(3, 3);
+    const adj = waterAdjacency(wg, 1, 1);
+    expect(adj).toEqual({ north: false, south: false, east: false, west: false });
+  });
+
+  it('does not throw at the map edge (out-of-bounds neighbor defaults to dry)', () => {
+    const wg = new WorldGrid(3, 3);
+    expect(() => waterAdjacency(wg, 0, 0)).not.toThrow();
+    expect(waterAdjacency(wg, 0, 0)).toEqual({ north: false, south: false, east: false, west: false });
+  });
+});
+
+describe('chunk-boundary continuity', () => {
+  it('two calls representing two different chunks rendering opposite sides of the same shared edge produce identical points', () => {
+    const edgeFromChunkA = shorelineEdgePoints(40, 12, 42, 12);
+    const edgeFromChunkB = shorelineEdgePoints(40, 12, 42, 12);
+    expect(edgeFromChunkB).toEqual(edgeFromChunkA);
   });
 });
