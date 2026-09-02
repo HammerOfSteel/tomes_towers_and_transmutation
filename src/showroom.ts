@@ -210,12 +210,15 @@ const showroom = {
     registerSpawned(result.rig.group, () => {});
   },
 
-  /** Spawn a building archetype. */
+  /** Spawn a building archetype. Optional `faction` param (temporary,
+   * for elven stone-tower kit POC verification) lets faction-specific
+   * geometry be previewed directly. */
   spawnBuilding(
     kind:  string = 'house',
     style: string = 'thatched',
     size:  string = 'small',
     x?: number, z?: number,
+    faction?: string,
   ): void {
     import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {
       import('@/world/buildings/BuildingDNA').then(({ STYLE_COLORS }) => {
@@ -225,6 +228,7 @@ const showroom = {
           condition: 'weathered', hasInterior: true, interiorLayout: 'single_room',
           colors: (STYLE_COLORS as Record<string, import('@/world/buildings/BuildingDNA').BuildingColors>)[style] ?? STYLE_COLORS['thatched'],
           rotation: 0,
+          faction,
         } as any;
         const inst = buildBuilding(dna);
         if (x !== undefined && z !== undefined) {
