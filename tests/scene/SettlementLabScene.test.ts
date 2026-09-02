@@ -197,7 +197,7 @@ describe('SettlementLabScene — enter(initialParams) for "Play in 3D" handoff',
   });
 });
 
-describe('SettlementLabScene — kind override (isolate one BuildingKind for review)', () => {
+describe('SettlementLabScene — race-by-race POC override (elven watchtower kit)', () => {
   let physics: PhysicsWorld;
   let player: PlayerController;
 
@@ -208,12 +208,13 @@ describe('SettlementLabScene — kind override (isolate one BuildingKind for rev
     player.applyDNA(DEFAULT_PLAYER_DNA);
   });
 
-  it('forces every building to the requested kind and reflects it in the readout', () => {
+  it('selecting faction=elven forces every building to the elven stone-tower kit\'s watchtower, no extra UI action needed', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
     // city + elven so this exercises the elven stone-tower kit's watchtower
-    // dispatch specifically (the exact scenario the user wants to preview).
-    lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto', kindOverride: 'watchtower' });
+    // dispatch specifically (the exact scenario the user wants to preview
+    // via Overworld Studio's Settlement tab -> "Play in 3D").
+    lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' });
 
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
@@ -224,17 +225,15 @@ describe('SettlementLabScene — kind override (isolate one BuildingKind for rev
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).toContain('kind override: watchtower');
-    const kindSelect = panelEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(kindSelect.value).toBe('watchtower');
+    expect(readoutEl.textContent).toContain('POC override: watchtower');
 
     lab.exit();
   });
 
-  it('omitting kindOverride (or "all") preserves the normal per-ward BuildingKind mix', () => {
+  it('other factions without a shipped POC override keep the normal per-ward BuildingKind mix', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' }); // no kindOverride
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' });
 
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
@@ -243,36 +242,20 @@ describe('SettlementLabScene — kind override (isolate one BuildingKind for rev
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).not.toContain('kind override');
-    const kindSelect = panelEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(kindSelect.value).toBe('all');
+    expect(readoutEl.textContent).not.toContain('POC override');
 
     lab.exit();
   });
 
-  it('an invalid kindOverride value does not throw and falls back to no override', () => {
+  it('switching the panel faction dropdown to elven and clicking Regenerate applies the override live', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    expect(() => lab.enter({
-      seed: 7, type: 'village', faction: 'human', layout: 'auto', kindOverride: 'not-a-real-kind',
-    })).not.toThrow();
-
-    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
-    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).not.toContain('kind override');
-
-    lab.exit();
-  });
-
-  it('selecting a kind override via the panel and clicking Regenerate re-applies it', () => {
-    const scene = new THREE.Scene();
-    const lab = new SettlementLabScene(scene, physics, player);
-    lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' }); // starts with no override
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' }); // starts with no override
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     document.body.appendChild(panelEl);
-    const kindSelect = panelEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    kindSelect.value = 'tower';
+    const factionSelect = panelEl.querySelector('[data-role="faction-select"]') as HTMLSelectElement;
+    factionSelect.value = 'elven';
     const regenBtn = panelEl.querySelector('[data-action="regenerate"]') as HTMLButtonElement;
     regenBtn.click();
 
@@ -280,7 +263,7 @@ describe('SettlementLabScene — kind override (isolate one BuildingKind for rev
       ._renderResult;
     expect(result.buildingRecords.length).toBeGreaterThan(0);
     for (const rec of result.buildingRecords) {
-      expect(rec.dna.buildingKind).toBe('tower');
+      expect(rec.dna.buildingKind).toBe('watchtower');
     }
 
     lab.exit();

@@ -183,7 +183,12 @@ describe('SettlementLabPanel', () => {
     panel.dispose();
   });
 
-  it('kind-select defaults to the "all" sentinel when buildingKinds is omitted', () => {
+  it('adds a position:fixed stylesheet so the panel is actually visible over the fullscreen game canvas', () => {
+    // Regression test: the panel previously had zero CSS at all, so it
+    // rendered in normal document flow after #game-canvas (100vw/100vh,
+    // body{overflow:hidden}) and was pushed completely below the fold —
+    // invisible even though its controls existed in the DOM. See SL_CSS's
+    // doc comment.
     const panel = new SettlementLabPanel({
       initialSeed: 1,
       settlementTypes: ['village'],
@@ -192,87 +197,33 @@ describe('SettlementLabPanel', () => {
       onRegenerate: vi.fn(),
     });
 
-    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(Array.from(kindSelect.options).map((o) => o.value)).toEqual(['all']);
-    expect(kindSelect.value).toBe('all');
+    const styleEl = document.getElementById('settlement-lab-panel-css');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl!.textContent).toContain('position: fixed');
+    expect(styleEl!.textContent).toContain('.settlement-lab-panel');
 
     panel.dispose();
   });
 
-  it('kind-select offers the "all" sentinel plus every provided buildingKinds option', () => {
-    const panel = new SettlementLabPanel({
+  it('only injects the stylesheet once across multiple panel instances', () => {
+    const panel1 = new SettlementLabPanel({
       initialSeed: 1,
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
-      buildingKinds: ['house', 'tower', 'watchtower'],
+      onRegenerate: vi.fn(),
+    });
+    const panel2 = new SettlementLabPanel({
+      initialSeed: 2,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
       onRegenerate: vi.fn(),
     });
 
-    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(Array.from(kindSelect.options).map((o) => o.value)).toEqual(['all', 'house', 'tower', 'watchtower']);
+    expect(document.querySelectorAll('#settlement-lab-panel-css').length).toBe(1);
 
-    panel.dispose();
-  });
-
-  it('preselects kind-select from initialKindOverride when present in buildingKinds', () => {
-    const onRegenerate = vi.fn();
-    const panel = new SettlementLabPanel({
-      initialSeed: 1,
-      settlementTypes: ['village'],
-      factions: [REAL_FACTIONS[0]],
-      layouts: ['auto'],
-      buildingKinds: ['house', 'tower', 'watchtower'],
-      initialKindOverride: 'watchtower',
-      onRegenerate,
-    });
-
-    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(kindSelect.value).toBe('watchtower');
-
-    const button = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
-    button.click();
-    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ kindOverride: 'watchtower' }));
-
-    panel.dispose();
-  });
-
-  it('falls back to the "all" sentinel when initialKindOverride is not in buildingKinds', () => {
-    const panel = new SettlementLabPanel({
-      initialSeed: 1,
-      settlementTypes: ['village'],
-      factions: [REAL_FACTIONS[0]],
-      layouts: ['auto'],
-      buildingKinds: ['house', 'tower'],
-      initialKindOverride: 'not-a-real-kind',
-      onRegenerate: vi.fn(),
-    });
-
-    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    expect(kindSelect.value).toBe('all');
-
-    panel.dispose();
-  });
-
-  it('calls onRegenerate with kindOverride reflecting the selected dropdown value', () => {
-    const onRegenerate = vi.fn();
-    const panel = new SettlementLabPanel({
-      initialSeed: 1,
-      settlementTypes: ['village'],
-      factions: [REAL_FACTIONS[0]],
-      layouts: ['auto'],
-      buildingKinds: ['house', 'tower'],
-      onRegenerate,
-    });
-    document.body.appendChild(panel.rootEl);
-
-    const kindSelect = panel.rootEl.querySelector('[data-role="kind-select"]') as HTMLSelectElement;
-    kindSelect.value = 'tower';
-    const button = panel.rootEl.querySelector('button[data-action="regenerate"]') as HTMLButtonElement;
-    button.click();
-
-    expect(onRegenerate).toHaveBeenCalledWith(expect.objectContaining({ kindOverride: 'tower' }));
-
-    panel.dispose();
+    panel1.dispose();
+    panel2.dispose();
   });
 });

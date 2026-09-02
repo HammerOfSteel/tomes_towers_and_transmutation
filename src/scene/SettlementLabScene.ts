@@ -24,9 +24,8 @@ import {
 } from '@/scene/SettlementRenderer';
 import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
 import { getFootprint, FLOOR_HEIGHT, type BuildingKind } from '@/world/buildings/BuildingDNA';
-import { BUILDING_CREATOR_KINDS } from '@/world/buildings/buildingCreatorState';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
-import { SettlementLabPanel, KIND_OVERRIDE_ALL } from '@/ui/SettlementLabPanel';
+import { SettlementLabPanel } from '@/ui/SettlementLabPanel';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -52,6 +51,22 @@ const LAYOUTS: LayoutType[] = [
   'radial', 'terraced', 'perimeter', 'cluster',
 ];
 
+/**
+ * Race-by-race procedural building POC rollout (see
+ * TODO/organic_world_tiles_todo.md's Phase 6): as each race gets its own
+ * researched "kit of parts" building(s), simply selecting that faction here
+ * shows ONLY that race's new building(s), not the old generic mix —
+ * exactly what the user asked for ("clear out the current elven buildings
+ * ... and only have the towers so I can see them"), with zero extra UI
+ * (no dropdown/toggle — picking the faction IS the override). Add an entry
+ * here as each race's POC building ships; remove/relax it once a race has
+ * enough building kinds that forcing one specific kind stops being useful
+ * for reviewing the whole settlement.
+ */
+const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind>> = {
+  elven: 'watchtower',
+};
+
 // ── Regenerate params type ────────────────────────────────────────────────────
 
 export interface RegenParams {
@@ -59,10 +74,6 @@ export interface RegenParams {
   type:    string;
   faction: string;
   layout:  string;
-  /** Optional dev/test-only BuildingKind override — see
-   *  SettlementLabPanel's KIND_OVERRIDE_ALL doc comment. Omitted or equal
-   *  to KIND_OVERRIDE_ALL means "no override" (normal ward-driven mix). */
-  kindOverride?: string;
 }
 
 // ── Scene ─────────────────────────────────────────────────────────────────────
@@ -137,7 +148,6 @@ export class SettlementLabScene {
       ? initialParams.faction : 'human';
     const layout  = initialParams && LAYOUTS.includes(initialParams.layout as LayoutType)
       ? initialParams.layout : 'auto';
-    const kindOverride = initialParams?.kindOverride ?? KIND_OVERRIDE_ALL;
 
     // ── Panel ────────────────────────────────────────────────────────────────
     this._panel = new SettlementLabPanel({
@@ -145,17 +155,15 @@ export class SettlementLabScene {
       settlementTypes: SETTLEMENT_TYPES,
       factions:        STUDIO_FACTIONS,
       layouts:         LAYOUTS,
-      buildingKinds:   [...BUILDING_CREATOR_KINDS],
       initialType:     type,
       initialFaction:  faction,
       initialLayout:   layout,
-      initialKindOverride: kindOverride,
       onRegenerate:    (params) => this._regenerate(params),
     });
     document.body.appendChild(this._panel.rootEl);
 
     // ── Initial settlement ────────────────────────────────────────────────
-    this._regenerate({ seed, type, faction, layout, kindOverride });
+    this._regenerate({ seed, type, faction, layout });
   }
 
   exit(): void {
@@ -217,16 +225,10 @@ export class SettlementLabScene {
     const ghw = centerCol; // grid-half-width passed to renderSettlementPlan
     const ghh = centerRow; // grid-half-height
 
-    // Resolve the panel's kind-override selection to a real BuildingKind,
-    // or undefined for "no override" (KIND_OVERRIDE_ALL sentinel, or an
-    // unrecognised value). See BuildingTypeMap.createSettlementBuildingDna's
-    // doc comment for why forcing every building to one kind is safe here.
-    const forceBuildingKind: BuildingKind | undefined =
-      params.kindOverride !== undefined
-      && params.kindOverride !== KIND_OVERRIDE_ALL
-      && (BUILDING_CREATOR_KINDS as readonly string[]).includes(params.kindOverride)
-        ? (params.kindOverride as BuildingKind)
-        : undefined;
+    // Race-by-race POC override (see POC_KIND_OVERRIDE_BY_FACTION's doc
+    // comment) — picking a faction that has a shipped POC building
+    // automatically shows ONLY that building, no separate UI action needed.
+    const forceBuildingKind = POC_KIND_OVERRIDE_BY_FACTION[params.faction];
 
     const result = renderSettlementPlan(plan, grid, ghw, ghh, {
       registerBuildingCollider: (dna, pos, rotationY) => {
@@ -273,7 +275,7 @@ export class SettlementLabScene {
       `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
       `features: ${result.featureGroups.length}`,
-      forceBuildingKind ? `kind override: ${forceBuildingKind}` : null,
+      forceBuildingKind ? `POC override: ${forceBuildingKind}` : null,
     ].filter((s): s is string => s !== null).join('  |  ');
     this._panel.setReadout(readout);
   }
