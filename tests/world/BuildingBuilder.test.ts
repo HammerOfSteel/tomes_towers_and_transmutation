@@ -256,3 +256,74 @@ describe('BuildingBuilder — blacksmith roof coverage', () => {
     expect(maxRoofZ).toBeGreaterThanOrEqual(d / 2 - 0.05);
   });
 });
+
+describe('buildHouseOrShop — rounded corner posts', () => {
+  // addChimney() already builds full-circle CylinderGeometry meshes (chimney
+  // pots/stacks), so counting *any* CylinderGeometry would over-count.
+  // The new rounded corner posts are the only *partial-arc* cylinders
+  // (thetaLength = PI/2) this builder produces, so filter on that instead.
+  function countCornerPostCylinders(group: THREE.Group): number {
+    let count = 0;
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.geometry instanceof THREE.CylinderGeometry) {
+        const thetaLength = o.geometry.parameters.thetaLength;
+        if (thetaLength < Math.PI * 2 - 1e-6) count++;
+      }
+    });
+    return count;
+  }
+
+  it('the generic house builder (no faction override) includes 4 rounded corner post meshes', () => {
+    const inst = buildBuilding(makeDna('house'));
+    expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
+  });
+
+  it('shop/inn/guild (also routed through buildHouseOrShop) each include 4 rounded corner post meshes', () => {
+    for (const kind of ['shop', 'inn', 'guild'] as const) {
+      const inst = buildBuilding(makeDna(kind));
+      expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
+    }
+  });
+
+  it('produces finite, non-NaN geometry across the whole building (including the new corner posts)', () => {
+    const inst = buildBuilding(makeDna('house'));
+    let hasNaN = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count * 3; i++) {
+          if (!Number.isFinite(pos.array[i])) hasNaN = true;
+        }
+      }
+    });
+    expect(hasNaN).toBe(false);
+  });
+
+  // Regression test for a real bug found only via live visual QA (not by
+  // any of the tests above, which all still passed): the first attempt
+  // at this fix added the rounded corner post but left the front/back/
+  // side wall panels spanning the *entire* w/d, so the panels' own still-
+  // sharp corner (farther from the post's center than any point on the
+  // post's own rounded rim) stuck out past the post and fully occluded
+  // it — mathematically present, completely invisible in the actual
+  // game. This test checks the wall panel meshes directly (identified by
+  // BoxGeometry height === wallH, which uniquely selects the 4 wall
+  // panels + the interior "core shadow volume" box): none of their
+  // width/depth parameters should still equal the untrimmed w/d.
+  it('wall panel boxes are narrower than the full w/d (actually cut back at the corners, not just visually covered by a post)', () => {
+    const size = 'medium';
+    const inst = buildBuilding(makeDna('house', { size }));
+    const { w, d } = getFootprint('house', size);
+    const wallH = FLOOR_HEIGHT * 1; // makeDna default floors: 1
+    let checkedAny = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !(o.geometry instanceof THREE.BoxGeometry)) return;
+      const { width, height, depth } = o.geometry.parameters;
+      if (Math.abs(height - wallH) > 1e-6) return; // only wallH-tall boxes (wall panels + core)
+      checkedAny = true;
+      expect(width).toBeLessThan(w - 0.05);
+      expect(depth).toBeLessThan(d - 0.05);
+    });
+    expect(checkedAny).toBe(true); // sanity: found at least one wallH-height box to check
+  });
+});

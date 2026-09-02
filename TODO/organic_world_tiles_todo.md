@@ -333,6 +333,35 @@ buildings, not just softened corners.
   see `2026-09-02-blockkit-dualgrid-chamfer.md`'s Task 1 Step 6). Still applies, unstarted,
   if 2.2/2.3 are ever picked up — that IS the kind of change needing this check-in.
 
+> **2026-09-02 follow-up** (user feedback after this PR merged: "was this
+> implemented only on water edges etc?" — clarifying the organic/rounded
+> treatment was expected broadly, not just water): shipped a lighter-weight
+> alternative to the still-deferred kit-of-parts effort (2.2–2.6 above,
+> still unstarted) that gets much closer to a real "Townscaper" look
+> without authoring per-faction meshes:
+> - Generalized `BlockKit.ts`'s flat 2-point diagonal chamfer into a true
+>   N-segment quarter-circle arc (default 3 segments), so the 8 factions
+>   that route through `meshBlockGrid()` now get genuinely rounded corners
+>   instead of a beveled octagon.
+> - Found (via live visual QA, not unit tests — see below) that the
+>   `human` faction's generic default builder (`buildHouseOrShop`, used by
+>   `house`/`shop`/`inn`/`guild` for any faction with no dedicated
+>   `FACTION_BUILDING_VARIANTS` entry) had **zero corner treatment at
+>   all** — 100% sharp `BoxGeometry` panels. Added rounded corner posts
+>   there too (radius `0.6`, tuned up from an initial `0.14` that proved
+>   imperceptible), which required also shortening the wall panels
+>   themselves so they don't occlude the post — a real bug the unit tests
+>   didn't catch, only found by a before/after screenshot comparison in
+>   Overworld Studio's Settlement Lab ("Play in 3D").
+> - See `docs/superpowers/specs/2026-09-02-rounded-building-corners-design.md`
+>   for full details, including its "2026-09-02 correction" note on the
+>   occlusion bug.
+> - Still deferred, unchanged from above: full kit-of-parts mesh-swap
+>   architecture (2.2–2.6); rounding `buildVilla` (has intentional Georgian
+>   quoins instead), `buildTerraced`/`buildCottage` (share the same
+>   box-core pattern, cheap follow-ups but out of scope this round), and
+>   ~12 other specialty builders (tavern, tower, gate, blacksmith, etc.).
+
 ---
 
 ## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid) ✅ Pipeline shipped 2026-09-02 (standalone utility only — live integration deferred, see below)
@@ -389,6 +418,47 @@ asking about, but also the one with the most integration risk against existing s
 session). Recommend doing Phase 1 and Phase 2 first, both to build shared confidence with
 the case-table/relaxation techniques on lower-risk systems, and because Phase 2's kit-of-
 parts pieces are a prerequisite for Phase 3.3's lattice-fitting step to have anything to fit.
+
+> **2026-09-02 follow-up investigation** (after Phase 2's rounded-building-
+> corners follow-up shipped, prompted by the user's "towns" mention while
+> pointing at the Settlement Lab): re-examined whether `SettlementModelGenerator.ts`
+> is actually as grid-rigid as this phase's "live integration deferred"
+> framing implies, before deciding whether to invest in wiring the new
+> `RelaxedMeshGrid.ts` utility in. Finding: **it already isn't grid-rigid**,
+> via independent techniques unrelated to this roadmap's dual-grid/
+> relaxed-mesh work:
+> - Ward shapes come from a **jittered-seed Voronoi diagram** (`buildFromSeeds()`
+>   warps each seed by a noise field before triangulating), not a
+>   rectangular grid — wards are already irregular polygons.
+> - `assignWardLayouts()` already probabilistically picks one of several
+>   building-fill strategies per ward (zone- and settlement-type-weighted),
+>   and **`fillWardOrganically()` already exists** — it follows the ward
+>   polygon's own boundary contour in staggered rows with randomized
+>   per-building size/rotation jitter, falling back to `'organic'` as the
+>   *default* weighting when no explicit palette entry exists for a
+>   ward/zone combination.
+> - Both settlement-internal streets (`chaikin([gate, ...waypts, hub], 3)`
+>   in this same file) and inter-settlement roads
+>   (`OverworldScene.ts`'s `_collectRoadPaths()`, `chaikin(gridPath..., 2)`)
+>   are already Chaikin-smoothed into curves instead of staying locked to
+>   raw axis-aligned A*/grid turns — this looks like it already directly
+>   addresses the "inter-city roads look like a drawn line" complaint that
+>   motivated this phase, most likely shipped in a prior session before
+>   this roadmap even existed.
+>
+> Given the ward/road systems already use their own organic techniques
+> (not this roadmap's dual-grid case table or relaxed-mesh grid, but
+> conceptually adjacent and already live), wiring `RelaxedMeshGrid.ts` in
+> now would most likely be redundant rather than closing a clear gap —
+> unlike the rounded-building-corners follow-up, where the human faction's
+> zero corner treatment was an unambiguous, verifiable bug. **Deferred
+> again, but now for a different reason than before**: not "too risky to
+> attempt" but "no longer clearly missing" — recommend any further
+> settlement-layout work start from actually comparing generated
+> settlements against the specific "looks blocky/grid-aligned" complaint
+> using the Settlement Lab (now available for exactly this) to identify a
+> concrete remaining gap, rather than assuming the whole system needs the
+> relaxed-mesh treatment.
 
 ---
 

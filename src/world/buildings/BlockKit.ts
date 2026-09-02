@@ -140,13 +140,42 @@ export function getFaceVisibility(grid: BlockGrid, bx: number, by: number, bz: n
 
 const OUTGOING_EDGE: Record<CornerId, keyof FaceVisibility> = { NW: 'N', NE: 'E', SE: 'S', SW: 'W' };
 
-function cornerPoints(corner: CornerId, s: number, r: number, chamfered: boolean): [number, number][] {
-  switch (corner) {
-    case 'NW': return chamfered ? [[-s, -s + r], [-s + r, -s]] : [[-s, -s]];
-    case 'NE': return chamfered ? [[s - r, -s], [s, -s + r]] : [[s, -s]];
-    case 'SE': return chamfered ? [[s, s - r], [s - r, s]] : [[s, s]];
-    case 'SW': return chamfered ? [[-s + r, s], [-s, s - r]] : [[-s, s]];
+/** Per-corner arc center (inset by `r` from the true corner along both axes,
+ * matching the existing chamfer's inset convention) and the 90° sweep
+ * (in standard math radians, x = cx + r*cos(angle), z = cz + r*sin(angle))
+ * between the corner's two existing flat-chamfer tangent points. */
+const CORNER_ARC: Record<CornerId, (s: number, r: number) => { cx: number; cz: number; startAngle: number; endAngle: number }> = {
+  NW: (s, r) => ({ cx: -s + r, cz: -s + r, startAngle: Math.PI,       endAngle: Math.PI * 1.5 }),
+  NE: (s, r) => ({ cx:  s - r, cz: -s + r, startAngle: Math.PI * 1.5, endAngle: Math.PI * 2   }),
+  SE: (s, r) => ({ cx:  s - r, cz:  s - r, startAngle: 0,             endAngle: Math.PI * 0.5 }),
+  SW: (s, r) => ({ cx: -s + r, cz:  s - r, startAngle: Math.PI * 0.5, endAngle: Math.PI       }),
+};
+
+/**
+ * A sharp corner contributes 1 point. A chamfered corner contributes
+ * `segments + 1` points sampled along the 90° arc between the two tangent
+ * points a flat chamfer would use (see `CORNER_ARC`) — `segments = 1`
+ * samples just the two endpoints, exactly reproducing the original flat
+ * 2-point diagonal cut; `segments > 1` adds intermediate points along the
+ * arc, producing a genuinely rounded (not just beveled) corner.
+ */
+function cornerPoints(corner: CornerId, s: number, r: number, chamfered: boolean, segments: number): [number, number][] {
+  if (!chamfered) {
+    switch (corner) {
+      case 'NW': return [[-s, -s]];
+      case 'NE': return [[s, -s]];
+      case 'SE': return [[s, s]];
+      case 'SW': return [[-s, s]];
+    }
   }
+  const { cx, cz, startAngle, endAngle } = CORNER_ARC[corner](s, r);
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const angle = startAngle + (endAngle - startAngle) * t;
+    pts.push([cx + r * Math.cos(angle), cz + r * Math.sin(angle)]);
+  }
+  return pts;
 }
 
 /** One outline point per element; `edgeTag[i]` names the segment from `points[i]` to `points[(i+1)%n]`. */
@@ -154,31 +183,37 @@ export interface BlockOutline extends Array<[number, number]> {}
 
 interface OutlinePoint { p: [number, number]; tagToNext: string }
 
-function buildOutlinePoints(flags: ChamferFlags, s: number, r: number): OutlinePoint[] {
+function buildOutlinePoints(flags: ChamferFlags, s: number, r: number, segments: number = 1): OutlinePoint[] {
   const CORNERS: CornerId[] = ['NW', 'NE', 'SE', 'SW'];
   const out: OutlinePoint[] = [];
   for (const corner of CORNERS) {
     const chamfered = flags[corner];
-    const pts = cornerPoints(corner, s, Math.min(r, s * 0.98), chamfered);
-    if (pts.length === 2) {
-      out.push({ p: pts[0]!, tagToNext: `${corner}_diag` });
-      out.push({ p: pts[1]!, tagToNext: OUTGOING_EDGE[corner] });
-    } else {
-      out.push({ p: pts[0]!, tagToNext: OUTGOING_EDGE[corner] });
+    const pts = cornerPoints(corner, s, Math.min(r, s * 0.98), chamfered, segments);
+    for (let i = 0; i < pts.length; i++) {
+      const isLast = i === pts.length - 1;
+      // Every internal arc-to-arc segment (not the corner's final edge to
+      // the next corner) is always visible regardless of face culling —
+      // same as the original 2-point diagonal's `_diag` tag — so
+      // blockGeometry()'s `tag.endsWith('_diag')` check needs no changes.
+      out.push({ p: pts[i]!, tagToNext: isLast ? OUTGOING_EDGE[corner] : `${corner}_diag` });
     }
   }
   return out;
 }
 
 /** Public: just the ordered `[x,z]` outline points (for direct unit testing of the corner algorithm). */
-export function buildBlockOutline(flags: ChamferFlags, s: number, r: number): [number, number][] {
-  return buildOutlinePoints(flags, s, r).map(pt => pt.p);
+export function buildBlockOutline(flags: ChamferFlags, s: number, r: number, segments: number = 1): [number, number][] {
+  return buildOutlinePoints(flags, s, r, segments).map(pt => pt.p);
 }
 
 // ── Single-block geometry ─────────────────────────────────────────────────────
 
 export interface BlockGeometryOptions {
   chamferRadius?: number;   // world units, default 0.16 * BLOCK_UNIT
+  /** Points sampled along each chamfered corner's 90-degree arc (see
+   * buildOutlinePoints()). 1 = flat diagonal cut (legacy look); default 3
+   * = a genuinely rounded corner. */
+  chamferSegments?: number;
   topBevel?: boolean;       // roofline-cell bevel (frustum-shaped cap)
   topBevelInset?: number;   // world units, default 0.12 * BLOCK_UNIT
   topBevelDrop?: number;    // world units, default 0.12 * BLOCK_UNIT
@@ -316,12 +351,13 @@ export function blockGeometry(
 ): THREE.BufferGeometry {
   const s = BLOCK_UNIT / 2;
   const r = opts.chamferRadius ?? 0.16 * BLOCK_UNIT;
+  const chamferSegments = opts.chamferSegments ?? 3;
   const inset = opts.topBevelInset ?? 0.12 * BLOCK_UNIT;
   const drop = opts.topBevelDrop ?? 0.12 * BLOCK_UNIT;
   const [bx, by, bz] = opts.blockCoord ?? [0, 0, 0];
   const worldOx = bx * BLOCK_UNIT, worldOy = by * BLOCK_UNIT, worldOz = bz * BLOCK_UNIT;
 
-  const outline = buildOutlinePoints(flags, s, r);
+  const outline = buildOutlinePoints(flags, s, r, chamferSegments);
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
@@ -408,6 +444,7 @@ export function blockGeometry(
 
 export interface MeshBlockGridOptions {
   chamferRadius?: number;
+  chamferSegments?: number;
   topBevel?: boolean;
   topBevelInset?: number;
   topBevelDrop?: number;
@@ -438,6 +475,7 @@ export function meshBlockGrid(
     const useTopBevel = topBevelDefault && !(opts.suppressTopBevel?.(bx, by, bz));
     const geo = blockGeometry(flags, faces, {
       chamferRadius: opts.chamferRadius,
+      chamferSegments: opts.chamferSegments,
       topBevel: useTopBevel,
       topBevelInset: opts.topBevelInset,
       topBevelDrop: opts.topBevelDrop,
