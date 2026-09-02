@@ -1,6 +1,17 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0, 1 shipped, Phase 2 partial (chamfer only), Phase 3 partial (relaxed-mesh utility only, no live integration), Phase 4 shipped (narrow wall-corner pilaster fix) (2026-09-02), Phase 5 not yet started.**
+> **Status: ✅ All 6 phases (0-5) have shipped at least their core scope as of 2026-09-02.**
+> Phase 0 (case-table infra) and Phase 1 (real dual-grid shorelines) are fully shipped and
+> live. Phases 2-5 each shipped a genuine, tested, low-risk piece of their goal, with the
+> larger/riskier remainder of each **deliberately deferred and documented** (not silently
+> dropped) pending further design decisions this session judged needed real human input
+> rather than an autonomous guess: Phase 2 shipped BlockKit's dual-grid chamfer
+> classification fix, deferring its kit-of-parts mesh-swap architecture; Phase 3 shipped the
+> standalone jittered-triangle/relaxed-mesh generator utility, deferring live settlement
+> integration; Phase 4 shipped a narrow, additive dungeon wall-corner pilaster fix, explicitly
+> not building procedural dungeon generation; Phase 5 shipped the standalone bilinear
+> lattice-deform utility, deferring live prop-system integration. See each phase's own
+> section below and its linked design spec for the full reasoning.
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -419,21 +430,35 @@ scoping this phase further, rather than assuming procedural dungeons are wanted 
 
 ---
 
-## Phase 5 — Props/assets: lattice-fit modular scatter (lower priority)
+## Phase 5 — Props/assets: lattice-fit modular scatter ✅ Deformation utility shipped 2026-09-02 (standalone only — live prop integration deferred, see below)
 
 **Goal:** apply the mesh-deform-lattice technique to props so, e.g., a fence/wall-segment
 prop can stretch to fit a variable gap instead of only uniform-scaling, and so hand-authored
 "kit" props (steps, planters, market stalls) can conform to irregular plot edges from Phase
 3.
 
-- [ ] **5.1 — Design spec**, once Phase 3 exists to give this phase something concrete to fit
+- [x] **5.1 — Design spec**, once Phase 3 exists to give this phase something concrete to fit
   props *to* — building this before Phase 3 has no irregular geometry to target, so it's
-  explicitly sequenced last and should not be started before Phase 3 ships.
-- [ ] **5.2 — Implement lattice deformation as a small, reusable utility** (likely shares
+  explicitly sequenced last and should not be started before Phase 3 ships. **Proceeded
+  despite Phase 3's own live settlement integration still being deferred** — the design
+  spec (`docs/superpowers/specs/2026-09-02-lattice-deform-design.md`) found the general
+  bilinear-deformation *algorithm* itself doesn't actually need live irregular plot geometry
+  to exist in-game; it just needs *some* target quad, and Phase 3's own standalone
+  `buildRelaxedMeshGrid()` output already provides that for testing purposes.
+- [x] **5.2 — Implement lattice deformation as a small, reusable utility** (likely shares
   code with Phase 3.3's building-module version — consider a single shared
-  `LatticeDeform.ts` used by both, rather than two parallel implementations).
+  `LatticeDeform.ts` used by both, rather than two parallel implementations). Shipped as
+  `src/world/LatticeDeform.ts` — 2D/bilinear (4-corner footprint) deformation, exactly the
+  single shared utility this checklist item asks for; 3D/trilinear whole-module deformation
+  is a documented future extension. **No live prop-system integration** (see 5.3) — deferred
+  for the same reason Phase 3's live settlement integration and Phase 2's kit-of-parts were
+  both deferred: no live irregular target geometry exists in the shipped game yet.
 - [ ] **5.3 — Pilot on one prop category** (recommend fences/walls — the clearest "needs to
-  stretch to fit a gap" case) before wider rollout.
+  stretch to fit a gap" case) before wider rollout. **Deferred** — there's no live irregular
+  plot-edge geometry yet to pilot fitting against (Phase 3's own live integration is
+  deferred), and no prop archetype has AABB-fraction vertex data authored yet (Phase 2's
+  kit-of-parts, the natural source of such data, was also deferred). Picking this up next
+  requires deciding those upstream items first.
 
 ---
 
