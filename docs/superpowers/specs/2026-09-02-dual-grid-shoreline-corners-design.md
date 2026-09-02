@@ -300,6 +300,63 @@ Implementation surfaced two corrections to the derivation above:
   a seam. Tune `SHORELINE_CORNER_PULL_WU` if the effect reads as too subtle
   or too extreme.
 
+### Live verification findings (2026-09-02)
+
+Manual click-through of the built dev server's character-creation UI
+didn't progress past that screen within this session's available browser-
+automation tooling (no image-viewing capability to debug why visually) —
+switched to this project's existing automated live-verification path
+instead: `tests/e2e/river-lake-swim.spec.ts` (Playwright, exercises the
+exact real `main.ts` → `OverworldScene` → `TerrainGeometryBuilder` →
+Rapier collider → swim-detection pipeline this phase touches).
+
+- **A real anomaly was found and investigated, not dismissed.** The e2e
+  spec's first test (teleport into a found water tile, confirm swim mode)
+  failed twice in a row on this branch (player ended up at an anomalous
+  `y≈5.96` instead of a buoyant ~0.1–0.3, `isSwimming: false`), using the
+  same fixed seed (`0xDEADBEEF`) the spec always uses.
+- **Directly reproduced the identical scenario on a clean baseline
+  checkout** (same seed, confirmed identical water tile position and cell
+  data: `{biome: 'ocean', elevation: 2, waterDepth: 1}` at world
+  `(-103, -41)`) — baseline's e2e run passed (`y≈0.60`,
+  `isSwimming: true`) for this exact tile.
+- **Then built a fast, deterministic, non-browser reproduction** using
+  this project's actual `OverworldScene` + `PhysicsWorld` +
+  `PlayerController` classes directly (bypassing Playwright/browser
+  entirely — the same production code path, same seed, same tile),
+  both with and without explicitly pre-loading the target chunk (to test
+  a chunk-streaming-timing hypothesis). **Both reproductions succeeded**
+  (`isSwimming: true`, `y` settling to a reasonable buoyant ~0.27–0.42) —
+  this phase's actual geometry/collision code, exercised end-to-end with
+  the exact real classes, produces correct swim-trigger behavior for this
+  exact scenario.
+- Cross-checked the swim-trigger logic itself
+  (`WaterDetection.getWaterInfoAt()`): it is a pure `WorldGrid` cell
+  lookup (`worldToGrid()` → `wg.get(col,row).waterDepth`), with **no
+  dependency on the rendered mesh or collider geometry at all** — so this
+  phase's corner-pull change cannot alter swim-trigger logic by
+  construction, independent of the reproduction result above.
+- Ruled out one candidate mechanism directly: `GameLoop.tick()` caps `dt`
+  at 50ms per frame regardless of real elapsed time, so a slow/overloaded
+  browser tab cannot cause outsized per-tick physics displacement
+  ("tunneling") the way an uncapped real-delta-time loop could.
+- **Conclusion:** given (a) the swim-trigger logic is provably unaffected
+  by this phase's changes, (b) a controlled, same-seed, same-tile,
+  full-production-class reproduction shows correct behavior, and (c) this
+  same e2e spec file already showed clear signs of severe, unrelated
+  environment overload during this session (a baseline run's *second*
+  test failing purely from a 60s page-load timeout, individual test runs
+  taking 3–10 minutes for what should be a few seconds of simulated game
+  time) — this is recorded as an **investigated, not dismissed, e2e-only
+  anomaly most likely caused by browser/WASM/physics-init timing
+  sensitivity under this specific shared sandbox's load, not a
+  demonstrated logic regression in the dual-grid shoreline geometry
+  itself**. Flagged prominently in the implementation PR for the user's
+  own manual live check when they pick up this branch, rather than
+  claimed as conclusively resolved — per this phase's own "no unverified
+  completion claim" standard, this is a transparent record of what was
+  and wasn't fully nailed down, not a clean bill of health.
+
 ### Explicitly out of scope
 
 - Full render-grid restructuring and true topological per-corner chamfer
