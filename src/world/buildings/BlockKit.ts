@@ -25,6 +25,7 @@
 
 import * as THREE from 'three';
 import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
+import { buildDualGridCaseTable } from '@/world/DualGridCaseTable';
 
 // ── Grid unit ─────────────────────────────────────────────────────────────────
 
@@ -69,12 +70,31 @@ const DIRS = {
   N: [0, 0, -1], S: [0, 0, 1], E: [1, 0, 0], W: [-1, 0, 0], U: [0, 1, 0], D: [0, -1, 0],
 } as const;
 
+/** Built once at module load — pure data, shared with ShorelineCornerField.ts's
+ *  own identical pattern (see docs/superpowers/specs/2026-09-02-dual-grid-case-table-usage.md). */
+const _chamferCaseTable = buildDualGridCaseTable(2);
+
+/** A cell is always occupied when getChamferFlags() is asked about it (the
+ *  function's own contract — see its doc comment) — this constant avoids a
+ *  redundant hasBlock() self-lookup at every one of the 4 corners below. */
+const SELF_OCCUPIED = 1;
+
 /**
- * Which of a cell's 4 vertical edges should be chamfered, based purely on
- * neighbour occupancy (the marching-squares-style exterior-corner test).
+ * Which of a cell's 4 vertical edges should be chamfered, based on the full
+ * dual-grid classification of the vertex at that corner: the corner's own
+ * diagonal neighbour, its two orthogonal neighbours, and the cell itself
+ * (always occupied) — chamfer iff that 4-cell configuration is exactly the
+ * dual-grid `outer_corner` shape (a genuinely isolated tip), never the
+ * `diagonal`/saddle shape (two cells touching only at a shared point, where
+ * chamfering would visually pull them apart) that a naive two-neighbour
+ * check can't distinguish from it. See
+ * docs/superpowers/specs/2026-09-02-blockkit-dualgrid-chamfer-design.md for
+ * the full derivation (including why `edge`/`inner_corner`/`full` never
+ * need to chamfer either, matching this rule's `outer_corner`-only test).
  * `suppressChamfer`, when it returns true for this cell, forces every edge
  * sharp regardless of neighbours (used by e.g. dwarven "monumental" cells
- * that should read as deliberately hard-edged masonry).
+ * that should read as deliberately hard-edged masonry) — checked first,
+ * independent of the case-table classification below.
  */
 export function getChamferFlags(
   grid: BlockGrid,
@@ -84,16 +104,20 @@ export function getChamferFlags(
   if (suppressChamfer?.(bx, by, bz)) {
     return { NW: false, NE: false, SE: false, SW: false };
   }
-  const nEmpty = !hasBlock(grid, bx + DIRS.N[0], by + DIRS.N[1], bz + DIRS.N[2]);
-  const sEmpty = !hasBlock(grid, bx + DIRS.S[0], by + DIRS.S[1], bz + DIRS.S[2]);
-  const eEmpty = !hasBlock(grid, bx + DIRS.E[0], by + DIRS.E[1], bz + DIRS.E[2]);
-  const wEmpty = !hasBlock(grid, bx + DIRS.W[0], by + DIRS.W[1], bz + DIRS.W[2]);
-  return {
-    NW: nEmpty && wEmpty,
-    NE: nEmpty && eEmpty,
-    SE: sEmpty && eEmpty,
-    SW: sEmpty && wEmpty,
+  const occ = (c: number, r: number): number => (hasBlock(grid, c, by, r) ? 1 : 0);
+  const isOuterCorner = (config: number[]): boolean => {
+    const found = _chamferCaseTable.mapping[config.join(',')];
+    if (!found) return false;
+    return _chamferCaseTable.tiles[found.tile]!.label === 'outer_corner';
   };
+  // Each corner's [NW, NE, SE, SW] vertex config: the self cell always sits
+  // diagonally opposite that corner's own diagonal neighbour, and adjacent
+  // to both of that corner's orthogonal neighbours (see design spec).
+  const nw = isOuterCorner([occ(bx - 1, bz - 1), occ(bx, bz - 1), SELF_OCCUPIED, occ(bx - 1, bz)]);
+  const ne = isOuterCorner([occ(bx, bz - 1), occ(bx + 1, bz - 1), occ(bx + 1, bz), SELF_OCCUPIED]);
+  const se = isOuterCorner([SELF_OCCUPIED, occ(bx + 1, bz), occ(bx + 1, bz + 1), occ(bx, bz + 1)]);
+  const sw = isOuterCorner([occ(bx - 1, bz), SELF_OCCUPIED, occ(bx, bz + 1), occ(bx - 1, bz + 1)]);
+  return { NW: nw, NE: ne, SE: se, SW: sw };
 }
 
 /** Standard voxel face culling: a face is visible iff its neighbour is empty. */
