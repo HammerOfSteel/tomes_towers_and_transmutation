@@ -1,6 +1,6 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0 and Phase 1 shipped (2026-09-02), Phases 2-5 not yet started.**
+> **Status: 🚧 Phase 0 and Phase 1 shipped, Phase 2 partially shipped (chamfer classification; kit-of-parts deferred) (2026-09-02), Phases 3-5 not yet started.**
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -273,36 +273,54 @@ it to take as long as (or longer than) this session's whole shoreline-wobble eff
 
 ---
 
-## Phase 2 — Extend `BlockKit.ts` to a true dual-grid + kit-of-parts building system
+## Phase 2 — Extend `BlockKit.ts` to the full dual-grid case table ✅ Shipped 2026-09-02 (chamfer classification only — kit-of-parts deferred, see below)
 
 **Goal:** move from BlockKit's current binary chamfer to the full 6-shape case table
 (Phase 0), and from "immediate procedural outline geometry" to "pick a small authored mesh
 piece + rotation from a per-faction kit" — the actual Townscaper look for settlement
 buildings, not just softened corners.
 
-- [ ] **2.1 — Design spec**: how does a faction's existing `BlockGrid` (from
+- [x] **2.1 — Design spec**: how does a faction's existing `BlockGrid` (from
   `FactionBlockProfiles.ts`) map onto the *corner* field the case table needs — likely: a
   corner is "occupied" if any of its 4 touching cells is occupied (same "OR" rule
   `getChamferFlags()` implicitly uses today, generalized). Decide how many mesh variants per
   canonical shape per faction (recommend starting with 1 each — 6 meshes — before adding
-  the "variant buckets" de-repetition trick from the research).
+  the "variant buckets" de-repetition trick from the research). **Resolved to a narrower
+  scope than originally sketched**: shipped as
+  `docs/superpowers/specs/2026-09-02-blockkit-dualgrid-chamfer-design.md` — investigation
+  found the real, addressable gap was `getChamferFlags()` conflating the dual-grid
+  `outer_corner` and `diagonal`/saddle shapes (both read as "chamfer" under the old
+  two-neighbour-only rule), not a missing kit-of-parts system per se. Fixed that
+  classification bug directly; the kit-of-parts mesh-swap architecture (2.2–2.6 below)
+  remains unstarted and is explicitly deferred, not silently dropped — see the design spec's
+  "Rejected alternative" section for why an autonomous pass shouldn't attempt it (2.5 below
+  already gates it on a live user check-in, which isn't something this pass can complete
+  responsibly on its own).
 - [ ] **2.2 — Author (or procedurally build, reusing existing wall/roof primitives) 6
   canonical building-corner meshes per faction style** that's being migrated first (pick
-  ONE faction as a pilot, not all of them at once).
+  ONE faction as a pilot, not all of them at once). **Deferred** — see 2.1's note.
 - [ ] **2.3 — Wire the case table into `FactionBlockProfiles.ts`'s pilot faction**, replacing
   its `BlockKit.meshBlockGrid()`-style immediate-geometry call with a case-table lookup +
   mesh-instance placement, gated behind a flag/separate code path so the other factions'
-  existing (working) rendering is untouched during development.
+  existing (working) rendering is untouched during development. **Deferred** — see 2.1's note.
 - [ ] **2.4 — Regression tests + settlement-parity check**: this project already has a
   `OverworldScene.settlement-parity.test.ts` snapshot test guarding exact building/road
   counts from earlier this session's settlement-placement fixes — extend or add a sibling
   test confirming the pilot faction's building *count and footprint* is unchanged (only its
-  *mesh/shape* should change).
+  *mesh/shape* should change). **Not needed for the classification-only fix actually
+  shipped** — it never changes which cells are occupied or how many buildings exist, only
+  which corners are softened, so settlement building/road counts are structurally unaffected
+  (see design spec's "Explicitly out of scope"). Still applies, unstarted, if 2.2/2.3 are
+  ever picked up.
 - [ ] **2.5 — Live verification + user check-in**: this is a visible art-direction change for
   a whole faction's building style — check in with the user on the pilot faction's new look
   before rolling the technique out to the remaining factions (2.6, listed as its own
   follow-up item, not written out per-faction here since it's mechanically the same as 2.1–
-  2.5 repeated).
+  2.5 repeated). **Not applicable to the classification-only fix actually shipped** (a
+  narrow correctness fix affecting only the rare diagonal-touch case, verified via unit tests
+  plus a direct render-and-inspect pass across 4 faction types/3 seeds with no crashes/NaNs —
+  see `2026-09-02-blockkit-dualgrid-chamfer.md`'s Task 1 Step 6). Still applies, unstarted,
+  if 2.2/2.3 are ever picked up — that IS the kind of change needing this check-in.
 
 ---
 
