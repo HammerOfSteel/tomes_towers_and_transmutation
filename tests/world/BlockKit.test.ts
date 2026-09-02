@@ -213,6 +213,47 @@ describe('BlockKit — outline polygon (2D cross-section)', () => {
     const chamfered = buildBlockOutline({ NW: true, NE: true, SE: true, SW: true }, s, r);
     expect(area(chamfered)).toBeLessThan(area(sharp));
   });
+
+  it('segments=1 (default) reproduces the exact existing 2-point flat-chamfer output', () => {
+    const withDefault = buildBlockOutline({ NW: true, NE: true, SE: true, SW: true }, s, r);
+    const withExplicit1 = buildBlockOutline({ NW: true, NE: true, SE: true, SW: true }, s, r, 1);
+    expect(withDefault.length).toBe(8);
+    for (let i = 0; i < withDefault.length; i++) {
+      expect(withDefault[i]![0]).toBeCloseTo(withExplicit1[i]![0]!, 9);
+      expect(withDefault[i]![1]).toBeCloseTo(withExplicit1[i]![1]!, 9);
+    }
+  });
+
+  it('segments=3 produces a 4-point arc per chamfered corner (16 points for all 4 corners)', () => {
+    const outline = buildBlockOutline({ NW: true, NE: true, SE: true, SW: true }, s, r, 3);
+    expect(outline.length).toBe(16); // 4 corners * (segments + 1) points each
+  });
+
+  it('segments=3 arc endpoints match the segments=1 flat-chamfer tangent points exactly', () => {
+    const flat = buildBlockOutline({ NW: true, NE: false, SE: false, SW: false }, s, r, 1);
+    const arc = buildBlockOutline({ NW: true, NE: false, SE: false, SW: false }, s, r, 3);
+    // flat = [NW_p0, NW_p1, NE, SE, SW] (5 points); arc = [NW_p0..NW_p3, NE, SE, SW] (7 points).
+    expect(arc[0]![0]).toBeCloseTo(flat[0]![0]!, 9);
+    expect(arc[0]![1]).toBeCloseTo(flat[0]![1]!, 9);
+    expect(arc[3]![0]).toBeCloseTo(flat[1]![0]!, 9);
+    expect(arc[3]![1]).toBeCloseTo(flat[1]![1]!, 9);
+  });
+
+  it('every segments=3 arc point stays within the block half-size bounds and outside the flat-chamfer line (bulges outward)', () => {
+    const outline = buildBlockOutline({ NW: true, NE: false, SE: false, SW: false }, s, r, 3);
+    for (const [x, z] of outline) {
+      expect(Math.abs(x)).toBeLessThanOrEqual(s + 1e-9);
+      expect(Math.abs(z)).toBeLessThanOrEqual(s + 1e-9);
+    }
+    // The arc's midpoint (3rd of 4 points, index 1 or 2) must lie strictly
+    // closer to the true sharp corner (-s,-s) than the flat chamfer's
+    // midpoint would (proving it bulges outward, i.e. is convex/rounded
+    // rather than a straight cut).
+    const midArc = outline[1]!; // second of the 4 NW arc points
+    const flatMid: [number, number] = [(-s + (-s + r)) / 2, (-s + r + -s) / 2];
+    const distToCorner = (p: [number, number]) => Math.hypot(p[0] - (-s), p[1] - (-s));
+    expect(distToCorner(midArc)).toBeLessThan(distToCorner(flatMid));
+  });
 });
 
 describe('BlockKit — single-block geometry sanity', () => {
