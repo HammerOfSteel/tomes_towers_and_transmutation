@@ -2459,14 +2459,25 @@ export class OverworldScene {
    * Scatters shoreline reeds (any dry tile adjacent to river/lake/ocean water,
    * excluding beach which already has its own decor) and underwater rock/seaweed
    * props (any actually-submerged tile) — see design spec
-   * docs/superpowers/specs/2026-09-01-water-riverbank-decor-props-design.md. Two
-   * independent poissonDisk passes (reeds denser, matching `_buildChunkBeachDecor()`'s
-   * own narrow-strip reasoning; underwater props sparser, since open water is a much
-   * larger area than a bank strip and a dense pass would read as cluttered), each with
-   * its own seed salt so their point sets don't correlate with any other scatter pass
-   * this chunk already runs. Purely decorative (no collider), reusing `_pooledMaterial()`
-   * and folded into the same `mergeGroupMeshesByMaterial(group)` pass as everything else
-   * in `_buildChunkScatter()`.
+   * docs/superpowers/specs/2026-09-01-water-riverbank-decor-props-design.md.
+   *
+   * **2026-09-02 revision:** the original spacing (2.4/3.5 WU) read as "sticks
+   * randomly dumped in the water" rather than natural vegetation — a lake's
+   * entire non-beach shoreline ring qualifies for reeds, so a tight spacing put
+   * a cluster on nearly every qualifying tile, and thin seaweed blades read as
+   * isolated dark line segments from this game's steep top-down isometric
+   * angle no matter how much a single blade is widened. Fixed by widening the
+   * spacing considerably (fewer, more spread-out clusters — reads as occasional
+   * accents, not a hedge) while making each cluster denser (so an individual
+   * clump still reads as a real patch of vegetation up close), and by favouring
+   * underwater rocks over seaweed (rocks read well from this angle — the
+   * "lake beds have more assets and texture now" feedback was specifically
+   * about them — while thin seaweed blades are the main "stick" offender).
+   * Two independent poissonDisk passes, each with its own seed salt so their
+   * point sets don't correlate with any other scatter pass this chunk already
+   * runs. Purely decorative (no collider), reusing `_pooledMaterial()` and
+   * folded into the same `mergeGroupMeshesByMaterial(group)` pass as everything
+   * else in `_buildChunkScatter()`.
    */
   private _buildChunkWaterDecor(coord: ChunkCoord, group: THREE.Group): void {
     const { _GHW: GHW, _GHH: GHH } = this;
@@ -2476,7 +2487,11 @@ export class OverworldScene {
     const originZ = (rowStart - GHH) * T;
 
     const reedRand = mulberry32((this._seed ^ 0x2B81_4F6D) ^ (coord.cx * 65599) ^ (coord.cz * 96179));
-    const reedPts = poissonDisk(chunkWorldSize, chunkWorldSize, 2.4, reedRand);
+    // Widened from 2.4 -> 5.5 WU: a lake/river's entire non-beach shoreline
+    // ring qualifies for reeds, so the original tight spacing put a cluster
+    // on nearly every qualifying tile, reading as a scattered mess rather
+    // than occasional shoreline accents.
+    const reedPts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, reedRand);
     for (const [px, pz] of reedPts) {
       const wx = originX + px;
       const wz = originZ + pz;
@@ -2493,11 +2508,10 @@ export class OverworldScene {
     }
 
     const waterRand = mulberry32((this._seed ^ 0x71DA_2C93) ^ (coord.cx * 54983) ^ (coord.cz * 41729));
-    // Denser than the original 5 WU spacing (now 3.5) — the isometric camera's steep
-    // top-down angle makes thin vertical props (seaweed) present a much smaller visible
-    // footprint than trees/rocks do at the same angle, so a higher population density is
-    // needed for the water floor to actually read as "populated" rather than empty.
-    const waterPts = poissonDisk(chunkWorldSize, chunkWorldSize, 3.5, waterRand);
+    // Widened from 3.5 -> 6.0 WU: fewer, more spread-out props read as
+    // occasional lake-bed features rather than debris scattered across the
+    // whole water surface.
+    const waterPts = poissonDisk(chunkWorldSize, chunkWorldSize, 6.0, waterRand);
     for (const [px, pz] of waterPts) {
       const wx = originX + px;
       const wz = originZ + pz;
@@ -2505,7 +2519,12 @@ export class OverworldScene {
       const r = Math.floor(wz / T + GHH);
       const cell = this._wg.get(c, r);
       if (!isWaterDecorAllowed(cell, 'underwater')) continue;
-      const prop = waterRand() < 0.5 ? this._makeUnderwaterRocks(waterRand) : this._makeSeaweed(waterRand);
+      // Favour rocks (0.8) over seaweed (0.2) — rocks read well from this
+      // game's steep top-down isometric angle ("lake beds have more assets
+      // and texture now" feedback was specifically about them) while thin
+      // seaweed blades are the main "looks like randomly dumped sticks"
+      // offender no matter how much a single blade is widened.
+      const prop = waterRand() < 0.8 ? this._makeUnderwaterRocks(waterRand) : this._makeSeaweed(waterRand);
       prop.position.set(wx, physicalHeightWU(cell, SH), wz);
       prop.rotation.y = waterRand() * Math.PI * 2;
       prop.userData.scatterKind = 'decor';
@@ -2522,12 +2541,15 @@ export class OverworldScene {
       rand,
       0.20,
     );
-    const bladeCount = 4 + Math.floor(rand() * 4); // 4..7 blades, denser/taller than dune grass
+    const bladeCount = 8 + Math.floor(rand() * 6); // 8..13 blades — a full, bushy clump
+                                                    // (was 4..7: too sparse, individual
+                                                    // blades read as isolated sticks from
+                                                    // this game's steep top-down angle)
     for (let i = 0; i < bladeCount; i++) {
-      const h = 0.55 + rand() * 0.5;
-      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.03, h, 4), mat);
+      const h = 0.4 + rand() * 0.3; // shorter (was 0.55-1.05) — less stick-like from above
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.045, h, 4), mat);
       const angle = (i / bladeCount) * Math.PI * 2 + rand() * 0.4;
-      const spread = 0.05 + rand() * 0.08;
+      const spread = 0.06 + rand() * 0.1;
       blade.position.set(Math.cos(angle) * spread, h / 2, Math.sin(angle) * spread);
       blade.rotation.z = (rand() - 0.5) * 0.25;
       g.add(blade);
@@ -2573,19 +2595,22 @@ export class OverworldScene {
       rand,
       0.18,
     );
-    const bladeCount = 3 + Math.floor(rand() * 2); // 3..4 blades — a fuller clump
+    const bladeCount = 6 + Math.floor(rand() * 4); // 6..9 blades — a fuller clump
+                                                    // (was 3..4: too sparse, read as
+                                                    // isolated sticks from this game's
+                                                    // steep top-down angle)
     for (let i = 0; i < bladeCount; i++) {
-      const h = 0.7 + rand() * 0.8;
+      const h = 0.35 + rand() * 0.3; // shorter (was 0.7-1.5) — less stick-like from above
       // A gently curved blade: a thin box, tilted and twisted, rather than a
       // straight cone — reads more like a soft underwater plant swaying in
-      // place than a rigid land blade. Widened from an original 0.05 to 0.13 —
+      // place than a rigid land blade. Widened from an original 0.05 to 0.15 —
       // a viewer looking almost straight down (this game's isometric camera)
       // sees very little of a thin vertical blade's length, so the blade's
       // WIDTH is what actually determines its visible footprint from that
       // angle; too thin and the whole clump reads as barely-there specks.
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.13, h, 0.03), mat);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.15, h, 0.04), mat);
       const angle = (i / bladeCount) * Math.PI * 2 + rand() * 0.6;
-      const spread = 0.04 + rand() * 0.08;
+      const spread = 0.05 + rand() * 0.09;
       blade.position.set(Math.cos(angle) * spread, h / 2, Math.sin(angle) * spread);
       blade.rotation.z = (rand() - 0.5) * 0.5;
       blade.rotation.y = rand() * Math.PI * 2;
