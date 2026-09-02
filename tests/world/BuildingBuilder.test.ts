@@ -256,3 +256,46 @@ describe('BuildingBuilder — blacksmith roof coverage', () => {
     expect(maxRoofZ).toBeGreaterThanOrEqual(d / 2 - 0.05);
   });
 });
+
+describe('buildHouseOrShop — rounded corner posts', () => {
+  // addChimney() already builds full-circle CylinderGeometry meshes (chimney
+  // pots/stacks), so counting *any* CylinderGeometry would over-count.
+  // The new rounded corner posts are the only *partial-arc* cylinders
+  // (thetaLength = PI/2) this builder produces, so filter on that instead.
+  function countCornerPostCylinders(group: THREE.Group): number {
+    let count = 0;
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.geometry instanceof THREE.CylinderGeometry) {
+        const thetaLength = o.geometry.parameters.thetaLength;
+        if (thetaLength < Math.PI * 2 - 1e-6) count++;
+      }
+    });
+    return count;
+  }
+
+  it('the generic house builder (no faction override) includes 4 rounded corner post meshes', () => {
+    const inst = buildBuilding(makeDna('house'));
+    expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
+  });
+
+  it('shop/inn/guild (also routed through buildHouseOrShop) each include 4 rounded corner post meshes', () => {
+    for (const kind of ['shop', 'inn', 'guild'] as const) {
+      const inst = buildBuilding(makeDna(kind));
+      expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
+    }
+  });
+
+  it('produces finite, non-NaN geometry across the whole building (including the new corner posts)', () => {
+    const inst = buildBuilding(makeDna('house'));
+    let hasNaN = false;
+    inst.exteriorGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count * 3; i++) {
+          if (!Number.isFinite(pos.array[i])) hasNaN = true;
+        }
+      }
+    });
+    expect(hasNaN).toBe(false);
+  });
+});

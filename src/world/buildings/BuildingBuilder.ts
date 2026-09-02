@@ -15,6 +15,7 @@ import {
 } from './TextureFactory';
 import { mulberry32 } from '@/core/prng';
 import { getFactionBuildingVariant } from './FactionBuildingVariants';
+import { addRoundedCornerPosts } from './RoundedCornerPosts';
 
 // ── Public contract ───────────────────────────────────────────────────────────
 
@@ -232,6 +233,14 @@ function buildHouseOrShop(dna: BuildingDNA): THREE.Group {
     panel.castShadow = panel.receiveShadow = true;
     g.add(panel);
   }
+
+  // Rounded corner posts — round the sharp seam between the front/back and
+  // side wall panels above without touching those panels. Radius 0.14
+  // matches the panels' own half-thickness (0.28 / 2) exactly, so the
+  // post's curved outer surface is tangent to both adjacent wall faces
+  // with no gap or overlap. See docs/superpowers/specs/
+  // 2026-09-02-rounded-building-corners-design.md (§A2).
+  addRoundedCornerPosts(g, w, d, plinthH, wallH, 0.14, wMat.clone());
 
   // Core shadow volume
   const core = new THREE.Mesh(

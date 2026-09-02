@@ -637,27 +637,33 @@ Add to the existing `tests/world/BuildingBuilder.test.ts` (its imports already i
 
 ```ts
 describe('buildHouseOrShop — rounded corner posts', () => {
-  it('the generic house builder (no faction override) includes 4 rounded corner post meshes', () => {
-    const inst = buildBuilding(makeDna('house'));
-    let cylinderCount = 0;
-    inst.exteriorGroup.traverse((o) => {
+  // addChimney() already builds full-circle CylinderGeometry meshes
+  // (chimney pots/stacks), so counting *any* CylinderGeometry would
+  // over-count. The new rounded corner posts are the only *partial-arc*
+  // cylinders (thetaLength = PI/2) this builder produces, so filter on
+  // that instead (found via TDD — an earlier draft of this test that
+  // counted all CylinderGeometry instances failed because the chimney's
+  // own cylinder pushed the count to a false-positive 1).
+  function countCornerPostCylinders(group: THREE.Group): number {
+    let count = 0;
+    group.traverse((o) => {
       if (o instanceof THREE.Mesh && o.geometry instanceof THREE.CylinderGeometry) {
-        cylinderCount++;
+        const thetaLength = o.geometry.parameters.thetaLength;
+        if (thetaLength < Math.PI * 2 - 1e-6) count++;
       }
     });
-    expect(cylinderCount).toBe(4);
+    return count;
+  }
+
+  it('the generic house builder (no faction override) includes 4 rounded corner post meshes', () => {
+    const inst = buildBuilding(makeDna('house'));
+    expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
   });
 
   it('shop/inn/guild (also routed through buildHouseOrShop) each include 4 rounded corner post meshes', () => {
     for (const kind of ['shop', 'inn', 'guild'] as const) {
       const inst = buildBuilding(makeDna(kind));
-      let cylinderCount = 0;
-      inst.exteriorGroup.traverse((o) => {
-        if (o instanceof THREE.Mesh && o.geometry instanceof THREE.CylinderGeometry) {
-          cylinderCount++;
-        }
-      });
-      expect(cylinderCount).toBe(4);
+      expect(countCornerPostCylinders(inst.exteriorGroup)).toBe(4);
     }
   });
 
