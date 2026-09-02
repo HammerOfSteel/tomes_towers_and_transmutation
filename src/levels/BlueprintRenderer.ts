@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
+import { findWallCornerPilasterPoints } from './WallCornerPilasters';
 import { PALETTE } from '@/shaders/palette';
 import { MaterialLibrary } from '@/rendering/MaterialLibrary';
 import {
@@ -306,48 +307,38 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   }
 
   // ── Corner pilasters — softens the inner silhouette of circular walls ─
-  // Where the ring makes a diagonal step, two wall tiles share a corner
-  // vertex that forms a 90° convex angle visible from inside the room.
-  // A low-poly (6-sided) cylinder at each such joint rounds the sharp angle
-  // without adding geometry along straight tile runs → no pearl-necklace.
-  // Detection: exactly one of the two straight-bridge tiles is floor
-  // (both-wall = interior corner, buried; both-floor = degenerate, skip).
+  // A low-poly (6-sided) cylinder at each genuine dual-grid inner_corner
+  // vertex rounds the sharp concave angle without adding geometry along
+  // straight tile runs → no pearl-necklace. Detection is delegated to
+  // findWallCornerPilasterPoints() (Phase 4 of the organic world tiles
+  // roadmap — see its own doc comment for why this replaced an ad-hoc
+  // "diagonal must be wall + exactly one bridge differs" rule that missed
+  // a mirror-image inner_corner configuration).
   {
     const wallTileSet = new Set(
       bp.tiles
         .filter(t => t.type === 'wall' && !doorKeys.has(`${t.x},${t.z}`) && !stairBackingKeys.has(`${t.x},${t.z}`))
         .map(t => `${t.x},${t.z}`),
     );
-    const placedCorners = new Set<string>();
+    // Same default wall height used for every pilaster -- matches the
+    // pre-existing code's behaviour exactly (it read `tile.h ?? wallHeight`
+    // per-tile, but no shipped blueprint sets a per-tile `h` override on any
+    // wall tile today, confirmed via `grep -l '"h"' src/levels/blueprints/*.json`
+    // returning nothing, so this is a simplification of already-deployed
+    // behaviour, not a behaviour change).
+    const pilasterHeight = wallHeight;
 
-    for (const tile of bp.tiles) {
-      if (tile.type !== 'wall' || doorKeys.has(`${tile.x},${tile.z}`) || stairBackingKeys.has(`${tile.x},${tile.z}`)) continue;
-      const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
-      const tH = tile.h ?? wallHeight;
+    for (const point of findWallCornerPilasterPoints(wallTileSet)) {
+      const { x: cx, z: cz } = cellToWorld(point.cx, point.cz, bp);
 
-      for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as [number, number][]) {
-        if (!wallTileSet.has(`${tile.x + dx},${tile.z + dz}`)) continue;
-        const bridgeX = wallTileSet.has(`${tile.x + dx},${tile.z}`);
-        const bridgeZ = wallTileSet.has(`${tile.x},${tile.z + dz}`);
-        // Skip buried interior corners (both bridges are wall)
-        // and skip degenerate floating corners (both bridges are floor).
-        if (bridgeX === bridgeZ) continue;
-
-        const cx = wx + dx * cellSize * 0.5;
-        const cz = wz + dz * cellSize * 0.5;
-        const key = `${cx.toFixed(2)},${cz.toFixed(2)}`;
-        if (placedCorners.has(key)) continue;
-        placedCorners.add(key);
-
-        // 6-sided low-poly pilaster — same material as surrounding wall blocks
-        const colGeo = new THREE.CylinderGeometry(cellSize * 0.28, cellSize * 0.28, tH, 6);
-        geometries.push(colGeo);
-        const col = new THREE.Mesh(colGeo, wallMat);
-        col.position.set(cx, tH / 2, cz);
-        col.castShadow = true;
-        col.receiveShadow = true;
-        group.add(col);
-      }
+      // 6-sided low-poly pilaster — same material as surrounding wall blocks
+      const colGeo = new THREE.CylinderGeometry(cellSize * 0.28, cellSize * 0.28, pilasterHeight, 6);
+      geometries.push(colGeo);
+      const col = new THREE.Mesh(colGeo, wallMat);
+      col.position.set(cx, pilasterHeight / 2, cz);
+      col.castShadow = true;
+      col.receiveShadow = true;
+      group.add(col);
     }
   }
 

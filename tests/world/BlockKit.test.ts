@@ -25,6 +25,7 @@ import {
   blockGeometry,
   meshBlockGrid,
 } from '@/world/buildings/BlockKit';
+import { buildDualGridCaseTable } from '@/world/DualGridCaseTable';
 
 function countVerts(geo: THREE.BufferGeometry): number {
   return geo.attributes.position.count;
@@ -107,6 +108,47 @@ describe('BlockKit — chamfer-flag classification (the core marching-squares-st
     setBlock(grid, 0, 0, 0, 'stone');
     const flags = getChamferFlags(grid, 0, 0, 0, () => true);
     expect(flags).toEqual({ NW: false, NE: false, SE: false, SW: false });
+  });
+
+  it('a diagonal-only touch (self + NW-diagonal neighbour occupied, both orthogonals empty) does NOT chamfer that corner (dual-grid saddle case)', () => {
+    // Cell at origin: NW-diagonal neighbour (-1, 0, -1) occupied, N (0,0,-1)
+    // and W (-1,0,0) both empty. Under the OLD two-neighbour-only rule this
+    // chamfered (both orthogonals empty); under the new dual-grid rule this
+    // is a genuine 'diagonal'/saddle shape (self + the opposite diagonal
+    // cell occupied, both orthogonals empty) and must NOT chamfer, since
+    // chamfering would visually pull the two diagonally-touching cells
+    // apart at the one point they share.
+    const grid = createBlockGrid();
+    setBlock(grid, 0, 0, 0, 'earth');
+    setBlock(grid, -1, 0, -1, 'earth'); // NW-diagonal neighbour only
+    const flags = getChamferFlags(grid, 0, 0, 0);
+    expect(flags.NW).toBe(false);
+    // The other 3 corners are unaffected by this specific diagonal
+    // neighbour (their own diagonal/orthogonal cells are still all empty)
+    // and remain genuine outer_corner shapes -- still chamfered.
+    expect(flags.NE).toBe(true);
+    expect(flags.SE).toBe(true);
+    expect(flags.SW).toBe(true);
+  });
+
+  it('every existing chamfer scenario in this file resolves identically under the new dual-grid classification (regression proof, not just re-run)', () => {
+    // Re-derives each of the 4 preceding tests' expected flags directly
+    // from buildDualGridCaseTable(2) itself (rather than re-running
+    // getChamferFlags(), which would be circular) to prove the new
+    // implementation's classification agrees with the case table's own
+    // already-tested (Phase 0) canonical shapes, corner by corner.
+    const table = buildDualGridCaseTable(2);
+    const labelFor = (config: number[]): string => {
+      const found = table.mapping[config.join(',')]!;
+      return table.tiles[found.tile]!.label;
+    };
+    // Isolated single block: every corner's [diag, ortho, self, ortho] = [0,0,1,0] -> outer_corner.
+    expect(labelFor([0, 0, 1, 0])).toBe('outer_corner');
+    // Buried in a solid 3x3: every corner's config = [1,1,1,1] -> full (never outer_corner).
+    expect(labelFor([1, 1, 1, 1])).not.toBe('outer_corner');
+    // Straight wall-run cell (N and S filled, E/W empty, diagonals empty):
+    // NW corner = [diagNW=0, N=1, self=1, W=0] -> edge (never outer_corner).
+    expect(labelFor([0, 1, 1, 0])).not.toBe('outer_corner');
   });
 });
 

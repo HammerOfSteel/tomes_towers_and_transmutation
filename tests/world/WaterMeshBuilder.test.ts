@@ -11,7 +11,8 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import { buildWaterMeshGeometryData } from '@/world/WaterMeshBuilder';
-import { shorelineEdgePoints } from '@/world/ShorelineWobble';
+import { buildTerrainGeometryData } from '@/world/TerrainGeometryBuilder';
+import { shorelineBoundaryPoints, shorelineCornerPull } from '@/world/ShorelineCornerField';
 
 describe('buildWaterMeshGeometryData', () => {
   it('returns null-equivalent (empty) geometry when there is no water at all', () => {
@@ -43,16 +44,16 @@ describe('buildWaterMeshGeometryData', () => {
     expect(found(tileNE[0]!, tileNE[1]!)).toBe(true);
   });
 
-  it('a water tile bordering land wobbles its edge using the exact ShorelineWobble points', () => {
+  it('a water tile bordering land follows the exact shoreline boundary points', () => {
     const wg = new WorldGrid(3, 3);
     wg.set(1, 1, { waterDepth: 2.0, feature: 'lake' }); // dry land all around it
-    const data = buildWaterMeshGeometryData(wg, 3, 3, 1, 1, 2, 0.55);
+    const T = 2, GHW = 1, GHH = 1;
+    const data = buildWaterMeshGeometryData(wg, 3, 3, GHW, GHH, T, 0.55);
 
-    // Tile (1,1) sits at world (wx=0, wz=0). Its south edge runs from
-    // (0,2) to (2,2) — the exact same call the land tile on the other
-    // side (tile (1,2)) computes for its own wall/top-surface boundary.
-    const southPts = shorelineEdgePoints(0, 2, 2, 2);
-    const interiorPt = southPts[1]!; // an interior (wobbled) lattice point
+    // Tile (1,1)'s south edge runs from vertex (1,2) to vertex (2,2) —
+    // the exact same call buildWaterMeshGeometryData() makes internally.
+    const southPts = shorelineBoundaryPoints(wg, T, GHW, GHH, 1, 2, 2, 2, true);
+    const interiorPt = southPts[1]!;
     expect(interiorPt[1]).not.toBe(2); // sanity: really is perturbed
 
     let found = false;
@@ -79,5 +80,33 @@ describe('buildWaterMeshGeometryData', () => {
     const data = buildWaterMeshGeometryData(wg, 3, 3, 1, 1, 2, 0.55);
     const vertexCount = data.positions.length / 3;
     for (const i of data.indices) expect(i).toBeLessThan(vertexCount);
+  });
+
+  it('a shared shoreline vertex matches TerrainGeometryBuilder\'s land-side point exactly (no land/water seam)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 1, { waterDepth: 2.0, feature: 'lake' }); // pond surrounded by land
+    const T = 2, GHW = 1, GHH = 1, SH = 0.55;
+    const waterData = buildWaterMeshGeometryData(wg, 3, 3, GHW, GHH, T, SH);
+    const terrainData = buildTerrainGeometryData(wg, 3, 3, GHW, GHH, T, SH);
+
+    // Vertex (2,2) is the pond's SE corner (see design spec's "isolated
+    // pond" case) -- an inner_corner with a real, non-zero pull.
+    const pull = shorelineCornerPull(wg, 2, 2);
+    expect(pull[0]).not.toBe(0);
+    expect(pull[1]).not.toBe(0);
+    const pulledX = (2 - GHW) * T + pull[0];
+    const pulledZ = (2 - GHH) * T + pull[1];
+
+    const findPoint = (positions: number[], x: number, z: number) => {
+      for (let i = 0; i < positions.length; i += 3) {
+        if (Math.abs(positions[i]! - x) < 1e-9 && Math.abs(positions[i + 2]! - z) < 1e-9) return true;
+      }
+      return false;
+    };
+    const terrainAllPositions = [terrainData.positions, ...Object.values(terrainData.groundGeometry).map(g => g.positions)];
+    const foundInWater = findPoint(waterData.positions, pulledX, pulledZ);
+    const foundInTerrain = terrainAllPositions.some(buf => findPoint(buf, pulledX, pulledZ));
+    expect(foundInWater).toBe(true);
+    expect(foundInTerrain).toBe(true);
   });
 });

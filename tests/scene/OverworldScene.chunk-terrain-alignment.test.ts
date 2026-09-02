@@ -98,17 +98,27 @@ describe('OverworldScene terrain-chunk streaming — grid/chunk coordinate align
     // world units away from the rectangle ChunkManager assumed. So the mesh
     // "loaded" for the water tile's chunk key never actually covered the
     // water tile's real world position at all. After the fix, the chunk's
-    // own geometry bounding box must contain (wx, wz).
+    // own geometry bounding box must contain (wx, wz) — within a small
+    // tolerance margin (2026-09-02: dual-grid shoreline corners can now
+    // pull a chunk-boundary vertex up to ~0.9 WU inward from its nominal
+    // grid position — see ShorelineCornerField.ts/its design spec's
+    // "Bound-tightness finding" — so a water tile sitting right at a
+    // chunk's edge can end up just outside that chunk's own shrunken
+    // bounding box even though the two adjacent chunks' meshes still meet
+    // seamlessly at the (shifted) shared boundary; this margin is
+    // comfortably larger than that max shift, so it still catches the
+    // original wrong-rectangle regression this test guards against).
     const geo = (chunkData as any).mesh.geometry as THREE.BufferGeometry;
     geo.computeBoundingBox();
     const box = geo.boundingBox!;
+    const CORNER_PULL_MARGIN = 1.0;
     expect(
-      wx >= box.min.x && wx <= box.max.x,
-      `Water tile x=${wx} outside loaded chunk mesh's x range [${box.min.x}, ${box.max.x}]`,
+      wx >= box.min.x - CORNER_PULL_MARGIN && wx <= box.max.x + CORNER_PULL_MARGIN,
+      `Water tile x=${wx} outside loaded chunk mesh's x range [${box.min.x}, ${box.max.x}] (± ${CORNER_PULL_MARGIN} margin)`,
     ).toBe(true);
     expect(
-      wz >= box.min.z && wz <= box.max.z,
-      `Water tile z=${wz} outside loaded chunk mesh's z range [${box.min.z}, ${box.max.z}]`,
+      wz >= box.min.z - CORNER_PULL_MARGIN && wz <= box.max.z + CORNER_PULL_MARGIN,
+      `Water tile z=${wz} outside loaded chunk mesh's z range [${box.min.z}, ${box.max.z}] (± ${CORNER_PULL_MARGIN} margin)`,
     ).toBe(true);
   });
 

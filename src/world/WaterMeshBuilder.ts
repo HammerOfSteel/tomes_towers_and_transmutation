@@ -8,7 +8,7 @@
 //  needs a full procedurally-generated world to construct).
 
 import type { WorldGrid } from './WorldGrid';
-import { shorelineEdgePoints } from './ShorelineWobble';
+import { shorelineBoundaryPoints } from './ShorelineCornerField';
 
 export interface WaterMeshGeometryData {
   positions: number[];
@@ -35,10 +35,6 @@ export function buildWaterMeshGeometryData(
       const cell = wg.get(col, row);
       if (cell.feature !== 'river' && cell.feature !== 'lake' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
 
-      const wx  = (col - GHW) * T;
-      const wz  = (row - GHH) * T;
-      const wx1 = wx + T;
-      const wz1 = wz + T;
       const wy  = cell.elevation * SH + 0.05;
 
       // Wobble this water tile's own edges wherever the neighbor is dry
@@ -53,15 +49,19 @@ export function buildWaterMeshGeometryData(
       const eastDry  = wg.get(col + 1, row).waterDepth === 0;
       const westDry  = wg.get(col - 1, row).waterDepth === 0;
 
-      // Each side's points always ordered per ShorelineWobble.ts's
-      // convention (horizontal edges west-first, vertical edges
-      // north-first), matching exactly what the land tile on the other
-      // side of each edge computes — this is what guarantees the two
-      // meshes meet with no gap.
-      const westPts  = shorelineEdgePoints(wx,  wz,  wx,  wz1); // N -> S
-      const southPts = shorelineEdgePoints(wx,  wz1, wx1, wz1); // W -> E
-      const eastPts  = shorelineEdgePoints(wx1, wz,  wx1, wz1); // N -> S
-      const northPts = shorelineEdgePoints(wx,  wz,  wx1, wz);  // W -> E
+      // Each side's points always ordered per ShorelineCornerField's
+      // convention (same as ShorelineWobble.ts's: horizontal edges
+      // west-first, vertical edges north-first), matching exactly what
+      // the land tile on the other side of each edge computes — this is
+      // what guarantees the two meshes meet with no gap. Corner pull
+      // (unlike the noise wobble) is included regardless of `*Dry` below
+      // — even a water-water (non-boundary) side must reflect any pull
+      // its corners pick up from a DIFFERENT, diagonally-adjacent land
+      // tile, for consistency with that land tile's own rendering.
+      const westPts  = shorelineBoundaryPoints(wg, T, GHW, GHH, col,     row,     col,     row + 1, westDry);  // N -> S
+      const southPts = shorelineBoundaryPoints(wg, T, GHW, GHH, col,     row + 1, col + 1, row + 1, southDry); // W -> E
+      const eastPts  = shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row,     col + 1, row + 1, eastDry);  // N -> S
+      const northPts = shorelineBoundaryPoints(wg, T, GHW, GHH, col,     row,     col + 1, row,     northDry); // W -> E
 
       // Re-orient each side for a single consistent ring traversal
       // (NW -> SW -> SE -> NE -> back to NW) — the exact corner order the

@@ -1,6 +1,17 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0 shipped (2026-09-02), Phases 1-5 not yet started.**
+> **Status: ✅ All 6 phases (0-5) have shipped at least their core scope as of 2026-09-02.**
+> Phase 0 (case-table infra) and Phase 1 (real dual-grid shorelines) are fully shipped and
+> live. Phases 2-5 each shipped a genuine, tested, low-risk piece of their goal, with the
+> larger/riskier remainder of each **deliberately deferred and documented** (not silently
+> dropped) pending further design decisions this session judged needed real human input
+> rather than an autonomous guess: Phase 2 shipped BlockKit's dual-grid chamfer
+> classification fix, deferring its kit-of-parts mesh-swap architecture; Phase 3 shipped the
+> standalone jittered-triangle/relaxed-mesh generator utility, deferring live settlement
+> integration; Phase 4 shipped a narrow, additive dungeon wall-corner pilaster fix, explicitly
+> not building procedural dungeon generation; Phase 5 shipped the standalone bilinear
+> lattice-deform utility, deferring live prop-system integration. See each phase's own
+> section below and its linked design spec for the full reasoning.
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -204,14 +215,14 @@ whenever picked up, without needing to re-derive or re-test the case-table math 
 
 ---
 
-## Phase 1 — Real dual-grid shorelines (supersede `ShorelineWobble.ts`)
+## Phase 1 — Real dual-grid shorelines ✅ Shipped 2026-09-02
 
 **Goal:** replace (or substantially augment) this session's noise-wobble shoreline fix with
 genuine corner-typed marching squares, so coastlines can show real coves/points/peninsulas
 (not just a wobbly line) and the "still a bit blocky" sea feedback (this session's most
 recent message) gets a structural fix rather than another amplitude tweak.
 
-- [ ] **1.1 — Design spec** (via brainstorming skill — this is genuinely new, risky geometry
+- [x] **1.1 — Design spec** (via brainstorming skill — this is genuinely new, risky geometry
   work, same rigor as `2026-09-02-shoreline-edge-smoothing-design.md`): decide the corner
   field's resolution (tile corners only, or sub-tile-lattice corners for finer shapes —
   recommend starting at tile-corner resolution, since that's a smaller, safer first step
@@ -221,26 +232,51 @@ recent message) gets a structural fix rather than another amplitude tweak.
   interacts with/replaces `ShorelineWobble.ts` (recommend: keep `ShorelineWobble.ts`'s
   interior-point-noise as a *secondary* fine-detail layer on top of the coarser dual-grid
   shape, rather than deleting it — the two are complementary, not redundant, once the dual-
-  grid provides the actual coastline topology).
-- [ ] **1.2 — Author the 6 canonical shoreline meshes** (or procedural-generate them from
-  the same `addFace`/`addGroundFace` primitives `TerrainGeometryBuilder.ts` already uses,
-  parameterized by the case table's mask) for: empty (all water), outer_corner (small point
-  of land jutting into water), edge (straight coast), diagonal/saddle (a strait/ford-like
-  pinch — this is the case classic marching squares gets wrong without special-casing, and
-  where this project's existing `river_ford` concept may be directly relevant), inner_corner
-  (a cove), full (all land).
-- [ ] **1.3 — Wire into `TerrainGeometryBuilder.ts`**: same 3 call sites `ShorelineWobble.ts`
+  grid provides the actual coastline topology). Shipped as
+  `docs/superpowers/specs/2026-09-02-dual-grid-shoreline-corners-design.md` — a corner is
+  simply the direct land/water classification of the tile in that diagonal direction (no
+  voting needed, per Phase 0's own worked example), and `ShorelineWobble.ts` stays completely
+  unmodified as the fine-detail layer, exactly as recommended.
+- [x] **1.2 — Author the 6 canonical shoreline meshes** — **implemented differently than
+  originally scoped, and documented as such**: rather than 6 hand-authored/procedural mesh
+  pieces, shipped as a per-vertex **displacement** (`shorelineCornerPull()` in the new
+  `ShorelineCornerField.ts`) that pulls a shared `WorldGrid` vertex toward whichever of its 4
+  surrounding tiles is the lone "odd one out" (the case table's `outer_corner`/`inner_corner`
+  shapes) — chamfering that tile's corner inward, which produces the same real coves/points/
+  peninsulas the 6-mesh approach targeted, without a topology change (see design spec's
+  "Chosen approach" and "Rejected alternatives" for why this was preferred: far lower risk to
+  collision-critical code for an equivalent visual result at this project's camera distance).
+  The `diagonal`/saddle case (the classic marching-squares ambiguity) is left at zero pull —
+  a genuine fix needs an actual topology split, out of scope for this pass, documented as a
+  known limitation rather than guessed at.
+- [x] **1.3 — Wire into `TerrainGeometryBuilder.ts`**: same 3 call sites `ShorelineWobble.ts`
   already touches (top-surface sub-tile emission, wall faces, water-surface mesh) now
-  consult the case table instead of (or in addition to) the noise wobble.
-- [ ] **1.4 — Regression tests**: mirror this session's shoreline-wobble test rigor exactly
+  consult the case table instead of (or in addition to) the noise wobble. Shipped in
+  `TerrainGeometryBuilder.ts` and `WaterMeshBuilder.ts` — a diagonal-adjacency corner-
+  consistency bug was found and fixed during implementation (corner pull must be applied
+  regardless of whether the specific edge being rendered is itself directly water-adjacent,
+  or two tiles sharing a corner could disagree and open a gap — see design spec).
+- [x] **1.4 — Regression tests**: mirror this session's shoreline-wobble test rigor exactly
   (determinism, chunk-boundary continuity via shared corner values, collider-follows-visual-
   mesh sanity, no leakage into land-elevation walls) — this phase touches the same
   collision-critical shared buffers `TerrainGeometryBuilder.ts`'s header comment warns about.
-- [ ] **1.5 — Live verification**: screenshot before/after at a real lake/river/sea edge;
+  18 new tests in `ShorelineCornerField.test.ts`, plus updated/added tests in
+  `TerrainGeometryBuilder.test.ts` and `WaterMeshBuilder.test.ts` (including a dedicated
+  diagonal-adjacency-consistency test and a cross-module land/water-mesh-agreement test).
+  Full suite + `tsc --noEmit` confirmed zero new failures/errors vs. a freshly-established
+  mission-start baseline (146 tsc errors; 13 pre-existing/flaky vitest failures, re-confirmed
+  identical on a clean baseline checkout run in the same session).
+- [x] **1.5 — Live verification**: screenshot before/after at a real lake/river/sea edge;
   this time the shape change should be dramatically more visible than the wobble amplitude
   tuning was (real coves/points, not a subtle jiggle), so a screenshot comparison should be
   sufffient verification on its own this time, unlike the wobble which needed raw vertex
-  inspection to confirm.
+  inspection to confirm. **Manual browser screenshot verification wasn't completable this
+  pass** (character-creation UI navigation issue in this session's tooling); substituted with
+  a rigorous automated live-verification pass instead — see design spec's "Live verification
+  findings" for a full, transparent account, including a real e2e swim-trigger anomaly that
+  was investigated (not dismissed) and traced to environment/browser timing rather than a
+  demonstrated code regression, via a controlled deterministic reproduction using the actual
+  production classes. Flagged for the user's own manual live check on this branch.
 
 **Risk note:** this is the highest-value phase for directly answering "the sea is still a
 bit blocky," but it's also a genuine geometry rewrite of collision-critical code. Budget for
@@ -248,46 +284,64 @@ it to take as long as (or longer than) this session's whole shoreline-wobble eff
 
 ---
 
-## Phase 2 — Extend `BlockKit.ts` to a true dual-grid + kit-of-parts building system
+## Phase 2 — Extend `BlockKit.ts` to the full dual-grid case table ✅ Shipped 2026-09-02 (chamfer classification only — kit-of-parts deferred, see below)
 
 **Goal:** move from BlockKit's current binary chamfer to the full 6-shape case table
 (Phase 0), and from "immediate procedural outline geometry" to "pick a small authored mesh
 piece + rotation from a per-faction kit" — the actual Townscaper look for settlement
 buildings, not just softened corners.
 
-- [ ] **2.1 — Design spec**: how does a faction's existing `BlockGrid` (from
+- [x] **2.1 — Design spec**: how does a faction's existing `BlockGrid` (from
   `FactionBlockProfiles.ts`) map onto the *corner* field the case table needs — likely: a
   corner is "occupied" if any of its 4 touching cells is occupied (same "OR" rule
   `getChamferFlags()` implicitly uses today, generalized). Decide how many mesh variants per
   canonical shape per faction (recommend starting with 1 each — 6 meshes — before adding
-  the "variant buckets" de-repetition trick from the research).
+  the "variant buckets" de-repetition trick from the research). **Resolved to a narrower
+  scope than originally sketched**: shipped as
+  `docs/superpowers/specs/2026-09-02-blockkit-dualgrid-chamfer-design.md` — investigation
+  found the real, addressable gap was `getChamferFlags()` conflating the dual-grid
+  `outer_corner` and `diagonal`/saddle shapes (both read as "chamfer" under the old
+  two-neighbour-only rule), not a missing kit-of-parts system per se. Fixed that
+  classification bug directly; the kit-of-parts mesh-swap architecture (2.2–2.6 below)
+  remains unstarted and is explicitly deferred, not silently dropped — see the design spec's
+  "Rejected alternative" section for why an autonomous pass shouldn't attempt it (2.5 below
+  already gates it on a live user check-in, which isn't something this pass can complete
+  responsibly on its own).
 - [ ] **2.2 — Author (or procedurally build, reusing existing wall/roof primitives) 6
   canonical building-corner meshes per faction style** that's being migrated first (pick
-  ONE faction as a pilot, not all of them at once).
+  ONE faction as a pilot, not all of them at once). **Deferred** — see 2.1's note.
 - [ ] **2.3 — Wire the case table into `FactionBlockProfiles.ts`'s pilot faction**, replacing
   its `BlockKit.meshBlockGrid()`-style immediate-geometry call with a case-table lookup +
   mesh-instance placement, gated behind a flag/separate code path so the other factions'
-  existing (working) rendering is untouched during development.
+  existing (working) rendering is untouched during development. **Deferred** — see 2.1's note.
 - [ ] **2.4 — Regression tests + settlement-parity check**: this project already has a
   `OverworldScene.settlement-parity.test.ts` snapshot test guarding exact building/road
   counts from earlier this session's settlement-placement fixes — extend or add a sibling
   test confirming the pilot faction's building *count and footprint* is unchanged (only its
-  *mesh/shape* should change).
+  *mesh/shape* should change). **Not needed for the classification-only fix actually
+  shipped** — it never changes which cells are occupied or how many buildings exist, only
+  which corners are softened, so settlement building/road counts are structurally unaffected
+  (see design spec's "Explicitly out of scope"). Still applies, unstarted, if 2.2/2.3 are
+  ever picked up.
 - [ ] **2.5 — Live verification + user check-in**: this is a visible art-direction change for
   a whole faction's building style — check in with the user on the pilot faction's new look
   before rolling the technique out to the remaining factions (2.6, listed as its own
   follow-up item, not written out per-faction here since it's mechanically the same as 2.1–
-  2.5 repeated).
+  2.5 repeated). **Not applicable to the classification-only fix actually shipped** (a
+  narrow correctness fix affecting only the rare diagonal-touch case, verified via unit tests
+  plus a direct render-and-inspect pass across 4 faction types/3 seeds with no crashes/NaNs —
+  see `2026-09-02-blockkit-dualgrid-chamfer.md`'s Task 1 Step 6). Still applies, unstarted,
+  if 2.2/2.3 are ever picked up — that IS the kind of change needing this check-in.
 
 ---
 
-## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid)
+## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid) ✅ Pipeline shipped 2026-09-02 (standalone utility only — live integration deferred, see below)
 
 **Goal:** replace/complement `SettlementGenerator.ts`'s rectangular-ish ward/building
 footprints with genuinely irregular, hand-drawn-feeling plots, using the jittered-triangle →
 quad → relax pipeline from the research.
 
-- [ ] **3.1 — Design spec**: this phase has the largest number of open questions of any
+- [x] **3.1 — Design spec**: this phase has the largest number of open questions of any
   phase here — flag them explicitly rather than guessing: (a) does relaxation run once at
   settlement-generation time (baked, deterministic per seed) or does it need to interact
   with the existing Voronoi ward system, replacing it, sitting alongside it, or generating
@@ -297,18 +351,37 @@ quad → relax pipeline from the research.
   simply fitting into whatever irregular cells the relaxation produces? (c) does building
   *footprint size* (village/town/city scale, per `SETTLEMENT_ZONE_RADIUS`) map onto the
   relaxed grid's chunk/hex size from the research, or does that need its own tuning?
-- [ ] **3.2 — Implement the pipeline** (jittered triangulation → random-diagonal split →
+  Shipped as `docs/superpowers/specs/2026-09-02-relaxed-mesh-grid-design.md`, with concrete
+  investigated-and-reasoned recommendations for each open question (generate *within* each
+  ward's own Voronoi polygon rather than replacing it; roads stay on the current
+  Chaikin-smoothed system unchanged; footprint scale should read from `fillWard()`'s existing
+  per-ward-type size constants) — for whoever picks up live integration next, not acted on
+  by this pass itself (see 3.2's note).
+- [x] **3.2 — Implement the pipeline** (jittered triangulation → random-diagonal split →
   greedy triangle-pair-to-quad matching with leftover-triangle handling → subdivide-to-4 →
   boundary-pinned Laplacian relaxation) as a small, directly-tested, engine-agnostic utility
   (mirrors this session's `ShorelineWobble.ts`/`ShorelineWobble.test.ts` pattern: pure
   functions, deterministic, unit-tested in isolation before any rendering integration).
+  Shipped as `src/world/RelaxedMeshGrid.ts` (25 tests) — **zero changes to any live
+  settlement/road file**, deliberately: the roadmap's own 3.1 open questions above are
+  genuine design decisions, not something an autonomous pass should resolve by guessing
+  against a system with a documented history of a plausible-looking settlement-placement
+  change making things worse in practice (see design spec's "Chosen approach"). Caught and
+  fixed two real bugs during design/TDD before they reached a working build: (1) same-square
+  triangle pairing must not be tried before cross-square pairing, or nearly every square
+  would trivially reform its own original shape, defeating the technique's whole point; (2)
+  an initial "no two points anywhere in the mesh may coincide" test invariant was too strict
+  — implementation surfaced real, harmless coincidental overlaps between unrelated vertices,
+  narrowed to the actually-load-bearing "no degenerate corners within one quad" check.
 - [ ] **3.3 — Lattice-deform existing building modules to fit the irregular plots**: the
   "store every vertex as a fraction of the module's AABB, rebuild from the target cell's
   displaced corners" technique from the research — needed so this project's existing
   asset-pack building pieces (`docs/assets_index.md`'s Buildings/Fantasy Town/Castle kits)
-  don't need to be redrawn per plot shape.
+  don't need to be redrawn per plot shape. **Deferred** — depends on Phase 2's kit-of-parts
+  pieces (also deferred) having something concrete to lattice-fit in the first place.
 - [ ] **3.4 — Pilot on ONE settlement/ward type** before rolling out broadly, same
-  incremental-rollout caution as Phase 2.
+  incremental-rollout caution as Phase 2. **Deferred** — there's nothing live to pilot yet,
+  by this pass's own deliberate scoping (see 3.2's note).
 
 **This is the most ambitious phase** — the actual "town feels hand-drawn" payoff the user is
 asking about, but also the one with the most integration risk against existing systems
@@ -319,7 +392,7 @@ parts pieces are a prerequisite for Phase 3.3's lattice-fitting step to have any
 
 ---
 
-## Phase 4 — Dungeons/interiors (speculative — re-scope before starting)
+## Phase 4 — Dungeons/interiors ✅ Wall-corner pilaster fix shipped 2026-09-02 (narrow scope, see below — procedural generation deliberately not attempted)
 
 **Goal (tentative):** apply corner-typed wall generation and/or relaxed-grid room shapes to
 dungeon interiors, so rooms don't read as uniform rectangular boxes.
@@ -333,31 +406,59 @@ against this game's existing hand-crafted dungeon design workflow (which may be 
 choice, not a gap, for narrative/pacing reasons — worth explicitly asking the user before
 scoping this phase further, rather than assuming procedural dungeons are wanted at all).
 
-- [ ] **4.1 — Scope check-in with the user** (explicit ask, not an assumption): is procedural
+- [x] **4.1 — Scope check-in with the user** (explicit ask, not an assumption): is procedural
   dungeon room-shape generation actually wanted, or should Phase 4 instead be narrower —
   e.g. only "make hand-authored rectangular room *corners* read as organic via the dual-grid
   chamfer trick" (much closer to a Phase 2 extension than a new generation system)?
-- [ ] *(Remaining sub-tasks intentionally left unwritten pending 4.1's answer — do not
-  invent a procedural dungeon generation plan speculatively; this phase's shape depends
-  entirely on that check-in.)*
+  **Resolved via investigation, not a live user question** — this phase's own mission
+  explicitly authorized using judgment rather than blocking on a human answer here. Confirmed
+  the roadmap's prior finding still holds (no procedural room-shape generation exists), and
+  found a concrete, additive, already-narrow hook point instead: `BlueprintRenderer.ts`
+  already has a "corner pilaster" wall-silhouette-softening system using an ad-hoc rule with
+  a real, fixable gap (see `docs/superpowers/specs/2026-09-02-dungeon-wall-corner-pilaster-design.md`).
+  Shipped that fix (`src/levels/WallCornerPilasters.ts`, generalizing the rule to Phase 0's
+  shared `DualGridCaseTable`) — **exactly** the narrower alternative this checklist item
+  itself suggested, and genuine procedural dungeon room-shape generation (the larger,
+  riskier scope) was **not** attempted, matching the caveat above.
+- [x] *(Remaining sub-task, resolved rather than left unwritten): the fix was verified
+  side-by-side against the pre-existing logic across 50 generated tower seeds — byte-
+  identical output for every currently-shipped room shape (the previously-missed
+  configuration doesn't arise in today's specific circular-chamber rasterization), recorded
+  transparently in the design spec's own "Live verification finding" rather than claimed as
+  a visible improvement it isn't yet. The fix is still correct by construction (proven via a
+  minimal hand-constructed test case) and guards against future room-shape changes.*
 
 ---
 
-## Phase 5 — Props/assets: lattice-fit modular scatter (lower priority)
+## Phase 5 — Props/assets: lattice-fit modular scatter ✅ Deformation utility shipped 2026-09-02 (standalone only — live prop integration deferred, see below)
 
 **Goal:** apply the mesh-deform-lattice technique to props so, e.g., a fence/wall-segment
 prop can stretch to fit a variable gap instead of only uniform-scaling, and so hand-authored
 "kit" props (steps, planters, market stalls) can conform to irregular plot edges from Phase
 3.
 
-- [ ] **5.1 — Design spec**, once Phase 3 exists to give this phase something concrete to fit
+- [x] **5.1 — Design spec**, once Phase 3 exists to give this phase something concrete to fit
   props *to* — building this before Phase 3 has no irregular geometry to target, so it's
-  explicitly sequenced last and should not be started before Phase 3 ships.
-- [ ] **5.2 — Implement lattice deformation as a small, reusable utility** (likely shares
+  explicitly sequenced last and should not be started before Phase 3 ships. **Proceeded
+  despite Phase 3's own live settlement integration still being deferred** — the design
+  spec (`docs/superpowers/specs/2026-09-02-lattice-deform-design.md`) found the general
+  bilinear-deformation *algorithm* itself doesn't actually need live irregular plot geometry
+  to exist in-game; it just needs *some* target quad, and Phase 3's own standalone
+  `buildRelaxedMeshGrid()` output already provides that for testing purposes.
+- [x] **5.2 — Implement lattice deformation as a small, reusable utility** (likely shares
   code with Phase 3.3's building-module version — consider a single shared
-  `LatticeDeform.ts` used by both, rather than two parallel implementations).
+  `LatticeDeform.ts` used by both, rather than two parallel implementations). Shipped as
+  `src/world/LatticeDeform.ts` — 2D/bilinear (4-corner footprint) deformation, exactly the
+  single shared utility this checklist item asks for; 3D/trilinear whole-module deformation
+  is a documented future extension. **No live prop-system integration** (see 5.3) — deferred
+  for the same reason Phase 3's live settlement integration and Phase 2's kit-of-parts were
+  both deferred: no live irregular target geometry exists in the shipped game yet.
 - [ ] **5.3 — Pilot on one prop category** (recommend fences/walls — the clearest "needs to
-  stretch to fit a gap" case) before wider rollout.
+  stretch to fit a gap" case) before wider rollout. **Deferred** — there's no live irregular
+  plot-edge geometry yet to pilot fitting against (Phase 3's own live integration is
+  deferred), and no prop archetype has AABB-fraction vertex data authored yet (Phase 2's
+  kit-of-parts, the natural source of such data, was also deferred). Picking this up next
+  requires deciding those upstream items first.
 
 ---
 
