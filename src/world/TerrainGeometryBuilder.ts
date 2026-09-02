@@ -14,13 +14,30 @@ import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
 import { GROUND_TERRAIN_VARIANTS } from './TerrainTextures';
-import { waterAdjacency, shorelineEdgePoints, type WaterAdjacency } from './ShorelineWobble';
+import { waterAdjacency, type WaterAdjacency } from './ShorelineWobble';
+import { shorelineCornerPull, shorelineBoundaryPoints } from './ShorelineCornerField';
 
 /** Shared "no water neighbor" constant — passed at call sites deliberately
  *  excluded from shoreline wobble (e.g. the genuinely-tilted 'edge' shape
  *  path; water tiles are never ramp-eligible, so this keeps that path
  *  byte-identical to before rather than needing its own gating logic). */
 const NO_WATER_ADJACENCY: WaterAdjacency = { north: false, south: false, east: false, west: false };
+
+/** Shared "no corner pull" constant for the same 'edge'-ramp path that
+ *  already opts out via NO_WATER_ADJACENCY (see design spec's "Explicitly
+ *  out of scope" — ramp shapes keep their pre-existing exclusion from any
+ *  shoreline treatment, corner pull included). */
+const NO_CORNER_PULL: readonly [number, number] = [0, 0];
+
+/** True if a corner-pull tuple is non-zero on either axis. A module-level
+ *  (not closure-local) helper so both emitGroundSubTiles() and the 4 wall
+ *  blocks further down in buildTerrainGeometryData() can use it without
+ *  worrying about declaration order — and named distinctly from
+ *  emitGroundSubTiles()'s own `nz` parameter (the face normal's Z
+ *  component) to avoid any shadowing confusion. */
+function _hasCornerPull(p: readonly [number, number]): boolean {
+  return p[0] !== 0 || p[1] !== 0;
+}
 
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
@@ -549,6 +566,7 @@ export function buildTerrainGeometryData(
     wxTile: number, wzTile: number,
     tr: number, tg: number, tb: number,
     adjacency: WaterAdjacency,
+    cornerPulls: { nw: readonly [number, number]; ne: readonly [number, number]; se: readonly [number, number]; sw: readonly [number, number] },
   ): void => {
     const N = GROUND_SUBDIVISIONS;
     const heightAt = (u: number, w: number): number =>
@@ -561,16 +579,24 @@ export function buildTerrainGeometryData(
       west:  _groundTextureVariant(wg.get(col - 1, row)),
     };
 
-    const wxTile1 = wxTile + T, wzTile1 = wzTile + T;
-    // Shoreline wobble points for each water-adjacent edge (null when that
-    // side has no water neighbor). Endpoint ordering follows
+    // Shoreline boundary points for each edge that either (a) directly
+    // borders water (adjacency.<side>, gates the fine noise-wobble layer
+    // too), or (b) has a non-zero corner pull at either endpoint even
+    // without direct adjacency (a diagonal water neighbor) — see design
+    // spec's diagonal-adjacency finding: skipping (b) would let this tile
+    // render an unpulled corner while its neighbor renders the same
+    // vertex pulled, opening a gap. Endpoint ordering follows
     // ShorelineWobble.ts's documented convention: horizontal edges
     // west-first, vertical edges north-first — lattice index i (0..N) is
     // the i-th sub-tile boundary point along that edge.
-    const southPts = adjacency.south ? shorelineEdgePoints(wxTile, wzTile1, wxTile1, wzTile1) : null;
-    const northPts = adjacency.north ? shorelineEdgePoints(wxTile, wzTile,  wxTile1, wzTile)  : null;
-    const eastPts  = adjacency.east  ? shorelineEdgePoints(wxTile1, wzTile, wxTile1, wzTile1) : null;
-    const westPts  = adjacency.west  ? shorelineEdgePoints(wxTile,  wzTile, wxTile,  wzTile1) : null;
+    const southPts = (adjacency.south || _hasCornerPull(cornerPulls.sw) || _hasCornerPull(cornerPulls.se))
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, adjacency.south) : null;
+    const northPts = (adjacency.north || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.ne))
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col + 1, row,     adjacency.north) : null;
+    const eastPts  = (adjacency.east  || _hasCornerPull(cornerPulls.ne) || _hasCornerPull(cornerPulls.se))
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, adjacency.east)  : null;
+    const westPts  = (adjacency.west  || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.sw))
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col,     row + 1, adjacency.west)  : null;
 
     for (let sz = 0; sz < N; sz++) {
       for (let sx = 0; sx < N; sx++) {
@@ -713,6 +739,17 @@ export function buildTerrainGeometryData(
       const jNE = subTileBumpJitter(wx1, wz1);
       const jSE = subTileBumpJitter(wx1, wz);
 
+      // Computed once per tile (not per call site) and reused by both the
+      // top-surface path below AND the 4 wall blocks further down — see
+      // design spec's "diagonal-adjacency" finding for why this must not
+      // be gated by this tile's own direct water adjacency.
+      const cornerPulls = {
+        nw: shorelineCornerPull(wg, col,     row),
+        ne: shorelineCornerPull(wg, col + 1, row),
+        se: shorelineCornerPull(wg, col + 1, row + 1),
+        sw: shorelineCornerPull(wg, col,     row + 1),
+      };
+
       // Ramp classification (see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md):
       // a dry tile's 4 corners derive from its real neighbors' elevation levels
       // (clamped to at most 1 level of slope); water tiles are never ramp-eligible,
@@ -816,7 +853,7 @@ export function buildTerrainGeometryData(
         if (groundVariant !== null) {
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb,
-            waterAdjacency(wg, col, row),
+            waterAdjacency(wg, col, row), cornerPulls,
           );
         } else {
           addFace(
@@ -850,7 +887,7 @@ export function buildTerrainGeometryData(
           // constant to keep this path byte-identical to before.
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb,
-            NO_WATER_ADJACENCY,
+            NO_WATER_ADJACENCY, { nw: NO_CORNER_PULL, ne: NO_CORNER_PULL, se: NO_CORNER_PULL, sw: NO_CORNER_PULL },
           );
         } else {
           addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
@@ -898,8 +935,9 @@ export function buildTerrainGeometryData(
       const wyS = physH(col, row + 1);
       if (wyS < wallTopS) {
         const d = 0.76;
-        if (wg.get(col, row + 1).waterDepth > 0) {
-          const pts = shorelineEdgePoints(wx, wz1, wx1, wz1);
+        const southWaterAdjacent = wg.get(col, row + 1).waterDepth > 0;
+        if (southWaterAdjacent || _hasCornerPull(cornerPulls.sw) || _hasCornerPull(cornerPulls.se)) {
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, southWaterAdjacent);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -920,8 +958,9 @@ export function buildTerrainGeometryData(
       const wyN = physH(col, row - 1);
       if (wyN < wallTopN) {
         const d = 0.50;
-        if (wg.get(col, row - 1).waterDepth > 0) {
-          const pts = shorelineEdgePoints(wx, wz, wx1, wz);
+        const northWaterAdjacent = wg.get(col, row - 1).waterDepth > 0;
+        if (northWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.ne)) {
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col + 1, row, northWaterAdjacent);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -942,8 +981,9 @@ export function buildTerrainGeometryData(
       const wyE = physH(col + 1, row);
       if (wyE < wallTopE) {
         const d = 0.63;
-        if (wg.get(col + 1, row).waterDepth > 0) {
-          const pts = shorelineEdgePoints(wx1, wz, wx1, wz1);
+        const eastWaterAdjacent = wg.get(col + 1, row).waterDepth > 0;
+        if (eastWaterAdjacent || _hasCornerPull(cornerPulls.ne) || _hasCornerPull(cornerPulls.se)) {
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, eastWaterAdjacent);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -964,8 +1004,9 @@ export function buildTerrainGeometryData(
       const wyW = physH(col - 1, row);
       if (wyW < wallTopW) {
         const d = 0.55;
-        if (wg.get(col - 1, row).waterDepth > 0) {
-          const pts = shorelineEdgePoints(wx, wz, wx, wz1);
+        const westWaterAdjacent = wg.get(col - 1, row).waterDepth > 0;
+        if (westWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.sw)) {
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col, row + 1, westWaterAdjacent);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(

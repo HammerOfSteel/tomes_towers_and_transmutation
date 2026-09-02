@@ -181,6 +181,45 @@ was verified arithmetically for all 4 corners of both cases before writing
 any code (see implementation plan's first task — this becomes the first
 integration-style test).
 
+### Bound-tightness finding (caught during implementation, not design)
+
+Implementation surfaced two corrections to the derivation above:
+
+1. **A real direction bug**: the minority corner's raw index cannot be
+   read as a single `steps % 4` formula shared between `outer_corner` and
+   `inner_corner` — their canonical masks place the minority corner at
+   *different* indices (`outer_corner`'s canonical `[0,0,0,1]` puts it at
+   `SW`; `inner_corner`'s canonical `[0,1,1,1]` puts it at `NW`). Fixed by
+   finding the minority corner directly in the raw (un-rotated) config —
+   `config.indexOf(1)` for `outer_corner`, `config.indexOf(0)` for
+   `inner_corner` — instead of via the case table's `steps`. Caught by
+   this phase's own "isolated peninsula" TDD test before it ever reached a
+   commit.
+2. **A tighter-than-assumed combined-displacement bound**: a tile edge
+   whose two endpoints both pull in the *same* direction (common at a
+   narrow water channel's end-cap, e.g. a 1-tile-wide river tile in a
+   single-row test grid) gets the fine noise wobble (bounded to 0.4 WU
+   perpendicular) added on top of a corner pull that does **not** attenuate
+   between such endpoints (their interpolated pull stays flatly at
+   `SHORELINE_CORNER_PULL_WU` across the whole edge, rather than fading
+   toward zero) — a combined worst-case single-axis reach of `0.5 + 0.4 =
+   0.9` WU from a tile boundary, not the `0.5` WU this spec's magnitude
+   reasoning above assumed in isolation. At `T = 2` (a 1.0 WU half-width),
+   0.9 WU is still under the tile's midline (no self-intersection/
+   inversion risk — confirmed mathematically: corner pull at any
+   interpolated point is bounded by convexity to at most
+   `SHORELINE_CORNER_PULL_WU` in magnitude, and noise is independently
+   capped at 0.4 WU, so 0.9 WU is a hard ceiling, not a loose estimate),
+   but the margin is thinner (10%) than the `~0.71` diagonal figure above
+   implied. Accepted as-is rather than shrinking
+   `SHORELINE_CORNER_PULL_WU` further — the live overworld's real
+   coastlines are dominated by longer runs where consecutive corners
+   don't all pull in lockstep, making this exact worst case rare; it was
+   caught here only because a 3-tile-wide test grid's single water tile is
+   an unusually extreme, symmetric case. Flagged for attention if live
+   verification (Task 6) shows visible self-intersection at any real
+   narrow-channel river end-cap.
+
 ### Scope
 
 - Applies to the same water/land boundary as the existing wobble: any
