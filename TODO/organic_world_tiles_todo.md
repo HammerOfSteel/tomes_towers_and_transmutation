@@ -584,16 +584,39 @@ Slime, Human — Slime/Human last, since those already look best).
   (classic cone and living canopy) and the real block-geometry wall
   surface (individually visible protruding stone courses, not a flat
   texture) render correctly.
-- [ ] **6.5 — Make the tower actually reachable in a live settlement,
-  then get the user's verdict, then roll out to the next race**: needs
-  either a `WARD_TO_KIND` entry pointing some ward type at
-  `watchtower`/`tower` (cross-faction change, out of this POC's
-  elven-only scope — needs its own small design decision about which
-  ward and whether other factions should get a matching override first)
-  or a different placement mechanism (e.g. a landmark/gate slot outside
-  the normal ward-fill loop). **Not started.** Once reachable, get the
-  user's own visual verdict via the Settlement Lab before committing to
-  a rollout order/pace for the remaining races.
+- [x] **6.4b — Settlement Lab "kind override" testing tool**: since
+  `watchtower`/`tower` can't naturally appear in a Settlement-Lab-
+  generated settlement (see 6.4's finding), added a dev-tool-only "kind
+  override" dropdown to the Lab panel (`SettlementLabPanel.ts` /
+  `SettlementLabScene.ts`) that forces *every* building in the
+  regenerated settlement to one chosen `BuildingKind`, regardless of its
+  ward's own `WARD_TO_KIND` mapping
+  (`BuildingTypeMap.createSettlementBuildingDna`'s new optional
+  `buildingKind` param, threaded through
+  `SettlementRenderer.SettlementRenderContext.forceBuildingKind`). This
+  is what the user asked for directly: "clear out the current elven
+  buildings in the settlement in play in 3D and only have the towers so
+  I can see them." Select faction `elven` + kind override `watchtower`
+  (or `tower`) in the Lab, hit Regenerate, and every building in the
+  test settlement is a stone tower — usable via Overworld Studio's
+  Settlement tab → "Play in 3D" → the Lab panel that opens. **Important
+  distinction from 6.5 below**: this only overrides the *test* tool: it
+  does not change what a normal, non-overridden settlement generates
+  (`WARD_TO_KIND` is untouched), so a real player still won't naturally
+  see a watchtower in actual play. It's a reusable verification
+  mechanism intended for every future race/building-kind in this
+  race-by-race rollout, not a fix for reachability in real play.
+- [ ] **6.5 — Make the tower actually reachable in a *normal* (non-
+  overridden) live settlement, i.e. real play, not just the Lab's test
+  override above**: needs either a `WARD_TO_KIND` entry pointing some
+  ward type at `watchtower`/`tower` (cross-faction change, out of this
+  POC's elven-only scope — needs its own small design decision about
+  which ward and whether other factions should get a matching override
+  first) or a different placement mechanism (e.g. a landmark/gate slot
+  outside the normal ward-fill loop). **Not started** — deliberately
+  deferred; the 6.4b tool above already unblocks visual testing/rollout
+  of new building kinds in the meantime, so this isn't a hard blocker
+  for continuing race-by-race work.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
