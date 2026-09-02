@@ -278,6 +278,56 @@ unit-tested math, just scaled by the environment's degraded frame timing.
 
 ---
 
+## Shoreline Edge Smoothing
+
+Addressed the repeatedly-flagged "blocky shoreline" complaint (rivers, lakes,
+and sea coastlines all showed a hard, tile-grid-aligned sawtooth silhouette
+where water meets land) — investigation confirmed this is a genuinely
+different issue from the water floor texture/prop work shipped earlier in
+this round: the water/land *boundary shape itself* was 100% unsmoothed,
+following the raw 2×2 WU tile grid with zero interpolation.
+
+Fixed with a new shared, deterministic, noise-perturbed edge-point utility
+(`ShorelineWobble.ts`) that every water-adjacent tile edge now calls
+identically from three places — the land top-surface boundary, the wall
+faces, and the water-surface mesh — so all three always meet with no gap,
+by construction (same edge endpoints, same seed, same math). Tile corners
+themselves never move (only the interior lattice points along an edge), so
+adjacent tiles/edges always still connect correctly, including at L-shaped
+shoreline turns and chunk-streaming boundaries. Scoped to flat-shape
+water-adjacent tiles (the common case — water tiles are never
+ramp-eligible); genuinely tilted ramp/edge shapes and rare non-planar
+corner shapes are left unwobbled for this pass, a small, deliberate,
+documented residual.
+
+A useful side discovery: `TerrainGeometryBuilder.ts`'s output already backs
+*both* the visual mesh and the Rapier physics collider from the same
+buffers by design (to guarantee they can never disagree) — so the wobbled
+boundary's collider follows the new shape automatically, for free, rather
+than needing separate handling. Verified via 102 new/updated unit tests
+(the wobble utility's determinism/bounds/endpoint-pinning, water-adjacency
+detection, top-surface and wall boundary wobbling, and the extracted
+water-mesh builder), a full regression suite pass (zero new failures), and
+live-browser verification — cast via direct water-mesh vertex-buffer
+inspection, since a ~0.4 WU wobble is inherently subtle to eyeball in a
+screenshot at this game's isometric camera distance, but is unambiguous in
+the raw geometry data. See
+`docs/superpowers/specs/2026-09-02-shoreline-edge-smoothing-design.md` and
+`docs/superpowers/plans/2026-09-02-shoreline-edge-smoothing.md`.
+
+Also fixed the same round's newly-shipped shoreline decor props reading as
+"randomly dumped sticks" rather than natural vegetation — widened cluster
+spacing considerably (reeds 2.4→5.5 WU, underwater props 3.5→6.0 WU — a
+lake's entire non-beach shoreline ring qualifies for reeds, so the original
+tight spacing put a cluster on nearly every qualifying tile), made each
+cluster denser and shorter (reads as a real patch up close without looking
+like isolated sticks from the steep top-down angle), and shifted underwater
+prop selection to favour rocks over seaweed (0.5→0.8 probability — rocks
+were the well-received part of the earlier feedback; thin seaweed blades
+were the "stick" offender).
+
+---
+
 ## Asset Pack Reference
 
 All GLBs live in `public/assets/`:

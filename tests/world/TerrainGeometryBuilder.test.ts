@@ -6,6 +6,7 @@ import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
+import { shorelineEdgePoints } from '@/world/ShorelineWobble';
 
 /**
  * Phase 4a (ground-texture-variant routing) split each tile's top face
@@ -130,30 +131,36 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
     // Use SH=1 so physical height in WU is directly comparable to depth.
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
 
-    // Tile 0 (grassland, covered → subdivided): east wall (1 unsubdivided
-    // face, base buffer) + top (16 sub-tiles, groundGeometry.grassland).
+    // Tile 0 (grassland, covered → subdivided): east wall (now
+    // SHORELINE_WOBBLE_SUBDIVISIONS=4 quads, water-adjacent — 2026-09-02
+    // shoreline wobble) + top (16 sub-tiles, groundGeometry.grassland).
     // Tile 1 (river — now COVERED via 2026-09-01's water floor texture
     // variety, routes to groundGeometry.river_floor instead of the base
     // buffer): top (16 sub-tiles — border-dithering may redirect a few of
     // its outermost sub-tiles toward the neighboring grassland's variant,
     // same as any other biome boundary, but the TOTAL sub-tile count for
     // this tile stays 16 regardless of which buffer each one lands in).
-    // Tile 2 (grassland): west wall (1 face, base buffer) + top (16
-    // sub-tiles, groundGeometry.grassland).
-    // Base buffer: 2 unsubdivided wall faces only (24 positions, 12 indices).
+    // Tile 2 (grassland): west wall (also 4 quads, water-adjacent) + top
+    // (16 sub-tiles, groundGeometry.grassland).
+    // Base buffer: 2 walls × 4 quads (96 positions, 48 indices).
     // Combined groundGeometry buffers: 48 sub-tile quads total (576 positions,
     // 288 indices) — split across grassland/river_floor/river_bank
     // (micro-patch) depending on border-dither/micro-patch rolls.
-    expect(totalPositionsLength(data)).toBe(2 * 4 * 3 + 3 * 16 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(2 * 6 + 3 * 16 * 6);
+    expect(totalPositionsLength(data)).toBe(2 * 4 * 4 * 3 + 3 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(2 * 4 * 6 + 3 * 16 * 6);
 
     // The river tile's top face sits at y = -RIVER_DEPTH_WU (elevation 0 - depth).
-    // Tile 1 spans world X in [0, 1) at this call's GHW=1/T=1 — a strictly interior
-    // sub-range (0.01, 0.99) isolates its own top-face geometry by X position while
-    // excluding wall-face vertices that sit exactly AT the shared tile boundary
-    // (x=0/x=1, shared with tile0's east wall / tile2's west wall) — see
-    // yValuesInXRange's doc comment for why buffer membership alone can't be used.
-    const tile1Ys = yValuesInXRange(data, 0.01, 0.99);
+    // Tile 1 spans world X in [0, 1) at this call's GHW=1/T=1 — the middle
+    // TWO of its 4 sub-tile columns (X in [0.25, 0.75], sx=1 and sx=2) are
+    // structurally guaranteed to never be touched by shoreline wobble
+    // (2026-09-02) regardless of amplitude — only the outermost column on
+    // each side (sx=0, sx=3) can have its boundary-facing corners wobbled,
+    // and only when that specific side borders water. Narrowed from the
+    // pre-wobble [0.01, 0.99] margin (which could pick up a wobbled
+    // neighboring dry tile's east/west boundary vertex bulging into this
+    // tile's nominal footprint — an intentional, correct effect of the new
+    // feature, not a bug) to this structurally-safe interior range instead.
+    const tile1Ys = yValuesInXRange(data, 0.26, 0.74);
     expect(tile1Ys.length).toBeGreaterThan(0);
     for (const y of tile1Ys) expect(y).toBeCloseTo(-RIVER_DEPTH_WU, 0);
   });
@@ -196,16 +203,17 @@ describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
 
     // Same shape as the river carving test above, except the middle tile now
     // routes to groundGeometry.lake_floor instead of river_floor: tile0 (east
-    // wall + subdivided top), tile1 lake (covered, subdivided top only, no
-    // wall), tile2 (west wall + subdivided top) — see that test's comment for
-    // the full breakdown.
-    expect(totalPositionsLength(data)).toBe(2 * 4 * 3 + 3 * 16 * 4 * 3);
-    expect(totalIndicesLength(data)).toBe(2 * 6 + 3 * 16 * 6);
+    // wall, now 4 wobbled quads, water-adjacent — 2026-09-02 shoreline
+    // wobble) + subdivided top), tile1 lake (covered, subdivided top only,
+    // no wall), tile2 (west wall, also 4 wobbled quads + subdivided top) —
+    // see that test's comment for the full breakdown.
+    expect(totalPositionsLength(data)).toBe(2 * 4 * 4 * 3 + 3 * 16 * 4 * 3);
+    expect(totalIndicesLength(data)).toBe(2 * 4 * 6 + 3 * 16 * 6);
 
     // Tile 1 spans world X in [0, 1) at this call's GHW=1/T=1 — see the river
-    // carving test above's yValuesInXRange doc comment for why isolating by
-    // world position (not buffer membership) is necessary here.
-    const tile1Ys = yValuesInXRange(data, 0.01, 0.99);
+    // carving test above's comment for why the structurally-safe [0.26, 0.74]
+    // interior range is used instead of the pre-wobble [0.01, 0.99] margin.
+    const tile1Ys = yValuesInXRange(data, 0.26, 0.74);
     expect(tile1Ys.length).toBeGreaterThan(0);
     for (const y of tile1Ys) expect(y).toBeCloseTo(-LAKE_DEPTH_WU, 0);
   });
@@ -1228,5 +1236,154 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
     // own north-east real corner) is shared with tile (2,1)'s NW.
     expect(q3SE_y).toBeCloseTo(tile2_1_SW_y, 9);
     expect(q15NE_y).toBeCloseTo(tile2_1_NW_y, 9);
+  });
+});
+
+describe('shoreline wobble — top surface', () => {
+  it('a dry tile bordering water gets a non-degenerate, gap-free ground mesh', () => {
+    // 3x3 grid: center dry tile (1,1) borders a wet tile to the south (1,2).
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 2, { waterDepth: 2.0, feature: 'lake' });
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 0.55);
+    expect(totalPositionsLength(data)).toBeGreaterThan(0);
+    // Every buffer's own indices must be valid against that SAME buffer's
+    // own vertex count (each groundGeometry variant has an independent
+    // index space, not offset into the combined total).
+    const buffers = [data, ...Object.values(data.groundGeometry)];
+    for (const buf of buffers) {
+      expect(buf.positions.length % 3).toBe(0);
+      const vertexCount = buf.positions.length / 3;
+      for (const i of buf.indices) expect(i).toBeLessThan(vertexCount);
+    }
+  });
+
+  it('two independent builds of the same water-adjacent grid produce byte-identical geometry (determinism)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 2, { waterDepth: 2.0, feature: 'lake' });
+    const a = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 0.55);
+    const b = buildTerrainGeometryData(wg, 3, 3, 1, 1, 2, 0.55);
+    expect(a.groundGeometry).toEqual(b.groundGeometry);
+    expect(a.positions).toEqual(b.positions);
+  });
+
+  it('wobbles the water-adjacent tile using the exact ShorelineWobble points (precise vertex check)', () => {
+    const wg = new WorldGrid(3, 3);
+    wg.set(1, 2, { waterDepth: 2.0, feature: 'lake' }); // south of tile (1,1)
+    const T = 2, SH = 0.55;
+    // Render ONLY tile (1,1) (colStart=1, rowStart=1, chunkW=1, chunkH=1) so
+    // its sub-tiles are the only thing rendered — the full wg is still
+    // passed in for correct neighbor lookups, matching this file's own
+    // established "render only tiles X" isolation pattern (see the
+    // shared-corner-seam test earlier in this file).
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, T, SH, 1, 1, 1, 1);
+
+    // Tile (1,1) sits at world (wx=0, wz=0). Its south edge runs from
+    // (0,2) to (2,2) — this is the exact same call
+    // TerrainGeometryBuilder.ts's emitGroundSubTiles() makes internally.
+    // Sub-tile (sx=1, sz=3)'s south-facing corner sits at lattice index
+    // sx=1 along that edge — an INTERIOR point (not a tile corner), so it
+    // must be wobbled away from its plain, unwobbled position (0.5, 2).
+    const southEdgePts = shorelineEdgePoints(0, 2, 2, 2);
+    const expectedZ = southEdgePts[1]![1];
+    expect(expectedZ).not.toBe(2); // sanity: this lattice point really is perturbed
+
+    // Search across every buffer this tile's sub-tiles could land in — a
+    // pre-existing, unrelated randomization (MICRO_PATCH_PROBABILITY /
+    // border-dithering) can route individual sub-tiles into different
+    // groundGeometry variants than the tile's "main" biome, so a specific
+    // vertex's exact buffer/index isn't predictable; only its (x, z)
+    // position is. `x` should stay exactly 0.5 (untouched — a south-edge
+    // wobble only ever perturbs Z), so it's a reliable anchor to search by.
+    const allPositions = [data.positions, ...Object.values(data.groundGeometry).map(g => g.positions)];
+    const foundZs: number[] = [];
+    for (const buf of allPositions) {
+      for (let i = 0; i < buf.length; i += 3) {
+        if (Math.abs(buf[i]! - 0.5) < 1e-9) foundZs.push(buf[i + 2]!);
+      }
+    }
+    expect(foundZs.some(z => Math.abs(z - expectedZ) < 1e-9)).toBe(true);
+    // And the OLD unwobbled position must be gone from this specific point
+    // (no vertex at x=0.5 should still sit at the plain z=2).
+    expect(foundZs.some(z => Math.abs(z - 2) < 1e-9)).toBe(false);
+  });
+
+  it('a tile with no water neighbor is completely unaffected (regression guard)', () => {
+    const wg = new WorldGrid(3, 3);
+    const T = 2, SH = 0.55;
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, T, SH, 1, 1, 1, 1);
+    // With no water anywhere, every vertex at x=0.5 must sit at the plain,
+    // unwobbled z=2 (the tile's south edge) — never anything else.
+    const allPositions = [data.positions, ...Object.values(data.groundGeometry).map(g => g.positions)];
+    const foundZs: number[] = [];
+    for (const buf of allPositions) {
+      for (let i = 0; i < buf.length; i += 3) {
+        if (Math.abs(buf[i]! - 0.5) < 1e-9 && Math.abs(buf[i + 2]! - 2) < 0.3) foundZs.push(buf[i + 2]!);
+      }
+    }
+    expect(foundZs.length).toBeGreaterThan(0);
+    for (const z of foundZs) expect(z).toBeCloseTo(2, 9);
+  });
+});
+
+describe('shoreline wobble — walls', () => {
+  it('a water-adjacent wall is subdivided into SHORELINE_WOBBLE_SUBDIVISIONS quads, not one flat quad', () => {
+    // Same 3-tile river setup as the water-depth-carving describe block
+    // above: tile 1 is a river between two land tiles (T=1, SH=1 so
+    // physical height in WU is directly comparable to depth).
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Tile 0's east wall (bordering the river) and tile 2's west wall
+    // (also bordering the river) are the only walls in this grid — both
+    // water-adjacent, so both should now be 4 quads (24 indices) each
+    // instead of 1 flat quad (6 indices) each.
+    expect(totalIndicesLength(data)).toBe(2 * 4 * 6 + 3 * 16 * 6);
+  });
+
+  it('a water-adjacent wall segment follows the exact ShorelineWobble points', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { feature: 'river', waterDepth: RIVER_DEPTH_WU });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Tile 0 sits at world X in [-1, 0) (GHW=1, T=1). Its east wall (the
+    // shared boundary with the river tile) runs along x=0, from z=0 to
+    // z=1 (a vertical edge, north-first per ShorelineWobble's convention).
+    const expectedPts = shorelineEdgePoints(0, 0, 0, 1);
+
+    // Walls always land in the base (untextured) buffer, never
+    // groundGeometry — the only walls in this grid are tile 0's east wall
+    // and tile 2's west wall, both water-adjacent, both now 4 quads
+    // (24 positions each = 8 vertices... actually 4 quads * 4 verts = 16
+    // vertices = 48 floats each). Search for a vertex whose Z is close to
+    // an interior wobble point (0.25 or 0.75 along the edge) and X is not
+    // exactly 0 (the unwobbled wall position) — proving this wall's
+    // horizontal footprint actually moved.
+    const base = data.positions;
+    let foundWobbledX = false;
+    for (let i = 0; i < base.length; i += 3) {
+      const x = base[i]!, z = base[i + 2]!;
+      if (Math.abs(z - expectedPts[1]![1]) < 1e-9 && Math.abs(x - expectedPts[1]![0]) < 1e-9) {
+        foundWobbledX = true;
+      }
+    }
+    expect(foundWobbledX).toBe(true);
+    // Sanity: the expected wobble point is actually different from the
+    // plain unwobbled wall position (x=0) — otherwise this test would
+    // trivially pass even without the fix.
+    expect(expectedPts[1]![0]).not.toBe(0);
+  });
+
+  it('a plain land-elevation wall (no water involved) is unaffected — reuses the existing "4 wall faces" test\'s exact scenario', () => {
+    // Mirrors the pre-existing 'emits 4 wall faces around a single raised
+    // tile between two flat tiles' test above (no water anywhere) — if
+    // this test starts failing, it means shoreline wobble started leaking
+    // into ordinary land-elevation walls, which must never happen (only a
+    // wall whose lower neighbor is actually water should ever subdivide).
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { elevation: 2 });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+    expect(data.positions).toHaveLength(4 * 4 * 3); // 4 flat wall faces, unsubdivided
+    expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6);
   });
 });
