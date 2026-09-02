@@ -9,7 +9,12 @@
 
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
+import type { BuildingDNA } from './BuildingDNA';
+import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
+import { barkTexture, ashlarTexture } from './FactionBlockTextures';
+import { slateTexture } from './TextureFactory';
 import { WALL_STRATEGY, buildWallSurface } from './StoneTowerWallSurface';
+import { buildTowerRoofCap } from './StoneTowerRoofCap';
 
 /** Local material helper -- mirrors FactionBuildingVariants.ts's own
  * `mat()` (not imported directly to avoid a circular import, since that
@@ -117,6 +122,59 @@ export function buildTowerWallRing(
       g.add(leaf);
     }
   }
+
+  return g;
+}
+
+/**
+ * Public entry point: builds a complete elven stone tower for the given
+ * `BuildingDNA` (dispatched from FactionBuildingVariants.ts's elven
+ * `watchtower`/`tower` override). Derives its footprint the same way
+ * every other builder in this codebase does (getFootprint(dna.
+ * buildingKind, dna.size)), so it automatically scales to both kinds'
+ * very different footprint scales (watchtower: fixed 2x2; tower:
+ * 3x3-7x5 by size).
+ *
+ * Floor count (3-6) is picked from the seed rather than strictly
+ * following `dna.floors` -- towers are a fixed-tall archetype, the same
+ * precedent the generic buildWatchtower() already sets with its own
+ * `Math.max(4, dna.floors)` override.
+ */
+export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
+  const { w, d } = getFootprint(dna.buildingKind, dna.size);
+  const radius = Math.max(1, Math.min(w, d) / 2);
+  const rand = mulberry32(dna.seed ^ 0xE15E70);
+  const floors = 3 + Math.floor(rand() * 4); // 3-6
+  const ringHeight = FLOOR_HEIGHT * 0.9;
+  const plinthHeight = 0.6;
+  const coneHeight = radius * 2.2;
+
+  const palette: StoneTowerPalette = {
+    stone:     mat(dna.colors.walls, { roughness: 0.85, map: ashlarTexture(Math.max(1, radius / 1.5), Math.max(1, ringHeight / 1.5)) }),
+    shingle:   mat(dna.colors.roof, { roughness: 0.75, map: slateTexture(Math.max(1, radius), Math.max(1, coneHeight / 1.5)) }),
+    leaf:      mat(dna.colors.trim, { roughness: 0.75 }),
+    bark:      mat('#4a3520', { roughness: 0.9, map: barkTexture() }),
+    moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
+  };
+
+  const g = new THREE.Group();
+  const base = buildTowerBase(radius, plinthHeight, dna.seed ^ 0xB453E, palette);
+  g.add(base);
+
+  let y = plinthHeight;
+  for (let fl = 0; fl < floors; fl++) {
+    const hasWindow = fl > 0 && rand() < 0.7;
+    const ringRadius = radius * (1 - fl * 0.015); // very slight taper per floor
+    const ring = buildTowerWallRing(ringRadius, ringHeight, dna.seed ^ (0x9E1E ^ fl), palette, hasWindow);
+    ring.position.y = y;
+    g.add(ring);
+    y += ringHeight;
+  }
+
+  const roofRadius = radius * (1 - (floors - 1) * 0.015);
+  const roof = buildTowerRoofCap(dna.seed ^ 0x800F, roofRadius, coneHeight, palette);
+  roof.position.y = y;
+  g.add(roof);
 
   return g;
 }
