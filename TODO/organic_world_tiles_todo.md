@@ -1,6 +1,6 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0 and Phase 1 shipped, Phase 2 partially shipped (chamfer classification; kit-of-parts deferred) (2026-09-02), Phases 3-5 not yet started.**
+> **Status: 🚧 Phase 0, 1 shipped, Phase 2 partial (chamfer only), Phase 3 partial (relaxed-mesh utility only, no live integration) (2026-09-02), Phases 4-5 not yet started.**
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -324,13 +324,13 @@ buildings, not just softened corners.
 
 ---
 
-## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid)
+## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid) ✅ Pipeline shipped 2026-09-02 (standalone utility only — live integration deferred, see below)
 
 **Goal:** replace/complement `SettlementGenerator.ts`'s rectangular-ish ward/building
 footprints with genuinely irregular, hand-drawn-feeling plots, using the jittered-triangle →
 quad → relax pipeline from the research.
 
-- [ ] **3.1 — Design spec**: this phase has the largest number of open questions of any
+- [x] **3.1 — Design spec**: this phase has the largest number of open questions of any
   phase here — flag them explicitly rather than guessing: (a) does relaxation run once at
   settlement-generation time (baked, deterministic per seed) or does it need to interact
   with the existing Voronoi ward system, replacing it, sitting alongside it, or generating
@@ -340,18 +340,37 @@ quad → relax pipeline from the research.
   simply fitting into whatever irregular cells the relaxation produces? (c) does building
   *footprint size* (village/town/city scale, per `SETTLEMENT_ZONE_RADIUS`) map onto the
   relaxed grid's chunk/hex size from the research, or does that need its own tuning?
-- [ ] **3.2 — Implement the pipeline** (jittered triangulation → random-diagonal split →
+  Shipped as `docs/superpowers/specs/2026-09-02-relaxed-mesh-grid-design.md`, with concrete
+  investigated-and-reasoned recommendations for each open question (generate *within* each
+  ward's own Voronoi polygon rather than replacing it; roads stay on the current
+  Chaikin-smoothed system unchanged; footprint scale should read from `fillWard()`'s existing
+  per-ward-type size constants) — for whoever picks up live integration next, not acted on
+  by this pass itself (see 3.2's note).
+- [x] **3.2 — Implement the pipeline** (jittered triangulation → random-diagonal split →
   greedy triangle-pair-to-quad matching with leftover-triangle handling → subdivide-to-4 →
   boundary-pinned Laplacian relaxation) as a small, directly-tested, engine-agnostic utility
   (mirrors this session's `ShorelineWobble.ts`/`ShorelineWobble.test.ts` pattern: pure
   functions, deterministic, unit-tested in isolation before any rendering integration).
+  Shipped as `src/world/RelaxedMeshGrid.ts` (25 tests) — **zero changes to any live
+  settlement/road file**, deliberately: the roadmap's own 3.1 open questions above are
+  genuine design decisions, not something an autonomous pass should resolve by guessing
+  against a system with a documented history of a plausible-looking settlement-placement
+  change making things worse in practice (see design spec's "Chosen approach"). Caught and
+  fixed two real bugs during design/TDD before they reached a working build: (1) same-square
+  triangle pairing must not be tried before cross-square pairing, or nearly every square
+  would trivially reform its own original shape, defeating the technique's whole point; (2)
+  an initial "no two points anywhere in the mesh may coincide" test invariant was too strict
+  — implementation surfaced real, harmless coincidental overlaps between unrelated vertices,
+  narrowed to the actually-load-bearing "no degenerate corners within one quad" check.
 - [ ] **3.3 — Lattice-deform existing building modules to fit the irregular plots**: the
   "store every vertex as a fraction of the module's AABB, rebuild from the target cell's
   displaced corners" technique from the research — needed so this project's existing
   asset-pack building pieces (`docs/assets_index.md`'s Buildings/Fantasy Town/Castle kits)
-  don't need to be redrawn per plot shape.
+  don't need to be redrawn per plot shape. **Deferred** — depends on Phase 2's kit-of-parts
+  pieces (also deferred) having something concrete to lattice-fit in the first place.
 - [ ] **3.4 — Pilot on ONE settlement/ward type** before rolling out broadly, same
-  incremental-rollout caution as Phase 2.
+  incremental-rollout caution as Phase 2. **Deferred** — there's nothing live to pilot yet,
+  by this pass's own deliberate scoping (see 3.2's note).
 
 **This is the most ambitious phase** — the actual "town feels hand-drawn" payoff the user is
 asking about, but also the one with the most integration risk against existing systems
