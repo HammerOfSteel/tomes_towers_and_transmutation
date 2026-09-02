@@ -51,10 +51,14 @@ const IRREGULAR: LatticeQuad = {
 
 describe('bilinearDeform', () => {
   it('deforms the 4 exact AABB corners to the target quad\'s own 4 corners', () => {
-    expect(bilinearDeform(0, 0, IRREGULAR)).toEqual(IRREGULAR.nw);
-    expect(bilinearDeform(1, 0, IRREGULAR)).toEqual(IRREGULAR.ne);
-    expect(bilinearDeform(1, 1, IRREGULAR)).toEqual(IRREGULAR.se);
-    expect(bilinearDeform(0, 1, IRREGULAR)).toEqual(IRREGULAR.sw);
+    const checkCorner = (got: { x: number; z: number }, expected: { x: number; z: number }) => {
+      expect(got.x).toBeCloseTo(expected.x, 10);
+      expect(got.z).toBeCloseTo(expected.z, 10);
+    };
+    checkCorner(bilinearDeform(0, 0, IRREGULAR), IRREGULAR.nw);
+    checkCorner(bilinearDeform(1, 0, IRREGULAR), IRREGULAR.ne);
+    checkCorner(bilinearDeform(1, 1, IRREGULAR), IRREGULAR.se);
+    checkCorner(bilinearDeform(0, 1, IRREGULAR), IRREGULAR.sw);
   });
 
   it('deforms the center (0.5, 0.5) to the average of the 4 target corners', () => {
