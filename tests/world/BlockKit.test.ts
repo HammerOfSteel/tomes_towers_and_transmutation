@@ -300,6 +300,23 @@ describe('BlockKit — single-block geometry sanity', () => {
     const g2 = blockGeometry(flags, faces, {});
     expect(Array.from(g1.attributes.position.array)).toEqual(Array.from(g2.attributes.position.array));
   });
+
+  it('defaults to rounded (chamferSegments=3) corners, producing more vertices than a flat chamfer (segments=1)', () => {
+    const flags = { NW: true, NE: true, SE: true, SW: true };
+    const faces = { N: true, S: true, E: true, W: true, U: true, D: true };
+    const rounded = blockGeometry(flags, faces, {});
+    const flat = blockGeometry(flags, faces, { chamferSegments: 1 });
+    expect(hasNaN(rounded)).toBe(false);
+    expect(countVerts(rounded)).toBeGreaterThan(countVerts(flat));
+  });
+
+  it('a sharp (unchamfered) block is unaffected by chamferSegments', () => {
+    const flags = { NW: false, NE: false, SE: false, SW: false };
+    const faces = { N: true, S: true, E: true, W: true, U: true, D: true };
+    const g3 = blockGeometry(flags, faces, { chamferSegments: 3 });
+    const g1 = blockGeometry(flags, faces, { chamferSegments: 1 });
+    expect(countVerts(g3)).toBe(countVerts(g1));
+  });
 });
 
 describe('BlockKit — UV generation (per-block, world-space-projected, for palette textures)', () => {
@@ -512,6 +529,17 @@ describe('BlockKit — meshBlockGrid (full grid -> THREE.Group)', () => {
     organic.traverse((o) => { if (o instanceof THREE.Mesh) organicVerts += countVerts(o.geometry); });
     monumental.traverse((o) => { if (o instanceof THREE.Mesh) monumentalVerts += countVerts(o.geometry); });
     expect(monumentalVerts).toBeLessThan(organicVerts);
+  });
+
+  it('meshBlockGrid defaults to rounded corners (more vertices than an explicit flat chamferSegments=1)', () => {
+    const grid = createBlockGrid();
+    setBlock(grid, 0, 0, 0, 'earth');
+    const rounded = meshBlockGrid(grid, samplePalette());
+    const flat = meshBlockGrid(grid, samplePalette(), { chamferSegments: 1 });
+    let roundedVerts = 0, flatVerts = 0;
+    rounded.traverse((o) => { if (o instanceof THREE.Mesh) roundedVerts += countVerts(o.geometry); });
+    flat.traverse((o) => { if (o instanceof THREE.Mesh) flatVerts += countVerts(o.geometry); });
+    expect(roundedVerts).toBeGreaterThan(flatVerts);
   });
 
   it('every merged mesh keeps a valid uv attribute matching its position count (so palette textures sample correctly post-merge)', () => {

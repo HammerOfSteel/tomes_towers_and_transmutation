@@ -210,6 +210,10 @@ export function buildBlockOutline(flags: ChamferFlags, s: number, r: number, seg
 
 export interface BlockGeometryOptions {
   chamferRadius?: number;   // world units, default 0.16 * BLOCK_UNIT
+  /** Points sampled along each chamfered corner's 90-degree arc (see
+   * buildOutlinePoints()). 1 = flat diagonal cut (legacy look); default 3
+   * = a genuinely rounded corner. */
+  chamferSegments?: number;
   topBevel?: boolean;       // roofline-cell bevel (frustum-shaped cap)
   topBevelInset?: number;   // world units, default 0.12 * BLOCK_UNIT
   topBevelDrop?: number;    // world units, default 0.12 * BLOCK_UNIT
@@ -347,12 +351,13 @@ export function blockGeometry(
 ): THREE.BufferGeometry {
   const s = BLOCK_UNIT / 2;
   const r = opts.chamferRadius ?? 0.16 * BLOCK_UNIT;
+  const chamferSegments = opts.chamferSegments ?? 3;
   const inset = opts.topBevelInset ?? 0.12 * BLOCK_UNIT;
   const drop = opts.topBevelDrop ?? 0.12 * BLOCK_UNIT;
   const [bx, by, bz] = opts.blockCoord ?? [0, 0, 0];
   const worldOx = bx * BLOCK_UNIT, worldOy = by * BLOCK_UNIT, worldOz = bz * BLOCK_UNIT;
 
-  const outline = buildOutlinePoints(flags, s, r);
+  const outline = buildOutlinePoints(flags, s, r, chamferSegments);
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
@@ -439,6 +444,7 @@ export function blockGeometry(
 
 export interface MeshBlockGridOptions {
   chamferRadius?: number;
+  chamferSegments?: number;
   topBevel?: boolean;
   topBevelInset?: number;
   topBevelDrop?: number;
@@ -469,6 +475,7 @@ export function meshBlockGrid(
     const useTopBevel = topBevelDefault && !(opts.suppressTopBevel?.(bx, by, bz));
     const geo = blockGeometry(flags, faces, {
       chamferRadius: opts.chamferRadius,
+      chamferSegments: opts.chamferSegments,
       topBevel: useTopBevel,
       topBevelInset: opts.topBevelInset,
       topBevelDrop: opts.topBevelDrop,
