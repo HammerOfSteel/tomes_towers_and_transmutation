@@ -71,6 +71,7 @@ import { SpatialHash }                 from '@/core/SpatialHash';
 import { buildCaveEntrance, isNearCaveEntrance, type BuiltCaveEntrance } from '@/world/CaveEntranceBuilder';
 import { buildGladeEntrance, isNearGladeEntrance, type BuiltGladeEntrance } from '@/world/GladeEntranceBuilder';
 import { buildTerrainGeometryData, getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
+import { buildWaterMeshGeometryData } from '@/world/WaterMeshBuilder';
 import type { RoadPathSegment } from '@/world/RoadPathSampler';
 import { roadVariantTexture, GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 import { terrainVariantTexture } from '@/world/TerrainTextures';
@@ -1606,33 +1607,7 @@ export class OverworldScene {
    */
   private _buildWaterMesh(): THREE.Mesh | null {
     const { _GW: GW, _GH: GH, _GHW: GHW, _GHH: GHH } = this;
-    const pos: number[] = [];
-    const idx: number[] = [];
-
-    for (let row = 0; row < GH; row++) {
-      for (let col = 0; col < GW; col++) {
-        const cell = this._wg.get(col, row);
-        if (cell.feature !== 'river' && cell.feature !== 'lake' && cell.biome !== 'ocean' && cell.biome !== 'deep_ocean') continue;
-
-        const wx  = (col - GHW) * T;
-        const wz  = (row - GHH) * T;
-        const wy  = cell.elevation * SH + 0.05;
-
-        const base = pos.length / 3;
-        pos.push(
-          wx,     wy, wz,
-          wx + T, wy, wz,
-          wx + T, wy, wz + T,
-          wx,     wy, wz + T,
-        );
-        // Wound so the cross product (v1-v0)x(v3-v0) yields +Y — i.e. the quad's
-        // front face (and computed normal) points up, visible from the default
-        // above-terrain camera angle. The naive (0,1,2 / 0,2,3) winding produces
-        // a downward-facing normal here, which silently back-face-culled the
-        // entire water surface from every normal gameplay camera angle.
-        idx.push(base, base + 3, base + 2,  base, base + 2, base + 1);
-      }
-    }
+    const { positions: pos, indices: idx } = buildWaterMeshGeometryData(this._wg, GW, GH, GHW, GHH, T, SH);
 
     if (pos.length === 0) return null;
 
