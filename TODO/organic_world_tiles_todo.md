@@ -584,28 +584,72 @@ Slime, Human — Slime/Human last, since those already look best).
   (classic cone and living canopy) and the real block-geometry wall
   surface (individually visible protruding stone courses, not a flat
   texture) render correctly.
-- [x] **6.4b — Settlement Lab "kind override" testing tool**: since
-  `watchtower`/`tower` can't naturally appear in a Settlement-Lab-
-  generated settlement (see 6.4's finding), added a dev-tool-only "kind
-  override" dropdown to the Lab panel (`SettlementLabPanel.ts` /
-  `SettlementLabScene.ts`) that forces *every* building in the
-  regenerated settlement to one chosen `BuildingKind`, regardless of its
-  ward's own `WARD_TO_KIND` mapping
-  (`BuildingTypeMap.createSettlementBuildingDna`'s new optional
-  `buildingKind` param, threaded through
-  `SettlementRenderer.SettlementRenderContext.forceBuildingKind`). This
-  is what the user asked for directly: "clear out the current elven
-  buildings in the settlement in play in 3D and only have the towers so
-  I can see them." Select faction `elven` + kind override `watchtower`
-  (or `tower`) in the Lab, hit Regenerate, and every building in the
-  test settlement is a stone tower — usable via Overworld Studio's
-  Settlement tab → "Play in 3D" → the Lab panel that opens. **Important
-  distinction from 6.5 below**: this only overrides the *test* tool: it
-  does not change what a normal, non-overridden settlement generates
-  (`WARD_TO_KIND` is untouched), so a real player still won't naturally
-  see a watchtower in actual play. It's a reusable verification
-  mechanism intended for every future race/building-kind in this
-  race-by-race rollout, not a fix for reachability in real play.
+- [x] **6.4b — Settlement Lab visibility fix + automatic race-by-race POC
+  override**: two real bugs found by actually reproducing the user's own
+  test flow (Overworld Studio's Settlement tab → "Play in 3D"), not just
+  checking the DOM. (1) `SettlementLabPanel.rootEl` had **zero CSS** since
+  it was first created — it rendered in normal document flow after the
+  fullscreen `#game-canvas`, pushing it completely below the fold and
+  invisible even though its controls existed in the DOM (a user testing
+  the real flow saw no panel at all). Fixed with a `position:fixed`
+  stylesheet matching `DevSandbox.ts`'s own injected-`<style>` convention
+  — verified live via `getBoundingClientRect()`/`elementFromPoint()` that
+  the panel is now genuinely on-screen and on top. (2) Initially tried a
+  "kind override" dropdown (forcing every building in a settlement to one
+  chosen `BuildingKind`) — the user pushed back: "why bother with the
+  dropdown" when picking a race that has a shipped POC building should
+  just show that automatically. Reverted the dropdown; replaced with
+  `SettlementLabScene.ts`'s `POC_KIND_OVERRIDE_BY_FACTION` map — selecting
+  faction `elven` (already an existing selector) now automatically forces
+  every building in the regenerated settlement to `watchtower`, no extra
+  UI action. `BuildingTypeMap.createSettlementBuildingDna`'s optional
+  `buildingKind` param and `SettlementRenderer`'s `forceBuildingKind`
+  field (the actual override plumbing) are unchanged/kept — only the
+  *driver* changed from a dropdown to an automatic per-faction map, one
+  entry to add per future race's POC. **Important distinction from 6.5
+  below**: this only overrides the Lab's *test* settlement — it does not
+  change what a normal, non-overridden settlement generates (`WARD_TO_KIND`
+  is untouched), so a real player still won't naturally see a watchtower
+  in actual play.
+- [x] **6.4c — Shape-variety pass ("the only variation is the top and the
+  height")**: after seeing the POC live via 6.4b's fix, the user pushed
+  back again: towers only varied by height/roof-cap, not real procedural
+  shape variety. Explicit instruction: research first (general procedural
+  tower techniques, Townscaper/Oskar Stålberg's technique specifically,
+  Godot addon ecosystem, Three.js-compatible libraries), then design,
+  then plan, then implement, then present live. Research (dedicated
+  research-agent pass, 5 threads, citations — see
+  `docs/superpowers/specs/2026-09-02-elven-stone-tower-variety-design.md`)
+  found this repo already has the exact Townscaper jittered-triangle/
+  relaxation technique implemented and tested (`src/world/
+  RelaxedMeshGrid.ts`, from an earlier phase) but never wired to any
+  building code, and ranked WFC/CSG explicitly **against** adoption as a
+  first move (WFC solves discrete content-selection given an
+  already-varied lattice, not shape generation itself; no mature 3D
+  Three.js WFC library exists). Shipped 4 additive techniques (new
+  `StoneTowerSilhouette.ts` + generalized `StoneTowerShape.ts`/
+  `StoneTowerWallSurface.ts`/`StoneTowerKit.ts`): (1) per-vertex,
+  per-floor coherent octagon jitter (seeded jitter + 1D relaxation along
+  the floor axis — the Townscaper "jitter then relax" technique adapted
+  to this ring's radial topology rather than forcing a flat-quad-mesh
+  reuse, with the reasoning documented in the design spec), (2) per-floor
+  footprint drift + rotation, (3) 4 seed-selected sub-archetype
+  silhouette profiles (`tapering`/`tiered`/`leaning`/`waisted`, each with
+  real-world precedent — lighthouses, pagodas, Kilmacduagh's leaning
+  round tower, machicolated galleries), (4) wiring all of the above
+  through the existing wall/roof-cap mesh code with zero new rendering
+  paths. Per-tier facet-count change (minaret precedent — genuinely the
+  most structurally novel idea surfaced) explicitly deferred as a
+  possible future pass. **Live-verified**: via Playwright (the canvas
+  browser tool's tab was stuck in a backgrounded/`document.hidden` state
+  that throttled rendering/screenshots — a tooling quirk, not a code
+  bug) across both the Settlement Lab (5 seeds, zero console errors,
+  buildings/readout correct) and `showroom.html` (6 watchtowers spawned
+  side-by-side, screenshotted from two different camera angles) —
+  confirmed genuinely different silhouettes side-by-side: visibly
+  leaning towers, straight tapering towers, and a visibly bulging
+  "waisted" tower, at different heights, with both roof-cap variants
+  still present — not a uniformly-scaled repeat of one shape.
 - [ ] **6.5 — Make the tower actually reachable in a *normal* (non-
   overridden) live settlement, i.e. real play, not just the Lab's test
   override above**: needs either a `WARD_TO_KIND` entry pointing some
