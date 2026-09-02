@@ -1,6 +1,7 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🔲 Research complete, not yet started.** Cross-cutting initiative — touches
+> **Status: 🚧 Phase 0 shipped (2026-09-02), Phases 1-5 not yet started.**
+> Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
 > (building/prop builders). Written 2026-09-02 after research into Oskar Stålberg's
@@ -167,32 +168,39 @@ these systems, not replacing them wholesale.
 
 ---
 
-## Phase 0 — Shared case-table infrastructure
+## Phase 0 — Shared case-table infrastructure ✅ Shipped 2026-09-02
 
 **Goal:** one small, well-tested, engine-agnostic utility that both terrain (Phase 1) and
 buildings (Phase 2) can reuse, so the "rotation-canonical dual-grid case table" logic is
 written and tested exactly once.
 
-- [ ] **0.1 — `DualGridCaseTable.ts`** (new, in `src/world/` or a shared location TBD by
-  whoever picks this up): given a number of states (2 for binary land/water or
-  empty/occupied; higher later if e.g. 3-way land/beach/water corner typing is wanted),
-  build the rotation-canonical case table exactly as researched: for every one of `states⁴`
-  4-corner configs, find its lexicographically-smallest rotation, group configs sharing a
-  canonical form (yields exactly 6 shapes for `states=2`: `empty`, `outer_corner`, `edge`,
-  `diagonal`, `inner_corner`, `full`), and return a `{config: [a,b,c,d]} -> {tile, steps}`
-  mapping (`steps` = how many 90° rotations from the canonical mesh to this config).
-- [ ] **0.2 — Unit tests**: verify exactly 6 canonical tiles for `states=2` (matches the
-  researched/reference result precisely — this is a strong, checkable invariant), verify
-  every one of the 16 raw configs maps to a valid `{tile, steps}` pair, verify rotating a
-  canonical tile by `steps` reproduces the original config exactly (round-trip test).
-- [ ] **0.3 — A worked example / usage doc**: since this is genuinely reusable infrastructure
-  with no game-visible effect on its own, include a short `docs/superpowers/specs/`-style
-  note (or a doc-comment example) showing how Phase 1 and Phase 2 are each expected to
-  consume it, so this phase doesn't ship as an orphaned utility nobody wires up next.
+- [x] **0.1 — `DualGridCaseTable.ts`** (`src/world/DualGridCaseTable.ts`): given a number of
+  states (2 for binary land/water or empty/occupied; verified working for higher state
+  counts too, e.g. 3-way corner typing), builds the rotation-canonical case table exactly as
+  researched — `buildDualGridCaseTable(states)` returns `{ tiles, mapping }`; every one of
+  `states⁴` 4-corner configs maps to `{tile, steps}` (`steps` = 90° clockwise rotations from
+  the canonical tile to this config). Confirmed exactly 6 canonical shapes for `states=2`
+  (`empty`, `outer_corner`, `edge`, `diagonal`, `inner_corner`, `full`), matching the
+  researched/reference result precisely. Corner order/winding `[NW, NE, SE, SW]` matches
+  `BlockKit.ts`'s existing `CornerId` convention, so Phase 2 needs no index remapping.
+- [x] **0.2 — Unit tests** (`tests/world/DualGridCaseTable.test.ts`, 13 tests): exactly 6
+  tiles for `states=2`; every raw config maps to a valid `{tile, steps}`; round-trip
+  rotation reproduces the exact original config; `configCount` sums to `states⁴`; exactly
+  one all-empty and one all-full canonical tile; all 6 binary labels present; deterministic
+  across repeated builds; a 3-state (81-config) case works without throwing. All passing;
+  full regression suite re-confirmed at the established baseline (14 pre-existing/flaky
+  failures, none new); `tsc --noEmit` steady at the established 146-error baseline.
+- [x] **0.3 — Worked example / usage doc**
+  (`docs/superpowers/specs/2026-09-02-dual-grid-case-table-usage.md`): shows the intended
+  calling convention plus a concrete worked example for both Phase 1 (shoreline corners,
+  keyed by `WorldGrid` tile water/land classification) and Phase 2 (building corners,
+  generalizing `BlockKit.ts`'s existing `getChamferFlags()` neighbour-occupancy rule) —
+  explicitly documents what Phase 0 does *not* decide (mesh authoring, exact domain-specific
+  corner-state derivation) so Phase 1/2 don't mistake the worked examples for a mandated rule.
 
-**This phase is a pure prerequisite** — no visual change on its own, deliberately small and
-independently testable so it can be built, reviewed, and merged before committing to either
-downstream phase.
+**This phase is a pure prerequisite** — no visual change on its own (by design), but it
+unblocks Phase 1 and Phase 2 to start their own brainstorming → design spec → plan cycles
+whenever picked up, without needing to re-derive or re-test the case-table math first.
 
 ---
 
