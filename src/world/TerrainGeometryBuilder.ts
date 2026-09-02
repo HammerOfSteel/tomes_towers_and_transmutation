@@ -898,10 +898,21 @@ export function buildTerrainGeometryData(
       const wyS = physH(col, row + 1);
       if (wyS < wallTopS) {
         const d = 0.76;
-        addFace(
-          [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
-          0, 0, 1,  tr * d, tg * d, tb * d,
-        );
+        if (wg.get(col, row + 1).waterDepth > 0) {
+          const pts = shorelineEdgePoints(wx, wz1, wx1, wz1);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            addFace(
+              [bx, wallTopS, bz], [ax, wallTopS, az], [ax, wyS, az], [bx, wyS, bz],
+              0, 0, 1,  tr * d, tg * d, tb * d,
+            );
+          }
+        } else {
+          addFace(
+            [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
+            0, 0, 1,  tr * d, tg * d, tb * d,
+          );
+        }
       }
 
       // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
@@ -909,10 +920,21 @@ export function buildTerrainGeometryData(
       const wyN = physH(col, row - 1);
       if (wyN < wallTopN) {
         const d = 0.50;
-        addFace(
-          [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
-          0, 0, -1,  tr * d, tg * d, tb * d,
-        );
+        if (wg.get(col, row - 1).waterDepth > 0) {
+          const pts = shorelineEdgePoints(wx, wz, wx1, wz);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            addFace(
+              [ax, wallTopN, az], [bx, wallTopN, bz], [bx, wyN, bz], [ax, wyN, az],
+              0, 0, -1,  tr * d, tg * d, tb * d,
+            );
+          }
+        } else {
+          addFace(
+            [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
+            0, 0, -1,  tr * d, tg * d, tb * d,
+          );
+        }
       }
 
       // ── EAST wall (+X face, at wx1) ──────────────────────────────────
@@ -920,10 +942,21 @@ export function buildTerrainGeometryData(
       const wyE = physH(col + 1, row);
       if (wyE < wallTopE) {
         const d = 0.63;
-        addFace(
-          [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
-          1, 0, 0,  tr * d, tg * d, tb * d,
-        );
+        if (wg.get(col + 1, row).waterDepth > 0) {
+          const pts = shorelineEdgePoints(wx1, wz, wx1, wz1);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            addFace(
+              [ax, wallTopE, az], [bx, wallTopE, bz], [bx, wyE, bz], [ax, wyE, az],
+              1, 0, 0,  tr * d, tg * d, tb * d,
+            );
+          }
+        } else {
+          addFace(
+            [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
+            1, 0, 0,  tr * d, tg * d, tb * d,
+          );
+        }
       }
 
       // ── WEST wall (−X face, at wx) ───────────────────────────────────
@@ -931,10 +964,21 @@ export function buildTerrainGeometryData(
       const wyW = physH(col - 1, row);
       if (wyW < wallTopW) {
         const d = 0.55;
-        addFace(
-          [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
-          -1, 0, 0,  tr * d, tg * d, tb * d,
-        );
+        if (wg.get(col - 1, row).waterDepth > 0) {
+          const pts = shorelineEdgePoints(wx, wz, wx, wz1);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            addFace(
+              [bx, wallTopW, bz], [ax, wallTopW, az], [ax, wyW, az], [bx, wyW, bz],
+              -1, 0, 0,  tr * d, tg * d, tb * d,
+            );
+          }
+        } else {
+          addFace(
+            [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
+            -1, 0, 0,  tr * d, tg * d, tb * d,
+          );
+        }
       }
     }
   }
