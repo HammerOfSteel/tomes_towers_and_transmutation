@@ -24,6 +24,7 @@ import {
   ashStoneTexture,
   obsidianTexture,
   toadstoolTexture,
+  ashlarTexture,
 } from '@/world/buildings/FactionBlockTextures';
 
 const ALL_TEXTURES: Array<[string, (repX?: number, repY?: number) => THREE.CanvasTexture]> = [
@@ -34,6 +35,7 @@ const ALL_TEXTURES: Array<[string, (repX?: number, repY?: number) => THREE.Canva
   ['ashStoneTexture', ashStoneTexture],
   ['obsidianTexture', obsidianTexture],
   ['toadstoolTexture', toadstoolTexture],
+  ['ashlarTexture', ashlarTexture],
 ];
 
 describe('FactionBlockTextures — shared conventions', () => {

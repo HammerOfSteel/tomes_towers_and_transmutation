@@ -42,6 +42,7 @@ let _hideCanvas:      HTMLCanvasElement | null = null;
 let _ashStoneCanvas:  HTMLCanvasElement | null = null;
 let _obsidianCanvas:  HTMLCanvasElement | null = null;
 let _toadstoolCanvas: HTMLCanvasElement | null = null;
+let _ashlarCanvas:    HTMLCanvasElement | null = null;
 
 // ── Internal helper ───────────────────────────────────────────────────────────
 
@@ -137,6 +138,44 @@ function _buildGraniteCanvas(): HTMLCanvasElement {
       g.strokeStyle = 'rgba(20,20,22,0.4)';
       g.lineWidth = mortar;
       g.strokeRect(x, y, bw, bh);
+      x += bw;
+    }
+    y += bh;
+    row++;
+  }
+  return c;
+}
+
+// ── Ashlar — refined elven dressed stone ─────────────────────────────────────
+// Larger, more uniform, cooler-grey coursed blocks than dwarven's
+// rougher graniteTexture() (which uses a rough salt-and-pepper
+// speckle) -- reads as refined elven masonry rather than crude-hewn
+// dwarven stone, keeping faction identity distinct even though both
+// are "grey stone" materials.
+
+function _buildAshlarCanvas(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  if (!g) return c;
+
+  g.fillStyle = '#9aa0a8';
+  g.fillRect(0, 0, 256, 256);
+
+  const palette = ['#a4aab2', '#9ea4ac', '#98a0a8', '#a8aeb4'];
+  const bw = 84, bh = 44, mortar = 3;
+  let y = 0, row = 0;
+  while (y < 260) {
+    const offset = row % 2 === 0 ? 0 : bw / 2;
+    let x = -offset;
+    while (x < 260) {
+      const col = palette[Math.floor(Math.random() * palette.length)]!;
+      g.fillStyle = col;
+      g.fillRect(x + mortar, y + mortar, bw - mortar, bh - mortar);
+      g.fillStyle = 'rgba(255,255,255,0.08)';
+      g.fillRect(x + mortar, y + mortar, bw - mortar, 2);
+      g.fillStyle = 'rgba(0,0,0,0.1)';
+      g.fillRect(x + mortar, y + bh - mortar - 2, bw - mortar, 2);
       x += bw;
     }
     y += bh;
@@ -386,4 +425,11 @@ export function obsidianTexture(repX = 1, repY = 1): THREE.CanvasTexture {
 export function toadstoolTexture(repX = 1, repY = 1): THREE.CanvasTexture {
   if (!_toadstoolCanvas) _toadstoolCanvas = _buildToadstoolCanvas();
   return _wrap(new THREE.CanvasTexture(_toadstoolCanvas), repX, repY);
+}
+
+/** Larger, uniform, cooler-grey dressed ashlar blocks — elven stone
+ * towers (distinct from graniteTexture()'s rougher dwarven speckle). */
+export function ashlarTexture(repX = 1, repY = 1): THREE.CanvasTexture {
+  if (!_ashlarCanvas) _ashlarCanvas = _buildAshlarCanvas();
+  return _wrap(new THREE.CanvasTexture(_ashlarCanvas), repX, repY);
 }
