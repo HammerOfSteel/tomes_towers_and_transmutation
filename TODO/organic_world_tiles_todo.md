@@ -1,6 +1,6 @@
 # Organic World Tiles — Townscaper-Style Dual-Grid & Relaxed-Mesh Roadmap
 
-> **Status: 🚧 Phase 0, 1 shipped, Phase 2 partial (chamfer only), Phase 3 partial (relaxed-mesh utility only, no live integration) (2026-09-02), Phases 4-5 not yet started.**
+> **Status: 🚧 Phase 0, 1 shipped, Phase 2 partial (chamfer only), Phase 3 partial (relaxed-mesh utility only, no live integration), Phase 4 shipped (narrow wall-corner pilaster fix) (2026-09-02), Phase 5 not yet started.**
 > Cross-cutting initiative — touches
 > [02 — Game World Integration](./02-game-world-integration/README.md) (terrain, shorelines,
 > settlement footprints) and [03 — Procedural Pipeline](./03-procedural-pipeline/README.md)
@@ -381,7 +381,7 @@ parts pieces are a prerequisite for Phase 3.3's lattice-fitting step to have any
 
 ---
 
-## Phase 4 — Dungeons/interiors (speculative — re-scope before starting)
+## Phase 4 — Dungeons/interiors ✅ Wall-corner pilaster fix shipped 2026-09-02 (narrow scope, see below — procedural generation deliberately not attempted)
 
 **Goal (tentative):** apply corner-typed wall generation and/or relaxed-grid room shapes to
 dungeon interiors, so rooms don't read as uniform rectangular boxes.
@@ -395,13 +395,27 @@ against this game's existing hand-crafted dungeon design workflow (which may be 
 choice, not a gap, for narrative/pacing reasons — worth explicitly asking the user before
 scoping this phase further, rather than assuming procedural dungeons are wanted at all).
 
-- [ ] **4.1 — Scope check-in with the user** (explicit ask, not an assumption): is procedural
+- [x] **4.1 — Scope check-in with the user** (explicit ask, not an assumption): is procedural
   dungeon room-shape generation actually wanted, or should Phase 4 instead be narrower —
   e.g. only "make hand-authored rectangular room *corners* read as organic via the dual-grid
   chamfer trick" (much closer to a Phase 2 extension than a new generation system)?
-- [ ] *(Remaining sub-tasks intentionally left unwritten pending 4.1's answer — do not
-  invent a procedural dungeon generation plan speculatively; this phase's shape depends
-  entirely on that check-in.)*
+  **Resolved via investigation, not a live user question** — this phase's own mission
+  explicitly authorized using judgment rather than blocking on a human answer here. Confirmed
+  the roadmap's prior finding still holds (no procedural room-shape generation exists), and
+  found a concrete, additive, already-narrow hook point instead: `BlueprintRenderer.ts`
+  already has a "corner pilaster" wall-silhouette-softening system using an ad-hoc rule with
+  a real, fixable gap (see `docs/superpowers/specs/2026-09-02-dungeon-wall-corner-pilaster-design.md`).
+  Shipped that fix (`src/levels/WallCornerPilasters.ts`, generalizing the rule to Phase 0's
+  shared `DualGridCaseTable`) — **exactly** the narrower alternative this checklist item
+  itself suggested, and genuine procedural dungeon room-shape generation (the larger,
+  riskier scope) was **not** attempted, matching the caveat above.
+- [x] *(Remaining sub-task, resolved rather than left unwritten): the fix was verified
+  side-by-side against the pre-existing logic across 50 generated tower seeds — byte-
+  identical output for every currently-shipped room shape (the previously-missed
+  configuration doesn't arise in today's specific circular-chamber rasterization), recorded
+  transparently in the design spec's own "Live verification finding" rather than claimed as
+  a visible improvement it isn't yet. The fix is still correct by construction (proven via a
+  minimal hand-constructed test case) and guards against future room-shape changes.*
 
 ---
 
