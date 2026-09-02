@@ -58,6 +58,25 @@ describe('buildWallSurfaceTextured (Strategy T)', () => {
     const g2 = buildWallSurfaceTextured(2, 3, mat);
     expect(countTriangles(g1)).toBe(countTriangles(g2));
   });
+
+  it('vertexScales average nudges the effective cylinder radius (documented Strategy-T limitation: no true per-vertex jitter, only an overall size shift)', () => {
+    function maxRadialExtent(group: THREE.Group): number {
+      let maxR = 0;
+      group.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          const pos = o.geometry.attributes.position;
+          for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i), z = pos.getZ(i);
+            maxR = Math.max(maxR, Math.hypot(x, z));
+          }
+        }
+      });
+      return maxR;
+    }
+    const base = buildWallSurfaceTextured(2, 3, mat);
+    const scaled = buildWallSurfaceTextured(2, 3, mat, [1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1]);
+    expect(maxRadialExtent(scaled)).toBeGreaterThan(maxRadialExtent(base));
+  });
 });
 
 describe('buildWallSurfaceBlocks (Strategy G)', () => {
@@ -94,6 +113,32 @@ describe('buildWallSurfaceBlocks (Strategy G)', () => {
     const coarse = buildWallSurfaceBlocks(2, 3, 42, mat, { blocksPerFace: 2, courseHeight: 1 });
     const fine = buildWallSurfaceBlocks(2, 3, 42, mat, { blocksPerFace: 4, courseHeight: 0.3 });
     expect(countTriangles(fine)).toBeGreaterThan(countTriangles(coarse));
+  });
+
+  it('vertexScales perturbs the outline so blocks near a scaled-up corner sit farther out than with an unscaled octagon', () => {
+    function maxRadialExtent(group: THREE.Group): number {
+      let maxR = 0;
+      group.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          const pos = o.geometry.attributes.position;
+          for (let i = 0; i < pos.count; i++) {
+            const x = pos.getX(i), z = pos.getZ(i);
+            maxR = Math.max(maxR, Math.hypot(x, z));
+          }
+        }
+      });
+      return maxR;
+    }
+    const base = buildWallSurfaceBlocks(2, 3, 42, mat);
+    const outlierScales = [1, 1, 1.3, 1, 1, 1, 1, 1];
+    const scaled = buildWallSurfaceBlocks(2, 3, 42, mat, {}, outlierScales);
+    expect(maxRadialExtent(scaled)).toBeGreaterThan(maxRadialExtent(base));
+  });
+
+  it('omitting vertexScales reproduces the exact same triangle count as before (backward compatible)', () => {
+    const withoutParam = buildWallSurfaceBlocks(2, 3, 42, mat);
+    const withUndefined = buildWallSurfaceBlocks(2, 3, 42, mat, {}, undefined);
+    expect(countTriangles(withoutParam)).toBe(countTriangles(withUndefined));
   });
 });
 

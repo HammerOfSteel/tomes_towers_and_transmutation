@@ -20,10 +20,21 @@ import { octagonFaces } from './StoneTowerShape';
  * regular octagon -- verified: both use x=r*sin(theta), z=r*cos(theta)).
  * Cheapest possible wall surface; relies entirely on the material's
  * texture map for the coursed-stone look.
+ *
+ * `vertexScales`, when given, can't be expressed as true per-vertex
+ * jitter on a single CylinderGeometry (it has one uniform radius) --
+ * as a documented, accepted simplification (Strategy T is the
+ * non-default comparison-only strategy), this uses the AVERAGE of the
+ * 8 scales as an overall radius nudge instead.
  */
-export function buildWallSurfaceTextured(radius: number, height: number, material: THREE.Material): THREE.Group {
+export function buildWallSurfaceTextured(
+  radius: number, height: number, material: THREE.Material, vertexScales?: number[],
+): THREE.Group {
+  const effectiveRadius = vertexScales !== undefined
+    ? radius * (vertexScales.reduce((s, v) => s + v, 0) / vertexScales.length)
+    : radius;
   const g = new THREE.Group();
-  const geo = new THREE.CylinderGeometry(radius, radius, height, 8, 1, false);
+  const geo = new THREE.CylinderGeometry(effectiveRadius, effectiveRadius, height, 8, 1, false);
   const mesh = new THREE.Mesh(geo, material);
   mesh.position.y = height / 2;
   mesh.castShadow = mesh.receiveShadow = true;
@@ -55,17 +66,24 @@ export interface WallBlockOptions {
  * material identity -- merges the whole tower ring into a single draw
  * call regardless of block count; visual variation comes from geometry
  * (size/protrusion jitter), not per-block material cloning.
+ *
+ * `vertexScales`, when given (8 entries, one per octagon corner), is
+ * forwarded to `octagonFaces()` so each course's blocks actually
+ * follow the jittered outline (StoneTowerSilhouette.ts's per-floor
+ * jitter) instead of a plain regular octagon -- omitted reproduces
+ * the exact prior (regular-octagon) behaviour.
  */
 export function buildWallSurfaceBlocks(
   radius: number, height: number, seed: number, material: THREE.Material,
   opts: WallBlockOptions = {},
+  vertexScales?: number[],
 ): THREE.Group {
   const g = new THREE.Group();
   const courseHeight = opts.courseHeight ?? 0.5;
   const blocksPerFace = opts.blocksPerFace ?? 3;
   const jitter = opts.jitter ?? 0.15;
   const rand = mulberry32(seed);
-  const faces = octagonFaces(radius);
+  const faces = octagonFaces(radius, vertexScales);
   const numCourses = Math.max(1, Math.round(height / courseHeight));
   const actualCourseH = height / numCourses;
   const blockDepth = 0.18;
@@ -110,11 +128,14 @@ export const WALL_STRATEGY: WallStrategy = 'blocks';
 
 /** Dispatches to whichever wall-surface strategy is requested -- lets
  * the tower-assembly code (StoneTowerKit.ts) stay agnostic to which is
- * active. */
+ * active. `vertexScales`, when given, is forwarded to whichever
+ * strategy is active (see each strategy's own doc comment for how it
+ * uses -- or approximates -- per-vertex jitter). */
 export function buildWallSurface(
   strategy: WallStrategy, radius: number, height: number, seed: number, material: THREE.Material,
+  vertexScales?: number[],
 ): THREE.Group {
   return strategy === 'textured'
-    ? buildWallSurfaceTextured(radius, height, material)
-    : buildWallSurfaceBlocks(radius, height, seed, material);
+    ? buildWallSurfaceTextured(radius, height, material, vertexScales)
+    : buildWallSurfaceBlocks(radius, height, seed, material, {}, vertexScales);
 }
