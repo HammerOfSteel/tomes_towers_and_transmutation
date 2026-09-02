@@ -333,6 +333,35 @@ buildings, not just softened corners.
   see `2026-09-02-blockkit-dualgrid-chamfer.md`'s Task 1 Step 6). Still applies, unstarted,
   if 2.2/2.3 are ever picked up — that IS the kind of change needing this check-in.
 
+> **2026-09-02 follow-up** (user feedback after this PR merged: "was this
+> implemented only on water edges etc?" — clarifying the organic/rounded
+> treatment was expected broadly, not just water): shipped a lighter-weight
+> alternative to the still-deferred kit-of-parts effort (2.2–2.6 above,
+> still unstarted) that gets much closer to a real "Townscaper" look
+> without authoring per-faction meshes:
+> - Generalized `BlockKit.ts`'s flat 2-point diagonal chamfer into a true
+>   N-segment quarter-circle arc (default 3 segments), so the 8 factions
+>   that route through `meshBlockGrid()` now get genuinely rounded corners
+>   instead of a beveled octagon.
+> - Found (via live visual QA, not unit tests — see below) that the
+>   `human` faction's generic default builder (`buildHouseOrShop`, used by
+>   `house`/`shop`/`inn`/`guild` for any faction with no dedicated
+>   `FACTION_BUILDING_VARIANTS` entry) had **zero corner treatment at
+>   all** — 100% sharp `BoxGeometry` panels. Added rounded corner posts
+>   there too (radius `0.6`, tuned up from an initial `0.14` that proved
+>   imperceptible), which required also shortening the wall panels
+>   themselves so they don't occlude the post — a real bug the unit tests
+>   didn't catch, only found by a before/after screenshot comparison in
+>   Overworld Studio's Settlement Lab ("Play in 3D").
+> - See `docs/superpowers/specs/2026-09-02-rounded-building-corners-design.md`
+>   for full details, including its "2026-09-02 correction" note on the
+>   occlusion bug.
+> - Still deferred, unchanged from above: full kit-of-parts mesh-swap
+>   architecture (2.2–2.6); rounding `buildVilla` (has intentional Georgian
+>   quoins instead), `buildTerraced`/`buildCottage` (share the same
+>   box-core pattern, cheap follow-ups but out of scope this round), and
+>   ~12 other specialty builders (tavern, tower, gate, blacksmith, etc.).
+
 ---
 
 ## Phase 3 — Organic settlement plot layout (Stålberg relaxed grid) ✅ Pipeline shipped 2026-09-02 (standalone utility only — live integration deferred, see below)
