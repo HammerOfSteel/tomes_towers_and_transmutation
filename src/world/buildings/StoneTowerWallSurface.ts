@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
-import { octagonFaces } from './StoneTowerShape';
+import { octagonFaces, type OctagonFace } from './StoneTowerShape';
 
 /**
  * Strategy T: a plain 8-sided extruded prism (matches
@@ -50,6 +50,14 @@ export interface WallBlockOptions {
   blocksPerFace?: number;
   /** 0-1 fraction of per-block size/protrusion variance. Default 0.15. */
   jitter?: number;
+  /**
+   * Build blocks for only these faces instead of the full 8-face octagon
+   * (e.g. a market stall's partial back wall, not a fully enclosed
+   * ring) -- when given, used verbatim instead of calling
+   * `octagonFaces(radius, vertexScales)` internally. Omitted (the
+   * default) reproduces the exact prior full-ring behavior unchanged.
+   */
+  facesOverride?: OctagonFace[];
 }
 
 /**
@@ -72,6 +80,10 @@ export interface WallBlockOptions {
  * follow the jittered outline (StoneTowerSilhouette.ts's per-floor
  * jitter) instead of a plain regular octagon -- omitted reproduces
  * the exact prior (regular-octagon) behaviour.
+ *
+ * `opts.facesOverride`, when given, builds blocks for only that face
+ * subset (e.g. a market stall's partial back wall) instead of the full
+ * 8-face ring -- see `WallBlockOptions.facesOverride`'s own doc comment.
  */
 export function buildWallSurfaceBlocks(
   radius: number, height: number, seed: number, material: THREE.Material,
@@ -83,7 +95,7 @@ export function buildWallSurfaceBlocks(
   const blocksPerFace = opts.blocksPerFace ?? 3;
   const jitter = opts.jitter ?? 0.15;
   const rand = mulberry32(seed);
-  const faces = octagonFaces(radius, vertexScales);
+  const faces = opts.facesOverride ?? octagonFaces(radius, vertexScales);
   const numCourses = Math.max(1, Math.round(height / courseHeight));
   const actualCourseH = height / numCourses;
   const blockDepth = 0.18;

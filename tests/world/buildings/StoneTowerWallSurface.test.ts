@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { buildWallSurfaceTextured, buildWallSurfaceBlocks, buildWallSurface, WALL_STRATEGY } from '@/world/buildings/StoneTowerWallSurface';
+import { octagonFaces } from '@/world/buildings/StoneTowerShape';
 
 function countTriangles(group: THREE.Group): number {
   let tris = 0;
@@ -139,6 +140,24 @@ describe('buildWallSurfaceBlocks (Strategy G)', () => {
     const withoutParam = buildWallSurfaceBlocks(2, 3, 42, mat);
     const withUndefined = buildWallSurfaceBlocks(2, 3, 42, mat, {}, undefined);
     expect(countTriangles(withoutParam)).toBe(countTriangles(withUndefined));
+  });
+
+  it('facesOverride restricts block construction to only the given faces (a genuine partial wall, not a full ring)', () => {
+    const full = buildWallSurfaceBlocks(2, 3, 42, mat);
+    const faces = octagonFaces(2);
+    const halfFaces = faces.slice(0, 4); // half the octagon's circumference
+    const partial = buildWallSurfaceBlocks(2, 3, 42, mat, { facesOverride: halfFaces });
+    // Roughly half the triangle count -- not exact (course/jitter math can shift things
+    // slightly per face), but a real, substantial reduction proves only a subset of
+    // faces were actually built.
+    expect(countTriangles(partial)).toBeLessThan(countTriangles(full) * 0.65);
+    expect(countTriangles(partial)).toBeGreaterThan(countTriangles(full) * 0.35);
+  });
+
+  it('omitting facesOverride reproduces the exact same triangle count as before (backward compatible)', () => {
+    const withoutOverride = buildWallSurfaceBlocks(2, 3, 42, mat);
+    const withUndefinedOverride = buildWallSurfaceBlocks(2, 3, 42, mat, { facesOverride: undefined });
+    expect(countTriangles(withoutOverride)).toBe(countTriangles(withUndefinedOverride));
   });
 });
 
