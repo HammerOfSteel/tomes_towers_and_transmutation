@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createBlockGrid, setBlock, hasBlock, getMaterialKey, BLOCK_UNIT, type BlockGrid } from '@/world/buildings/BlockKit';
+import { createBlockGrid, setBlock, getMaterialKey, BLOCK_UNIT, type BlockGrid } from '@/world/buildings/BlockKit';
 import { carveTrunkWindows, pickWindowCount } from '@/world/buildings/ElvenTrunkWindows';
 
 describe('pickWindowCount', () => {
