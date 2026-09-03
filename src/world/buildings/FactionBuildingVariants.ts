@@ -37,7 +37,7 @@ import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
 import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, elvenRadiusAtHeight, elvenHeightAtFrac, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenRadiusAtHeight, elvenHeightAtFrac, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { carveTrunkWindows } from './ElvenTrunkWindows';
 import { buildElvenStoneTower } from './StoneTowerKit';
 
@@ -731,22 +731,34 @@ function addRingBraces(g: THREE.Group, seed: number, y: number, trunkRadius: num
 function buildElvenVilla(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.5; // tall, reaching into canopy
+  const floors = Math.max(1, dna.floors);
   const g = new THREE.Group();
   addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
     facade: true,
+    floors,
   });
-  // Elder's Hall: a block-built plank ring/balcony girdling the trunk's
-  // actual neck (where the taper stops and the canopy begins), sized to
-  // just overhang the trunk's real constructed waist radius there (not an
-  // arbitrary fraction of the whole footprint) plus a handful of angled
-  // support braces bridging ring-to-trunk, so it reads as a platform built
-  // onto the tree rather than a disc floating beside it.
+  // Elder's Hall: block-built plank ring/balcony "collars" girdling the trunk, one
+  // per floor (not just once at the neck) -- a direct application of the real
+  // treehouse "ring beam + triangulated knee brace" research finding (a beam/collar
+  // wraps the trunk at each platform level, diagonal braces carry load down to the
+  // trunk below), each sized to the trunk's own real constructed radius at that
+  // floor's height (not an arbitrary fraction of the whole footprint), so a
+  // multi-floor building reads as N distinct stories, not one undifferentiated
+  // stepped cone with a single ring at the top.
   const woodMat = mat(dna.colors.trim, { roughness: 0.85 });
-  const neckY = elvenNeckY(h);
-  const trunkRadiusAtNeck = elvenWaistRadius(fp.w, fp.d);
-  const ringRadius = trunkRadiusAtNeck * 1.25;
-  addPlankRing(g, dna.seed ^ 0xE1F3_0013, neckY, ringRadius, woodMat, 14);
-  addRingBraces(g, dna.seed ^ 0xE1F3_0015, neckY, trunkRadiusAtNeck, ringRadius, woodMat, 6);
+  const canopyStartFrac = 0.6;
+  for (let floorIdx = 0; floorIdx < floors; floorIdx++) {
+    const heightFrac = ((floorIdx + 1) / floors) * canopyStartFrac;
+    const ringY = elvenHeightAtFrac(h, heightFrac);
+    const trunkRadiusHere = elvenRadiusAtHeight(fp.w, fp.d, heightFrac);
+    const ringRadius = trunkRadiusHere * 1.25;
+    const ringGroup = new THREE.Group();
+    ringGroup.name = 'elven-trunk-ring-beam';
+    ringGroup.position.y = ringY;
+    addPlankRing(ringGroup, dna.seed ^ (0xE1F3_0013 + floorIdx), 0, ringRadius, woodMat, 14);
+    addRingBraces(ringGroup, dna.seed ^ (0xE1F3_0015 + floorIdx), 0, trunkRadiusHere, ringRadius, woodMat, 6);
+    g.add(ringGroup);
+  }
   return g;
 }
 

@@ -687,6 +687,30 @@ describe('Elven — BlockKit tapering living-tree trunk + canopy (not a smooth c
     }
     expect(trimColoredMaterialCount).toBeGreaterThanOrEqual(3);
   });
+
+  it('a 3-floor building has 3 named ring-beam groups; a 1-floor building has 1', () => {
+    function countRings(g: THREE.Group): number {
+      let count = 0;
+      g.traverse((o) => { if (o.name === 'elven-trunk-ring-beam') count++; });
+      return count;
+    }
+    const oneFloor = getFactionBuildingVariant('elven', 'house')!({ ...makeDna('house', 'elven', 9), size: 'medium', floors: 1 });
+    const threeFloor = getFactionBuildingVariant('elven', 'house')!({ ...makeDna('house', 'elven', 9), size: 'medium', floors: 3 });
+    expect(countRings(oneFloor)).toBe(1);
+    expect(countRings(threeFloor)).toBe(3);
+  });
+
+  it('ring beams sit at strictly increasing heights, one per floor bottom to top', () => {
+    const dna = { ...makeDna('house', 'elven', 9), size: 'medium' as const, floors: 3 as const };
+    const g = getFactionBuildingVariant('elven', 'house')!(dna);
+    g.updateMatrixWorld(true);
+    const ringYs: number[] = [];
+    g.traverse((o) => { if (o.name === 'elven-trunk-ring-beam') ringYs.push(o.position.y); });
+    ringYs.sort((a, b) => a - b);
+    expect(ringYs.length).toBe(3);
+    expect(ringYs[1]).toBeGreaterThan(ringYs[0]!);
+    expect(ringYs[2]).toBeGreaterThan(ringYs[1]!);
+  });
 });
 
 // ── Vampire deep-quality pass (settlement visual fidelity follow-up) ───────
