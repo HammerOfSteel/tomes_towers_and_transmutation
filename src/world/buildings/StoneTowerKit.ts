@@ -74,13 +74,115 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
   return g;
 }
 
+/** Weighted prop catalog for a wall ring's decoration slot (docs/
+ * superpowers/specs/2026-09-03-elven-stone-tower-features-design.md):
+ * extends the original vine-or-nothing choice into 4 outcomes so a
+ * tower's rings show more than one kind of accent. Weights: none 35%,
+ * vine 35% (together matching the original ~50%-ish vine frequency
+ * closely enough), moss_patch 15%, banner 15%. */
+export type WallProp = 'none' | 'vine' | 'moss_patch' | 'banner';
+const WALL_PROP_WEIGHTS: [WallProp, number][] = [
+  ['none', 0.35], ['vine', 0.35], ['moss_patch', 0.15], ['banner', 0.15],
+];
+
+/** Deterministic seeded weighted choice among the wall-prop catalog. */
+export function pickWallProp(seed: number): WallProp {
+  const rand = mulberry32((seed ^ 0x50524F50) >>> 0); // 'PROP'-ish tag
+  const roll = rand();
+  let acc = 0;
+  for (const [prop, weight] of WALL_PROP_WEIGHTS) {
+    acc += weight;
+    if (roll < acc) return prop;
+  }
+  return WALL_PROP_WEIGHTS[WALL_PROP_WEIGHTS.length - 1]![0];
+}
+
+/** Existing vine + 3 leaves accent, unchanged from before this
+ * feature pass. */
+function _buildVineProp(radius: number, ringHeight: number, rand: () => number, palette: StoneTowerPalette): THREE.Group {
+  const g = new THREE.Group();
+  const vineAng = rand() * Math.PI * 2;
+  const vineLen = ringHeight * (0.4 + rand() * 0.4);
+  const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, vineLen, 5), palette.bark);
+  vine.position.set(Math.sin(vineAng) * radius * 1.01, vineLen / 2, Math.cos(vineAng) * radius * 1.01);
+  vine.rotation.y = vineAng;
+  vine.castShadow = true;
+  g.add(vine);
+  for (let i = 0; i < 3; i++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.08 + rand() * 0.04, 6, 5), palette.leaf);
+    leaf.position.set(
+      Math.sin(vineAng) * radius * 1.05,
+      vineLen * (0.3 + i * 0.3),
+      Math.cos(vineAng) * radius * 1.05,
+    );
+    g.add(leaf);
+  }
+  return g;
+}
+
+/** Best-effort extraction of a material's color -- palette materials
+ * are always `MeshStandardMaterial` in practice (see `mat()` above),
+ * but the shared `StoneTowerPalette` interface types them as the base
+ * `THREE.Material` so callers can substitute test doubles; this keeps
+ * every color-reading call site consistent instead of scattering
+ * one-off `instanceof` checks. */
+function _materialColor(material: THREE.Material, fallback: string): THREE.Color {
+  return material instanceof THREE.MeshStandardMaterial ? material.color : new THREE.Color(fallback);
+}
+
+/** Weathering/staining accent: 2-3 flat, slightly-protruding
+ * semi-transparent decals low on the ring, reusing palette.leaf at
+ * reduced opacity -- the one deliberate per-instance material clone
+ * in this kit, justified since a decal needs its own opacity/
+ * transparency and sits outside the merged wall-surface group
+ * anyway. */
+function _buildMossPatchProp(radius: number, ringHeight: number, rand: () => number, palette: StoneTowerPalette): THREE.Group {
+  const g = new THREE.Group();
+  const baseColor = _materialColor(palette.leaf, '#3d6b35');
+  const patchCount = 2 + Math.floor(rand() * 2);
+  for (let i = 0; i < patchCount; i++) {
+    const ang = rand() * Math.PI * 2;
+    const patchMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.95, transparent: true, opacity: 0.5 + rand() * 0.2 });
+    const size = radius * (0.18 + rand() * 0.12);
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(size, size * (0.7 + rand() * 0.5)), patchMat);
+    patch.position.set(Math.sin(ang) * radius * 1.005, ringHeight * (0.05 + rand() * 0.2), Math.cos(ang) * radius * 1.005);
+    patch.rotation.y = ang;
+    g.add(patch);
+  }
+  return g;
+}
+
+/** A thin hanging cloth banner on a small horizontal rod, hung near
+ * the top of the ring on a different angular position than the
+ * window slot so they don't overlap. */
+function _buildBannerProp(radius: number, ringHeight: number, rand: () => number, palette: StoneTowerPalette): THREE.Group {
+  const g = new THREE.Group();
+  // Offset well away from the window's fixed z=radius*0.99 slot (angle 0)
+  // so the banner never overlaps it.
+  const ang = Math.PI + (rand() - 0.5) * 1.2;
+  const bannerW = radius * (0.22 + rand() * 0.08);
+  const bannerH = ringHeight * (0.35 + rand() * 0.2);
+  const rodLen = bannerW * 1.3;
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, rodLen, 5), palette.stone);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set(Math.sin(ang) * radius * 1.02, ringHeight * 0.75, Math.cos(ang) * radius * 1.02);
+  rod.rotation.y = ang;
+  g.add(rod);
+  const bannerMat = new THREE.MeshStandardMaterial({ color: _materialColor(palette.moonstone, '#d8e8f0'), roughness: 0.8, side: THREE.DoubleSide });
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(bannerW, bannerH), bannerMat);
+  banner.position.set(Math.sin(ang) * radius * 1.02, ringHeight * 0.75 - bannerH / 2, Math.cos(ang) * radius * 1.02);
+  banner.rotation.y = ang;
+  g.add(banner);
+  return g;
+}
+
 /**
  * One floor's wall ring: the shaft surface (whichever strategy is
  * active) plus an optional pointed-arch window insert (with a small
  * moonstone accent at its point, matching elven's existing palette
- * conventions) and sparse seed-driven vine growth -- kept sparse so the
- * stone still reads as the primary material, not overwhelmed by
- * foliage.
+ * conventions) and a seed-driven wall-prop accent (vine/moss patch/
+ * banner/none, see `pickWallProp()`) -- kept sparse so the stone
+ * still reads as the primary material, not overwhelmed by decoration.
  *
  * `vertexScales`/`offsetX`/`offsetZ`/`rotationOffset` (all optional,
  * from StoneTowerSilhouette.ts's per-floor jitter/drift/profile math)
@@ -88,7 +190,7 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
  * unjittered regular octagon -- `vertexScales` reaches the wall
  * surface itself (see buildWallSurface()'s doc comment), while
  * `offsetX`/`offsetZ`/`rotationOffset` are applied to the RETURNED
- * GROUP's own position/rotation, so the window/vine decoration above
+ * GROUP's own position/rotation, so the window/prop decoration above
  * (already positioned relative to this group's local origin) moves
  * and rotates along with the wall for free. Omitted, all four
  * reproduce the exact prior (centered, unjittered) behaviour.
@@ -117,23 +219,13 @@ export function buildTowerWallRing(
     g.add(archPoint);
   }
 
-  if (rand() < 0.5) {
-    const vineAng = rand() * Math.PI * 2;
-    const vineLen = ringHeight * (0.4 + rand() * 0.4);
-    const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, vineLen, 5), palette.bark);
-    vine.position.set(Math.sin(vineAng) * radius * 1.01, vineLen / 2, Math.cos(vineAng) * radius * 1.01);
-    vine.rotation.y = vineAng;
-    vine.castShadow = true;
-    g.add(vine);
-    for (let i = 0; i < 3; i++) {
-      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.08 + rand() * 0.04, 6, 5), palette.leaf);
-      leaf.position.set(
-        Math.sin(vineAng) * radius * 1.05,
-        vineLen * (0.3 + i * 0.3),
-        Math.cos(vineAng) * radius * 1.05,
-      );
-      g.add(leaf);
-    }
+  const prop = pickWallProp(seed);
+  if (prop === 'vine') {
+    g.add(_buildVineProp(radius, ringHeight, rand, palette));
+  } else if (prop === 'moss_patch') {
+    g.add(_buildMossPatchProp(radius, ringHeight, rand, palette));
+  } else if (prop === 'banner') {
+    g.add(_buildBannerProp(radius, ringHeight, rand, palette));
   }
 
   g.position.x = offsetX;
@@ -142,6 +234,7 @@ export function buildTowerWallRing(
 
   return g;
 }
+
 
 /**
  * Public entry point: builds a complete elven stone tower for the given

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildTowerBase, buildTowerWallRing, buildElvenStoneTower, type StoneTowerPalette } from '@/world/buildings/StoneTowerKit';
+import { buildTowerBase, buildTowerWallRing, buildElvenStoneTower, pickWallProp, type StoneTowerPalette } from '@/world/buildings/StoneTowerKit';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
 
@@ -38,6 +38,36 @@ function makePalette(): StoneTowerPalette {
     moonstone: new THREE.MeshStandardMaterial({ color: '#d8e8f0' }),
   };
 }
+
+describe('pickWallProp', () => {
+  const ALL_PROPS = ['none', 'vine', 'moss_patch', 'banner'];
+
+  it('always returns a known prop outcome', () => {
+    for (let seed = 0; seed < 60; seed++) {
+      expect(ALL_PROPS).toContain(pickWallProp(seed));
+    }
+  });
+
+  it('is deterministic for the same seed', () => {
+    expect(pickWallProp(321)).toBe(pickWallProp(321));
+  });
+
+  it('produces all 4 outcomes across many seeds, roughly matching the documented weights', () => {
+    const counts: Record<string, number> = { none: 0, vine: 0, moss_patch: 0, banner: 0 };
+    const N = 2000;
+    for (let seed = 0; seed < N; seed++) counts[pickWallProp(seed)]!++;
+    for (const key of ALL_PROPS) expect(counts[key]).toBeGreaterThan(0);
+    // Generous bands (documented weights: none 35%, vine 35%, moss 15%, banner 15%).
+    expect(counts.none! / N).toBeGreaterThan(0.2);
+    expect(counts.none! / N).toBeLessThan(0.5);
+    expect(counts.vine! / N).toBeGreaterThan(0.2);
+    expect(counts.vine! / N).toBeLessThan(0.5);
+    expect(counts.moss_patch! / N).toBeGreaterThan(0.05);
+    expect(counts.moss_patch! / N).toBeLessThan(0.3);
+    expect(counts.banner! / N).toBeGreaterThan(0.05);
+    expect(counts.banner! / N).toBeLessThan(0.3);
+  });
+});
 
 describe('buildTowerBase', () => {
   it('produces at least one mesh with finite, non-NaN geometry', () => {
@@ -119,6 +149,17 @@ describe('buildTowerWallRing', () => {
     const base = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
     const scaled = buildTowerWallRing(2, 2.9, 42, makePalette(), false, [1, 1, 1.3, 1, 1, 1, 1, 1]);
     expect(maxRadialExtent(scaled)).toBeGreaterThan(maxRadialExtent(base));
+  });
+
+  it('a seed sweep produces more than 2 distinct mesh counts (proof the prop catalog -- vine/moss/banner/none -- actually varies, not just vine-or-nothing as before)', () => {
+    const meshCounts = new Set<number>();
+    for (let seed = 0; seed < 40; seed++) {
+      const g = buildTowerWallRing(2, 2.9, seed, makePalette(), false);
+      let meshCount = 0;
+      g.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
+      meshCounts.add(meshCount);
+    }
+    expect(meshCounts.size).toBeGreaterThan(2);
   });
 });
 
