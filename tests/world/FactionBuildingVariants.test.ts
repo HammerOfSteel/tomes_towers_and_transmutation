@@ -5,14 +5,13 @@
  * distinct from both each other and the generic shared-shape fallback.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers, pickElvenCanopyArchetype } from '@/world/buildings/FactionBlockProfiles';
-import * as FactionBlockProfiles from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -578,170 +577,19 @@ describe('Dwarven — stepped-tier BlockKit hall with hard-edged buttress corner
 // Regression guards for the gnarled-bark trunk + leaf-cluster canopy
 // rework that replaced a perfectly smooth tapered cylinder trunk and a
 // single smooth dome standing in for an entire tree canopy.
-describe('Elven — BlockKit tapering living-tree trunk + canopy (not a smooth cylinder + sphere-cluster dome)', () => {
-  it('produces only finite (non-NaN/non-infinite) vertices for the trunk/canopy grid + props', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
+describe('Elven — remaining BlockKit-based kinds (chapel/shop, unaffected by the treehouse-kit rebuild)', () => {
+  it('produces only finite (non-NaN/non-infinite) vertices for chapel/shop', () => {
+    for (const kind of ['chapel', 'shop'] as BuildingKind[]) {
       expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.elven![kind]!(makeDna(kind, 'elven', 21)));
     }
   });
 
-  it('builds the trunk from many discrete block meshes (a Lego-style assembly, not one smooth cylinder + sphere-cluster canopy)', () => {
-    const g = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 7));
-    // No CylinderGeometry standing in for the whole trunk, and no large
-    // SphereGeometry standing in for the whole canopy (the old
-    // noise-crumbled-cylinder-plus-foliage-blob body is gone) — small
-    // decorative spheres (glow motes) are fine and expected.
-    let hasCylinderTrunk = false;
-    let hasLargeSphere = false;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') {
-        const p = (o.geometry as THREE.CylinderGeometry).parameters;
-        if (p.height > 0.8) hasCylinderTrunk = true; // a real trunk body, not a small platform post
-      }
-      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') {
-        const p = (o.geometry as THREE.SphereGeometry).parameters;
-        if (p.radius > 0.15) hasLargeSphere = true;
-      }
-    });
-    expect(hasCylinderTrunk).toBe(false);
-    expect(hasLargeSphere).toBe(false);
-    // A block trunk's merged geometry has far more vertices than a single
-    // low-poly primitive would, reflecting many individually-culled block
-    // faces assembled together.
-    const trunk = findBiggestMesh(g);
-    const pos = trunk.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
-  });
-
-  it('produces a different trunk/canopy silhouette per seed (deterministic but seed-varied)', () => {
-    const countBlockVerts = (g: THREE.Group): number => {
-      let total = 0;
-      g.traverse(o => {
-        if (o instanceof THREE.Mesh) total += (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-      });
-      return total;
-    };
-    const gA = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 1));
-    const gB = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 1));
-    expect(countBlockVerts(gA)).toBe(countBlockVerts(gA2)); // deterministic for the same seed
-    expect(countBlockVerts(gA)).not.toBe(countBlockVerts(gB)); // varies across seeds
-  });
-
-  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface)', () => {
+  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface) -- still used directly by buildElvenShop', () => {
     const grid = buildElvenTrunkGrid(5, 6, 5, 5, { facade: true });
     const bw = Math.round(6 / BLOCK_UNIT);
     const bd = Math.round(5 / BLOCK_UNIT);
     const cx = Math.round(bw / 2);
     expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
-  });
-
-  it('gives the trunk a dedicated facade-material block group around the door, distinct from the bark body', () => {
-    const dna = makeDna('villa', 'elven', 5);
-    const g = FACTION_BUILDING_VARIANTS.elven!.villa!(dna);
-    const materialColors = new Set<string>();
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-        materialColors.add(o.material.color.getHexString());
-      }
-    });
-    // Bark (dna.colors.walls), leaf-canopy (dna.colors.roof) and facade
-    // (dna.colors.trim) block materials should all be present as distinct
-    // merged meshes.
-    expect(materialColors.has(new THREE.Color(dna.colors.walls).getHexString())).toBe(true);
-    expect(materialColors.has(new THREE.Color(dna.colors.roof).getHexString())).toBe(true);
-    expect(materialColors.has(new THREE.Color(dna.colors.trim).getHexString())).toBe(true);
-  });
-
-  it('builds the balcony from a ring of small plank blocks, not one smooth torus', () => {
-    const g = FACTION_BUILDING_VARIANTS.elven!.villa!(makeDna('villa', 'elven', 9));
-    let hasTorus = false;
-    let boxCount = 0;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'TorusGeometry') hasTorus = true;
-      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') boxCount++;
-    });
-    expect(hasTorus).toBe(false);
-    expect(boxCount).toBeGreaterThanOrEqual(14); // the plank ring alone is 14 planks
-  });
-
-  it('the merged trunk mesh uses a distinct window_frame material not present before this wiring', () => {
-    const dna = { ...makeDna('house', 'elven', 5), size: 'medium' as const, floors: 2 as const };
-    const g = getFactionBuildingVariant('elven', 'house')!(dna);
-    const materials = new Set<THREE.Material>();
-    g.traverse((o) => { if (o instanceof THREE.Mesh) materials.add(o.material as THREE.Material); });
-    // Direct proof window_frame exists as its own material: addBlockElvenTrunk
-    // creates 'facade' and 'window_frame' as two SEPARATE mat() calls using the same
-    // input color (colors.trim), and buildElvenVilla's own ring/brace "woodMat" is a
-    // THIRD, separately-created mat() call also using colors.trim -- so all three are
-    // distinct THREE.Material object identities even though they resolve to the same
-    // rendered color. Counting how many distinct material OBJECTS (not colors) match
-    // colors.trim is a robust proxy: before this task only 'facade' + woodMat exist
-    // (count 2); after wiring, 'window_frame' also exists (count 3) -- proving
-    // carveTrunkWindows() actually ran and its output actually got meshed, not just
-    // that the trunk grew taller (floors already did that before this task, so a
-    // vertex-count-only comparison wouldn't actually prove anything).
-    let trimColoredMaterialCount = 0;
-    const trimHex = new THREE.Color(dna.colors.trim).getHexString();
-    for (const m of materials) {
-      if (m instanceof THREE.MeshStandardMaterial && m.color.getHexString() === trimHex) trimColoredMaterialCount++;
-    }
-    expect(trimColoredMaterialCount).toBeGreaterThanOrEqual(3);
-  });
-
-  it('a 3-floor building has 3 named ring-beam groups; a 1-floor building has 1', () => {
-    function countRings(g: THREE.Group): number {
-      let count = 0;
-      g.traverse((o) => { if (o.name === 'elven-trunk-ring-beam') count++; });
-      return count;
-    }
-    const oneFloor = getFactionBuildingVariant('elven', 'house')!({ ...makeDna('house', 'elven', 9), size: 'medium', floors: 1 });
-    const threeFloor = getFactionBuildingVariant('elven', 'house')!({ ...makeDna('house', 'elven', 9), size: 'medium', floors: 3 });
-    expect(countRings(oneFloor)).toBe(1);
-    expect(countRings(threeFloor)).toBe(3);
-  });
-
-  it('ring beams sit at strictly increasing heights, one per floor bottom to top', () => {
-    const dna = { ...makeDna('house', 'elven', 9), size: 'medium' as const, floors: 3 as const };
-    const g = getFactionBuildingVariant('elven', 'house')!(dna);
-    g.updateMatrixWorld(true);
-    const ringYs: number[] = [];
-    g.traverse((o) => { if (o.name === 'elven-trunk-ring-beam') ringYs.push(o.position.y); });
-    ringYs.sort((a, b) => a - b);
-    expect(ringYs.length).toBe(3);
-    expect(ringYs[1]).toBeGreaterThan(ringYs[0]!);
-    expect(ringYs[2]).toBeGreaterThan(ringYs[1]!);
-  });
-
-  it('calls pickElvenEntranceStyle/pickElvenCanopyArchetype with dna.seed when building (proof they are wired into the live builder, not just tested in isolation on buildElvenTrunkGrid directly)', () => {
-    // Spying on the real exported functions (not re-deriving behavior independently)
-    // directly proves buildElvenVilla actually calls them with dna.seed, rather than
-    // relying on fragile geometric/raycasting proxies that can't reliably discriminate
-    // sub-block-sized differences in merged mesh geometry.
-    const entranceSpy = vi.spyOn(FactionBlockProfiles, 'pickElvenEntranceStyle');
-    const canopySpy = vi.spyOn(FactionBlockProfiles, 'pickElvenCanopyArchetype');
-    const dna = { ...makeDna('house', 'elven', 17), size: 'medium' as const, floors: 1 as const };
-    getFactionBuildingVariant('elven', 'house')!(dna);
-    expect(entranceSpy).toHaveBeenCalledWith(17);
-    expect(canopySpy).toHaveBeenCalledWith(17);
-    entranceSpy.mockRestore();
-    canopySpy.mockRestore();
-  });
-
-  it('moss_crown archetype material actually appears in a live build for a seed that picks it', () => {
-    let mossSeed = -1;
-    for (let seed = 0; seed < 30; seed++) {
-      if (pickElvenCanopyArchetype(seed) === 'moss_crown') { mossSeed = seed; break; }
-    }
-    expect(mossSeed).toBeGreaterThanOrEqual(0);
-    const dna = { ...makeDna('house', 'elven', mossSeed), size: 'medium' as const, floors: 1 as const };
-    const g = getFactionBuildingVariant('elven', 'house')!(dna);
-    let sawMoss = false;
-    g.traverse((o) => {
-      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial
-        && o.material.color.getHexString() === new THREE.Color('#5a7a48').getHexString()) sawMoss = true;
-    });
-    expect(sawMoss).toBe(true);
   });
 });
 
@@ -981,17 +829,16 @@ describe('elven watchtower/tower -- stone-tower kit POC', () => {
     expect(hasCylinderOrCone).toBe(true);
   });
 
-  it('other elven kinds are untouched (still resolve to the existing tree-trunk builders)', () => {
-    const villa = buildBuilding(makeDna('villa', 'elven', 5));
-    let hasCylinderOrConeInVilla = false;
-    villa.exteriorGroup.traverse((o) => {
-      if (o instanceof THREE.Mesh && (o.geometry instanceof THREE.CylinderGeometry || o.geometry instanceof THREE.ConeGeometry)) {
-        hasCylinderOrConeInVilla = true;
-      }
-    });
-    // The tree-trunk builder (BlockKit-meshed, non-indexed custom
-    // geometry) never produces a raw CylinderGeometry/ConeGeometry --
-    // confirms villa's builder is unchanged by this task.
-    expect(hasCylinderOrConeInVilla).toBe(false);
+  it('other elven kinds are untouched (still resolve to their own builders, not accidentally reassigned to the tower)', () => {
+    // Villa now legitimately shares construction TECHNIQUE with the tower
+    // (buildElvenTreehouseHome reuses buildTowerKitCore, see
+    // docs/superpowers/specs/2026-09-03-elven-treehouse-tower-kit-rebuild.md),
+    // so a geometry-shape heuristic (e.g. "no Cylinder/Cone anywhere") is no
+    // longer a valid discriminator -- both legitimately use them now. The
+    // real regression this guards against is watchtower/tower's OWN
+    // builder accidentally also being wired to villa; check function
+    // identity directly instead.
+    expect(FACTION_BUILDING_VARIANTS.elven!.villa).not.toBe(FACTION_BUILDING_VARIANTS.elven!.watchtower);
+    expect(FACTION_BUILDING_VARIANTS.elven!.villa).not.toBe(FACTION_BUILDING_VARIANTS.elven!.tower);
   });
 });

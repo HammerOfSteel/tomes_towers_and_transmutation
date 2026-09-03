@@ -37,9 +37,10 @@ import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
 import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenRadiusAtHeight, elvenHeightAtFrac, pickElvenEntranceStyle, pickElvenCanopyArchetype, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { carveTrunkWindows } from './ElvenTrunkWindows';
 import { buildElvenStoneTower } from './StoneTowerKit';
+import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -680,94 +681,6 @@ function addBlockElvenTrunk(
   mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
   mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
   g.add(mesh);
-}
-
-/**
- * A ring platform/balcony built from small radial plank blocks — the same
- * "many small solid pieces read correctly from every angle" principle as
- * vulperia's timber-stave door ring, replacing a single smooth
- * `TorusGeometry` (which, being a thin continuous ring, degenerates to a
- * hairline edge-on and doesn't read as "built" at all).
- */
-function addPlankRing(g: THREE.Group, seed: number, y: number, radius: number, material: THREE.Material, count = 14): void {
-  const r = mulberry32(seed);
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2;
-    const rad = radius * (0.96 + r() * 0.06);
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(radius * (Math.PI * 2 / count) * 1.15, 0.06, radius * 0.22), material);
-    plank.position.set(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
-    plank.rotation.y = -ang + Math.PI / 2;
-    plank.castShadow = true;
-    plank.receiveShadow = true;
-    g.add(plank);
-  }
-}
-
-/**
- * Diagonal wooden support brackets bracing a plank ring against the trunk
- * surface just below it — without these the ring reads as a disc floating
- * in mid-air next to the trunk (a "flying saucer collar" illusion),
- * regardless of how correctly its radius/height are otherwise sized.
- * A handful of angled braces running from the trunk surface up/out to the
- * ring's underside visually "grounds" it as an attached platform.
- */
-function addRingBraces(g: THREE.Group, seed: number, y: number, trunkRadius: number, ringRadius: number, material: THREE.Material, count = 6): void {
-  const r = mulberry32(seed);
-  const braceLen = Math.hypot(ringRadius - trunkRadius, ringRadius * 0.3);
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2 + r() * 0.3;
-    const innerR = trunkRadius * 0.92;
-    const midX = Math.cos(ang) * (innerR + ringRadius) * 0.5;
-    const midZ = Math.sin(ang) * (innerR + ringRadius) * 0.5;
-    const brace = new THREE.Mesh(new THREE.BoxGeometry(braceLen, 0.05, 0.05), material);
-    brace.position.set(midX, y - ringRadius * 0.18, midZ);
-    brace.rotation.y = -ang + Math.PI / 2;
-    brace.rotation.z = Math.atan2(ringRadius * 0.3, ringRadius - trunkRadius);
-    brace.castShadow = true;
-    g.add(brace);
-  }
-}
-
-function buildElvenVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.5; // tall, reaching into canopy
-  const floors = Math.max(1, dna.floors);
-  const g = new THREE.Group();
-  // Independent seed offsets for entrance/canopy picks so they aren't correlated
-  // with each other or with any other per-building random choice sharing dna.seed
-  // (pickElvenEntranceStyle/pickElvenCanopyArchetype each already XOR their own
-  // distinct constant internally, so dna.seed is passed straight through here).
-  const entranceStyle = pickElvenEntranceStyle(dna.seed);
-  const canopyArchetype = pickElvenCanopyArchetype(dna.seed);
-  addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
-    facade: true,
-    floors,
-    entranceStyle,
-    canopyArchetype,
-  });
-  // Elder's Hall: block-built plank ring/balcony "collars" girdling the trunk, one
-  // per floor (not just once at the neck) -- a direct application of the real
-  // treehouse "ring beam + triangulated knee brace" research finding (a beam/collar
-  // wraps the trunk at each platform level, diagonal braces carry load down to the
-  // trunk below), each sized to the trunk's own real constructed radius at that
-  // floor's height (not an arbitrary fraction of the whole footprint), so a
-  // multi-floor building reads as N distinct stories, not one undifferentiated
-  // stepped cone with a single ring at the top.
-  const woodMat = mat(dna.colors.trim, { roughness: 0.85 });
-  const canopyStartFrac = 0.6;
-  for (let floorIdx = 0; floorIdx < floors; floorIdx++) {
-    const heightFrac = ((floorIdx + 1) / floors) * canopyStartFrac;
-    const ringY = elvenHeightAtFrac(h, heightFrac);
-    const trunkRadiusHere = elvenRadiusAtHeight(fp.w, fp.d, heightFrac);
-    const ringRadius = trunkRadiusHere * 1.25;
-    const ringGroup = new THREE.Group();
-    ringGroup.name = 'elven-trunk-ring-beam';
-    ringGroup.position.y = ringY;
-    addPlankRing(ringGroup, dna.seed ^ (0xE1F3_0013 + floorIdx), 0, ringRadius, woodMat, 14);
-    addRingBraces(ringGroup, dna.seed ^ (0xE1F3_0015 + floorIdx), 0, trunkRadiusHere, ringRadius, woodMat, 6);
-    g.add(ringGroup);
-  }
-  return g;
 }
 
 function buildElvenChapel(dna: BuildingDNA): THREE.Group {
@@ -1422,7 +1335,7 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     blacksmith: buildUndeadVilla,
   },
   elven: {
-    villa:    buildElvenVilla,
+    villa:    buildElvenTreehouseHome,
     chapel:   buildElvenChapel,
     shop:     buildElvenShop,
     // `house` (gateward/farm wards) and `terraced` (slum ward) are real
@@ -1430,15 +1343,26 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     // — every settlement's farm/gateward/slum buildings use them, so
     // without an override here they fell through to the generic default
     // builder and only got elven's STYLE_COLORS palette (pale sage walls/
-    // roof tint), not elven geometry. Reusing buildElvenVilla is safe:
-    // it derives its footprint from `dna.buildingKind`/`dna.size`
+    // roof tint), not elven geometry. Reusing buildElvenTreehouseHome is
+    // safe: it derives its footprint from `dna.buildingKind`/`dna.size`
     // dynamically (via getFootprint()), so it scales correctly to these
     // smaller kinds rather than assuming villa's fixed 7x5.
-    house:    buildElvenVilla,
-    terraced: buildElvenVilla,
+    //
+    // 2026-09-03 follow-up (docs/superpowers/specs/
+    // 2026-09-03-elven-treehouse-tower-kit-rebuild.md): house/terraced/
+    // villa/inn/blacksmith all moved from `buildElvenVilla` (a BlockKit
+    // voxel-occupancy grid) to `buildElvenTreehouseHome` (real
+    // per-course block + carved-recessed-opening construction, reusing
+    // the elven stone-tower kit's own proven technique) per direct user
+    // feedback: "we dont go with that old block design... more in style
+    // with the tower for building the structure." `buildElvenShop` is
+    // NOT touched by this round -- deferred to its own future pass in
+    // the race-by-race cycle.
+    house:    buildElvenTreehouseHome,
+    terraced: buildElvenTreehouseHome,
     // Phase 2b increment 3: inn/blacksmith had no elven override either.
-    inn:        buildElvenVilla,
-    blacksmith: buildElvenVilla,
+    inn:        buildElvenTreehouseHome,
+    blacksmith: buildElvenTreehouseHome,
     // Phase 6 POC (docs/superpowers/specs/
     // 2026-09-02-elven-stone-tower-kit-design.md): watchtower/tower had
     // NO elven override at all (fell through to the generic square
