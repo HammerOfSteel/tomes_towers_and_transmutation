@@ -364,6 +364,34 @@ describe('FactionBlockProfiles — elvenRadiusAtHeight / elvenHeightAtFrac', () 
 });
 
 
+describe('FactionBlockProfiles — pickElvenEntranceStyle', () => {
+  it('is deterministic per seed', () => {
+    expect(pickElvenEntranceStyle(11)).toBe(pickElvenEntranceStyle(11));
+  });
+
+  it('produces both styles across a seed sweep (proof raised_platform is reachable)', () => {
+    const styles = new Set<string>();
+    for (let seed = 0; seed < 60; seed++) styles.add(pickElvenEntranceStyle(seed));
+    expect(styles).toEqual(new Set(['ground_arch', 'raised_platform']));
+  });
+
+  it('raised_platform carves the doorway starting above ground level, unlike ground_arch', () => {
+    const W = 6, D = 6, H = 6;
+    const bw = Math.max(3, Math.round(W / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(D / BLOCK_UNIT));
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    const groundGrid = buildElvenTrunkGrid(1, W, D, H, { facade: true, entranceStyle: 'ground_arch' });
+    const raisedGrid = buildElvenTrunkGrid(1, W, D, H, { facade: true, entranceStyle: 'raised_platform' });
+    // ground_arch: carved open at by=0 (existing behavior, unchanged).
+    expect(hasBlock(groundGrid, cx, 0, frontZ)).toBe(false);
+    // raised_platform: by=0 is NOT carved (still solid trunk/root), the notch starts
+    // higher up instead.
+    expect(hasBlock(raisedGrid, cx, 0, frontZ)).toBe(true);
+  });
+});
+
+
 describe('FactionBlockProfiles — smoothTaperRadiusFrac (shared taper helper)', () => {
   it('returns startFrac at t=0 and endFrac at t=1', () => {
     expect(smoothTaperRadiusFrac(0, 1, 0.4)).toBeCloseTo(1, 5);
