@@ -19,6 +19,7 @@ import { pickSilhouetteProfile, buildFloorTransforms, buildFloorVertexScales } f
 import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
 import { pickEntranceStyle, buildEntrance } from './StoneTowerEntrance';
 import { shouldHaveBalcony, buildBalcony } from './StoneTowerBalcony';
+import { buildQuoins } from './StoneTowerQuoins';
 
 /** Local material helper -- mirrors FactionBuildingVariants.ts's own
  * `mat()` (not imported directly to avoid a circular import, since that
@@ -78,6 +79,10 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
   const entranceStyle = pickEntranceStyle(seed);
   const entrance = buildEntrance(entranceStyle, plinthRadius, seed, palette);
   g.add(entrance);
+
+  const quoins = buildQuoins(plinthRadius, plinthHeight, undefined, palette.stone);
+  quoins.name = 'elven-stone-tower-quoins';
+  g.add(quoins);
 
   return g;
 }
@@ -210,6 +215,10 @@ export function buildTowerWallRing(
   const g = new THREE.Group();
   const wall = buildWallSurface(WALL_STRATEGY, radius, ringHeight, seed, palette.stone, vertexScales);
   g.add(wall);
+
+  const quoins = buildQuoins(radius, ringHeight, vertexScales, palette.stone);
+  quoins.name = 'elven-stone-tower-quoins';
+  g.add(quoins);
 
   const rand = mulberry32(seed ^ 0x714D0);
 

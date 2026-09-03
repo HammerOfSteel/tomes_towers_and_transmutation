@@ -111,6 +111,15 @@ describe('buildTowerBase', () => {
     }
     expect(totalMeshCounts.size).toBeGreaterThan(1);
   });
+
+  it('has 8 corner quoins attached to the plinth (a named group so callers/tests can find it)', () => {
+    const g = buildTowerBase(2, 0.6, 42, makePalette());
+    const quoins = g.getObjectByName('elven-stone-tower-quoins');
+    expect(quoins).toBeDefined();
+    let meshCount = 0;
+    quoins!.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
+    expect(meshCount).toBe(8);
+  });
 });
 
 describe('buildTowerWallRing', () => {
@@ -136,6 +145,15 @@ describe('buildTowerWallRing', () => {
     const g1 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
     const g2 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
     expect(countVerts(g1)).toBe(countVerts(g2));
+  });
+
+  it('has 8 corner quoins attached to every ring (a named group so callers/tests can find it)', () => {
+    const g = buildTowerWallRing(2, 2.9, 42, makePalette(), false);
+    const quoins = g.getObjectByName('elven-stone-tower-quoins');
+    expect(quoins).toBeDefined();
+    let meshCount = 0;
+    quoins!.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
+    expect(meshCount).toBe(8);
   });
 
   it('window type varies across seeds (a round oculus TorusGeometry appears for at least one seed but not another)', () => {
