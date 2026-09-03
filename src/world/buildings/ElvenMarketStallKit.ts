@@ -110,11 +110,14 @@ export function buildElvenMarketStall(dna: BuildingDNA): THREE.Group {
   counter.rotation.y = counterFace.normalAngle;
   g.add(counter);
 
-  // Counter slab (waist-height display shelf) projecting from the
-  // opening, facing the same direction.
-  const counterSlab = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.1, 0.1, radius * 0.4), woodMat);
-  const slabAngle = counterFace.normalAngle;
+  // Counter slab (waist-height display shelf), posts, awning, and sign all
+  // sit on the OPEN "front"/customer side -- the OPPOSITE direction from
+  // the back wall's own outward normal, not further behind it. (A real
+  // stall's counter projects toward the street, not into the exterior
+  // behind its own back wall.)
+  const slabAngle = counterFace.normalAngle + Math.PI;
   const slabDist = radius + radius * 0.22;
+  const counterSlab = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.1, 0.1, radius * 0.4), woodMat);
   counterSlab.position.set(Math.sin(slabAngle) * slabDist, wallHeight * 0.32, Math.cos(slabAngle) * slabDist);
   counterSlab.rotation.y = slabAngle;
   counterSlab.castShadow = counterSlab.receiveShadow = true;
