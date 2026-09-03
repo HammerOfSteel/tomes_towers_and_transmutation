@@ -28,6 +28,21 @@ import { octagonPoints } from './StoneTowerShape';
 export function buildFloorCap(radius: number, material: THREE.Material, vertexScales?: number[]): THREE.Mesh {
   const pts = octagonPoints(radius, vertexScales);
   const positions: number[] = [0, 0, 0]; // center vertex, index 0
+  // Simple planar UV mapping (x/z projected into [0,1]) -- required so
+  // this geometry merges cleanly with the wall/quoin/entrance geometry
+  // it shares a material with (see mergeGroupMeshesByMaterial() in
+  // MeshMergeUtils.ts, called on the whole building group by
+  // SettlementRenderer.ts): mergeGeometries() requires every geometry in
+  // a merge bucket to have the exact same attribute set, and a missing
+  // `uv` attribute here caused it to fail silently (logged, not thrown)
+  // -- which in turn caused mergeGroupMeshesByMaterial() to drop AND
+  // dispose EVERY mesh in that material's bucket, including the wall
+  // itself, leaving affected buildings with no visible walls at all
+  // (a real regression caught via live Playwright verification, not
+  // any automated test -- see this file's own test for the regression
+  // guard now in place).
+  const uvs: number[] = [0.5, 0.5];
+  for (const [x, z] of pts) uvs.push(x / (2 * radius) + 0.5, z / (2 * radius) + 0.5);
   for (const [x, z] of pts) positions.push(x, 0, z);
 
   const indices: number[] = [];
@@ -40,6 +55,7 @@ export function buildFloorCap(radius: number, material: THREE.Material, vertexSc
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
 
