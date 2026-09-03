@@ -276,7 +276,13 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   const floors = 3 + Math.floor(rand() * 4); // 3-6
   const ringHeight = FLOOR_HEIGHT * 0.9;
   const plinthHeight = 0.6;
-  const coneHeight = radius * 2.2;
+  // A roof cap at the original radius*2.2 was only ~15% of a typical
+  // tower's total height -- too small for the classic/living/pagoda
+  // archetypal differences (StoneTowerRoofCap.ts) to read clearly at
+  // normal viewing distance, even though each is a genuinely distinct
+  // assembly up close. Bumped up to give the roof real visual weight,
+  // closer to the reference kit's much more roof-dominant proportions.
+  const coneHeight = radius * 3.5;
 
   const profile = pickSilhouetteProfile(dna.seed);
   const transforms = buildFloorTransforms(profile, dna.seed, floors);

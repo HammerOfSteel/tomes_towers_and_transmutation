@@ -495,6 +495,8 @@ const showroom = {
 
 (window as any).showroom        = showroom;
 (window as any).__showroomScene = scene;   // exposed for Playwright tests
+(window as any).__showroomCamera = camera; // exposed for Playwright tests (precise verification screenshots)
+(window as any).__showroomControls = controls; // exposed so tests can sync OrbitControls' target after manually moving the camera (otherwise controls.update() in the render loop snaps the camera back every frame)
 
 // ── HUD instructions ──────────────────────────────────────────────────────────
 
