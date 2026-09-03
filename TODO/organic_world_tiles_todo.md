@@ -682,6 +682,85 @@ Slime, Human — Slime/Human last, since those already look best).
   screenshot — noted honestly as a modest accent, not a dramatic feature,
   matching its own design intent as a smaller "gallery" detail rather
   than a macro-silhouette change.
+- [x] **6.4e — Reference-image-driven technique rebuild (windows, entrance,
+  quoins, balcony, roof-caps) + pagoda-legibility fix**: user feedback
+  after 6.4d, with a screenshot: "those small gray round and rectangular
+  things... are not what the rest of the tower looks like at all" — the
+  windows/entrance were flat glass-box/floating-cone primitives glued
+  onto real block-course walls, a genuine style mismatch (wall = real
+  depth, openings = flat). Then, with 5 reference images from a real
+  tabletop-terrain tower kit: "I cant believe all the research... lead
+  to this so far... look no further than Townscaper... it is so clearly
+  a problem of technique and implementation" — the references showed
+  carved recessed pointed-arch openings with proud stone frames, a
+  genuinely OPEN octagonal crow's-nest gallery, continuous vertical
+  corner quoins, and — most importantly — **structurally different**
+  roof/top assemblies side by side (single cone+gallery, double-tiered
+  pagoda, plain spire), proving "distinct variety" means different kit
+  ASSEMBLIES, not parametric tweaks to one shape. No further research
+  cycle was run (the reference images function as the spec); went
+  straight to a full technique rebuild, one file at a time, strict TDD:
+  - **`StoneTowerOpenings.ts`** (new): shared recessed-arch-opening
+    technique — a proud stone frame (`ExtrudeGeometry` of an arch-shape-
+    with-a-hole) around a genuinely receded dark cavity (a separate
+    solid extruded arch pushed inward). Used by both windows and the
+    entrance so both finally have real carved depth matching the wall's
+    own block-course technique. 6 tests.
+  - **`StoneTowerWindows.ts`** / **`StoneTowerEntrance.ts`** (rebuilt):
+    all 3 window types and the entrance now use the shared recessed-
+    opening technique (or repositioned primitives) for real depth; the
+    pointed-arch window gets a moonstone oculus accent, the entrance a
+    keystone accent. 11 + 7 tests.
+  - **`StoneTowerQuoins.ts`** (new): 8 raised corner-pilaster boxes per
+    octagon vertex, proud of the wall, following the ring's own vertex
+    jitter — wired into every wall ring and the base plinth. 6 tests.
+  - **`StoneTowerBalcony.ts`** (rebuilt): the old solid closed parapet
+    cylinder replaced with genuinely open vertical rib posts (real gaps
+    between them) plus thin top/bottom rail bands — verified via a
+    raycast test that a meaningful fraction of rays actually pass
+    through the gaps instead of hitting a solid wall every time. 8 tests.
+  - **`StoneTowerRoofCap.ts`** (rebuilt): the classic cap gained a
+    flared/scalloped eave, 3 stepped shingle-course bands (visible
+    seams), 8 corner finials, and an apex finial ball — not one smooth
+    cone. Added a genuinely distinct **pagoda archetype**
+    (`buildPagodaRoofCap`) and an exported, testable
+    `pickRoofArchetype(seed)` (classic 40% / pagoda 35% / living 25%).
+    `buildElvenStoneTower`'s `coneHeight` bumped from `radius*2.2` to
+    `radius*3.5` — the roof was only ~15% of a typical tower's height,
+    too small for archetype differences to read at normal viewing
+    distance. 15 tests.
+  - **Live-verification-driven second pass on the pagoda archetype**:
+    the first pagoda version stacked two *full*, independently-pointed
+    `buildClassicRoofCap` tiers joined by a neck. Playwright screenshots
+    (both wide framing and a close, cropped framing matching the
+    isometric camera's real default zoom — `CameraRig.FRUSTUM_HEIGHT`)
+    showed this reads as one ambiguous blob: the lower tier's own point
+    sits flush against the neck, visually blending the two tapers into
+    a single cone, even though the underlying geometry was genuinely
+    different (27 vs 13 meshes) and passed its own "waist" unit test.
+    Root cause of the false-positive test: it sampled "max radius near
+    a Y coordinate" across the whole group, but the neck's own rings
+    sit at the *exact same Y* as the wider rings they connect to
+    (flush-stacked), so the query always picked the wider neighbor,
+    never the neck's own narrower radius — the test never actually
+    exercised the failure mode. Fixed by making the lower tier a
+    bespoke *truncated* eave+body (no point of its own — the upper
+    tier is the only apex in the assembly, removing the double-point
+    ambiguity), naming the neck mesh so tests can read its own radius
+    directly, and rewriting the waist test to compare the neck's radius
+    against the widest radius strictly below/above it. Re-verified with
+    cropped screenshots at realistic zoom: a clear, unambiguous
+    wide → narrow → wide → point pagoda silhouette, visibly distinct
+    from the classic archetype's single monotonic taper.
+  - **Verification**: 278 tests across `tests/world/buildings/` all
+    green; fresh full-suite regression re-confirmed unchanged from
+    baseline both before and after the pagoda second pass (144 tsc
+    errors, the same 13 pre-existing/flaky vitest failures — `main.
+    startup.smoke`×3, `enemyLoader`×3, `towerGenerator`×2, `talentSystem`
+    ×3, `WaterMaterial`×1, `ResourceNodePlacer`×1 — no new regressions).
+    Live-verified via Playwright screenshots at both a wide framing and
+    a close, cropped framing calibrated to the isometric camera's actual
+    default zoom (not an arbitrary close-up) for every fix in this round.
 - [ ] **6.5 — Make the tower actually reachable in a *normal* (non-
   overridden) live settlement, i.e. real play, not just the Lab's test
   override above**: needs either a `WARD_TO_KIND` entry pointing some
