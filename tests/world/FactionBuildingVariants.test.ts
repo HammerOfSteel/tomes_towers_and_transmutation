@@ -577,14 +577,12 @@ describe('Dwarven — stepped-tier BlockKit hall with hard-edged buttress corner
 // Regression guards for the gnarled-bark trunk + leaf-cluster canopy
 // rework that replaced a perfectly smooth tapered cylinder trunk and a
 // single smooth dome standing in for an entire tree canopy.
-describe('Elven — remaining BlockKit-based kinds (chapel/shop, unaffected by the treehouse-kit rebuild)', () => {
-  it('produces only finite (non-NaN/non-infinite) vertices for chapel/shop', () => {
-    for (const kind of ['chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.elven![kind]!(makeDna(kind, 'elven', 21)));
-    }
+describe('Elven — remaining BlockKit-adjacent bits (chapel unaffected by the tower-kit rebuild; buildElvenTrunkGrid kept as a reusable primitive)', () => {
+  it('produces only finite (non-NaN/non-infinite) vertices for chapel', () => {
+    expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.elven!.chapel!(makeDna('chapel', 'elven', 21)));
   });
 
-  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface) -- still used directly by buildElvenShop', () => {
+  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface) -- buildElvenTrunkGrid itself is no longer wired into any live elven builder (shop moved to buildElvenMarketStall, see ElvenMarketStallKit.test.ts) but remains a tested, reusable primitive for future kinds', () => {
     const grid = buildElvenTrunkGrid(5, 6, 5, 5, { facade: true });
     const bw = Math.round(6 / BLOCK_UNIT);
     const bd = Math.round(5 / BLOCK_UNIT);

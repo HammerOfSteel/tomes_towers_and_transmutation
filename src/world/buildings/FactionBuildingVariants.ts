@@ -36,11 +36,11 @@ import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
-import { carveTrunkWindows } from './ElvenTrunkWindows';
+import { earthTexture, graniteTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
+import { buildElvenMarketStall } from './ElvenMarketStallKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -638,50 +638,17 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 }
 
 // ── Elven — living-tree architecture ──────────────────────────────────────────
-// Elder's Hall (patriciate), Ancient Shrine (church), Moonlit Exchange (market):
-// organic curved trunk silhouettes grown from real block occupancy, leaf-canopy
-// crowns, and moonstone/firefly accents — a village grown from trees, not built
-// with lumber. Phase 2e (§2e.5): the trunk+canopy body is now a genuine BlockKit
-// grid (`buildElvenTrunkGrid()` — the heightfield technique run "inside-out": a
-// per-*level* radius that narrows to a waist then flares into a canopy), not a
-// noise-crumbled cylinder topped with a cluster of overlapping foliage spheres
-// (see plan doc §2e.5 for why the old sphere-cluster canopy read as "a muddy
-// brown blob with dangling root tendrils").
-
-/**
- * Builds + meshes + centers a `buildElvenTrunkGrid()` living-tree trunk into
- * `g` at the origin (same centering convention as `addBlockDwarvenHall()`).
- * No corner is chamfer-suppressed — unlike dwarven's deliberately-hard
- * buttresses, elven architecture wants every edge softened into an organic
- * silhouette.
- */
-function addBlockElvenTrunk(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  barkColor: string, leafColor: string, facadeColor: string,
-  opts: ElvenTrunkOptions = {},
-): void {
-  const grid = buildElvenTrunkGrid(seed, w, d, h, opts);
-  carveTrunkWindows(grid, w, d, h, opts.floors ?? 1, seed ^ 0xE1F3_11D0, {
-    canopyStartFrac: opts.canopyStartFrac,
-    waistFrac: opts.waistFrac,
-  });
-  const palette = {
-    bark:      mat(barkColor, { roughness: 0.9, map: barkTexture() }),
-    leaf:      mat(leafColor, { roughness: 0.75 }),
-    moss:      mat('#5a7a48', { roughness: 0.95 }),
-    facade:    mat(facadeColor, { roughness: 0.8 }),
-    window_frame: mat(facadeColor, { roughness: 0.7 }),
-    moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
-    glow:      new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.9, roughness: 0.5 }),
-  };
-  const mesh = meshBlockGrid(grid, palette);
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
+// Ancient Shrine (church): organic curved trunk silhouettes grown from real
+// block occupancy. The Elder's Hall (patriciate/house/terraced/inn/blacksmith)
+// and Moonlit Exchange (market) have both since moved to the tower kit's real
+// block-course + carved-opening construction (see ElvenTreehouseKit.ts /
+// ElvenMarketStallKit.ts) -- `addBlockElvenTrunk()`/`buildElvenTrunkGrid()`
+// (the BlockKit voxel-occupancy technique) had no remaining callers in this
+// file once `buildElvenShop()` was rebuilt, and were removed as dead code.
+// `buildElvenTrunkGrid`/`pickElvenEntranceStyle`/`pickElvenCanopyArchetype`/
+// `carveTrunkWindows` remain exported, tested, reusable primitives in
+// FactionBlockProfiles.ts/ElvenTrunkWindows.ts for any future kind that wants
+// them -- not deleted, just no longer wired into a live elven builder here.
 
 function buildElvenChapel(dna: BuildingDNA): THREE.Group {
   const fp = getFootprint(dna.buildingKind, dna.size);
@@ -700,31 +667,6 @@ function buildElvenChapel(dna: BuildingDNA): THREE.Group {
   }
   const crystalMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#a0ffe0'), emissive: new THREE.Color('#60ffc0'), emissiveIntensity: 1.0, roughness: 0.15, transparent: true, opacity: 0.9 });
   addMesh(g, new THREE.OctahedronGeometry(0.3, 0), crystalMat, 0, 1.0, 0);
-  return g;
-}
-
-function buildElvenShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 1.1; // a small sapling, not a full trunk
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xE1F3_0003);
-  // Moonlit Exchange: a raised wooden trading platform beneath a small
-  // block-built sapling (a miniature version of the same trunk+canopy grid,
-  // not a separate sphere-cluster technique) — reusing the villa's own
-  // shape profile at a smaller scale is the same "small, consistent
-  // vocabulary" principle the block-kit engine is built on.
-  const woodMat = mat(dna.colors.trim, { roughness: 0.85 });
-  addMesh(g, new THREE.CylinderGeometry(0.1, 0.14, 0.35, 8), woodMat, 0, 0.175, 0);
-  addMesh(g, new THREE.BoxGeometry(fp.w, 0.1, fp.d), woodMat, 0, 0.35, 0);
-  addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0014, fp.w * 0.55, fp.d * 0.55, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
-    canopyStartFrac: 0.35, waistFrac: 0.6, canopyFlareFrac: 1.2,
-  });
-  g.children[g.children.length - 1]!.position.y += 0.4; // sit atop the trading platform
-  // Hanging glow-motes typical of a moonlit night market.
-  const glowMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.8 });
-  for (let i = 0; i < 4; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), glowMat, (r() - 0.5) * fp.w, 0.5, (r() - 0.5) * fp.d);
-  }
   return g;
 }
 
@@ -1337,7 +1279,13 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
   elven: {
     villa:    buildElvenTreehouseHome,
     chapel:   buildElvenChapel,
-    shop:     buildElvenShop,
+    // 2026-09-03 follow-up (docs/superpowers/specs/
+    // 2026-09-03-elven-market-stall-design.md): shop moved from
+    // `buildElvenShop` (a BlockKit voxel sapling) to
+    // `buildElvenMarketStall` (real block-course + carved-opening
+    // construction, same tower-kit family as villa/watchtower) --
+    // continuing the same race-by-race, building-by-building cycle.
+    shop:     buildElvenMarketStall,
     // `house` (gateward/farm wards) and `terraced` (slum ward) are real
     // BuildingKinds produced by WARD_TO_KIND (src/buildingToDungeonPlan.ts)
     // — every settlement's farm/gateward/slum buildings use them, so
