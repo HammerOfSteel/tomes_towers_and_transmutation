@@ -392,6 +392,45 @@ describe('FactionBlockProfiles — pickElvenEntranceStyle', () => {
 });
 
 
+describe('FactionBlockProfiles — pickElvenCanopyArchetype', () => {
+  it('is deterministic per seed', () => {
+    expect(pickElvenCanopyArchetype(7)).toBe(pickElvenCanopyArchetype(7));
+  });
+
+  it('produces both archetypes across a seed sweep', () => {
+    const archetypes = new Set<string>();
+    for (let seed = 0; seed < 60; seed++) archetypes.add(pickElvenCanopyArchetype(seed));
+    expect(archetypes).toEqual(new Set(['satellite_lobes', 'moss_crown']));
+  });
+
+  it('moss_crown has no separate branch-connector cells (a single fused mass), unlike satellite_lobes', () => {
+    const W = 8, D = 8, H = 9;
+    const lobesGrid = buildElvenTrunkGrid(1, W, D, H, { canopyArchetype: 'satellite_lobes' });
+    const mossGrid = buildElvenTrunkGrid(1, W, D, H, { canopyArchetype: 'moss_crown' });
+    const bh = Math.max(6, Math.round(H / BLOCK_UNIT));
+    const canopyStartBy = Math.round(bh * 0.6);
+    let lobesHasBarkInCanopy = false, mossHasBarkInCanopy = false;
+    for (const [k, matKey] of lobesGrid.cells.entries()) {
+      const by = Number(k.split(',')[1]);
+      if (by > canopyStartBy + 1 && matKey === 'bark') lobesHasBarkInCanopy = true;
+    }
+    for (const [k, matKey] of mossGrid.cells.entries()) {
+      const by = Number(k.split(',')[1]);
+      if (by > canopyStartBy + 1 && matKey === 'bark') mossHasBarkInCanopy = true;
+    }
+    expect(lobesHasBarkInCanopy).toBe(true); // satellite_lobes has branches (existing behavior)
+    expect(mossHasBarkInCanopy).toBe(false); // moss_crown has no branches
+  });
+
+  it('moss_crown still produces valid, non-empty canopy geometry', () => {
+    const grid = buildElvenTrunkGrid(2, 8, 8, 9, { canopyArchetype: 'moss_crown' });
+    let leafCount = 0;
+    for (const matKey of grid.cells.values()) if (matKey === 'leaf' || matKey === 'moss') leafCount++;
+    expect(leafCount).toBeGreaterThan(0);
+  });
+});
+
+
 describe('FactionBlockProfiles — smoothTaperRadiusFrac (shared taper helper)', () => {
   it('returns startFrac at t=0 and endFrac at t=1', () => {
     expect(smoothTaperRadiusFrac(0, 1, 0.4)).toBeCloseTo(1, 5);
