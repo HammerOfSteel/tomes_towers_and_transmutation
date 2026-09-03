@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home kit-of-parts) ✅ 2 of ~9 elven building types shipped, 2026-09-02/03
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall kit-of-parts) ✅ 3 of ~9 elven building types shipped, 2026-09-02/03
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -899,6 +899,71 @@ Slime, Human — Slime/Human last, since those already look best).
   root tendrils, vine/leaf props, and an organic multi-lobe living
   canopy — visually consistent with the tower's own established quality
   bar, directly addressing the feedback.
+- [x] **6.6c — Third elven building type: the market stall ("shop" kind,
+  "Moonlit Exchange")**: user asked to move to "the next building type"
+  in the same research → learn → plan → build → test cycle. Targeted
+  `buildElvenShop()` — the last elven kind still on the old `BlockKit`
+  voxel technique alongside a distinct `buildElvenChapel()` (untouched;
+  uses its own standing-tree-stones technique, never part of the "old
+  block design" complaint). Design: `docs/superpowers/specs/
+  2026-09-03-elven-market-stall-design.md`. Research summary: real
+  market stalls are genuinely 1-2 walls, not 4 (a back wall for locked
+  storage + an open counter facing the street) — pre-1850s shops used
+  awning + open counter, not glass display windows (large glazed
+  storefronts are a 20th-century convention); historical hanging signs
+  used carved/painted trade symbols rather than lettering (legally
+  codified in England in 1393; medieval illiteracy made pictorial
+  symbols the norm); Zelda BOTW's Great Deku Tree literally nests a
+  "General Shop" and "Spore Store" into a giant living tree, directly
+  validating the existing "Moonlit Exchange" (trading platform beneath
+  a sapling) *concept* even though its *construction* needed rebuilding.
+  Found strong in-repo precedent to reuse rather than reinvent: the
+  generic `buildMarketStall()`'s striped sloped-panel awning technique,
+  the tavern's rigid bracket+board+chain hanging sign, and
+  `StoneTowerOpenings.ts`'s carved-recessed-opening technique at a
+  wide/short aspect ratio for a genuine counter cutout. Shipped: a new
+  `facesOverride` option on `buildWallSurfaceBlocks()` (additive,
+  backward-compatible — existing callers/tests unaffected) so a caller
+  can build real per-course blocks for only a SUBSET of the octagon's 8
+  faces, used for a genuinely partial 3-face back wall (not a full
+  enclosed ring — the single biggest fix per the research); new
+  `ElvenMarketStallKit.ts`'s `buildElvenMarketStall()` composing that
+  partial wall, a carved counter-opening, a counter slab + 2 corner
+  posts, a striped fabric awning (`buildStallAwning`, elven-palette
+  variant of the existing generic technique), a small living sapling
+  canopy (`buildLivingRoofCap` at a miniature scale, keeping the "grown
+  from a tree" identity), and a hanging trade-sign with a glowing
+  moonstone accent standing in for a carved trade symbol. Old
+  `buildElvenShop`/`addBlockElvenTrunk` deleted as dead code once
+  nothing referenced them; `buildElvenTrunkGrid`/`carveTrunkWindows`/
+  `pickElvenEntranceStyle`/`pickElvenCanopyArchetype` remain exported,
+  tested, reusable primitives — not deleted, just no longer wired into
+  any live elven builder. **Real placement bug found and fixed during
+  live-verification**: the counter slab/posts/awning/sign were all
+  positioned along the back wall's own outward-normal direction (i.e.
+  further into the exterior BEHIND the enclosed storage area) instead
+  of the OPEN customer-facing side (the opposite direction, where the
+  missing wall faces are) — fixed by flipping the reference angle;
+  caught via an actual screenshot, not just unit tests (the unit tests
+  couldn't have caught this since they don't assert on absolute
+  spatial direction, only relative geometry presence). Verification: 8
+  new `ElvenMarketStallKit.test.ts` tests (valid geometry across a seed
+  sweep, determinism, substantial real block-course triangle count in
+  the named back wall, a genuinely partial not full-ring wall via
+  triangle-count comparison, a real carved `ExtrudeGeometry`
+  counter-opening, an always-living sapling canopy checked within its
+  own named subtree, a multi-panel fabric awning, a glowing sign
+  accent); full `FactionBuildingVariants.test.ts` (113 tests) passes;
+  fresh full-suite regression re-confirmed unchanged (144 tsc errors,
+  the same 13 pre-existing/flaky vitest failures — one extra flaky
+  timeout seen on one run in an unrelated overworld-streaming test,
+  confirmed by re-running in isolation to be pre-existing sandbox
+  flakiness). Live-verified via Playwright screenshots (after the
+  placement fix): a genuinely partial, visibly-open curved wood-block
+  back wall (clearly not a full enclosure), a striped fabric awning, a
+  counter with goods, corner posts, and a hanging sign — a silhouette
+  genuinely distinct from the fully-enclosed treehouse home, matching
+  the research's "shop vs. house" distinguishing-signal table.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
