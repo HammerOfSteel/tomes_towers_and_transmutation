@@ -88,6 +88,29 @@ describe('buildTowerBase', () => {
       expect(hasNaN(g)).toBe(false);
     }
   });
+
+  it('always has an entrance attached (a dark recessed doorway mesh is present)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const g = buildTowerBase(2, 0.6, seed, makePalette());
+      let hasDoor = false;
+      g.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
+          if (o.material.color.getHexString() === '0a0a0a') hasDoor = true;
+        }
+      });
+      expect(hasDoor).toBe(true);
+    }
+  });
+
+  it('entrance style varies across seeds (total mesh count is not perfectly constant)', () => {
+    const totalMeshCounts = new Set<number>();
+    for (let seed = 0; seed < 30; seed++) {
+      let count = 0;
+      buildTowerBase(2, 0.6, seed, makePalette()).traverse((o) => { if (o instanceof THREE.Mesh) count++; });
+      totalMeshCounts.add(count);
+    }
+    expect(totalMeshCounts.size).toBeGreaterThan(1);
+  });
 });
 
 describe('buildTowerWallRing', () => {
@@ -113,6 +136,19 @@ describe('buildTowerWallRing', () => {
     const g1 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
     const g2 = buildTowerWallRing(2, 2.9, 42, makePalette(), true);
     expect(countVerts(g1)).toBe(countVerts(g2));
+  });
+
+  it('window type varies across seeds (a round oculus TorusGeometry appears for at least one seed but not another)', () => {
+    let sawTorus = false;
+    let sawNonTorus = false;
+    for (let seed = 0; seed < 30; seed++) {
+      const g = buildTowerWallRing(2, 2.9, seed, makePalette(), true);
+      let hasTorus = false;
+      g.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'TorusGeometry') hasTorus = true; });
+      if (hasTorus) sawTorus = true; else sawNonTorus = true;
+    }
+    expect(sawTorus).toBe(true);
+    expect(sawNonTorus).toBe(true);
   });
 
   it('omitting the new optional params (vertexScales/offset/rotation) leaves the group at local origin with zero rotation', () => {
@@ -253,5 +289,37 @@ describe('buildElvenStoneTower', () => {
       const g = buildElvenStoneTower(makeTowerDna('tower', { seed }));
       expect(hasNaN(g)).toBe(false);
     }
+  });
+
+  it('a balcony is present for some seeds and absent for others, named so it can be found', () => {
+    let sawBalcony = false;
+    let sawNoBalcony = false;
+    for (let seed = 0; seed < 30; seed++) {
+      const g = buildElvenStoneTower(makeTowerDna('tower', { seed }));
+      if (g.getObjectByName('elven-stone-tower-balcony')) sawBalcony = true;
+      else sawNoBalcony = true;
+    }
+    expect(sawBalcony).toBe(true);
+    expect(sawNoBalcony).toBe(true);
+  });
+
+  it('adding a balcony does not shift floor-ring indexing (children[1] is still floor 0 regardless)', () => {
+    // Regression guard: the balcony, when present, must be appended
+    // AFTER the roof (not inserted in the middle), so the existing
+    // "different seeds produce measurably different floor-ring
+    // shapes/positions" test's g.children[1] assumption keeps holding.
+    let foundBalconySeed: number | null = null;
+    for (let seed = 0; seed < 30; seed++) {
+      if (buildElvenStoneTower(makeTowerDna('tower', { seed })).getObjectByName('elven-stone-tower-balcony')) {
+        foundBalconySeed = seed;
+        break;
+      }
+    }
+    expect(foundBalconySeed).not.toBeNull();
+    const g = buildElvenStoneTower(makeTowerDna('tower', { seed: foundBalconySeed! }));
+    const balconyIndex = g.children.findIndex((c) => c.name === 'elven-stone-tower-balcony');
+    // Balcony must be the LAST child (appended after base + all floor
+    // rings + roof).
+    expect(balconyIndex).toBe(g.children.length - 1);
   });
 });

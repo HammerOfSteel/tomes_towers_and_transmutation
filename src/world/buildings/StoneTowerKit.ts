@@ -16,6 +16,9 @@ import { slateTexture } from './TextureFactory';
 import { WALL_STRATEGY, buildWallSurface } from './StoneTowerWallSurface';
 import { buildTowerRoofCap } from './StoneTowerRoofCap';
 import { pickSilhouetteProfile, buildFloorTransforms, buildFloorVertexScales } from './StoneTowerSilhouette';
+import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
+import { pickEntranceStyle, buildEntrance } from './StoneTowerEntrance';
+import { shouldHaveBalcony, buildBalcony } from './StoneTowerBalcony';
 
 /** Local material helper -- mirrors FactionBuildingVariants.ts's own
  * `mat()` (not imported directly to avoid a circular import, since that
@@ -43,8 +46,9 @@ export interface StoneTowerPalette {
 export function buildTowerBase(radius: number, plinthHeight: number, seed: number, palette: StoneTowerPalette): THREE.Group {
   const g = new THREE.Group();
   const rand = mulberry32(seed);
+  const plinthRadius = radius * 1.2;
 
-  const plinth = buildWallSurface(WALL_STRATEGY, radius * 1.2, plinthHeight, seed ^ 0xB453, palette.stone);
+  const plinth = buildWallSurface(WALL_STRATEGY, plinthRadius, plinthHeight, seed ^ 0xB453, palette.stone);
   g.add(plinth);
 
   const rootCount = 4 + Math.floor(rand() * 3);
@@ -70,6 +74,10 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
     rock.castShadow = rock.receiveShadow = true;
     g.add(rock);
   }
+
+  const entranceStyle = pickEntranceStyle(seed);
+  const entrance = buildEntrance(entranceStyle, plinthRadius, seed, palette);
+  g.add(entrance);
 
   return g;
 }
@@ -206,17 +214,8 @@ export function buildTowerWallRing(
   const rand = mulberry32(seed ^ 0x714D0);
 
   if (hasWindow) {
-    const archBodyH = ringHeight * 0.35;
-    const archBodyW = radius * 0.3;
-    const archPointH = archBodyH * 0.5;
-    const glassMat = new THREE.MeshStandardMaterial({ color: '#1a2a1a', roughness: 0.4 });
-    const archBody = new THREE.Mesh(new THREE.BoxGeometry(archBodyW, archBodyH, 0.06), glassMat);
-    archBody.position.set(0, ringHeight * 0.5, radius * 0.99);
-    g.add(archBody);
-    const archPoint = new THREE.Mesh(new THREE.ConeGeometry(archBodyW * 0.5, archPointH, 3), palette.moonstone);
-    archPoint.position.set(0, ringHeight * 0.5 + archBodyH / 2 + archPointH / 2, radius * 0.99);
-    archPoint.rotation.y = Math.PI / 4;
-    g.add(archPoint);
+    const style = pickWindowStyle(seed);
+    g.add(buildWindow(style, radius, ringHeight, palette));
   }
 
   const prop = pickWallProp(seed);
@@ -289,6 +288,7 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   let y = plinthHeight;
   let lastCombinedRadius = radius;
   let lastOffsetX = 0, lastOffsetZ = 0;
+  let balconyY = plinthHeight, balconyRadius = radius, balconyOffsetX = 0, balconyOffsetZ = 0;
   for (let fl = 0; fl < floors; fl++) {
     const hasWindow = fl > 0 && rand() < 0.7;
     const microTaper = 1 - fl * 0.015; // pre-existing very slight per-floor taper
@@ -306,6 +306,16 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
     lastCombinedRadius = combinedRadius;
     lastOffsetX = offsetX;
     lastOffsetZ = offsetZ;
+    // Balcony (see StoneTowerBalcony.ts) attaches at the boundary right
+    // below the top floor -- i.e. right after the second-to-last floor's
+    // ring -- so the roof cap still reads as sitting on a normal top
+    // floor, with the balcony as a distinct projecting band below it.
+    if (fl === floors - 2) {
+      balconyY = y;
+      balconyRadius = combinedRadius;
+      balconyOffsetX = offsetX;
+      balconyOffsetZ = offsetZ;
+    }
   }
 
   // Roof cap follows the LAST floor's actual combined radius/offset (not
@@ -315,6 +325,16 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   const roof = buildTowerRoofCap(dna.seed ^ 0x800F, lastCombinedRadius, coneHeight, palette);
   roof.position.set(lastOffsetX, y, lastOffsetZ);
   g.add(roof);
+
+  // Balcony is appended LAST (after base + every floor ring + roof) so
+  // its presence never shifts the floor-ring indexing other code/tests
+  // rely on (g.children[1] is always floor 0's ring, regardless).
+  if (shouldHaveBalcony(dna.seed)) {
+    const balcony = buildBalcony(dna.seed, balconyRadius, palette);
+    balcony.name = 'elven-stone-tower-balcony';
+    balcony.position.set(balconyOffsetX, balconyY, balconyOffsetZ);
+    g.add(balcony);
+  }
 
   return g;
 }
