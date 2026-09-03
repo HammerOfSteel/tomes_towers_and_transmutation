@@ -5,11 +5,17 @@
  * tower always has a way in) -- only the STYLE varies by seed, built
  * once per tower and attached to `buildTowerBase()`'s plinth front
  * face.
+ *
+ * Shares StoneTowerOpenings.ts's recessed-frame-plus-cavity technique
+ * with the windows for real carved depth (a proud stone frame around a
+ * genuinely receded dark doorway), rather than a flat dark box glued
+ * onto the wall with zero depth.
  */
 
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { StoneTowerPalette } from './StoneTowerKit';
+import { buildRecessedArchOpening, type RecessedArchOptions } from './StoneTowerOpenings';
 
 export type EntranceStyle = 'plain_arch' | 'flanked_pillars';
 const ALL_STYLES: EntranceStyle[] = ['plain_arch', 'flanked_pillars'];
@@ -21,22 +27,30 @@ export function pickEntranceStyle(seed: number): EntranceStyle {
 }
 
 /**
- * Builds a person-scale pointed-arch doorway (a larger version of
- * StoneTowerWindows.ts's pointed_arch shape, sized for entry rather
- * than light) with a dark recessed "open doorway" box and a
- * moonstone-accented point.
+ * Builds a person-scale carved pointed-arch doorway using
+ * StoneTowerOpenings.ts's shared recessed-frame-plus-cavity technique,
+ * with a small moonstone accent set into the frame's peak like a
+ * keystone ornament (matching the windows' equivalent detail for a
+ * consistent visual language between openings).
  */
 function _buildArch(radius: number, doorH: number, doorW: number, palette: StoneTowerPalette): THREE.Group {
-  const g = new THREE.Group();
-  const pointH = doorH * 0.3;
+  const opts: RecessedArchOptions = {
+    width: doorW,
+    straightHeight: doorH * 0.75,
+    pointHeight: doorH * 0.3,
+    recessDepth: radius * 0.08,
+    frameWidth: radius * 0.055,
+    frameProud: radius * 0.035,
+  };
   const doorMat = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.9 });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.1), doorMat);
-  door.position.set(0, doorH / 2, radius * 0.99);
-  g.add(door);
-  const point = new THREE.Mesh(new THREE.ConeGeometry(doorW * 0.55, pointH, 3), palette.moonstone);
-  point.position.set(0, doorH + pointH / 2, radius * 0.99);
-  point.rotation.y = Math.PI / 4;
-  g.add(point);
+  const g = buildRecessedArchOpening(opts, radius, doorMat, palette.stone);
+
+  const accentR = opts.width * 0.14;
+  const accent = new THREE.Mesh(new THREE.CylinderGeometry(accentR, accentR, radius * 0.025, 8), palette.moonstone);
+  accent.rotation.x = Math.PI / 2;
+  accent.position.set(0, opts.straightHeight + opts.pointHeight * 0.6, radius + opts.frameProud * 0.6);
+  g.add(accent);
+
   return g;
 }
 

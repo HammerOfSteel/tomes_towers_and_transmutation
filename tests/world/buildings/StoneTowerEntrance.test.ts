@@ -84,4 +84,27 @@ describe('buildEntrance', () => {
     const flanked = buildEntrance('flanked_pillars', radius, 42, makePalette());
     expect(countVerts(flanked)).toBeGreaterThan(countVerts(plain));
   });
+
+  it('has real carved depth: a dark cavity material genuinely recesses behind the wall surface, and a stone frame material genuinely projects proud of it, with a real gap between them (not a flat decal, and not incidental cone-radius Z-extent)', () => {
+    const g = buildEntrance('plain_arch', radius, 42, makePalette());
+    g.updateMatrixWorld(true);
+    let cavityMinZ = Infinity;
+    let frameMaxZ = -Infinity;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.MeshStandardMaterial)) return;
+      const pos = o.geometry.attributes.position;
+      const isDark = o.material.color.getHexString() === '0a0a0a';
+      const isStone = o.material.color.getHexString() === '9aa0a8'; // makePalette()'s stone color
+      if (!isDark && !isStone) return;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        if (isDark) cavityMinZ = Math.min(cavityMinZ, v.z);
+        if (isStone) frameMaxZ = Math.max(frameMaxZ, v.z);
+      }
+    });
+    expect(cavityMinZ).toBeLessThan(radius);
+    expect(frameMaxZ).toBeGreaterThan(radius);
+    expect(cavityMinZ).toBeLessThan(frameMaxZ);
+  });
 });
