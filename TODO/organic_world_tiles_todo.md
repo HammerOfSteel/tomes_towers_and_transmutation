@@ -650,6 +650,38 @@ Slime, Human — Slime/Human last, since those already look best).
   leaning towers, straight tapering towers, and a visibly bulging
   "waisted" tower, at different heights, with both roof-cap variants
   still present — not a uniformly-scaled repeat of one shape.
+- [x] **6.4d — Kit-of-parts feature variety (windows, entrance, balcony,
+  props)**: user feedback after 6.4c: "better but we are not there yet...
+  more distinct variety" — named concrete kit-of-parts ideas (window
+  sizes/types, a top balcony, a bottom entrance archway, more prop
+  variety). Direct continuation of the already-approved kit-of-parts
+  technique (no fresh external research needed — see
+  `docs/superpowers/specs/2026-09-03-elven-stone-tower-features-design.md`).
+  Shipped 4 additive pieces: **`StoneTowerWindows.ts`** (3 window types —
+  the original pointed-arch, a round oculus with a torus stone frame, a
+  cross-mullion 4-pane window — x 3 sizes, re-rolled per floor so one
+  tower's windows can differ from each other); **`StoneTowerEntrance.ts`**
+  (2 archway styles — plain arch, flanked-pillars — always present, only
+  the style varies, attached to the base's actual plinth radius);
+  **`StoneTowerBalcony.ts`** (a seeded ~40% chance projecting gallery —
+  corbel brackets + deck collar + parapet — attached at the second-to-last
+  floor, appended after the roof so it never shifts floor-ring indexing);
+  and an extended wall-prop catalog in `StoneTowerKit.ts` (`pickWallProp`:
+  none/vine/moss_patch/banner, up from the original vine-or-nothing coin
+  flip). All feed the *existing* wall/roof-cap mesh code, no new rendering
+  paths beyond the pieces themselves. 31 new/updated tests (9 window,
+  6 entrance, 7 balcony, 9 StoneTowerKit wiring/prop-catalog additions),
+  all passing; fresh baseline re-confirmed unchanged (144 tsc errors, the
+  same pre-existing/flaky vitest failure set as every prior round — 12-13
+  depending on `ResourceNodePlacer`'s known intermittent timeout). Live-verified via Playwright
+  (Settlement Lab across 5 seeds, `showroom.html` row + close-up
+  screenshots) — confirmed windows/entrances/roof variety clearly visible;
+  balcony confirmed structurally via its own dedicated test suite (corbel/
+  deck/parapet mesh counts, bounding-radius growth, ~40% presence rate)
+  and visible as a subtle collar band near the roofline in a close-up
+  screenshot — noted honestly as a modest accent, not a dramatic feature,
+  matching its own design intent as a smaller "gallery" detail rather
+  than a macro-silhouette change.
 - [ ] **6.5 — Make the tower actually reachable in a *normal* (non-
   overridden) live settlement, i.e. real play, not just the Lab's test
   override above**: needs either a `WARD_TO_KIND` entry pointing some
