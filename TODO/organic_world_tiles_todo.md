@@ -846,6 +846,59 @@ Slime, Human — Slime/Human last, since those already look best).
   FACTION.elven` switched from `'watchtower'` to `'house'` so "Play in
   3D" now isolates the new building type for user testing, per the
   established per-round testing pattern.
+- [x] **6.6b — Rebuild on the tower's real block-course construction
+  technique (not BlockKit)**: user feedback after seeing 6.6 live:
+  "these are nice designs but we dont go with that old block design...
+  We have the brick foundation now remember? So more in style with the
+  tower for building the structure but I like you effort and idea for
+  the general design. Just lets keep working with that nice brick work
+  the tower uses." A construction-technique swap, not a design change —
+  the windows/entrance-style/floor/canopy-variety *feature set* from
+  6.6 stays; only *how* the walls/windows/entrance/floors are physically
+  built changes, from `BlockKit`'s voxel-occupancy grid to the elven
+  stone-tower kit's own real per-course-block (`StoneTowerWallSurface.ts`
+  Strategy G) + carved-recessed-opening (`StoneTowerOpenings.ts`)
+  technique. Design doc: `docs/superpowers/specs/
+  2026-09-03-elven-treehouse-tower-kit-rebuild.md`. No fresh research
+  needed — the technique was already researched/built/approved on the
+  tower; this is a reuse task. Extracted `buildTowerKitCore()` (base + N
+  wall rings + roof cap) from `buildElvenStoneTower()`'s own body so a
+  second building family could reuse it without duplication —
+  `buildElvenStoneTower`'s existing 30 tests all pass unchanged,
+  confirming the extraction is behavior-preserving. New
+  `ElvenTreehouseKit.ts`'s `buildElvenTreehouseHome()` reuses nearly
+  every tower-kit piece verbatim (base with root-tendril decoration +
+  carved entrance + quoins, wall rings with carved windows + vine/moss/
+  banner props, the optional open-gallery balcony, silhouette-profile
+  variety) with a wood/bark palette and `buildLivingRoofCap()` always
+  forced as the roof (never the tower's classic/pagoda/living random
+  dispatch — a residential tree home should always end in a living
+  canopy). Unlike the tower, respects `dna.floors` exactly rather than a
+  fixed 3-6-floor archetype. `house`/`terraced`/`villa`/`inn`/
+  `blacksmith` repointed to the new builder; the old `buildElvenVilla`
+  and its `addPlankRing`/`addRingBraces` per-floor ring-beam helpers
+  (both BlockKit-adjacent/superseded) deleted as dead code.
+  `buildElvenShop` (a different elven kind, out of this round's scope)
+  still uses `addBlockElvenTrunk`/`buildElvenTrunkGrid` unchanged — a
+  deliberate deferral, not an oversight, matching this project's
+  established one-building-type-at-a-time pattern; its own BlockKit-vs-
+  tower-kit question is left for whenever shop is reached in the
+  race-by-race cycle. Verification: 6 new `ElvenTreehouseKit.test.ts`
+  tests (valid geometry across a seed sweep, determinism, real
+  `BoxGeometry` block construction — not a BlockKit voxel grid, exact
+  `dna.floors` respect, an always-living never-classic/pagoda roof cap,
+  a genuine carved `ExtrudeGeometry` entrance); full elven test slice
+  (121 tests) and `FactionBuildingVariants.test.ts` (113 tests, after
+  removing/updating assertions that exercised the now-deleted
+  `buildElvenVilla`) all pass; fresh full-suite regression re-confirmed
+  unchanged (144 tsc errors, the same 13 pre-existing/flaky vitest
+  failures as every prior round, no new regressions). Live-verified via
+  Playwright screenshots: real coursed wood-block walls with visible
+  bark-grain texture and running-bond offsets, a genuine carved pointed-
+  arch door with a keystone accent and real recessed depth, quoins,
+  root tendrils, vine/leaf props, and an organic multi-lobe living
+  canopy — visually consistent with the tower's own established quality
+  bar, directly addressing the feedback.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
