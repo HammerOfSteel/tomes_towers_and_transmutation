@@ -96,25 +96,32 @@ describe('buildElvenTreehouseHome', () => {
     expect(countRings(threeFloor)).toBe(countRings(oneFloor) + 2);
   });
 
-  it('always ends in a living-canopy roof cap, never a classic shingle or pagoda roof', () => {
-    for (let seed = 0; seed < 15; seed++) {
+  it('varies its roof archetype across seeds (living/classic/pagoda), unlike the old always-living behavior', () => {
+    // Structure from buildTowerKitCore: [base, ring0, ..., ring(floors-1),
+    // roof, (optional balcony)] -- the roof is always at index floors+1.
+    // Both buildClassicRoofCap and buildPagodaRoofCap (which embeds a
+    // full classic cap for its own upper tier) always end with a
+    // SphereGeometry apex finial ball -- buildLivingRoofCap never
+    // produces one (its geometry is entirely a single merged BlockKit
+    // grid mesh). Checking only the roof child's own subtree (not the
+    // whole building) avoids a false positive from _buildVineProp's
+    // unrelated small SphereGeometry leaf decorations elsewhere on the
+    // wall rings.
+    let sawApexBall = false;
+    let sawNoApexBall = false;
+    for (let seed = 0; seed < 30; seed++) {
       const dna = makeDna('house', seed, 2);
       const g = buildElvenTreehouseHome(dna);
-      // Structure from buildTowerKitCore: [base, ring0, ..., ring(floors-1),
-      // roof, (optional balcony)] -- the roof is always at index floors+1.
       const roof = g.children[dna.floors + 1]!;
-      // Both buildClassicRoofCap and buildPagodaRoofCap (which embeds a
-      // full classic cap for its own upper tier) always end with a
-      // SphereGeometry apex finial ball -- buildLivingRoofCap never
-      // produces one (its geometry is entirely a single merged BlockKit
-      // grid mesh). Checking only the roof child's own subtree (not the
-      // whole building) avoids a false positive from _buildVineProp's
-      // unrelated small SphereGeometry leaf decorations elsewhere on the
-      // wall rings.
-      let sawApexBall = false;
-      roof.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawApexBall = true; });
-      expect(sawApexBall).toBe(false);
+      let hasApexBall = false;
+      roof.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') hasApexBall = true; });
+      if (hasApexBall) sawApexBall = true; else sawNoApexBall = true;
     }
+    // sawApexBall true means at least one seed produced classic/pagoda;
+    // sawNoApexBall true means at least one seed produced the living
+    // canopy -- together, proof of genuine variety.
+    expect(sawApexBall).toBe(true);
+    expect(sawNoApexBall).toBe(true);
   });
 
   it('has a carved entrance doorway (reusing buildTowerBase unchanged) -- a genuine recessed opening, not a flat surface', () => {

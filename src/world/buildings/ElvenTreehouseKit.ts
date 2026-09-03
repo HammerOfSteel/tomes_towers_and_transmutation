@@ -9,10 +9,16 @@
  *
  * Reuses `StoneTowerKit.ts`'s `buildTowerKitCore()` (base + N wall
  * rings + roof cap, extracted specifically to make this reuse
- * possible) with a wood/bark palette and `buildLivingRoofCap()` always
- * as the roof (never the tower's own classic/pagoda/living random
- * dispatch — a residential tree home should always end in a living
- * canopy). Everything else (wall rings with carved windows and vine/
+ * possible) with a wood/bark palette and `buildTowerRoofCap()`'s
+ * classic/pagoda/living dispatch, weighted toward `living` via
+ * `RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS` (docs/superpowers/specs/
+ * 2026-09-04-tower-kit-floor-caps-and-roof-variety-design.md) --
+ * previously this always forced a living canopy on every building,
+ * which read as monotonous once several were visible in one
+ * settlement; reusing the tower's own already-approved classic/pagoda
+ * archetypes (with `living` kept as the plurality choice, preserving
+ * the "living tree home" identity) gives genuine per-building roof
+ * variety. Everything else (wall rings with carved windows and vine/
  * moss/banner props, quoins, the base's root-tendril decoration and
  * carved entrance, the optional open-gallery balcony) is the SAME
  * exported tower-kit machinery, unmodified.
@@ -24,7 +30,7 @@ import type { BuildingDNA } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { barkTexture } from './FactionBlockTextures';
 import { buildTowerKitCore, type StoneTowerPalette } from './StoneTowerKit';
-import { buildLivingRoofCap } from './StoneTowerRoofCap';
+import { buildTowerRoofCap, RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS } from './StoneTowerRoofCap';
 
 function mat(color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.85, metalness: 0, ...opts });
@@ -57,10 +63,11 @@ export function buildElvenTreehouseHome(dna: BuildingDNA): THREE.Group {
   // functions are material-agnostic, just keyed by these names --
   // `stone` holds this house's real WOOD wall/quoin/entrance/frame
   // material (bark-textured, matching a plank/log-course wall), and
-  // `shingle` is unused (this house always calls `buildLivingRoofCap`
-  // directly, never `buildTowerRoofCap`'s classic/pagoda dispatch which
-  // is the only consumer of `shingle`) but still populated to satisfy
-  // the shared interface.
+  // `shingle` is the same wood material -- genuinely used now (unlike
+  // when this house always forced buildLivingRoofCap()) since the
+  // classic/pagoda roof archetypes below render their shingle bands in
+  // it, giving a wood-shingled roof that stays thematically consistent
+  // with the walls below.
   const woodMat = mat(dna.colors.walls, { roughness: 0.9, map: barkTexture(Math.max(1, radius / 1.2), Math.max(1, ringHeight / 1.2)) });
   const palette: StoneTowerPalette = {
     stone:     woodMat,
@@ -73,7 +80,7 @@ export function buildElvenTreehouseHome(dna: BuildingDNA): THREE.Group {
   const rand = mulberry32(dna.seed ^ 0xE15E70);
   return buildTowerKitCore(
     dna, radius, floors, coneHeight, palette,
-    (seed, r, _h, p) => buildLivingRoofCap(seed ^ 0x1DEA, r, { leaf: p.leaf, bark: p.bark }),
+    (seed, r, h, p) => buildTowerRoofCap(seed, r, h, { shingle: p.shingle, leaf: p.leaf, bark: p.bark }, RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS),
     rand,
   );
 }

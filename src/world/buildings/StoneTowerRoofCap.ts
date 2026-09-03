@@ -212,31 +212,47 @@ export function buildPagodaRoofCap(radius: number, coneHeight: number, palette: 
 
 export type RoofArchetype = 'classic' | 'living' | 'pagoda';
 
-/** Weighted per-archetype choice: classic 40%, pagoda 35% (given
- * strong presence as the newest, most structurally distinct
- * archetype), living 25% (a rarer, distinctive hybrid-tree variant). */
-const ROOF_ARCHETYPE_WEIGHTS: [RoofArchetype, number][] = [
+export type RoofArchetypeWeights = [RoofArchetype, number][];
+
+/** Existing tower weights, now named/exported so other callers (the
+ * residential family) can pass their own table while this stays the
+ * default: classic 40% (given strong presence as the newest, most
+ * structurally distinct archetype), pagoda 35%, living 25% (a rarer,
+ * distinctive hybrid-tree variant). */
+export const TOWER_ROOF_ARCHETYPE_WEIGHTS: RoofArchetypeWeights = [
   ['classic', 0.4], ['pagoda', 0.35], ['living', 0.25],
 ];
 
-/** Deterministic seeded weighted choice among the 3 roof archetypes. */
-export function pickRoofArchetype(seed: number): RoofArchetype {
+/** Residential (elven house/villa/terraced/inn/blacksmith) weights:
+ * `living` stays the plurality choice (preserves the "living tree home"
+ * identity as the most common outcome) while giving genuine variety via
+ * the SAME already-approved classic/pagoda tower roof archetypes,
+ * directly answering user feedback that every treehouse roof looked
+ * identical. */
+export const RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS: RoofArchetypeWeights = [
+  ['living', 0.45], ['classic', 0.30], ['pagoda', 0.25],
+];
+
+/** Deterministic seeded weighted choice among the 3 roof archetypes,
+ * using `weights` (default: the tower's own table). */
+export function pickRoofArchetype(seed: number, weights: RoofArchetypeWeights = TOWER_ROOF_ARCHETYPE_WEIGHTS): RoofArchetype {
   const rand = mulberry32(seed);
   const roll = rand();
   let acc = 0;
-  for (const [archetype, weight] of ROOF_ARCHETYPE_WEIGHTS) {
+  for (const [archetype, weight] of weights) {
     acc += weight;
     if (roll < acc) return archetype;
   }
-  return ROOF_ARCHETYPE_WEIGHTS[ROOF_ARCHETYPE_WEIGHTS.length - 1]![0];
+  return weights[weights.length - 1]![0];
 }
 
 /**
  * Picks a roof-cap archetype (classic conical shingle, living canopy,
- * or pagoda) from `seed` via `pickRoofArchetype()` and builds it.
+ * or pagoda) from `seed` via `pickRoofArchetype(seed, weights)` and
+ * builds it. `weights` defaults to the tower's own table.
  */
-export function buildTowerRoofCap(seed: number, radius: number, coneHeight: number, palette: RoofCapPalette): THREE.Group {
-  const archetype = pickRoofArchetype(seed);
+export function buildTowerRoofCap(seed: number, radius: number, coneHeight: number, palette: RoofCapPalette, weights: RoofArchetypeWeights = TOWER_ROOF_ARCHETYPE_WEIGHTS): THREE.Group {
+  const archetype = pickRoofArchetype(seed, weights);
   switch (archetype) {
     case 'living': return buildLivingRoofCap(seed ^ 0x1DEA, radius, { leaf: palette.leaf, bark: palette.bark });
     case 'pagoda': return buildPagodaRoofCap(radius, coneHeight, palette);

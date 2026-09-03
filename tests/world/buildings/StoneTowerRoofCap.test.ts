@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildClassicRoofCap, buildLivingRoofCap, buildPagodaRoofCap, buildTowerRoofCap, pickRoofArchetype } from '@/world/buildings/StoneTowerRoofCap';
+import { buildClassicRoofCap, buildLivingRoofCap, buildPagodaRoofCap, buildTowerRoofCap, pickRoofArchetype, TOWER_ROOF_ARCHETYPE_WEIGHTS, RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS } from '@/world/buildings/StoneTowerRoofCap';
 
 function hasNaN(group: THREE.Group): boolean {
   let bad = false;
@@ -190,5 +190,44 @@ describe('buildTowerRoofCap (dispatcher)', () => {
     const g1 = buildTowerRoofCap(42, 2, 3, palette);
     const g2 = buildTowerRoofCap(42, 2, 3, palette);
     expect(countVerts(g1)).toBe(countVerts(g2));
+  });
+});
+
+describe('weighted roof-archetype tables', () => {
+  const palette = {
+    shingle: new THREE.MeshStandardMaterial({ color: '#5a6068' }),
+    leaf: new THREE.MeshStandardMaterial({ color: '#3d6b35' }),
+    bark: new THREE.MeshStandardMaterial({ color: '#4a3520' }),
+  };
+
+  it('pickRoofArchetype defaults to the tower weights (existing behavior unchanged)', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      expect(pickRoofArchetype(seed)).toBe(pickRoofArchetype(seed, TOWER_ROOF_ARCHETYPE_WEIGHTS));
+    }
+  });
+
+  it('RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS produces all 3 archetypes across a seed sweep, with living as plurality', () => {
+    const counts: Record<string, number> = { classic: 0, pagoda: 0, living: 0 };
+    for (let seed = 0; seed < 200; seed++) {
+      const archetype = pickRoofArchetype(seed, RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS);
+      counts[archetype]!++;
+    }
+    expect(counts.classic).toBeGreaterThan(0);
+    expect(counts.pagoda).toBeGreaterThan(0);
+    expect(counts.living).toBeGreaterThan(0);
+    expect(counts.living).toBeGreaterThan(counts.classic);
+    expect(counts.living).toBeGreaterThan(counts.pagoda);
+  });
+
+  it('buildTowerRoofCap accepts a custom weight table', () => {
+    // With a table that always picks 'living', the dispatcher must never
+    // produce an apex-ball finial (classic/pagoda's own discriminator).
+    const alwaysLiving: [import('@/world/buildings/StoneTowerRoofCap').RoofArchetype, number][] = [['living', 1]];
+    for (let seed = 0; seed < 10; seed++) {
+      const g = buildTowerRoofCap(seed, 2, 3, palette, alwaysLiving);
+      let sawApexBall = false;
+      g.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawApexBall = true; });
+      expect(sawApexBall).toBe(false);
+    }
   });
 });
