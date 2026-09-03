@@ -103,22 +103,6 @@ describe('buildPagodaRoofCap', () => {
     bark: new THREE.MeshStandardMaterial({ color: '#4a3520' }),
   };
 
-  function maxRadiusNearY(group: THREE.Group, y: number, tolerance: number): number {
-    group.updateMatrixWorld(true);
-    let maxR = 0;
-    const v = new THREE.Vector3();
-    group.traverse((o) => {
-      if (!(o instanceof THREE.Mesh)) return;
-      const pos = o.geometry.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-        if (Math.abs(v.y - y) > tolerance) continue;
-        maxR = Math.max(maxR, Math.hypot(v.x, v.z));
-      }
-    });
-    return maxR;
-  }
-
   it('produces valid, non-NaN geometry', () => {
     const g = buildPagodaRoofCap(2, 3, palette);
     expect(countVerts(g)).toBeGreaterThan(0);
@@ -132,18 +116,43 @@ describe('buildPagodaRoofCap', () => {
   });
 
   it('has a genuine two-tiered "pagoda" silhouette: a real waist/cinch between two wider tiers, unlike the classic roof\'s single monotonic taper', () => {
-    // Concrete Y sample points derived directly from buildPagodaRoofCap's
-    // own layout formula (radius=2, coneHeight=3): lowerHeight=1.65,
-    // neckY=1.188 (neck spans [1.188, 1.548]), upper tier's own eave
-    // sits right after the neck. Sampling within the lower tier's body,
-    // within the neck, and just past the neck (upper tier's eave)
-    // should show wide -> narrow -> wide again, not a single taper.
+    // Y-based vertex-ring sampling is unreliable here: the neck cylinder's
+    // own top/bottom rings sit at the EXACT same Y as the wider body/eave
+    // rings it connects to (they're stacked flush), so a naive "widest
+    // vertex near Y" query always picks the wider neighboring ring, never
+    // the neck's own narrower one. Instead, find the neck mesh directly
+    // (named 'elven-pagoda-neck') and compare its own radius against the
+    // widest radius found strictly below it (the truncated lower body)
+    // and strictly above it (the upper tier's own flared eave) -- this
+    // proves a real local-minimum waist, not just two touching cones.
     const g = buildPagodaRoofCap(2, 3, palette);
-    const lowerBodyR = maxRadiusNearY(g, 0.6, 0.15);
-    const waistR = maxRadiusNearY(g, 1.35, 0.1);
-    const upperEaveR = maxRadiusNearY(g, 1.65, 0.1);
-    expect(waistR).toBeLessThan(lowerBodyR);
-    expect(upperEaveR).toBeGreaterThan(waistR);
+    g.updateMatrixWorld(true);
+    const neck = g.getObjectByName('elven-pagoda-neck') as THREE.Mesh;
+    expect(neck).toBeTruthy();
+    const neckParams = (neck.geometry as THREE.CylinderGeometry).parameters;
+    const neckR = Math.max(neckParams.radiusTop, neckParams.radiusBottom);
+    const neckBottomY = neck.position.y - neckParams.height / 2;
+    const neckTopY = neck.position.y + neckParams.height / 2;
+
+    function maxRadiusInRange(yMin: number, yMax: number): number {
+      let maxR = 0;
+      const v = new THREE.Vector3();
+      g.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || o === neck) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          if (v.y < yMin || v.y > yMax) continue;
+          maxR = Math.max(maxR, Math.hypot(v.x, v.z));
+        }
+      });
+      return maxR;
+    }
+
+    const lowerBodyR = maxRadiusInRange(-Infinity, neckBottomY + 1e-6);
+    const upperEaveR = maxRadiusInRange(neckTopY - 1e-6, Infinity);
+    expect(neckR).toBeLessThan(lowerBodyR);
+    expect(neckR).toBeLessThan(upperEaveR);
   });
 
   it('has substantially more geometry than a single classic roof cap (two tiers + a connecting neck, not one assembly)', () => {

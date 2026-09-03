@@ -140,37 +140,71 @@ export interface RoofCapPalette {
 }
 
 /**
- * "Pagoda" roof-cap archetype: two stacked classic-roof-cap tiers
- * (a larger lower tier, a smaller upper tier) joined by a genuinely
- * waisted neck -- a structurally distinct top ASSEMBLY from the
- * single-cone classic/living caps, matching the reference tabletop-kit
- * image's stacked-roof tower variant. The neck's own smaller radius
- * (well under both the lower tier's body and the upper tier's own
- * flared eave) is what gives pagodas their characteristic silhouette:
- * wide -> narrow -> wide again -> taper to a point, rather than one
- * continuous monotonic taper.
+ * "Pagoda" roof-cap archetype: a truncated lower eave-and-body section
+ * (deliberately no point of its own -- see below) topped by a genuine
+ * waisted neck, then a full smaller upper tier (`buildClassicRoofCap`,
+ * WITH its own pointed apex) -- a structurally distinct top ASSEMBLY
+ * from the single-cone classic/living caps, matching the reference
+ * tabletop-kit image's stacked-roof tower variant.
+ *
+ * The lower tier deliberately does NOT reuse `buildClassicRoofCap`
+ * (which was the first version's approach): giving the lower tier its
+ * OWN full taper-to-a-point competed visually with the upper tier's
+ * own point, so the two tiers' near-touching apexes blurred into one
+ * ambiguous cone silhouette at normal viewing distance, even though
+ * the underlying geometry was genuinely two separate assemblies (see
+ * design spec's follow-up note on this exact failure mode). Truncating
+ * the lower tier's body well before a point -- so the ONLY apex in the
+ * whole roof is the upper tier's -- gives a clean, unambiguous
+ * wide -> narrow (neck) -> wide (upper eave) -> point silhouette that
+ * reads as a genuine two-tier pagoda at a glance, not just under
+ * close inspection.
  */
 export function buildPagodaRoofCap(radius: number, coneHeight: number, palette: RoofCapPalette): THREE.Group {
   const g = new THREE.Group();
 
-  const lowerHeight = coneHeight * 0.55;
+  const lowerHeight = coneHeight * 0.42;
   const upperRadius = radius * 0.55;
-  const upperHeight = coneHeight * 0.55;
+  const upperHeight = coneHeight * 0.58;
   const neckHeight = coneHeight * 0.12;
-  const neckY = lowerHeight * 0.72;
 
-  const lowerTier = buildClassicRoofCap(radius, lowerHeight, palette.shingle);
-  g.add(lowerTier);
+  const eaveInnerR = radius * 1.15;
+  const eaveOuterR = radius * 1.4;
+  const eaveH = lowerHeight * 0.22;
+  const eave = new THREE.Mesh(new THREE.CylinderGeometry(eaveInnerR, eaveOuterR, eaveH, 8), palette.shingle);
+  eave.position.y = eaveH / 2;
+  eave.castShadow = eave.receiveShadow = true;
+  g.add(eave);
 
-  const neckBottomR = upperRadius * 0.55;
+  // Truncated body: tapers from the eave's inner radius down to just
+  // wider than the neck below it -- NOT to a point (that's the upper
+  // tier's job).
+  const bodyTopR = upperRadius * 1.1;
+  const bodyH = lowerHeight - eaveH;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(bodyTopR, eaveInnerR, bodyH, 8), palette.shingle);
+  body.position.y = eaveH + bodyH / 2;
+  body.castShadow = body.receiveShadow = true;
+  g.add(body);
+
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    const finialH = radius * 0.18;
+    const finial = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.03, finialH, 4), palette.shingle);
+    finial.position.set(Math.sin(ang) * eaveOuterR * 0.94, eaveH + finialH / 2, Math.cos(ang) * eaveOuterR * 0.94);
+    finial.castShadow = true;
+    g.add(finial);
+  }
+
+  const neckBottomR = bodyTopR * 0.85;
   const neckTopR = upperRadius * 0.85;
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(neckTopR, neckBottomR, neckHeight, 8), palette.bark);
-  neck.position.y = neckY;
+  neck.name = 'elven-pagoda-neck';
+  neck.position.y = lowerHeight + neckHeight / 2;
   neck.castShadow = neck.receiveShadow = true;
   g.add(neck);
 
   const upperTier = buildClassicRoofCap(upperRadius, upperHeight, palette.shingle);
-  upperTier.position.y = neckY + neckHeight;
+  upperTier.position.y = lowerHeight + neckHeight;
   g.add(upperTier);
 
   return g;
