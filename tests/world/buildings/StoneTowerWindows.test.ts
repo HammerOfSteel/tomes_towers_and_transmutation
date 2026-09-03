@@ -122,4 +122,40 @@ describe('buildWindow', () => {
     g.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
     expect(meshCount).toBeGreaterThan(1);
   });
+
+  it("pointed_arch has real carved depth: some geometry sits behind the wall surface (recessed cavity) and some sits proud of it (raised frame) -- not a flat decal", () => {
+    const g = buildWindow({ type: 'pointed_arch', size: 'medium' }, radius, ringHeight, makePalette());
+    g.updateMatrixWorld(true);
+    let minZ = Infinity, maxZ = -Infinity;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        minZ = Math.min(minZ, v.z);
+        maxZ = Math.max(maxZ, v.z);
+      }
+    });
+    expect(minZ).toBeLessThan(radius);
+    expect(maxZ).toBeGreaterThan(radius);
+  });
+
+  it('oculus also has real depth (recessed disc behind a proud stone ring frame)', () => {
+    const g = buildWindow({ type: 'oculus', size: 'medium' }, radius, ringHeight, makePalette());
+    g.updateMatrixWorld(true);
+    let minZ = Infinity, maxZ = -Infinity;
+    const v = new THREE.Vector3();
+    g.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        minZ = Math.min(minZ, v.z);
+        maxZ = Math.max(maxZ, v.z);
+      }
+    });
+    expect(minZ).toBeLessThan(radius);
+    expect(maxZ).toBeGreaterThan(radius);
+  });
 });
