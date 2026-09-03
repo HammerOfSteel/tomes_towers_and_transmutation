@@ -4,11 +4,15 @@
  * 2026-09-03-elven-stone-tower-features-design.md): a seeded ~40%
  * chance per tower, independent of silhouette profile, giving a
  * "watch-post" reading distinct from a tiered profile's own stepping.
- * Built from 3 cheap primitives (corbel brackets, a projecting deck,
- * a low parapet) rather than full per-course block geometry -- a
- * balcony is a small accent feature, not a primary wall surface, so
- * this keeps its triangle cost low regardless of which wall strategy
- * the tower's main shaft uses.
+ *
+ * Built as a genuinely OPEN crow's-nest: corbel brackets (protruding
+ * from the wall) support a projecting deck, topped by an open
+ * balustrade of individual vertical rib posts with real visible gaps
+ * between them (plus thin top/bottom rail bands connecting the ribs)
+ * -- matching the reference tabletop-kit image's open gallery you
+ * could actually stand in and see through, not a solid closed drum
+ * (the original implementation's flaw, flagged directly against the
+ * reference).
  */
 
 import * as THREE from 'three';
@@ -27,8 +31,10 @@ export function shouldHaveBalcony(seed: number): boolean {
  * Builds a complete balcony band: a ring of corbel brackets
  * (cone wedges, apex pointing down/inward, matching real corbelling)
  * protruding from the wall at `radius`, a thin projecting deck
- * (a slightly-larger-radius short cylinder "collar"), and a low
- * parapet wall ring at the collar's outer radius.
+ * (a slightly-larger-radius short cylinder "collar"), and an OPEN
+ * balustrade -- individual vertical rib posts with visible gaps
+ * between them, joined by a thin bottom kick-rail and a thin top
+ * hand-rail band -- rather than one solid parapet shell.
  */
 export function buildBalcony(seed: number, radius: number, palette: StoneTowerPalette): THREE.Group {
   const g = new THREE.Group();
@@ -55,14 +61,38 @@ export function buildBalcony(seed: number, radius: number, palette: StoneTowerPa
   deck.castShadow = deck.receiveShadow = true;
   g.add(deck);
 
+  // Open balustrade: individual rib posts around the circumference
+  // (real gaps between them, unlike a closed cylindrical shell), plus
+  // thin top/bottom rail bands so the ribs read as one connected
+  // railing structure rather than a loose picket fence.
   const parapetHeight = deckRadius * 0.35;
-  const parapet = new THREE.Mesh(
-    new THREE.CylinderGeometry(deckRadius * 0.97, deckRadius * 0.97, parapetHeight, 8, 1, true),
+  const railThickness = deckRadius * 0.035;
+  const ribCount = 10 + Math.floor(rand() * 4); // 10-13, denser than the corbel spacing
+  const ribRadius = deckRadius * 0.97;
+  for (let i = 0; i < ribCount; i++) {
+    const ang = (i / ribCount) * Math.PI * 2;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(railThickness, parapetHeight, railThickness), palette.stone);
+    rib.position.set(Math.sin(ang) * ribRadius, deckHeight + parapetHeight / 2, Math.cos(ang) * ribRadius);
+    rib.rotation.y = ang;
+    rib.castShadow = rib.receiveShadow = true;
+    g.add(rib);
+  }
+
+  const bottomRail = new THREE.Mesh(
+    new THREE.CylinderGeometry(ribRadius, ribRadius, railThickness * 1.4, 8, 1, true),
     palette.stone,
   );
-  parapet.position.y = deckHeight + parapetHeight / 2;
-  parapet.castShadow = parapet.receiveShadow = true;
-  g.add(parapet);
+  bottomRail.position.y = deckHeight + railThickness * 0.7;
+  bottomRail.castShadow = bottomRail.receiveShadow = true;
+  g.add(bottomRail);
+
+  const topRail = new THREE.Mesh(
+    new THREE.CylinderGeometry(ribRadius, ribRadius, railThickness * 1.4, 8, 1, true),
+    palette.stone,
+  );
+  topRail.position.y = deckHeight + parapetHeight - railThickness * 0.7;
+  topRail.castShadow = topRail.receiveShadow = true;
+  g.add(topRail);
 
   return g;
 }

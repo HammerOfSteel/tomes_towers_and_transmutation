@@ -87,4 +87,35 @@ describe('buildBalcony', () => {
     g.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
     expect(meshCount).toBeGreaterThan(3); // several corbel brackets + deck + parapet
   });
+
+  it('the parapet is a genuinely OPEN rib gallery (visible gaps between posts), not a solid drum -- a ray cast horizontally through the parapet band from outside must reach the tower centre through at least one gap', () => {
+    const g = buildBalcony(42, radius, makePalette());
+    g.updateMatrixWorld(true);
+    // Only test rib/rail meshes (exclude corbels/deck, which legitimately
+    // sit lower and would otherwise block every ray).
+    const parapetMeshes: THREE.Mesh[] = [];
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.position.y > radius * 0.15) parapetMeshes.push(o);
+    });
+    expect(parapetMeshes.length).toBeGreaterThan(0);
+    const railY = parapetMeshes.reduce((s, m) => s + m.position.y, 0) / parapetMeshes.length;
+
+    const raycaster = new THREE.Raycaster();
+    const deckRadius = radius * 1.35; // matches buildBalcony's own deckRadius formula
+    let hitCount = 0;
+    const rayCount = 64;
+    for (let i = 0; i < rayCount; i++) {
+      const ang = (i / rayCount) * Math.PI * 2;
+      const origin = new THREE.Vector3(Math.sin(ang) * deckRadius * 3, railY, Math.cos(ang) * deckRadius * 3);
+      const dir = new THREE.Vector3(-Math.sin(ang), 0, -Math.cos(ang));
+      raycaster.set(origin, dir);
+      const hits = raycaster.intersectObjects(parapetMeshes, false);
+      if (hits.length > 0) hitCount++;
+    }
+    // A solid drum would hit on every single ray; a genuinely open rib
+    // gallery must have a substantial fraction of rays pass clean
+    // through a gap between ribs.
+    expect(hitCount).toBeLessThan(rayCount);
+    expect(hitCount).toBeGreaterThan(0); // ribs must still exist and block SOME rays
+  });
 });
