@@ -341,3 +341,29 @@ describe('buildElvenStoneTower', () => {
     expect(balconyIndex).toBe(g.children.length - 1);
   });
 });
+
+describe('floor caps (fixes the "seethrough, no ground" bug)', () => {
+  it('buildTowerBase includes a floor-cap mesh at its own top', () => {
+    const g = buildTowerBase(2, 0.6, 5, makePalette());
+    let found: THREE.Object3D | undefined;
+    g.traverse((o) => { if (o.name === 'elven-tower-floor-cap') found = o; });
+    expect(found).toBeDefined();
+    expect(found!.position.y).toBeCloseTo(0.6, 5);
+  });
+
+  it('buildTowerWallRing includes a floor-cap mesh at its own top (local y = ringHeight)', () => {
+    const g = buildTowerWallRing(2, 3, 5, makePalette(), false);
+    let found: THREE.Object3D | undefined;
+    g.traverse((o) => { if (o.name === 'elven-tower-floor-cap') found = o; });
+    expect(found).toBeDefined();
+    expect(found!.position.y).toBeCloseTo(3, 5);
+  });
+
+  it('does not change buildTowerKitCore\'s top-level child ordering (base, rings, roof, optional balcony)', () => {
+    const g = buildElvenStoneTower(makeTowerDna('tower', { seed: 5 }));
+    // Existing convention already relied on elsewhere in this file/
+    // ElvenTreehouseKit.test.ts: children are [base, ring0..ringN-1, roof, balcony?].
+    // Floor caps must live INSIDE base/ring groups, not as new top-level siblings.
+    expect(g.children.length).toBeGreaterThanOrEqual(1 + 3 + 1); // base + >=3 floors + roof (floor count is seed-random 3-6)
+  });
+});

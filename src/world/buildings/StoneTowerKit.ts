@@ -20,6 +20,7 @@ import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
 import { pickEntranceStyle, buildEntrance } from './StoneTowerEntrance';
 import { shouldHaveBalcony, buildBalcony } from './StoneTowerBalcony';
 import { buildQuoins } from './StoneTowerQuoins';
+import { buildFloorCap } from './StoneTowerFloorCap';
 
 /** Local material helper -- mirrors FactionBuildingVariants.ts's own
  * `mat()` (not imported directly to avoid a circular import, since that
@@ -83,6 +84,13 @@ export function buildTowerBase(radius: number, plinthHeight: number, seed: numbe
   const quoins = buildQuoins(plinthRadius, plinthHeight, undefined, palette.stone);
   quoins.name = 'elven-stone-tower-quoins';
   g.add(quoins);
+
+  // Solid decking at the base's own top -- closes the seam into floor
+  // 0's ring, which is narrower than the flared plinth below it (see
+  // StoneTowerFloorCap.ts's doc comment for the full bug this fixes).
+  const floorCap = buildFloorCap(plinthRadius, palette.stone);
+  floorCap.position.y = plinthHeight;
+  g.add(floorCap);
 
   return g;
 }
@@ -235,6 +243,16 @@ export function buildTowerWallRing(
   } else if (prop === 'banner') {
     g.add(_buildBannerProp(radius, ringHeight, rand, palette));
   }
+
+  // Solid decking at this ring's own top -- closes the seam into
+  // whatever sits above (the next floor's ring, or the roof if this is
+  // the last floor), which may be narrower (see StoneTowerFloorCap.ts's
+  // doc comment for the full bug this fixes). Added BEFORE the position/
+  // rotation offsets below so it inherits them for free, matching every
+  // other decoration in this function.
+  const floorCap = buildFloorCap(radius, palette.stone, vertexScales);
+  floorCap.position.y = ringHeight;
+  g.add(floorCap);
 
   g.position.x = offsetX;
   g.position.z = offsetZ;
