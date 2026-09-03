@@ -245,56 +245,37 @@ export function buildTowerWallRing(
 
 
 /**
- * Public entry point: builds a complete elven stone tower for the given
- * `BuildingDNA` (dispatched from FactionBuildingVariants.ts's elven
- * `watchtower`/`tower` override). Derives its footprint the same way
- * every other builder in this codebase does (getFootprint(dna.
- * buildingKind, dna.size)), so it automatically scales to both kinds'
- * very different footprint scales (watchtower: fixed 2x2; tower:
- * 3x3-7x5 by size).
+ * Shared core for any tower-kit-family building: stacks a base, N wall
+ * rings (via `buildTowerWallRing()`), and a caller-supplied roof cap.
+ * Extracted from `buildElvenStoneTower()`'s original body so a second
+ * building family (see `ElvenTreehouseKit.ts`'s `buildElvenTreehouseHome`)
+ * can reuse the exact same real-block-course construction technique
+ * without duplicating it -- `buildElvenStoneTower()` below is now a thin
+ * wrapper around this, with its existing 30 tests passing unchanged as
+ * proof this extraction is behavior-preserving, not a rewrite.
  *
- * Floor count (3-6) is picked from the seed rather than strictly
- * following `dna.floors` -- towers are a fixed-tall archetype, the same
- * precedent the generic buildWatchtower() already sets with its own
- * `Math.max(4, dna.floors)` override.
- *
- * Shape variety (docs/superpowers/specs/
- * 2026-09-02-elven-stone-tower-variety-design.md): one of 4 named
- * silhouette profiles is picked once per tower by seed
- * (pickSilhouetteProfile), giving each floor a `radiusScale`/
- * `offsetX`/`offsetZ`/`rotationOffset` curve on top of per-floor,
- * per-vertex octagon jitter (buildFloorVertexScales) -- so no two
- * towers (and no two floors of the same tower) share an identical
- * outline, and different seeds can produce genuinely different
- * *kinds* of tower (tapering/tiered/leaning/waisted), not just a
- * uniformly-scaled repeat of one shape.
+ * `rand` is the CALLER's own `mulberry32(dna.seed ^ 0xE15E70)` instance,
+ * passed through (not re-seeded here) so a caller that already consumed
+ * one draw from it (e.g. `buildElvenStoneTower` rolling its own random
+ * floor count) continues the exact same stream for this core's
+ * per-floor `hasWindow` rolls, matching the original single-stream
+ * behavior exactly.
  */
-export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
-  const { w, d } = getFootprint(dna.buildingKind, dna.size);
-  const radius = Math.max(1, Math.min(w, d) / 2);
-  const rand = mulberry32(dna.seed ^ 0xE15E70);
-  const floors = 3 + Math.floor(rand() * 4); // 3-6
+export function buildTowerKitCore(
+  dna: BuildingDNA,
+  radius: number,
+  floors: number,
+  coneHeight: number,
+  palette: StoneTowerPalette,
+  buildRoof: (seed: number, radius: number, coneHeight: number, palette: StoneTowerPalette) => THREE.Group,
+  rand: () => number,
+): THREE.Group {
   const ringHeight = FLOOR_HEIGHT * 0.9;
   const plinthHeight = 0.6;
-  // A roof cap at the original radius*2.2 was only ~15% of a typical
-  // tower's total height -- too small for the classic/living/pagoda
-  // archetypal differences (StoneTowerRoofCap.ts) to read clearly at
-  // normal viewing distance, even though each is a genuinely distinct
-  // assembly up close. Bumped up to give the roof real visual weight,
-  // closer to the reference kit's much more roof-dominant proportions.
-  const coneHeight = radius * 3.5;
 
   const profile = pickSilhouetteProfile(dna.seed);
   const transforms = buildFloorTransforms(profile, dna.seed, floors);
   const floorVertexScales = buildFloorVertexScales(dna.seed, floors);
-
-  const palette: StoneTowerPalette = {
-    stone:     mat(dna.colors.walls, { roughness: 0.85, map: ashlarTexture(Math.max(1, radius / 1.5), Math.max(1, ringHeight / 1.5)) }),
-    shingle:   mat(dna.colors.roof, { roughness: 0.75, map: slateTexture(Math.max(1, radius), Math.max(1, coneHeight / 1.5)) }),
-    leaf:      mat(dna.colors.trim, { roughness: 0.75 }),
-    bark:      mat('#4a3520', { roughness: 0.9, map: barkTexture() }),
-    moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
-  };
 
   const g = new THREE.Group();
   const base = buildTowerBase(radius, plinthHeight, dna.seed ^ 0xB453E, palette);
@@ -337,7 +318,7 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   // the original base radius) so it sits flush against wherever the top
   // floor really ended up, rather than floating relative to a stale
   // base-radius/base-position assumption.
-  const roof = buildTowerRoofCap(dna.seed ^ 0x800F, lastCombinedRadius, coneHeight, palette);
+  const roof = buildRoof(dna.seed ^ 0x800F, lastCombinedRadius, coneHeight, palette);
   roof.position.set(lastOffsetX, y, lastOffsetZ);
   g.add(roof);
 
@@ -352,4 +333,54 @@ export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
   }
 
   return g;
+}
+
+/**
+ * Public entry point: builds a complete elven stone tower for the given
+ * `BuildingDNA` (dispatched from FactionBuildingVariants.ts's elven
+ * `watchtower`/`tower` override). Derives its footprint the same way
+ * every other builder in this codebase does (getFootprint(dna.
+ * buildingKind, dna.size)), so it automatically scales to both kinds'
+ * very different footprint scales (watchtower: fixed 2x2; tower:
+ * 3x3-7x5 by size).
+ *
+ * Floor count (3-6) is picked from the seed rather than strictly
+ * following `dna.floors` -- towers are a fixed-tall archetype, the same
+ * precedent the generic buildWatchtower() already sets with its own
+ * `Math.max(4, dna.floors)` override.
+ *
+ * Shape variety (docs/superpowers/specs/
+ * 2026-09-02-elven-stone-tower-variety-design.md): one of 4 named
+ * silhouette profiles is picked once per tower by seed
+ * (pickSilhouetteProfile), giving each floor a `radiusScale`/
+ * `offsetX`/`offsetZ`/`rotationOffset` curve on top of per-floor,
+ * per-vertex octagon jitter (buildFloorVertexScales) -- so no two
+ * towers (and no two floors of the same tower) share an identical
+ * outline, and different seeds can produce genuinely different
+ * *kinds* of tower (tapering/tiered/leaning/waisted), not just a
+ * uniformly-scaled repeat of one shape.
+ */
+export function buildElvenStoneTower(dna: BuildingDNA): THREE.Group {
+  const { w, d } = getFootprint(dna.buildingKind, dna.size);
+  const radius = Math.max(1, Math.min(w, d) / 2);
+  const rand = mulberry32(dna.seed ^ 0xE15E70);
+  const floors = 3 + Math.floor(rand() * 4); // 3-6
+  const ringHeight = FLOOR_HEIGHT * 0.9;
+  // A roof cap at the original radius*2.2 was only ~15% of a typical
+  // tower's total height -- too small for the classic/living/pagoda
+  // archetypal differences (StoneTowerRoofCap.ts) to read clearly at
+  // normal viewing distance, even though each is a genuinely distinct
+  // assembly up close. Bumped up to give the roof real visual weight,
+  // closer to the reference kit's much more roof-dominant proportions.
+  const coneHeight = radius * 3.5;
+
+  const palette: StoneTowerPalette = {
+    stone:     mat(dna.colors.walls, { roughness: 0.85, map: ashlarTexture(Math.max(1, radius / 1.5), Math.max(1, ringHeight / 1.5)) }),
+    shingle:   mat(dna.colors.roof, { roughness: 0.75, map: slateTexture(Math.max(1, radius), Math.max(1, coneHeight / 1.5)) }),
+    leaf:      mat(dna.colors.trim, { roughness: 0.75 }),
+    bark:      mat('#4a3520', { roughness: 0.9, map: barkTexture() }),
+    moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
+  };
+
+  return buildTowerKitCore(dna, radius, floors, coneHeight, palette, buildTowerRoofCap, rand);
 }
