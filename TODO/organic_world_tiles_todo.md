@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall kit-of-parts) ✅ 3 of ~9 elven building types shipped, 2026-09-02/03
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall kit-of-parts) ✅ 3 of ~9 elven building types shipped, 2026-09-02/04
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -964,6 +964,69 @@ Slime, Human — Slime/Human last, since those already look best).
   counter with goods, corner posts, and a hanging sign — a silhouette
   genuinely distinct from the fully-enclosed treehouse home, matching
   the research's "shop vs. house" distinguishing-signal table.
+
+- [x] **6.6d — Floor-cap fix + residential roof-archetype variety
+  (tower-kit shared fix, applies to both the tower and the treehouse
+  family)**: user feedback on the shipped treehouse home
+  (house/villa/terraced/inn/blacksmith) in-game: (1) some buildings
+  showed a visible dark/seethrough gap where the trunk met the roof —
+  "no ground there"; (2) every building forced the same living-canopy
+  roof, reading as monotonous with several visible in one settlement —
+  "the roofs can be more like the tower design roofs." Design: `docs/
+  superpowers/specs/2026-09-04-tower-kit-floor-caps-and-roof-variety-
+  design.md`; plan: `docs/superpowers/plans/2026-09-04-tower-kit-floor-
+  caps-and-roof-variety.md`. Root cause of (1): `StoneTowerWallSurface.
+  ts`'s per-course block walls are a genuinely hollow shell (individual
+  protruding blocks, no backing wall or floor anywhere); wherever a
+  ring/roof above was narrower than the ring below (worst case: the
+  living roof cap's neck, starting at half the top floor's own radius),
+  the wider ring's own top rim was an unfloored, seethrough ledge. Fix:
+  new `StoneTowerFloorCap.ts`'s `buildFloorCap()` — a filled octagon
+  disc (triangle fan from `StoneTowerShape.ts`'s existing
+  `octagonPoints()`) — added at the top of every `buildTowerBase()`/
+  `buildTowerWallRing()` group, closing every base/floor, floor/floor,
+  and floor/roof seam automatically for both `buildElvenStoneTower()`
+  and `buildElvenTreehouseHome()`. For (2): `StoneTowerRoofCap.ts`'s
+  `pickRoofArchetype()`/`buildTowerRoofCap()` gained an optional
+  trailing weight-table parameter (default: the tower's own existing
+  `TOWER_ROOF_ARCHETYPE_WEIGHTS`, so `buildElvenStoneTower()` is
+  unaffected); a new `RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS` (living 45% /
+  classic 30% / pagoda 25%) keeps `living` the plurality choice
+  (preserving the "living tree home" identity) while reusing the
+  tower's own already-approved classic/pagoda archetypes for genuine
+  variety — no new 4th archetype invented. `ElvenTreehouseKit.ts` now
+  calls `buildTowerRoofCap(..., RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS)`
+  instead of unconditionally forcing `buildLivingRoofCap()`.
+  **A real regression was found and fixed during live-verification, not
+  by any unit test**: `buildFloorCap()`'s custom `BufferGeometry`
+  initially had only `position`/`normal` attributes, no `uv` — since it
+  shares `palette.stone` with the wall blocks/quoins/entrance (all of
+  which DO have `uv`), and `SettlementRenderer.ts` runs
+  `mergeGroupMeshesByMaterial()` over each building's whole group after
+  construction, the attribute mismatch made THREE's `mergeGeometries()`
+  fail (logged, not thrown) — and `mergeGroupMeshesByMaterial()` drops
+  AND disposes EVERY mesh in a bucket whose merge fails, not just the
+  offending one, so affected buildings lost their ENTIRE wall geometry,
+  rendering as a flat, undetailed dark silhouette in the live settlement
+  generator (though never in isolated unit tests, which never exercise
+  `mergeGroupMeshesByMaterial()` on a floor-cap-bearing group). Fixed by
+  giving `buildFloorCap()` a simple planar `uv` attribute matching every
+  other tower-kit primitive; added a dedicated regression test
+  (`StoneTowerFloorCap.test.ts`) that reproduces the exact failure via
+  `mergeGroupMeshesByMaterial()` directly and asserts no console error
+  and a surviving merged mesh — confirmed to fail pre-fix with the
+  identical "must have compatible attributes... uv" message seen live,
+  and pass after. Verification: 6 `StoneTowerFloorCap.test.ts` tests (2
+  new regression-guard tests), all 33 `StoneTowerKit.test.ts` tests
+  (including 3 new floor-cap tests) and all pre-existing 30 unchanged,
+  updated `StoneTowerRoofCap.test.ts`/`ElvenTreehouseKit.test.ts` tests
+  confirming both the default-weights backward-compatibility and real
+  roof-archetype variety; full regression (13 vitest / 144 tsc,
+  baseline-unchanged). Live-reverified via Playwright across 3
+  settlement seeds after the uv fix: every building shows full detailed
+  wall/window/entrance geometry (no seethrough gaps), with visibly
+  distinct classic-shingle, pagoda-style, and living-canopy roofs
+  co-existing in the same settlement.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
