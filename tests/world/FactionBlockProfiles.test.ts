@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers, elvenWaistRadius, elvenNeckY, elvenRadiusAtHeight, elvenHeightAtFrac, pickElvenEntranceStyle, pickElvenCanopyArchetype } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -321,6 +321,45 @@ describe('FactionBlockProfiles — elven tapering living-wood trunk', () => {
     const gridC = buildElvenTrunkGrid(43, W, D, H, {});
     expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
     expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+});
+
+
+describe('FactionBlockProfiles — elvenRadiusAtHeight / elvenHeightAtFrac', () => {
+  it('elvenRadiusAtHeight at the neck height fraction matches elvenWaistRadius exactly', () => {
+    const w = 6, d = 6;
+    const atNeck = elvenRadiusAtHeight(w, d, 0.6, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    const waist = elvenWaistRadius(w, d, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    expect(atNeck).toBeCloseTo(waist, 10);
+  });
+
+  it('elvenRadiusAtHeight at height fraction 0 returns a wider radius than at the neck', () => {
+    const w = 6, d = 6;
+    const atBase = elvenRadiusAtHeight(w, d, 0, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    const atNeck = elvenRadiusAtHeight(w, d, 0.6, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    expect(atBase).toBeGreaterThan(atNeck);
+  });
+
+  it('elvenRadiusAtHeight decreases monotonically from base to neck', () => {
+    const w = 8, d = 8;
+    const opts = { canopyStartFrac: 0.6, waistFrac: 0.35 };
+    const r0 = elvenRadiusAtHeight(w, d, 0.0, opts);
+    const r1 = elvenRadiusAtHeight(w, d, 0.2, opts);
+    const r2 = elvenRadiusAtHeight(w, d, 0.4, opts);
+    const r3 = elvenRadiusAtHeight(w, d, 0.6, opts);
+    expect(r0).toBeGreaterThanOrEqual(r1);
+    expect(r1).toBeGreaterThanOrEqual(r2);
+    expect(r2).toBeGreaterThanOrEqual(r3);
+  });
+
+  it('elvenHeightAtFrac at the default canopyStartFrac matches elvenNeckY exactly', () => {
+    const h = 9;
+    expect(elvenHeightAtFrac(h, 0.6)).toBeCloseTo(elvenNeckY(h), 10);
+  });
+
+  it('elvenHeightAtFrac increases with height fraction', () => {
+    const h = 10;
+    expect(elvenHeightAtFrac(h, 0.2)).toBeLessThan(elvenHeightAtFrac(h, 0.5));
   });
 });
 

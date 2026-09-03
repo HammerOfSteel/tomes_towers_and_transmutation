@@ -364,6 +364,19 @@ export function elvenTrunkBlocksTall(h: number): number {
 
 /**
  * World-space Y (matching the trunk mesh's own centring convention — see
+ * `elvenCanopyTopY()` in FactionBuildingVariants.ts) at an arbitrary normalized
+ * total-height fraction `frac` (0..1) — generalizes what `elvenNeckY()` used to
+ * compute only for the fixed neck fraction, so per-floor ring/window placement can
+ * ask for any height along the trunk.
+ */
+export function elvenHeightAtFrac(h: number, frac: number): number {
+  const bh = elvenTrunkBlocksTall(h);
+  const by = Math.round(bh * frac);
+  return by * BLOCK_UNIT + BLOCK_UNIT / 2;
+}
+
+/**
+ * World-space Y (matching the trunk mesh's own centring convention — see
  * `elvenCanopyTopY()` in FactionBuildingVariants.ts) of the trunk's actual
  * "neck": the level where the taper stops and the canopy ellipsoid
  * begins. Callers placing a balcony/platform ring flush against the trunk
@@ -371,9 +384,41 @@ export function elvenTrunkBlocksTall(h: number): number {
  * an arbitrary fraction of the total trunk height.
  */
 export function elvenNeckY(h: number, canopyStartFrac = 0.6): number {
-  const bh = elvenTrunkBlocksTall(h);
-  const canopyStartBy = Math.round(bh * canopyStartFrac);
-  return canopyStartBy * BLOCK_UNIT + BLOCK_UNIT / 2;
+  return elvenHeightAtFrac(h, canopyStartFrac);
+}
+
+/**
+ * Trunk-phase radius fraction (of the base radius) at a normalized *total*-height
+ * fraction `t` (0..1) -- the single shared taper-curve formula used by
+ * `buildElvenTrunkGrid()`'s own fill loop, `elvenRadiusAtHeight()`, and
+ * `ElvenTrunkWindows.ts`'s window carving, so all three always agree on exactly the
+ * same curve (no risk of a window/ring being placed against a radius the trunk's own
+ * fill loop wouldn't actually build). Eases from 1.0 (base) down to `waistFrac` with a
+ * *zero-derivative* landing (smoothstep) so the canopy ellipsoid grafted on top meets
+ * it without a visible kink/collar — the single biggest cause of the old profile
+ * reading as a flying-saucer "mushroom cap" instead of a tree crown.
+ */
+export function elvenTrunkRadiusFracAt(t: number, canopyStartFrac: number, waistFrac: number): number {
+  const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
+  return smoothTaperRadiusFrac(u, 1, waistFrac);
+}
+
+/**
+ * World-unit radius of the trunk's actual constructed surface at an arbitrary
+ * normalized total-height fraction `heightFrac` (0..1) — generalizes what
+ * `elvenWaistRadius()` used to compute only at the fixed neck fraction, so per-floor
+ * ring/window placement can size itself against the trunk's real tapered surface at
+ * any height, not just the neck.
+ */
+export function elvenRadiusAtHeight(w: number, d: number, heightFrac: number, opts: ElvenTrunkOptions = {}): number {
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
+  const canopyStartFrac = opts.canopyStartFrac ?? 0.6;
+  const radiusFrac = elvenTrunkRadiusFracAt(heightFrac, canopyStartFrac, waistFrac);
+  return radiusFrac * maxR * BLOCK_UNIT;
 }
 
 /**
@@ -386,12 +431,8 @@ export function elvenNeckY(h: number, canopyStartFrac = 0.6): number {
  * floating at an arbitrary, possibly much wider or narrower, radius.
  */
 export function elvenWaistRadius(w: number, d: number, opts: ElvenTrunkOptions = {}): number {
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
-  const maxR = Math.max(cx, cz) + 0.5;
-  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
-  return waistFrac * maxR * BLOCK_UNIT;
+  const canopyStartFrac = opts.canopyStartFrac ?? 0.6;
+  return elvenRadiusAtHeight(w, d, canopyStartFrac, opts);
 }
 
 /**
@@ -434,15 +475,12 @@ export function buildElvenTrunkGrid(
 
   /**
    * Trunk-phase radius (as a fraction of the base radius) at normalized
-   * height `t` (0..1, trunk-only range). Eases from 1.0 (base) down to
-   * `waistFrac` with a *zero-derivative* landing (smoothstep) so the
-   * canopy ellipsoid grafted on top (see below) meets it without a visible
-   * kink/collar — the single biggest cause of the old profile reading as
-   * a flying-saucer "mushroom cap" instead of a tree crown.
+   * height `t` (0..1, trunk-only range). Delegates to the shared
+   * `elvenTrunkRadiusFracAt()` so this function's curve and
+   * `elvenRadiusAtHeight()`/window carving's curve can never drift apart.
    */
   function trunkRadiusFracAt(t: number): number {
-    const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
-    return smoothTaperRadiusFrac(u, 1, waistFrac);
+    return elvenTrunkRadiusFracAt(t, canopyStartFrac, waistFrac);
   }
 
   const canopyStartBy = Math.round(bh * canopyStartFrac);
