@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit POC) ✅ POC shipped 2026-09-02
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home kit-of-parts) ✅ 2 of ~9 elven building types shipped, 2026-09-02/03
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -772,6 +772,80 @@ Slime, Human — Slime/Human last, since those already look best).
   deferred; the 6.4b tool above already unblocks visual testing/rollout
   of new building kinds in the meantime, so this isn't a hard blocker
   for continuing race-by-race work.
+- [x] **6.6 — Second elven building type: the living-tree home ("house"/
+  "terraced"/"villa"/"inn"/"blacksmith", all routed through
+  `buildElvenVilla()`) — highest-frequency elven building type, kit-of-
+  parts round**: user asked to move to "the next building type" in the
+  same research → learn → plan → build → test → confirm cycle used for
+  the tower, running under user-enabled autopilot for this cycle. Design
+  spec: `docs/superpowers/specs/2026-09-03-elven-treehouse-home-design.
+  md`. Plan: `docs/superpowers/plans/2026-09-03-elven-treehouse-home.md`.
+  Research summary (full report in session transcript): real treehouse
+  engineering gives directly-usable *design rules* (ring beams +
+  triangulated knee braces carry platform load, not many nails into thin
+  branches — real treehouse roofs are conventional shingle/thatch far
+  more often than a true "living roof," validating keeping the leaf
+  canopy as the fantasy roof rather than pursuing a hybrid); The Elder
+  Scrolls' Bosmer/Valenwood (Falinesti) is the standout in-fiction
+  precedent for "buildings grown into a living tree" — "curled webs of
+  moss... forming a shared roof for several dozen small buildings" gave
+  the second canopy archetype idea; confirmed no public precedent
+  applies Townscaper's technique to organic/tree structures (this
+  codebase's `BlockKit.ts` is already ahead of any public example);
+  confirmed procedural tree algorithms (L-systems, space colonization,
+  Weber-Penn/EZ-Tree) all target decorative background trees, none
+  reason about floors/doors — validating the existing architecture
+  (tapered-radius skeleton curve driving heightfield occupancy, with
+  floors/doors/windows carved in afterward as a separate concern);
+  `three-bvh-csg` was found and considered for curved window carving but
+  NOT adopted (new dependency, CSG not built for this kind of
+  regeneration scale, and the existing occupancy-carving technique
+  already proven on the door achieves the same "genuine round arch"
+  result at zero extra cost). Shipped 4 additive pieces, all extending
+  the existing engine (no new dependencies): **ring-beam + knee-brace
+  bands at every floor** (previously only one, fixed at the neck,
+  regardless of floor count — new `elvenRadiusAtHeight()`/
+  `elvenHeightAtFrac()` helpers in `FactionBlockProfiles.ts` let each
+  floor's ring size itself against the trunk's own real tapered radius
+  at that height); **`ElvenTrunkWindows.ts`** (new file) — carved window
+  openings extending the door's proven occupancy-carving technique (a
+  genuine removed-block notch, not a flat recolor) to 2-4 window angles
+  per floor band around the trunk's circumference; **2 entrance styles**
+  (`pickElvenEntranceStyle`: 60% `ground_arch` unchanged / 40%
+  `raised_platform`, the doorway carved starting 2 blocks above ground
+  level); **2 canopy archetypes** (`pickElvenCanopyArchetype`: 55%
+  `satellite_lobes` unchanged / 45% `moss_crown`, a denser wider fused
+  mass with a mottled two-tone leaf/moss material, no separate lobes or
+  branches — the Falinesti-inspired motif). 12 commits, strict TDD
+  throughout. **Real bug found and fixed during live-verification prep**:
+  the 2 picker functions and their carving logic were fully implemented
+  and unit-tested in isolation against `buildElvenTrunkGrid` directly,
+  but `buildElvenVilla()` never actually called them — every live
+  building always silently defaulted to `ground_arch`/`satellite_lobes`
+  regardless of seed. Fixed by wiring `pickElvenEntranceStyle(dna.seed)`/
+  `pickElvenCanopyArchetype(dna.seed)` into `buildElvenVilla()`; verified
+  via a spy on the real exported picker functions (an earlier attempt at
+  a raycast-based geometric proxy for this same proof turned out to be
+  too fragile to reliably discriminate sub-block-sized geometry
+  differences in the merged mesh and was replaced). Verification: 253
+  tests passing across the elven-related test slice (`BlockKit`,
+  `FactionBlockProfiles`, `FactionBuildingVariants`, `ElvenTrunkWindows`,
+  `SettlementLabScene`); fresh full-suite regression re-confirmed
+  unchanged (144 tsc errors, the same 13 pre-existing/flaky vitest
+  failures as every prior round — 2 additional timeouts seen on one run
+  in unrelated terrain/overworld-streaming tests were confirmed flaky by
+  re-running them in isolation, not caused by this round's changes).
+  Live-verified via Playwright screenshots: ring-beam bands genuinely
+  scale 1/2/3 per floor count; a raking-light close-up confirmed the
+  carved windows show real removed-block depth (visible dark gaps behind
+  a proud frame), not a flat recolor; both entrance styles and both
+  canopy archetypes are visually distinguishable side-by-side, though
+  the canopy archetype difference reads as a modest, not dramatic,
+  distinction at small building scale (noted honestly, matching the
+  tower's own balcony precedent). Settlement Lab's `POC_KIND_OVERRIDE_BY_
+  FACTION.elven` switched from `'watchtower'` to `'house'` so "Play in
+  3D" now isolates the new building type for user testing, per the
+  established per-round testing pattern.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
