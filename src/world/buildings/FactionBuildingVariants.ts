@@ -37,7 +37,7 @@ import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
 import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenRadiusAtHeight, elvenHeightAtFrac, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenRadiusAtHeight, elvenHeightAtFrac, pickElvenEntranceStyle, pickElvenCanopyArchetype, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { carveTrunkWindows } from './ElvenTrunkWindows';
 import { buildElvenStoneTower } from './StoneTowerKit';
 
@@ -733,9 +733,17 @@ function buildElvenVilla(dna: BuildingDNA): THREE.Group {
   const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.5; // tall, reaching into canopy
   const floors = Math.max(1, dna.floors);
   const g = new THREE.Group();
+  // Independent seed offsets for entrance/canopy picks so they aren't correlated
+  // with each other or with any other per-building random choice sharing dna.seed
+  // (pickElvenEntranceStyle/pickElvenCanopyArchetype each already XOR their own
+  // distinct constant internally, so dna.seed is passed straight through here).
+  const entranceStyle = pickElvenEntranceStyle(dna.seed);
+  const canopyArchetype = pickElvenCanopyArchetype(dna.seed);
   addBlockElvenTrunk(g, dna.seed ^ 0xE1F3_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.roof, dna.colors.trim, {
     facade: true,
     floors,
+    entranceStyle,
+    canopyArchetype,
   });
   // Elder's Hall: block-built plank ring/balcony "collars" girdling the trunk, one
   // per floor (not just once at the neck) -- a direct application of the real

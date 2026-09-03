@@ -5,13 +5,14 @@
  * distinct from both each other and the generic shared-shape fallback.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers, pickElvenCanopyArchetype } from '@/world/buildings/FactionBlockProfiles';
+import * as FactionBlockProfiles from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
@@ -710,6 +711,37 @@ describe('Elven — BlockKit tapering living-tree trunk + canopy (not a smooth c
     expect(ringYs.length).toBe(3);
     expect(ringYs[1]).toBeGreaterThan(ringYs[0]!);
     expect(ringYs[2]).toBeGreaterThan(ringYs[1]!);
+  });
+
+  it('calls pickElvenEntranceStyle/pickElvenCanopyArchetype with dna.seed when building (proof they are wired into the live builder, not just tested in isolation on buildElvenTrunkGrid directly)', () => {
+    // Spying on the real exported functions (not re-deriving behavior independently)
+    // directly proves buildElvenVilla actually calls them with dna.seed, rather than
+    // relying on fragile geometric/raycasting proxies that can't reliably discriminate
+    // sub-block-sized differences in merged mesh geometry.
+    const entranceSpy = vi.spyOn(FactionBlockProfiles, 'pickElvenEntranceStyle');
+    const canopySpy = vi.spyOn(FactionBlockProfiles, 'pickElvenCanopyArchetype');
+    const dna = { ...makeDna('house', 'elven', 17), size: 'medium' as const, floors: 1 as const };
+    getFactionBuildingVariant('elven', 'house')!(dna);
+    expect(entranceSpy).toHaveBeenCalledWith(17);
+    expect(canopySpy).toHaveBeenCalledWith(17);
+    entranceSpy.mockRestore();
+    canopySpy.mockRestore();
+  });
+
+  it('moss_crown archetype material actually appears in a live build for a seed that picks it', () => {
+    let mossSeed = -1;
+    for (let seed = 0; seed < 30; seed++) {
+      if (pickElvenCanopyArchetype(seed) === 'moss_crown') { mossSeed = seed; break; }
+    }
+    expect(mossSeed).toBeGreaterThanOrEqual(0);
+    const dna = { ...makeDna('house', 'elven', mossSeed), size: 'medium' as const, floors: 1 as const };
+    const g = getFactionBuildingVariant('elven', 'house')!(dna);
+    let sawMoss = false;
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial
+        && o.material.color.getHexString() === new THREE.Color('#5a7a48').getHexString()) sawMoss = true;
+    });
+    expect(sawMoss).toBe(true);
   });
 });
 
