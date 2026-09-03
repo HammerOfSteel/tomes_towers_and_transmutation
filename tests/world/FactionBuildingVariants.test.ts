@@ -663,6 +663,30 @@ describe('Elven — BlockKit tapering living-tree trunk + canopy (not a smooth c
     expect(hasTorus).toBe(false);
     expect(boxCount).toBeGreaterThanOrEqual(14); // the plank ring alone is 14 planks
   });
+
+  it('the merged trunk mesh uses a distinct window_frame material not present before this wiring', () => {
+    const dna = { ...makeDna('house', 'elven', 5), size: 'medium' as const, floors: 2 as const };
+    const g = getFactionBuildingVariant('elven', 'house')!(dna);
+    const materials = new Set<THREE.Material>();
+    g.traverse((o) => { if (o instanceof THREE.Mesh) materials.add(o.material as THREE.Material); });
+    // Direct proof window_frame exists as its own material: addBlockElvenTrunk
+    // creates 'facade' and 'window_frame' as two SEPARATE mat() calls using the same
+    // input color (colors.trim), and buildElvenVilla's own ring/brace "woodMat" is a
+    // THIRD, separately-created mat() call also using colors.trim -- so all three are
+    // distinct THREE.Material object identities even though they resolve to the same
+    // rendered color. Counting how many distinct material OBJECTS (not colors) match
+    // colors.trim is a robust proxy: before this task only 'facade' + woodMat exist
+    // (count 2); after wiring, 'window_frame' also exists (count 3) -- proving
+    // carveTrunkWindows() actually ran and its output actually got meshed, not just
+    // that the trunk grew taller (floors already did that before this task, so a
+    // vertex-count-only comparison wouldn't actually prove anything).
+    let trimColoredMaterialCount = 0;
+    const trimHex = new THREE.Color(dna.colors.trim).getHexString();
+    for (const m of materials) {
+      if (m instanceof THREE.MeshStandardMaterial && m.color.getHexString() === trimHex) trimColoredMaterialCount++;
+    }
+    expect(trimColoredMaterialCount).toBeGreaterThanOrEqual(3);
+  });
 });
 
 // ── Vampire deep-quality pass (settlement visual fidelity follow-up) ───────

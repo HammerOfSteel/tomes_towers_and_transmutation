@@ -37,7 +37,8 @@ import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
 import { earthTexture, graniteTexture, barkTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildElvenTrunkGrid, elvenNeckY, elvenWaistRadius, elvenRadiusAtHeight, elvenHeightAtFrac, type ElvenTrunkOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { carveTrunkWindows } from './ElvenTrunkWindows';
 import { buildElvenStoneTower } from './StoneTowerKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
@@ -660,10 +661,16 @@ function addBlockElvenTrunk(
   opts: ElvenTrunkOptions = {},
 ): void {
   const grid = buildElvenTrunkGrid(seed, w, d, h, opts);
+  carveTrunkWindows(grid, w, d, h, opts.floors ?? 1, seed ^ 0xE1F3_11D0, {
+    canopyStartFrac: opts.canopyStartFrac,
+    waistFrac: opts.waistFrac,
+  });
   const palette = {
     bark:      mat(barkColor, { roughness: 0.9, map: barkTexture() }),
     leaf:      mat(leafColor, { roughness: 0.75 }),
+    moss:      mat('#5a7a48', { roughness: 0.95 }),
     facade:    mat(facadeColor, { roughness: 0.8 }),
+    window_frame: mat(facadeColor, { roughness: 0.7 }),
     moonstone: mat('#d8e8f0', { roughness: 0.5, metalness: 0.05 }),
     glow:      new THREE.MeshStandardMaterial({ color: new THREE.Color('#c0f0ff'), emissive: new THREE.Color('#80e0ff'), emissiveIntensity: 0.9, roughness: 0.5 }),
   };
