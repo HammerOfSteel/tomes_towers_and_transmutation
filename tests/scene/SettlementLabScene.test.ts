@@ -197,7 +197,7 @@ describe('SettlementLabScene — enter(initialParams) for "Play in 3D" handoff',
   });
 });
 
-describe('SettlementLabScene — race-by-race POC override (elven watchtower kit)', () => {
+describe('SettlementLabScene — race-by-race POC override (elven living-tree home kit)', () => {
   let physics: PhysicsWorld;
   let player: PlayerController;
 
@@ -208,10 +208,10 @@ describe('SettlementLabScene — race-by-race POC override (elven watchtower kit
     player.applyDNA(DEFAULT_PLAYER_DNA);
   });
 
-  it('selecting faction=elven forces every building to the elven stone-tower kit\'s watchtower, no extra UI action needed', () => {
+  it('selecting faction=elven forces every building to the elven living-tree home kit\'s house, no extra UI action needed', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    // city + elven so this exercises the elven stone-tower kit's watchtower
+    // city + elven so this exercises the elven living-tree home kit's house
     // dispatch specifically (the exact scenario the user wants to preview
     // via Overworld Studio's Settlement tab -> "Play in 3D").
     lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' });
@@ -220,12 +220,12 @@ describe('SettlementLabScene — race-by-race POC override (elven watchtower kit
       ._renderResult;
     expect(result.buildingRecords.length).toBeGreaterThan(0);
     for (const rec of result.buildingRecords) {
-      expect(rec.dna.buildingKind).toBe('watchtower');
+      expect(rec.dna.buildingKind).toBe('house');
     }
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).toContain('POC override: watchtower');
+    expect(readoutEl.textContent).toContain('POC override: house');
 
     lab.exit();
   });
@@ -263,7 +263,7 @@ describe('SettlementLabScene — race-by-race POC override (elven watchtower kit
       ._renderResult;
     expect(result.buildingRecords.length).toBeGreaterThan(0);
     for (const rec of result.buildingRecords) {
-      expect(rec.dna.buildingKind).toBe('watchtower');
+      expect(rec.dna.buildingKind).toBe('house');
     }
 
     lab.exit();

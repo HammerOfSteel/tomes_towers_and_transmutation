@@ -64,7 +64,10 @@ const LAYOUTS: LayoutType[] = [
  * for reviewing the whole settlement.
  */
 const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind>> = {
-  elven: 'watchtower',
+  // 'house' for the living-tree-home kit-of-parts round (2026-09-03) -- was
+  // 'watchtower' during the stone-tower kit round. Switch back to 'watchtower' (or add
+  // more entries) if you need to re-isolate the tower for comparison.
+  elven: 'house',
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────
