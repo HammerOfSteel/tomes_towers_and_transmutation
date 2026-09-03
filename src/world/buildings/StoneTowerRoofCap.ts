@@ -1,10 +1,15 @@
 /**
- * StoneTowerRoofCap.ts — the two roof-cap variants for the elven
- * stone-tower kit POC (docs/superpowers/specs/
- * 2026-09-02-elven-stone-tower-kit-design.md): a classic conical
- * shingle roof (this task), and a living-canopy cap where the stone
- * shaft transitions into actual foliage (added in the next task) --
- * the clearest "hybrid stone + living tree" moment in the whole kit.
+ * StoneTowerRoofCap.ts — the three roof-cap archetypes for the elven
+ * stone-tower kit (docs/superpowers/specs/
+ * 2026-09-02-elven-stone-tower-kit-design.md /
+ * 2026-09-03-elven-stone-tower-features-design.md): a classic conical
+ * shingle roof (with a flared eave, stepped shingle-course relief, and
+ * corner finials -- matching the reference tabletop-kit image's actual
+ * roof detail, not a single smooth cone), a living-canopy cap where
+ * the stone shaft transitions into actual foliage, and a genuinely
+ * distinct "pagoda" archetype (two stacked tiers with a real waisted
+ * neck between them) -- three structurally different top ASSEMBLIES,
+ * not just parametric variations of one shape.
  */
 
 import * as THREE from 'three';
@@ -12,21 +17,61 @@ import { mulberry32 } from '@/core/prng';
 import { createBlockGrid, setBlock, meshBlockGrid, BLOCK_UNIT } from './BlockKit';
 
 /**
- * Classic conical shingle roof cap. A slight eave overhang (radius
- * *1.15) matches real tower-roof construction (the roof oversails the
- * wall below it). Relies on the material's own texture map (this kit's
- * caller passes a slateTexture()-mapped material) for shingle detail --
- * unlike the wall surface, this spec scoped the texture-vs-geometry
- * comparison to the wall only (see design spec's Testing section), so
- * the roof stays a single low-poly cone.
+ * Classic conical shingle roof cap: a flared eave skirt (oversailing
+ * the wall below, matching real tower-roof construction), 3 stepped
+ * shingle-course bands (each band-to-band seam reads as a visible
+ * shingle course line, rather than one perfectly smooth cone), 8
+ * corner finials at the eave's outer octagon vertices, and an apex
+ * finial ball at the very top -- matching the reference image's actual
+ * roof relief (scalloped eave, corner spires, a finial point) instead
+ * of a single plain `ConeGeometry`.
  */
 export function buildClassicRoofCap(radius: number, coneHeight: number, material: THREE.Material): THREE.Group {
   const g = new THREE.Group();
-  const geo = new THREE.ConeGeometry(radius * 1.15, coneHeight, 8);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.y = coneHeight / 2;
-  mesh.castShadow = mesh.receiveShadow = true;
-  g.add(mesh);
+
+  const eaveInnerR = radius * 1.15;
+  const eaveOuterR = radius * 1.4;
+  const eaveH = coneHeight * 0.12;
+  const eave = new THREE.Mesh(new THREE.CylinderGeometry(eaveInnerR, eaveOuterR, eaveH, 8), material);
+  eave.position.y = eaveH / 2;
+  eave.castShadow = eave.receiveShadow = true;
+  g.add(eave);
+
+  const bandCount = 3;
+  const bodyHeight = coneHeight - eaveH;
+  let y = eaveH;
+  for (let b = 0; b < bandCount; b++) {
+    const bandH = bodyHeight / bandCount;
+    const t0 = b / bandCount, t1 = (b + 1) / bandCount;
+    // Overall taper from the eave's inner radius down toward a
+    // near-point apex, eased across all bands.
+    const targetBottomR = eaveInnerR * (1 - t0) + 0.02 * t0;
+    const targetTopR = eaveInnerR * (1 - t1) + 0.02 * t1;
+    // A slight outward step at each band's own base (beyond the plain
+    // taper) so consecutive bands don't align into one smooth surface
+    // -- a visible shingle-course seam at every band boundary.
+    const stepBottomR = b === 0 ? targetBottomR : targetBottomR * 1.05;
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(targetTopR, stepBottomR, bandH, 8), material);
+    seg.position.y = y + bandH / 2;
+    seg.castShadow = seg.receiveShadow = true;
+    g.add(seg);
+    y += bandH;
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    const finialH = radius * 0.22;
+    const finial = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.035, finialH, 4), material);
+    finial.position.set(Math.sin(ang) * eaveOuterR * 0.94, eaveH + finialH / 2, Math.cos(ang) * eaveOuterR * 0.94);
+    finial.castShadow = true;
+    g.add(finial);
+  }
+
+  const apexBall = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.05, 6, 5), material);
+  apexBall.position.y = coneHeight + radius * 0.05;
+  apexBall.castShadow = true;
+  g.add(apexBall);
+
   return g;
 }
 
@@ -95,14 +140,72 @@ export interface RoofCapPalette {
 }
 
 /**
- * Picks a roof-cap style (classic conical shingle vs. living canopy)
- * from `seed`: 40% living, 60% classic -- most towers keep the classic
- * silhouette, with the living cap as a distinctive rarer variant.
+ * "Pagoda" roof-cap archetype: two stacked classic-roof-cap tiers
+ * (a larger lower tier, a smaller upper tier) joined by a genuinely
+ * waisted neck -- a structurally distinct top ASSEMBLY from the
+ * single-cone classic/living caps, matching the reference tabletop-kit
+ * image's stacked-roof tower variant. The neck's own smaller radius
+ * (well under both the lower tier's body and the upper tier's own
+ * flared eave) is what gives pagodas their characteristic silhouette:
+ * wide -> narrow -> wide again -> taper to a point, rather than one
+ * continuous monotonic taper.
+ */
+export function buildPagodaRoofCap(radius: number, coneHeight: number, palette: RoofCapPalette): THREE.Group {
+  const g = new THREE.Group();
+
+  const lowerHeight = coneHeight * 0.55;
+  const upperRadius = radius * 0.55;
+  const upperHeight = coneHeight * 0.55;
+  const neckHeight = coneHeight * 0.12;
+  const neckY = lowerHeight * 0.72;
+
+  const lowerTier = buildClassicRoofCap(radius, lowerHeight, palette.shingle);
+  g.add(lowerTier);
+
+  const neckBottomR = upperRadius * 0.55;
+  const neckTopR = upperRadius * 0.85;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(neckTopR, neckBottomR, neckHeight, 8), palette.bark);
+  neck.position.y = neckY;
+  neck.castShadow = neck.receiveShadow = true;
+  g.add(neck);
+
+  const upperTier = buildClassicRoofCap(upperRadius, upperHeight, palette.shingle);
+  upperTier.position.y = neckY + neckHeight;
+  g.add(upperTier);
+
+  return g;
+}
+
+export type RoofArchetype = 'classic' | 'living' | 'pagoda';
+
+/** Weighted per-archetype choice: classic 40%, pagoda 35% (given
+ * strong presence as the newest, most structurally distinct
+ * archetype), living 25% (a rarer, distinctive hybrid-tree variant). */
+const ROOF_ARCHETYPE_WEIGHTS: [RoofArchetype, number][] = [
+  ['classic', 0.4], ['pagoda', 0.35], ['living', 0.25],
+];
+
+/** Deterministic seeded weighted choice among the 3 roof archetypes. */
+export function pickRoofArchetype(seed: number): RoofArchetype {
+  const rand = mulberry32(seed);
+  const roll = rand();
+  let acc = 0;
+  for (const [archetype, weight] of ROOF_ARCHETYPE_WEIGHTS) {
+    acc += weight;
+    if (roll < acc) return archetype;
+  }
+  return ROOF_ARCHETYPE_WEIGHTS[ROOF_ARCHETYPE_WEIGHTS.length - 1]![0];
+}
+
+/**
+ * Picks a roof-cap archetype (classic conical shingle, living canopy,
+ * or pagoda) from `seed` via `pickRoofArchetype()` and builds it.
  */
 export function buildTowerRoofCap(seed: number, radius: number, coneHeight: number, palette: RoofCapPalette): THREE.Group {
-  const rand = mulberry32(seed);
-  const useLiving = rand() < 0.4;
-  return useLiving
-    ? buildLivingRoofCap(seed ^ 0x1DEA, radius, { leaf: palette.leaf, bark: palette.bark })
-    : buildClassicRoofCap(radius, coneHeight, palette.shingle);
+  const archetype = pickRoofArchetype(seed);
+  switch (archetype) {
+    case 'living': return buildLivingRoofCap(seed ^ 0x1DEA, radius, { leaf: palette.leaf, bark: palette.bark });
+    case 'pagoda': return buildPagodaRoofCap(radius, coneHeight, palette);
+    case 'classic': return buildClassicRoofCap(radius, coneHeight, palette.shingle);
+  }
 }
