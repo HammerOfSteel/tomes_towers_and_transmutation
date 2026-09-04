@@ -24,9 +24,18 @@ import { octagonPoints } from './StoneTowerShape';
  * already produce a +Y-facing normal, so no extra rotation step is
  * needed (unlike THREE.ShapeGeometry, which builds in the XY plane and
  * would need an explicit rotateX).
+ *
+ * An optional `pointsOverride` parameter lets a caller supply an
+ * arbitrary corner-point list (e.g. a rectangle) instead of a regular
+ * octagon -- see `ElvenChapelKit.ts`'s nave for the first consumer.
+ * `radius` becomes unused in that case (the UV mapping below falls back
+ * to the override points' own max extent).
  */
-export function buildFloorCap(radius: number, material: THREE.Material, vertexScales?: number[]): THREE.Mesh {
-  const pts = octagonPoints(radius, vertexScales);
+export function buildFloorCap(
+  radius: number, material: THREE.Material, vertexScales?: number[],
+  pointsOverride?: [number, number][],
+): THREE.Mesh {
+  const pts = pointsOverride ?? octagonPoints(radius, vertexScales);
   const positions: number[] = [0, 0, 0]; // center vertex, index 0
   // Simple planar UV mapping (x/z projected into [0,1]) -- required so
   // this geometry merges cleanly with the wall/quoin/entrance geometry
@@ -40,9 +49,16 @@ export function buildFloorCap(radius: number, material: THREE.Material, vertexSc
   // itself, leaving affected buildings with no visible walls at all
   // (a real regression caught via live Playwright verification, not
   // any automated test -- see this file's own test for the regression
-  // guard now in place).
+  // guard now in place). When `pointsOverride` is given (e.g. a
+  // rectangle nave, which has no single natural "radius"), the UV
+  // normalization falls back to the max absolute coordinate across the
+  // override points instead of `radius`, so UVs stay in a sane [0,1]-ish
+  // range regardless of shape.
+  const uvScale = pointsOverride
+    ? Math.max(1e-6, ...pts.flatMap(([x, z]) => [Math.abs(x), Math.abs(z)])) * 2
+    : radius * 2;
   const uvs: number[] = [0.5, 0.5];
-  for (const [x, z] of pts) uvs.push(x / (2 * radius) + 0.5, z / (2 * radius) + 0.5);
+  for (const [x, z] of pts) uvs.push(x / uvScale + 0.5, z / uvScale + 0.5);
   for (const [x, z] of pts) positions.push(x, 0, z);
 
   const indices: number[] = [];

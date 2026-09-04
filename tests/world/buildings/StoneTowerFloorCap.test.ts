@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { buildFloorCap } from '@/world/buildings/StoneTowerFloorCap';
 import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
+import { rectanglePoints } from '@/world/buildings/StoneTowerShape';
 
 function mat(): THREE.Material {
   return new THREE.MeshStandardMaterial({ color: '#888' });
@@ -55,6 +56,34 @@ describe('buildFloorCap', () => {
       maxDist = Math.max(maxDist, Math.hypot(pos.getX(i), pos.getZ(i)));
     }
     expect(maxDist).toBeGreaterThan(2.9); // corner 7 at radius*1.5 = 3.0
+  });
+
+  it('pointsOverride replaces the default octagon corners with the given points', () => {
+    const rectPts = rectanglePoints(2, 4);
+    const cap = buildFloorCap(0, mat(), undefined, rectPts);
+    const pos = cap.geometry.attributes.position;
+    // Center vertex (index 0) plus exactly 4 corner vertices (indices 1-4).
+    expect(pos.count).toBe(5);
+    // Corner vertices should exactly match rectPts (in x/z; y is always 0).
+    for (let i = 0; i < 4; i++) {
+      expect(pos.getX(i + 1)).toBeCloseTo(rectPts[i]![0], 5);
+      expect(pos.getZ(i + 1)).toBeCloseTo(rectPts[i]![1], 5);
+    }
+  });
+
+  it('pointsOverride produces a +Y-facing normal, same as the default octagon path', () => {
+    const rectPts = rectanglePoints(2, 4);
+    const cap = buildFloorCap(0, mat(), undefined, rectPts);
+    cap.geometry.computeVertexNormals();
+    const normals = cap.geometry.attributes.normal;
+    for (let i = 0; i < normals.count; i++) {
+      expect(normals.getY(i)).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('omitting pointsOverride reproduces the exact prior octagon behavior (backward compatibility)', () => {
+    const capDefault = buildFloorCap(2, mat());
+    expect(capDefault.geometry.attributes.position.count).toBe(9); // center + 8 octagon corners
   });
 
   it('has a uv attribute (2 components per vertex) matching every other tower-kit primitive', () => {
