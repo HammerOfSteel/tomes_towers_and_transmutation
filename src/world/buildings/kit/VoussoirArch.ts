@@ -21,9 +21,11 @@ export interface BuildVoussoirArchOptions {
   survivalFraction?: number;
   /** Forward Z offset applied only to the keystone. */
   keystoneProud?: number;
+  /** Emit displaced fragment meshes for omitted upper voussoirs. Defaults to false. */
+  brokenEmission?: boolean;
 }
 
-interface ArchMetrics {
+export interface ArchMetrics {
   halfSpan: number;
   radius: number;
   centerOffset: number;
@@ -42,6 +44,8 @@ const JOINT_FRACTION = 0.18;
 const LEFT_TAG = 0x4C45_4654;
 const RIGHT_TAG = 0x5249_4748;
 const KEYSTONE_TAG = 0x4B45_5953;
+const BROKEN_LEFT_TAG = 0x424C_4654;
+const BROKEN_RIGHT_TAG = 0x4252_4748;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -55,7 +59,7 @@ function getEffectiveArchRatio(archRatio: number): number {
   return Math.max(archRatio, GOTHIC_ARCH_ROMANESQUE_RATIO);
 }
 
-function getArchMetrics(width: number, archRatio: number): ArchMetrics {
+export function getArchMetrics(width: number, archRatio: number): ArchMetrics {
   // GothicArch.ts keeps this helper private, so this additive module re-derives
   // the same standard two-centred-arch geometry instead of widening that file's API.
   const span = Math.max(width, 0);
@@ -163,6 +167,51 @@ function buildSideVoussoir(options: {
   return mesh;
 }
 
+function buildBrokenVoussoir(options: {
+  centerX: number;
+  centerY: number;
+  innerRadius: number;
+  radialThickness: number;
+  angleStart: number;
+  angleEnd: number;
+  blockDepth: number;
+  depthCenter: number;
+  material: THREE.Material;
+  name: string;
+  side: 'left' | 'right';
+  slotIndex: number;
+  seed: number;
+  tag: number;
+}): THREE.Mesh {
+  const rand = pieceRandom(options.seed, options.tag, options.slotIndex);
+  const angleMid = (options.angleStart + options.angleEnd) * 0.5;
+  const angleHalfSpan = Math.abs(options.angleEnd - options.angleStart) * 0.22;
+  const innerRadius = options.innerRadius + options.radialThickness * 0.12;
+  const outerRadius = innerRadius + Math.max(options.radialThickness * (0.42 + rand() * 0.16), 0.02);
+  const shape = buildPolygonShape([
+    polarPoint(options.centerX, options.centerY, innerRadius, angleMid - angleHalfSpan),
+    polarPoint(options.centerX, options.centerY, innerRadius, angleMid + angleHalfSpan),
+    polarPoint(options.centerX, options.centerY, outerRadius, angleMid + angleHalfSpan),
+    polarPoint(options.centerX, options.centerY, outerRadius, angleMid - angleHalfSpan),
+  ]);
+
+  const mesh = createExtrudedMesh(shape, options.blockDepth * (0.58 + rand() * 0.12), options.material, options.name, {
+    role: 'broken-voussoir',
+    side: options.side,
+    slotIndex: options.slotIndex,
+    depthCenter: options.depthCenter,
+  });
+
+  const sideSign = options.side === 'left' ? -1 : 1;
+  mesh.position.x += sideSign * (options.radialThickness * (0.28 + rand() * 0.18));
+  mesh.position.y -= options.radialThickness * (0.45 + rand() * 0.25);
+  mesh.position.z -= options.blockDepth * (0.12 + rand() * 0.12);
+  mesh.rotation.x = signed(rand) * 0.18;
+  mesh.rotation.y = signed(rand) * 0.24;
+  mesh.rotation.z = sideSign * (0.2 + rand() * 0.16);
+  return mesh;
+}
+
 function buildKeystone(options: {
   centerOffset: number;
   springHeight: number;
@@ -203,6 +252,51 @@ function buildKeystone(options: {
   return mesh;
 }
 
+function buildBrokenKeystone(options: {
+  centerOffset: number;
+  springHeight: number;
+  innerRadius: number;
+  radialThickness: number;
+  leftBoundaryAngle: number;
+  rightBoundaryAngle: number;
+  apexLeftAngle: number;
+  apexRightAngle: number;
+  apexY: number;
+  blockDepth: number;
+  depthCenter: number;
+  material: THREE.Material;
+  seed: number;
+}): THREE.Mesh {
+  const rand = pieceRandom(options.seed, KEYSTONE_TAG ^ 0x4252_4B4E, 0);
+  const thickness = options.radialThickness * (0.56 + rand() * 0.16);
+  const leftAngle = THREE.MathUtils.lerp(options.leftBoundaryAngle, options.apexLeftAngle, 0.58);
+  const rightAngle = THREE.MathUtils.lerp(options.rightBoundaryAngle, options.apexRightAngle, 0.58);
+  const outerRadius = options.innerRadius + Math.max(thickness, 0.02);
+  const apexOuterRise = Math.sqrt(Math.max(outerRadius * outerRadius - options.centerOffset * options.centerOffset, 0));
+  const apexOuter = new THREE.Vector2(0, options.springHeight + apexOuterRise);
+  const shape = buildPolygonShape([
+    polarPoint(options.centerOffset, options.springHeight, options.innerRadius, leftAngle),
+    new THREE.Vector2(0, THREE.MathUtils.lerp(options.springHeight, options.apexY, 0.84)),
+    polarPoint(-options.centerOffset, options.springHeight, options.innerRadius, rightAngle),
+    polarPoint(-options.centerOffset, options.springHeight, outerRadius, rightAngle),
+    apexOuter.lerp(new THREE.Vector2(0, options.springHeight), 0.18),
+    polarPoint(options.centerOffset, options.springHeight, outerRadius, leftAngle),
+  ]);
+
+  const mesh = createExtrudedMesh(shape, options.blockDepth * (0.62 + rand() * 0.08), options.material, 'keystone-broken', {
+    role: 'broken-voussoir',
+    side: 'center',
+    slotIndex: -1,
+    depthCenter: options.depthCenter,
+  });
+  mesh.position.y -= options.radialThickness * (0.5 + rand() * 0.22);
+  mesh.position.z -= options.blockDepth * (0.12 + rand() * 0.1);
+  mesh.rotation.x = signed(rand) * 0.18;
+  mesh.rotation.y = signed(rand) * 0.16;
+  mesh.rotation.z = 0.12 + signed(rand) * 0.1;
+  return mesh;
+}
+
 function survivingSideCount(voussoirCount: number, survivalFraction: number): number {
   if (survivalFraction >= 1) return voussoirCount;
   return clamp(Math.ceil(voussoirCount * clamp(survivalFraction, 0, 1) - 1e-6), 0, voussoirCount);
@@ -215,6 +309,7 @@ export function buildVoussoirArch(options: BuildVoussoirArchOptions): THREE.Grou
   const depthCenter = options.depth ?? depthFor('FRAME');
   const survivalFraction = clamp(options.survivalFraction ?? 1, 0, 1);
   const keystoneProud = options.keystoneProud ?? DEFAULT_KEYSTONE_PROUD;
+  const brokenEmission = options.brokenEmission ?? false;
   const seed = options.seed ?? 0;
   const metrics = getArchMetrics(options.width, options.archRatio);
   const apexY = options.springHeight + metrics.rise;
@@ -270,6 +365,70 @@ export function buildVoussoirArch(options: BuildVoussoirArchOptions): THREE.Grou
       seed,
       tag: RIGHT_TAG,
     }));
+  }
+
+  if (brokenEmission && survivalFraction < 1) {
+    const apexLeftAngle = Math.PI - metrics.halfSweep;
+    const apexRightAngle = metrics.halfSweep;
+    const leftBoundaryAngle = Math.PI - metrics.halfSweep + keystoneHalfAngle;
+    const rightBoundaryAngle = metrics.halfSweep - keystoneHalfAngle;
+    group.add(buildBrokenKeystone({
+      centerOffset: metrics.centerOffset,
+      springHeight: options.springHeight,
+      innerRadius: metrics.radius,
+      radialThickness,
+      leftBoundaryAngle,
+      rightBoundaryAngle,
+      apexLeftAngle,
+      apexRightAngle,
+      apexY,
+      blockDepth,
+      depthCenter: depthCenter + keystoneProud,
+      material: options.material,
+      seed,
+    }));
+  }
+
+  if (brokenEmission && sideSurvivors < voussoirCount) {
+    for (let index = sideSurvivors; index < voussoirCount; index++) {
+      const leftLower = Math.PI - index * step;
+      const leftUpper = Math.PI - (index + 1) * step;
+      group.add(buildBrokenVoussoir({
+        centerX: metrics.centerOffset,
+        centerY: options.springHeight,
+        innerRadius: metrics.radius,
+        radialThickness,
+        angleStart: leftLower,
+        angleEnd: leftUpper,
+        blockDepth,
+        depthCenter,
+        material: options.material,
+        name: `voussoir-broken-left-${index}`,
+        side: 'left',
+        slotIndex: index,
+        seed,
+        tag: BROKEN_LEFT_TAG,
+      }));
+
+      const rightLower = index * step;
+      const rightUpper = (index + 1) * step;
+      group.add(buildBrokenVoussoir({
+        centerX: -metrics.centerOffset,
+        centerY: options.springHeight,
+        innerRadius: metrics.radius,
+        radialThickness,
+        angleStart: rightLower,
+        angleEnd: rightUpper,
+        blockDepth,
+        depthCenter,
+        material: options.material,
+        name: `voussoir-broken-right-${index}`,
+        side: 'right',
+        slotIndex: index,
+        seed,
+        tag: BROKEN_RIGHT_TAG,
+      }));
+    }
   }
 
   if (survivalFraction >= 1) {
