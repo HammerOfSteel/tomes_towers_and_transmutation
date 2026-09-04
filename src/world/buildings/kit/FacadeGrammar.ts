@@ -1,8 +1,9 @@
 /**
  * FacadeGrammar.ts — deterministic split-grammar bay layout for fixed-size
- * facade modules. This stays pure-logic on purpose: it outputs bay placement
- * data only, so later geometry builders can render fixed modules without ever
- * stretching their mouldings to match arbitrary facade widths.
+ * facade modules plus proportional relative spacer bays. This stays pure-logic
+ * on purpose: it outputs bay placement data only, so later geometry builders
+ * can render fixed modules without ever stretching their mouldings to match
+ * arbitrary facade widths.
  */
 
 import { mulberry32 } from '../../../core/prng';
@@ -27,6 +28,12 @@ export interface FloatSegmentSpec {
   id?: string;
 }
 
+export interface RelativeSegmentSpec {
+  kind: 'relative';
+  id?: string;
+  fraction: number;
+}
+
 export interface RepeatSegmentSpec {
   kind: 'repeat';
   width: number;
@@ -37,7 +44,7 @@ export interface RepeatSegmentSpec {
   candidates?: readonly WeightedModuleCandidate[];
 }
 
-export type SegmentSpec = FixedSegmentSpec | RepeatSegmentSpec | FloatSegmentSpec;
+export type SegmentSpec = FixedSegmentSpec | RelativeSegmentSpec | RepeatSegmentSpec | FloatSegmentSpec;
 export type BayKind = SegmentSpec['kind'];
 
 export interface FacadeBay {
@@ -61,6 +68,8 @@ interface NormalizedRepeatSegmentSpec {
   candidates: readonly WeightedModuleCandidate[];
 }
 
+type NormalizedSegmentSpec = FixedSegmentSpec | RelativeSegmentSpec | FloatSegmentSpec | NormalizedRepeatSegmentSpec;
+
 export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], seed: number): BayLayout {
   assertFiniteNonNegative(totalWidth, 'totalWidth');
   if (spec.length === 0) {
@@ -70,6 +79,7 @@ export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], s
   const normalizedSpecs = spec.map(normalizeSegment);
   const minimumRequiredWidth = normalizedSpecs.reduce((sum, segment) => {
     if (segment.kind === 'fixed') return sum + segment.width;
+    if (segment.kind === 'relative') return sum + segment.fraction * totalWidth;
     if (segment.kind === 'repeat') return sum + segment.width * segment.min;
     return sum;
   }, 0);
@@ -83,6 +93,7 @@ export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], s
   const repeatCounts = allocateRepeatCounts(totalWidth, normalizedSpecs);
   const placedWithoutFloats = normalizedSpecs.reduce((sum, segment, index) => {
     if (segment.kind === 'fixed') return sum + segment.width;
+    if (segment.kind === 'relative') return sum + segment.fraction * totalWidth;
     if (segment.kind === 'repeat') return sum + repeatCounts[index]! * segment.width;
     return sum;
   }, 0);
@@ -103,6 +114,7 @@ export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], s
   let x = 0;
   let repeatOrdinal = 0;
   let floatOrdinal = 0;
+  let relativeOrdinal = 0;
 
   for (let index = 0; index < normalizedSpecs.length; index++) {
     const segment = normalizedSpecs[index]!;
@@ -130,6 +142,19 @@ export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], s
       continue;
     }
 
+    if (segment.kind === 'relative') {
+      const width = segment.fraction * totalWidth;
+      bays.push({
+        id: segment.id ?? `relative-${relativeOrdinal}`,
+        kind: 'relative',
+        x,
+        width,
+      });
+      x += width;
+      relativeOrdinal++;
+      continue;
+    }
+
     const width = floatWidths[floatOrdinal] ?? 0;
     bays.push({
       id: segment.id ?? (floatWidths.length === 1 ? 'filler' : `filler-${floatOrdinal}`),
@@ -149,13 +174,18 @@ export function layoutFacade(totalWidth: number, spec: readonly SegmentSpec[], s
   return { totalWidth, bays };
 }
 
-function normalizeSegment(segment: SegmentSpec): FixedSegmentSpec | FloatSegmentSpec | NormalizedRepeatSegmentSpec {
+function normalizeSegment(segment: SegmentSpec): NormalizedSegmentSpec {
   if (segment.kind === 'fixed') {
     assertFinitePositive(segment.width, `fixed segment "${segment.id}" width`);
     return segment;
   }
 
   if (segment.kind === 'float') {
+    return segment;
+  }
+
+  if (segment.kind === 'relative') {
+    assertFinitePositive(segment.fraction, 'relative segment fraction');
     return segment;
   }
 
@@ -208,7 +238,7 @@ function validateCandidates(candidates: readonly WeightedModuleCandidate[]): voi
   }
 }
 
-function allocateRepeatCounts(totalWidth: number, spec: readonly (FixedSegmentSpec | FloatSegmentSpec | NormalizedRepeatSegmentSpec)[]): number[] {
+function allocateRepeatCounts(totalWidth: number, spec: readonly NormalizedSegmentSpec[]): number[] {
   const repeatCounts = Array(spec.length).fill(0) as number[];
   let usedWidth = 0;
 
@@ -219,6 +249,11 @@ function allocateRepeatCounts(totalWidth: number, spec: readonly (FixedSegmentSp
       continue;
     }
 
+    if (segment.kind === 'relative') {
+      usedWidth += segment.fraction * totalWidth;
+      continue;
+    }
+
     if (segment.kind === 'float') {
       continue;
     }
@@ -226,7 +261,7 @@ function allocateRepeatCounts(totalWidth: number, spec: readonly (FixedSegmentSp
     // Repeat groups are intentionally greedy in declared order: each one takes
     // as many whole fixed-width instances as it can while still reserving the
     // minimum required width for later segments in the grammar.
-    const minimumAfter = minimumWidthAfter(spec, index + 1);
+    const minimumAfter = minimumWidthAfter(totalWidth, spec, index + 1);
     const availableForThisRepeat = totalWidth - usedWidth - minimumAfter;
     const repeatCount = Math.floor((availableForThisRepeat + EPSILON) / segment.width);
     repeatCounts[index] = Math.min(segment.max, Math.max(segment.min, repeatCount));
@@ -237,11 +272,13 @@ function allocateRepeatCounts(totalWidth: number, spec: readonly (FixedSegmentSp
 }
 
 function minimumWidthAfter(
-  spec: readonly (FixedSegmentSpec | FloatSegmentSpec | NormalizedRepeatSegmentSpec)[],
+  totalWidth: number,
+  spec: readonly NormalizedSegmentSpec[],
   startIndex: number,
 ): number {
   return spec.slice(startIndex).reduce((sum, segment) => {
     if (segment.kind === 'fixed') return sum + segment.width;
+    if (segment.kind === 'relative') return sum + segment.fraction * totalWidth;
     if (segment.kind === 'repeat') return sum + segment.width * segment.min;
     return sum;
   }, 0);

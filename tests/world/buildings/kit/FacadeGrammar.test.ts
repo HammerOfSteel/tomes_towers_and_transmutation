@@ -13,6 +13,10 @@ function endOfLastBay(layout: { bays: Array<{ x: number; width: number }> }): nu
   return lastBay ? lastBay.x + lastBay.width : 0;
 }
 
+function specialRepeatIndex(layout: { bays: Array<{ kind: string; special?: boolean }> }): number {
+  return layout.bays.filter(bay => bay.kind === 'repeat').findIndex(bay => bay.special);
+}
+
 describe('layoutFacade', () => {
   it('fills both 7.3 and 9.1 facade widths exactly with fixed modules unchanged and filler absorbing the remainder', async () => {
     const { layoutFacade } = await loadFacadeGrammar();
@@ -77,6 +81,53 @@ describe('layoutFacade', () => {
     expect(layoutC).not.toEqual(layoutA);
   });
 
+  it('scales relative bay widths proportionally with total facade width', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      { kind: 'relative', fraction: 0.2 },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    const narrow = layoutFacade(7.3, spec, 123);
+    const wide = layoutFacade(9.1, spec, 123);
+
+    expect(narrow.bays.find(bay => bay.kind === 'relative')).toMatchObject({
+      id: 'relative-0',
+      kind: 'relative',
+      width: 7.3 * 0.2,
+    });
+    expect(wide.bays.find(bay => bay.kind === 'relative')).toMatchObject({
+      id: 'relative-0',
+      kind: 'relative',
+      width: 9.1 * 0.2,
+    });
+  });
+
+  it('fills exactly with fixed, relative, repeat, and float segments at multiple facade widths', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      {
+        kind: 'repeat',
+        width: 1.0,
+        candidates: [{ id: 'window', weight: 1 }],
+      },
+      { kind: 'relative', id: 'pier', fraction: 0.2 },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    for (const totalWidth of [7.3, 9.1]) {
+      const layout = layoutFacade(totalWidth, spec, 5);
+      const relative = layout.bays.find(bay => bay.kind === 'relative');
+
+      expect(sumBayWidths(layout)).toBeCloseTo(totalWidth, 10);
+      expect(endOfLastBay(layout)).toBeCloseTo(totalWidth, 10);
+      expect(relative?.id).toBe('pier');
+      expect(relative?.width).toBeCloseTo(totalWidth * 0.2, 10);
+    }
+  });
+
   it('marks exactly one repeat bay as special when repeat bays are placed', async () => {
     const { layoutFacade } = await loadFacadeGrammar();
     const spec = [
@@ -99,6 +150,69 @@ describe('layoutFacade', () => {
     expect(repeatBays.length).toBeGreaterThan(0);
     expect(specialBays).toHaveLength(1);
     expect(layoutFacade(6.4, spec, 9)).toEqual(layout);
+  });
+
+  it('pins the exact special repeat bay for known seeds and varies it across seeds', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      {
+        kind: 'repeat',
+        width: 1.0,
+        candidates: [
+          { id: 'window-common', weight: 3 },
+          { id: 'window-rare', weight: 1 },
+        ],
+      },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    expect(specialRepeatIndex(layoutFacade(6.4, spec, 0))).toBe(4);
+    expect(specialRepeatIndex(layoutFacade(6.4, spec, 1))).toBe(0);
+    expect(specialRepeatIndex(layoutFacade(6.4, spec, 7))).toBe(1);
+  });
+
+  it('does not mark a special bay when no repeat instances are placed', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      {
+        kind: 'repeat',
+        width: 1.0,
+        max: 0,
+        candidates: [{ id: 'window', weight: 1 }],
+      },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    const layout = layoutFacade(2.0, spec, 9);
+
+    expect(layout.bays.some(bay => bay.special)).toBe(false);
+    expect(layout.bays.filter(bay => bay.kind === 'repeat')).toHaveLength(0);
+    expect(sumBayWidths(layout)).toBeCloseTo(2.0, 10);
+  });
+
+  it('supports exact-fit layouts with zero repeats and zero-width float filler', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      {
+        kind: 'repeat',
+        width: 1.0,
+        max: 0,
+        candidates: [{ id: 'window', weight: 1 }],
+      },
+      { kind: 'relative', id: 'pier', fraction: 0.7 },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    const layout = layoutFacade(4.0, spec, 3);
+    const filler = layout.bays.find(bay => bay.kind === 'float');
+
+    expect(layout.bays.filter(bay => bay.kind === 'repeat')).toHaveLength(0);
+    expect(filler?.width).toBe(0);
+    expect(sumBayWidths(layout)).toBeCloseTo(4.0, 10);
+    expect(endOfLastBay(layout)).toBeCloseTo(4.0, 10);
   });
 
   it('biases weighted repeat candidates toward higher weights across many seeds', async () => {
@@ -156,5 +270,22 @@ describe('layoutFacade', () => {
     ] as const;
 
     expect(() => layoutFacade(3.0, spec, 5)).toThrowError(/minimum required facade width/i);
+  });
+
+  it('throws the same overflow error when fixed, relative, and minimum repeat widths cannot fit', async () => {
+    const { layoutFacade } = await loadFacadeGrammar();
+    const spec = [
+      { kind: 'fixed', id: 'door', width: 1.2 },
+      { kind: 'relative', id: 'pier', fraction: 0.5 },
+      {
+        kind: 'repeat',
+        width: 1.0,
+        min: 2,
+        candidates: [{ id: 'window', weight: 1 }],
+      },
+      { kind: 'float', id: 'filler' },
+    ] as const;
+
+    expect(() => layoutFacade(4.0, spec, 5)).toThrowError(/minimum required facade width/i);
   });
 });
