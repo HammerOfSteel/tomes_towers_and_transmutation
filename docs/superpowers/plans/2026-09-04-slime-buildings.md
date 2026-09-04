@@ -1,18 +1,18 @@
 # Slime Buildings — Implementation Plan
 
-**Status:** Draft — awaiting user approval before implementation.
+**Status:** Approved (2026-09-04) — user selected the mimic-culture direction. Ready to execute.
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents are available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Blocked:** This plan is conditional on the user approving the slime art direction. Recommended direction: **Alternative A — inhabited-ruin / occupied-shell**, with hardened secretion as overlay vocabulary and containment modules only as functional props.
+**Approved direction:** Alternative A — inhabited-ruin / occupied-shell, reframed as **mimic culture** (see spec §2.4): slime colonies observe and reproduce another race's building shell, lightly `Ruinate`-damaged rather than truly decayed, then apply the slime accretion kit in a **rotating neon hue** (mint-green, azure-blue, bubblegum-pink, violet-purple, cyan-teal — not one fixed green) plus a **rounded gel-mimic silhouette** (larger fillet radius on mimicked hard edges, asymmetric ridge/eave sag, mandatory drip points even when undamaged).
 
-**Goal:** Replace slime’s current blob-based building variants with a full 8-kind occupied-shell kit that reads as slime through discrete, depth-laddered accretion modules rather than smooth gelatinous massing.
+**Goal:** Replace slime’s current blob-based building variants with a full 8-kind mimic-culture kit that reads as slime through discrete, depth-laddered, rounded, neon-hued accretion modules layered onto a mimicked host shell — never smooth gelatinous massing.
 
-**Architecture:** Build slime buildings as host shell → `Ruinate` → slime accretion overlay. Reuse the shared modular building kit heavily because slime is ninth in the rollout; only slime-specific accretion/material/composition code should be new unless a required Part 4 module is still missing.
+**Architecture:** Build slime buildings as host shell → light `Ruinate` → slime accretion overlay (neon hue + rounding pass). Reuse the shared modular building kit heavily because slime is ninth in the rollout; only slime-specific accretion/material/composition code should be new unless a required Part 4 module is still missing.
 
 **Tech Stack:** TypeScript, Three.js, Vitest, existing building kit modules, Settlement Lab Playwright verification. No new runtime dependency is expected.
 
-**Estimated task count:** 22 tasks total — Task 0 is the art-direction approval gate; Tasks 1–3 are `[SHARED KIT]` prerequisite/completion tasks that may be deduped if already built by earlier races; Tasks 4–14 are 11 slime race-specific implementation tasks; Tasks 15–21 are the required final integration/verification/documentation/commit tasks.
+**Estimated task count:** 21 tasks total — Tasks 1–3 are `[SHARED KIT]` prerequisite/completion tasks that may be deduped if already built by earlier races; Tasks 4–14 are 11 slime race-specific implementation tasks; Tasks 15–21 are the required final integration/verification/documentation/commit tasks. (Task 0, the art-direction approval gate, is resolved and removed from the active list; its history is kept below for the record.)
 
 **Known baseline to state during verification:** `npx tsc --noEmit` has **144 pre-existing errors**; `npx vitest run` has **~13 pre-existing failures / 3272 passing**. Only new failures beyond those baselines are regressions.
 
@@ -20,29 +20,17 @@
 
 ## Dependencies / ordering
 
-1. Art direction must be approved first.
-2. `[SHARED KIT]` tasks come before slime-specific tasks.
-3. Slime-specific tasks build materials, accretion modules, host-shell selection, then individual kind builders.
-4. Final tasks must remain in this exact order: wire into `FACTION_BUILDING_VARIANTS`; generalise Settlement Lab showcase so all 8 slime kinds render; delete superseded builders; full regression; live Playwright screenshot; update TODO docs; commit.
+1. `[SHARED KIT]` tasks come before slime-specific tasks.
+2. Slime-specific tasks build materials, accretion modules, host-shell selection, then individual kind builders.
+3. Final tasks must remain in this exact order: wire into `FACTION_BUILDING_VARIANTS`; generalise Settlement Lab showcase so all 8 slime kinds render; delete superseded builders; full regression; live Playwright screenshot; update TODO docs; commit.
 
 ---
 
-### Task 0: Art-direction approval gate
+### Task 0 (resolved): Art-direction approval gate
 
 **Goal:** Prevent accidental implementation of an unapproved slime architecture direction.
 
-**Files:**
-- Read: `race-plans/slime/spec.md`
-- Modify after approval only: source/tests below
-
-**Failing test to write first:** None — this is a human approval gate, not a code task.
-
-**Implementation outline:**
-- [ ] Confirm the user approved Alternative A, B, C, or a specific hybrid.
-- [ ] If the user chooses Alternative B or C, revise this plan before coding.
-- [ ] If the user approves Alternative A, continue with Task 1.
-
-**Verification command:** None. Do not implement code until approval is recorded in the parent workflow.
+**Resolution (2026-09-04):** User approved the mimic-culture direction (Alternative A + neon hue rotation + rounded silhouette). See spec §2.4. No further gating needed before Task 1.
 
 ---
 
@@ -127,21 +115,24 @@
 
 ### Task 4: Slime material palette and constants
 
-**Goal:** Preserve established slime colours/glow while forbidding large smooth blob massing.
+**Goal:** Replace the single fixed green palette with a rotating neon hue system while forbidding large smooth blob massing.
 
 **Files:**
 - Create: `src/world/buildings/slime/SlimeMaterials.ts`
 - Test: `tests/world/buildings/slime/SlimeMaterials.test.ts`
 
 **Failing test to write first:**
-- Assert exported constants match current slime palette evidence: `#aaffcc`, `#66ffaa`, `#22ff88`, `#00cc66`, and dark accent `#186030`.
-- Assert `createSlimeMaterialSet()` returns named material slots: `gel`, `gelDark`, `gelGlow`, `hardenedGel`, `wetStain`, `containedGel`.
+- Assert exported `SLIME_HUE_FAMILIES` contains exactly five named families with light/dark hex pairs: `mint_green` (`#aaffcc`/`#66ffaa`), `azure_blue` (`#7ec8ff`/`#3d9dff`), `bubblegum_pink` (`#ff9ee8`/`#ff5cc8`), `violet_purple` (`#c79bff`/`#9a5bff`), `cyan_teal` (`#7ffff0`/`#2be8d4`), with weights `0.30/0.20/0.20/0.15/0.15` summing to 1.
+- Assert `rollSlimeHueFamily(seed)` is deterministic for a given seed and returns one of the five family ids, respecting the declared weights over a large sample.
+- Assert `rollElderHueBlend(seed)` (for `villa`/`chapel`/`watchtower`) returns two *adjacent* families per a defined adjacency map, never two arbitrary families and never a hue outside the five.
+- Assert `createSlimeMaterialSet(hueFamily)` returns named material slots: `gel`, `gelDark`, `gelGlow`, `hardenedGel`, `wetStain`, `containedGel`, with `gelDark` computed at ~35% luminance of `gel` for that family (not the old fixed `#186030`).
 - Assert material slots are reusable object identities within one set and do not clone per placed detail by default.
 
 **Implementation outline:**
 - Use `THREE.MeshStandardMaterial` for gel/hardened material slots.
 - Use transparent/emissive settings only for membrane/lens/contained pieces.
 - Export size/depth constants for accretion modules: lip height, membrane rim depth, tendril radius bounds, puddle tile thickness.
+- Export rounding constants for Task 6: `MIMIC_FILLET_RADIUS_MIN = 0.06`, `MIMIC_FILLET_RADIUS_MAX = 0.10`, `MIMIC_RIDGE_SAG_MIN = 0.05`, `MIMIC_RIDGE_SAG_MAX = 0.12`.
 
 **Verification command:**
 - `npx vitest run tests/world/buildings/slime/SlimeMaterials.test.ts`
@@ -179,9 +170,9 @@
 
 ---
 
-### Task 6: Slime host-shell selection weights
+### Task 6: Slime host-shell selection weights (mimicry source)
 
-**Goal:** Encode the approved occupied-shell art direction as deterministic host-shell weights per building kind.
+**Goal:** Encode the approved mimic-culture direction as deterministic host-shell ("mimicry source") weights per building kind.
 
 **Files:**
 - Create: `src/world/buildings/slime/SlimeHostShells.ts`
@@ -190,13 +181,13 @@
 **Failing test to write first:**
 - Assert all 8 canonical kinds have host-shell weight tables.
 - Assert each weight table sums to `1.0 ± 0.001`.
-- Assert `pickSlimeHostShell(kind, seed)` is deterministic.
+- Assert `pickSlimeHostShell(kind, seed)` is deterministic and returns a `{ shellId, sourceLabel }` pair, where `sourceLabel` names the mimicked race/shell family (e.g. `"elven small-shell"`) for use in generated metadata/comments per spec §2.4 rule 12.
 - Assert `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, and `watchtower` do not all collapse to the same host shell id.
 
 **Implementation outline:**
 - Encode weights from `spec.md` Section 4.
-- Bias grassland/forest-compatible shells (human rural, elven, generic stone) but allow occasional reclaimed prior-race shell.
-- Return shell descriptor ids/callbacks, not full built groups, so later tasks can compose lazily.
+- Bias grassland/forest-compatible shells (human rural, elven, generic stone) but allow occasional reclaimed prior-race shell; a settlement may freely mix mimicry sources across its buildings (spec §8 "remaining open items").
+- Return shell descriptor ids/callbacks plus the source label, not full built groups, so later tasks can compose lazily.
 
 **Verification command:**
 - `npx vitest run tests/world/buildings/slime/SlimeHostShells.test.ts`
@@ -229,7 +220,7 @@
 
 ### Task 8: Slime occupation composer
 
-**Goal:** Implement host shell → ruin → slime overlay composition shared by all slime kinds.
+**Goal:** Implement host shell → light ruin → slime overlay composition shared by all slime kinds, applying the neon hue rotation and rounded gel-mimic silhouette from spec §2.4.
 
 **Files:**
 - Create: `src/world/buildings/slime/SlimeOccupiedShell.ts`
@@ -238,12 +229,17 @@
 **Failing test to write first:**
 - Assert `buildSlimeOccupiedShell(dna, blueprint)` returns a non-empty `THREE.Group`.
 - Assert same seed/kind yields deterministic child names/counts.
-- Assert output contains host shell, ruinate result, and at least three slime overlay module classes.
+- Assert output contains host shell, light-ruinate result, and at least three slime overlay module classes.
+- Assert `ruinateShell()` is invoked at roughly half the damage intensity used for a true abandoned ruin (spec §2.4-A), not full decay.
+- Assert the composed group carries one rolled hue family from `SLIME_HUE_FAMILIES` (via `rollSlimeHueFamily`/`rollElderHueBlend` for `villa`/`chapel`/`watchtower`) and every accretion module drawn from that same family — no mixed-family output within one building.
+- Assert mimicked hard edges (wall corners, frame corners, coping, roof ridge caps) are filleted at `MIMIC_FILLET_RADIUS_MIN`–`MIMIC_FILLET_RADIUS_MAX`, strictly larger than the host kit's own chamfer, while the underlying block-course wall geometry keeps its sharp courses (spec §2.4-B.2).
+- Assert one ridge or eave edge is offset downward by `MIMIC_RIDGE_SAG_MIN`–`MIMIC_RIDGE_SAG_MAX` relative to its mirrored counterpart, and that at least 1 and at most 3 drip points are present, regardless of the ruin-damage roll (i.e. even a lightly-damaged building still gets its mandatory drip points).
 - Assert a generated bounding box remains finite and roughly matches the requested footprint plus allowed overlay skirt.
 
 **Implementation outline:**
 - Accept a `SlimeKindBlueprint` containing footprint, floors, opening schedule, ruin intensity, module weights, and prop weights.
-- Use `pickSlimeHostShell()` then `ruinateShell()` then attach accretion modules to sockets.
+- Use `pickSlimeHostShell()` then `ruinateShell()` at reduced intensity then attach accretion modules to sockets, all built from the one rolled `createSlimeMaterialSet(hueFamily)`.
+- Apply the `Bevels` module with the mimic radius constants to mimicked hard-edge sockets; apply the ridge/eave sag as a deterministic per-seed vertex offset on the roof module only, not the wall.
 - Add a fallback socket strategy for host shells that lack rich metadata.
 
 **Verification command:**

@@ -1,11 +1,11 @@
 # Slime Buildings — Design Spec
 
-Slime is the ninth and most reuse-heavy race, but it is also the race with the least settled building direction: there is no usable slime building reference art in this checkout. The safest conditional design is an **inhabited-ruin / occupied-shell** kit: slimes colonise legible abandoned architecture, then add discrete membrane, tendril, hardened-gel, and puddle-skirt modules that read as slime without making the building itself a blob.
+Slime is the ninth and most reuse-heavy race, and it is the race with no reference art in this checkout. That absence is resolved by the user's own creative direction rather than by inventing art: slime culture is a **mimic culture** — a Pokémon-Ditto-style people who observe and reproduce the settlements of every other race they encounter, but always rendered in their own translucent, rounded, neon-hued gel medium (green, blue, pink, purple, cyan, and more) instead of the host race's real materials. The construction system is **inhabited-ruin / occupied-shell reuse** (Alternative A below), now reframed as active mimicry rather than passive ruin-squatting, plus two new mandatory treatments layered on top: a **full neon palette rotation** (not a single green hue) and a **rounded/softened "gel-mimic" silhouette** (filleted corners, sagging ridgelines, dripping eaves) that visibly distinguishes a slime copy from the real building it imitates.
 
-**Status:** Draft — awaiting user approval before implementation.
+**Status:** **Approved (2026-09-04)** — user selected the mimic-culture direction; see §2.4 for the finalised design signature. Ready to move to implementation planning/execution.
 
-> [!IMPORTANT]
-> **BLOCKED-ON-ART-DIRECTION: no slime building reference art is available.** Direct verification with `ls concept_art/reference/buildings` returned `No such file or directory` in this worktree, and there is no `concept_art/reference/buildings/slime/` folder or file set to inventory. This spec therefore presents alternatives and a recommendation; it must not be treated as settled art direction until the user chooses a slime architecture direction.
+> [!NOTE]
+> **Reference-art gap resolved by design decision, not by art.** `concept_art/reference/buildings/slime/` still does not exist and none is expected. §1 below is retained as evidence of what informed the recommendation, but the direction itself is now settled: slime buildings mimic the shell/massing/facade output of whichever other race's kit they copy, then apply the mimic-culture material and rounding treatment in §2.4. This makes slime's implementation *more* grounded than a from-scratch art direction would have been, because it inherits the already-specified shell kits of the other eight races.
 
 ## 1. Reference art inventory — NONE AVAILABLE
 
@@ -53,7 +53,7 @@ Because no slime building art exists, this spec is anchored to **repo-establishe
 
 ### Consequence for this document
 
-All design below is conditional. The user should choose one of the alternatives in Section 2 before any implementation begins. The recommended direction is intentionally conservative because slime is scheduled last and the shared kit should already exist.
+The alternatives in §2.1–§2.3 below were presented for approval and remain in the document as the design trail. §2.4 records the user's decision and is the settled direction: Alternative A's occupied-shell reuse system, reframed as active mimicry, with a full neon palette and rounded silhouette treatment layered on top. Implementation should follow §2.4, not treat §2.1–§2.3 as still open.
 
 ## 2. Race design language
 
@@ -65,7 +65,7 @@ A naive “slime building” is a blob. That is exactly what the doctrine forbid
 
 The answer cannot be “large translucent hemisphere.” The slime read must come from **additive, modular, depth-laddered pieces**: membrane sheets stretched between hard supports, faceted hardened-gel plates, tendril anchors, layered puddle skirts, clogged openings, luminous gel lenses, and slime-stained rubble.
 
-### Alternative A — Inhabited-ruin / occupied-shell (**recommended**)
+### 2.1 Alternative A — Inhabited-ruin / occupied-shell (**recommended, and the basis of the approved direction in §2.4**)
 
 **Premise:** Slimes do not primarily build. They colonise. A slime building starts as a legible abandoned structure from the shared kit, then `Ruinate` damages it and a slime accretion layer occupies it.
 
@@ -91,7 +91,7 @@ The answer cannot be “large translucent hemisphere.” The slime read must com
 
 **Recommendation:** choose this as the primary direction. It is the safest route through the no-blob constraint and best honours the missing-art uncertainty.
 
-### Alternative B — Crystallised / hardened secretion
+### 2.2 Alternative B — Crystallised / hardened secretion
 
 **Premise:** Slime secretes material that hardens into faceted plates, coral-like branches, dripstone ribs, and crystalline shells.
 
@@ -112,7 +112,7 @@ The answer cannot be “large translucent hemisphere.” The slime read must com
 
 **Best use if Alternative A is chosen:** use hardened secretion as the slime overlay material, not as the whole massing system.
 
-### Alternative C — Vessel / containment architecture
+### 2.3 Alternative C — Vessel / containment architecture
 
 **Premise:** Slime bodies are fluid; their buildings are rigid vessels and channels built to contain, move, or display them.
 
@@ -132,7 +132,7 @@ The answer cannot be “large translucent hemisphere.” The slime read must com
 
 **Best use if Alternative A is chosen:** use vessel modules as props for `shop`, `inn`, and `blacksmith`, not as the whole settlement language.
 
-### Recommended conditional design signature
+### Recommended conditional design signature (superseded — see §2.4 for the approved version)
 
 If the user approves Alternative A, slime buildings should follow these rules:
 
@@ -146,6 +146,41 @@ If the user approves Alternative A, slime buildings should follow these rules:
 8. **Biome tone:** grassland/forest affinity means moss, grass, roots, and damp stones are appropriate; avoid desert lava or frozen necropolis reads.
 9. **Settlement composition:** cluster layout around central Slime Pool / Pulse Pool; alleys should feel linked by slime trails and membrane bridges.
 10. **Asymmetry:** slime growth chooses one dominant side / breach per building; perfect bilateral layouts are banned.
+
+This list is retained for the design trail. Rules 1, 2, 4, 5, 6, 8, 9, and 10 are carried forward unchanged into §2.4. Rules 3 and 7 (single green palette) are superseded — the approved direction uses a full neon hue rotation, not one fixed green — and a new rounding/mimicry rule is added.
+
+### 2.4 Approved direction (2026-09-04 user decision): mimic-culture architecture
+
+The user's framing: slime culture works like a Pokémon Ditto — a species that observes and reproduces the settlements of every other culture it encounters and absorbs, but the copy is always visibly made of slime: rounded, glossy, and rendered across a spread of neon hues (green, blue, pink, purple, and more), not a single tint. This is adopted as the settled slime direction. It is mechanically Alternative A (§2.1) — same host-shell reuse, same `Ruinate` damage pass, same accretion-module vocabulary — with two mandatory additions that make the "mimicry" read distinct from "ruin colonised by moss":
+
+**A. Mimicry framing replaces ruin framing as the narrative frame (mechanically similar, narratively different).** A slime building is not primarily a *decayed* building that slime happened to move into; it is an *impression* the slime colony formed of a building it observed, then reproduced in its own body. Practically this changes only emphasis, not code shape:
+- `Ruinate` damage should be **lighter and more selective** than a true abandoned ruin (roughly half the damage intensity used for the undead/vampire funerary ruin work) — just enough asymmetric imperfection to show the copy is imperfect and organic, not enough to look condemned.
+- The host-shell selection (Task 6 in the plan) should be described as "the source culture being mimicked," and a settlement can plausibly mimic more than one neighbouring race's shell library, giving intra-settlement variety.
+- Every kind's blueprint keeps its structural blueprint (§4) unchanged; only the "why" in prose changes from "colonised by slimes after abandonment" to "an impression of that shell formed by the local slime colony."
+
+**B. Two new mandatory treatments layered on the existing accretion kit:**
+
+1. **Neon palette rotation.** Replace the single fixed green palette with a per-building hue roll across a defined neon set. Each building (not each settlement) rolls one dominant hue family, so a mimic settlement shows genuine colour variety rather than a monochrome green district:
+   - `mint_green` `#aaffcc` / `#66ffaa` (original palette, kept as one option, weight `0.30`)
+   - `azure_blue` `#7ec8ff` / `#3d9dff` (weight `0.20`)
+   - `bubblegum_pink` `#ff9ee8` / `#ff5cc8` (weight `0.20`)
+   - `violet_purple` `#c79bff` / `#9a5bff` (weight `0.15`)
+   - `cyan_teal` `#7ffff0` / `#2be8d4` (weight `0.15`)
+   - Dark recess/shadow tint scales with the dominant hue (roughly 35% luminance of the light tone) rather than reusing the fixed `#186030` for every hue.
+   - Elder/civic buildings (`villa`, `chapel`, `watchtower`) may blend two adjacent hue families (e.g. violet + azure) to read as a more "senior" or magically-saturated colony, still from the same set — never a hue outside the defined palette, to keep a coherent slime-colony read across a settlement.
+2. **Rounded gel-mimic silhouette.** Because the copy is made of slime, not stone or timber, every mimicked hard edge gets a **fillet/round pass** distinct from the host race's real sharp-edged version:
+   - Wall corners, window/door frame corners, coping, and roof ridge caps use a rounded bevel radius of `0.06–0.10 WU` (vs. the host kit's typical `0.02–0.03 WU` chamfer), applied via the existing Tier 1 `Bevels` module with a larger radius parameter rather than a new geometry system.
+   - Roofline gets a slight asymmetric **sag**: one ridge or eave edge droops `0.05–0.12 WU` lower than its mirrored counterpart, suggesting the copy is still slightly soft/settling. This is a deterministic per-building seed offset, not physics.
+   - Eaves and sills get 1–3 **drip points** (reusing `faceted_drip_run`) even on undamaged copies, since dripping is now a material signature of the mimicry itself, not only ruin decay.
+   - These roundings apply only to the *slime accretion layer and mimicked silhouette*, never by scaling or smoothing the underlying host shell's block-course wall geometry itself — the wall blocks stay sharp and legible; the rounding reads on the outer profile, copings, and openings frames, per the depth ladder.
+
+**Revised design signature (supersedes the §2.3 list above):** rules 1, 2, 4, 5, 6, 8, 9, 10 from the superseded list are unchanged. Rules 3 and 7 become:
+- **3′. Slime is an additive kit layer in a rotating neon hue,** not fixed green: lips, membranes, tendrils, infill, ground skirts, and contained pools all use that building's rolled hue family from the five defined above.
+- **7′. Palette is the five-family neon set** in bullet **B.1** above, weighted per building; dark recesses/emissive cores scale from the rolled hue rather than reusing one fixed dark green.
+- **11 (new). Rounded gel-mimic silhouette is mandatory** per bullet **B.2** above: fillet radius `0.06–0.10 WU` on mimicked hard edges, asymmetric ridge/eave sag `0.05–0.12 WU`, and 1–3 drip points per building regardless of ruin-damage state.
+- **12 (new). Mimicry source is named per building** in generated metadata/comments (e.g. "mimics the elven small-shell library") so the accretion composer and tests can assert the source shell family, not just "some shell."
+
+
 
 ## 3. Real-world & game-dev basis
 
@@ -181,9 +216,9 @@ This aligns with the modular-building research report:
 - Occupancy-carve / five-piece openings avoid CSG and flat dark rectangles.
 - `Ruinate` supplies convincing decay without icosahedron rubble.
 
-## 4. Per-kind blueprint (conditional on Alternative A approval)
+## 4. Per-kind blueprint (mimic-culture direction, per §2.4)
 
-All kind blueprints below assume Alternative A as the approved primary direction. If the user chooses Alternative B or C instead, Section 4 should be rewritten before implementation.
+All kind blueprints below use the §2.1 (Alternative A) host-shell/`Ruinate`/accretion structure, with the §2.4 neon-hue rotation and rounded gel-mimic silhouette applied as the final overlay pass on every kind. Where a row below still says "slime overlay uses green," read that as shorthand for "the building's rolled hue family from §2.4-B.1," and every roofline/coping/frame edge gets the §2.4-B.2 rounding and drip treatment regardless of ruin-damage state.
 
 Shared numeric constants for this section:
 
@@ -409,7 +444,7 @@ Procedural variation axes:
 | `Tracery.ts` | Chapel rose/oculus and high-status villa windows, then gel-lens infill behind it. |
 | `LatheColumn.ts` | Optional villa/chapel porch/arcade columns; not a slime signature. |
 
-### Slime-specific modules to add only after art-direction approval
+### Slime-specific modules (approved 2026-09-04, mimic-culture direction)
 
 These are race-specific unless the parent decides they should become generic contamination/infestation tools:
 
@@ -570,28 +605,22 @@ Current slime builders are all variations of glossy translucent domes / blobs:
 
 ## 8. Out of scope / deferred
 
-### Deferred because of missing art direction
+### Resolved by the 2026-09-04 user decision (previously listed here as blocked)
 
-1. Final choice among Alternative A, B, C, or a hybrid.
-2. Whether slime host shells should primarily look human, elven, dwarven, random previous-race salvage, or a new neutral ruin kit.
-3. Whether the tone should be cute/friendly, eerie/hive, alchemical, fungal, crystalline, or comedic.
-4. Whether ordinary doors/windows are needed for slime inhabitants or should be interpreted as access sluices / viewing frames.
-5. Whether “Pulse Pool” and “Elder Blob” should feel religious, communal, biological, magical, or civic.
+1. ~~Final choice among Alternative A, B, C, or a hybrid.~~ **Resolved: Alternative A, reframed as mimic culture, per §2.4.**
+2. ~~Whether slime host shells should primarily look human, elven, dwarven, random previous-race salvage, or a new neutral ruin kit.~~ **Resolved: any/all — a settlement may mimic more than one neighbouring race's shell library; the mimicked source is named per building (§2.4 rule 12).**
+3. ~~Whether the tone should be cute/friendly, eerie/hive, alchemical, fungal, crystalline, or comedic.~~ **Resolved: playful mimicry (Ditto-like), not eerie/hive — bright neon, rounded, glossy.**
+4. Whether ordinary doors/windows are needed for slime inhabitants, or should be interpreted as access sluices/viewing frames — **still open**, defaulted to ordinary five-piece openings with a gel-lens pane per §4, since the mimic reproduces the host building's opening layout.
+5. Whether "Pulse Pool" and "Elder Blob" should feel religious, communal, biological, magical, or civic — **still open**, defaulted to communal/civic per the cluster-layout evidence; not a blocker for implementation.
 
-### Reference art requested to unblock properly
+### Remaining open items (non-blocking)
 
-Please supply, ideally as `concept_art/reference/buildings/slime/`:
-
-1. **One chosen art-direction board**: occupied ruins, hardened secretion, containment architecture, or a labelled hybrid.
-2. **8 small silhouette thumbnails** for `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, `watchtower` at isometric camera distance.
-3. **Material swatches**: liquid gel, hardened gel/secretion, membrane, slime-stained stone/timber, contained core glow.
-4. **Door/window examples**: how amorphous slime inhabitants enter, display goods, worship, trade, sleep, and work without default humanoid assumptions.
-5. **One settlement composition sketch** showing the central Slime Pool / Pulse Pool relationship to surrounding buildings.
-6. **Negative examples** of what still feels too blobby or too generic, especially if any smooth dome/pool motif is acceptable only at prop scale.
+- Exact per-settlement rule for how many distinct mimicked source races may appear in one slime settlement (single dominant neighbour vs. free mix) is left to implementation judgement in Task 6 of the plan; either is compliant with §2.4.
+- Whether a rare "elder" hue blend (two adjacent neon families) should be settlement-wide or per-building is left to implementation judgement; per-building is the default reading of §2.4-B.1.
 
 ### Deferred cross-race/system decisions
 
-- Natural `watchtower` reachability remains a cross-race gap: `watchtower` is not produced by `WARD_TO_KIND` and needs either a landmark slot or a ward mapping decision.
+- Natural `watchtower` reachability remains a cross-race gap: `watchtower` is not produced by `WARD_TO_KIND` and needs either a landmark slot or a ward mapping decision (doctrine §9.1's gateward-anchor proposal).
 - Slime road texture is currently generic cobblestone; a slime road/gutter system should be considered in a later terrain/road pass.
 - Territory dressing props (`ooze puddle patch`, `stacked-goo mound`, `glistening slime-trail rocks`) remain outside this building spec unless parent scope expands to settlement environment dressing.
-- Interiors are not designed here beyond exterior implications; slime-specific rooms/pools should get their own pass after art direction is approved.
+- Interiors are not designed here beyond exterior implications; slime-specific rooms/pools should get their own pass later.
