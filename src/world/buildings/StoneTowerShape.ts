@@ -67,3 +67,61 @@ export function octagonFaces(radius: number, vertexScales?: number[]): OctagonFa
   }
   return faces;
 }
+
+/**
+ * Returns the 4 corners of a rectangle of the given half-width/half-depth,
+ * as [x, z] pairs -- same winding direction as `octagonPoints()` (verified
+ * by direct computation to produce the same +Y-facing floor-cap normal):
+ * (halfW, halfD) -> (halfW, -halfD) -> (-halfW, -halfD) -> (-halfW, halfD).
+ * Used by any building whose footprint is a genuine rectangle rather than
+ * a regular octagon (e.g. the elven chapel's 4x8 nave) -- paired with
+ * `rectangleFaces()` below, this lets `buildFloorCap()`/`buildQuoins()`
+ * (via their `pointsOverride` parameter) and `buildWallSurfaceBlocks()`
+ * (via its existing `facesOverride` parameter) build a real rectangular
+ * hall using the exact same real per-course block-and-mortar technique as
+ * every octagonal tower-kit building, with zero new wall-building code.
+ */
+export function rectanglePoints(halfW: number, halfD: number): [number, number][] {
+  return [
+    [halfW, halfD],
+    [halfW, -halfD],
+    [-halfW, -halfD],
+    [-halfW, halfD],
+  ];
+}
+
+/**
+ * Returns the 4 faces of a rectangle of the given half-width/half-depth,
+ * in the same `OctagonFace` shape and winding order as `octagonFaces()`.
+ * Face 0 = the +X (right) wall, face 1 = the -Z (back) wall, face 2 =
+ * the -X (left) wall, face 3 = the +Z (front, entrance) wall -- matching
+ * `rectanglePoints()`'s own corner order.
+ */
+export function rectangleFaces(halfW: number, halfD: number): OctagonFace[] {
+  const pts = rectanglePoints(halfW, halfD);
+  const faces: OctagonFace[] = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i]!;
+    const b = pts[(i + 1) % n]!;
+    const midX = (a[0] + b[0]) / 2;
+    const midZ = (a[1] + b[1]) / 2;
+    faces.push({ a, b, normalAngle: Math.atan2(midX, midZ) });
+  }
+  return faces;
+}
+
+/**
+ * Linearly interpolates a point along a face's own a->b segment, for
+ * `t` in [0, 1] (t=0 -> `face.a`, t=1 -> `face.b`, t=0.5 -> the face's
+ * own midpoint). Works for ANY face (rectangle or octagon) -- a small,
+ * pure, generically reusable utility, distinct from
+ * `buildWallSurfaceBlocks()`'s own inline per-block placement math
+ * (which additionally handles per-course jitter/offset that a
+ * window/entrance placement caller doesn't need).
+ */
+export function facePointAt(face: OctagonFace, t: number): [number, number] {
+  const [ax, az] = face.a;
+  const [bx, bz] = face.b;
+  return [ax + (bx - ax) * t, az + (bz - az) * t];
+}

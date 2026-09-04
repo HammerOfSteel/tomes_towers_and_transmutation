@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { octagonPoints, octagonFaces } from '@/world/buildings/StoneTowerShape';
+import { octagonPoints, octagonFaces, rectanglePoints, rectangleFaces, facePointAt } from '@/world/buildings/StoneTowerShape';
 
 describe('octagonPoints', () => {
   it('returns exactly 8 points', () => {
@@ -94,5 +94,60 @@ describe('octagonFaces', () => {
       expect(faces[i]!.a).toEqual(pts[i]);
       expect(faces[i]!.b).toEqual(pts[(i + 1) % 8]);
     }
+  });
+});
+
+describe('rectanglePoints', () => {
+  it('returns exactly 4 corners at (+-halfW, +-halfD), winding matching octagonPoints (produces a +Y floor-cap normal)', () => {
+    const pts = rectanglePoints(2, 4);
+    expect(pts).toEqual([[2, 4], [2, -4], [-2, -4], [-2, 4]]);
+  });
+});
+
+describe('rectangleFaces', () => {
+  it('returns 4 faces with normalAngle 0 (front, +Z), PI/2 (right, +X), PI (back, -Z), -PI/2 (left, -X), matching octagonFaces\' own atan2(midX, midZ) convention', () => {
+    const faces = rectangleFaces(2, 4);
+    expect(faces).toHaveLength(4);
+    expect(faces[0]!.normalAngle).toBeCloseTo(Math.PI / 2, 5);   // right (+X wall)
+    expect(faces[1]!.normalAngle).toBeCloseTo(Math.PI, 5);        // back (-Z wall, apse-facing)
+    expect(faces[2]!.normalAngle).toBeCloseTo(-Math.PI / 2, 5);   // left (-X wall)
+    expect(faces[3]!.normalAngle).toBeCloseTo(0, 5);              // front (+Z wall, entrance)
+  });
+
+  it('each face\'s a/b corners match consecutive rectanglePoints entries', () => {
+    const pts = rectanglePoints(2, 4);
+    const faces = rectangleFaces(2, 4);
+    for (let i = 0; i < 4; i++) {
+      expect(faces[i]!.a).toEqual(pts[i]);
+      expect(faces[i]!.b).toEqual(pts[(i + 1) % 4]);
+    }
+  });
+});
+
+describe('facePointAt', () => {
+  it('returns face.a at t=0 and face.b at t=1', () => {
+    const faces = rectangleFaces(2, 4);
+    const face = faces[0]!; // right wall, a=[2,4], b=[2,-4]
+    expect(facePointAt(face, 0)).toEqual([2, 4]);
+    expect(facePointAt(face, 1)).toEqual([2, -4]);
+  });
+
+  it('linearly interpolates at t=0.5 (the face midpoint)', () => {
+    const faces = rectangleFaces(2, 4);
+    const face = faces[0]!;
+    const [x, z] = facePointAt(face, 0.5);
+    expect(x).toBeCloseTo(2, 5);
+    expect(z).toBeCloseTo(0, 5);
+  });
+
+  it('at t=0.3 matches manual interpolation for a non-axis-aligned face', () => {
+    // Use an octagon face (diagonal a/b) to prove this isn't rectangle-specific.
+    const faces = octagonFaces(2);
+    const face = faces[0]!;
+    const [ax, az] = face.a;
+    const [bx, bz] = face.b;
+    const [x, z] = facePointAt(face, 0.3);
+    expect(x).toBeCloseTo(ax + (bx - ax) * 0.3, 5);
+    expect(z).toBeCloseTo(az + (bz - az) * 0.3, 5);
   });
 });
