@@ -79,16 +79,6 @@ function circlePath(center: THREE.Vector2, radius: number): THREE.Path {
   return path;
 }
 
-function buildPolygonShape(points: THREE.Vector2[]): THREE.Shape {
-  const shape = new THREE.Shape();
-  shape.moveTo(points[0]!.x, points[0]!.y);
-  for (let i = 1; i < points.length; i++) {
-    shape.lineTo(points[i]!.x, points[i]!.y);
-  }
-  shape.closePath();
-  return shape;
-}
-
 function buildAnnularSectorPath(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number): THREE.Path {
   const outerStart = polarPoint(outerRadius, startAngle);
   const innerEnd = polarPoint(innerRadius, endAngle);
@@ -234,14 +224,23 @@ function buildSpokeConnectorShape(
   const junctionHalf = junctionAngleSpan * 0.5;
   const waistHalf = Math.min(waistAngleSpan, junctionAngleSpan) * 0.5;
   const waistRadius = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.5);
-  return buildPolygonShape([
-    polarPoint(innerRadius, angleCenter - junctionHalf),
-    polarPoint(waistRadius, angleCenter - waistHalf),
-    polarPoint(outerRadius, angleCenter - junctionHalf),
-    polarPoint(outerRadius, angleCenter + junctionHalf),
-    polarPoint(waistRadius, angleCenter + waistHalf),
-    polarPoint(innerRadius, angleCenter + junctionHalf),
-  ]);
+  const startAngle = angleCenter - junctionHalf;
+  const endAngle = angleCenter + junctionHalf;
+  const innerStart = polarPoint(innerRadius, startAngle);
+  const waistStart = polarPoint(waistRadius, angleCenter - waistHalf);
+  const outerStart = polarPoint(outerRadius, startAngle);
+  const waistEnd = polarPoint(waistRadius, angleCenter + waistHalf);
+  const innerEnd = polarPoint(innerRadius, endAngle);
+  const shape = new THREE.Shape();
+  shape.moveTo(innerStart.x, innerStart.y);
+  shape.lineTo(waistStart.x, waistStart.y);
+  shape.lineTo(outerStart.x, outerStart.y);
+  shape.absarc(0, 0, outerRadius, startAngle, endAngle, false);
+  shape.lineTo(waistEnd.x, waistEnd.y);
+  shape.lineTo(innerEnd.x, innerEnd.y);
+  shape.absarc(0, 0, innerRadius, endAngle, startAngle, true);
+  shape.closePath();
+  return shape;
 }
 
 function createRoseWindowLayout(options: RoseWindowOptions): RoseWindowLayout {
@@ -258,8 +257,8 @@ function createRoseWindowLayout(options: RoseWindowOptions): RoseWindowLayout {
   const ringThickness = radialSpan * ROSE_RING_SHARE / ringCount;
   const spokeThickness = radialSpan * (1 - ROSE_RING_SHARE) / ringCount;
   const ringSegmentAngleSpan = step * ROSE_RING_SEGMENT_COVERAGE;
-  const spokeJunctionAngleSpan = step * ROSE_SPOKE_JUNCTION_COVERAGE;
-  const spokeWaistAngleSpan = step * ROSE_SPOKE_WAIST_COVERAGE;
+  const spokeJunctionAngleSpan = Math.min(step * ROSE_SPOKE_JUNCTION_COVERAGE, ringSegmentAngleSpan);
+  const spokeWaistAngleSpan = Math.min(step * ROSE_SPOKE_WAIST_COVERAGE, spokeJunctionAngleSpan);
   const junctionOverlapAngle = ringSegmentAngleSpan + spokeJunctionAngleSpan - step;
   const spokeBelts: RoseRadialBand[] = [];
   const ringBands: RoseRadialBand[] = [];
@@ -516,6 +515,7 @@ export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Mate
 }
 
 export const __traceryTestUtils = {
+  polarPoint: (radius: number, angle: number): THREE.Vector2 => polarPoint(radius, angle),
   buildTrefoilShape(radius: number): THREE.Shape {
     return buildFoilShape(radius, 3);
   },

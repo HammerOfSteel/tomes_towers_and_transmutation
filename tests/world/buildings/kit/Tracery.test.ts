@@ -5,6 +5,57 @@ async function loadTraceryModule() {
   return import('../../../../src/world/buildings/kit/Tracery');
 }
 
+function buildLegacyChordSpokeConnectorShape(
+  innerRadius: number,
+  outerRadius: number,
+  angleCenter: number,
+  junctionAngleSpan: number,
+  waistAngleSpan: number,
+): THREE.Shape {
+  const junctionHalf = junctionAngleSpan * 0.5;
+  const waistHalf = Math.min(waistAngleSpan, junctionAngleSpan) * 0.5;
+  const waistRadius = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.5);
+  const shape = new THREE.Shape();
+  const points = [
+    new THREE.Vector2(Math.cos(angleCenter - junctionHalf) * innerRadius, Math.sin(angleCenter - junctionHalf) * innerRadius),
+    new THREE.Vector2(Math.cos(angleCenter - waistHalf) * waistRadius, Math.sin(angleCenter - waistHalf) * waistRadius),
+    new THREE.Vector2(Math.cos(angleCenter - junctionHalf) * outerRadius, Math.sin(angleCenter - junctionHalf) * outerRadius),
+    new THREE.Vector2(Math.cos(angleCenter + junctionHalf) * outerRadius, Math.sin(angleCenter + junctionHalf) * outerRadius),
+    new THREE.Vector2(Math.cos(angleCenter + waistHalf) * waistRadius, Math.sin(angleCenter + waistHalf) * waistRadius),
+    new THREE.Vector2(Math.cos(angleCenter + junctionHalf) * innerRadius, Math.sin(angleCenter + junctionHalf) * innerRadius),
+  ];
+  shape.moveTo(points[0]!.x, points[0]!.y);
+  for (let index = 1; index < points.length; index++) {
+    shape.lineTo(points[index]!.x, points[index]!.y);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function distancePointToSegment(point: THREE.Vector2, start: THREE.Vector2, end: THREE.Vector2): number {
+  const segment = new THREE.Vector2().subVectors(end, start);
+  const lengthSq = segment.lengthSq();
+  if (lengthSq === 0) return point.distanceTo(start);
+  const projection = clamp01(new THREE.Vector2().subVectors(point, start).dot(segment) / lengthSq);
+  const closest = start.clone().addScaledVector(segment, projection);
+  return point.distanceTo(closest);
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function minimumOutlineDistance(shape: THREE.Shape, point: THREE.Vector2, divisions = 512): number {
+  const outline = shape.getPoints(divisions);
+  let minimum = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < outline.length; index++) {
+    const start = outline[index]!;
+    const end = outline[(index + 1) % outline.length]!;
+    minimum = Math.min(minimum, distancePointToSegment(point, start, end));
+  }
+  return minimum;
+}
+
 function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
   root.traverse((child) => {
@@ -136,6 +187,50 @@ describe('Tracery kit', () => {
       assertFiniteGeometry(rose);
     }
   }, 15000);
+
+  it('builds rose spoke flares that reach the shared ring radius across the full junction span', async () => {
+    const { __traceryTestUtils } = await loadTraceryModule();
+    const layout = __traceryTestUtils.createRoseWindowLayout({ lobes: 8, radius: 1, ringCount: 2 });
+    const slotIndex = 0;
+    const beltIndex = 0;
+    const ringIndex = 0;
+    const ringSlotIndex = 0;
+    const spokeShape = __traceryTestUtils.buildRoseSpokeConnectorShape(layout, slotIndex, beltIndex);
+    const ringShape = __traceryTestUtils.buildRoseRingSegmentShape(layout, ringIndex, ringSlotIndex);
+    const belt = layout.spokeBelts[beltIndex]!;
+    const band = layout.ringBands[ringIndex]!;
+    const angleCenter = -Math.PI / 2 + slotIndex * layout.step;
+    const junctionHalf = layout.spokeJunctionAngleSpan * 0.5;
+    const sharedRadius = belt.outerRadius;
+    const sampleAngles = Array.from({ length: 7 }, (_, index) => (
+      angleCenter - junctionHalf + (layout.spokeJunctionAngleSpan * index) / 6
+    ));
+    const legacyShape = buildLegacyChordSpokeConnectorShape(
+      belt.innerRadius,
+      belt.outerRadius,
+      angleCenter,
+      layout.spokeJunctionAngleSpan,
+      layout.spokeWaistAngleSpan,
+    );
+
+    expect(band.innerRadius).toBeCloseTo(sharedRadius, 12);
+    expect(ringShape.holes.length).toBeGreaterThan(0);
+    expect(layout.ringSegmentAngleSpan).toBeGreaterThanOrEqual(layout.spokeJunctionAngleSpan);
+
+    const fixedDistances = sampleAngles.map((angle) => (
+      minimumOutlineDistance(spokeShape, __traceryTestUtils.polarPoint(sharedRadius, angle))
+    ));
+    const legacyDistances = sampleAngles.map((angle) => (
+      minimumOutlineDistance(legacyShape, __traceryTestUtils.polarPoint(sharedRadius, angle))
+    ));
+
+    for (const distance of fixedDistances) {
+      expect(distance).toBeLessThan(5e-6);
+    }
+
+    expect(fixedDistances[3]!).toBeLessThan(5e-6);
+    expect(legacyDistances[3]!).toBeGreaterThan(1e-3);
+  });
 
   it('emits optional broken tracery fragments while the default build stays intact', async () => {
     const { buildRoseWindow } = await loadTraceryModule();
