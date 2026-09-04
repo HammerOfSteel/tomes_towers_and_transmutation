@@ -6,7 +6,7 @@
 
 **Goal:** Build the human baseline settlement kit for runtime faction `human_town`, covering `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, and `watchtower` with modular medieval vernacular construction.
 
-**Architecture:** Consume the shared doctrine kit wherever it exists, then add human-specific composition on top. The only flagship new shared module is `TimberFrame`; add a small shared thatch roof profile only if the previous races did not already implement one. Human variety comes from `FacadeGrammar`, fixed-size modules, `TimberFrame` panel swapping, roof material swapping, jetties, and `MassComposer` wings/porches/dormers.
+**Architecture:** Human runs third after elven and dwarven, so consume Tier 1 and existing Tier 2 doctrine kit instead of rebuilding it. The flagship new shared module is `TimberFrame`; add a small shared thatch roof profile only if the previous races did not already implement one. Human-specific composition then layers `FacadeGrammar`, fixed-size modules, `TimberFrame` panel swapping, roof material swapping, jetties, and `MassComposer` wings/porches/dormers.
 
 **Tech Stack:** TypeScript, Three.js, Vitest, existing Playwright visual verification. No new runtime dependencies unless the already-approved shared `RoofMassing` implementation requires one.
 
@@ -48,6 +48,8 @@ Assert that `buildTimberFramePanel({ width: 2, height: 3.2, pattern: 'stAndrewsC
 - returns a `THREE.Group` with named children for `post`, `rail`, `brace`, and `infill`;
 - places frame pieces at depth `+0.08 WU` and infill at `0.00` or `-0.04 WU`;
 - emits two vertical posts, at least three rails, and two crossing braces for `stAndrewsCross`;
+- respects maximum post spacing `2.4 WU` and infill span `0.75 WU`;
+- emits non-flat decorative geometry for `quatrefoil` and alternating braces for `herringbone`;
 - never places braces through a supplied opening exclusion rectangle;
 - is deterministic for the same seed.
 
@@ -65,10 +67,11 @@ Implement exports:
 - `buildTimberFrameFacade(opts): THREE.Group` that accepts bay splits from `FacadeGrammar` or plain bay descriptors.
 
 Rules:
-- posts `0.16-0.22 WU`; rails at `0.18`, `1.05`, `2.15`, `height - 0.08`;
+- posts `0.16-0.22 WU`; maximum post spacing `2.4 WU`; rails at `0.18`, `1.05`, `2.15`, `height - 0.08`;
 - studs when open span exceeds `0.75 WU`;
 - brace angle `35-55°`;
 - timber depth `+0.08`, infill `0.00/-0.04`;
+- decorative patterns include St Andrew's cross, herringbone, brick-nogging, repair panels, and a raised/pierced quatrefoil panel;
 - use shared materials passed in, never clone for colour variation.
 
 - [ ] **Step 4: Verify**
@@ -87,11 +90,9 @@ Expected: PASS.
 - Create or modify: `src/world/buildings/kit/ThatchRoofSurface.ts` or `src/world/buildings/kit/ShingleSurface.ts`
 - Test: `tests/world/buildings/kit/ThatchRoofSurface.test.ts` or extend `tests/world/buildings/kit/ShingleSurface.test.ts`
 
-- [ ] **Step 1: Inspect existing shared roof kit**
+- [ ] **Step 1: Write or extend the roof test first**
 
-If `ShingleSurface` already contains a tested thatch mode meeting this goal, record it and skip to Task 3. Do not duplicate it.
-
-- [ ] **Step 2: Write the failing test**
+Test path: `tests/world/buildings/kit/ThatchRoofSurface.test.ts` or the existing `tests/world/buildings/kit/ShingleSurface.test.ts` if `ShingleSurface` already owns roof materials.
 
 Assert that a `4 × 3 WU` gable thatch surface has:
 - 4-6 stacked scalloped bands per pitch;
@@ -101,17 +102,19 @@ Assert that a `4 × 3 WU` gable thatch surface has:
 - visible verge pieces on both gables;
 - no single smooth roof plane standing in for thatch.
 
-- [ ] **Step 3: Run the test and confirm it fails**
+If an existing shared `ShingleSurface` thatch mode already satisfies this exact test, keep that test and mark this task as consumed rather than duplicating the module.
+
+- [ ] **Step 2: Run the test and confirm the status**
 
 Run the smallest matching test file.
 
-Expected: FAIL until thatch profile exists.
+Expected: FAIL if thatch support is missing; PASS means the shared kit already exists and implementation can skip to Task 3.
 
-- [ ] **Step 4: Implement or extend the roof kit**
+- [ ] **Step 3: Implement or extend the roof kit if the test failed**
 
 Use the research §3.2 approach: bands instead of a smooth plane, jittered wisps, ridge cap, eave roll, and verge depth. Keep materials shared; use `BatchedDetail` if already available.
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 4: Verify**
 
 Run the same targeted roof test.
 
@@ -576,7 +579,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write the failing test**
 
-Assert that the showcase kind override can provide a per-building callback or equivalent roster distributor that returns all 8 canonical kinds for `human_town`, not only one global override. Assert the generated preview contains `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, and `watchtower` markers.
+Assert that the showcase kind override can provide a per-building callback or equivalent roster distributor that returns all 8 canonical kinds for studio faction `human`, mapped to runtime `human_town`, not only one global override. Assert the generated preview contains `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, and `watchtower` markers at least once each.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -586,7 +589,7 @@ Expected: FAIL until showcase generalisation is implemented.
 
 - [ ] **Step 3: Implement**
 
-Generalise the round-6.6f per-building callback so every selected race can distribute canonical kinds across settlement buildings. Keep natural `WARD_TO_KIND` unchanged; this is a review/showcase path. Include `watchtower` despite no ward entry so the visual acceptance gate is possible.
+Generalise the round-6.6f per-building callback so every selected race can distribute canonical kinds across settlement buildings. For human, cycle the first eight building records through the canonical roster in a stable order, then let later buildings fall back to natural ward kinds or repeat by weighted roster if needed. Keep natural `WARD_TO_KIND` unchanged; this is a review/showcase path. Include `watchtower` despite no ward entry so the visual acceptance gate is possible.
 
 - [ ] **Step 4: Verify**
 

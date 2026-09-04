@@ -12,17 +12,18 @@ This is the thinnest reference set of the nine races: only three files, one of t
 |---|---|---|
 | `multi_story_house.jpeg` | A compact 3-storey fantasy townhouse with cream plaster walls, terracotta tile roofs, stacked balconies, a front porch, arched windows, visible chimney, side lean-to/wing, and small foundation vents. It is ordinary but richly layered. | Human town/villa/inn language: warm plaster over stone plinth, clay-tile pitched roofs, off-centre secondary rooflets, chimney stacks, balconies/oriel bays, porch posts, exterior stairs, and asymmetrical side additions. The arched upper windows motivate human `archRatio≈0.9-1.0` rather than elven lancets. |
 | `simple_cottage.webp` | A toy-like rural cottage on a raised timber deck, with plank walls, round window, round attic oculus, thick blue curved roof, external steps, railings, lantern post, shrubs, and a very simple friendly silhouette. | Rural house/terraced fallback: small cottages may use raised timber platforms, visible porch stairs, chunky railings, round/oculus loft windows, and thick readable roof edges. The blue roof is not copied literally for all humans, but its thick verge/eave informs thatch: rolled eaves, ridge cap, visible roof depth at the gable verge. |
-| `varous_house_designs.html` | Saved Superhive/Blender Market page. Grep recovered `<title>` and `og:title`: “Stylized Fantasy House Pack Low Poly 3D Medieval Desert Houses Low-Poly 3D Model”; `og:image` points to a remote product image; `og:description` is generic (“A Unique Market for Creators that love Blender”); no useful `<h1>` was present. | The useful signal is “pack”: humans should have many related house designs, not one canonical shape. “Stylized fantasy low-poly medieval houses” validates readable modular exaggeration: oversized roofs, clear props, chunky framing, varied gables, and colour-value variation. “Desert” is not adopted as the core human theme; at most it permits warmer plaster and clay-tile palettes for town houses. |
+| `varous_house_designs.html` | Saved Superhive/Blender Market page. Grep recovered `<title>` and `og:title`: “Stylized Fantasy House Pack Low Poly 3D Medieval Desert Houses Low-Poly 3D Model”; `og:image` points to a remote product image; `og:description` is generic. The embedded product data is more useful: four hand-crafted stylized buildings for fantasy/medieval/desert game environments — “Fantasy House 1” with curved tile roof and stone chimney, “Fantasy House 2” with extended porch and wood accents, “Tudor House” with half-timbered medieval details, and “Desert House” with mud walls, wooden awning, and props. | The useful signal is “pack”: humans should have many related house designs, not one canonical shape. The named Tudor house directly supports proud half-timbering; the porch/wood-accent house supports decks, stairs, galleries, and railings; the curved tile-roof house supports chunky roof silhouettes and chimneys; the desert house is not adopted as the core human theme, but permits warmer plaster, clay-tile palettes, awnings, and street props. |
 
 Reference-driven constraints:
 
 - Humans must look ordinary first: cream plaster, brown timber, stone bases, clay/slate/thatch roofs, iron straps, lanterns, barrels, shutters, flower boxes.
 - Variety must be grammatical, not noisy. The HTML pack implies a set of compatible modules; the street should shuffle roof, wall, porch, window, and jetty modules without stretching mouldings.
 - The flagship silhouette from `multi_story_house.jpeg` is stacked occupancy: porch, upper floor, dormer/chimney, side wing. The flagship silhouette from `simple_cottage.webp` is thick low roof + raised deck.
+- The set has no dedicated blacksmith, chapel, shopfront, terraced row, or watchtower image. Those kinds must therefore lean explicitly on section 3's real medieval construction basis while borrowing only general human vocabulary from the art: timber, plaster, stone, roofs, porches, chimneys, and props.
 
 ## 2. Race design language
 
-1. **Baseline race, not bland race.** Human buildings are the control group: familiar medieval vernacular that lets elven living towers, dwarven halls, fae mushrooms, and undead crypts read as departures. Their exoticness comes from human ordinariness.
+1. **Baseline race, not bland race.** Human buildings are the control group and the architecture the player will see most. Familiar medieval vernacular lets elven living towers, dwarven halls, fae mushrooms, and undead crypts read as departures; their exoticness comes from human ordinariness.
 2. **Internal variation is the identity.** Human settlements should look as if owners rebuilt, extended, and repaired them over centuries. The implementation should use split grammar + module swapping + seeded jitter: one row of houses may mix plaster infill, brick nogging, stone bases, jetties, dormers, roof pitches, and chimney positions.
 3. **TimberFrame is the flagship `[SHARED KIT]` contribution.** A half-timbered wall is not a texture. It is a proud structural frame of posts, rails, braces, and studs at `+0.08 WU`, with recessed infill panels at `0.00` or `-0.04 WU`. The frame is the facade split grid. Fae, vulperia, and orcish can reuse it with different materials.
 4. **Jetty is the signature human silhouette move.** Upper floors may project `0.28-0.45 WU` past the lower wall, carried by a bressummer beam at the floor line, exposed joist ends at `0.28-0.40 WU` spacing, and corbels/knee braces below. It must not be a single enlarged upper box.
@@ -50,12 +51,14 @@ Concrete `TimberFrame` rules:
 
 - Base module width: nominal `2.0 WU`; accepted bay widths `1.6-2.4 WU`; filler panels absorb leftover at facade ends and must be visually marked as narrow repair bays.
 - Storey height: `3.2 WU`; rails at `0.18`, `1.05`, `2.15`, and `3.12 WU` within each storey. Floor/bressummer beam: `0.18-0.24 WU` high, `0.16-0.22 WU` deep.
-- Posts: `0.16-0.22 WU` wide, full storey height, at bay boundaries and outer corners. Corner posts can project to `+0.10 WU`.
-- Studs: `0.08-0.12 WU`, placed when a bay exceeds `1.3 WU`; maximum open infill span `0.75 WU`.
+- Posts: `0.16-0.22 WU` wide, full storey height, at bay boundaries and outer corners. Maximum structural post spacing is `2.4 WU`; if a grammar bay widens beyond that, split it into a real post plus filler panel rather than scaling the timbers. Corner posts can project to `+0.10 WU`.
+- Studs: `0.08-0.12 WU`, placed when a bay exceeds `1.3 WU`; maximum open infill span `0.75 WU`, so a `2.0 WU` bay usually gets two studs or one central stud plus braces.
 - Braces: `0.10-0.14 WU`, angle `35-55°`, endpoint notches land on posts/rails, not floating in the infill. Avoid crossing window apertures unless the window is intentionally framed as an oriel.
-- Patterns by weight: simple tension brace `35%`, St Andrew's cross `25%`, herringbone/nested chevrons `15%`, quatrefoil panel `10%`, brick-nogging grid `10%`, blank plaster repair panel `5%`.
+- Patterns by weight: simple tension brace `35%`; St Andrew's cross `25%` with two diagonals crossing at panel centre; herringbone/nested chevrons `15%` across 2-3 adjacent panels; quatrefoil panel `10%` as a raised or pierced four-lobed plate inside a square timber panel, never a flat texture; brick-nogging grid `10%` with recessed brick courses; blank plaster repair panel `5%`.
 
 ## 4. Per-kind blueprint
+
+Shared opening depth offsets for every kind unless the row states otherwise: wall face `0.00 WU`; timber frame/quoin/string/sill nose `+0.08 WU`; opening surround/door architrave `+0.04 WU`; panel repair or blind recess `-0.04` to `-0.06 WU`; reveal/jamb/head/sill top `-0.12 WU`; glazing or door leaf `-0.20 WU`. Doors additionally require threshold step at `+0.08 WU`, 5-7 planks, and 3-5 strap-iron bars.
 
 ### 4.1 `house`
 
@@ -65,7 +68,7 @@ Concrete `TimberFrame` rules:
 | Floors/storeys | `1` main floor plus loft; `2` floors in town seeds `30%`. Storey height `3.2 WU`; loft knee wall `0.8-1.1 WU`. |
 | Massing | Simple rectangle with one optional lean-to (`35%`) on a side or rear; rural variants may use raised deck from `simple_cottage.webp`. |
 | Wall system | `55%` timber frame + plaster infill, `25%` rubble/stone ground half with timber above, `20%` plank cottage wall. Plinth `0.35 WU` rubble, skirt stones around base. |
-| Opening schedule | Front: one off-centre plank door `0.9×2.0 WU`, one window `0.72×0.95`; side/rear: 1-2 small windows. Loft: round oculus `0.45-0.55 WU` or tiny dormer `35%`. All openings: surround `+0.04`, sill `+0.08`, reveal `-0.12`, glazing/door `-0.20`. |
+| Opening schedule | Front: one off-centre plank door `0.9×2.0 WU`, one window `0.72×0.95`; side/rear: 1-2 small windows. Loft: round oculus `0.45-0.55 WU` or tiny dormer `35%`. All openings use shared section 4 offsets: surround `+0.04`, sill/threshold nose `+0.08`, reveal `-0.12`, glazing/door `-0.20`. |
 | Roof archetype | `55%` thatch steep gable, pitch `48-55°`, eave roll `0.18 WU`; `30%` clay tile gable, pitch `38-45°`; `15%` slate half-hip. Eaves `0.35-0.5 WU`; ridge cap always present. |
 | Ornament/props | Shutters, flower box, chopping block, barrel, bench, lantern hook, patched infill panel, single chimney. |
 
@@ -87,7 +90,7 @@ Variation axes:
 | Floors/storeys | `2` floors baseline; `3` floors `25%`. Storey height `3.2 WU`. |
 | Massing | Tall narrow rectangle; front facade split into 1-2 bays. Upper storey jetty `70%`, projection `0.3-0.4 WU`. Party walls plain, no side windows. |
 | Wall system | Ground floor `60%` stone/brick, `40%` timber/plaster. Upper floors almost always `TimberFrame`. Infill may alternate plaster and brick-nogging panels. |
-| Opening schedule | Door off-centre at ground (`0.8×2.0`), shop-like front window optional `25%`; upper: 1-2 windows/floor, one special bay (oriel `20%`, blocked/repaired `10%`). Depth ladder as above; window sill projects beyond frame by `0.04 WU`. |
+| Opening schedule | Door off-centre at ground (`0.8×2.0`), shop-like front window optional `25%`; upper: 1-2 windows/floor, one special bay (oriel `20%`, blocked/repaired `10%`). All openings use shared section 4 offsets; window sill projects beyond frame by `0.04 WU`. |
 | Roof archetype | Street-facing gable `45%`, side-gable shared row roof `35%`, mansard/attic dormer `20%`. Clay tile `65%`, slate `25%`, thatch only `10%`. |
 | Jetty details | Bressummer beam at first-floor line, exposed joist ends every `0.32 WU`, corbels under every other joist, underside shadow board. |
 | Ornament/props | Hanging sign hook, laundry pole, shutters, drain spout, shared party-wall chimney, small stoop. |
@@ -110,7 +113,7 @@ Variation axes:
 | Floors/storeys | `2` floors baseline; attic/dormer level visual only; storey height `3.2 WU`, plinth `0.55 WU`. |
 | Massing | L-plan `35%`, T-plan `25%`, central block + side wing `25%`, compact manor `15%`. Asymmetry required: one wing, one porch, or offset chimney. |
 | Wall system | Stone ground floor `70%`; timber/plaster or Tudor upper `65%`; high-status all-stone with timber gables `20%`; all-plaster townhouse `15%`. |
-| Opening schedule | Front: 4-5 bays, but one bay altered. Door `1.1×2.2` with canopy/porch; 2-4 ground windows, 3-5 upper windows, 1-3 dormers. Windows may be arched (`35%`) or rectangular with cross mullions. Depth ladder enforced. |
+| Opening schedule | Front: 4-5 bays, but one bay altered. Door `1.1×2.2` with canopy/porch; 2-4 ground windows, 3-5 upper windows, 1-3 dormers. Windows may be arched (`35%`) or rectangular with cross mullions. Shared section 4 offsets enforced for every opening. |
 | Roof archetype | Clay tile hip/gable compound `55%`; slate steep gables `30%`; mixed tile + thatch service wing `15%`. Ridge crest or finials `25%`; 2 chimneys minimum. |
 | Ornament/props | Balcony or porch from `multi_story_house.jpeg`, carved bargeboards, lanterns, garden pots, cellar vents, rain barrels. |
 
@@ -132,7 +135,7 @@ Variation axes:
 | Floors/storeys | `2` floors baseline, `3` floors `20%`; storey height `3.2 WU`; ground storey slightly taller (`3.4 WU`) when using public hall. |
 | Massing | Broad frontage, visible public entrance, side stable/lean-to `30%`, upper gallery/balcony `45%`. |
 | Wall system | Stone or brick ground floor (`65%`) for public hall, timber frame upper (`80%`), plaster/brick infill mixed by bay. |
-| Opening schedule | Front: double plank door `1.4×2.2`, 2 large mullioned ground windows, 3-5 upper windows, sign bay, optional balcony doors. Sides: 1-2 windows. Kitchen rear gets small service door. All windows five-piece; doors planked with straps. |
+| Opening schedule | Front: double plank door `1.4×2.2`, 2 large mullioned ground windows, 3-5 upper windows, sign bay, optional balcony doors. Sides: 1-2 windows. Kitchen rear gets small service door. All windows use shared section 4 offsets; doors are planked with straps and threshold. |
 | Roof archetype | Clay tile broad gable/hip `60%`, slate `25%`, thatch rural inn `15%`; 2-3 chimneys; 1-2 dormers; eaves `0.45 WU`. |
 | Ornament/props | Hanging inn sign, barrels, benches, wagon wheel, lantern pair, stacked crates, balcony rails, visible cellar hatch. |
 
@@ -198,7 +201,7 @@ Variation axes:
 | Floors/storeys | One tall sacred volume, wall height `5.0-5.8 WU` (`~1.6-1.8` storeys), no inhabited second floor. |
 | Massing | Plain rectangular parish chapel, humble baseline, with bellcote or small timber bell frame instead of grand tower. |
 | Wall system | Weathered stone block-course lower walls using `buildWallSurfaceBlocks()`/`VoussoirArch`; plaster/timber porch possible. Buttresses modest: `+0.30` at long-wall intervals. |
-| Opening schedule | Long sides: 2-3 arched windows per side (`0.7×1.8`), equilateral/soft Gothic `archRatio 0.9-1.1`; west/front door `1.0×2.2`; small round or arched gable window. All with voussoirs, sill, mullion/tracery, set-back dark/stained glazing. |
+| Opening schedule | Long sides: 2-3 arched windows per side (`0.7×1.8`), equilateral/soft Gothic `archRatio 0.9-1.1`; west/front door `1.0×2.2`; small round or arched gable window. All use shared section 4 offsets plus voussoirs, sill, mullion/tracery, set-back dark/stained glazing. |
 | Roof archetype | Slate or clay tile steep gable `75%`; thatch for rural chapel `15%`; wood-shingle bellcote roof `10%`. Ridge cross/finial; bargeboards. |
 | Ornament/props | Bellcote slab with tiny bell, simple buttresses, grave markers/flower pots, stone path, small lantern, optional rose/quatrefoil gable panel. |
 
@@ -279,7 +282,7 @@ Genuinely new modules human should contribute:
 - The generic builders have some useful seeds to keep: compact footprints, plinths, chimneys, terraced jetty intent, villa portico intent, blacksmith open forge intent, chapel long nave, and watchtower slit/battlement intent.
 - The current implementation does not meet the doctrine bar: many visible walls are large boxes/textured panels; doors/windows include box/sphere stand-ins; roofs use coarse primitives; timber framing exists only as a few box strips rather than a structural split grid; jetty is an enlarged upper box with one beam; watchtower/chapel openings and merlons need rebuilt detailing.
 - Human should be rebuilt as a new faction-specific kit, not by patching the generic builder case-by-case. Keep only safe generic helpers where they already meet the bar (e.g. the coursed chimney idea can be upgraded to shared materials/merge-safe geometry).
-- `watchtower` has no `WARD_TO_KIND` entry today. Do not solve reachability inside the human kit; reference doctrine §9.1's cross-race proposal to map the anchor building of the `gateward` ward to `watchtower` and keep human wiring ready for that decision.
+- `watchtower` has no `WARD_TO_KIND` entry today. Do not solve natural reachability inside the human kit; reference doctrine §9.1's cross-race proposal to map the anchor building of the `gateward` ward to `watchtower` and keep human wiring ready for that decision.
 
 ## 8. Out of scope / deferred
 
