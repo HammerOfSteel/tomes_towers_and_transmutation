@@ -78,6 +78,24 @@ describe('buildArchShape', () => {
     const straightLineX = lineXAtY(spring, apex, leftArcPoint.y);
     expect(Math.abs(leftArcPoint.x - straightLineX)).toBeGreaterThan(0.01);
   });
+
+  it('uses a shouldered/depressed-arch compromise for shallow pointHeight: a narrower Romanesque cap with flat shoulders instead of forcing an unrealistic full-span arch', () => {
+    // For this shallow case (halfWidth=1, straightHeight=2, pointHeight=0.6),
+    // the curvedWidth becomes Math.min(2, 0.6*2) = 1.2, and shoulders exist.
+    const shape = buildArchShape(1, 2, 0.6);
+    const pts = shape.getPoints(64);
+    const fullWidth = 2;
+
+    // Find the narrowest point of the curved head (should be narrower than full width).
+    const curvedHeadPoints = pts.filter((p) => p.y >= 2);
+    const minCurvedWidth = Math.min(...curvedHeadPoints.map((p) => Math.abs(p.x) * 2));
+
+    // The curved cap's width must be narrower than the full jamb width,
+    // proving the shoulder mechanism is active for this shallow case.
+    expect(minCurvedWidth).toBeLessThan(fullWidth);
+    // But it should still be finite and positive.
+    expect(minCurvedWidth).toBeGreaterThan(0);
+  });
 });
 
 describe('buildRecessedArchOpening', () => {

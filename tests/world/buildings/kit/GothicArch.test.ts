@@ -69,4 +69,27 @@ describe('buildGothicArchShape', () => {
     expect(romanesqueApex.y).toBeLessThan(equilateralApex.y);
     expect(equilateralApex.y).toBeLessThan(lancetApex.y);
   });
+
+  it('silently clamps archRatio below 0.5 (Romanesque) to 0.5 — the geometric floor for a valid two-centred arch', () => {
+    const belowFloor = buildGothicArchShape({ width: 1, springHeight: 1, archRatio: 0.1 });
+    const atFloor = buildGothicArchShape({ width: 1, springHeight: 1, archRatio: 0.5 });
+
+    const belowFloorApex = highestPoint(belowFloor.getPoints(64));
+    const atFloorApex = highestPoint(atFloor.getPoints(64));
+
+    // Both should produce finite geometry
+    expect(Number.isFinite(belowFloorApex.y)).toBe(true);
+    expect(Number.isFinite(atFloorApex.y)).toBe(true);
+
+    // The clamped version (archRatio=0.1 → 0.5) must produce the same apex height
+    // as the explicit floor value, proving the clamp is active and documented.
+    expect(belowFloorApex.y).toBeCloseTo(atFloorApex.y, 10);
+
+    // Verify all points are finite (no NaN or Infinity).
+    const belowFloorPoints = belowFloor.getPoints(64);
+    for (const point of belowFloorPoints) {
+      expect(Number.isFinite(point.x)).toBe(true);
+      expect(Number.isFinite(point.y)).toBe(true);
+    }
+  });
 });

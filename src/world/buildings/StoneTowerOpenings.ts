@@ -23,6 +23,17 @@ import { buildGothicArchShape, GOTHIC_ARCH_ROMANESQUE_RATIO } from './kit/Gothic
  * rising `pointHeight` further via two circular arcs whose centres sit
  * on the springing line. `pointHeight = 0` degenerates to a plain
  * rectangle (reused for square-topped openings).
+ *
+ * For shallow pointHeight relative to width (a common case, e.g. the
+ * existing test case buildArchShape(1, 2, 0.6)), a full-span two-centred
+ * arch would require a much taller rise than the legacy `pointHeight`
+ * value describes. This adapter uses a "shouldered arch" compromise:
+ * narrowing the curved cap to a Romanesque semicircle sized to hit the
+ * exact legacy apex height, with flat horizontal "shoulder" segments on
+ * either side at the springing height to bridge it to the full jamb width.
+ * This is a recognized historical arch style (shouldered/depressed arch),
+ * chosen to preserve the numeric apex-height contract for shallow legacy
+ * values, not a bug or oversight.
  */
 export function buildArchShape(halfWidth: number, straightHeight: number, pointHeight: number): THREE.Shape {
   if (pointHeight > 0) {

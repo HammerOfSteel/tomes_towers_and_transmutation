@@ -17,6 +17,11 @@ export const GOTHIC_ARCH_EQUILATERAL_RATIO = 1.0;
 export const GOTHIC_ARCH_LANCET_RATIO = 1.6;
 
 function getEffectiveArchRatio(archRatio: number): number {
+  // Clamp archRatio to a minimum of 0.5 (Romanesque semicircle) — a geometric
+  // necessity for a valid two-centred arch. Below 0.5, the radius would be
+  // less than halfSpan, forcing the arc centres INSIDE the span; a single
+  // consistent circular sweep cannot then reach both springing points across
+  // the full width. This is not an arbitrary choice, but a hard geometric floor.
   return Math.max(archRatio, GOTHIC_ARCH_ROMANESQUE_RATIO);
 }
 
