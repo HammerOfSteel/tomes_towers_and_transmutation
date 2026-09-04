@@ -14,23 +14,54 @@
  */
 
 import * as THREE from 'three';
+import { buildGothicArchShape, GOTHIC_ARCH_ROMANESQUE_RATIO } from './kit/GothicArch';
 
 /**
  * Builds a 2D pointed-arch outline centered on the X axis, with its
  * BOTTOM edge at y=0 (the opening's sill/threshold) — a rectangular
- * body of `straightHeight`, capped by a triangular point rising
- * `pointHeight` further (a simple, stylized two-straight-line point,
- * matching this kit's existing low-poly convention rather than a true
- * two-centered Gothic arc). `pointHeight = 0` degenerates to a plain
+ * body of `straightHeight`, capped by a true two-centred Gothic point
+ * rising `pointHeight` further via two circular arcs whose centres sit
+ * on the springing line. `pointHeight = 0` degenerates to a plain
  * rectangle (reused for square-topped openings).
  */
 export function buildArchShape(halfWidth: number, straightHeight: number, pointHeight: number): THREE.Shape {
+  if (pointHeight > 0) {
+    const fullWidth = halfWidth * 2;
+    const curvedWidth = Math.min(fullWidth, pointHeight * 2);
+    const shoulderWidth = (fullWidth - curvedWidth) / 2;
+
+    if (shoulderWidth <= 1e-6) {
+      const archRatio = (pointHeight * pointHeight) / (fullWidth * fullWidth) + 0.25;
+      return buildGothicArchShape({
+        width: fullWidth,
+        springHeight: straightHeight,
+        archRatio,
+      });
+    }
+
+    const curvedHalfWidth = curvedWidth / 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(-halfWidth, 0);
+    shape.lineTo(-halfWidth, straightHeight);
+    shape.lineTo(-curvedHalfWidth, straightHeight);
+
+    const archHead = buildGothicArchShape({
+      width: curvedWidth,
+      springHeight: straightHeight,
+      archRatio: GOTHIC_ARCH_ROMANESQUE_RATIO,
+    });
+
+    shape.curves.push(archHead.curves[1]!, archHead.curves[2]!);
+    shape.currentPoint.copy(new THREE.Vector2(curvedHalfWidth, straightHeight));
+    shape.lineTo(halfWidth, straightHeight);
+    shape.lineTo(halfWidth, 0);
+    shape.lineTo(-halfWidth, 0);
+    return shape;
+  }
+
   const shape = new THREE.Shape();
   shape.moveTo(-halfWidth, 0);
   shape.lineTo(-halfWidth, straightHeight);
-  if (pointHeight > 0) {
-    shape.lineTo(0, straightHeight + pointHeight);
-  }
   shape.lineTo(halfWidth, straightHeight);
   shape.lineTo(halfWidth, 0);
   shape.lineTo(-halfWidth, 0);
@@ -43,8 +74,7 @@ export function buildArchShape(halfWidth: number, straightHeight: number, pointH
 function _buildFrameShape(halfWidth: number, straightHeight: number, pointHeight: number, frameWidth: number): THREE.Shape {
   const outer = buildArchShape(halfWidth + frameWidth, straightHeight + frameWidth, pointHeight > 0 ? pointHeight + frameWidth : 0);
   const inner = buildArchShape(halfWidth, straightHeight, pointHeight);
-  const holePath = new THREE.Path(inner.getPoints());
-  outer.holes.push(holePath);
+  outer.holes.push(inner);
   return outer;
 }
 

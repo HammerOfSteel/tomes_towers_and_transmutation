@@ -30,6 +30,19 @@ function countVerts(obj: THREE.Object3D): number {
   return n;
 }
 
+function lineXAtY(start: THREE.Vector2, end: THREE.Vector2, y: number): number {
+  const t = (y - start.y) / (end.y - start.y);
+  return start.x + (end.x - start.x) * t;
+}
+
+function closestPointToY(points: THREE.Vector2[], targetY: number, predicate: (point: THREE.Vector2) => boolean): THREE.Vector2 | undefined {
+  const matches = points.filter(predicate);
+  return matches.reduce<THREE.Vector2 | undefined>((best, point) => {
+    if (!best) return point;
+    return Math.abs(point.y - targetY) < Math.abs(best.y - targetY) ? point : best;
+  }, undefined);
+}
+
 describe('buildArchShape', () => {
   it('produces a valid THREE.Shape with the expected pointed-arch outline', () => {
     const shape = buildArchShape(1, 2, 0.6);
@@ -46,6 +59,24 @@ describe('buildArchShape', () => {
     const pts = shape.getPoints();
     const maxY = Math.max(...pts.map((p) => p.y));
     expect(maxY).toBeCloseTo(2, 1);
+  });
+
+  it('uses curved sides near the apex instead of the old straight triangular point', () => {
+    const shape = buildArchShape(1, 2, 0.6);
+    const pts = shape.getPoints(64);
+    const apex = pts.reduce((best, p) => (p.y > best.y ? p : best), pts[0]!);
+    const spring = new THREE.Vector2(-1, 2);
+    const leftArcPoint = closestPointToY(
+      pts,
+      2 + (apex.y - 2) * 0.35,
+      (p) => p.x < 0 && p.y > 2 && p.y < apex.y - 0.02,
+    );
+
+    expect(leftArcPoint).toBeDefined();
+    if (!leftArcPoint) return;
+
+    const straightLineX = lineXAtY(spring, apex, leftArcPoint.y);
+    expect(Math.abs(leftArcPoint.x - straightLineX)).toBeGreaterThan(0.01);
   });
 });
 
