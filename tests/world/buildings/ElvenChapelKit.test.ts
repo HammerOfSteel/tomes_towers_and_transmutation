@@ -142,4 +142,41 @@ describe('buildElvenChapelShrine', () => {
     expect(Math.abs(worldPos.x)).toBeLessThan(0.1);
     expect(worldPos.z).toBeLessThan(0); // behind the nave, inside the apse
   });
+
+  it('has a bellcote (pierced wall-slab) above the entrance gable, with at least 1 bell', () => {
+    const g = buildElvenChapelShrine(makeDna(2));
+    const bellcote = g.getObjectByName('elven-chapel-bellcote');
+    expect(bellcote).toBeDefined();
+    let bellCount = 0;
+    bellcote!.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry' && o.name === 'elven-chapel-bell') bellCount++;
+    });
+    expect(bellCount).toBeGreaterThanOrEqual(1);
+    expect(bellCount).toBeLessThanOrEqual(2);
+  });
+
+  it('the bellcote sits above the nave (y > naveHeight) and in front of the nave (z > 0, near the entrance)', () => {
+    const g = buildElvenChapelShrine(makeDna(2));
+    const bellcote = g.getObjectByName('elven-chapel-bellcote')!;
+    const worldPos = new THREE.Vector3();
+    bellcote.getWorldPosition(worldPos);
+    expect(worldPos.y).toBeGreaterThan(4.48); // naveHeight for floors=1
+    expect(worldPos.z).toBeGreaterThan(0);
+  });
+
+  it('has a relocated forecourt of standing stones outside the nave, in front of the entrance', () => {
+    const g = buildElvenChapelShrine(makeDna(1));
+    const forecourt = g.getObjectByName('elven-chapel-forecourt');
+    expect(forecourt).toBeDefined();
+    const stones: THREE.Mesh[] = [];
+    forecourt!.traverse((o) => { if (o instanceof THREE.Mesh) stones.push(o); });
+    expect(stones.length).toBeGreaterThanOrEqual(4);
+    // Every stone must sit fully outside the nave's own front wall
+    // (halfD=4 for the fixed 4x8 footprint).
+    for (const stone of stones) {
+      const worldPos = new THREE.Vector3();
+      stone.getWorldPosition(worldPos);
+      expect(worldPos.z).toBeGreaterThan(4);
+    }
+  });
 });

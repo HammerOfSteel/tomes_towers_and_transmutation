@@ -33,6 +33,7 @@ import { buildEntrance, pickEntranceStyle } from './StoneTowerEntrance';
 import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
 import { buildGableRoofCap } from './StoneTowerGableRoof';
 import { buildLivingRoofCap } from './StoneTowerRoofCap';
+import { buildRecessedArchOpening, type RecessedArchOptions } from './StoneTowerOpenings';
 import type { StoneTowerPalette } from './StoneTowerKit';
 
 function mat(color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
@@ -184,6 +185,87 @@ function _buildApse(dna: BuildingDNA, halfD: number, palette: StoneTowerPalette)
 }
 
 /**
+ * Builds the bellcote: a small pierced wall-slab centered above the
+ * entrance gable, with 1-2 small recessed-arch bell openings (reusing
+ * `buildRecessedArchOpening()`'s shared carved-cavity technique at a
+ * small scale -- the SAME technique as every other opening in the kit,
+ * not a new one), each containing a small bell (a simple truncated-cone
+ * silhouette via CylinderGeometry with different top/bottom radii).
+ * Favored over a second full tower-kit instance per the design doc's
+ * real-world small-parish-church precedent (a bell-gable is cheaper and
+ * more proportionate to a fixed small 4x8 footprint than a full second
+ * tower).
+ */
+function _buildBellcote(dna: BuildingDNA, halfW: number, halfD: number, naveHeight: number, ridgeHeight: number, palette: StoneTowerPalette): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'elven-chapel-bellcote';
+  const rand = mulberry32(dna.seed ^ 0x42454C4C); // 'BELL' in ASCII hex
+  const bellCount: 1 | 2 = rand() < 0.5 ? 1 : 2;
+
+  const slabW = halfW * (bellCount === 2 ? 1.1 : 0.7);
+  const slabH = ridgeHeight * 0.7;
+  const slabThickness = 0.15;
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(slabW, slabH, slabThickness), palette.stone);
+  slab.castShadow = slab.receiveShadow = true;
+  g.add(slab);
+
+  const openingOpts: RecessedArchOptions = {
+    width: slabW * (bellCount === 2 ? 0.32 : 0.4),
+    straightHeight: slabH * 0.4,
+    pointHeight: slabH * 0.2,
+    recessDepth: slabThickness * 0.6,
+    frameWidth: slabW * 0.03,
+    frameProud: slabThickness * 0.2,
+  };
+  const bellMat = mat('#8a8478', { roughness: 0.6, metalness: 0.3 });
+  const bellXOffsets = bellCount === 2 ? [-slabW * 0.22, slabW * 0.22] : [0];
+  for (const bx of bellXOffsets) {
+    const opening = buildRecessedArchOpening(openingOpts, slabThickness / 2, mat('#1a1612'), palette.stone);
+    opening.position.x = bx;
+    g.add(opening);
+
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(openingOpts.width * 0.14, openingOpts.width * 0.28, openingOpts.straightHeight * 0.5, 8), bellMat);
+    bell.name = 'elven-chapel-bell';
+    bell.position.set(bx, slabH * 0.15, slabThickness * 0.1);
+    bell.castShadow = true;
+    g.add(bell);
+  }
+
+  // Positioned above the nave, centered on the entrance gable, pulled
+  // slightly back from the very front edge so it reads as structurally
+  // attached to the gable wall rather than floating in front of it.
+  g.position.set(0, naveHeight + ridgeHeight * 0.55, halfD * 0.85);
+  return g;
+}
+
+/**
+ * Builds the forecourt: the old `buildElvenChapel()`'s 6 standing
+ * tree-stone monoliths, RELOCATED (not deleted) outdoors as a small
+ * "sacred grove" approach avenue flanking the path to the entrance --
+ * preserving the current shrine's identity as context around the new
+ * real building, per the design doc's research (standing stones as an
+ * outdoor/approach feature, not the building's own wall material).
+ */
+function _buildForecourt(dna: BuildingDNA, halfD: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'elven-chapel-forecourt';
+  const rand = mulberry32(dna.seed ^ 0x464F5245); // 'FORE' in ASCII hex
+  const stoneMat = mat('#7a8a70', { roughness: 0.95 });
+  const stoneCount = 6;
+  for (let i = 0; i < stoneCount; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const rowIndex = Math.floor(i / 2);
+    const sh = 0.8 + rand() * 0.4;
+    const stone = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, sh, 6), stoneMat);
+    stone.position.set(side * (0.9 + rand() * 0.3), sh / 2, halfD + 0.6 + rowIndex * 0.9);
+    stone.rotation.y = rand() * Math.PI * 2;
+    stone.castShadow = true;
+    g.add(stone);
+  }
+  return g;
+}
+
+/**
  * Public entry point: builds a complete elven chapel/shrine for the
  * given `BuildingDNA` (dispatched from FactionBuildingVariants.ts's
  * elven `chapel` override). Footprint is always the fixed 4x8 "long
@@ -213,6 +295,8 @@ export function buildElvenChapelShrine(dna: BuildingDNA): THREE.Group {
   g.add(roof);
 
   g.add(_buildApse(dna, halfD, palette));
+  g.add(_buildBellcote(dna, halfW, halfD, naveHeight, ridgeHeight, palette));
+  g.add(_buildForecourt(dna, halfD));
 
   return g;
 }
