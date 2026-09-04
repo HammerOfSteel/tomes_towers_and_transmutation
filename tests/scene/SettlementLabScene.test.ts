@@ -197,7 +197,7 @@ describe('SettlementLabScene — enter(initialParams) for "Play in 3D" handoff',
   });
 });
 
-describe('SettlementLabScene — race-by-race POC override (elven living-tree home kit)', () => {
+describe('SettlementLabScene — race-by-race POC override (elven building-kit showcase)', () => {
   let physics: PhysicsWorld;
   let player: PlayerController;
 
@@ -208,26 +208,34 @@ describe('SettlementLabScene — race-by-race POC override (elven living-tree ho
     player.applyDNA(DEFAULT_PLAYER_DNA);
   });
 
-  it('selecting faction=elven forces every building to the elven living-tree home kit\'s house, no extra UI action needed', () => {
+  it('selecting faction=elven shows a mix of elven building kinds (the treehouse/shop/chapel family via natural ward mapping) PLUS a forced watchtower (the only elven kind with no WARD_TO_KIND entry, so it never appears naturally) -- letting every shipped elven building kit be reviewed together in one settlement', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    // city + elven so this exercises the elven living-tree home kit's house
-    // dispatch specifically (the exact scenario the user wants to preview
-    // via Overworld Studio's Settlement tab -> "Play in 3D").
+    // city + elven so this exercises the full range of wards (market/
+    // church/inn/smithy/merchant/patriciate/slum/gateward/farm), matching
+    // the scenario the user wants to preview via Overworld Studio's
+    // Settlement tab -> "Play in 3D": every elven building type at once.
     lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' });
 
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
     expect(result.buildingRecords.length).toBeGreaterThan(0);
-    for (const rec of result.buildingRecords) {
-      expect(rec.dna.buildingKind).toBe('house');
-    }
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    // The showcase override must add real variety -- not collapse back to
+    // a single forced kind the way the old single-kind POC override did.
+    expect(kinds.size).toBeGreaterThan(1);
+    // watchtower (the tower kit, otherwise unreachable via any ward) must
+    // be guaranteed present.
+    expect(kinds.has('watchtower')).toBe(true);
+    // Exactly one building is forced to watchtower -- everything else
+    // keeps its own natural ward-based kind.
+    const watchtowerCount = result.buildingRecords.filter(r => r.dna.buildingKind === 'watchtower').length;
+    expect(watchtowerCount).toBe(1);
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).toContain('POC override: house');
-
-    lab.exit();
+    expect(readoutEl.textContent).toContain('POC override: showcase');
   });
 
   it('other factions without a shipped POC override keep the normal per-ward BuildingKind mix', () => {
@@ -247,7 +255,7 @@ describe('SettlementLabScene — race-by-race POC override (elven living-tree ho
     lab.exit();
   });
 
-  it('switching the panel faction dropdown to elven and clicking Regenerate applies the override live', () => {
+  it('switching the panel faction dropdown to elven and clicking Regenerate applies the showcase override live', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
     lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' }); // starts with no override
@@ -262,9 +270,9 @@ describe('SettlementLabScene — race-by-race POC override (elven living-tree ho
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
     expect(result.buildingRecords.length).toBeGreaterThan(0);
-    for (const rec of result.buildingRecords) {
-      expect(rec.dna.buildingKind).toBe('house');
-    }
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.has('watchtower')).toBe(true);
+    expect(kinds.size).toBeGreaterThan(1);
 
     lab.exit();
   });

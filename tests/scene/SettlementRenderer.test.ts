@@ -221,4 +221,40 @@ describe('renderSettlementPlan', () => {
     // merchant, etc. ward.
     expect(kinds.size).toBeGreaterThan(1);
   });
+
+  it('ctx.forceBuildingKind as a function is called per-building (building, index) and can selectively override only some buildings, leaving the rest on their natural ward-based kind', () => {
+    const wg = makeGrid();
+    const plan = planSettlement('city', CENTRE, CENTRE, 7, wg);
+    // Force only the FIRST anchor building to 'watchtower'; every other
+    // building returns undefined, falling through to WARD_TO_KIND — lets
+    // a caller guarantee one showcase kind appears (e.g. a kind with no
+    // WARD_TO_KIND entry at all, like 'watchtower') while still exercising
+    // the settlement's normal variety for everything else.
+    let anchorForced = false;
+    const forceBuildingKind = vi.fn((b: PlacedBuilding, _index: number) => {
+      if (b.isAnchor && !anchorForced) {
+        anchorForced = true;
+        return 'watchtower' as const;
+      }
+      return undefined;
+    });
+    const ctx: SettlementRenderContext = { ...makeCtx(), forceBuildingKind };
+
+    const result = renderSettlementPlan(plan, wg, CENTRE, CENTRE, ctx);
+
+    expect(forceBuildingKind).toHaveBeenCalled();
+    // Every call must receive the exact PlacedBuilding + its own index.
+    const [firstCallBuilding, firstCallIndex] = forceBuildingKind.mock.calls[0]!;
+    expect(firstCallBuilding).toBe(plan.buildings[0]);
+    expect(firstCallIndex).toBe(0);
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.has('watchtower')).toBe(true);
+    // Still more than one distinct kind overall (the un-overridden
+    // buildings kept their natural ward-based variety).
+    expect(kinds.size).toBeGreaterThan(1);
+    // Exactly one building was actually forced to watchtower.
+    const watchtowerCount = result.buildingRecords.filter(r => r.dna.buildingKind === 'watchtower').length;
+    expect(watchtowerCount).toBe(1);
+  });
 });
