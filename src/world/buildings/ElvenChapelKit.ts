@@ -20,19 +20,46 @@
  */
 
 import * as THREE from 'three';
+import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { barkTexture, ashlarTexture } from './FactionBlockTextures';
 import { slateTexture } from './TextureFactory';
-import { rectanglePoints, rectangleFaces } from './StoneTowerShape';
+import { rectanglePoints, rectangleFaces, facePointAt, type OctagonFace } from './StoneTowerShape';
 import { buildWallSurfaceBlocks } from './StoneTowerWallSurface';
 import { buildFloorCap } from './StoneTowerFloorCap';
 import { buildQuoins } from './StoneTowerQuoins';
 import { buildEntrance, pickEntranceStyle } from './StoneTowerEntrance';
+import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
+import { buildGableRoofCap } from './StoneTowerGableRoof';
 import type { StoneTowerPalette } from './StoneTowerKit';
 
 function mat(color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.85, metalness: 0, ...opts });
+}
+
+/**
+ * Rotates + positions `obj` (a window/entrance group whose own geometry
+ * is always built flush at local Z = radius, per
+ * StoneTowerOpenings.ts's shared convention) onto `face` at fractional
+ * position `t` along the face's own a->b segment (t=0.5 = the face's
+ * own centered default). The CALLER must have already built `obj` with
+ * its own baked-in radius equal to the exact perpendicular distance from
+ * the nave's own center to `face`'s own midpoint (verified by direct
+ * computation: rotating `obj`'s own baked-in local (0,0,radius)
+ * reference point by `face.normalAngle` then lands it EXACTLY on that
+ * midpoint) -- for the rectangle nave's own side walls, that's `halfW`
+ * (StoneTowerShape.ts's `rectangleFaces()` docs). Given that invariant
+ * holds, this function itself only needs the rotation + the along-face
+ * delta from the midpoint, not the radius value itself.
+ */
+function _placeOnFace(obj: THREE.Object3D, face: OctagonFace, t: number): void {
+  obj.rotation.y = face.normalAngle;
+  const midX = (face.a[0] + face.b[0]) / 2;
+  const midZ = (face.a[1] + face.b[1]) / 2;
+  const [targetX, targetZ] = facePointAt(face, t);
+  obj.position.x += targetX - midX;
+  obj.position.z += targetZ - midZ;
 }
 
 /**
@@ -67,6 +94,21 @@ function _buildNave(dna: BuildingDNA, halfW: number, halfD: number, naveHeight: 
   const entrance = buildEntrance(entranceStyle, halfD, dna.seed, palette);
   g.add(entrance);
 
+  // 4 lancet windows, 2 per long side wall (faces 0 and 2 -- the +X/-X
+  // walls) -- real single-cell parish naves read as an evenly-spaced
+  // lancet rhythm along both long walls (see design doc's research
+  // summary), not clustered on one side.
+  const windowRand = mulberry32(dna.seed ^ 0x57494E44); // 'WIND'-ish tag, matching StoneTowerWindows.ts's own convention
+  for (const face of [naveFaces[0]!, naveFaces[2]!]) {
+    for (const t of [0.3, 0.7]) {
+      const style = pickWindowStyle(dna.seed ^ Math.floor(windowRand() * 0xFFFF));
+      const win = buildWindow({ type: 'pointed_arch', size: style.size }, halfW, naveHeight, palette);
+      win.name = 'elven-chapel-window';
+      _placeOnFace(win, face, t);
+      g.add(win);
+    }
+  }
+
   return g;
 }
 
@@ -82,6 +124,7 @@ export function buildElvenChapelShrine(dna: BuildingDNA): THREE.Group {
   const halfW = fp.w / 2;
   const halfD = fp.d / 2;
   const naveHeight = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.4;
+  const ridgeHeight = naveHeight * 0.55;
 
   const palette: StoneTowerPalette = {
     stone:     mat(dna.colors.walls, { roughness: 0.85, map: ashlarTexture(Math.max(1, halfW), Math.max(1, naveHeight / 1.5)) }),
@@ -93,5 +136,10 @@ export function buildElvenChapelShrine(dna: BuildingDNA): THREE.Group {
 
   const g = new THREE.Group();
   g.add(_buildNave(dna, halfW, halfD, naveHeight, palette));
+
+  const roof = buildGableRoofCap(halfW, halfD, ridgeHeight, palette.shingle);
+  roof.position.y = naveHeight;
+  g.add(roof);
+
   return g;
 }

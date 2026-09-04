@@ -91,4 +91,19 @@ describe('buildElvenChapelShrine', () => {
     quoins!.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
     expect(meshCount).toBe(4);
   });
+
+  it('has exactly 4 lancet (pointed-arch) windows, 2 per long side wall', () => {
+    const g = buildElvenChapelShrine(makeDna(11));
+    let windowCount = 0;
+    g.traverse((o) => { if (o.name === 'elven-chapel-window') windowCount++; });
+    expect(windowCount).toBe(4);
+  });
+
+  it('has a gabled roof reaching above the nave\'s own wall height', () => {
+    const g = buildElvenChapelShrine(makeDna(4));
+    const box = new THREE.Box3().setFromObject(g);
+    // naveHeight = FLOOR_HEIGHT(3.2) * 1 * 1.4 = 4.48; the roof's ridge
+    // must add real height above that.
+    expect(box.max.y).toBeGreaterThan(4.48 + 1);
+  });
 });
