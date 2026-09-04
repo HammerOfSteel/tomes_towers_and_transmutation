@@ -231,10 +231,14 @@ function _buildBellcote(dna: BuildingDNA, halfW: number, halfD: number, naveHeig
     g.add(bell);
   }
 
-  // Positioned above the nave, centered on the entrance gable, pulled
-  // slightly back from the very front edge so it reads as structurally
-  // attached to the gable wall rather than floating in front of it.
-  g.position.set(0, naveHeight + ridgeHeight * 0.55, halfD * 0.85);
+  // Positioned above the nave, standing proud in FRONT of the entrance
+  // gable's own face (which sits at world z = halfD, matching the gable
+  // roof's own end-triangle plane -- Z must be > halfD, not < halfD, or
+  // the bellcote sits hidden INSIDE the wall/roof volume, occluded from
+  // outside view; a real placement bug caught only via live Playwright
+  // verification, matching this session's established pattern for
+  // exactly this class of bug).
+  g.position.set(0, naveHeight + ridgeHeight * 0.55, halfD + slabThickness * 3);
   return g;
 }
 

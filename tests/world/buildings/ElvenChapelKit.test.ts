@@ -155,13 +155,13 @@ describe('buildElvenChapelShrine', () => {
     expect(bellCount).toBeLessThanOrEqual(2);
   });
 
-  it('the bellcote sits above the nave (y > naveHeight) and in front of the nave (z > 0, near the entrance)', () => {
+  it('the bellcote sits above the nave (y > naveHeight) and OUTSIDE (in front of) the entrance gable\'s own face plane (z > halfD=4) -- not hidden inside the wall/roof volume', () => {
     const g = buildElvenChapelShrine(makeDna(2));
     const bellcote = g.getObjectByName('elven-chapel-bellcote')!;
     const worldPos = new THREE.Vector3();
     bellcote.getWorldPosition(worldPos);
     expect(worldPos.y).toBeGreaterThan(4.48); // naveHeight for floors=1
-    expect(worldPos.z).toBeGreaterThan(0);
+    expect(worldPos.z).toBeGreaterThan(4); // strictly outside the gable's own face plane (halfD=4)
   });
 
   it('has a relocated forecourt of standing stones outside the nave, in front of the entrance', () => {
