@@ -56,6 +56,43 @@ function minimumOutlineDistance(shape: THREE.Shape, point: THREE.Vector2, divisi
   return minimum;
 }
 
+function pointOnPolygonBoundary(point: THREE.Vector2, polygon: THREE.Vector2[], epsilon = 1e-6): boolean {
+  for (let index = 0; index < polygon.length; index++) {
+    const start = polygon[index]!;
+    const end = polygon[(index + 1) % polygon.length]!;
+    if (distancePointToSegment(point, start, end) <= epsilon) return true;
+  }
+  return false;
+}
+
+function pointInPolygon(point: THREE.Vector2, polygon: THREE.Vector2[], epsilon = 1e-6): boolean {
+  if (pointOnPolygonBoundary(point, polygon, epsilon)) return true;
+
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const current = polygon[index]!;
+    const prior = polygon[previous]!;
+    const crossesScanline = (current.y > point.y) !== (prior.y > point.y);
+
+    if (!crossesScanline) continue;
+
+    const intersectionX = ((prior.x - current.x) * (point.y - current.y)) / (prior.y - current.y) + current.x;
+    if (point.x < intersectionX) inside = !inside;
+  }
+
+  return inside;
+}
+
+function pointInShape(shape: THREE.Shape, point: THREE.Vector2, divisions = 2048, epsilon = 1e-6): boolean {
+  if (!pointInPolygon(point, shape.getPoints(divisions), epsilon)) return false;
+  return !shape.holes.some((hole) => pointInPolygon(point, hole.getPoints(divisions), epsilon));
+}
+
+function pointOnShapeBoundary(shape: THREE.Shape, point: THREE.Vector2, divisions = 2048, epsilon = 1e-6): boolean {
+  if (pointOnPolygonBoundary(point, shape.getPoints(divisions), epsilon)) return true;
+  return shape.holes.some((hole) => pointOnPolygonBoundary(point, hole.getPoints(divisions), epsilon));
+}
+
 function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
   root.traverse((child) => {
@@ -135,7 +172,7 @@ describe('Tracery kit', () => {
     assertFiniteGeometry(quatrefoil);
   });
 
-  it('builds a rose window whose ring piercings are explicit holes and whose spoke/ring joints overlap', async () => {
+  it('builds a rose window whose ring piercings are explicit holes and whose layout preserves positive spoke/ring overlap margins', async () => {
     const { buildRoseWindow, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#9da2aa' });
     const options = { lobes: 8, radius: 1, ringCount: 2 };
@@ -173,7 +210,7 @@ describe('Tracery kit', () => {
     assertFiniteGeometry(rose);
   });
 
-  it('keeps rose-window geometry finite and overlap-connected for common Gothic lobe counts', async () => {
+  it('keeps rose-window geometry finite and preserves positive junction-overlap metrics for common Gothic lobe counts', async () => {
     const { buildRoseWindow, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#8f96a0' });
 
@@ -188,17 +225,66 @@ describe('Tracery kit', () => {
     }
   }, 15000);
 
-  it('builds rose spoke flares that reach the shared ring radius across the full junction span', async () => {
+  it('proves rose spoke flare edges meet both neighboring ring segments while the spoke center stays in the intentional gap', async () => {
+    const { __traceryTestUtils } = await loadTraceryModule();
+    for (const options of [
+      { lobes: 6, radius: 1, ringCount: 1 },
+      { lobes: 8, radius: 1, ringCount: 2 },
+      { lobes: 12, radius: 1, ringCount: 2 },
+    ]) {
+      const layout = __traceryTestUtils.createRoseWindowLayout(options);
+      const slotIndex = 0;
+      const spokeCenter = -Math.PI / 2 + slotIndex * layout.step;
+      const junctionHalf = layout.spokeJunctionAngleSpan * 0.5;
+      const edgeInset = layout.junctionOverlapAngle * 0.25;
+      const leftRingSlotIndex = (slotIndex - 1 + layout.lobes) % layout.lobes;
+      const rightRingSlotIndex = slotIndex;
+
+      expect(layout.junctionOverlapAngle).toBeGreaterThan(0);
+
+      for (let ringIndex = 0; ringIndex < layout.ringCount; ringIndex++) {
+        const band = layout.ringBands[ringIndex]!;
+        const spokeShape = __traceryTestUtils.buildRoseSpokeConnectorShape(layout, slotIndex, ringIndex);
+        const belt = layout.spokeBelts[ringIndex]!;
+        const sharedRadius = band.innerRadius;
+        const spokeRadiusInset = (belt.outerRadius - belt.innerRadius) * 0.05;
+        const radiusInset = (band.outerRadius - band.innerRadius) * 0.05;
+        const spokeSampleRadius = sharedRadius - spokeRadiusInset;
+        const sampleRadius = sharedRadius + radiusInset;
+        const leftRingShape = __traceryTestUtils.buildRoseRingSegmentShape(layout, ringIndex, leftRingSlotIndex);
+        const rightRingShape = __traceryTestUtils.buildRoseRingSegmentShape(layout, ringIndex, rightRingSlotIndex);
+        const leftBoundaryPoint = __traceryTestUtils.polarPoint(sharedRadius, spokeCenter - junctionHalf + edgeInset);
+        const rightBoundaryPoint = __traceryTestUtils.polarPoint(sharedRadius, spokeCenter + junctionHalf - edgeInset);
+        const leftSpokePoint = __traceryTestUtils.polarPoint(spokeSampleRadius, spokeCenter - junctionHalf + edgeInset);
+        const rightSpokePoint = __traceryTestUtils.polarPoint(spokeSampleRadius, spokeCenter + junctionHalf - edgeInset);
+        const leftEdgePoint = __traceryTestUtils.polarPoint(sampleRadius, spokeCenter - junctionHalf + edgeInset);
+        const rightEdgePoint = __traceryTestUtils.polarPoint(sampleRadius, spokeCenter + junctionHalf - edgeInset);
+        const centerPoint = __traceryTestUtils.polarPoint(sampleRadius, spokeCenter);
+
+        expect(belt.outerRadius).toBeCloseTo(sharedRadius, 12);
+        expect(pointOnShapeBoundary(spokeShape, leftBoundaryPoint)).toBe(true);
+        expect(pointOnShapeBoundary(leftRingShape, leftBoundaryPoint)).toBe(true);
+        expect(pointOnShapeBoundary(spokeShape, rightBoundaryPoint)).toBe(true);
+        expect(pointOnShapeBoundary(rightRingShape, rightBoundaryPoint)).toBe(true);
+        expect(pointInShape(spokeShape, leftSpokePoint)).toBe(true);
+        expect(pointInShape(spokeShape, rightSpokePoint)).toBe(true);
+        expect(pointInShape(leftRingShape, leftEdgePoint)).toBe(true);
+        expect(pointInShape(rightRingShape, rightEdgePoint)).toBe(true);
+
+        // By design the spoke fills the middle of the gap; ring material only reaches the flare edges.
+        expect(pointInShape(leftRingShape, centerPoint)).toBe(false);
+        expect(pointInShape(rightRingShape, centerPoint)).toBe(false);
+      }
+    }
+  });
+
+  it('keeps the arc-based spoke shared-radius profile tighter than the legacy straight-chord connector', async () => {
     const { __traceryTestUtils } = await loadTraceryModule();
     const layout = __traceryTestUtils.createRoseWindowLayout({ lobes: 8, radius: 1, ringCount: 2 });
     const slotIndex = 0;
     const beltIndex = 0;
-    const ringIndex = 0;
-    const ringSlotIndex = 0;
     const spokeShape = __traceryTestUtils.buildRoseSpokeConnectorShape(layout, slotIndex, beltIndex);
-    const ringShape = __traceryTestUtils.buildRoseRingSegmentShape(layout, ringIndex, ringSlotIndex);
     const belt = layout.spokeBelts[beltIndex]!;
-    const band = layout.ringBands[ringIndex]!;
     const angleCenter = -Math.PI / 2 + slotIndex * layout.step;
     const junctionHalf = layout.spokeJunctionAngleSpan * 0.5;
     const sharedRadius = belt.outerRadius;
@@ -212,10 +298,6 @@ describe('Tracery kit', () => {
       layout.spokeJunctionAngleSpan,
       layout.spokeWaistAngleSpan,
     );
-
-    expect(band.innerRadius).toBeCloseTo(sharedRadius, 12);
-    expect(ringShape.holes.length).toBeGreaterThan(0);
-    expect(layout.ringSegmentAngleSpan).toBeGreaterThanOrEqual(layout.spokeJunctionAngleSpan);
 
     const fixedDistances = sampleAngles.map((angle) => (
       minimumOutlineDistance(spokeShape, __traceryTestUtils.polarPoint(sharedRadius, angle))
