@@ -27,7 +27,6 @@ export function finishArchitecturalGeometry(geometry: THREE.BufferGeometry): THR
   const merged = mergeVertices(cloned);
   
   // Bake creased normals for proper shading of beveled edges
-  toCreasedNormals(merged);
-  
-  return merged;
+  // Note: toCreasedNormals returns a new geometry (converts indexed to non-indexed)
+  return toCreasedNormals(merged);
 }
