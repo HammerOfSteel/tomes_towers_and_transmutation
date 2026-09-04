@@ -157,6 +157,45 @@ function worldTriangles(root: THREE.Object3D): WorldTriangle[] {
   return triangles;
 }
 
+function triangleDoubleArea(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): number {
+  return b.clone().sub(a).cross(c.clone().sub(a)).length();
+}
+
+function triangleAreaMetrics(
+  root: THREE.Object3D,
+  zeroAreaEpsilon = 1e-12,
+): { total: number; zeroAreaCount: number; minDoubleArea: number } {
+  root.updateMatrixWorld(true);
+  let total = 0;
+  let zeroAreaCount = 0;
+  let minDoubleArea = Number.POSITIVE_INFINITY;
+
+  for (const mesh of collectMeshes(root)) {
+    const position = mesh.geometry.getAttribute('position');
+    for (let index = 0; index < position.count; index += 3) {
+      const a = new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld);
+      const b = new THREE.Vector3().fromBufferAttribute(position, index + 1).applyMatrix4(mesh.matrixWorld);
+      const c = new THREE.Vector3().fromBufferAttribute(position, index + 2).applyMatrix4(mesh.matrixWorld);
+      const doubleArea = triangleDoubleArea(a, b, c);
+      total += 1;
+      minDoubleArea = Math.min(minDoubleArea, doubleArea);
+      if (doubleArea <= zeroAreaEpsilon) zeroAreaCount += 1;
+    }
+  }
+
+  return {
+    total,
+    zeroAreaCount,
+    minDoubleArea,
+  };
+}
+
+function partTopY(root: THREE.Object3D, name: string): number {
+  const part = root.getObjectByName(name);
+  expect(part).toBeTruthy();
+  return part ? worldBox(part).max.y : 0;
+}
+
 function meanCapNormalY(root: THREE.Object3D, anchor: 'top' | 'bottom'): number {
   const triangles = worldTriangles(root);
   const box = worldBox(root);
@@ -507,5 +546,37 @@ describe('buildLatheColumn', () => {
     const brokenProfile = ringSeriesAtWorldY(brokenShaft, sampleY);
 
     expect(rootMeanSquareDifference(intactProfile, brokenProfile)).toBeLessThan(0.002);
+  });
+
+  it('avoids zero-area triangles for boundary-adjacent breaks around every architectural transition', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+    const intact = buildLatheColumn({ height: 3 }, makeStoneMaterial());
+    const boundaries = [
+      partTopY(intact, 'base'),
+      partTopY(intact, 'shaft'),
+      partTopY(intact, 'capital'),
+    ];
+    const offsets = [-0.01, -0.001, -0.0005, -0.0001, 0.0001, 0.0005, 0.001, 0.01];
+    const sampleHeights = Array.from(new Set([
+      0.43,
+      0.4201,
+      2.4001,
+      ...boundaries.flatMap(boundary => offsets.map(offset => Number((boundary + offset).toFixed(6)))),
+    ])).filter(height => height > 0 && height < 3);
+
+    for (const brokenAtHeight of sampleHeights) {
+      const metrics = triangleAreaMetrics(
+        buildLatheColumn({ height: 3, brokenAtHeight }, makeStoneMaterial()),
+      );
+
+      expect(
+        metrics.zeroAreaCount,
+        `brokenAtHeight=${brokenAtHeight} emitted ${metrics.zeroAreaCount}/${metrics.total} zero-area triangles`,
+      ).toBe(0);
+      expect(
+        metrics.minDoubleArea,
+        `brokenAtHeight=${brokenAtHeight} had min double-area ${metrics.minDoubleArea}`,
+      ).toBeGreaterThan(1e-12);
+    }
   });
 });

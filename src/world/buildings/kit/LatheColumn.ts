@@ -65,6 +65,7 @@ const DEFAULT_FLUTE_COUNT = 12;
 const DEFAULT_LOBE_COUNT = 4;
 const EPSILON = 1e-6;
 const NUMERIC_EPSILON = Number.EPSILON * 64;
+const ARCHITECTURAL_VERTEX_MERGE_TOLERANCE = 1e-4;
 const MIN_FRACTURE_DROP = 0.03;
 const MIN_FRACTURE_BAND_DEPTH = 0.04;
 const PART_SEED_TAGS: Record<PartName, number> = {
@@ -228,11 +229,21 @@ function sliceRingsToHeight(rings: RingSpec[], visibleHeight: number): RingSpec[
   }
 
   const topSource = rings.find(ring => Math.abs(ring.y - visibleHeight) <= tolerance);
-  sliced.push(topSource
+  const topRing = topSource
     ? { y: visibleHeight, radius: topSource.radius }
-    : { y: visibleHeight, radius: interpolateRingRadius(rings, visibleHeight) });
+    : { y: visibleHeight, radius: interpolateRingRadius(rings, visibleHeight) };
 
-  if (sliced.length === 1) {
+  const lastRing = sliced[sliced.length - 1];
+  const radiusTolerance = lastRing ? scaledTolerance(lastRing.radius, topRing.radius) : tolerance;
+  if (
+    !lastRing
+    || Math.abs(lastRing.y - topRing.y) > tolerance
+    || Math.abs(lastRing.radius - topRing.radius) > radiusTolerance
+  ) {
+    sliced.push(topRing);
+  }
+
+  if (sliced.length === 1 && visibleHeight > tolerance) {
     sliced.unshift({ y: 0, radius: sliced[0]!.radius });
   }
 
@@ -341,6 +352,7 @@ function buildSectionGeometry(
   closeTop: boolean,
   radialSegments = DEFAULT_RADIAL_SEGMENTS,
   profileHeight = sectionHeight,
+  finishGeometry = true,
 ): THREE.BufferGeometry {
   const ringVertices = rings.map(ring => buildRingVertices(ring, profileHeight, radialSegments, radiusFn));
   const vertexData: number[] = [];
@@ -365,7 +377,7 @@ function buildSectionGeometry(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertexData, 3));
   geometry.computeVertexNormals();
-  return finishArchitecturalGeometry(geometry);
+  return finishGeometry ? finishArchitecturalGeometry(geometry) : geometry;
 }
 
 function buildBrokenSectionGeometry(
@@ -394,6 +406,10 @@ function buildBrokenSectionGeometry(
     ),
   };
   const shellRings = [...lowerRings, fracturedTopRing];
+  const shellSupportRing = lowerRings[lowerRings.length - 1]!;
+  const minFractureOffset = Math.min(...(fracturedTopRing.yOffsets ?? [0]));
+  const minShellBandHeight = Math.max(visibleHeight + minFractureOffset - shellSupportRing.y, 0);
+  const finishShellGeometry = minShellBandHeight > ARCHITECTURAL_VERTEX_MERGE_TOLERANCE;
 
   const fractureCapGeometry = new THREE.BufferGeometry();
   const fractureCapVertexData: number[] = [];
@@ -414,6 +430,7 @@ function buildBrokenSectionGeometry(
       false,
       radialSegments,
       spec.height,
+      finishShellGeometry,
     ),
     fractureCapGeometry: finishArchitecturalGeometry(fractureCapGeometry),
   };
