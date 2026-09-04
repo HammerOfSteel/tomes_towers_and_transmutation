@@ -1157,6 +1157,81 @@ Slime, Human — Slime/Human last, since those already look best).
   standing among the brown conical-roofed treehouse buildings, arch
   structures, and other variety in the same settlement.
 
+- [x] **6.7 — ALL-RACE BUILDING PROGRAMME: research + design specs +
+  implementation plans for all 8 building kinds × 9 races (PLANNING
+  ONLY — implementation deliberately not started)**: after reviewing
+  the 4 shipped elven kits together (6.6f), the user rejected two of
+  them outright — *"there two buildings, dont meet the standards at
+  all... The church and stall will need to be not just improved but
+  made from scratch again"* — and then scoped up dramatically: every
+  building type for every race, driven by newly-supplied reference art
+  at `concept_art/reference/buildings/`, using modular "brick"-style
+  construction with real procedural variety and *"ABSOLUTELY NO BACK
+  GEOMETRY BS! NO BLOBS OR SQUARES FOR WINDOWS OR SUCH!"*. The user
+  explicitly asked for **all** the research/design/planning to be done
+  first, on a separate branch per race, then to stop for review before
+  any implementation.
+  **Root cause of the two rejections** (traced to code, see doctrine
+  Part 1): round 6.6b upgraded the *walls* to block-course masonry and
+  the user praised them, but roofs, openings and caps were left on the
+  old primitives. `StoneTowerGableRoof.buildGableRoofCap` (L78-106) is
+  two flat slope planes — the featureless black roof on the chapel.
+  `StoneTowerRoofCap.buildLivingRoofCap` (L98-133) is a BlockKit voxel
+  blob — the pile of white cubes on the apse, i.e. the *same* voxel
+  technique 6.6b already replaced for walls. `buildRecessedArchOpening`
+  (L92-98) makes a correct proud frame + a bare dark cavity with no
+  sill, mullion, tracery or glazing — the *"small gray round and
+  rectangular things"*. And `buildArchShape` (L27-38) draws a stylised
+  two-straight-line point, not a true two-centred gothic arc.
+  **Delivered** (docs only, zero source changes, `tsc` still exactly
+  144 baseline errors):
+  * `docs/superpowers/specs/2026-09-04-modular-building-kit-doctrine.md`
+    — the binding cross-race quality bar, identical on all 9 branches.
+    Seven non-negotiable rules, the most important being the **depth
+    ladder** (nothing coplanar; `+0.30` buttress down to `-0.20`
+    glazing, because openings read from *shading discontinuity*, not
+    albedo — a coplanar colour change reads as paint) and the
+    **five-piece opening minimum** (recess, proud surround, sill,
+    mullion, set-back opaque glazing). Pieces 1-2 exist today; 3-5 are
+    the entire gap behind the rejection. Plus a KEEP/REBUILD/RETIRE/
+    MISSING audit, the 3-tier shared kit to build under
+    `src/world/buildings/kit/`, the canonical 8-kind roster, the
+    per-race template, sequencing, and decisions D1-D8.
+  * `docs/superpowers/research/2026-09-04-modular-building-techniques-research.md`
+    — 1485-line external research report: kit-of-parts module/socket
+    model, facade split grammars, true two-centred gothic arch
+    construction, voussoirs/jambs/sills/hood moulds/foils/mullions,
+    shingle gauge lattices, interlace knotwork, columns and arcades,
+    the seven ruin signals, masonry vocabulary, lattice domes, three.js
+    r170 specifics (BatchedMesh, ExtrudeGeometry caveats, the CSG
+    verdict), anti-patterns, and recommendations R1-R16.
+  * 9 design specs + 9 implementation plans, one race per branch
+    (`race/<race>-buildings`), all pushed. Elven carries the shared kit
+    (18 of its 41 tasks are `[SHARED KIT]`) and both from-scratch
+    rebuilds: the chapel as a **brick-built gothic church ruin**
+    (seeded per-course occupancy erosion so the break line reads as
+    individual bricks — the whole point of a "brick build" ruin, and
+    why CSG is rejected: a boolean cut gives the smooth planar face
+    the user hates) and the market stall as an **elven gazebo/
+    pavilion** (stepped plinth, columns, lattice/vine canopy).
+  * `concept_art/reference/buildings/` itself, which was **untracked** —
+    the design source for the whole programme existed only in the local
+    main checkout's working directory and was in no commit.
+  **Cross-race findings** (doctrine Part 9): `watchtower`/`tower` are
+  still unreachable in real settlements — 6.6f only worked around it in
+  the lab. Proposed one shared fix: map the *anchor* building of the
+  `gateward` ward to `watchtower` (gateward is the gate district, is
+  already in `MAIN_ROAD_WARD_TYPES` so it sits on a main road at the
+  settlement edge where a tower reads best, `farm` still covers
+  `house`, and `mapPlacedBuildingToDna` already has `isAnchor` so no
+  new plumbing is needed — but `buildingHalfExtents` must apply the
+  same rule or spacing breaks). Also: several races currently alias
+  `house`/`terraced`/`inn`/`blacksmith` all onto one villa builder; and
+  `slime` has **no reference art**, so its spec presents three
+  alternative directions with a recommendation and is explicitly
+  blocked on a user decision.
+  **Status: awaiting user approval. No implementation started.**
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
