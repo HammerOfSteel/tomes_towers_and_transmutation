@@ -103,10 +103,13 @@ describe('buildArchShape', () => {
     expect(innerShoulderPoints.length).toBeGreaterThan(0);
 
     // 3. Above the springing line (y > straightHeight + small margin), all points
-    // should have |x| < expectedCurvedHalfWidth (inside the curved cap, not shoulder)
+    // should have |x| <= expectedCurvedHalfWidth (inside the curved cap, not the
+    // shoulder) — a tight tolerance here (not the ±0.15 band used for the spring-line
+    // checks above) so a too-wide cap/shoulder bleed above the springing line would
+    // still fail this assertion.
     const aboveSpringPoints = pts.filter((p) => p.y > straightHeight + 0.01);
     expect(aboveSpringPoints.length).toBeGreaterThan(0);
-    const tooWideAboveSpring = aboveSpringPoints.filter((p) => Math.abs(p.x) > expectedCurvedHalfWidth + 0.05);
+    const tooWideAboveSpring = aboveSpringPoints.filter((p) => Math.abs(p.x) > expectedCurvedHalfWidth + 0.005);
     expect(tooWideAboveSpring.length).toBe(0);
   });
 });
