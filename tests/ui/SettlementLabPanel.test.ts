@@ -182,4 +182,48 @@ describe('SettlementLabPanel', () => {
 
     panel.dispose();
   });
+
+  it('adds a position:fixed stylesheet so the panel is actually visible over the fullscreen game canvas', () => {
+    // Regression test: the panel previously had zero CSS at all, so it
+    // rendered in normal document flow after #game-canvas (100vw/100vh,
+    // body{overflow:hidden}) and was pushed completely below the fold —
+    // invisible even though its controls existed in the DOM. See SL_CSS's
+    // doc comment.
+    const panel = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      onRegenerate: vi.fn(),
+    });
+
+    const styleEl = document.getElementById('settlement-lab-panel-css');
+    expect(styleEl).not.toBeNull();
+    expect(styleEl!.textContent).toContain('position: fixed');
+    expect(styleEl!.textContent).toContain('.settlement-lab-panel');
+
+    panel.dispose();
+  });
+
+  it('only injects the stylesheet once across multiple panel instances', () => {
+    const panel1 = new SettlementLabPanel({
+      initialSeed: 1,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      onRegenerate: vi.fn(),
+    });
+    const panel2 = new SettlementLabPanel({
+      initialSeed: 2,
+      settlementTypes: ['village'],
+      factions: [REAL_FACTIONS[0]],
+      layouts: ['auto'],
+      onRegenerate: vi.fn(),
+    });
+
+    expect(document.querySelectorAll('#settlement-lab-panel-css').length).toBe(1);
+
+    panel1.dispose();
+    panel2.dispose();
+  });
 });

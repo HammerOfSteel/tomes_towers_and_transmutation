@@ -351,6 +351,39 @@ export interface ElvenTrunkOptions {
   facadeHeightFrac?: number;
   /** Bark-surface radius irregularity, applied per vertical "rib" (default 0.1). */
   jitter?: number;
+  /** Entrance style (default `'ground_arch'` — today's existing behavior). */
+  entranceStyle?: ElvenEntranceStyle;
+  /** Canopy archetype (default `'satellite_lobes'` — today's existing behavior). */
+  canopyArchetype?: ElvenCanopyArchetype;
+  /** Number of floor bands to carve window openings for (default 1). */
+  floors?: number;
+}
+
+export type ElvenEntranceStyle = 'ground_arch' | 'raised_platform';
+
+/**
+ * Picks one of 2 entrance styles per building, weighted 60% ground_arch (the more
+ * common real-world default) / 40% raised_platform (the distinct-but-rarer variant --
+ * a real treehouse-precedent detail: entrances often sit above ground level on a
+ * stilted/root-flared base).
+ */
+export function pickElvenEntranceStyle(seed: number): ElvenEntranceStyle {
+  const rand = mulberry32(seed ^ 0xE1F3_D002);
+  return rand() < 0.6 ? 'ground_arch' : 'raised_platform';
+}
+
+export type ElvenCanopyArchetype = 'satellite_lobes' | 'moss_crown';
+
+/**
+ * Picks one of 2 canopy archetypes per building, weighted 55% satellite_lobes (the
+ * existing separated-lobes-plus-branches crown) / 45% moss_crown (a denser, wider,
+ * lower-profile single mass with no separate lobes/branches -- the Falinesti "curled
+ * webs of moss... forming a shared roof" motif). Close to even, unlike the entrance's
+ * more/less-common split, since both are equally "valid" looks.
+ */
+export function pickElvenCanopyArchetype(seed: number): ElvenCanopyArchetype {
+  const rand = mulberry32(seed ^ 0xE1F3_C003);
+  return rand() < 0.55 ? 'satellite_lobes' : 'moss_crown';
 }
 
 /**
@@ -364,6 +397,19 @@ export function elvenTrunkBlocksTall(h: number): number {
 
 /**
  * World-space Y (matching the trunk mesh's own centring convention — see
+ * `elvenCanopyTopY()` in FactionBuildingVariants.ts) at an arbitrary normalized
+ * total-height fraction `frac` (0..1) — generalizes what `elvenNeckY()` used to
+ * compute only for the fixed neck fraction, so per-floor ring/window placement can
+ * ask for any height along the trunk.
+ */
+export function elvenHeightAtFrac(h: number, frac: number): number {
+  const bh = elvenTrunkBlocksTall(h);
+  const by = Math.round(bh * frac);
+  return by * BLOCK_UNIT + BLOCK_UNIT / 2;
+}
+
+/**
+ * World-space Y (matching the trunk mesh's own centring convention — see
  * `elvenCanopyTopY()` in FactionBuildingVariants.ts) of the trunk's actual
  * "neck": the level where the taper stops and the canopy ellipsoid
  * begins. Callers placing a balcony/platform ring flush against the trunk
@@ -371,9 +417,41 @@ export function elvenTrunkBlocksTall(h: number): number {
  * an arbitrary fraction of the total trunk height.
  */
 export function elvenNeckY(h: number, canopyStartFrac = 0.6): number {
-  const bh = elvenTrunkBlocksTall(h);
-  const canopyStartBy = Math.round(bh * canopyStartFrac);
-  return canopyStartBy * BLOCK_UNIT + BLOCK_UNIT / 2;
+  return elvenHeightAtFrac(h, canopyStartFrac);
+}
+
+/**
+ * Trunk-phase radius fraction (of the base radius) at a normalized *total*-height
+ * fraction `t` (0..1) -- the single shared taper-curve formula used by
+ * `buildElvenTrunkGrid()`'s own fill loop, `elvenRadiusAtHeight()`, and
+ * `ElvenTrunkWindows.ts`'s window carving, so all three always agree on exactly the
+ * same curve (no risk of a window/ring being placed against a radius the trunk's own
+ * fill loop wouldn't actually build). Eases from 1.0 (base) down to `waistFrac` with a
+ * *zero-derivative* landing (smoothstep) so the canopy ellipsoid grafted on top meets
+ * it without a visible kink/collar — the single biggest cause of the old profile
+ * reading as a flying-saucer "mushroom cap" instead of a tree crown.
+ */
+export function elvenTrunkRadiusFracAt(t: number, canopyStartFrac: number, waistFrac: number): number {
+  const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
+  return smoothTaperRadiusFrac(u, 1, waistFrac);
+}
+
+/**
+ * World-unit radius of the trunk's actual constructed surface at an arbitrary
+ * normalized total-height fraction `heightFrac` (0..1) — generalizes what
+ * `elvenWaistRadius()` used to compute only at the fixed neck fraction, so per-floor
+ * ring/window placement can size itself against the trunk's real tapered surface at
+ * any height, not just the neck.
+ */
+export function elvenRadiusAtHeight(w: number, d: number, heightFrac: number, opts: ElvenTrunkOptions = {}): number {
+  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
+  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
+  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
+  const maxR = Math.max(cx, cz) + 0.5;
+  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
+  const canopyStartFrac = opts.canopyStartFrac ?? 0.6;
+  const radiusFrac = elvenTrunkRadiusFracAt(heightFrac, canopyStartFrac, waistFrac);
+  return radiusFrac * maxR * BLOCK_UNIT;
 }
 
 /**
@@ -386,12 +464,8 @@ export function elvenNeckY(h: number, canopyStartFrac = 0.6): number {
  * floating at an arbitrary, possibly much wider or narrower, radius.
  */
 export function elvenWaistRadius(w: number, d: number, opts: ElvenTrunkOptions = {}): number {
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  const cx = (bw - 1) / 2, cz = (bd - 1) / 2;
-  const maxR = Math.max(cx, cz) + 0.5;
-  const waistFrac = opts.waistFrac ?? ELVEN_DEFAULT_WAIST_FRAC;
-  return waistFrac * maxR * BLOCK_UNIT;
+  const canopyStartFrac = opts.canopyStartFrac ?? 0.6;
+  return elvenRadiusAtHeight(w, d, canopyStartFrac, opts);
 }
 
 /**
@@ -434,15 +508,12 @@ export function buildElvenTrunkGrid(
 
   /**
    * Trunk-phase radius (as a fraction of the base radius) at normalized
-   * height `t` (0..1, trunk-only range). Eases from 1.0 (base) down to
-   * `waistFrac` with a *zero-derivative* landing (smoothstep) so the
-   * canopy ellipsoid grafted on top (see below) meets it without a visible
-   * kink/collar — the single biggest cause of the old profile reading as
-   * a flying-saucer "mushroom cap" instead of a tree crown.
+   * height `t` (0..1, trunk-only range). Delegates to the shared
+   * `elvenTrunkRadiusFracAt()` so this function's curve and
+   * `elvenRadiusAtHeight()`/window carving's curve can never drift apart.
    */
   function trunkRadiusFracAt(t: number): number {
-    const u = canopyStartFrac > 0 ? t / canopyStartFrac : 1;
-    return smoothTaperRadiusFrac(u, 1, waistFrac);
+    return elvenTrunkRadiusFracAt(t, canopyStartFrac, waistFrac);
   }
 
   const canopyStartBy = Math.round(bh * canopyStartFrac);
@@ -468,33 +539,44 @@ export function buildElvenTrunkGrid(
   const lobes: CanopyLobe[] = [
     { cx, cy: canopyStartBy + mainRy * 0.7, cz, rxz: mainRxz, ry: mainRy },
   ];
-  const numSatellites = 3 + Math.floor(lobeRng() * 2); // 3-4 satellite foliage masses
   interface BranchSeg { ax: number; ay: number; az: number; bx: number; by: number; bz: number; }
   const branches: BranchSeg[] = [];
-  for (let i = 0; i < numSatellites; i++) {
-    const ang = (i / numSatellites) * Math.PI * 2 + lobeRng() * 0.8;
-    // Real separation from the trunk axis: far enough out that, after the
-    // central cap's own radius is subtracted, there's genuine empty space
-    // between the cap and each satellite — that gap is what makes the
-    // connecting branch visible instead of swallowed.
-    const offsetFrac = 0.95 + lobeRng() * 0.45;
-    const satRxz = mainRxz * (0.62 + lobeRng() * 0.3);
-    const satRy = mainRy * (0.75 + lobeRng() * 0.4);
-    // Vary height broadly across the canopy's vertical range so the
-    // satellites sit at different levels (asymmetric, layered crown)
-    // rather than all lined up in one flat ring at the same height.
-    const heightFrac = 0.25 + lobeRng() * 0.65;
-    const satCy = canopyStartBy + canopyRadiusY * heightFrac;
-    const lobeCx = cx + Math.cos(ang) * offsetFrac * maxR;
-    const lobeCz = cz + Math.sin(ang) * offsetFrac * maxR;
-    lobes.push({ cx: lobeCx, cy: satCy, cz: lobeCz, rxz: satRxz, ry: satRy });
-    // Branch: starts low on the upper trunk/neck (varied per branch, some
-    // originating a little below the neck like a real limb splitting off
-    // the trunk itself) and climbs out to the satellite's own centre —
-    // the only connective tissue between trunk and this foliage mass, so
-    // it reads as a genuine branch bridging real empty space.
-    const branchStartBy = canopyStartBy - Math.round(lobeRng() * 3);
-    branches.push({ ax: cx, ay: branchStartBy, az: cz, bx: lobeCx, by: satCy, bz: lobeCz });
+  const canopyArchetype = opts.canopyArchetype ?? 'satellite_lobes';
+  if (canopyArchetype === 'satellite_lobes') {
+    const numSatellites = 3 + Math.floor(lobeRng() * 2); // 3-4 satellite foliage masses
+    for (let i = 0; i < numSatellites; i++) {
+      const ang = (i / numSatellites) * Math.PI * 2 + lobeRng() * 0.8;
+      // Real separation from the trunk axis: far enough out that, after the
+      // central cap's own radius is subtracted, there's genuine empty space
+      // between the cap and each satellite — that gap is what makes the
+      // connecting branch visible instead of swallowed.
+      const offsetFrac = 0.95 + lobeRng() * 0.45;
+      const satRxz = mainRxz * (0.62 + lobeRng() * 0.3);
+      const satRy = mainRy * (0.75 + lobeRng() * 0.4);
+      // Vary height broadly across the canopy's vertical range so the
+      // satellites sit at different levels (asymmetric, layered crown)
+      // rather than all lined up in one flat ring at the same height.
+      const heightFrac = 0.25 + lobeRng() * 0.65;
+      const satCy = canopyStartBy + canopyRadiusY * heightFrac;
+      const lobeCx = cx + Math.cos(ang) * offsetFrac * maxR;
+      const lobeCz = cz + Math.sin(ang) * offsetFrac * maxR;
+      lobes.push({ cx: lobeCx, cy: satCy, cz: lobeCz, rxz: satRxz, ry: satRy });
+      // Branch: starts low on the upper trunk/neck (varied per branch, some
+      // originating a little below the neck like a real limb splitting off
+      // the trunk itself) and climbs out to the satellite's own centre —
+      // the only connective tissue between trunk and this foliage mass, so
+      // it reads as a genuine branch bridging real empty space.
+      const branchStartBy = canopyStartBy - Math.round(lobeRng() * 3);
+      branches.push({ ax: cx, ay: branchStartBy, az: cz, bx: lobeCx, by: satCy, bz: lobeCz });
+    }
+  } else {
+    // moss_crown: one wide, dense, fused mass -- no satellite lobes, no branches. A
+    // real, distinct architecture (the Falinesti "shared mossy roof" motif from this
+    // round's research), not a parameter tweak on satellite_lobes: the single central
+    // lobe above is widened/flattened in place instead of surrounded by separate
+    // smaller masses reached by branches.
+    lobes[0]!.rxz = mainRxz * 1.55;
+    lobes[0]!.ry = mainRy * 0.85;
   }
   /** Shortest distance from point p to line segment a-b, all in raw column-index units; also returns the segment parameter t (0=a, 1=b) for radius tapering. */
   function distToSegment(px: number, py: number, pz: number, seg: BranchSeg): { dist: number; t: number } {
@@ -527,6 +609,11 @@ export function buildElvenTrunkGrid(
 
   const notchWidth = opts.facade ? Math.max(2, Math.round(bw * (opts.facadeWidthFrac ?? 0.32))) : 0;
   const requestedNotchHeight = opts.facade ? Math.max(3, Math.round(canopyStartBy * (opts.facadeHeightFrac ?? 0.36))) : 0;
+  const entranceStyle = opts.entranceStyle ?? 'ground_arch';
+  // raised_platform: the doorway starts a couple of blocks above ground level (a
+  // stilted/root-flared entry, per the real treehouse research), so shift the carve
+  // range's floor up instead of starting at by=0.
+  const entranceRaiseBy = entranceStyle === 'raised_platform' ? 2 : 0;
   // The doorway/frame is carved into the trunk's fixed front footprint rows
   // (bz >= bd - notchDepth), but the trunk itself tapers inward with height.
   // Once the taper has narrowed enough that the trunk's own radius no
@@ -545,9 +632,10 @@ export function buildElvenTrunkGrid(
   let notchHeight = requestedNotchHeight;
   if (opts.facade) {
     notchHeight = requestedNotchHeight;
-    for (let by = 0; by < requestedNotchHeight; by++) {
+    for (let localBy = 0; localBy < requestedNotchHeight; localBy++) {
+      const by = localBy + entranceRaiseBy;
       const t = bh > 1 ? by / (bh - 1) : 0;
-      if (trunkRadiusFracAt(t) < frameCornerDist * 1.08) { notchHeight = Math.max(2, by); break; }
+      if (trunkRadiusFracAt(t) < frameCornerDist * 1.08) { notchHeight = Math.max(2, localBy); break; }
     }
   }
   const notchCx = Math.round(bw / 2);
@@ -580,12 +668,13 @@ export function buildElvenTrunkGrid(
           if (dNorm > radiusFrac) continue;
 
           let material = 'bark';
-          if (opts.facade && by < notchHeight && bz >= bd - notchDepth) {
+          const localBy = by - entranceRaiseBy;
+          if (opts.facade && by >= entranceRaiseBy && localBy < notchHeight && bz >= bd - notchDepth) {
             // Arch narrows with height following a circular arc — a
             // genuine round-top archway built from occupancy, not a
             // separate curved mesh. `frac` is how far up the arch this
             // row is; the notch's half-width shrinks toward 0 as frac -> 1.
-            const frac = by / notchHeight;
+            const frac = localBy / notchHeight;
             const halfWidthHere = Math.max(0, Math.round((notchWidth / 2) * Math.sqrt(Math.max(0, 1 - frac * frac))));
             const inNotchX = Math.abs(bx - notchCx) < halfWidthHere;
             const inFrameX = Math.abs(bx - notchCx) < halfWidthHere + 1;
@@ -607,7 +696,11 @@ export function buildElvenTrunkGrid(
             if (dist < best) best = dist;
           }
           if (best <= 1 + n * (jitterAmt * 1.3)) {
-            setBlock(grid, bx, by, bz, 'leaf');
+            // moss_crown gets a mottled two-tone leaf/moss surface via the same noise
+            // value already in scope, reading as a mossy, textured mass rather than
+            // uniform foliage green; satellite_lobes keeps its existing uniform leaf.
+            const useMoss = canopyArchetype === 'moss_crown' && n > 0.15;
+            setBlock(grid, bx, by, bz, useMoss ? 'moss' : 'leaf');
             continue;
           }
           // Not inside any leaf lobe — check whether this cell sits on one

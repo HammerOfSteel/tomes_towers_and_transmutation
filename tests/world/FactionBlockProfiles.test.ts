@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBlock, getMaterialKey, BLOCK_UNIT } from '@/world/buildings/BlockKit';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, smoothTaperRadiusFrac, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers, elvenWaistRadius, elvenNeckY, elvenRadiusAtHeight, elvenHeightAtFrac, pickElvenEntranceStyle, pickElvenCanopyArchetype } from '@/world/buildings/FactionBlockProfiles';
 
 describe('FactionBlockProfiles — vulperia den heightfield mound', () => {
   it('produces a grounded, dome-shaped grid: the centre column is taller than a footprint-edge column', () => {
@@ -321,6 +321,112 @@ describe('FactionBlockProfiles — elven tapering living-wood trunk', () => {
     const gridC = buildElvenTrunkGrid(43, W, D, H, {});
     expect([...gridA.cells.entries()]).toEqual([...gridB.cells.entries()]);
     expect([...gridA.cells.entries()]).not.toEqual([...gridC.cells.entries()]);
+  });
+});
+
+
+describe('FactionBlockProfiles — elvenRadiusAtHeight / elvenHeightAtFrac', () => {
+  it('elvenRadiusAtHeight at the neck height fraction matches elvenWaistRadius exactly', () => {
+    const w = 6, d = 6;
+    const atNeck = elvenRadiusAtHeight(w, d, 0.6, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    const waist = elvenWaistRadius(w, d, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    expect(atNeck).toBeCloseTo(waist, 10);
+  });
+
+  it('elvenRadiusAtHeight at height fraction 0 returns a wider radius than at the neck', () => {
+    const w = 6, d = 6;
+    const atBase = elvenRadiusAtHeight(w, d, 0, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    const atNeck = elvenRadiusAtHeight(w, d, 0.6, { canopyStartFrac: 0.6, waistFrac: 0.4 });
+    expect(atBase).toBeGreaterThan(atNeck);
+  });
+
+  it('elvenRadiusAtHeight decreases monotonically from base to neck', () => {
+    const w = 8, d = 8;
+    const opts = { canopyStartFrac: 0.6, waistFrac: 0.35 };
+    const r0 = elvenRadiusAtHeight(w, d, 0.0, opts);
+    const r1 = elvenRadiusAtHeight(w, d, 0.2, opts);
+    const r2 = elvenRadiusAtHeight(w, d, 0.4, opts);
+    const r3 = elvenRadiusAtHeight(w, d, 0.6, opts);
+    expect(r0).toBeGreaterThanOrEqual(r1);
+    expect(r1).toBeGreaterThanOrEqual(r2);
+    expect(r2).toBeGreaterThanOrEqual(r3);
+  });
+
+  it('elvenHeightAtFrac at the default canopyStartFrac matches elvenNeckY exactly', () => {
+    const h = 9;
+    expect(elvenHeightAtFrac(h, 0.6)).toBeCloseTo(elvenNeckY(h), 10);
+  });
+
+  it('elvenHeightAtFrac increases with height fraction', () => {
+    const h = 10;
+    expect(elvenHeightAtFrac(h, 0.2)).toBeLessThan(elvenHeightAtFrac(h, 0.5));
+  });
+});
+
+
+describe('FactionBlockProfiles — pickElvenEntranceStyle', () => {
+  it('is deterministic per seed', () => {
+    expect(pickElvenEntranceStyle(11)).toBe(pickElvenEntranceStyle(11));
+  });
+
+  it('produces both styles across a seed sweep (proof raised_platform is reachable)', () => {
+    const styles = new Set<string>();
+    for (let seed = 0; seed < 60; seed++) styles.add(pickElvenEntranceStyle(seed));
+    expect(styles).toEqual(new Set(['ground_arch', 'raised_platform']));
+  });
+
+  it('raised_platform carves the doorway starting above ground level, unlike ground_arch', () => {
+    const W = 6, D = 6, H = 6;
+    const bw = Math.max(3, Math.round(W / BLOCK_UNIT));
+    const bd = Math.max(3, Math.round(D / BLOCK_UNIT));
+    const cx = Math.round(bw / 2);
+    const frontZ = bd - 1;
+    const groundGrid = buildElvenTrunkGrid(1, W, D, H, { facade: true, entranceStyle: 'ground_arch' });
+    const raisedGrid = buildElvenTrunkGrid(1, W, D, H, { facade: true, entranceStyle: 'raised_platform' });
+    // ground_arch: carved open at by=0 (existing behavior, unchanged).
+    expect(hasBlock(groundGrid, cx, 0, frontZ)).toBe(false);
+    // raised_platform: by=0 is NOT carved (still solid trunk/root), the notch starts
+    // higher up instead.
+    expect(hasBlock(raisedGrid, cx, 0, frontZ)).toBe(true);
+  });
+});
+
+
+describe('FactionBlockProfiles — pickElvenCanopyArchetype', () => {
+  it('is deterministic per seed', () => {
+    expect(pickElvenCanopyArchetype(7)).toBe(pickElvenCanopyArchetype(7));
+  });
+
+  it('produces both archetypes across a seed sweep', () => {
+    const archetypes = new Set<string>();
+    for (let seed = 0; seed < 60; seed++) archetypes.add(pickElvenCanopyArchetype(seed));
+    expect(archetypes).toEqual(new Set(['satellite_lobes', 'moss_crown']));
+  });
+
+  it('moss_crown has no separate branch-connector cells (a single fused mass), unlike satellite_lobes', () => {
+    const W = 8, D = 8, H = 9;
+    const lobesGrid = buildElvenTrunkGrid(1, W, D, H, { canopyArchetype: 'satellite_lobes' });
+    const mossGrid = buildElvenTrunkGrid(1, W, D, H, { canopyArchetype: 'moss_crown' });
+    const bh = Math.max(6, Math.round(H / BLOCK_UNIT));
+    const canopyStartBy = Math.round(bh * 0.6);
+    let lobesHasBarkInCanopy = false, mossHasBarkInCanopy = false;
+    for (const [k, matKey] of lobesGrid.cells.entries()) {
+      const by = Number(k.split(',')[1]);
+      if (by > canopyStartBy + 1 && matKey === 'bark') lobesHasBarkInCanopy = true;
+    }
+    for (const [k, matKey] of mossGrid.cells.entries()) {
+      const by = Number(k.split(',')[1]);
+      if (by > canopyStartBy + 1 && matKey === 'bark') mossHasBarkInCanopy = true;
+    }
+    expect(lobesHasBarkInCanopy).toBe(true); // satellite_lobes has branches (existing behavior)
+    expect(mossHasBarkInCanopy).toBe(false); // moss_crown has no branches
+  });
+
+  it('moss_crown still produces valid, non-empty canopy geometry', () => {
+    const grid = buildElvenTrunkGrid(2, 8, 8, 9, { canopyArchetype: 'moss_crown' });
+    let leafCount = 0;
+    for (const matKey of grid.cells.values()) if (matKey === 'leaf' || matKey === 'moss') leafCount++;
+    expect(leafCount).toBeGreaterThan(0);
   });
 });
 

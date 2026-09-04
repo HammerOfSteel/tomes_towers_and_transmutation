@@ -196,3 +196,76 @@ describe('SettlementLabScene — enter(initialParams) for "Play in 3D" handoff',
     lab8.exit();
   });
 });
+
+describe('SettlementLabScene — race-by-race POC override (elven living-tree home kit)', () => {
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+
+  beforeAll(async () => {
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+  });
+
+  it('selecting faction=elven forces every building to the elven living-tree home kit\'s house, no extra UI action needed', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    // city + elven so this exercises the elven living-tree home kit's house
+    // dispatch specifically (the exact scenario the user wants to preview
+    // via Overworld Studio's Settlement tab -> "Play in 3D").
+    lab.enter({ seed: 7, type: 'city', faction: 'elven', layout: 'auto' });
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+    for (const rec of result.buildingRecords) {
+      expect(rec.dna.buildingKind).toBe('house');
+    }
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
+    expect(readoutEl.textContent).toContain('POC override: house');
+
+    lab.exit();
+  });
+
+  it('other factions without a shipped POC override keep the normal per-ward BuildingKind mix', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' });
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.size).toBeGreaterThan(1);
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
+    expect(readoutEl.textContent).not.toContain('POC override');
+
+    lab.exit();
+  });
+
+  it('switching the panel faction dropdown to elven and clicking Regenerate applies the override live', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' }); // starts with no override
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    document.body.appendChild(panelEl);
+    const factionSelect = panelEl.querySelector('[data-role="faction-select"]') as HTMLSelectElement;
+    factionSelect.value = 'elven';
+    const regenBtn = panelEl.querySelector('[data-action="regenerate"]') as HTMLButtonElement;
+    regenBtn.click();
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+    for (const rec of result.buildingRecords) {
+      expect(rec.dna.buildingKind).toBe('house');
+    }
+
+    lab.exit();
+  });
+});

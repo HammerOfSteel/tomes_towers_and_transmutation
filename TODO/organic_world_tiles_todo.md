@@ -532,6 +532,591 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts) ✅ 4 of ~9 elven building types shipped, 2026-09-02/04
+
+**Goal:** move past "stacking blocks looks okayish" toward a genuinely
+researched, modular "kit of parts" construction method per race,
+starting with one proof-of-concept (an elven tower) before rolling the
+same research → design → plan → implement cycle out to the other
+races (order: Elven, Dwarves, Orcish, Vampire, Undead, Vulperia, Fae,
+Slime, Human — Slime/Human last, since those already look best).
+
+- [x] **6.1 — Research**: real-world tower construction (coursing,
+  battered bases, quoins, conical shingle roofs) + procedural building
+  generation techniques in games/research (shape grammars/CGA shape,
+  and — the far more common game-industry answer, matching the user's
+  tabletop-terrain-kit reference image — modular "kit of parts" systems:
+  a small set of pieces sharing one socket/cross-section, stacked in
+  any order). See `docs/superpowers/specs/
+  2026-09-02-elven-stone-tower-kit-design.md`'s "Research summary."
+- [x] **6.2 — Design + POC plan**: an octagonal cross-section "ring
+  stack" (base/plinth, wall rings, roof cap), with two directly-compared
+  wall-surface strategies — a cheap textured prism vs. real per-course
+  block geometry (`StoneTowerShape.ts`, `StoneTowerWallSurface.ts`,
+  `StoneTowerRoofCap.ts`, `StoneTowerKit.ts`) — per the user's explicit
+  preference for real geometry over a flat texture illusion (past
+  texture-only attempts in this project reportedly looked "too basic").
+  **Measured, not assumed**: one wall ring (radius 2, height 2.9) is 32
+  triangles/0.05ms textured vs. 1728 triangles/3.65ms real-geometry —
+  ~54x more triangles but merged into a single draw call via the
+  existing `mergeGroupMeshesByMaterial()`, well within normal
+  per-building poly budgets for a one-time procedural-generation cost.
+  Hybrid stone + living-tree decoration (root tendrils, vines, a
+  living-canopy roof-cap variant) per the user's "complement, don't
+  replace" direction for elven's existing tree-trunk architecture.
+- [x] **6.3 — Live-wired**: `FACTION_BUILDING_VARIANTS['elven']` now
+  overrides `watchtower`/`tower` (both previously unstyled/generic) with
+  `buildElvenStoneTower`.
+- [x] **6.4 — Live verification — real finding, not a rubber stamp**:
+  attempted verification via Overworld Studio's Settlement Lab as
+  planned, and found `watchtower`/`tower` are **not currently reachable
+  through the live ward-based settlement generator at all** —
+  `WARD_TO_KIND` (`src/buildingToDungeonPlan.ts`, the map every
+  settlement ward's building kind actually comes from) has no entry for
+  either kind, for any faction, so no settlement generated via
+  `planSettlement()`/the Settlement Lab currently places one. (A
+  separate, unrelated `SettlementSpawner.ts` module has its own
+  `watchtower` entry for a `'city'`-type building list, but that's a
+  different, simpler realm-map placement system, not what the Settlement
+  Lab renders.) Verified instead via `showroom.html`'s `spawnBuilding()`
+  dev tool (given a small, backward-compatible `faction` parameter for
+  this) — confirmed no errors and, visually, both roof-cap variants
+  (classic cone and living canopy) and the real block-geometry wall
+  surface (individually visible protruding stone courses, not a flat
+  texture) render correctly.
+- [x] **6.4b — Settlement Lab visibility fix + automatic race-by-race POC
+  override**: two real bugs found by actually reproducing the user's own
+  test flow (Overworld Studio's Settlement tab → "Play in 3D"), not just
+  checking the DOM. (1) `SettlementLabPanel.rootEl` had **zero CSS** since
+  it was first created — it rendered in normal document flow after the
+  fullscreen `#game-canvas`, pushing it completely below the fold and
+  invisible even though its controls existed in the DOM (a user testing
+  the real flow saw no panel at all). Fixed with a `position:fixed`
+  stylesheet matching `DevSandbox.ts`'s own injected-`<style>` convention
+  — verified live via `getBoundingClientRect()`/`elementFromPoint()` that
+  the panel is now genuinely on-screen and on top. (2) Initially tried a
+  "kind override" dropdown (forcing every building in a settlement to one
+  chosen `BuildingKind`) — the user pushed back: "why bother with the
+  dropdown" when picking a race that has a shipped POC building should
+  just show that automatically. Reverted the dropdown; replaced with
+  `SettlementLabScene.ts`'s `POC_KIND_OVERRIDE_BY_FACTION` map — selecting
+  faction `elven` (already an existing selector) now automatically forces
+  every building in the regenerated settlement to `watchtower`, no extra
+  UI action. `BuildingTypeMap.createSettlementBuildingDna`'s optional
+  `buildingKind` param and `SettlementRenderer`'s `forceBuildingKind`
+  field (the actual override plumbing) are unchanged/kept — only the
+  *driver* changed from a dropdown to an automatic per-faction map, one
+  entry to add per future race's POC. **Important distinction from 6.5
+  below**: this only overrides the Lab's *test* settlement — it does not
+  change what a normal, non-overridden settlement generates (`WARD_TO_KIND`
+  is untouched), so a real player still won't naturally see a watchtower
+  in actual play.
+- [x] **6.4c — Shape-variety pass ("the only variation is the top and the
+  height")**: after seeing the POC live via 6.4b's fix, the user pushed
+  back again: towers only varied by height/roof-cap, not real procedural
+  shape variety. Explicit instruction: research first (general procedural
+  tower techniques, Townscaper/Oskar Stålberg's technique specifically,
+  Godot addon ecosystem, Three.js-compatible libraries), then design,
+  then plan, then implement, then present live. Research (dedicated
+  research-agent pass, 5 threads, citations — see
+  `docs/superpowers/specs/2026-09-02-elven-stone-tower-variety-design.md`)
+  found this repo already has the exact Townscaper jittered-triangle/
+  relaxation technique implemented and tested (`src/world/
+  RelaxedMeshGrid.ts`, from an earlier phase) but never wired to any
+  building code, and ranked WFC/CSG explicitly **against** adoption as a
+  first move (WFC solves discrete content-selection given an
+  already-varied lattice, not shape generation itself; no mature 3D
+  Three.js WFC library exists). Shipped 4 additive techniques (new
+  `StoneTowerSilhouette.ts` + generalized `StoneTowerShape.ts`/
+  `StoneTowerWallSurface.ts`/`StoneTowerKit.ts`): (1) per-vertex,
+  per-floor coherent octagon jitter (seeded jitter + 1D relaxation along
+  the floor axis — the Townscaper "jitter then relax" technique adapted
+  to this ring's radial topology rather than forcing a flat-quad-mesh
+  reuse, with the reasoning documented in the design spec), (2) per-floor
+  footprint drift + rotation, (3) 4 seed-selected sub-archetype
+  silhouette profiles (`tapering`/`tiered`/`leaning`/`waisted`, each with
+  real-world precedent — lighthouses, pagodas, Kilmacduagh's leaning
+  round tower, machicolated galleries), (4) wiring all of the above
+  through the existing wall/roof-cap mesh code with zero new rendering
+  paths. Per-tier facet-count change (minaret precedent — genuinely the
+  most structurally novel idea surfaced) explicitly deferred as a
+  possible future pass. **Live-verified**: via Playwright (the canvas
+  browser tool's tab was stuck in a backgrounded/`document.hidden` state
+  that throttled rendering/screenshots — a tooling quirk, not a code
+  bug) across both the Settlement Lab (5 seeds, zero console errors,
+  buildings/readout correct) and `showroom.html` (6 watchtowers spawned
+  side-by-side, screenshotted from two different camera angles) —
+  confirmed genuinely different silhouettes side-by-side: visibly
+  leaning towers, straight tapering towers, and a visibly bulging
+  "waisted" tower, at different heights, with both roof-cap variants
+  still present — not a uniformly-scaled repeat of one shape.
+- [x] **6.4d — Kit-of-parts feature variety (windows, entrance, balcony,
+  props)**: user feedback after 6.4c: "better but we are not there yet...
+  more distinct variety" — named concrete kit-of-parts ideas (window
+  sizes/types, a top balcony, a bottom entrance archway, more prop
+  variety). Direct continuation of the already-approved kit-of-parts
+  technique (no fresh external research needed — see
+  `docs/superpowers/specs/2026-09-03-elven-stone-tower-features-design.md`).
+  Shipped 4 additive pieces: **`StoneTowerWindows.ts`** (3 window types —
+  the original pointed-arch, a round oculus with a torus stone frame, a
+  cross-mullion 4-pane window — x 3 sizes, re-rolled per floor so one
+  tower's windows can differ from each other); **`StoneTowerEntrance.ts`**
+  (2 archway styles — plain arch, flanked-pillars — always present, only
+  the style varies, attached to the base's actual plinth radius);
+  **`StoneTowerBalcony.ts`** (a seeded ~40% chance projecting gallery —
+  corbel brackets + deck collar + parapet — attached at the second-to-last
+  floor, appended after the roof so it never shifts floor-ring indexing);
+  and an extended wall-prop catalog in `StoneTowerKit.ts` (`pickWallProp`:
+  none/vine/moss_patch/banner, up from the original vine-or-nothing coin
+  flip). All feed the *existing* wall/roof-cap mesh code, no new rendering
+  paths beyond the pieces themselves. 31 new/updated tests (9 window,
+  6 entrance, 7 balcony, 9 StoneTowerKit wiring/prop-catalog additions),
+  all passing; fresh baseline re-confirmed unchanged (144 tsc errors, the
+  same pre-existing/flaky vitest failure set as every prior round — 12-13
+  depending on `ResourceNodePlacer`'s known intermittent timeout). Live-verified via Playwright
+  (Settlement Lab across 5 seeds, `showroom.html` row + close-up
+  screenshots) — confirmed windows/entrances/roof variety clearly visible;
+  balcony confirmed structurally via its own dedicated test suite (corbel/
+  deck/parapet mesh counts, bounding-radius growth, ~40% presence rate)
+  and visible as a subtle collar band near the roofline in a close-up
+  screenshot — noted honestly as a modest accent, not a dramatic feature,
+  matching its own design intent as a smaller "gallery" detail rather
+  than a macro-silhouette change.
+- [x] **6.4e — Reference-image-driven technique rebuild (windows, entrance,
+  quoins, balcony, roof-caps) + pagoda-legibility fix**: user feedback
+  after 6.4d, with a screenshot: "those small gray round and rectangular
+  things... are not what the rest of the tower looks like at all" — the
+  windows/entrance were flat glass-box/floating-cone primitives glued
+  onto real block-course walls, a genuine style mismatch (wall = real
+  depth, openings = flat). Then, with 5 reference images from a real
+  tabletop-terrain tower kit: "I cant believe all the research... lead
+  to this so far... look no further than Townscaper... it is so clearly
+  a problem of technique and implementation" — the references showed
+  carved recessed pointed-arch openings with proud stone frames, a
+  genuinely OPEN octagonal crow's-nest gallery, continuous vertical
+  corner quoins, and — most importantly — **structurally different**
+  roof/top assemblies side by side (single cone+gallery, double-tiered
+  pagoda, plain spire), proving "distinct variety" means different kit
+  ASSEMBLIES, not parametric tweaks to one shape. No further research
+  cycle was run (the reference images function as the spec); went
+  straight to a full technique rebuild, one file at a time, strict TDD:
+  - **`StoneTowerOpenings.ts`** (new): shared recessed-arch-opening
+    technique — a proud stone frame (`ExtrudeGeometry` of an arch-shape-
+    with-a-hole) around a genuinely receded dark cavity (a separate
+    solid extruded arch pushed inward). Used by both windows and the
+    entrance so both finally have real carved depth matching the wall's
+    own block-course technique. 6 tests.
+  - **`StoneTowerWindows.ts`** / **`StoneTowerEntrance.ts`** (rebuilt):
+    all 3 window types and the entrance now use the shared recessed-
+    opening technique (or repositioned primitives) for real depth; the
+    pointed-arch window gets a moonstone oculus accent, the entrance a
+    keystone accent. 11 + 7 tests.
+  - **`StoneTowerQuoins.ts`** (new): 8 raised corner-pilaster boxes per
+    octagon vertex, proud of the wall, following the ring's own vertex
+    jitter — wired into every wall ring and the base plinth. 6 tests.
+  - **`StoneTowerBalcony.ts`** (rebuilt): the old solid closed parapet
+    cylinder replaced with genuinely open vertical rib posts (real gaps
+    between them) plus thin top/bottom rail bands — verified via a
+    raycast test that a meaningful fraction of rays actually pass
+    through the gaps instead of hitting a solid wall every time. 8 tests.
+  - **`StoneTowerRoofCap.ts`** (rebuilt): the classic cap gained a
+    flared/scalloped eave, 3 stepped shingle-course bands (visible
+    seams), 8 corner finials, and an apex finial ball — not one smooth
+    cone. Added a genuinely distinct **pagoda archetype**
+    (`buildPagodaRoofCap`) and an exported, testable
+    `pickRoofArchetype(seed)` (classic 40% / pagoda 35% / living 25%).
+    `buildElvenStoneTower`'s `coneHeight` bumped from `radius*2.2` to
+    `radius*3.5` — the roof was only ~15% of a typical tower's height,
+    too small for archetype differences to read at normal viewing
+    distance. 15 tests.
+  - **Live-verification-driven second pass on the pagoda archetype**:
+    the first pagoda version stacked two *full*, independently-pointed
+    `buildClassicRoofCap` tiers joined by a neck. Playwright screenshots
+    (both wide framing and a close, cropped framing matching the
+    isometric camera's real default zoom — `CameraRig.FRUSTUM_HEIGHT`)
+    showed this reads as one ambiguous blob: the lower tier's own point
+    sits flush against the neck, visually blending the two tapers into
+    a single cone, even though the underlying geometry was genuinely
+    different (27 vs 13 meshes) and passed its own "waist" unit test.
+    Root cause of the false-positive test: it sampled "max radius near
+    a Y coordinate" across the whole group, but the neck's own rings
+    sit at the *exact same Y* as the wider rings they connect to
+    (flush-stacked), so the query always picked the wider neighbor,
+    never the neck's own narrower radius — the test never actually
+    exercised the failure mode. Fixed by making the lower tier a
+    bespoke *truncated* eave+body (no point of its own — the upper
+    tier is the only apex in the assembly, removing the double-point
+    ambiguity), naming the neck mesh so tests can read its own radius
+    directly, and rewriting the waist test to compare the neck's radius
+    against the widest radius strictly below/above it. Re-verified with
+    cropped screenshots at realistic zoom: a clear, unambiguous
+    wide → narrow → wide → point pagoda silhouette, visibly distinct
+    from the classic archetype's single monotonic taper.
+  - **Verification**: 278 tests across `tests/world/buildings/` all
+    green; fresh full-suite regression re-confirmed unchanged from
+    baseline both before and after the pagoda second pass (144 tsc
+    errors, the same 13 pre-existing/flaky vitest failures — `main.
+    startup.smoke`×3, `enemyLoader`×3, `towerGenerator`×2, `talentSystem`
+    ×3, `WaterMaterial`×1, `ResourceNodePlacer`×1 — no new regressions).
+    Live-verified via Playwright screenshots at both a wide framing and
+    a close, cropped framing calibrated to the isometric camera's actual
+    default zoom (not an arbitrary close-up) for every fix in this round.
+- [ ] **6.5 — Make the tower actually reachable in a *normal* (non-
+  overridden) live settlement, i.e. real play, not just the Lab's test
+  override above**: needs either a `WARD_TO_KIND` entry pointing some
+  ward type at `watchtower`/`tower` (cross-faction change, out of this
+  POC's elven-only scope — needs its own small design decision about
+  which ward and whether other factions should get a matching override
+  first) or a different placement mechanism (e.g. a landmark/gate slot
+  outside the normal ward-fill loop). **Not started** — deliberately
+  deferred; the 6.4b tool above already unblocks visual testing/rollout
+  of new building kinds in the meantime, so this isn't a hard blocker
+  for continuing race-by-race work.
+- [x] **6.6 — Second elven building type: the living-tree home ("house"/
+  "terraced"/"villa"/"inn"/"blacksmith", all routed through
+  `buildElvenVilla()`) — highest-frequency elven building type, kit-of-
+  parts round**: user asked to move to "the next building type" in the
+  same research → learn → plan → build → test → confirm cycle used for
+  the tower, running under user-enabled autopilot for this cycle. Design
+  spec: `docs/superpowers/specs/2026-09-03-elven-treehouse-home-design.
+  md`. Plan: `docs/superpowers/plans/2026-09-03-elven-treehouse-home.md`.
+  Research summary (full report in session transcript): real treehouse
+  engineering gives directly-usable *design rules* (ring beams +
+  triangulated knee braces carry platform load, not many nails into thin
+  branches — real treehouse roofs are conventional shingle/thatch far
+  more often than a true "living roof," validating keeping the leaf
+  canopy as the fantasy roof rather than pursuing a hybrid); The Elder
+  Scrolls' Bosmer/Valenwood (Falinesti) is the standout in-fiction
+  precedent for "buildings grown into a living tree" — "curled webs of
+  moss... forming a shared roof for several dozen small buildings" gave
+  the second canopy archetype idea; confirmed no public precedent
+  applies Townscaper's technique to organic/tree structures (this
+  codebase's `BlockKit.ts` is already ahead of any public example);
+  confirmed procedural tree algorithms (L-systems, space colonization,
+  Weber-Penn/EZ-Tree) all target decorative background trees, none
+  reason about floors/doors — validating the existing architecture
+  (tapered-radius skeleton curve driving heightfield occupancy, with
+  floors/doors/windows carved in afterward as a separate concern);
+  `three-bvh-csg` was found and considered for curved window carving but
+  NOT adopted (new dependency, CSG not built for this kind of
+  regeneration scale, and the existing occupancy-carving technique
+  already proven on the door achieves the same "genuine round arch"
+  result at zero extra cost). Shipped 4 additive pieces, all extending
+  the existing engine (no new dependencies): **ring-beam + knee-brace
+  bands at every floor** (previously only one, fixed at the neck,
+  regardless of floor count — new `elvenRadiusAtHeight()`/
+  `elvenHeightAtFrac()` helpers in `FactionBlockProfiles.ts` let each
+  floor's ring size itself against the trunk's own real tapered radius
+  at that height); **`ElvenTrunkWindows.ts`** (new file) — carved window
+  openings extending the door's proven occupancy-carving technique (a
+  genuine removed-block notch, not a flat recolor) to 2-4 window angles
+  per floor band around the trunk's circumference; **2 entrance styles**
+  (`pickElvenEntranceStyle`: 60% `ground_arch` unchanged / 40%
+  `raised_platform`, the doorway carved starting 2 blocks above ground
+  level); **2 canopy archetypes** (`pickElvenCanopyArchetype`: 55%
+  `satellite_lobes` unchanged / 45% `moss_crown`, a denser wider fused
+  mass with a mottled two-tone leaf/moss material, no separate lobes or
+  branches — the Falinesti-inspired motif). 12 commits, strict TDD
+  throughout. **Real bug found and fixed during live-verification prep**:
+  the 2 picker functions and their carving logic were fully implemented
+  and unit-tested in isolation against `buildElvenTrunkGrid` directly,
+  but `buildElvenVilla()` never actually called them — every live
+  building always silently defaulted to `ground_arch`/`satellite_lobes`
+  regardless of seed. Fixed by wiring `pickElvenEntranceStyle(dna.seed)`/
+  `pickElvenCanopyArchetype(dna.seed)` into `buildElvenVilla()`; verified
+  via a spy on the real exported picker functions (an earlier attempt at
+  a raycast-based geometric proxy for this same proof turned out to be
+  too fragile to reliably discriminate sub-block-sized geometry
+  differences in the merged mesh and was replaced). Verification: 253
+  tests passing across the elven-related test slice (`BlockKit`,
+  `FactionBlockProfiles`, `FactionBuildingVariants`, `ElvenTrunkWindows`,
+  `SettlementLabScene`); fresh full-suite regression re-confirmed
+  unchanged (144 tsc errors, the same 13 pre-existing/flaky vitest
+  failures as every prior round — 2 additional timeouts seen on one run
+  in unrelated terrain/overworld-streaming tests were confirmed flaky by
+  re-running them in isolation, not caused by this round's changes).
+  Live-verified via Playwright screenshots: ring-beam bands genuinely
+  scale 1/2/3 per floor count; a raking-light close-up confirmed the
+  carved windows show real removed-block depth (visible dark gaps behind
+  a proud frame), not a flat recolor; both entrance styles and both
+  canopy archetypes are visually distinguishable side-by-side, though
+  the canopy archetype difference reads as a modest, not dramatic,
+  distinction at small building scale (noted honestly, matching the
+  tower's own balcony precedent). Settlement Lab's `POC_KIND_OVERRIDE_BY_
+  FACTION.elven` switched from `'watchtower'` to `'house'` so "Play in
+  3D" now isolates the new building type for user testing, per the
+  established per-round testing pattern.
+- [x] **6.6b — Rebuild on the tower's real block-course construction
+  technique (not BlockKit)**: user feedback after seeing 6.6 live:
+  "these are nice designs but we dont go with that old block design...
+  We have the brick foundation now remember? So more in style with the
+  tower for building the structure but I like you effort and idea for
+  the general design. Just lets keep working with that nice brick work
+  the tower uses." A construction-technique swap, not a design change —
+  the windows/entrance-style/floor/canopy-variety *feature set* from
+  6.6 stays; only *how* the walls/windows/entrance/floors are physically
+  built changes, from `BlockKit`'s voxel-occupancy grid to the elven
+  stone-tower kit's own real per-course-block (`StoneTowerWallSurface.ts`
+  Strategy G) + carved-recessed-opening (`StoneTowerOpenings.ts`)
+  technique. Design doc: `docs/superpowers/specs/
+  2026-09-03-elven-treehouse-tower-kit-rebuild.md`. No fresh research
+  needed — the technique was already researched/built/approved on the
+  tower; this is a reuse task. Extracted `buildTowerKitCore()` (base + N
+  wall rings + roof cap) from `buildElvenStoneTower()`'s own body so a
+  second building family could reuse it without duplication —
+  `buildElvenStoneTower`'s existing 30 tests all pass unchanged,
+  confirming the extraction is behavior-preserving. New
+  `ElvenTreehouseKit.ts`'s `buildElvenTreehouseHome()` reuses nearly
+  every tower-kit piece verbatim (base with root-tendril decoration +
+  carved entrance + quoins, wall rings with carved windows + vine/moss/
+  banner props, the optional open-gallery balcony, silhouette-profile
+  variety) with a wood/bark palette and `buildLivingRoofCap()` always
+  forced as the roof (never the tower's classic/pagoda/living random
+  dispatch — a residential tree home should always end in a living
+  canopy). Unlike the tower, respects `dna.floors` exactly rather than a
+  fixed 3-6-floor archetype. `house`/`terraced`/`villa`/`inn`/
+  `blacksmith` repointed to the new builder; the old `buildElvenVilla`
+  and its `addPlankRing`/`addRingBraces` per-floor ring-beam helpers
+  (both BlockKit-adjacent/superseded) deleted as dead code.
+  `buildElvenShop` (a different elven kind, out of this round's scope)
+  still uses `addBlockElvenTrunk`/`buildElvenTrunkGrid` unchanged — a
+  deliberate deferral, not an oversight, matching this project's
+  established one-building-type-at-a-time pattern; its own BlockKit-vs-
+  tower-kit question is left for whenever shop is reached in the
+  race-by-race cycle. Verification: 6 new `ElvenTreehouseKit.test.ts`
+  tests (valid geometry across a seed sweep, determinism, real
+  `BoxGeometry` block construction — not a BlockKit voxel grid, exact
+  `dna.floors` respect, an always-living never-classic/pagoda roof cap,
+  a genuine carved `ExtrudeGeometry` entrance); full elven test slice
+  (121 tests) and `FactionBuildingVariants.test.ts` (113 tests, after
+  removing/updating assertions that exercised the now-deleted
+  `buildElvenVilla`) all pass; fresh full-suite regression re-confirmed
+  unchanged (144 tsc errors, the same 13 pre-existing/flaky vitest
+  failures as every prior round, no new regressions). Live-verified via
+  Playwright screenshots: real coursed wood-block walls with visible
+  bark-grain texture and running-bond offsets, a genuine carved pointed-
+  arch door with a keystone accent and real recessed depth, quoins,
+  root tendrils, vine/leaf props, and an organic multi-lobe living
+  canopy — visually consistent with the tower's own established quality
+  bar, directly addressing the feedback.
+- [x] **6.6c — Third elven building type: the market stall ("shop" kind,
+  "Moonlit Exchange")**: user asked to move to "the next building type"
+  in the same research → learn → plan → build → test cycle. Targeted
+  `buildElvenShop()` — the last elven kind still on the old `BlockKit`
+  voxel technique alongside a distinct `buildElvenChapel()` (untouched;
+  uses its own standing-tree-stones technique, never part of the "old
+  block design" complaint). Design: `docs/superpowers/specs/
+  2026-09-03-elven-market-stall-design.md`. Research summary: real
+  market stalls are genuinely 1-2 walls, not 4 (a back wall for locked
+  storage + an open counter facing the street) — pre-1850s shops used
+  awning + open counter, not glass display windows (large glazed
+  storefronts are a 20th-century convention); historical hanging signs
+  used carved/painted trade symbols rather than lettering (legally
+  codified in England in 1393; medieval illiteracy made pictorial
+  symbols the norm); Zelda BOTW's Great Deku Tree literally nests a
+  "General Shop" and "Spore Store" into a giant living tree, directly
+  validating the existing "Moonlit Exchange" (trading platform beneath
+  a sapling) *concept* even though its *construction* needed rebuilding.
+  Found strong in-repo precedent to reuse rather than reinvent: the
+  generic `buildMarketStall()`'s striped sloped-panel awning technique,
+  the tavern's rigid bracket+board+chain hanging sign, and
+  `StoneTowerOpenings.ts`'s carved-recessed-opening technique at a
+  wide/short aspect ratio for a genuine counter cutout. Shipped: a new
+  `facesOverride` option on `buildWallSurfaceBlocks()` (additive,
+  backward-compatible — existing callers/tests unaffected) so a caller
+  can build real per-course blocks for only a SUBSET of the octagon's 8
+  faces, used for a genuinely partial 3-face back wall (not a full
+  enclosed ring — the single biggest fix per the research); new
+  `ElvenMarketStallKit.ts`'s `buildElvenMarketStall()` composing that
+  partial wall, a carved counter-opening, a counter slab + 2 corner
+  posts, a striped fabric awning (`buildStallAwning`, elven-palette
+  variant of the existing generic technique), a small living sapling
+  canopy (`buildLivingRoofCap` at a miniature scale, keeping the "grown
+  from a tree" identity), and a hanging trade-sign with a glowing
+  moonstone accent standing in for a carved trade symbol. Old
+  `buildElvenShop`/`addBlockElvenTrunk` deleted as dead code once
+  nothing referenced them; `buildElvenTrunkGrid`/`carveTrunkWindows`/
+  `pickElvenEntranceStyle`/`pickElvenCanopyArchetype` remain exported,
+  tested, reusable primitives — not deleted, just no longer wired into
+  any live elven builder. **Real placement bug found and fixed during
+  live-verification**: the counter slab/posts/awning/sign were all
+  positioned along the back wall's own outward-normal direction (i.e.
+  further into the exterior BEHIND the enclosed storage area) instead
+  of the OPEN customer-facing side (the opposite direction, where the
+  missing wall faces are) — fixed by flipping the reference angle;
+  caught via an actual screenshot, not just unit tests (the unit tests
+  couldn't have caught this since they don't assert on absolute
+  spatial direction, only relative geometry presence). Verification: 8
+  new `ElvenMarketStallKit.test.ts` tests (valid geometry across a seed
+  sweep, determinism, substantial real block-course triangle count in
+  the named back wall, a genuinely partial not full-ring wall via
+  triangle-count comparison, a real carved `ExtrudeGeometry`
+  counter-opening, an always-living sapling canopy checked within its
+  own named subtree, a multi-panel fabric awning, a glowing sign
+  accent); full `FactionBuildingVariants.test.ts` (113 tests) passes;
+  fresh full-suite regression re-confirmed unchanged (144 tsc errors,
+  the same 13 pre-existing/flaky vitest failures — one extra flaky
+  timeout seen on one run in an unrelated overworld-streaming test,
+  confirmed by re-running in isolation to be pre-existing sandbox
+  flakiness). Live-verified via Playwright screenshots (after the
+  placement fix): a genuinely partial, visibly-open curved wood-block
+  back wall (clearly not a full enclosure), a striped fabric awning, a
+  counter with goods, corner posts, and a hanging sign — a silhouette
+  genuinely distinct from the fully-enclosed treehouse home, matching
+  the research's "shop vs. house" distinguishing-signal table.
+
+- [x] **6.6d — Floor-cap fix + residential roof-archetype variety
+  (tower-kit shared fix, applies to both the tower and the treehouse
+  family)**: user feedback on the shipped treehouse home
+  (house/villa/terraced/inn/blacksmith) in-game: (1) some buildings
+  showed a visible dark/seethrough gap where the trunk met the roof —
+  "no ground there"; (2) every building forced the same living-canopy
+  roof, reading as monotonous with several visible in one settlement —
+  "the roofs can be more like the tower design roofs." Design: `docs/
+  superpowers/specs/2026-09-04-tower-kit-floor-caps-and-roof-variety-
+  design.md`; plan: `docs/superpowers/plans/2026-09-04-tower-kit-floor-
+  caps-and-roof-variety.md`. Root cause of (1): `StoneTowerWallSurface.
+  ts`'s per-course block walls are a genuinely hollow shell (individual
+  protruding blocks, no backing wall or floor anywhere); wherever a
+  ring/roof above was narrower than the ring below (worst case: the
+  living roof cap's neck, starting at half the top floor's own radius),
+  the wider ring's own top rim was an unfloored, seethrough ledge. Fix:
+  new `StoneTowerFloorCap.ts`'s `buildFloorCap()` — a filled octagon
+  disc (triangle fan from `StoneTowerShape.ts`'s existing
+  `octagonPoints()`) — added at the top of every `buildTowerBase()`/
+  `buildTowerWallRing()` group, closing every base/floor, floor/floor,
+  and floor/roof seam automatically for both `buildElvenStoneTower()`
+  and `buildElvenTreehouseHome()`. For (2): `StoneTowerRoofCap.ts`'s
+  `pickRoofArchetype()`/`buildTowerRoofCap()` gained an optional
+  trailing weight-table parameter (default: the tower's own existing
+  `TOWER_ROOF_ARCHETYPE_WEIGHTS`, so `buildElvenStoneTower()` is
+  unaffected); a new `RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS` (living 45% /
+  classic 30% / pagoda 25%) keeps `living` the plurality choice
+  (preserving the "living tree home" identity) while reusing the
+  tower's own already-approved classic/pagoda archetypes for genuine
+  variety — no new 4th archetype invented. `ElvenTreehouseKit.ts` now
+  calls `buildTowerRoofCap(..., RESIDENTIAL_ROOF_ARCHETYPE_WEIGHTS)`
+  instead of unconditionally forcing `buildLivingRoofCap()`.
+  **A real regression was found and fixed during live-verification, not
+  by any unit test**: `buildFloorCap()`'s custom `BufferGeometry`
+  initially had only `position`/`normal` attributes, no `uv` — since it
+  shares `palette.stone` with the wall blocks/quoins/entrance (all of
+  which DO have `uv`), and `SettlementRenderer.ts` runs
+  `mergeGroupMeshesByMaterial()` over each building's whole group after
+  construction, the attribute mismatch made THREE's `mergeGeometries()`
+  fail (logged, not thrown) — and `mergeGroupMeshesByMaterial()` drops
+  AND disposes EVERY mesh in a bucket whose merge fails, not just the
+  offending one, so affected buildings lost their ENTIRE wall geometry,
+  rendering as a flat, undetailed dark silhouette in the live settlement
+  generator (though never in isolated unit tests, which never exercise
+  `mergeGroupMeshesByMaterial()` on a floor-cap-bearing group). Fixed by
+  giving `buildFloorCap()` a simple planar `uv` attribute matching every
+  other tower-kit primitive; added a dedicated regression test
+  (`StoneTowerFloorCap.test.ts`) that reproduces the exact failure via
+  `mergeGroupMeshesByMaterial()` directly and asserts no console error
+  and a surviving merged mesh — confirmed to fail pre-fix with the
+  identical "must have compatible attributes... uv" message seen live,
+  and pass after. Verification: 6 `StoneTowerFloorCap.test.ts` tests (2
+  new regression-guard tests), all 33 `StoneTowerKit.test.ts` tests
+  (including 3 new floor-cap tests) and all pre-existing 30 unchanged,
+  updated `StoneTowerRoofCap.test.ts`/`ElvenTreehouseKit.test.ts` tests
+  confirming both the default-weights backward-compatibility and real
+  roof-archetype variety; full regression (13 vitest / 144 tsc,
+  baseline-unchanged). Live-reverified via Playwright across 3
+  settlement seeds after the uv fix: every building shows full detailed
+  wall/window/entrance geometry (no seethrough gaps), with visibly
+  distinct classic-shingle, pagoda-style, and living-canopy roofs
+  co-existing in the same settlement.
+
+- [x] **6.6e — Fourth elven building type: the chapel ("Ancient Shrine" →
+  Gothic-elven nave + apse + bellcote + forecourt)**: user asked to move
+  to the next building type in the same research → learn → plan → build
+  → test cycle. Targeted `buildElvenChapel()` — the LAST elven kind still
+  on the old style (a ring of 6 standing tree-stones + a central glowing
+  crystal), reachable via the `church` ward in normal settlement
+  generation. Design: `docs/superpowers/specs/
+  2026-09-04-elven-chapel-rebuild-design.md`. Plan: `docs/superpowers/
+  plans/2026-09-04-elven-chapel-rebuild.md`.
+  **Core technical tension**: `chapel`'s footprint is a fixed 4x8 "long
+  nave" (1:2 aspect ratio) — genuinely elongated, unlike every prior
+  tower-kit building's roughly square/circular footprint, and the whole
+  kit is built around a single-radius regular octagon. Research found: a
+  4x8 rectangle is already architecturally correct (real single-cell
+  Anglo-Saxon/Norman parish naves run 2:1-3:1); a small octagonal apse at
+  the altar end is genuine real-world architecture (a direct, no-
+  compromise bridge back to the kit's existing radial technology); small
+  parish churches overwhelmingly use a cheap bell-gable/bellcote instead
+  of a full second tower; round-tower churches are a NAMED real-world
+  precedent for "a round piece docking flush against a flat wall" (the
+  seam itself is the historically-attested detail); lancet (pointed-arch)
+  windows are already this kit's existing `pointed_arch` type; the
+  vernacular roof for a small rectangular nave is a simple gabled ridge
+  roof (a genuinely new primitive, since none of the kit's radial
+  cone/pagoda/living roof-caps can fit a rectangle). The single biggest
+  codebase finding: `buildWallSurfaceBlocks()`'s existing `facesOverride`
+  (added for the market stall) has NO dependency on regular-octagon
+  faces — it can be pointed at a plain 4-face rectangle with ZERO changes
+  to that function itself.
+  Shipped: `rectanglePoints()`/`rectangleFaces()`/`facePointAt()` (new,
+  `StoneTowerShape.ts`) — rectangle shape math + a face-interpolation
+  utility, reused for window/entrance placement along a wall; `buildFloorCap()`/
+  `buildQuoins()` both gained an optional `pointsOverride` parameter
+  (backward-compatible, existing octagon callers unaffected) so they can
+  use the rectangle's 4 real corners instead of a regular octagon's 8;
+  new `StoneTowerGableRoof.ts`'s `buildGableRoofCap()` (two raked planes
+  + ridge beam + gable-end triangle fills + ridge-end finials) — the
+  one genuinely new shared primitive, reusable by any future rectangular
+  hall; new `ElvenChapelKit.ts`'s `buildElvenChapelShrine()` composing a
+  real rectangular nave (per-course block walls, quoins at its 4 real
+  corners, floor cap, entrance, 4 lancet windows evenly spaced along both
+  long walls, gable roof), a small octagonal apse (built with the kit's
+  EXISTING, completely unmodified radial machinery — a partial ring open
+  toward the nave via the same "omit some faces" technique the market
+  stall proved, always topped with a living-canopy roof, housing the
+  relocated sacred crystal on a small pedestal, on-axis with the
+  entrance), a bellcote (a small pierced wall-slab with 1-2 bell openings
+  above the entrance gable, reusing `buildRecessedArchOpening()`'s shared
+  carved-cavity technique), and a relocated forecourt of the old shrine's
+  6 standing tree-stones (repositioned outdoors as an approach avenue,
+  not deleted). Old `buildElvenChapel` deleted as dead code (confirmed
+  via grep: no other callers in the repo). Synced `docs/BUILDINGS.md`'s
+  stale elven chapel row (a pre-existing "woodland shrine, no walls, open
+  colonnade" description that predates this entire rebuild lineage and
+  already conflicted with the shipped watchtower/villa descriptions in
+  the same doc — documented as intentionally-superseded, not a
+  regression, since every prior round already implicitly superseded this
+  doc without objection).
+  **Real placement bug found and fixed during live-verification, not by
+  any unit test**: the bellcote was initially positioned at `z = halfD *
+  0.85` — INSIDE the gable wall/roof's own volume (the front gable wall
+  and its matching gable-end roof triangle both sit at exactly `z =
+  halfD`), so it was fully occluded from outside view, invisible in the
+  actual live settlement despite passing its own unit test (which only
+  checked relative position in isolation, not visibility against the
+  wall/roof around it). Fixed by moving it to `z = halfD + slabThickness
+  * 3`, standing proud in front of the gable's own face — matching the
+  real-world bell-gable precedent. Live-reverified: the bellcote's
+  pierced wall-slab with 2 bell openings is now clearly visible standing
+  above the entrance gable.
+  Verification: 6 new/updated test files (`StoneTowerShape.test.ts` +6,
+  `StoneTowerFloorCap.test.ts` +3, `StoneTowerQuoins.test.ts` +3, new
+  `StoneTowerGableRoof.test.ts` with 5 tests, new `ElvenChapelKit.test.ts`
+  with 14 tests, `FactionBuildingVariants.test.ts` chapel describe block
+  rewritten); full regression (13 vitest / 144 tsc, baseline-unchanged).
+  Live-verified via Playwright (temporarily switching the Settlement
+  Lab's POC override to `chapel` for isolated close-up screenshots, then
+  reverting it back to `house`): real per-course block rectangular
+  walls, 4 evenly-spaced lancet windows, a carved entrance, a gabled
+  ridge roof (not a cone), a small octagonal apse with a visible glowing
+  crystal and living-canopy roof, and (after the placement fix) a
+  visible bellcote.
+
+**Non-goal for this phase**: applying lessons learned here back to
+terrain/nature tile-connection — explicitly a *future* step the user
+named, after all races' buildings are done.
+
+---
+
 ## Cross-cutting notes for whoever picks this up
 
 - **Every phase should go through brainstorming → design spec → writing-plans → TDD

@@ -1,3 +1,42 @@
+// ── CSS ───────────────────────────────────────────────────────────────────────
+// SettlementLabPanel previously had NO styling at all — it rendered as a
+// plain in-flow <div> appended after the fullscreen #game-canvas (which is
+// `width:100vw;height:100vh` with `body{overflow:hidden}` — see index.html),
+// so it was pushed completely below the fold and invisible, even though its
+// controls existed in the DOM (a real, pre-existing bug: a user testing via
+// the actual "Play in 3D" button saw no panel at all, only the normal game
+// HUD/DevSandbox). Every other real dev/HUD panel in this codebase
+// (DevSandbox.ts's `.ds-panel`, HUD.ts's stat blocks) uses `position: fixed`
+// with an injected <style> singleton — this mirrors that exact convention.
+const SL_CSS = `
+.settlement-lab-panel {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 7600;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px;
+  background: rgba(6,4,14,.94); backdrop-filter: blur(8px);
+  border: 1px solid #2a1e4a; border-radius: 6px;
+  font-family: 'Crimson Text','Georgia',serif; font-size: .8rem;
+  color: #d4c0f0;
+  box-shadow: 0 12px 48px rgba(0,0,0,.8);
+}
+.settlement-lab-panel input,
+.settlement-lab-panel select,
+.settlement-lab-panel button {
+  font: inherit; color: inherit;
+  background: rgba(255,255,255,.06);
+  border: 1px solid #3a2c5a; border-radius: 4px;
+  padding: 4px 6px;
+}
+.settlement-lab-panel button { cursor: pointer; }
+.settlement-lab-panel button:hover { background: rgba(255,255,255,.14); }
+.settlement-lab-panel [data-role="seed-input"] { width: 90px; }
+.settlement-lab-panel [data-role="readout"] {
+  flex-basis: 100%; opacity: .85; font-size: .74rem;
+}
+`;
+
 export interface SettlementLabPanelOptions {
   initialSeed: number;
   settlementTypes: string[];
@@ -30,6 +69,7 @@ export class SettlementLabPanel {
 
   constructor(options: SettlementLabPanelOptions) {
     this.initialSeed = options.initialSeed;
+    this._ensureStyles();
     this.rootEl = document.createElement('div');
     this.rootEl.className = 'settlement-lab-panel';
 
@@ -119,5 +159,13 @@ export class SettlementLabPanel {
     }
 
     return select;
+  }
+
+  private _ensureStyles(): void {
+    if (document.getElementById('settlement-lab-panel-css')) return;
+    const s = document.createElement('style');
+    s.id = 'settlement-lab-panel-css';
+    s.textContent = SL_CSS;
+    document.head.appendChild(s);
   }
 }

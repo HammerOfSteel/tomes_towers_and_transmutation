@@ -1,6 +1,6 @@
 import { WARD_TO_KIND, WARD_TO_SIZE, WARD_TO_FLOORS } from '@/buildingToDungeonPlan';
 import type { SettlementType, PlacedBuilding } from '../SettlementGenerator';
-import type { BuildingDNA, Faction } from './BuildingDNA';
+import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { factionBuildingDna } from './BuildingDNA';
 
 export function mapStudioFactionToRuntimeFaction(faction: string): Faction {
@@ -30,8 +30,20 @@ export function createSettlementBuildingDna(
   b: PlacedBuilding,
   settlementType: SettlementType,
   faction: Faction,
+  /** Dev/test-only override: when given, every building uses this kind
+   *  instead of its ward's WARD_TO_KIND mapping. Lets a tool like the
+   *  Settlement Lab isolate a single building kind (e.g. show ONLY
+   *  elven watchtowers) in an otherwise-normal settlement, so a new
+   *  race/kind's procedural building can be reviewed in its real
+   *  settlement context instead of only in showroom.html. Every
+   *  PlacedBuilding already came from a ward whose type has a
+   *  WARD_TO_KIND entry (planSettlement() only pushes to `buildings`
+   *  after that check passes — see SettlementGenerator.ts), so this is
+   *  safe to apply unconditionally rather than needing its own
+   *  null-check branch. */
+  buildingKind?: BuildingKind,
 ): BuildingDNA | null {
-  const kind = WARD_TO_KIND[b.wardType];
+  const kind = buildingKind ?? WARD_TO_KIND[b.wardType];
   if (!kind) return null;
   if (b.isAnchor) {
     const size = WARD_TO_SIZE[b.wardType] ?? 'medium';

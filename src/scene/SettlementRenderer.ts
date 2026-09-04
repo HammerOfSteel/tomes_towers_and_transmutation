@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import type { WorldGrid } from '@/world/WorldGrid';
 import type { SettlementPlan } from '@/world/SettlementGenerator';
-import type { BuildingDNA, Faction } from '@/world/buildings/BuildingDNA';
+import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import {
   createSettlementBuildingDna,
@@ -44,6 +44,14 @@ export interface SettlementRenderContext {
   /** Convert the plan's studio-side faction string to a runtime Faction.
    *  Pass `mapStudioFactionToRuntimeFaction` from BuildingTypeMap.ts here. */
   mapFaction: (studioFaction: string) => Faction;
+  /** Dev/test-only: when given, every building in this settlement is built
+   *  with this BuildingKind regardless of its ward's own WARD_TO_KIND
+   *  mapping. Forwarded verbatim to createSettlementBuildingDna() — see
+   *  its doc comment for why this is safe to apply unconditionally.
+   *  Used by SettlementLabScene's "kind override" dropdown so a single
+   *  new race/kind's procedural building can be previewed alone in an
+   *  otherwise-normal generated settlement. */
+  forceBuildingKind?: BuildingKind;
 }
 
 export interface SettlementBuildingRecord {
@@ -120,7 +128,7 @@ export function renderSettlementPlan(
     const wz = (b.row - ghh + b.offsetZ) * T;
     const wy = wg.get(b.col, b.row).elevation * SH;
 
-    const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction);
+    const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction, ctx.forceBuildingKind);
     if (!dna) continue;
 
     const inst = buildBuilding(dna);

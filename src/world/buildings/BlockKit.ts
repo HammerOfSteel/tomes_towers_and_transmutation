@@ -55,6 +55,13 @@ export function hasBlock(grid: BlockGrid, bx: number, by: number, bz: number): b
   return grid.cells.has(key(bx, by, bz));
 }
 
+/** Removes a cell from the grid, if present -- used by post-pass occupancy carving
+ *  (e.g. window openings) that needs to genuinely open a hole in an already-built
+ *  grid, the same "hole" effect the door notch achieves during initial fill. */
+export function clearBlock(grid: BlockGrid, bx: number, by: number, bz: number): void {
+  grid.cells.delete(key(bx, by, bz));
+}
+
 export function getMaterialKey(grid: BlockGrid, bx: number, by: number, bz: number): string | undefined {
   return grid.cells.get(key(bx, by, bz));
 }

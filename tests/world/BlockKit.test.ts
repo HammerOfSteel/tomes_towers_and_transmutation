@@ -18,6 +18,7 @@ import {
   createBlockGrid,
   setBlock,
   hasBlock,
+  clearBlock,
   getMaterialKey,
   getChamferFlags,
   getFaceVisibility,
@@ -52,6 +53,20 @@ describe('BlockKit — grid primitives', () => {
     expect(hasBlock(grid, 0, 0, 0)).toBe(true);
     expect(getMaterialKey(grid, 0, 0, 0)).toBe('earth');
     expect(hasBlock(grid, 1, 0, 0)).toBe(false);
+  });
+
+  it('clearBlock removes a previously-set block so hasBlock reports false', () => {
+    const grid = createBlockGrid();
+    setBlock(grid, 1, 2, 3, 'bark');
+    expect(hasBlock(grid, 1, 2, 3)).toBe(true);
+    clearBlock(grid, 1, 2, 3);
+    expect(hasBlock(grid, 1, 2, 3)).toBe(false);
+  });
+
+  it('clearBlock is a safe no-op on a cell that was never set', () => {
+    const grid = createBlockGrid();
+    expect(() => clearBlock(grid, 9, 9, 9)).not.toThrow();
+    expect(hasBlock(grid, 9, 9, 9)).toBe(false);
   });
 });
 

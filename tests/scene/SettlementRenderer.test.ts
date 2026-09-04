@@ -188,4 +188,37 @@ describe('renderSettlementPlan', () => {
       expect(rec.isAnchor).toBe(orig!.isAnchor);
     }
   });
+
+  it('ctx.forceBuildingKind forces every building to that kind, regardless of ward mapping', () => {
+    const wg = makeGrid();
+    // A real city settlement has a mix of ward types (market/church/inn/
+    // smithy/merchant/patriciate/slum/gateward/farm/...), each normally
+    // mapping to a different BuildingKind via WARD_TO_KIND — a strong
+    // check that the override really applies to every one of them, not
+    // just a single ward type.
+    const plan = planSettlement('city', CENTRE, CENTRE, 7, wg);
+    const ctx: SettlementRenderContext = { ...makeCtx(), forceBuildingKind: 'watchtower' };
+
+    const result = renderSettlementPlan(plan, wg, CENTRE, CENTRE, ctx);
+
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+    for (const rec of result.buildingRecords) {
+      expect(rec.dna.buildingKind).toBe('watchtower');
+    }
+  });
+
+  it('omitting forceBuildingKind preserves the normal per-ward BuildingKind mix', () => {
+    const wg = makeGrid();
+    const plan = planSettlement('city', CENTRE, CENTRE, 7, wg);
+    const ctx = makeCtx(); // no forceBuildingKind
+
+    const result = renderSettlementPlan(plan, wg, CENTRE, CENTRE, ctx);
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    // A city-sized settlement should produce more than one distinct kind
+    // when no override is applied (the whole point of the regression
+    // check above) — this seed/type is known to place a market, church,
+    // merchant, etc. ward.
+    expect(kinds.size).toBeGreaterThan(1);
+  });
 });

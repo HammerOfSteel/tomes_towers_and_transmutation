@@ -23,7 +23,7 @@ import {
   type SettlementRenderResult,
 } from '@/scene/SettlementRenderer';
 import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingTypeMap';
-import { getFootprint, FLOOR_HEIGHT } from '@/world/buildings/BuildingDNA';
+import { getFootprint, FLOOR_HEIGHT, type BuildingKind } from '@/world/buildings/BuildingDNA';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { SettlementLabPanel } from '@/ui/SettlementLabPanel';
 
@@ -50,6 +50,25 @@ const LAYOUTS: LayoutType[] = [
   'auto', 'organic', 'grid', 'linear',
   'radial', 'terraced', 'perimeter', 'cluster',
 ];
+
+/**
+ * Race-by-race procedural building POC rollout (see
+ * TODO/organic_world_tiles_todo.md's Phase 6): as each race gets its own
+ * researched "kit of parts" building(s), simply selecting that faction here
+ * shows ONLY that race's new building(s), not the old generic mix —
+ * exactly what the user asked for ("clear out the current elven buildings
+ * ... and only have the towers so I can see them"), with zero extra UI
+ * (no dropdown/toggle — picking the faction IS the override). Add an entry
+ * here as each race's POC building ships; remove/relax it once a race has
+ * enough building kinds that forcing one specific kind stops being useful
+ * for reviewing the whole settlement.
+ */
+const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind>> = {
+  // 'house' for the living-tree-home kit-of-parts round (2026-09-03) -- was
+  // 'watchtower' during the stone-tower kit round. Switch back to 'watchtower' (or add
+  // more entries) if you need to re-isolate the tower for comparison.
+  elven: 'house',
+};
 
 // ── Regenerate params type ────────────────────────────────────────────────────
 
@@ -209,6 +228,11 @@ export class SettlementLabScene {
     const ghw = centerCol; // grid-half-width passed to renderSettlementPlan
     const ghh = centerRow; // grid-half-height
 
+    // Race-by-race POC override (see POC_KIND_OVERRIDE_BY_FACTION's doc
+    // comment) — picking a faction that has a shipped POC building
+    // automatically shows ONLY that building, no separate UI action needed.
+    const forceBuildingKind = POC_KIND_OVERRIDE_BY_FACTION[params.faction];
+
     const result = renderSettlementPlan(plan, grid, ghw, ghh, {
       registerBuildingCollider: (dna, pos, rotationY) => {
         const fp    = getFootprint(dna.buildingKind, dna.size);
@@ -225,6 +249,7 @@ export class SettlementLabScene {
         this._buildingBodies.push(body);
       },
       mapFaction: mapStudioFactionToRuntimeFaction,
+      forceBuildingKind,
     });
 
     this._renderResult = result;
@@ -253,7 +278,8 @@ export class SettlementLabScene {
       `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
       `features: ${result.featureGroups.length}`,
-    ].join('  |  ');
+      forceBuildingKind ? `POC override: ${forceBuildingKind}` : null,
+    ].filter((s): s is string => s !== null).join('  |  ');
     this._panel.setReadout(readout);
   }
 
