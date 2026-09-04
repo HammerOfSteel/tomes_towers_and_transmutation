@@ -106,4 +106,40 @@ describe('buildElvenChapelShrine', () => {
     // must add real height above that.
     expect(box.max.y).toBeGreaterThan(4.48 + 1);
   });
+
+  it('has an apse (small octagonal altar niche) docked against the nave\'s back wall, open toward the nave', () => {
+    const g = buildElvenChapelShrine(makeDna(6));
+    const apse = g.getObjectByName('elven-chapel-apse');
+    expect(apse).toBeDefined();
+    // Docked behind the nave: apse's own world position.z must be
+    // negative (nave's back wall sits at z = -halfD; the apse projects
+    // further in -Z from there).
+    const worldPos = new THREE.Vector3();
+    apse!.getWorldPosition(worldPos);
+    expect(worldPos.z).toBeLessThan(0);
+  });
+
+  it('the apse always uses a living-canopy roof cap (never classic/pagoda), a deliberate sacred-altar identity choice', () => {
+    for (let seed = 0; seed < 10; seed++) {
+      const g = buildElvenChapelShrine(makeDna(seed));
+      const apse = g.getObjectByName('elven-chapel-apse')!;
+      let sawApexBall = false;
+      apse.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawApexBall = true; });
+      // buildClassicRoofCap/buildPagodaRoofCap always end with a
+      // SphereGeometry apex finial ball; buildLivingRoofCap never does
+      // (its geometry is a single merged BlockKit grid mesh) -- see
+      // StoneTowerRoofCap.test.ts's own established discriminator.
+      expect(sawApexBall).toBe(false);
+    }
+  });
+
+  it('the sacred crystal sits inside the apse, on-axis (x approx 0), visible from the nave\'s own entrance', () => {
+    const g = buildElvenChapelShrine(makeDna(8));
+    const crystal = g.getObjectByName('elven-chapel-sacred-crystal');
+    expect(crystal).toBeDefined();
+    const worldPos = new THREE.Vector3();
+    crystal!.getWorldPosition(worldPos);
+    expect(Math.abs(worldPos.x)).toBeLessThan(0.1);
+    expect(worldPos.z).toBeLessThan(0); // behind the nave, inside the apse
+  });
 });

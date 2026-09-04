@@ -25,13 +25,14 @@ import type { BuildingDNA } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { barkTexture, ashlarTexture } from './FactionBlockTextures';
 import { slateTexture } from './TextureFactory';
-import { rectanglePoints, rectangleFaces, facePointAt, type OctagonFace } from './StoneTowerShape';
+import { rectanglePoints, rectangleFaces, facePointAt, octagonFaces, type OctagonFace } from './StoneTowerShape';
 import { buildWallSurfaceBlocks } from './StoneTowerWallSurface';
 import { buildFloorCap } from './StoneTowerFloorCap';
 import { buildQuoins } from './StoneTowerQuoins';
 import { buildEntrance, pickEntranceStyle } from './StoneTowerEntrance';
 import { pickWindowStyle, buildWindow } from './StoneTowerWindows';
 import { buildGableRoofCap } from './StoneTowerGableRoof';
+import { buildLivingRoofCap } from './StoneTowerRoofCap';
 import type { StoneTowerPalette } from './StoneTowerKit';
 
 function mat(color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
@@ -112,6 +113,76 @@ function _buildNave(dna: BuildingDNA, halfW: number, halfD: number, naveHeight: 
   return g;
 }
 
+/** How far the apse's own center sits behind the nave's back gable wall
+ * (as a multiple of the apse's own radius) -- a modest overlap so the
+ * apse visibly docks flush against the nave's flat wall (the real-world
+ * round-tower-church precedent: this seam is the historically-attested
+ * detail, not a flaw to hide -- see design doc's research summary). */
+const APSE_DOCK_FRAC = 0.55;
+
+/**
+ * Builds the apse: a small octagonal altar niche, using the kit's
+ * EXISTING, completely unmodified radial machinery (a regular octagon
+ * via `octagonFaces()`, `buildFloorCap()`, `buildQuoins()`, all called
+ * with no `pointsOverride` since the apse genuinely IS a regular
+ * octagon). Open toward the nave (+Z direction): faces 0 and 7 (the two
+ * faces nearest normalAngle=0, i.e. facing +Z) are omitted from the
+ * wall's own `facesOverride`, so the altar niche is visible from inside
+ * the nave rather than a sealed room -- the same "omit some faces"
+ * technique already proven on the market stall's own partial back wall.
+ * Always topped with a living-canopy roof cap (never the tower's own
+ * classic/pagoda/living random dispatch) -- a deliberate identity
+ * choice: the altar always sits beneath a living canopy, echoing the
+ * tree-integration motif already established elsewhere in this kit, and
+ * visually distinguishing the sacred apse from the nave's own new plain
+ * gable roof.
+ */
+function _buildApse(dna: BuildingDNA, halfD: number, palette: StoneTowerPalette): THREE.Group {
+  const apseSeed = dna.seed ^ 0x41505345; // 'APSE' in ASCII hex
+  const apseRadius = halfD * 0.45;
+  const apseHeight = FLOOR_HEIGHT * 0.9;
+
+  const g = new THREE.Group();
+  g.name = 'elven-chapel-apse';
+
+  const allFaces = octagonFaces(apseRadius);
+  const openFaces = allFaces.filter((_, i) => i !== 0 && i !== 7);
+  const walls = buildWallSurfaceBlocks(0, apseHeight, apseSeed, palette.stone, { facesOverride: openFaces });
+  g.add(walls);
+
+  const quoins = buildQuoins(apseRadius, apseHeight, undefined, palette.stone);
+  g.add(quoins);
+
+  const floorCap = buildFloorCap(apseRadius, palette.stone);
+  floorCap.position.y = apseHeight;
+  g.add(floorCap);
+
+  const roof = buildLivingRoofCap(apseSeed ^ 0x1DEA, apseRadius, { leaf: palette.leaf, bark: palette.bark });
+  roof.position.y = apseHeight;
+  g.add(roof);
+
+  // Relocated sacred crystal (unchanged material identity from the old
+  // buildElvenChapel()'s own emissive octahedron) -- on-axis at the
+  // apse's own focal point, on a small pedestal.
+  const pedestalMat = mat('#7a8a70', { roughness: 0.95 });
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(apseRadius * 0.18, apseRadius * 0.22, apseHeight * 0.3, 8), pedestalMat);
+  pedestal.position.y = apseHeight * 0.15;
+  pedestal.castShadow = pedestal.receiveShadow = true;
+  g.add(pedestal);
+
+  const crystalMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#a0ffe0'), emissive: new THREE.Color('#60ffc0'), emissiveIntensity: 1.0, roughness: 0.15, transparent: true, opacity: 0.9 });
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(apseRadius * 0.2, 0), crystalMat);
+  crystal.name = 'elven-chapel-sacred-crystal';
+  crystal.position.y = apseHeight * 0.45;
+  g.add(crystal);
+
+  // Dock the whole apse behind the nave's own back gable wall (which
+  // sits at world z = -halfD -- see rectangleFaces()'s face index 1).
+  g.position.z = -halfD - apseRadius * (1 - APSE_DOCK_FRAC);
+
+  return g;
+}
+
 /**
  * Public entry point: builds a complete elven chapel/shrine for the
  * given `BuildingDNA` (dispatched from FactionBuildingVariants.ts's
@@ -140,6 +211,8 @@ export function buildElvenChapelShrine(dna: BuildingDNA): THREE.Group {
   const roof = buildGableRoofCap(halfW, halfD, ridgeHeight, palette.shingle);
   roof.position.y = naveHeight;
   g.add(roof);
+
+  g.add(_buildApse(dna, halfD, palette));
 
   return g;
 }
