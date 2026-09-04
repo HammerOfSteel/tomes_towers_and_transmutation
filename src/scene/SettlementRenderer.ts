@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import type { WorldGrid } from '@/world/WorldGrid';
-import type { SettlementPlan } from '@/world/SettlementGenerator';
+import type { SettlementPlan, PlacedBuilding } from '@/world/SettlementGenerator';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import {
@@ -44,14 +44,26 @@ export interface SettlementRenderContext {
   /** Convert the plan's studio-side faction string to a runtime Faction.
    *  Pass `mapStudioFactionToRuntimeFaction` from BuildingTypeMap.ts here. */
   mapFaction: (studioFaction: string) => Faction;
-  /** Dev/test-only: when given, every building in this settlement is built
-   *  with this BuildingKind regardless of its ward's own WARD_TO_KIND
-   *  mapping. Forwarded verbatim to createSettlementBuildingDna() — see
-   *  its doc comment for why this is safe to apply unconditionally.
-   *  Used by SettlementLabScene's "kind override" dropdown so a single
-   *  new race/kind's procedural building can be previewed alone in an
-   *  otherwise-normal generated settlement. */
-  forceBuildingKind?: BuildingKind;
+  /** Dev/test-only: when given as a plain `BuildingKind`, every building
+   *  in this settlement is built with that kind regardless of its ward's
+   *  own WARD_TO_KIND mapping (forwarded verbatim to
+   *  createSettlementBuildingDna() — see its doc comment for why this is
+   *  safe to apply unconditionally). Used by SettlementLabScene's
+   *  single-kind POC overrides so a single new race/kind's procedural
+   *  building can be previewed alone in an otherwise-normal generated
+   *  settlement.
+   *
+   *  When given as a FUNCTION instead, called once per building (with
+   *  that building's own `PlacedBuilding` and its index in
+   *  `plan.buildings`) so a caller can selectively override only SOME
+   *  buildings — return a `BuildingKind` to force that one building,
+   *  or `undefined` to fall through to its normal ward-based kind. Lets
+   *  a caller guarantee a kind with no `WARD_TO_KIND` entry at all (e.g.
+   *  elven's `watchtower`/`tower`, unreachable through any ward) appears
+   *  at least once in an otherwise-natural settlement, so every shipped
+   *  building "kit" for a race can be reviewed together instead of
+   *  forcing the whole settlement to one single kind. */
+  forceBuildingKind?: BuildingKind | ((building: PlacedBuilding, index: number) => BuildingKind | undefined);
 }
 
 export interface SettlementBuildingRecord {
@@ -123,12 +135,16 @@ export function renderSettlementPlan(
   const runtimeFaction = ctx.mapFaction(plan.faction);
 
   // ── Buildings ──────────────────────────────────────────────────────────────
-  for (const b of plan.buildings) {
+  for (let i = 0; i < plan.buildings.length; i++) {
+    const b = plan.buildings[i]!;
     const wx = (b.col - ghw + b.offsetX) * T;
     const wz = (b.row - ghh + b.offsetZ) * T;
     const wy = wg.get(b.col, b.row).elevation * SH;
 
-    const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction, ctx.forceBuildingKind);
+    const kindOverride = typeof ctx.forceBuildingKind === 'function'
+      ? ctx.forceBuildingKind(b, i)
+      : ctx.forceBuildingKind;
+    const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction, kindOverride);
     if (!dna) continue;
 
     const inst = buildBuilding(dna);
