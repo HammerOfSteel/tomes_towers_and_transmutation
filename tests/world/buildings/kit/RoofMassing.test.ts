@@ -180,7 +180,10 @@ describe('RoofMassing', () => {
     expect(countNamedDescendants(eastLastStrip!, /^course-\d+$/)).toBeGreaterThan(0);
     const eastBaseWidth = localMeshXExtent(eastFirstStrip!);
     const eastTipWidth = localMeshXExtent(eastLastStrip!);
+    expect(eastBaseWidth).toBeGreaterThan(0);
     expect(eastBaseWidth).toBeGreaterThan(outerHalfDepth * 2 * 0.95);
+    expect(eastTipWidth).toBeGreaterThan(0);
+    expect(eastTipWidth).toBeGreaterThan(ridgeHalfLength * 2 * 0.9);
     expect(eastTipWidth).toBeLessThan(ridgeHalfLength * 2 * 1.1);
     expect(eastTipWidth).toBeLessThan(eastBaseWidth * 0.6);
 
@@ -193,7 +196,10 @@ describe('RoofMassing', () => {
     expect(countNamedDescendants(frontLastStrip!, /^course-\d+$/)).toBeGreaterThan(0);
     const frontBaseWidth = localMeshXExtent(frontFirstStrip!);
     const frontTipWidth = localMeshXExtent(frontLastStrip!);
+    expect(frontBaseWidth).toBeGreaterThan(0);
     expect(frontBaseWidth).toBeGreaterThan(outerHalfWidth * 2 * 0.95);
+    expect(frontTipWidth).toBeGreaterThan(0);
+    expect(frontTipWidth).toBeGreaterThan(0.2);
     expect(frontTipWidth).toBeLessThan(0.5);
     expect(frontTipWidth).toBeLessThan(frontBaseWidth * 0.1);
 
