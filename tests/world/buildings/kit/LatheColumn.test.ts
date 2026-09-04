@@ -219,6 +219,18 @@ function rootMeanSquareDifference(a: number[], b: number[]): number {
   return Math.sqrt(a.reduce((sum, value, index) => sum + (value - b[index]!) ** 2, 0) / a.length);
 }
 
+function fractureCapVertices(root: THREE.Object3D, partName: string): THREE.Vector3[] {
+  const fractureCap = root.getObjectByName(`${partName}-fracture-cap`);
+  expect(fractureCap).toBeTruthy();
+  return fractureCap ? worldVertices(fractureCap) : [];
+}
+
+function ySpan(vertices: THREE.Vector3[]): number {
+  expect(vertices.length).toBeGreaterThan(0);
+  const ys = vertices.map(vertex => vertex.y);
+  return Math.max(...ys) - Math.min(...ys);
+}
+
 describe('buildLatheColumn', () => {
   it('builds a finite non-degenerate column whose overall height matches the request', async () => {
     const buildLatheColumn = await loadBuildLatheColumn();
@@ -336,7 +348,7 @@ describe('buildLatheColumn', () => {
     expect(lobedStdDev).toBeGreaterThan(flutedStdDev * 1.25);
   });
 
-  it('supports broken columns with capped height, missing upper parts, and a jagged non-flat break line', async () => {
+  it('supports broken columns with capped height, missing upper parts, and a distinctly jagged fracture cap', async () => {
     const buildLatheColumn = await loadBuildLatheColumn();
     const brokenAtHeight = 1.92;
     const column = buildLatheColumn({
@@ -354,10 +366,26 @@ describe('buildLatheColumn', () => {
     expect(column.getObjectByName('impost')).toBeFalsy();
     if (!shaft) return;
 
-    const topBand = bandVertices(shaft, worldBox(shaft).max.y - 0.03, 0.04);
-    expect(topBand.length).toBeGreaterThan(0);
-    const yValues = topBand.map(vertex => vertex.y);
-    expect(Math.max(...yValues) - Math.min(...yValues)).toBeGreaterThan(0.03);
+    expect(ySpan(fractureCapVertices(shaft, 'shaft'))).toBeGreaterThan(0.02);
+  });
+
+  it('keeps the fracture cap jagged even when the break lands almost exactly on a shaft ring', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+    const brokenAtHeight = 1.9051;
+    const column = buildLatheColumn({
+      height: 3,
+      brokenAtHeight,
+      seed: 17,
+    }, makeStoneMaterial());
+
+    const shaft = column.getObjectByName('shaft');
+    expect(shaft).toBeTruthy();
+    expect(column.getObjectByName('capital')).toBeFalsy();
+    expect(column.getObjectByName('impost')).toBeFalsy();
+    expect(worldBox(column).max.y - worldBox(column).min.y).toBeCloseTo(brokenAtHeight, 3);
+    if (!shaft) return;
+
+    expect(ySpan(fractureCapVertices(shaft, 'shaft'))).toBeGreaterThan(0.02);
   });
 
   it('treats a break height at the full column height as intact rather than spuriously broken', async () => {

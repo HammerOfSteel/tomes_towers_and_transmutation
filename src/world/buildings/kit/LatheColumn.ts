@@ -39,6 +39,16 @@ interface BrokenPartPlacement {
   visibleHeight: number;
 }
 
+interface BrokenTopProfile {
+  fractureBandDepth: number;
+  maxDrop: number;
+}
+
+interface BrokenSectionGeometry {
+  shellGeometry: THREE.BufferGeometry;
+  fractureCapGeometry: THREE.BufferGeometry;
+}
+
 interface ColumnLayout {
   baseHeight: number;
   shaftHeight: number;
@@ -55,6 +65,8 @@ const DEFAULT_FLUTE_COUNT = 12;
 const DEFAULT_LOBE_COUNT = 4;
 const EPSILON = 1e-6;
 const NUMERIC_EPSILON = Number.EPSILON * 64;
+const MIN_FRACTURE_DROP = 0.03;
+const MIN_FRACTURE_BAND_DEPTH = 0.04;
 const PART_SEED_TAGS: Record<PartName, number> = {
   base: 0x4241_5345,
   shaft: 0x5348_4654,
@@ -227,31 +239,52 @@ function sliceRingsToHeight(rings: RingSpec[], visibleHeight: number): RingSpec[
   return sliced;
 }
 
+function resolveBrokenTopProfile(sectionHeight: number, referenceRadius: number): BrokenTopProfile {
+  const maxDrop = Math.min(
+    Math.max(referenceRadius * 0.18, MIN_FRACTURE_DROP),
+    sectionHeight * 0.72,
+  );
+
+  return {
+    fractureBandDepth: Math.min(
+      Math.max(maxDrop / 0.82, MIN_FRACTURE_BAND_DEPTH),
+      sectionHeight,
+    ),
+    maxDrop,
+  };
+}
+
 function buildBrokenTopVariations(
   radialSegments: number,
-  sectionHeight: number,
-  referenceRadius: number,
-  connectionGap: number,
+  maxDrop: number,
   seed: number,
 ): Pick<RingSpec, 'yOffsets' | 'radialScales'> {
   const rand = mulberry32(seed >>> 0);
-  const maxDrop = Math.min(
-    Math.max(referenceRadius * 0.34, sectionHeight * 0.18),
-    connectionGap * 0.82,
-    sectionHeight * 0.78,
-  );
   const apexStart = Math.floor(rand() * radialSegments);
   const apexSpan = Math.max(1, Math.floor(radialSegments * 0.04));
+  const troughStart = (apexStart + Math.floor(radialSegments / 2)) % radialSegments;
+  const troughSpan = Math.max(1, Math.floor(radialSegments * 0.06));
   const yOffsets: number[] = [];
   const radialScales: number[] = [];
 
   for (let index = 0; index < radialSegments; index++) {
-    const wrappedDistance = Math.min(
+    const wrappedApexDistance = Math.min(
       Math.abs(index - apexStart),
       radialSegments - Math.abs(index - apexStart),
     );
-    const isApex = wrappedDistance <= apexSpan;
-    yOffsets.push(isApex ? 0 : -(0.18 + rand() * 0.82) * maxDrop);
+    const wrappedTroughDistance = Math.min(
+      Math.abs(index - troughStart),
+      radialSegments - Math.abs(index - troughStart),
+    );
+    const isApex = wrappedApexDistance <= apexSpan;
+    const isTrough = wrappedTroughDistance <= troughSpan;
+    yOffsets.push(
+      isApex
+        ? 0
+        : isTrough
+          ? -maxDrop
+          : -(0.35 + rand() * 0.65) * maxDrop,
+    );
     radialScales.push(1);
   }
 
@@ -340,49 +373,72 @@ function buildBrokenSectionGeometry(
   visibleHeight: number,
   seed: number,
   radialSegments = DEFAULT_RADIAL_SEGMENTS,
-): THREE.BufferGeometry {
-  const rings = sliceRingsToHeight(spec.rings, visibleHeight);
-  const topRing = rings[rings.length - 1]!;
-  const previousRing = rings.length > 1 ? rings[rings.length - 2]! : null;
+): BrokenSectionGeometry {
+  const topRing = {
+    y: visibleHeight,
+    radius: interpolateRingRadius(spec.rings, visibleHeight),
+  };
   const referenceRadius = spec.radiusFn(
     topRing.radius,
     0,
     spec.height <= NUMERIC_EPSILON ? 0 : THREE.MathUtils.clamp(topRing.y / spec.height, 0, 1),
   );
-
-  rings[rings.length - 1] = {
+  const { fractureBandDepth, maxDrop } = resolveBrokenTopProfile(visibleHeight, referenceRadius);
+  const lowerRings = sliceRingsToHeight(spec.rings, Math.max(visibleHeight - fractureBandDepth, 0));
+  const fracturedTopRing: RingSpec = {
     ...topRing,
     ...buildBrokenTopVariations(
       radialSegments,
-      visibleHeight,
-      referenceRadius,
-      previousRing ? Math.max(topRing.y - previousRing.y, 0) : visibleHeight,
+      maxDrop,
       (seed ^ PART_SEED_TAGS[spec.name]) >>> 0,
     ),
   };
+  const shellRings = [...lowerRings, fracturedTopRing];
 
-  return buildSectionGeometry(
-    rings,
-    visibleHeight,
-    spec.radiusFn,
-    spec.closeBottom,
+  const fractureCapGeometry = new THREE.BufferGeometry();
+  const fractureCapVertexData: number[] = [];
+  appendRingCap(
+    fractureCapVertexData,
+    buildRingVertices(fracturedTopRing, spec.height, radialSegments, spec.radiusFn),
     true,
-    radialSegments,
-    spec.height,
   );
+  fractureCapGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fractureCapVertexData, 3));
+  fractureCapGeometry.computeVertexNormals();
+
+  return {
+    shellGeometry: buildSectionGeometry(
+      shellRings,
+      visibleHeight,
+      spec.radiusFn,
+      spec.closeBottom,
+      false,
+      radialSegments,
+      spec.height,
+    ),
+    fractureCapGeometry: finishArchitecturalGeometry(fractureCapGeometry),
+  };
 }
 
 function createPartMesh(
-  name: PartName,
+  name: string,
   geometry: THREE.BufferGeometry,
   material: THREE.Material,
+  role = name,
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = name;
-  mesh.userData.role = name;
+  mesh.userData.role = role;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+function createPartGroup(name: PartName, children: THREE.Object3D[]): THREE.Group {
+  const group = new THREE.Group();
+  group.name = name;
+  group.userData.role = name;
+  for (const child of children) group.add(child);
+  return group;
 }
 
 function buildParts(
@@ -487,12 +543,22 @@ export function buildLatheColumn(options: LatheColumnOptions, material: THREE.Ma
   for (const part of parts) {
     if (brokenPlacement && part.startY > brokenAtHeight! + EPSILON) break;
 
-    const geometry = brokenPlacement?.name === part.name
-      ? buildBrokenSectionGeometry(part, brokenPlacement.visibleHeight, seed)
-      : buildSectionGeometry(part.rings, part.height, part.radiusFn, part.closeBottom, part.closeTop);
-    const mesh = createPartMesh(part.name, geometry, material);
-    mesh.position.y = part.startY;
-    column.add(mesh);
+    const partObject = brokenPlacement?.name === part.name
+      ? (() => {
+        const brokenGeometry = buildBrokenSectionGeometry(part, brokenPlacement.visibleHeight, seed);
+        return createPartGroup(part.name, [
+          createPartMesh(`${part.name}-shell`, brokenGeometry.shellGeometry, material, `${part.name}-shell`),
+          createPartMesh(`${part.name}-fracture-cap`, brokenGeometry.fractureCapGeometry, material, 'fracture-cap'),
+        ]);
+      })()
+      : createPartMesh(
+        part.name,
+        buildSectionGeometry(part.rings, part.height, part.radiusFn, part.closeBottom, part.closeTop),
+        material,
+        part.name,
+      );
+    partObject.position.y = part.startY;
+    column.add(partObject);
 
     if (brokenPlacement?.name === part.name) break;
   }
