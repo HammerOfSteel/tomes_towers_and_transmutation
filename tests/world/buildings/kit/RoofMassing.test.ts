@@ -64,6 +64,38 @@ function allMeshMaterials(object: THREE.Object3D): THREE.Material[] {
   return materials;
 }
 
+function namedChildren<T extends THREE.Object3D>(object: THREE.Object3D, pattern: RegExp): T[] {
+  return object.children.filter((child): child is T => pattern.test(child.name));
+}
+
+function highestNumberedChild<T extends THREE.Object3D>(object: THREE.Object3D, prefix: string): T | undefined {
+  return namedChildren<T>(object, new RegExp(`^${prefix}-\\d+$`))
+    .sort((a, b) => Number(a.name.slice(prefix.length + 1)) - Number(b.name.slice(prefix.length + 1)))
+    .at(-1);
+}
+
+function localMeshXExtent(object: THREE.Object3D): number {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const position = child.geometry.getAttribute('position');
+    for (let index = 0; index < position.count; index++) {
+      minX = Math.min(minX, position.getX(index));
+      maxX = Math.max(maxX, position.getX(index));
+    }
+  });
+  return Number.isFinite(minX) && Number.isFinite(maxX) ? maxX - minX : 0;
+}
+
+function countNamedDescendants(object: THREE.Object3D, pattern: RegExp): number {
+  let count = 0;
+  object.traverse((child) => {
+    if (pattern.test(child.name)) count++;
+  });
+  return count;
+}
+
 function geometrySignature(object: THREE.Object3D): string {
   object.updateMatrixWorld(true);
   const rows: Array<{ name: string; vertices: number[] }> = [];
@@ -139,6 +171,32 @@ describe('RoofMassing', () => {
     expect(topWidths.filter(width => width < 0.25)).toHaveLength(2);
     expect(topWidths.filter(width => width > 2)).toHaveLength(2);
 
+    const eastSlope = roofA.getObjectByName('hip-slope-east')!;
+    const eastFirstStrip = eastSlope.getObjectByName('strip-0');
+    const eastLastStrip = highestNumberedChild<THREE.Group>(eastSlope, 'strip');
+    expect(eastFirstStrip).toBeTruthy();
+    expect(eastLastStrip).toBeTruthy();
+    expect(countNamedDescendants(eastFirstStrip!, /^course-\d+$/)).toBeGreaterThan(0);
+    expect(countNamedDescendants(eastLastStrip!, /^course-\d+$/)).toBeGreaterThan(0);
+    const eastBaseWidth = localMeshXExtent(eastFirstStrip!);
+    const eastTipWidth = localMeshXExtent(eastLastStrip!);
+    expect(eastBaseWidth).toBeGreaterThan(outerHalfDepth * 2 * 0.95);
+    expect(eastTipWidth).toBeLessThan(ridgeHalfLength * 2 * 1.1);
+    expect(eastTipWidth).toBeLessThan(eastBaseWidth * 0.6);
+
+    const frontSlope = roofA.getObjectByName('hip-slope-front')!;
+    const frontFirstStrip = frontSlope.getObjectByName('strip-0');
+    const frontLastStrip = highestNumberedChild<THREE.Group>(frontSlope, 'strip');
+    expect(frontFirstStrip).toBeTruthy();
+    expect(frontLastStrip).toBeTruthy();
+    expect(countNamedDescendants(frontFirstStrip!, /^course-\d+$/)).toBeGreaterThan(0);
+    expect(countNamedDescendants(frontLastStrip!, /^course-\d+$/)).toBeGreaterThan(0);
+    const frontBaseWidth = localMeshXExtent(frontFirstStrip!);
+    const frontTipWidth = localMeshXExtent(frontLastStrip!);
+    expect(frontBaseWidth).toBeGreaterThan(outerHalfWidth * 2 * 0.95);
+    expect(frontTipWidth).toBeLessThan(0.5);
+    expect(frontTipWidth).toBeLessThan(frontBaseWidth * 0.1);
+
     const frontBox = new THREE.Box3().setFromObject(roofA.getObjectByName('hip-slope-front')!);
     const backBox = new THREE.Box3().setFromObject(roofA.getObjectByName('hip-slope-back')!);
     expect(frontBox.max.z).toBeGreaterThan(outerHalfDepth - 0.05);
@@ -172,6 +230,21 @@ describe('RoofMassing', () => {
     const crossBox = new THREE.Box3().setFromObject(crossA);
     expect(crossBox.max.x - crossBox.min.x).toBeGreaterThan(gableBox.max.x - gableBox.min.x);
     expect(crossBox.max.z - crossBox.min.z).toBeGreaterThanOrEqual(gableBox.max.z - gableBox.min.z);
+
+    for (const volumeName of ['cross-gable-main', 'cross-gable-wing']) {
+      const volume = crossA.getObjectByName(volumeName);
+      expect(volume).toBeTruthy();
+      const volumeSlopes = slopeGroups(volume!);
+      expect(volumeSlopes).toHaveLength(2);
+      volumeSlopes.forEach((slope) => {
+        const surface = slope.getObjectByName('shingle-surface');
+        expect(surface).toBeTruthy();
+        const claimedCourseCount = Number(surface?.userData.courseCount);
+        expect(claimedCourseCount).toBeGreaterThanOrEqual(2);
+        expect(countNamedDescendants(surface!, /^course-\d+$/)).toBe(claimedCourseCount);
+      });
+      expect(countNamedDescendants(volume!, /^course-\d+$/)).toBeGreaterThanOrEqual(4);
+    }
 
     expect(hasPlaneGeometry(crossA)).toBe(false);
     expect(hasNonFiniteGeometry(crossA)).toBe(false);
