@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall kit-of-parts) ✅ 3 of ~9 elven building types shipped, 2026-09-02/04
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts) ✅ 4 of ~9 elven building types shipped, 2026-09-02/04
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1027,6 +1027,89 @@ Slime, Human — Slime/Human last, since those already look best).
   wall/window/entrance geometry (no seethrough gaps), with visibly
   distinct classic-shingle, pagoda-style, and living-canopy roofs
   co-existing in the same settlement.
+
+- [x] **6.6e — Fourth elven building type: the chapel ("Ancient Shrine" →
+  Gothic-elven nave + apse + bellcote + forecourt)**: user asked to move
+  to the next building type in the same research → learn → plan → build
+  → test cycle. Targeted `buildElvenChapel()` — the LAST elven kind still
+  on the old style (a ring of 6 standing tree-stones + a central glowing
+  crystal), reachable via the `church` ward in normal settlement
+  generation. Design: `docs/superpowers/specs/
+  2026-09-04-elven-chapel-rebuild-design.md`. Plan: `docs/superpowers/
+  plans/2026-09-04-elven-chapel-rebuild.md`.
+  **Core technical tension**: `chapel`'s footprint is a fixed 4x8 "long
+  nave" (1:2 aspect ratio) — genuinely elongated, unlike every prior
+  tower-kit building's roughly square/circular footprint, and the whole
+  kit is built around a single-radius regular octagon. Research found: a
+  4x8 rectangle is already architecturally correct (real single-cell
+  Anglo-Saxon/Norman parish naves run 2:1-3:1); a small octagonal apse at
+  the altar end is genuine real-world architecture (a direct, no-
+  compromise bridge back to the kit's existing radial technology); small
+  parish churches overwhelmingly use a cheap bell-gable/bellcote instead
+  of a full second tower; round-tower churches are a NAMED real-world
+  precedent for "a round piece docking flush against a flat wall" (the
+  seam itself is the historically-attested detail); lancet (pointed-arch)
+  windows are already this kit's existing `pointed_arch` type; the
+  vernacular roof for a small rectangular nave is a simple gabled ridge
+  roof (a genuinely new primitive, since none of the kit's radial
+  cone/pagoda/living roof-caps can fit a rectangle). The single biggest
+  codebase finding: `buildWallSurfaceBlocks()`'s existing `facesOverride`
+  (added for the market stall) has NO dependency on regular-octagon
+  faces — it can be pointed at a plain 4-face rectangle with ZERO changes
+  to that function itself.
+  Shipped: `rectanglePoints()`/`rectangleFaces()`/`facePointAt()` (new,
+  `StoneTowerShape.ts`) — rectangle shape math + a face-interpolation
+  utility, reused for window/entrance placement along a wall; `buildFloorCap()`/
+  `buildQuoins()` both gained an optional `pointsOverride` parameter
+  (backward-compatible, existing octagon callers unaffected) so they can
+  use the rectangle's 4 real corners instead of a regular octagon's 8;
+  new `StoneTowerGableRoof.ts`'s `buildGableRoofCap()` (two raked planes
+  + ridge beam + gable-end triangle fills + ridge-end finials) — the
+  one genuinely new shared primitive, reusable by any future rectangular
+  hall; new `ElvenChapelKit.ts`'s `buildElvenChapelShrine()` composing a
+  real rectangular nave (per-course block walls, quoins at its 4 real
+  corners, floor cap, entrance, 4 lancet windows evenly spaced along both
+  long walls, gable roof), a small octagonal apse (built with the kit's
+  EXISTING, completely unmodified radial machinery — a partial ring open
+  toward the nave via the same "omit some faces" technique the market
+  stall proved, always topped with a living-canopy roof, housing the
+  relocated sacred crystal on a small pedestal, on-axis with the
+  entrance), a bellcote (a small pierced wall-slab with 1-2 bell openings
+  above the entrance gable, reusing `buildRecessedArchOpening()`'s shared
+  carved-cavity technique), and a relocated forecourt of the old shrine's
+  6 standing tree-stones (repositioned outdoors as an approach avenue,
+  not deleted). Old `buildElvenChapel` deleted as dead code (confirmed
+  via grep: no other callers in the repo). Synced `docs/BUILDINGS.md`'s
+  stale elven chapel row (a pre-existing "woodland shrine, no walls, open
+  colonnade" description that predates this entire rebuild lineage and
+  already conflicted with the shipped watchtower/villa descriptions in
+  the same doc — documented as intentionally-superseded, not a
+  regression, since every prior round already implicitly superseded this
+  doc without objection).
+  **Real placement bug found and fixed during live-verification, not by
+  any unit test**: the bellcote was initially positioned at `z = halfD *
+  0.85` — INSIDE the gable wall/roof's own volume (the front gable wall
+  and its matching gable-end roof triangle both sit at exactly `z =
+  halfD`), so it was fully occluded from outside view, invisible in the
+  actual live settlement despite passing its own unit test (which only
+  checked relative position in isolation, not visibility against the
+  wall/roof around it). Fixed by moving it to `z = halfD + slabThickness
+  * 3`, standing proud in front of the gable's own face — matching the
+  real-world bell-gable precedent. Live-reverified: the bellcote's
+  pierced wall-slab with 2 bell openings is now clearly visible standing
+  above the entrance gable.
+  Verification: 6 new/updated test files (`StoneTowerShape.test.ts` +6,
+  `StoneTowerFloorCap.test.ts` +3, `StoneTowerQuoins.test.ts` +3, new
+  `StoneTowerGableRoof.test.ts` with 5 tests, new `ElvenChapelKit.test.ts`
+  with 14 tests, `FactionBuildingVariants.test.ts` chapel describe block
+  rewritten); full regression (13 vitest / 144 tsc, baseline-unchanged).
+  Live-verified via Playwright (temporarily switching the Settlement
+  Lab's POC override to `chapel` for isolated close-up screenshots, then
+  reverting it back to `house`): real per-course block rectangular
+  walls, 4 evenly-spaced lancet windows, a carved entrance, a gabled
+  ridge roof (not a cone), a small octagonal apse with a visible glowing
+  crystal and living-canopy roof, and (after the placement fix) a
+  visible bellcote.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
