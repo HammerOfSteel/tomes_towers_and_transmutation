@@ -13,6 +13,7 @@ import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/Build
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
 import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
+import { buildElvenChapelShrine } from '@/world/buildings/ElvenChapelKit';
 
 function makeDna(kind: BuildingKind, faction: Faction | undefined, seed = 99): BuildingDNA {
   return {
@@ -577,12 +578,23 @@ describe('Dwarven — stepped-tier BlockKit hall with hard-edged buttress corner
 // Regression guards for the gnarled-bark trunk + leaf-cluster canopy
 // rework that replaced a perfectly smooth tapered cylinder trunk and a
 // single smooth dome standing in for an entire tree canopy.
-describe('Elven — remaining BlockKit-adjacent bits (chapel unaffected by the tower-kit rebuild; buildElvenTrunkGrid kept as a reusable primitive)', () => {
+describe('Elven — chapel rebuilt on the tower-kit\'s real block-course technique (2026-09-04 rebuild)', () => {
+  it('elven.chapel is wired to buildElvenChapelShrine, not the old standing-tree-stones builder', () => {
+    expect(FACTION_BUILDING_VARIANTS.elven!.chapel).toBe(buildElvenChapelShrine);
+  });
+
   it('produces only finite (non-NaN/non-infinite) vertices for chapel', () => {
     expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.elven!.chapel!(makeDna('chapel', 'elven', 21)));
   });
 
-  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface) -- buildElvenTrunkGrid itself is no longer wired into any live elven builder (shop moved to buildElvenMarketStall, see ElvenMarketStallKit.test.ts) but remains a tested, reusable primitive for future kinds', () => {
+  it('builds real per-course block walls -- the wall\'s own merged mesh has far more vertices than a plain box (mergeGroupMeshesByMaterial() merges many per-course blocks into one BufferGeometry, so a raw BoxGeometry-type count would undercount)', () => {
+    const g = FACTION_BUILDING_VARIANTS.elven!.chapel!(makeDna('chapel', 'elven', 21));
+    let maxVertCount = 0;
+    g.traverse((o) => { if (o instanceof THREE.Mesh) maxVertCount = Math.max(maxVertCount, o.geometry.attributes.position.count); });
+    expect(maxVertCount).toBeGreaterThan(500);
+  });
+
+  it('carves a real arched doorway gap in the trunk grid at the front (a genuine hole, not just an applied surface) -- buildElvenTrunkGrid itself is no longer wired into any live elven builder (shop moved to buildElvenMarketStall, chapel moved to buildElvenChapelShrine) but remains a tested, reusable primitive for future kinds', () => {
     const grid = buildElvenTrunkGrid(5, 6, 5, 5, { facade: true });
     const bw = Math.round(6 / BLOCK_UNIT);
     const bd = Math.round(5 / BLOCK_UNIT);

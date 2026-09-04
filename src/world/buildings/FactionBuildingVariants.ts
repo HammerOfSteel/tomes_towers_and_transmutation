@@ -41,6 +41,7 @@ import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, 
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
+import { buildElvenChapelShrine } from './ElvenChapelKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -638,37 +639,18 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 }
 
 // ── Elven — living-tree architecture ──────────────────────────────────────────
-// Ancient Shrine (church): organic curved trunk silhouettes grown from real
-// block occupancy. The Elder's Hall (patriciate/house/terraced/inn/blacksmith)
-// and Moonlit Exchange (market) have both since moved to the tower kit's real
-// block-course + carved-opening construction (see ElvenTreehouseKit.ts /
-// ElvenMarketStallKit.ts) -- `addBlockElvenTrunk()`/`buildElvenTrunkGrid()`
-// (the BlockKit voxel-occupancy technique) had no remaining callers in this
-// file once `buildElvenShop()` was rebuilt, and were removed as dead code.
-// `buildElvenTrunkGrid`/`pickElvenEntranceStyle`/`pickElvenCanopyArchetype`/
-// `carveTrunkWindows` remain exported, tested, reusable primitives in
-// FactionBlockProfiles.ts/ElvenTrunkWindows.ts for any future kind that wants
-// them -- not deleted, just no longer wired into a live elven builder here.
-
-function buildElvenChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xE1F3_0002);
-  // Ancient Shrine: a ring of standing tree-stones around a central glowing
-  // crystal — already genuine discrete standing monoliths (not a deformed
-  // blob primitive), kept as-is from Phase 2b/2d.
-  const stoneMat = mat('#7a8a70', { roughness: 0.95 });
-  const nStones = 6;
-  for (let i = 0; i < nStones; i++) {
-    const ang = (i / nStones) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.42;
-    const sh = 0.8 + r() * 0.4;
-    addMesh(g, new THREE.CylinderGeometry(0.14, 0.18, sh, 6), stoneMat, Math.cos(ang) * rad, sh / 2, Math.sin(ang) * rad, ang);
-  }
-  const crystalMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#a0ffe0'), emissive: new THREE.Color('#60ffc0'), emissiveIntensity: 1.0, roughness: 0.15, transparent: true, opacity: 0.9 });
-  addMesh(g, new THREE.OctahedronGeometry(0.3, 0), crystalMat, 0, 1.0, 0);
-  return g;
-}
+// The Elder's Hall (patriciate/house/terraced/inn/blacksmith), Moonlit
+// Exchange (market), and (2026-09-04) the Ancient Shrine (church/chapel)
+// have all since moved to the tower kit's real block-course + carved-
+// opening construction (see ElvenTreehouseKit.ts / ElvenMarketStallKit.ts /
+// ElvenChapelKit.ts) -- `addBlockElvenTrunk()`/`buildElvenTrunkGrid()`
+// (the BlockKit voxel-occupancy technique) had no remaining callers in
+// this file once `buildElvenShop()` was rebuilt, and were removed as dead
+// code. `buildElvenTrunkGrid`/`pickElvenEntranceStyle`/
+// `pickElvenCanopyArchetype`/`carveTrunkWindows` remain exported, tested,
+// reusable primitives in FactionBlockProfiles.ts/ElvenTrunkWindows.ts for
+// any future kind that wants them -- not deleted, just no longer wired
+// into a live elven builder here.
 
 // ── Dwarven — carved-stone mountain architecture ──────────────────────────────
 // Guild Hall (patriciate), Stone Temple (church), Trade Vault (market):
@@ -1278,7 +1260,15 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
   },
   elven: {
     villa:    buildElvenTreehouseHome,
-    chapel:   buildElvenChapel,
+    // 2026-09-04 follow-up (docs/superpowers/specs/
+    // 2026-09-04-elven-chapel-rebuild-design.md): chapel moved from
+    // buildElvenChapel (a ring of standing tree-stone monoliths + a
+    // central glowing crystal) to buildElvenChapelShrine (a real
+    // rectangular nave + small octagonal apse + bellcote + relocated
+    // forecourt, all on the same real block-course + carved-opening
+    // construction technique as the rest of the elven lineage) -- the
+    // LAST elven building kind not yet on this technique.
+    chapel:   buildElvenChapelShrine,
     // 2026-09-03 follow-up (docs/superpowers/specs/
     // 2026-09-03-elven-market-stall-design.md): shop moved from
     // `buildElvenShop` (a BlockKit voxel sapling) to

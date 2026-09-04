@@ -183,7 +183,7 @@ living vines woven into structure, no right angles where avoidable.*
 |---|---|---|---|
 | `cottage` | `elven` | Vine-covered, curved walls, leaf-shaped windows | Forest dwelling |
 | `watchtower` | `elven` | Spiralling form, no battlements, open platform top | Treetop observation post |
-| `chapel` (woodland shrine) | `elven` | No walls — open pillared colonnade, living tree as central column | Sacred grove |
+| `chapel` (Gothic-elven shrine) | `elven` | Rectangular nave (real per-course block walls, lancet windows, gabled roof) + small octagonal apse (living-canopy roof, sacred crystal) + bellcote + standing-stone forecourt | See `docs/superpowers/specs/2026-09-04-elven-chapel-rebuild-design.md` |
 | `villa` (elder's hall) | `elven` | Long low form, many windows, garden terrace | Elder's meeting hall |
 | `market_stall` | `elven` | Woven-branch frame, flower/herb goods | Wandering merchant |
 | `tent` (travelling camp) | `nomadic` | Pale canvas, silver rope | Wandering elf camp |
