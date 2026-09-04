@@ -83,18 +83,31 @@ describe('buildArchShape', () => {
     // For this shallow case (halfWidth=1, straightHeight=2, pointHeight=0.6),
     // the curvedWidth becomes Math.min(2, 0.6*2) = 1.2, and shoulders exist.
     const shape = buildArchShape(1, 2, 0.6);
-    const pts = shape.getPoints(64);
+    const pts = shape.getPoints(128);
+    const straightHeight = 2;
     const fullWidth = 2;
+    const expectedCurvedHalfWidth = 0.6; // curvedWidth = 1.2, half = 0.6
+    const yTolerance = 0.02;
 
-    // Find the narrowest point of the curved head (should be narrower than full width).
-    const curvedHeadPoints = pts.filter((p) => p.y >= 2);
-    const minCurvedWidth = Math.min(...curvedHeadPoints.map((p) => Math.abs(p.x) * 2));
+    // Points at the springing line (y ≈ straightHeight, within tolerance)
+    const springPoints = pts.filter((p) => Math.abs(p.y - straightHeight) < yTolerance);
+    expect(springPoints.length).toBeGreaterThan(0);
 
-    // The curved cap's width must be narrower than the full jamb width,
-    // proving the shoulder mechanism is active for this shallow case.
-    expect(minCurvedWidth).toBeLessThan(fullWidth);
-    // But it should still be finite and positive.
-    expect(minCurvedWidth).toBeGreaterThan(0);
+    // At the shoulder region (y ≈ straightHeight), there should be:
+    // 1. Points with |x| ≈ fullWidth/2 (1.0) — the outer edge of the shoulder
+    const outerShoulderPoints = springPoints.filter((p) => Math.abs(Math.abs(p.x) - fullWidth / 2) < 0.15);
+    expect(outerShoulderPoints.length).toBeGreaterThan(0);
+
+    // 2. Points with |x| ≈ expectedCurvedHalfWidth (0.6) — where shoulder meets curved cap
+    const innerShoulderPoints = springPoints.filter((p) => Math.abs(Math.abs(p.x) - expectedCurvedHalfWidth) < 0.15);
+    expect(innerShoulderPoints.length).toBeGreaterThan(0);
+
+    // 3. Above the springing line (y > straightHeight + small margin), all points
+    // should have |x| < expectedCurvedHalfWidth (inside the curved cap, not shoulder)
+    const aboveSpringPoints = pts.filter((p) => p.y > straightHeight + 0.01);
+    expect(aboveSpringPoints.length).toBeGreaterThan(0);
+    const tooWideAboveSpring = aboveSpringPoints.filter((p) => Math.abs(p.x) > expectedCurvedHalfWidth + 0.05);
+    expect(tooWideAboveSpring.length).toBe(0);
   });
 });
 
