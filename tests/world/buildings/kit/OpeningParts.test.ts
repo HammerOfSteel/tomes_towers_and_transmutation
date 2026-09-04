@@ -70,6 +70,36 @@ describe('buildWindowOpening', () => {
       glazing.position.z - wallZ,
     ]);
   });
+
+  it('clamps undersized recess and surround depths to the doctrine minimums', () => {
+    const wallZ = 1.5;
+    const opening = buildWindowOpening({
+      width: 0.72,
+      straightHeight: 1.08,
+      pointHeight: 0.42,
+      recessDepth: 0.05,
+      frameWidth: 0.09,
+      frameProud: 0.01,
+      wallZ,
+      stoneMaterial: makeMaterials().stone,
+      recessMaterial: makeMaterials().recess,
+      glazingMaterial: makeMaterials().glazing,
+    });
+
+    const recess = requireChild(opening, 'recess');
+    const surround = requireChild(opening, 'surround');
+    const sill = requireChild(opening, 'sill');
+
+    const actualRecessDepth = wallZ - recess.position.z;
+    const actualSurroundProud = surround.position.z - wallZ;
+    const sillProjectionPastFrame = sill.position.z - surround.position.z;
+
+    expect(actualRecessDepth).toBeGreaterThanOrEqual(0.12);
+    expect(actualSurroundProud).toBeGreaterThanOrEqual(0.04);
+    expect(actualSurroundProud).toBeGreaterThanOrEqual(actualRecessDepth * 0.3);
+    expect(sillProjectionPastFrame).toBeGreaterThanOrEqual(0.03);
+    expect(sillProjectionPastFrame).toBeLessThanOrEqual(0.06);
+  });
 });
 
 describe('buildDoorOpening', () => {
@@ -125,5 +155,31 @@ describe('buildDoorOpening', () => {
 
     const doorLeafBox = new THREE.Box3().setFromObject(doorLeaf);
     expect(doorLeafBox.max.y).toBeLessThanOrEqual(1.55 + 1e-6);
+  });
+
+  it('clamps an undersized proud surround to the minimum ratio for deep door recesses', () => {
+    const wallZ = 2.4;
+    const materials = makeMaterials();
+    const opening = buildDoorOpening({
+      width: 0.9,
+      straightHeight: 1.55,
+      pointHeight: 0.48,
+      recessDepth: 0.2,
+      frameWidth: 0.12,
+      frameProud: 0.01,
+      wallZ,
+      stoneMaterial: materials.stone,
+      recessMaterial: materials.recess,
+      woodMaterial: materials.wood,
+    });
+
+    const recess = requireChild(opening, 'recess');
+    const surround = requireChild(opening, 'surround');
+
+    const actualRecessDepth = wallZ - recess.position.z;
+    const actualSurroundProud = surround.position.z - wallZ;
+
+    expect(actualRecessDepth).toBeGreaterThanOrEqual(0.2);
+    expect(actualSurroundProud).toBeGreaterThanOrEqual(actualRecessDepth * 0.3);
   });
 });

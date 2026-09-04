@@ -48,6 +48,12 @@ interface ApertureMetrics {
   clearPointHeight: number;
 }
 
+// Doctrine Part 2, Rule 2 ("five-piece opening minimum"): recesses must be at
+// least one wall block deep (0.12 WU), and surrounds must project at least 30%
+// of that recess depth proud of the wall face.
+const MIN_RECESS_DEPTH = 0.12;
+const MIN_SURROUND_PROUD_RATIO = 0.3;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -65,8 +71,9 @@ function buildBorderShape(inner: THREE.Shape, outer: THREE.Shape): THREE.Shape {
 }
 
 function getOpeningDepths(recessDepth: number, frameProud: number): OpeningDepths {
-  const reveal = -Math.max(recessDepth, Math.abs(depthFor('REVEAL')));
-  const frame = Math.max(frameProud, depthFor('FRAME'));
+  const effectiveRecessDepth = Math.max(recessDepth, MIN_RECESS_DEPTH);
+  const reveal = -effectiveRecessDepth;
+  const frame = Math.max(frameProud, effectiveRecessDepth * MIN_SURROUND_PROUD_RATIO, depthFor('FRAME'));
   const sillFront = frame + 0.045;
   const glazing = Math.min(depthFor('GLAZING') - 0.002, reveal - 0.04);
   const division = Math.max(depthFor('RECESS'), glazing + 0.08);

@@ -100,3 +100,61 @@ Refactored:
 ## Concerns
 - Strap bars currently reuse the passed stone material rather than a darker iron material. This keeps the no-new-palette / no-cloning discipline simple and does not break tests, but may be worth revisiting if a shared iron material is introduced later.
 - Threshold currently reuses the sill construction pattern, including the subtle underside lip; visually acceptable, but a future art pass may want a flatter threshold profile.
+
+---
+
+## 2026-09-04 Review-finding follow-up
+### What changed
+- Enforced doctrine minimums inside `src/world/buildings/kit/OpeningParts.ts` with named constants:
+  - `MIN_RECESS_DEPTH = 0.12`
+  - `MIN_SURROUND_PROUD_RATIO = 0.3`
+- `getOpeningDepths()` now clamps the effective recess depth to at least `0.12` WU and the effective surround proud depth to `max(frameProud, recessDepth * 0.3, 0.04)`.
+- Added regression coverage in `tests/world/buildings/kit/OpeningParts.test.ts` for:
+  - undersized window recess/surround inputs still producing doctrine-compliant depths
+  - undersized door surround inputs still producing the required proud ratio
+- Added `tests/world/buildings/StoneTowerEntrance.test.ts` coverage asserting `buildEntrance()` exposes named descendants `recess`, `surround`, `threshold`, and `door-leaf`.
+
+### RED/GREEN evidence
+#### RED
+Command:
+`npx vitest run tests/world/buildings/kit/OpeningParts.test.ts tests/world/buildings/StoneTowerEntrance.test.ts`
+
+Observed pre-fix failure:
+```text
+❯ tests/world/buildings/kit/OpeningParts.test.ts (4 tests | 1 failed)
+  × buildDoorOpening > clamps an undersized proud surround to the minimum ratio for deep door recesses
+    → expected 0.040000000000000036 to be greater than or equal to 0.06000000000000005
+```
+
+#### GREEN
+Command:
+`npx vitest run tests/world/buildings/kit/OpeningParts.test.ts tests/world/buildings/StoneTowerEntrance.test.ts`
+
+Observed post-fix pass:
+```text
+✓ tests/world/buildings/kit/OpeningParts.test.ts (4 tests)
+✓ tests/world/buildings/StoneTowerEntrance.test.ts (8 tests)
+
+Test Files  2 passed (2)
+     Tests  12 passed (12)
+```
+
+### Full verification command output
+Command:
+`npx vitest run tests/world/buildings/kit/OpeningParts.test.ts tests/world/buildings/StoneTowerWindows.test.ts tests/world/buildings/StoneTowerEntrance.test.ts`
+
+```text
+npm notice run tomes-towers-and-transmutation@0.1.0 npx
+npm notice run 'vitest' run tests/world/buildings/kit/OpeningParts.test.ts tests/world/buildings/StoneTowerWindows.test.ts tests/world/buildings/StoneTowerEntrance.test.ts
+
+ RUN  v3.2.7 /Users/terrygoleman/.copilot/repos/copilot-worktrees/tomes_towers_and_transmutation/terrygoleman-urban-spork
+
+ ✓ tests/world/buildings/kit/OpeningParts.test.ts (4 tests) 35ms
+ ✓ tests/world/buildings/StoneTowerEntrance.test.ts (8 tests) 55ms
+ ✓ tests/world/buildings/StoneTowerWindows.test.ts (11 tests) 86ms
+
+ Test Files  3 passed (3)
+      Tests  23 passed (23)
+   Start at  19:49:58
+   Duration  2.25s (transform 145ms, setup 192ms, collect 412ms, tests 176ms, environment 4.47s, prepare 299ms)
+```
