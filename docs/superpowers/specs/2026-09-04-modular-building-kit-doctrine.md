@@ -385,3 +385,71 @@ Bite-sized TDD tasks in dependency order, matching the precedent set by
 | D6 | Enforce the depth ladder with a dev assertion | An unenforced style rule regresses; this one already has |
 | D7 | Canonical 8-kind roster per race | Matches `WARD_TO_KIND` reachability; prevents scope drift |
 | D8 | Research + spec + plan for **all** races before implementing any | The user asked for this explicitly and will review before implementation starts |
+
+---
+
+## Part 9 — Cross-race open items (addendum)
+
+Two issues affect every race. Deciding them **once**, here, avoids nine
+inconsistent answers.
+
+### 9.1 `watchtower` is unreachable in real settlements — proposed fix
+
+**Problem.** `WARD_TO_KIND` (`src/buildingToDungeonPlan.ts:289-301`) maps 10 ward
+types onto 7 kinds. `watchtower`/`tower` appear in no ward, so they **never spawn
+in a generated settlement**. Round 6.6f worked around this in the Settlement Lab
+only, by forcing `plan.buildings[0]` to `watchtower` via the dev override. Real
+gameplay still never shows a tower.
+
+**Proposed fix (recommended).** Give the *anchor* building of the `gateward` ward
+the `watchtower` kind, leaving its non-anchor buildings on `house`:
+
+- `gateward` is literally the settlement's gate district. A gate tower is the
+  historically correct building there, and it is the one place a tower belongs
+  without inventing a new ward.
+- `gateward` is already in `MAIN_ROAD_WARD_TYPES`
+  (`src/world/SettlementGenerator.ts:453-455`), so it sits on a main road at the
+  settlement edge — exactly where a tower reads best on the skyline.
+- `farm` also maps to `house`, so `house` does not lose its ward.
+- The change is small and localised: `mapPlacedBuildingToDna()`
+  (`src/world/buildings/BuildingTypeMap.ts:46-56`) already receives `b.isAnchor`,
+  so the anchor/non-anchor split needs no new plumbing. `WARD_TO_KIND` itself
+  stays as the non-anchor default.
+- Watch for the footprint change: `getFootprint('watchtower', size)` must be fed
+  through `buildingHalfExtents()` (`SettlementGenerator.ts:591-596`) so overlap
+  and clearance still work. `buildingHalfExtents` currently derives the kind from
+  `WARD_TO_KIND[b.wardType]!` and *does* have `isAnchor`, so it must apply the
+  same rule or spacing will be wrong.
+
+**Alternatives considered.** A dedicated `watchtower` ward (more invasive: needs
+ward-generation weights, a ward label per faction in `overworld-studio.ts`'s
+`FACTION_WARD_NAMES`, and a cartography colour); or a settlement-level "landmark
+slot" independent of wards (most flexible, most new machinery). Both are larger
+than the problem.
+
+**Status: proposed, not yet implemented.** It is deliberately *not* part of any
+single race's plan — it is one shared task that should land on `main` alongside
+the Tier 1 kit, before the per-race work merges. Each race plan references this
+section rather than restating it.
+
+### 9.2 Several kinds currently collapse onto one builder
+
+`FACTION_BUILDING_VARIANTS` (`src/world/buildings/FactionBuildingVariants.ts`)
+shows the pattern this programme exists to fix. For example vulperia maps
+`house`, `terraced`, `inn` and `blacksmith` all to `buildVulperiaVilla`
+(L1224-1234), and orcish does the same (L1334-1337). Those aliases were an
+honest stopgap — the comments say so — but the result is a settlement where four
+of the eight kinds are the same building at different footprints.
+
+Per Part 5's "Sharing within a roster", sharing a builder remains acceptable, but
+only when the spec states **what actually differs** (massing, roof archetype,
+opening set, props). Every per-race spec's section 7 ("Current-state delta") must
+list which of its kinds are currently aliased and what each becomes.
+
+### 9.3 `slime` has no reference art
+
+`concept_art/reference/buildings/` has folders for `dwarf`, `elven`, `fae`,
+`human`, `orc`, `undead`, `vampire` and `vulperia` — but **not `slime`**, which is
+a playable, studio-selectable faction. Per Part 7 item 5, the slime spec presents
+alternative art directions with a recommendation and is explicitly blocked on a
+user decision, rather than silently inventing one.
