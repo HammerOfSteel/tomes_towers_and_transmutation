@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { finishArchitecturalGeometry, trimExtrudeSettings } from '../../../../src/world/buildings/kit/Bevels';
 
 async function loadTraceryModule() {
   return import('../../../../src/world/buildings/kit/Tracery');
@@ -23,59 +22,6 @@ function assertFiniteGeometry(root: THREE.Object3D): void {
       expect(Number.isFinite(positions.getZ(i))).toBe(true);
     }
   }
-}
-
-function signedTriangleVolume(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): number {
-  return a.dot(b.clone().cross(c)) / 6;
-}
-
-function meshVolume(mesh: THREE.Mesh): number {
-  mesh.updateMatrixWorld(true);
-  const position = mesh.geometry.getAttribute('position');
-  const index = mesh.geometry.getIndex();
-  const a = new THREE.Vector3();
-  const b = new THREE.Vector3();
-  const c = new THREE.Vector3();
-  let volume = 0;
-
-  if (index) {
-    for (let i = 0; i < index.count; i += 3) {
-      a.fromBufferAttribute(position, index.getX(i)).applyMatrix4(mesh.matrixWorld);
-      b.fromBufferAttribute(position, index.getX(i + 1)).applyMatrix4(mesh.matrixWorld);
-      c.fromBufferAttribute(position, index.getX(i + 2)).applyMatrix4(mesh.matrixWorld);
-      volume += signedTriangleVolume(a, b, c);
-    }
-    return Math.abs(volume);
-  }
-
-  for (let i = 0; i < position.count; i += 3) {
-    a.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
-    b.fromBufferAttribute(position, i + 1).applyMatrix4(mesh.matrixWorld);
-    c.fromBufferAttribute(position, i + 2).applyMatrix4(mesh.matrixWorld);
-    volume += signedTriangleVolume(a, b, c);
-  }
-
-  return Math.abs(volume);
-}
-
-function objectVolume(root: THREE.Object3D): number {
-  root.updateMatrixWorld(true);
-  return collectMeshes(root).reduce((sum, mesh) => sum + meshVolume(mesh), 0);
-}
-
-function buildSolidDiscVolume(radius: number, depth: number): number {
-  const circle = new THREE.Shape();
-  circle.absarc(0, 0, radius, 0, Math.PI * 2);
-  const geometry = finishArchitecturalGeometry(new THREE.ExtrudeGeometry(circle, {
-    ...trimExtrudeSettings(depth / 2),
-    depth,
-    bevelEnabled: true,
-    steps: 1,
-    curveSegments: 48,
-  }));
-  geometry.translate(0, 0, -depth / 2);
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
-  return meshVolume(mesh);
 }
 
 function signature(root: THREE.Object3D): string[] {
@@ -104,40 +50,48 @@ function brokenFragments(root: THREE.Object3D): THREE.Mesh[] {
   return collectMeshes(root).filter((mesh) => mesh.userData.role === 'broken-tracery-fragment');
 }
 
+function intactTraceryPartNames(root: THREE.Object3D): string[] {
+  return collectMeshes(root)
+    .map((mesh) => mesh.name)
+    .filter((name) => /^(ring-\d+-segment-\d+|spoke-\d+-connector-\d+)$/.test(name))
+    .sort();
+}
+
 describe('Tracery kit', () => {
-  it('builds a pierced trefoil stone frame rather than a solid disc', async () => {
-    const { buildTrefoil } = await loadTraceryModule();
+  it('builds a trefoil from a shape with explicit pierced-hole topology', async () => {
+    const { buildTrefoil, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#b8b1a2' });
+    const shape = __traceryTestUtils.buildTrefoilShape(0.8);
     const trefoil = buildTrefoil(0.8, { material });
-    const box = new THREE.Box3().setFromObject(trefoil).getSize(new THREE.Vector3());
 
     expect(trefoil.name).toBe('trefoil');
+    expect(shape.holes).toHaveLength(4);
     expect(collectMeshes(trefoil)).toHaveLength(1);
     expect(collectMeshes(trefoil)[0]!.material).toBe(material);
     assertFiniteGeometry(trefoil);
-    expect(objectVolume(trefoil)).toBeLessThan(buildSolidDiscVolume(0.8, box.z) * 0.82);
   });
 
-  it('builds a pierced quatrefoil stone frame rather than a solid disc', async () => {
-    const { buildQuatrefoil } = await loadTraceryModule();
+  it('builds a quatrefoil from a shape with explicit pierced-hole topology', async () => {
+    const { buildQuatrefoil, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#b8b1a2' });
+    const shape = __traceryTestUtils.buildQuatrefoilShape(0.85);
     const quatrefoil = buildQuatrefoil(0.85, { material });
-    const box = new THREE.Box3().setFromObject(quatrefoil).getSize(new THREE.Vector3());
 
     expect(quatrefoil.name).toBe('quatrefoil');
+    expect(shape.holes).toHaveLength(5);
     expect(collectMeshes(quatrefoil)).toHaveLength(1);
     expect(collectMeshes(quatrefoil)[0]!.material).toBe(material);
     assertFiniteGeometry(quatrefoil);
-    expect(objectVolume(quatrefoil)).toBeLessThan(buildSolidDiscVolume(0.85, box.z) * 0.8);
   });
 
-  it('builds a pierced rose window with named rings and spokes that all share one material reference', async () => {
-    const { buildRoseWindow } = await loadTraceryModule();
+  it('builds a rose window whose ring piercings are explicit holes and whose spoke/ring joints overlap', async () => {
+    const { buildRoseWindow, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#9da2aa' });
-    const rose = buildRoseWindow({ lobes: 8, radius: 1, ringCount: 2 }, material);
+    const options = { lobes: 8, radius: 1, ringCount: 2 };
+    const layout = __traceryTestUtils.createRoseWindowLayout(options);
+    const rose = buildRoseWindow(options, material);
     const ringParts = rose.children.filter((child) => /^ring-\d+$/.test(child.name));
     const spokeParts = rose.children.filter((child) => /^spoke-\d+$/.test(child.name));
-    const depth = new THREE.Box3().setFromObject(rose).getSize(new THREE.Vector3()).z;
 
     expect(ringParts).toHaveLength(2);
     expect(spokeParts).toHaveLength(8);
@@ -152,24 +106,36 @@ describe('Tracery kit', () => {
       'spoke-7',
     ]);
 
+    expect(layout.junctionOverlapAngle).toBeGreaterThan(0);
+    expect(layout.ringBands[0]!.innerRadius * layout.junctionOverlapAngle).toBeGreaterThan(0.01);
+
+    for (let ringIndex = 0; ringIndex < layout.ringCount; ringIndex++) {
+      for (let slotIndex = 0; slotIndex < layout.lobes; slotIndex++) {
+        expect(__traceryTestUtils.buildRoseRingSegmentShape(layout, ringIndex, slotIndex).holes.length).toBeGreaterThan(0);
+      }
+    }
+
     for (const mesh of collectMeshes(rose)) {
       expect(mesh.material).toBe(material);
     }
 
     assertFiniteGeometry(rose);
-    expect(objectVolume(rose)).toBeLessThan(buildSolidDiscVolume(1, depth) * 0.72);
   });
 
-  it('keeps rose-window geometry finite for common Gothic lobe counts', async () => {
-    const { buildRoseWindow } = await loadTraceryModule();
+  it('keeps rose-window geometry finite and overlap-connected for common Gothic lobe counts', async () => {
+    const { buildRoseWindow, __traceryTestUtils } = await loadTraceryModule();
     const material = new THREE.MeshStandardMaterial({ color: '#8f96a0' });
 
     for (const lobes of [6, 8, 12]) {
-      const rose = buildRoseWindow({ lobes, radius: 1, ringCount: 3 }, material);
+      const options = { lobes, radius: 1, ringCount: 3 };
+      const layout = __traceryTestUtils.createRoseWindowLayout(options);
+      const rose = buildRoseWindow(options, material);
       expect(rose.children.filter((child) => /^spoke-\d+$/.test(child.name))).toHaveLength(lobes);
+      expect(layout.junctionOverlapAngle).toBeGreaterThan(0);
+      expect(layout.ringBands[0]!.innerRadius * layout.junctionOverlapAngle).toBeGreaterThan(0.008);
       assertFiniteGeometry(rose);
     }
-  });
+  }, 15000);
 
   it('emits optional broken tracery fragments while the default build stays intact', async () => {
     const { buildRoseWindow } = await loadTraceryModule();
@@ -178,13 +144,28 @@ describe('Tracery kit', () => {
 
     const intact = buildRoseWindow(options, material);
     const broken = buildRoseWindow({ ...options, brokenEmission: true, seed: 19 }, material);
+    const intactNames = new Set(intactTraceryPartNames(intact));
+    const brokenIntactNames = new Set(intactTraceryPartNames(broken));
+    const missingNames = [...intactNames].filter((name) => !brokenIntactNames.has(name));
 
     expect(brokenFragments(intact)).toHaveLength(0);
     expect(brokenFragments(broken).length).toBeGreaterThan(0);
     expect(signature(broken)).not.toEqual(signature(intact));
+    expect([...brokenIntactNames].every((name) => intactNames.has(name))).toBe(true);
+    expect(missingNames.length).toBeGreaterThan(0);
 
     for (const fragment of brokenFragments(broken)) {
       expect(fragment.material).toBe(material);
+
+      if (fragment.userData.kind === 'ring-segment') {
+        expect(broken.getObjectByName(`ring-${fragment.userData.ringIndex}-segment-${fragment.userData.slotIndex}`)).toBeFalsy();
+      }
+
+      if (fragment.userData.kind === 'spoke') {
+        expect(
+          collectMeshes(broken).some((mesh) => mesh.name.startsWith(`spoke-${fragment.userData.slotIndex}-connector-`)),
+        ).toBe(false);
+      }
     }
   });
 

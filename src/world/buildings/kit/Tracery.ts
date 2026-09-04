@@ -33,12 +33,34 @@ const FOIL_CUSP_RADIUS_RATIO = 0.11;
 
 const ROSE_OCULUS_RATIO = 0.14;
 const ROSE_RING_SHARE = 0.42;
-const ROSE_RING_SEGMENT_COVERAGE = 0.58;
-const ROSE_SPOKE_COVERAGE = 0.22;
-const ROSE_SEGMENT_HOLE_RADIAL_RATIO = 0.22;
-const ROSE_SEGMENT_HOLE_TANGENTIAL_RATIO = 0.16;
+const ROSE_RING_SEGMENT_COVERAGE = 0.72;
+const ROSE_SPOKE_JUNCTION_COVERAGE = 0.34;
+const ROSE_SPOKE_WAIST_COVERAGE = 0.18;
+const ROSE_SEGMENT_HOLE_RADIAL_INSET_RATIO = 0.24;
+const ROSE_SEGMENT_HOLE_ANGULAR_INSET_RATIO = 0.24;
 const BROKEN_SPOKE_TAG = 0x5350_4B45;
 const BROKEN_RING_TAG = 0x524E_4730;
+
+interface RoseRadialBand {
+  innerRadius: number;
+  outerRadius: number;
+}
+
+export interface RoseWindowLayout {
+  lobes: number;
+  radius: number;
+  ringCount: number;
+  requestedRingCount: number;
+  depth: number;
+  step: number;
+  oculusRadius: number;
+  ringBands: RoseRadialBand[];
+  spokeBelts: RoseRadialBand[];
+  ringSegmentAngleSpan: number;
+  spokeJunctionAngleSpan: number;
+  spokeWaistAngleSpan: number;
+  junctionOverlapAngle: number;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -65,6 +87,18 @@ function buildPolygonShape(points: THREE.Vector2[]): THREE.Shape {
   }
   shape.closePath();
   return shape;
+}
+
+function buildAnnularSectorPath(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number): THREE.Path {
+  const outerStart = polarPoint(outerRadius, startAngle);
+  const innerEnd = polarPoint(innerRadius, endAngle);
+  const path = new THREE.Path();
+  path.moveTo(outerStart.x, outerStart.y);
+  path.absarc(0, 0, outerRadius, startAngle, endAngle, false);
+  path.lineTo(innerEnd.x, innerEnd.y);
+  path.absarc(0, 0, innerRadius, endAngle, startAngle, true);
+  path.closePath();
+  return path;
 }
 
 function extrudeTraceryShape(shape: THREE.Shape, depth: number, curveSegments = DEFAULT_CURVE_SEGMENTS): THREE.BufferGeometry {
@@ -171,15 +205,13 @@ function buildAnnularSectorShape(innerRadius: number, outerRadius: number, start
 }
 
 function addSegmentPiercing(shape: THREE.Shape, innerRadius: number, outerRadius: number, startAngle: number, endAngle: number): void {
-  const angleMid = (startAngle + endAngle) * 0.5;
-  const holeOrbit = (innerRadius + outerRadius) * 0.5;
-  const holeRadius = Math.min(
-    (outerRadius - innerRadius) * ROSE_SEGMENT_HOLE_RADIAL_RATIO,
-    holeOrbit * (endAngle - startAngle) * ROSE_SEGMENT_HOLE_TANGENTIAL_RATIO,
-  );
+  const holeInner = innerRadius + (outerRadius - innerRadius) * ROSE_SEGMENT_HOLE_RADIAL_INSET_RATIO;
+  const holeOuter = outerRadius - (outerRadius - innerRadius) * ROSE_SEGMENT_HOLE_RADIAL_INSET_RATIO;
+  const holeStart = startAngle + (endAngle - startAngle) * ROSE_SEGMENT_HOLE_ANGULAR_INSET_RATIO;
+  const holeEnd = endAngle - (endAngle - startAngle) * ROSE_SEGMENT_HOLE_ANGULAR_INSET_RATIO;
 
-  if (holeRadius > 0.018) {
-    shape.holes.push(circlePath(polarPoint(holeOrbit, angleMid), holeRadius));
+  if (holeOuter - holeInner > 0.018 && holeEnd - holeStart > 0.045) {
+    shape.holes.push(buildAnnularSectorPath(holeInner, holeOuter, holeStart, holeEnd));
   }
 }
 
@@ -192,15 +224,74 @@ function buildRingSegmentShape(innerRadius: number, outerRadius: number, angleCe
   return shape;
 }
 
-function buildSpokeConnectorShape(innerRadius: number, outerRadius: number, angleCenter: number, angleSpan: number): THREE.Shape {
-  const innerHalf = angleSpan * 0.38;
-  const outerHalf = angleSpan * 0.5;
+function buildSpokeConnectorShape(
+  innerRadius: number,
+  outerRadius: number,
+  angleCenter: number,
+  junctionAngleSpan: number,
+  waistAngleSpan: number,
+): THREE.Shape {
+  const junctionHalf = junctionAngleSpan * 0.5;
+  const waistHalf = Math.min(waistAngleSpan, junctionAngleSpan) * 0.5;
+  const waistRadius = THREE.MathUtils.lerp(innerRadius, outerRadius, 0.5);
   return buildPolygonShape([
-    polarPoint(innerRadius, angleCenter - innerHalf),
-    polarPoint(innerRadius, angleCenter + innerHalf),
-    polarPoint(outerRadius, angleCenter + outerHalf),
-    polarPoint(outerRadius, angleCenter - outerHalf),
+    polarPoint(innerRadius, angleCenter - junctionHalf),
+    polarPoint(waistRadius, angleCenter - waistHalf),
+    polarPoint(outerRadius, angleCenter - junctionHalf),
+    polarPoint(outerRadius, angleCenter + junctionHalf),
+    polarPoint(waistRadius, angleCenter + waistHalf),
+    polarPoint(innerRadius, angleCenter + junctionHalf),
   ]);
+}
+
+function createRoseWindowLayout(options: RoseWindowOptions): RoseWindowLayout {
+  const lobes = Math.max(3, Math.floor(options.lobes));
+  const radius = Math.max(options.radius ?? DEFAULT_ROSE_RADIUS, 0.25);
+  const depth = DEFAULT_FOIL_DEPTH;
+  const requestedRingCount = Math.max(1, Math.floor(options.ringCount ?? DEFAULT_RING_COUNT));
+  const oculusRadius = radius * ROSE_OCULUS_RATIO;
+  const radialSpan = radius - oculusRadius;
+  const minBandThickness = Math.max(depth * 0.55, 0.03);
+  const maxSupportedRingCount = Math.max(1, Math.floor(radialSpan / (minBandThickness * 2)));
+  const ringCount = Math.min(requestedRingCount, maxSupportedRingCount);
+  const step = (Math.PI * 2) / lobes;
+  const ringThickness = radialSpan * ROSE_RING_SHARE / ringCount;
+  const spokeThickness = radialSpan * (1 - ROSE_RING_SHARE) / ringCount;
+  const ringSegmentAngleSpan = step * ROSE_RING_SEGMENT_COVERAGE;
+  const spokeJunctionAngleSpan = step * ROSE_SPOKE_JUNCTION_COVERAGE;
+  const spokeWaistAngleSpan = step * ROSE_SPOKE_WAIST_COVERAGE;
+  const junctionOverlapAngle = ringSegmentAngleSpan + spokeJunctionAngleSpan - step;
+  const spokeBelts: RoseRadialBand[] = [];
+  const ringBands: RoseRadialBand[] = [];
+
+  let cursor = oculusRadius;
+  for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
+    const spokeInner = cursor;
+    const spokeOuter = cursor + spokeThickness;
+    spokeBelts.push({ innerRadius: spokeInner, outerRadius: spokeOuter });
+    cursor = spokeOuter;
+
+    const ringInner = cursor;
+    const ringOuter = ringIndex === ringCount - 1 ? radius : cursor + ringThickness;
+    ringBands.push({ innerRadius: ringInner, outerRadius: ringOuter });
+    cursor = ringOuter;
+  }
+
+  return {
+    lobes,
+    radius,
+    ringCount,
+    requestedRingCount,
+    depth,
+    step,
+    oculusRadius,
+    ringBands,
+    spokeBelts,
+    ringSegmentAngleSpan,
+    spokeJunctionAngleSpan,
+    spokeWaistAngleSpan,
+    junctionOverlapAngle,
+  };
 }
 
 function pieceRandom(seed: number, primary: number, secondary: number): () => number {
@@ -271,7 +362,8 @@ function buildBrokenSpokeFragment(
   innerRadius: number,
   outerRadius: number,
   angleCenter: number,
-  angleSpan: number,
+  junctionAngleSpan: number,
+  waistAngleSpan: number,
   depth: number,
   material: THREE.Material,
   slotIndex: number,
@@ -282,7 +374,8 @@ function buildBrokenSpokeFragment(
     THREE.MathUtils.lerp(innerRadius, outerRadius, 0.24),
     THREE.MathUtils.lerp(innerRadius, outerRadius, 0.7),
     angleCenter,
-    angleSpan * 0.7,
+    junctionAngleSpan * 0.72,
+    waistAngleSpan * 0.8,
   );
   const mesh = createTraceryMesh(fragmentShape, depth * (0.62 + rand() * 0.14), material, `spoke-broken-${slotIndex}`, {
     role: 'broken-tracery-fragment',
@@ -319,58 +412,36 @@ export function buildQuatrefoil(radius: number, options: TraceryFoilOptions = {}
 }
 
 export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Material): THREE.Group {
-  const lobes = Math.max(3, Math.floor(options.lobes));
-  const radius = Math.max(options.radius ?? DEFAULT_ROSE_RADIUS, 0.25);
-  const depth = DEFAULT_FOIL_DEPTH;
-  const requestedRingCount = Math.max(1, Math.floor(options.ringCount ?? DEFAULT_RING_COUNT));
   const brokenEmission = options.brokenEmission ?? false;
   const seed = options.seed ?? 0;
+  const layout = createRoseWindowLayout(options);
   const rose = new THREE.Group();
   rose.name = 'rose-window';
-  const oculusRadius = radius * ROSE_OCULUS_RATIO;
-  const radialSpan = radius - oculusRadius;
-  const minBandThickness = Math.max(depth * 0.55, 0.03);
-  const maxSupportedRingCount = Math.max(1, Math.floor(radialSpan / (minBandThickness * 2)));
-  const ringCount = Math.min(requestedRingCount, maxSupportedRingCount);
-  const step = (Math.PI * 2) / lobes;
-  const ringThickness = radialSpan * ROSE_RING_SHARE / ringCount;
-  const spokeThickness = radialSpan * (1 - ROSE_RING_SHARE) / ringCount;
-  const segmentAngleSpan = step * ROSE_RING_SEGMENT_COVERAGE;
-  const spokeAngleSpan = step * ROSE_SPOKE_COVERAGE;
-  rose.userData = { role: 'rose-window', lobes, ringCount, requestedRingCount, depth };
-  const brokenSpokes = brokenEmission ? selectBrokenSpokes(lobes, seed) : new Set<number>();
-  const brokenRingSegments = brokenEmission ? selectBrokenRingSegments(lobes, ringCount, seed) : new Set<string>();
+  rose.userData = {
+    role: 'rose-window',
+    lobes: layout.lobes,
+    ringCount: layout.ringCount,
+    requestedRingCount: layout.requestedRingCount,
+    depth: layout.depth,
+    junctionOverlapAngle: layout.junctionOverlapAngle,
+  };
+  const brokenSpokes = brokenEmission ? selectBrokenSpokes(layout.lobes, seed) : new Set<number>();
+  const brokenRingSegments = brokenEmission ? selectBrokenRingSegments(layout.lobes, layout.ringCount, seed) : new Set<string>();
 
-  let cursor = oculusRadius;
-  const spokeBelts: Array<{ innerRadius: number; outerRadius: number }> = [];
-  const ringBands: Array<{ innerRadius: number; outerRadius: number }> = [];
-
-  for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
-    const spokeInner = cursor;
-    const spokeOuter = cursor + spokeThickness;
-    spokeBelts.push({ innerRadius: spokeInner, outerRadius: spokeOuter });
-    cursor = spokeOuter;
-
-    const ringInner = cursor;
-    const ringOuter = ringIndex === ringCount - 1 ? radius : cursor + ringThickness;
-    ringBands.push({ innerRadius: ringInner, outerRadius: ringOuter });
-    cursor = ringOuter;
-  }
-
-  for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
+  for (let ringIndex = 0; ringIndex < layout.ringCount; ringIndex++) {
     const ringGroup = new THREE.Group();
     ringGroup.name = `ring-${ringIndex}`;
-    const band = ringBands[ringIndex]!;
+    const band = layout.ringBands[ringIndex]!;
 
-    for (let slotIndex = 0; slotIndex < lobes; slotIndex++) {
-      const angleCenter = -Math.PI / 2 + slotIndex * step + step / 2;
+    for (let slotIndex = 0; slotIndex < layout.lobes; slotIndex++) {
+      const angleCenter = -Math.PI / 2 + slotIndex * layout.step + layout.step / 2;
       if (brokenRingSegments.has(`${ringIndex}:${slotIndex}`)) {
         ringGroup.add(buildBrokenRingFragment(
           band.innerRadius,
           band.outerRadius,
           angleCenter,
-          segmentAngleSpan,
-          depth,
+          layout.ringSegmentAngleSpan,
+          layout.depth,
           material,
           ringIndex,
           slotIndex,
@@ -380,8 +451,8 @@ export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Mate
       }
 
       ringGroup.add(createTraceryMesh(
-        buildRingSegmentShape(band.innerRadius, band.outerRadius, angleCenter, segmentAngleSpan),
-        depth,
+        buildRingSegmentShape(band.innerRadius, band.outerRadius, angleCenter, layout.ringSegmentAngleSpan),
+        layout.depth,
         material,
         `ring-${ringIndex}-segment-${slotIndex}`,
         {
@@ -395,21 +466,22 @@ export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Mate
     rose.add(ringGroup);
   }
 
-  for (let slotIndex = 0; slotIndex < lobes; slotIndex++) {
+  for (let slotIndex = 0; slotIndex < layout.lobes; slotIndex++) {
     const spokeGroup = new THREE.Group();
     spokeGroup.name = `spoke-${slotIndex}`;
-    const angleCenter = -Math.PI / 2 + slotIndex * step;
+    const angleCenter = -Math.PI / 2 + slotIndex * layout.step;
 
-    for (let beltIndex = 0; beltIndex < spokeBelts.length; beltIndex++) {
-      const belt = spokeBelts[beltIndex]!;
+    for (let beltIndex = 0; beltIndex < layout.spokeBelts.length; beltIndex++) {
+      const belt = layout.spokeBelts[beltIndex]!;
       if (brokenSpokes.has(slotIndex)) {
         if (beltIndex === 0) {
           spokeGroup.add(buildBrokenSpokeFragment(
             belt.innerRadius,
             belt.outerRadius,
             angleCenter,
-            spokeAngleSpan,
-            depth,
+            layout.spokeJunctionAngleSpan,
+            layout.spokeWaistAngleSpan,
+            layout.depth,
             material,
             slotIndex,
             seed,
@@ -419,8 +491,14 @@ export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Mate
       }
 
       spokeGroup.add(createTraceryMesh(
-        buildSpokeConnectorShape(belt.innerRadius, belt.outerRadius, angleCenter, spokeAngleSpan),
-        depth,
+        buildSpokeConnectorShape(
+          belt.innerRadius,
+          belt.outerRadius,
+          angleCenter,
+          layout.spokeJunctionAngleSpan,
+          layout.spokeWaistAngleSpan,
+        ),
+        layout.depth,
         material,
         `spoke-${slotIndex}-connector-${beltIndex}`,
         {
@@ -436,3 +514,31 @@ export function buildRoseWindow(options: RoseWindowOptions, material: THREE.Mate
 
   return rose;
 }
+
+export const __traceryTestUtils = {
+  buildTrefoilShape(radius: number): THREE.Shape {
+    return buildFoilShape(radius, 3);
+  },
+  buildQuatrefoilShape(radius: number): THREE.Shape {
+    return buildFoilShape(radius, 4);
+  },
+  createRoseWindowLayout(options: RoseWindowOptions): RoseWindowLayout {
+    return createRoseWindowLayout(options);
+  },
+  buildRoseRingSegmentShape(layout: RoseWindowLayout, ringIndex: number, slotIndex: number): THREE.Shape {
+    const band = layout.ringBands[ringIndex]!;
+    const angleCenter = -Math.PI / 2 + slotIndex * layout.step + layout.step / 2;
+    return buildRingSegmentShape(band.innerRadius, band.outerRadius, angleCenter, layout.ringSegmentAngleSpan);
+  },
+  buildRoseSpokeConnectorShape(layout: RoseWindowLayout, slotIndex: number, beltIndex: number): THREE.Shape {
+    const belt = layout.spokeBelts[beltIndex]!;
+    const angleCenter = -Math.PI / 2 + slotIndex * layout.step;
+    return buildSpokeConnectorShape(
+      belt.innerRadius,
+      belt.outerRadius,
+      angleCenter,
+      layout.spokeJunctionAngleSpan,
+      layout.spokeWaistAngleSpan,
+    );
+  },
+};
