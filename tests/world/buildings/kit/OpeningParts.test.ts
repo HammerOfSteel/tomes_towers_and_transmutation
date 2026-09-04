@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { assertDepthSeparated, depthFor } from '@/world/buildings/kit/DepthLadder';
-import { buildWindowOpening } from '@/world/buildings/kit/OpeningParts';
+import { buildWindowOpening, buildDoorOpening } from '@/world/buildings/kit/OpeningParts';
 
 function makeMaterials() {
   return {
@@ -69,5 +69,61 @@ describe('buildWindowOpening', () => {
       division.position.z - wallZ,
       glazing.position.z - wallZ,
     ]);
+  });
+});
+
+describe('buildDoorOpening', () => {
+  it('returns a recessed planked door with a threshold and strap bars at glazing depth', () => {
+    const wallZ = 2.4;
+    const materials = makeMaterials();
+    const opening = buildDoorOpening({
+      width: 0.9,
+      straightHeight: 1.55,
+      pointHeight: 0.48,
+      recessDepth: 0.18,
+      frameWidth: 0.12,
+      frameProud: 0.06,
+      wallZ,
+      stoneMaterial: materials.stone,
+      recessMaterial: materials.recess,
+      woodMaterial: materials.wood,
+    });
+
+    const recess = requireChild(opening, 'recess');
+    const surround = requireChild(opening, 'surround');
+    const threshold = requireChild(opening, 'threshold');
+    const doorLeaf = requireChild(opening, 'door-leaf');
+
+    expect(recess.position.z - wallZ).toBeLessThanOrEqual(depthFor('REVEAL'));
+    expect(surround.position.z - wallZ).toBeGreaterThanOrEqual(depthFor('FRAME'));
+    expect(threshold.position.z - surround.position.z).toBeGreaterThanOrEqual(0.03);
+    expect(threshold.position.z - surround.position.z).toBeLessThanOrEqual(0.06);
+
+    // Doors occupy the set-back "glazing" rung in the depth ladder: they are
+    // the closing leaf that lives behind the reveal rather than a glass pane.
+    expect(doorLeaf.position.z - wallZ).toBeLessThanOrEqual(depthFor('GLAZING'));
+
+    const planks = doorLeaf.children.filter((child) => child.name.startsWith('plank-'));
+    const straps = doorLeaf.children.filter((child) => child.name.startsWith('strap-'));
+    expect(planks.length).toBeGreaterThanOrEqual(5);
+    expect(planks.length).toBeLessThanOrEqual(7);
+    expect(straps.length).toBeGreaterThanOrEqual(3);
+    expect(straps.length).toBeLessThanOrEqual(5);
+
+    const plankBoxes = planks
+      .map((plank) => new THREE.Box3().setFromObject(plank))
+      .sort((a, b) => a.min.x - b.min.x);
+    for (let i = 1; i < plankBoxes.length; i++) {
+      expect(plankBoxes[i]!.min.x).toBeGreaterThan(plankBoxes[i - 1]!.max.x);
+    }
+
+    for (const strap of straps) {
+      const strapBox = new THREE.Box3().setFromObject(strap);
+      expect(strapBox.max.x - strapBox.min.x).toBeGreaterThan(0.45);
+      expect(strapBox.max.y - strapBox.min.y).toBeLessThan(0.12);
+    }
+
+    const doorLeafBox = new THREE.Box3().setFromObject(doorLeaf);
+    expect(doorLeafBox.max.y).toBeLessThanOrEqual(1.55 + 1e-6);
   });
 });

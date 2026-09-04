@@ -21,6 +21,19 @@ export interface WindowOpeningOptions {
   divisionStyle?: DivisionStyle;
 }
 
+export interface DoorOpeningOptions {
+  width: number;
+  straightHeight: number;
+  pointHeight: number;
+  recessDepth: number;
+  frameWidth: number;
+  frameProud: number;
+  wallZ: number;
+  stoneMaterial: THREE.Material;
+  recessMaterial: THREE.Material;
+  woodMaterial: THREE.Material;
+}
+
 interface OpeningDepths {
   reveal: number;
   frame: number;
@@ -112,6 +125,12 @@ function buildSill(width: number, wallZ: number, frameDepth: number, stoneMateri
   drip.castShadow = drip.receiveShadow = true;
   sill.add(drip);
   return sill;
+}
+
+function buildThreshold(width: number, wallZ: number, frameDepth: number, stoneMaterial: THREE.Material): THREE.Group {
+  const threshold = buildSill(width, wallZ, frameDepth, stoneMaterial);
+  threshold.name = 'threshold';
+  return threshold;
 }
 
 function buildArchRecess(
@@ -295,6 +314,70 @@ export function buildWindowOpening(opts: WindowOpeningOptions): THREE.Group {
     buildSill(opts.width, opts.wallZ, depths.frame, opts.stoneMaterial),
     buildArchDivision(opts, depths, metrics),
     buildArchGlazing(opts, depths, metrics),
+  );
+  return opening;
+}
+
+function buildDoorLeaf(opts: DoorOpeningOptions, depths: OpeningDepths): THREE.Group {
+  const leaf = createOpeningGroup('door-leaf', opts.wallZ, depths.glazing);
+  const metrics = getArchApertureMetrics(opts.width, opts.straightHeight, opts.pointHeight, opts.frameWidth);
+  const leafWidth = metrics.clearWidth * 0.94;
+  // Keep the planked leaf below the spring line so the rectangular boards do
+  // not protrude into the narrowing pointed-arch head at oblique camera angles.
+  const leafHeight = metrics.clearStraightHeight;
+  const plankCount = clamp(Math.round(opts.width / 0.15), 5, 7);
+  const gap = 0.008;
+  const plankWidth = (leafWidth - gap * (plankCount - 1)) / plankCount;
+  const plankDepth = 0.028;
+  const plankBottom = leafHeight / 2;
+
+  for (let index = 0; index < plankCount; index++) {
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(plankWidth, leafHeight, plankDepth),
+      opts.woodMaterial,
+    );
+    plank.name = `plank-${index}`;
+    plank.position.set(
+      -leafWidth / 2 + plankWidth / 2 + index * (plankWidth + gap),
+      plankBottom,
+      plankDepth / 2,
+    );
+    plank.castShadow = plank.receiveShadow = true;
+    leaf.add(plank);
+  }
+
+  const strapCount = clamp(Math.round(leafHeight / 0.55), 3, 5);
+  const strapWidth = leafWidth * 0.96;
+  const strapHeight = 0.035;
+  for (let index = 0; index < strapCount; index++) {
+    const strap = new THREE.Mesh(
+      new THREE.BoxGeometry(strapWidth, strapHeight, 0.01),
+      opts.stoneMaterial,
+    );
+    strap.name = `strap-${index}`;
+    const t = strapCount === 1 ? 0.5 : index / (strapCount - 1);
+    strap.position.set(0, leafHeight * (0.18 + t * 0.58), plankDepth + 0.006);
+    strap.castShadow = strap.receiveShadow = true;
+    leaf.add(strap);
+  }
+
+  return leaf;
+}
+
+export function buildDoorOpening(opts: DoorOpeningOptions): THREE.Group {
+  const opening = new THREE.Group();
+  const depths = getOpeningDepths(opts.recessDepth, opts.frameProud);
+  const windowLike: WindowOpeningOptions = {
+    ...opts,
+    glazingMaterial: opts.woodMaterial,
+  };
+  const metrics = getArchApertureMetrics(opts.width, opts.straightHeight, opts.pointHeight, opts.frameWidth);
+
+  opening.add(
+    buildArchRecess(windowLike, depths, metrics, opts.recessMaterial),
+    buildArchSurround(windowLike, depths),
+    buildThreshold(opts.width * 1.04, opts.wallZ, depths.frame, opts.stoneMaterial),
+    buildDoorLeaf(opts, depths),
   );
   return opening;
 }
