@@ -27,12 +27,20 @@ const QUOIN_PROUD = 1.05;
  * (StoneTowerSilhouette.ts's `buildFloorVertexScales()`) -- a jittered
  * corner's quoin moves with it, rather than the quoin staying on an
  * unperturbed regular octagon while the wall around it wobbles.
+ *
+ * An optional `pointsOverride` parameter lets a caller supply an
+ * arbitrary corner-point list (e.g. a rectangle's 4 real corners)
+ * instead of a regular octagon's 8 -- `radius` is still used to scale
+ * each quoin box's own width/depth, so pass a representative scale
+ * (e.g. a rectangular nave's own half-width) even when overriding the
+ * point source.
  */
 export function buildQuoins(
   radius: number, ringHeight: number, vertexScales: number[] | undefined, material: THREE.Material,
+  pointsOverride?: [number, number][],
 ): THREE.Group {
   const g = new THREE.Group();
-  const pts = octagonPoints(radius, vertexScales);
+  const pts = pointsOverride ?? octagonPoints(radius, vertexScales);
   const quoinWidth = radius * 0.1;
   const quoinDepth = radius * 0.1;
 

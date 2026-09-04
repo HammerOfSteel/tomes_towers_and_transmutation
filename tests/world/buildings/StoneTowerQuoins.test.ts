@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { buildQuoins } from '@/world/buildings/StoneTowerQuoins';
-import { octagonPoints } from '@/world/buildings/StoneTowerShape';
+import { octagonPoints, rectanglePoints } from '@/world/buildings/StoneTowerShape';
 
 function hasNaN(group: THREE.Group): boolean {
   let bad = false;
@@ -79,5 +79,34 @@ describe('buildQuoins', () => {
     const baseR = Math.hypot(baseMeshes[2]!.position.x, baseMeshes[2]!.position.z);
     const scaledR = Math.hypot(scaledMeshes[2]!.position.x, scaledMeshes[2]!.position.z);
     expect(scaledR).toBeGreaterThan(baseR);
+  });
+});
+
+describe('buildQuoins pointsOverride', () => {
+  const material = new THREE.MeshStandardMaterial({ color: '#9aa0a8' });
+
+  it('places exactly one quoin per override point instead of the default 8 octagon corners', () => {
+    const rectPts = rectanglePoints(2, 4);
+    const g = buildQuoins(2, 3, undefined, material, rectPts);
+    let meshCount = 0;
+    g.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
+    expect(meshCount).toBe(4);
+  });
+
+  it('positions each quoin proud of its own override corner, along that corner\'s own direction from origin', () => {
+    const rectPts = rectanglePoints(2, 4);
+    const g = buildQuoins(2, 3, undefined, material, rectPts);
+    const meshes = g.children.filter((c) => c instanceof THREE.Mesh) as THREE.Mesh[];
+    // First quoin corresponds to rectPts[0] = [2, 4]; QUOIN_PROUD (1.05) pushes it
+    // slightly further from the origin along the same direction.
+    expect(meshes[0]!.position.x).toBeGreaterThan(2);
+    expect(meshes[0]!.position.z).toBeGreaterThan(4);
+  });
+
+  it('omitting pointsOverride reproduces the exact prior octagon behavior (backward compatibility)', () => {
+    const g = buildQuoins(2, 3, undefined, material);
+    let meshCount = 0;
+    g.traverse((o) => { if (o instanceof THREE.Mesh) meshCount++; });
+    expect(meshCount).toBe(8);
   });
 });
