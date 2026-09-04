@@ -3,6 +3,19 @@ import * as THREE from 'three';
 import { buildShingleSurface, type ShingleSurfaceOptions } from '@/world/buildings/kit/ShingleSurface';
 
 type TileCenter = { x: number; y: number; width: number; height: number };
+type Silhouette = NonNullable<ShingleSurfaceOptions['silhouette']>;
+
+const TRIANGLES_PER_TILE_BUDGET: Record<Silhouette, number> = {
+  rectangular: 12,
+  diamond: 16,
+  fishscale: 48,
+};
+
+const TRIM_TRIANGLE_BUDGET = {
+  ridge: 12,
+  eave: 12,
+  verge: 24,
+} as const;
 
 function countTriangles(object: THREE.Object3D): number {
   let total = 0;
@@ -26,8 +39,57 @@ function courseGroups(group: THREE.Group): THREE.Group[] {
   return group.children.filter((child): child is THREE.Group => child instanceof THREE.Group && child.name.startsWith('course-'));
 }
 
+function tileCourseBounds(group: THREE.Group): THREE.Box3 {
+  return courseGroups(group).reduce((bounds, course) => bounds.union(new THREE.Box3().setFromObject(course)), new THREE.Box3());
+}
+
 function tileCenters(course: THREE.Group): TileCenter[] {
   return (course.userData.tileCenters as TileCenter[] | undefined) ?? [];
+}
+
+function mergedCourseMesh(course: THREE.Group): THREE.Mesh {
+  const meshes = course.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+  expect(meshes).toHaveLength(1);
+  return meshes[0]!;
+}
+
+function measureKickDegrees(course: THREE.Group): number {
+  const position = mergedCourseMesh(course).geometry.getAttribute('position');
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let index = 0; index < position.count; index++) {
+    const y = position.getY(index);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+
+  const yTolerance = 1e-4;
+  let minZSum = 0;
+  let minCount = 0;
+  let maxZSum = 0;
+  let maxCount = 0;
+  for (let index = 0; index < position.count; index++) {
+    const y = position.getY(index);
+    const z = position.getZ(index);
+    if (Math.abs(y - minY) <= yTolerance) {
+      minZSum += z;
+      minCount++;
+    }
+    if (Math.abs(y - maxY) <= yTolerance) {
+      maxZSum += z;
+      maxCount++;
+    }
+  }
+
+  expect(minCount).toBeGreaterThan(0);
+  expect(maxCount).toBeGreaterThan(0);
+  return THREE.MathUtils.radToDeg(Math.atan2((minZSum / minCount) - (maxZSum / maxCount), maxY - minY));
+}
+
+function enabledTrimTriangleBudget(trim?: ShingleSurfaceOptions['trim']): number {
+  return (trim?.ridge ?? true ? TRIM_TRIANGLE_BUDGET.ridge : 0)
+    + (trim?.eave ?? true ? TRIM_TRIANGLE_BUDGET.eave : 0)
+    + (trim?.verge ?? true ? TRIM_TRIANGLE_BUDGET.verge : 0);
 }
 
 function layoutSignature(group: THREE.Group): string {
@@ -107,9 +169,10 @@ describe('buildShingleSurface', () => {
     const row0 = tileCenters(course0).map(center => center.x);
     const row1 = tileCenters(course1).map(center => center.x);
     const averageGap = (row0[row0.length - 1]! - row0[0]!) / (row0.length - 1);
-    const firstOffset = Math.abs(row1[0]! - row0[0]!);
+    const firstFullTileOffset = Math.abs(row1[1]! - row0[0]!);
 
-    expect(firstOffset).toBeCloseTo(averageGap * 0.5, 3);
+    expect(tileCenters(course1)).toHaveLength(tileCenters(course0).length + 1);
+    expect(firstFullTileOffset).toBeCloseTo(averageGap * 0.5, 3);
     expect(row1).not.toEqual(row0);
     expect(course1.userData.rowOffset).toBeCloseTo(averageGap * 0.5, 6);
   });
@@ -122,25 +185,66 @@ describe('buildShingleSurface', () => {
       jitter: 0,
     });
 
-    const tileBounds = courseGroups(roof).reduce((bounds, course) => bounds.union(new THREE.Box3().setFromObject(course)), new THREE.Box3());
+    const tileBounds = tileCourseBounds(roof);
     const centerX = (tileBounds.min.x + tileBounds.max.x) * 0.5;
     expect(centerX).toBeCloseTo(0, 6);
   });
 
-  it('uses a default kick in-range and clamps custom kickDegrees into 2-5°', () => {
+  it('clips staggered edge tiles so tile coverage stays within the requested width', () => {
     const material = makeMaterial();
-    const defaultRoof = buildShingleSurface(width, slopeLength, 1, material);
+    const reviewerCase = buildShingleSurface(4.2, 3.5, 11, material, {
+      courseHeight: 0.35,
+      tilesPerCourse: 8,
+      jitter: 0,
+    });
+    const widerCase = buildShingleSurface(5, 4, 12, material, {
+      courseHeight: 0.4,
+      tilesPerCourse: 9,
+      jitter: 0,
+    });
+
+    for (const [panelWidth, roof] of [[4.2, reviewerCase], [5, widerCase]] as const) {
+      const bounds = tileCourseBounds(roof);
+      expect(bounds.min.x).toBeGreaterThanOrEqual(-panelWidth / 2 - 1e-6);
+      expect(bounds.max.x).toBeLessThanOrEqual(panelWidth / 2 + 1e-6);
+    }
+
+    const oddCourseTiles = tileCenters(courseGroups(reviewerCase)[1]!);
+    expect(oddCourseTiles[0]!.width).toBeLessThan(oddCourseTiles[1]!.width);
+    expect(oddCourseTiles[oddCourseTiles.length - 1]!.width).toBeLessThan(oddCourseTiles[1]!.width);
+  });
+
+  it('uses a default kick in-range, clamps custom kickDegrees into 2-5°, and applies the kick to geometry', () => {
+    const material = makeMaterial();
+    const defaultRoof = buildShingleSurface(width, slopeLength, 1, material, {
+      courseHeight: 0.35,
+      tilesPerCourse: 3,
+      jitter: 0,
+      trim: { ridge: false, eave: false, verge: false },
+    });
     expect(defaultRoof.userData.kickDegrees).toBeGreaterThanOrEqual(2);
     expect(defaultRoof.userData.kickDegrees).toBeLessThanOrEqual(5);
     expect(defaultRoof.userData.kickDegrees).toBeCloseTo(3, 6);
+    expect(measureKickDegrees(courseGroups(defaultRoof)[0]!)).toBeCloseTo(3, 1);
 
-    const clampedLow = buildShingleSurface(width, slopeLength, 1, material, { kickDegrees: 0.5 });
-    const clampedHigh = buildShingleSurface(width, slopeLength, 1, material, { kickDegrees: 12 });
+    const clampedLow = buildShingleSurface(width, slopeLength, 1, material, {
+      courseHeight: 0.35,
+      tilesPerCourse: 3,
+      jitter: 0,
+      kickDegrees: 0.5,
+      trim: { ridge: false, eave: false, verge: false },
+    });
+    const clampedHigh = buildShingleSurface(width, slopeLength, 1, material, {
+      courseHeight: 0.35,
+      tilesPerCourse: 3,
+      jitter: 0,
+      kickDegrees: 12,
+      trim: { ridge: false, eave: false, verge: false },
+    });
     expect(clampedLow.userData.kickDegrees).toBe(2);
     expect(clampedHigh.userData.kickDegrees).toBe(5);
-
-    const firstCourse = courseGroups(clampedHigh)[0];
-    expect(firstCourse.userData.kickDegrees).toBe(5);
+    expect(measureKickDegrees(courseGroups(clampedLow)[0]!)).toBeCloseTo(2, 1);
+    expect(measureKickDegrees(courseGroups(clampedHigh)[0]!)).toBeCloseTo(5, 1);
   });
 
   it('adds identifiable ridge, eave, and verge trim, and honours trim toggles', () => {
@@ -178,21 +282,46 @@ describe('buildShingleSurface', () => {
     expect(trimmedOff.getObjectByName('verge-trim')).toBeUndefined();
   });
 
-  it('produces materially richer geometry than one plane while staying under a bounded per-panel triangle ceiling', () => {
+  it('keeps triangle cost within the documented per-tile density budget across panel sizes and silhouettes', () => {
     const material = makeMaterial();
-    const roof = buildShingleSurface(width, slopeLength, 5, material, {
-      courseHeight: 0.35,
-      tilesPerCourse: 8,
-      silhouette: 'fishscale',
-    });
+    const cases: Array<{ width: number; slopeLength: number; options: ShingleSurfaceOptions }> = [
+      {
+        width: 5,
+        slopeLength: 3.5,
+        options: { silhouette: 'fishscale' },
+      },
+      {
+        width: 4.2,
+        slopeLength: 4,
+        options: { silhouette: 'fishscale' },
+      },
+      {
+        width: 4.2,
+        slopeLength,
+        options: {
+          courseHeight: 0.35,
+          tilesPerCourse: 8,
+          jitter: 0,
+          silhouette: 'diamond',
+        },
+      },
+    ];
 
-    const triangles = countTriangles(roof);
-    // One 4.2m x 3.5m panel at this default-ish density is expected to be
-    // reused many times across a settlement, so keep it comfortably below
-    // "several thousand" triangles per panel while still being much richer
-    // than a 2-triangle placeholder plane.
-    expect(triangles).toBeGreaterThan(2);
-    expect(triangles).toBeLessThan(4000);
+    for (const { width: panelWidth, slopeLength: panelSlopeLength, options } of cases) {
+      const roof = buildShingleSurface(panelWidth, panelSlopeLength, 5, material, options);
+      const silhouette = options.silhouette ?? 'rectangular';
+      const perTileBudget = TRIANGLES_PER_TILE_BUDGET[silhouette];
+      const courseTriangleBudget = courseGroups(roof).reduce(
+        (sum, course) => sum + tileCenters(course).length * perTileBudget,
+        0,
+      );
+
+      expect(countTriangles(roof)).toBeGreaterThan(2);
+      courseGroups(roof).forEach((course) => {
+        expect(countTriangles(course)).toBeLessThanOrEqual(tileCenters(course).length * perTileBudget);
+      });
+      expect(countTriangles(roof)).toBeLessThanOrEqual(courseTriangleBudget + enabledTrimTriangleBudget(options.trim));
+    }
   });
 
   it('keeps every merged mesh on the exact same material instance', () => {
@@ -238,5 +367,6 @@ describe('buildShingleSurface', () => {
     expect(new Set(vertexCounts).size).toBeGreaterThan(1);
     expect(geometrySignature(rectangular)).not.toBe(geometrySignature(diamond));
     expect(geometrySignature(diamond)).not.toBe(geometrySignature(fishscale));
+    expect(geometrySignature(rectangular)).not.toBe(geometrySignature(fishscale));
   });
 });

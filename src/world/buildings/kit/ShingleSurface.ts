@@ -5,7 +5,11 @@ import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
 export interface ShingleSurfaceOptions {
   /** World units per exposed tile course up the slope. Default 0.35. */
   courseHeight?: number;
-  /** How many tile columns span the panel width. Default derives from width. */
+  /**
+   * Nominal full-width tile columns across the panel. Staggered courses may
+   * emit one extra trimmed edge tile so the tile field still stays inside the
+   * requested width instead of overhanging past the verges.
+   */
   tilesPerCourse?: number;
   /** 0-1 fraction of per-tile size/position jitter. Default 0.12. */
   jitter?: number;
@@ -17,11 +21,19 @@ export interface ShingleSurfaceOptions {
   trim?: { ridge?: boolean; eave?: boolean; verge?: boolean };
 }
 
+type ShingleSilhouette = NonNullable<ShingleSurfaceOptions['silhouette']>;
+
 interface TileCenterRecord {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+interface CourseTileSlot {
+  minX: number;
+  maxX: number;
+  centerX: number;
 }
 
 interface TileCoverageBounds {
@@ -34,9 +46,43 @@ interface TileCoverageBounds {
 const DEFAULT_COURSE_HEIGHT = 0.35;
 const DEFAULT_JITTER = 0.12;
 const DEFAULT_KICK_DEGREES = 3;
+/**
+ * Roof assemblers in this codebase compose many panels of different world
+ * sizes, so an absolute "all panels stay under N triangles" promise scales
+ * badly and becomes false as panels get larger. The stable contract here is a
+ * density budget instead: each emitted tile silhouette has a fixed triangle
+ * ceiling, and staggered rows only add trimmed edge tiles rather than denser
+ * geometry. Total panel cost is therefore predictable from emitted tile count
+ * plus the small constant trim overhead.
+ */
+const SHINGLE_TILE_TRIANGLE_BUDGET: Record<ShingleSilhouette, number> = {
+  rectangular: 12,
+  diamond: 16,
+  fishscale: 48,
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function buildCourseTileSlots(width: number, tilesPerCourse: number, courseIndex: number): CourseTileSlot[] {
+  const tileSpan = width / tilesPerCourse;
+  const rowOffset = courseIndex % 2 === 1 ? tileSpan * 0.5 : 0;
+  const startIndex = rowOffset > 0 ? -1 : 0;
+  const slots: CourseTileSlot[] = [];
+  for (let tileIndex = startIndex; tileIndex < tilesPerCourse; tileIndex++) {
+    const nominalMinX = -width / 2 + tileSpan * tileIndex + rowOffset;
+    const nominalMaxX = nominalMinX + tileSpan;
+    const minX = Math.max(nominalMinX, -width / 2);
+    const maxX = Math.min(nominalMaxX, width / 2);
+    if (maxX - minX <= 1e-6) continue;
+    slots.push({
+      minX,
+      maxX,
+      centerX: (minX + maxX) * 0.5,
+    });
+  }
+  return slots;
 }
 
 function markMergedMeshesForLighting(group: THREE.Group): void {
@@ -48,7 +94,7 @@ function markMergedMeshesForLighting(group: THREE.Group): void {
   });
 }
 
-function buildTileShape(width: number, height: number, silhouette: NonNullable<ShingleSurfaceOptions['silhouette']>): THREE.Shape {
+function buildTileShape(width: number, height: number, silhouette: ShingleSilhouette): THREE.Shape {
   const halfW = width / 2;
   const shape = new THREE.Shape();
 
@@ -84,7 +130,7 @@ function buildTileShape(width: number, height: number, silhouette: NonNullable<S
   return shape;
 }
 
-function silhouetteLocalMinY(height: number, silhouette: NonNullable<ShingleSurfaceOptions['silhouette']>): number {
+function silhouetteLocalMinY(height: number, silhouette: ShingleSilhouette): number {
   return silhouette === 'fishscale' ? -height * 0.1 : 0;
 }
 
@@ -93,7 +139,7 @@ function createShingleTileGeometry(
   height: number,
   depth: number,
   kickDegrees: number,
-  silhouette: NonNullable<ShingleSurfaceOptions['silhouette']>,
+  silhouette: ShingleSilhouette,
 ): THREE.ExtrudeGeometry {
   const geometry = new THREE.ExtrudeGeometry(buildTileShape(width, height, silhouette), {
     depth,
@@ -137,7 +183,7 @@ export function buildShingleSurface(
   const group = new THREE.Group();
   group.name = 'shingle-surface';
 
-  const silhouette = opts.silhouette ?? 'rectangular';
+  const silhouette: ShingleSilhouette = opts.silhouette ?? 'rectangular';
   const requestedCourseHeight = Math.max(0.1, opts.courseHeight ?? DEFAULT_COURSE_HEIGHT);
   const courseCount = Math.max(1, Math.round(slopeLength / requestedCourseHeight));
   const actualCourseHeight = slopeLength / courseCount;
@@ -166,23 +212,26 @@ export function buildShingleSurface(
   group.userData.kickDegrees = kickDegrees;
   group.userData.silhouette = silhouette;
   group.userData.tileBounds = tileBounds;
+  group.userData.triangleBudgetPerTile = SHINGLE_TILE_TRIANGLE_BUDGET[silhouette];
 
   for (let courseIndex = 0; courseIndex < courseCount; courseIndex++) {
     const courseGroup = new THREE.Group();
     courseGroup.name = `course-${courseIndex}`;
 
     const rowOffset = courseIndex % 2 === 1 ? tileSpan * 0.5 : 0;
+    const tileSlots = buildCourseTileSlots(width, tilesPerCourse, courseIndex);
     const centers: TileCenterRecord[] = [];
 
-    for (let tileIndex = 0; tileIndex < tilesPerCourse; tileIndex++) {
+    for (const slot of tileSlots) {
       const sizeJitter = 1 + (rand() - 0.5) * jitter;
       const heightJitter = 1 + (rand() - 0.5) * jitter;
-      const tileWidth = tileSpan * 0.92 * sizeJitter;
+      const slotWidth = slot.maxX - slot.minX;
+      const tileWidth = Math.min(slotWidth, slotWidth * 0.92 * sizeJitter);
       const tileHeight = tileHeightBase * heightJitter;
       const localDepth = tileDepth * (1 + (rand() - 0.5) * jitter * 0.65);
       const xJitter = (rand() - 0.5) * tileSpan * jitter * 0.35;
       const yJitter = (rand() - 0.5) * actualCourseHeight * jitter * 0.2;
-      const x = -width / 2 + tileSpan * (tileIndex + 0.5) + rowOffset + xJitter;
+      const x = clamp(slot.centerX + xJitter, slot.minX + tileWidth / 2, slot.maxX - tileWidth / 2);
       const y = courseIndex * actualCourseHeight + yJitter;
       const mesh = new THREE.Mesh(
         createShingleTileGeometry(tileWidth, tileHeight, localDepth, kickDegrees, silhouette),
