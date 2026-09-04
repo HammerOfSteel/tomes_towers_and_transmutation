@@ -16,6 +16,7 @@ import {
   planSettlement,
   applySettlementToGrid,
   type SettlementType,
+  type PlacedBuilding,
 } from '@/world/SettlementGenerator';
 import type { LayoutType } from '@/world/SettlementModelGenerator';
 import {
@@ -59,15 +60,34 @@ const LAYOUTS: LayoutType[] = [
  * exactly what the user asked for ("clear out the current elven buildings
  * ... and only have the towers so I can see them"), with zero extra UI
  * (no dropdown/toggle — picking the faction IS the override). Add an entry
- * here as each race's POC building ships; remove/relax it once a race has
- * enough building kinds that forcing one specific kind stops being useful
- * for reviewing the whole settlement.
+ * here as each race's POC building ships; relax it to a per-building
+ * SHOWCASE function (see `RenderContext.forceBuildingKind`'s function-form
+ * doc comment) once a race has enough shipped building kinds that forcing
+ * the WHOLE settlement to one single kind stops being useful for reviewing
+ * everything at once (2026-09-04: elven crossed that line at 4 kits —
+ * tower/treehouse-residential/market-stall/chapel).
+ *
+ * A plain `BuildingKind` value here forces EVERY building to that one
+ * kind (the original single-kind isolation behavior, still available for
+ * a race that's only shipped one kit so far). A function value instead
+ * forces only SOME buildings (returning `undefined` for the rest falls
+ * through to their normal ward-based kind) — used once a race has enough
+ * variety that showing it all together is more useful than isolating one
+ * kind.
  */
-const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind>> = {
-  // 'house' for the living-tree-home kit-of-parts round (2026-09-03) -- was
-  // 'watchtower' during the stone-tower kit round. Switch back to 'watchtower' (or add
-  // more entries) if you need to re-isolate the tower for comparison.
-  elven: 'house',
+const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind | ((b: PlacedBuilding, index: number) => BuildingKind | undefined)>> = {
+  // Elven now has 4 shipped building kits: the stone tower (watchtower/
+  // tower kinds), the living-tree residential home (villa/house/terraced/
+  // inn/blacksmith kinds, all via the same builder), the market stall
+  // (shop kind), and the chapel (chapel kind) -- all reachable via normal
+  // WARD_TO_KIND ward mapping EXCEPT watchtower/tower, which have no
+  // WARD_TO_KIND entry at all and so never spawn naturally. Forcing the
+  // very first building in the plan to 'watchtower' guarantees the tower
+  // kit is always present alongside whatever natural ward variety the
+  // settlement produces, so every shipped elven building type can be
+  // reviewed together in one "Play in 3D" session instead of forcing the
+  // whole settlement to a single isolated kind.
+  elven: (_b, index) => (index === 0 ? 'watchtower' : undefined),
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────
@@ -273,12 +293,15 @@ export class SettlementLabScene {
       this._roadMeshes.push(mesh);
     }
 
+    const overrideLabel = typeof forceBuildingKind === 'function'
+      ? `showcase (all ${params.faction} kits)`
+      : forceBuildingKind;
     const readout = [
       `buildings: ${result.buildingGroups.length}`,
       `roads: ${result.roadRibbonMeshes.length}`,
       `lamps: ${result.lampGroups.length}`,
       `features: ${result.featureGroups.length}`,
-      forceBuildingKind ? `POC override: ${forceBuildingKind}` : null,
+      overrideLabel ? `POC override: ${overrideLabel}` : null,
     ].filter((s): s is string => s !== null).join('  |  ');
     this._panel.setReadout(readout);
   }

@@ -1111,6 +1111,52 @@ Slime, Human — Slime/Human last, since those already look best).
   crystal and living-canopy roof, and (after the placement fix) a
   visible bellcote.
 
+- [x] **6.6f — Settlement Lab: show ALL shipped elven building kits
+  together ("showcase" override), not just one forced kind**: with 4
+  elven kits now shipped (stone tower, living-tree residential, market
+  stall, chapel), the user asked to review all of them at once in
+  "Play in 3D" instead of the lab forcing every building to a single
+  kind (the `POC_KIND_OVERRIDE_BY_FACTION['elven'] = 'house'` behavior
+  used by every round 6.6-6.6e, which by design hid the other 3 kits).
+  **Problem**: `watchtower`/`tower` (the stone-tower kit's kinds) have
+  NO entry in `WARD_TO_KIND` (`src/buildingToDungeonPlan.ts`) — every
+  other elven kind is reachable via normal ward-based generation
+  (market→shop, church→chapel, merchant/patriciate→villa,
+  slum→terraced, gateward→house, farm→house, all routing to the shared
+  treehouse-residential builder), but the tower kit never spawns
+  naturally and would stay invisible if the override were simply
+  removed. Fix: generalized `SettlementRenderContext.forceBuildingKind`
+  (`src/scene/SettlementRenderer.ts`) to accept either a plain
+  `BuildingKind` (forces every building, the original single-kind-
+  isolate behavior, still available/used by other factions) OR a
+  per-building callback `(building, index) => BuildingKind | undefined`
+  called once per building in `renderSettlementPlan()`'s loop —
+  returning `undefined` falls through to the building's normal
+  ward-based kind. `POC_KIND_OVERRIDE_BY_FACTION['elven']` is now
+  `(_b, index) => index === 0 ? 'watchtower' : undefined`: deterministic
+  per seed, forces only the settlement's first building to the
+  otherwise-unreachable tower kind, and leaves every other building on
+  its natural ward-based variety — so a single "Play in 3D" session now
+  shows all 4 kit families together. `SettlementLabScene.ts`'s readout
+  branches on `typeof forceBuildingKind === 'function'` to show
+  `POC override: showcase (all elven kits)` instead of interpolating
+  the function value directly.
+  Verification: new test in `SettlementRenderer.test.ts` proving the
+  callback form (spied, called with the exact `PlacedBuilding` +
+  index, selective override coexists with natural variety); the elven
+  describe block in `SettlementLabScene.test.ts` rewritten (3 tests:
+  showcase variety + guaranteed watchtower + new readout text; other
+  factions unaffected; live UI faction-switch + Regenerate applies the
+  showcase) — 11/11 pass. Full regression clean (144 tsc / 13 vitest,
+  both exactly baseline). Live-verified via Playwright against a dev
+  server running from this actual worktree (not the stale server
+  already running from the separate main checkout, which does NOT
+  pick up worktree-only source changes): readout shows
+  `POC override: showcase (all elven kits)`; zoomed-out screenshot
+  shows the grey stone tower's distinct crenellated silhouette
+  standing among the brown conical-roofed treehouse buildings, arch
+  structures, and other variety in the same settlement.
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
