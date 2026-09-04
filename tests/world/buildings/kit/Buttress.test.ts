@@ -72,10 +72,19 @@ function worldVertices(root: THREE.Object3D): THREE.Vector3[] {
   return vertices;
 }
 
-function topBandSpread(root: THREE.Object3D, bandHeight: number): { width: number; depth: number; yVariation: number } {
+function horizontalBandSpread(
+  root: THREE.Object3D,
+  anchor: 'top' | 'bottom',
+  bandHeight: number,
+): { width: number; depth: number; yVariation: number } {
   const vertices = worldVertices(root);
+  const minY = Math.min(...vertices.map(vertex => vertex.y));
   const maxY = Math.max(...vertices.map(vertex => vertex.y));
-  const band = vertices.filter(vertex => vertex.y >= maxY - bandHeight);
+  const band = vertices.filter(vertex => (
+    anchor === 'top'
+      ? vertex.y >= maxY - bandHeight
+      : vertex.y <= minY + bandHeight
+  ));
   const xs = band.map(vertex => vertex.x);
   const ys = band.map(vertex => vertex.y);
   const zs = band.map(vertex => vertex.z);
@@ -85,6 +94,14 @@ function topBandSpread(root: THREE.Object3D, bandHeight: number): { width: numbe
     depth: Math.max(...zs) - Math.min(...zs),
     yVariation: Math.max(...ys) - Math.min(...ys),
   };
+}
+
+function topBandSpread(root: THREE.Object3D, bandHeight: number): { width: number; depth: number; yVariation: number } {
+  return horizontalBandSpread(root, 'top', bandHeight);
+}
+
+function bottomBandSpread(root: THREE.Object3D, bandHeight: number): { width: number; depth: number; yVariation: number } {
+  return horizontalBandSpread(root, 'bottom', bandHeight);
 }
 
 function assertFiniteGeometry(root: THREE.Object3D): void {
@@ -159,6 +176,34 @@ describe('buildButtress', () => {
     expect(cap1Size.z).toBeGreaterThan(stage2Size.z);
     expect(cap0Size.y).toBeGreaterThan(0.1);
     expect(cap1Size.y).toBeGreaterThan(0.1);
+
+    const cap0BottomBand = bottomBandSpread(weatheredCaps[0]!, cap0Size.y * 0.25);
+    const cap0TopBand = topBandSpread(weatheredCaps[0]!, cap0Size.y * 0.25);
+    const cap1BottomBand = bottomBandSpread(weatheredCaps[1]!, cap1Size.y * 0.25);
+    const cap1TopBand = topBandSpread(weatheredCaps[1]!, cap1Size.y * 0.25);
+
+    expect(cap0TopBand.width).toBeLessThan(cap0BottomBand.width * 0.98);
+    expect(cap0TopBand.depth).toBeLessThan(cap0BottomBand.depth * 0.98);
+    expect(cap1TopBand.width).toBeLessThan(cap1BottomBand.width * 0.98);
+    expect(cap1TopBand.depth).toBeLessThan(cap1BottomBand.depth * 0.98);
+  });
+
+  it('builds gablet caps without zero-thickness child meshes', async () => {
+    const buildButtress = await loadBuildButtress();
+    const buttress = buildButtress({ height: 4, cap: 'gablet' }, makeStoneMaterial());
+    const gabletCap = buttress.getObjectByName('gablet-cap');
+
+    expect(gabletCap).toBeTruthy();
+    if (!gabletCap) return;
+
+    const degenerateMeshes = collectMeshes(gabletCap)
+      .map(mesh => ({
+        name: mesh.name,
+        size: worldSize(mesh).toArray().map(value => Number(value.toFixed(6))),
+      }))
+      .filter(({ size }) => size.some(axis => axis <= 0.001));
+
+    expect(degenerateMeshes).toEqual([]);
   });
 
   it('sizes gablet caps from the topmost stage footprint rather than a fixed absolute dimension', async () => {

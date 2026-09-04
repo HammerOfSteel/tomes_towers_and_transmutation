@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { mulberry32 } from '../../../core/prng';
 import { finishArchitecturalGeometry, trimExtrudeSettings } from './Bevels';
 import { depthFor } from './DepthLadder';
-import { buildGableRoof } from './RoofMassing';
 
 export type ButtressCapStyle = 'flat' | 'gablet' | 'pinnacle';
 
@@ -58,9 +57,44 @@ function rectangularShape(width: number, height: number): THREE.Shape {
   return shape;
 }
 
+function gableProfileShape(width: number, height: number, ridgeWidth: number): THREE.Shape {
+  const halfWidth = width * 0.5;
+  const halfRidgeWidth = Math.min(ridgeWidth * 0.5, halfWidth - EPSILON);
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfWidth, 0);
+  shape.lineTo(-halfRidgeWidth, height);
+  shape.lineTo(halfRidgeWidth, height);
+  shape.lineTo(halfWidth, 0);
+  shape.closePath();
+  return shape;
+}
+
 function buildRectangularPrismGeometry(width: number, height: number, depth: number): THREE.BufferGeometry {
   const bevelWidth = Math.max(Math.min(width, height, depth) * 0.16, 0.01);
   const geometry = new THREE.ExtrudeGeometry(rectangularShape(width, height), {
+    ...trimExtrudeSettings(bevelWidth),
+    depth,
+    steps: 1,
+  });
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox ?? new THREE.Box3();
+  const size = bounds.getSize(new THREE.Vector3());
+  geometry.scale(
+    width / Math.max(size.x, EPSILON),
+    height / Math.max(size.y, EPSILON),
+    depth / Math.max(size.z, EPSILON),
+  );
+  geometry.computeBoundingBox();
+  const normalizedBounds = geometry.boundingBox ?? new THREE.Box3();
+  const centerX = (normalizedBounds.min.x + normalizedBounds.max.x) * 0.5;
+  geometry.translate(-centerX, -normalizedBounds.min.y, -normalizedBounds.min.z);
+  return finishArchitecturalGeometry(geometry);
+}
+
+function buildGablePrismGeometry(width: number, height: number, depth: number): THREE.BufferGeometry {
+  const ridgeWidth = Math.min(Math.max(width * 0.18, 0.06), width * 0.4);
+  const bevelWidth = Math.max(Math.min(width, height, depth, ridgeWidth) * 0.12, 0.006);
+  const geometry = new THREE.ExtrudeGeometry(gableProfileShape(width, height, ridgeWidth), {
     ...trimExtrudeSettings(bevelWidth),
     depth,
     steps: 1,
@@ -350,35 +384,19 @@ function buildGabletCap(footprint: Footprint, material: THREE.Material, seed: nu
 
   const targetWidth = footprint.width * 0.9;
   const targetDepth = footprint.depth * 0.92;
-  const halfWidth = targetWidth / (2 * 1.15);
-  const halfDepth = targetDepth / 2.04;
   const ridgeHeight = Math.max(Math.max(footprint.width, footprint.depth) * 0.36, 0.14);
-  const roof = buildGableRoof(
-    halfWidth,
-    halfDepth,
-    ridgeHeight,
-    (seed ^ 0x4741_424C) >>> 0,
+  const roof = createMesh(
+    buildGablePrismGeometry(targetWidth, ridgeHeight, targetDepth),
     material,
+    'gablet-roof',
+    {
+      role: 'gablet-cap',
+      seed,
+      width: targetWidth,
+      depth: targetDepth,
+      ridgeHeight,
+    },
   );
-
-  roof.name = 'gablet-roof';
-  roof.updateMatrixWorld(true);
-  let roofBounds = new THREE.Box3().setFromObject(roof);
-  roof.position.x -= (roofBounds.min.x + roofBounds.max.x) * 0.5;
-  roof.position.y -= roofBounds.min.y;
-  roof.position.z -= roofBounds.min.z;
-  roof.updateMatrixWorld(true);
-  roofBounds = new THREE.Box3().setFromObject(roof);
-  const roofSize = roofBounds.getSize(new THREE.Vector3());
-  const scaleX = targetWidth / Math.max(roofSize.x, EPSILON);
-  const scaleZ = targetDepth / Math.max(roofSize.z, EPSILON);
-  const scaleY = Math.sqrt(scaleX * scaleZ);
-  roof.scale.set(scaleX, scaleY, scaleZ);
-  roof.updateMatrixWorld(true);
-  roofBounds = new THREE.Box3().setFromObject(roof);
-  roof.position.x -= (roofBounds.min.x + roofBounds.max.x) * 0.5;
-  roof.position.y -= roofBounds.min.y;
-  roof.position.z -= roofBounds.min.z;
   group.add(roof);
   return group;
 }
