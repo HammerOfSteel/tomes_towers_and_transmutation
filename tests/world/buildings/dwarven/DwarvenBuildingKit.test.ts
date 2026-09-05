@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop, buildDwarvenBlacksmith } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop, buildDwarvenBlacksmith, buildDwarvenChapel } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -483,6 +483,104 @@ describe('buildDwarvenBlacksmith', () => {
     for (const seed of [1, 2, 3, 42, 999]) {
       const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed }));
       assertFiniteGeometry(smith);
+    }
+  });
+});
+
+describe('buildDwarvenChapel', () => {
+  it('respects the fixed 4x8 footprint plus apse-projection/plinth tolerance', () => {
+    const fp = getFootprint('chapel', 'medium');
+    expect(fp.w).toBe(4);
+    expect(fp.d).toBe(8);
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 2 }));
+    const box = new THREE.Box3().setFromObject(chapel);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    // A rear octagonal apse/core is a real, intentional additional mass
+    // docked BEHIND the nave's own back wall (the same real-world
+    // round-apse-church precedent already used by ElvenChapelKit.ts) --
+    // it can legitimately project up to its own near-full radius beyond
+    // the nominal footprint's rear edge, plus the usual
+    // buttress/plinth/steps fringe on top of that (the same "real
+    // architecture legitimately exceeds the nominal collision footprint"
+    // principle as villa's wing tolerance).
+    const maxApseProjection = 2.6;
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+    expect(size.z).toBeLessThanOrEqual(fp.d + maxApseProjection + 1.5);
+  });
+
+  it('has a rear core or rear rock cheek', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    const rearCore = findByNameIncluding(chapel, 'chapel-rear-core');
+    const rockCheek = findByNameIncluding(chapel, 'rear-rock-cheek');
+    expect(rearCore || rockCheek).toBeTruthy();
+  });
+
+  it('never grows a full cathedral tower', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed }));
+      const box = new THREE.Box3().setFromObject(chapel);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      expect(size.y).toBeLessThanOrEqual(6.5);
+    }
+  });
+
+  it('has grounded entry steps and a plinth', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    expect(findByNameIncluding(chapel, 'front-steps')).toBeTruthy();
+    expect(findByNameIncluding(chapel, 'plinth-course')).toBeTruthy();
+  });
+
+  it('has an ancestor-door arch with the five-piece opening minimum', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    const door = findByNameIncluding(chapel, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+  });
+
+  it('has a voussoir arch ring with 9-11 total voussoirs over the door', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    const arch = findByNameIncluding(chapel, 'voussoir-arch');
+    expect(arch).toBeTruthy();
+    const leftCount = countByNameIncluding(arch!, 'voussoir-left-');
+    const rightCount = countByNameIncluding(arch!, 'voussoir-right-');
+    const hasKeystone = findByNameIncluding(arch!, 'keystone') ? 1 : 0;
+    const total = leftCount + rightCount + hasKeystone;
+    expect(total).toBeGreaterThanOrEqual(9);
+    expect(total).toBeLessThanOrEqual(11);
+  });
+
+  it('has heavy side buttresses along the long nave walls', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    expect(countByNameIncluding(chapel, 'buttress')).toBeGreaterThanOrEqual(4);
+  });
+
+  it('has 4 side nave openings or blind panels across both long walls', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    const windows = countByNameIncluding(chapel, 'dwarven-window');
+    const oculi = countByNameIncluding(chapel, 'dwarven-oculus');
+    const blinds = countByNameIncluding(chapel, 'chapel-blind-panel');
+    expect(windows + oculi + blinds).toBeGreaterThanOrEqual(4);
+  });
+
+  it('has an unconditional raised ancestor rune/chevron plaque ornament', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    expect(findByNameIncluding(chapel, 'dwarven-chapel-ancestor-plaque')).toBeTruthy();
+  });
+
+  it('has lathe columns flanking the door, never bare freestanding cylinders', () => {
+    const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed: 1 }));
+    expect(countByNameIncluding(chapel, 'lathe-column')).toBeGreaterThanOrEqual(2);
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed }));
+      assertFiniteGeometry(chapel);
     }
   });
 });

@@ -2055,4 +2055,450 @@ export function buildDwarvenBlacksmith(dna: BuildingDNA): THREE.Group {
   return g;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Chapel
+// ─────────────────────────────────────────────────────────────────────────
+
+const CHAPEL_NAVE_HEIGHT = 3.00;
+const CHAPEL_APSE_RADIUS = 1.3;
+/** How far the octagonal apse's own center sits behind the nave's back
+ * wall (as a fraction of its own radius) -- mirrors ElvenChapelKit.ts's
+ * own `APSE_DOCK_FRAC` precedent exactly (same real-world docked-apse
+ * seam detail, just generalized to the dwarven kit's own rectangular
+ * `rectangleFaces()` nave instead of an octagonal one). */
+const CHAPEL_APSE_DOCK_FRAC = 0.55;
+
+/** Builds a brazier from its three named real parts (never a bare
+ * cylinder/sphere stand-in): a tapered-vessel bowl, three angled tripod
+ * legs, and a small recessed glowing ember plane set down inside the
+ * bowl's own rim. */
+function buildBrazier(seed: number, palette: DwarvenPalette): THREE.Group {
+  const rand = mulberry32(seed >>> 0);
+  const g = new THREE.Group();
+  g.name = 'dwarven-chapel-brazier';
+
+  const bowlHeight = 0.22;
+  const legHeight = 0.55;
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.11, bowlHeight, 8), palette.iron);
+  bowl.name = 'brazier-bowl';
+  bowl.position.y = legHeight + bowlHeight / 2;
+  bowl.castShadow = bowl.receiveShadow = true;
+  g.add(bowl);
+
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2 + rand() * 0.15;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.026, legHeight, 6), palette.iron);
+    leg.name = `brazier-leg-${i}`;
+    leg.position.set(Math.sin(angle) * 0.1, legHeight / 2, Math.cos(angle) * 0.1);
+    leg.rotation.z = Math.sin(angle) * 0.16;
+    leg.rotation.x = -Math.cos(angle) * 0.16;
+    leg.castShadow = leg.receiveShadow = true;
+    g.add(leg);
+  }
+
+  const ember = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.02, 8), palette.forgeEmissive ?? palette.soot);
+  ember.name = 'brazier-ember-plane';
+  ember.position.y = legHeight + bowlHeight * 0.65;
+  g.add(ember);
+
+  return g;
+}
+
+/**
+ * Builds a low dwarven chapel: a long rectangular nave (`rectangleFaces()`,
+ * fixed 4x8 footprint) on an extra-high 0.45 WU plinth with a rear rock
+ * cheek, a monumental low-arched ancestor door wrapped in a 9-11-voussoir
+ * ring with a raised keystone crest and flanking fluted lathe columns,
+ * heavy side buttresses along both long walls, one of three rear-core
+ * variants (octagonal apse with three exposed faces / rock-cut altar wall
+ * / low parapet sanctuary), one of three roof families (heavy gable / low
+ * vault-parapet / octagonal cap over the apse), a 4-position side-window
+ * rhythm (slit arches / oculi+slits / mostly blind raised panels), ridge
+ * stones plus two short capped roof vents, an unconditional raised
+ * ancestor-rune/chevron plaque, and one "sacred exterior" prop (twin
+ * braziers / extra ancestor plaques / a small bell-vent cap / plinth
+ * monument stones) -- see design spec section 4 `chapel`. Deliberately NO
+ * full cathedral tower: the tallest feature is the roof ridge (and, only
+ * in the 'octagonal-cap' branch, a squat conical cap over the rear apse),
+ * never a freestanding tower mass, matching the spec's explicit ban.
+ */
+export function buildDwarvenChapel(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('chapel', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+  const g = new THREE.Group();
+  g.name = 'dwarven-chapel';
+
+  const nave = buildRectHall(halfW, halfD, CHAPEL_NAVE_HEIGHT, tagSeed(dna.seed, 'NAVE'), palette.granite);
+  g.add(nave.group);
+
+  // Extra-high plinth (3 courses @ 0.15 WU = 0.45 WU total, per spec) plus
+  // front entry steps and a rear rock cheek piled against the nave's own
+  // back wall (`buildRockPlinthSkirt`'s existing `rearRockCheek` option --
+  // no new kit code needed, this feature already exists for exactly this
+  // purpose).
+  const plinth = buildRockPlinthSkirt({
+    points: nave.points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    plinthLevels: 3,
+    plinthCourseHeight: 0.15,
+    stepsFace: nave.faces[3],
+    rearRockCheek: true,
+    rearCheekFace: nave.faces[1],
+  });
+  g.add(plinth);
+
+  // Ancestor door: low/squat arch, 1.05 W x 1.85 H, voussoir ring (9 or 11
+  // total voussoirs per spec's "9-11 voussoirs"), a keystone crest plaque
+  // distinct from the arch's own masonry keystone, and flanking fluted
+  // lathe columns with bases/caps (never bare freestanding cylinders).
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const doorWidth = 1.05;
+  const doorHeight = 1.85;
+  const doorArchRatio = 0.5 + doorRand() * 0.1;
+  const door = buildDwarvenDoor({
+    width: doorWidth,
+    height: doorHeight,
+    wallZ: wallZFor(3, halfW, halfD),
+    palette: openingPalette,
+    archRatio: doorArchRatio,
+  });
+  door.name = 'dwarven-door';
+  placeOnFace(door, nave.faces[3]!, 0.5);
+  g.add(door);
+
+  const doorPointHeight = Math.min(doorHeight * 0.4, (doorWidth / 2) * doorArchRatio);
+  const doorStraightHeight = Math.max(doorHeight * 0.6, doorHeight - doorPointHeight);
+  const voussoirCount = doorRand() < 0.5 ? 4 : 5; // 2*4+1=9 or 2*5+1=11 total
+  const archGroup = buildVoussoirArch({
+    width: doorWidth * 1.35,
+    springHeight: doorStraightHeight + 0.1,
+    archRatio: doorArchRatio,
+    material: palette.granite,
+    voussoirCount,
+    seed: tagSeed(dna.seed, 'ARCH'),
+  });
+  archGroup.position.z = wallZFor(3, halfW, halfD);
+  placeOnFace(archGroup, nave.faces[3]!, 0.5);
+  g.add(archGroup);
+
+  const crest = buildShieldPlaque({ width: 0.34, height: 0.4, material: palette.iron, motif: 'hammer' });
+  crest.name = 'dwarven-chapel-keystone-crest';
+  crest.position.set(0, doorStraightHeight + 0.55, halfD + 0.05);
+  g.add(crest);
+
+  for (const cx of [-1, 1]) {
+    const column = buildLatheColumn({
+      height: doorStraightHeight + 0.25,
+      radius: 0.15,
+      crossSection: 'fluted',
+      seed: tagSeed(dna.seed, `COLM${cx}`),
+    }, palette.granite);
+    column.position.set(cx * (doorWidth / 2 + 0.2), 0, halfD + 0.08);
+    g.add(column);
+  }
+
+  // Heavy side buttresses: 3 per long wall (6 total), evenly spaced.
+  // Buttresses aren't built by a wallZ-aware opening preset, so (matching
+  // the plain-mesh convention used everywhere else in this file) their own
+  // pre-rotation local z is set explicitly to the wall's own distance from
+  // center before `placeOnFace()` rotates+translates the whole assembly
+  // onto the target face.
+  for (const fi of [0, 2]) {
+    for (const t of [0.2, 0.5, 0.8]) {
+      const buttress = buildButtress({
+        height: CHAPEL_NAVE_HEIGHT * 0.85,
+        width: 0.45,
+        depth: 0.4,
+        stages: 2,
+        seed: tagSeed(dna.seed, `BUTR${fi}_${Math.round(t * 10)}`),
+      }, palette.basalt);
+      buttress.position.z = wallZFor(fi, halfW, halfD) - 0.15;
+      placeOnFace(buttress, nave.faces[fi]!, t);
+      g.add(buttress);
+    }
+  }
+
+  // Window rhythm axis: 4 slit arches 0.40 / 2 oculi + 2 slits 0.35 /
+  // mostly blind panels 0.25 -- always exactly 4 side positions (2 per
+  // long wall), each becoming a real opening or (in the 'blind' branch,
+  // for 3 of the 4 positions) a raised blind panel -- per the design
+  // spec's "four side openings or blind panels" rule and the
+  // no-flat-coplanar-surface doctrine rule (the blind panel is a real
+  // proud beveled plaque, not a flat texture swap).
+  const rhythmRand = mulberry32(tagSeed(dna.seed, 'RHYT'));
+  const rhythm = pickWeighted(rhythmRand, [
+    ['slits', 0.40],
+    ['mixed', 0.35],
+    ['blind', 0.25],
+  ] as Array<['slits' | 'mixed' | 'blind', number]>);
+
+  const sidePositions: Array<{ fi: number; t: number }> = [
+    { fi: 0, t: 0.3 },
+    { fi: 0, t: 0.7 },
+    { fi: 2, t: 0.3 },
+    { fi: 2, t: 0.7 },
+  ];
+  sidePositions.forEach(({ fi, t }, idx) => {
+    const wallZ = wallZFor(fi, halfW, halfD);
+    if (rhythm === 'blind' && idx !== 1) {
+      const panel = buildShieldPlaque({ width: 0.4, height: 0.6, material: palette.granite, motif: 'plain' });
+      panel.name = 'chapel-blind-panel';
+      panel.position.y = CHAPEL_NAVE_HEIGHT * 0.5;
+      panel.position.z = wallZ + 0.02;
+      placeOnFace(panel, nave.faces[fi]!, t);
+      g.add(panel);
+      return;
+    }
+    if (rhythm === 'mixed' && idx % 2 === 0) {
+      const oculus = buildDwarvenOculus({ diameter: 0.55, wallZ, palette: openingPalette });
+      oculus.name = 'dwarven-oculus';
+      oculus.position.y = CHAPEL_NAVE_HEIGHT * 0.55;
+      placeOnFace(oculus, nave.faces[fi]!, t);
+      g.add(oculus);
+      return;
+    }
+    const win = buildDwarvenWindow({ width: 0.42, height: 0.85, wallZ, palette: openingPalette, archRatio: 0.5 });
+    win.name = 'dwarven-window';
+    win.position.y = CHAPEL_NAVE_HEIGHT * 0.5;
+    placeOnFace(win, nave.faces[fi]!, t);
+    g.add(win);
+  });
+
+  // Rear core axis: octagonal apse 0.50 / rock-cut altar wall 0.30 / low
+  // parapet sanctuary 0.20.
+  const rearRand = mulberry32(tagSeed(dna.seed, 'REAR'));
+  const rearCoreType = pickWeighted(rearRand, [
+    ['apse', 0.50],
+    ['rock-altar', 0.30],
+    ['parapet-sanctuary', 0.20],
+  ] as Array<['apse' | 'rock-altar' | 'parapet-sanctuary', number]>);
+
+  let apseCapY: number | undefined;
+  if (rearCoreType === 'apse') {
+    const apseHeight = CHAPEL_NAVE_HEIGHT * 0.75;
+    const allFaces = octagonFaces(CHAPEL_APSE_RADIUS);
+    // Three exposed faces (of the octagon's 8), the ones reading as "away
+    // from the nave" once the whole assembly is docked behind the nave's
+    // own rear wall -- per spec's "three exposed faces" (a full 8-face
+    // ring would look like a sealed cell floating behind the nave; a
+    // symmetric 2-face opening -- as ElvenChapelKit.ts's own apse uses --
+    // reads as a much larger 6-face room, too big for this squat altar
+    // core).
+    const apseSeed = tagSeed(dna.seed, 'APSE');
+    const exposedFaces = allFaces.filter((_, i) => i === 3 || i === 4 || i === 5);
+    const apseGroup = new THREE.Group();
+    apseGroup.name = 'chapel-rear-core';
+    const walls = buildWallSurfaceBlocks(0, apseHeight, apseSeed, palette.granite, { facesOverride: exposedFaces });
+    apseGroup.add(walls);
+    const quoins = buildQuoins(CHAPEL_APSE_RADIUS, apseHeight, undefined, palette.granite);
+    apseGroup.add(quoins);
+    const floorCap = buildFloorCap(CHAPEL_APSE_RADIUS, palette.granite);
+    floorCap.position.y = apseHeight;
+    apseGroup.add(floorCap);
+
+    // Round oculus (0.65 diameter) with a cross mullion, recessed behind
+    // the opening's own ring frame (the standard five-piece window recess
+    // already IS that ring frame -- no extra geometry needed).
+    const apseOculus = buildDwarvenOculus({
+      diameter: 0.65,
+      wallZ: CHAPEL_APSE_RADIUS,
+      palette: openingPalette,
+      divisionStyle: 'cross',
+    });
+    apseOculus.name = 'dwarven-oculus';
+    apseOculus.position.y = apseHeight * 0.55;
+    placeOnFace(apseOculus, allFaces[4]!, 0.5);
+    apseGroup.add(apseOculus);
+
+    apseGroup.position.z = -halfD - CHAPEL_APSE_RADIUS * (1 - CHAPEL_APSE_DOCK_FRAC);
+    g.add(apseGroup);
+    apseCapY = apseHeight;
+  } else if (rearCoreType === 'rock-altar') {
+    // Rock-cut altar wall: a jumble of large boulder chunks stacked flush
+    // against the nave's own rear wall -- a real carved-outcrop
+    // silhouette (irregular jittered boxes), never a bare flat wall
+    // pretending to be "rock-cut" nor a blob primitive.
+    const altarGroup = new THREE.Group();
+    altarGroup.name = 'chapel-rear-core';
+    const altarRand = mulberry32(tagSeed(dna.seed, 'ALTR'));
+    const chunkCount = 7;
+    for (let i = 0; i < chunkCount; i++) {
+      const w = 0.35 + altarRand() * 0.25;
+      const h = 0.3 + altarRand() * 0.35;
+      const d = 0.3 + altarRand() * 0.2;
+      const chunk = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), palette.basalt);
+      chunk.name = `chapel-altar-chunk-${i}`;
+      chunk.position.set(
+        (altarRand() - 0.5) * (halfW * 1.6),
+        h / 2 + altarRand() * 0.3,
+        -halfD - d * 0.3 - altarRand() * 0.15,
+      );
+      chunk.rotation.y = (altarRand() - 0.5) * 0.4;
+      chunk.castShadow = chunk.receiveShadow = true;
+      altarGroup.add(chunk);
+    }
+    g.add(altarGroup);
+  } else {
+    // Low parapet sanctuary: a smaller, lower rectangular annex behind the
+    // nave, topped with its own coped-parapet roof -- a genuinely
+    // different, low, flat-roofed extension (never a re-skin of the
+    // octagonal apse).
+    const sanctuaryHalfW = halfW * 0.6;
+    const sanctuaryHalfD = halfD * 0.22;
+    const sanctuaryHeight = CHAPEL_NAVE_HEIGHT * 0.42;
+    const sanctuaryGroup = new THREE.Group();
+    sanctuaryGroup.name = 'chapel-rear-core';
+    const sanctuaryPoints = rectanglePoints(sanctuaryHalfW, sanctuaryHalfD);
+    const sanctuary = buildMassFromSpec(
+      { points: sanctuaryPoints, faces: rectangleFaces(sanctuaryHalfW, sanctuaryHalfD), height: sanctuaryHeight },
+      tagSeed(dna.seed, 'SANC'),
+      palette.granite,
+    );
+    sanctuaryGroup.add(sanctuary);
+    const sanctuaryRoof = buildParapetRoof(sanctuaryPoints, palette, 0.2);
+    sanctuaryRoof.position.y = sanctuaryHeight;
+    sanctuaryGroup.add(sanctuaryRoof);
+    sanctuaryGroup.position.z = -halfD - sanctuaryHalfD;
+    g.add(sanctuaryGroup);
+  }
+
+  // Roof family axis: gabled stone 0.45 / low vault-parapet 0.35 /
+  // octagonal cap 0.20. 'vault-parapet' and 'octagonal-cap' both give the
+  // nave itself the kit's low coped-parapet stand-in for "low vault" --
+  // 'octagonal-cap"'s own distinguishing silhouette is the extra conical
+  // cap added below over the rear apse (only when the rear core actually
+  // IS an apse), per the spec's "octagonal conical cap OVER REAR CORE"
+  // wording (not a main-roof silhouette in its own right).
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofFamily = pickWeighted(roofRand, [
+    ['gabled', 0.45],
+    ['vault-parapet', 0.35],
+    ['octagonal-cap', 0.20],
+  ] as Array<['gabled' | 'vault-parapet' | 'octagonal-cap', number]>);
+
+  const roofRise = Math.min(halfW, halfD) * 1.1;
+  const ridgeWorldY = CHAPEL_NAVE_HEIGHT + roofRise;
+  const naveRoof = roofFamily === 'gabled'
+    ? buildDwarvenRoof('gable', halfW, halfD, nave.points, roofRise, tagSeed(dna.seed, 'ROOF'), palette)
+    : buildDwarvenRoof('parapet', halfW, halfD, nave.points, roofRise, tagSeed(dna.seed, 'ROOF'), palette);
+  naveRoof.position.y = CHAPEL_NAVE_HEIGHT;
+  g.add(naveRoof);
+
+  if (roofFamily === 'octagonal-cap' && apseCapY !== undefined) {
+    const cap = buildHipRoof(CHAPEL_APSE_RADIUS, CHAPEL_APSE_RADIUS, apseCapY * 0.4 + 0.5, tagSeed(dna.seed, 'APCAP'), palette.roofTile, { shingle: { silhouette: 'rectangular' } });
+    cap.name = 'chapel-apse-conical-cap';
+    cap.position.set(0, apseCapY, -halfD - CHAPEL_APSE_RADIUS * (1 - CHAPEL_APSE_DOCK_FRAC));
+    g.add(cap);
+  }
+
+  // Ridge stones: a proud stone cresting strip along the roof spine.
+  const ridgeCresting = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, fp.d * 0.94), palette.basalt);
+  ridgeCresting.name = 'chapel-ridge-stones';
+  ridgeCresting.position.set(0, ridgeWorldY + 0.06, 0);
+  ridgeCresting.castShadow = ridgeCresting.receiveShadow = true;
+  g.add(ridgeCresting);
+
+  // Two short capped roof vents -- reuses the same real course-and-collar
+  // chimney technique at a small, purely decorative scale.
+  for (const vz of [-halfD * 0.4, halfD * 0.4]) {
+    const vent = buildCorbelledChimneyStack({
+      width: 0.26,
+      depth: 0.26,
+      height: 0.55,
+      material: palette.basalt,
+      collarMaterial: palette.iron,
+      capMaterial: palette.basalt,
+      flueMaterial: palette.soot,
+      seed: tagSeed(dna.seed, `VENT${Math.round(vz * 10)}`),
+      courseCount: 3,
+      collarBands: 1,
+    });
+    vent.name = 'chapel-roof-vent';
+    vent.position.set(0, ridgeWorldY, vz);
+    g.add(vent);
+  }
+
+  // Sacred exterior axis: twin braziers 0.35 / ancestor plaques 0.35 /
+  // bell-vent cap 0.15 / plinth monuments 0.15.
+  const sacredRand = mulberry32(tagSeed(dna.seed, 'SACR'));
+  const sacredChoice = pickWeighted(sacredRand, [
+    ['braziers', 0.35],
+    ['plaques', 0.35],
+    ['bell-cap', 0.15],
+    ['monuments', 0.15],
+  ] as Array<['braziers' | 'plaques' | 'bell-cap' | 'monuments', number]>);
+
+  if (sacredChoice === 'braziers') {
+    for (const cx of [-1, 1]) {
+      const brazier = buildBrazier(tagSeed(dna.seed, `BRAZ${cx}`), palette);
+      brazier.position.set(cx * (doorWidth / 2 + 0.55), 0, halfD + 0.35);
+      g.add(brazier);
+    }
+  } else if (sacredChoice === 'plaques') {
+    for (const fi of [0, 2]) {
+      const plaque = buildShieldPlaque({ width: 0.3, height: 0.42, material: palette.iron, motif: 'anvil' });
+      plaque.name = 'dwarven-chapel-sacred-plaque';
+      plaque.position.y = CHAPEL_NAVE_HEIGHT * 0.75;
+      plaque.position.z = wallZFor(fi, halfW, halfD) + 0.02;
+      placeOnFace(plaque, nave.faces[fi]!, 0.5);
+      g.add(plaque);
+    }
+  } else if (sacredChoice === 'bell-cap') {
+    // A small bell/vent cap accent at the roof ridge center -- explicitly
+    // NOT a full bell tower/cathedral tower (spec forbids that): just a
+    // slightly taller central vent stack with a small cast bell nested in
+    // its throat.
+    const bellCap = buildCorbelledChimneyStack({
+      width: 0.3,
+      depth: 0.3,
+      height: 0.75,
+      material: palette.basalt,
+      collarMaterial: palette.iron,
+      capMaterial: palette.basalt,
+      flueMaterial: palette.soot,
+      seed: tagSeed(dna.seed, 'BELL'),
+      courseCount: 4,
+      collarBands: 2,
+    });
+    bellCap.name = 'dwarven-chapel-bell-vent-cap';
+    bellCap.position.set(0, ridgeWorldY, 0);
+    g.add(bellCap);
+
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 0.14, 8), palette.iron);
+    bell.name = 'dwarven-chapel-bell';
+    bell.position.set(0, ridgeWorldY + 0.4, 0);
+    bell.castShadow = bell.receiveShadow = true;
+    g.add(bell);
+  } else {
+    // Plinth monument stones: 2-3 small standing slabs near the entry.
+    const monRand = mulberry32(tagSeed(dna.seed, 'MONU'));
+    const monumentCount = 2 + Math.round(monRand());
+    for (let i = 0; i < monumentCount; i++) {
+      const t = (i + 1) / (monumentCount + 1);
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5 + monRand() * 0.15, 0.1), palette.basalt);
+      slab.name = `dwarven-chapel-monument-${i}`;
+      slab.position.set((t - 0.5) * halfW * 1.6, 0.25, halfD + 0.5);
+      slab.rotation.y = (monRand() - 0.5) * 0.3;
+      slab.castShadow = slab.receiveShadow = true;
+      g.add(slab);
+    }
+  }
+
+  // Unconditional ancestor runes/chevrons ornament: raised block plaques
+  // (via the shared chevron-belt technique), not flat text, present
+  // regardless of which "sacred exterior" axis choice was rolled above
+  // (the spec's own "Ornament" bullet is separate from -- and additional
+  // to -- the "Props"/"sacred exterior" variation-axis bullet).
+  const ancestorPlaque = buildChevronBelt({ width: fp.w * 0.6, material: palette.iron });
+  ancestorPlaque.name = 'dwarven-chapel-ancestor-plaque';
+  ancestorPlaque.position.set(0, CHAPEL_NAVE_HEIGHT - 0.3, halfD + 0.04);
+  g.add(ancestorPlaque);
+
+  return g;
+}
+
 
