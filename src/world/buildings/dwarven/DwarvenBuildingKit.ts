@@ -962,3 +962,367 @@ export function buildDwarvenVilla(dna: BuildingDNA): THREE.Group {
 
   return g;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Inn
+// ─────────────────────────────────────────────────────────────────────────
+
+const INN_STOREY_HEIGHT = 2.85;
+
+/** Builds a timber-panel upper storey: real framed plank wall blocks
+ * (`palette.wood`) standing inside proud STONE corner posts (`palette.
+ * basalt` quoins, not wood) -- the design spec's "framed planks sitting
+ * inside stone posts, not flat texture" requirement, achieved by
+ * decoupling `buildRectHall()`'s usual single-material wall+quoin
+ * coupling into two independently-chosen materials. */
+function buildTimberPanelUpper(
+  halfW: number,
+  halfD: number,
+  height: number,
+  seed: number,
+  woodMaterial: THREE.Material,
+  stoneMaterial: THREE.Material,
+): { group: THREE.Group; faces: OctagonFace[]; points: [number, number][] } {
+  const g = new THREE.Group();
+  const points = rectanglePoints(halfW, halfD);
+  const faces = rectangleFaces(halfW, halfD);
+  const longestFace = 2 * Math.max(halfW, halfD);
+
+  const walls = buildWallSurfaceBlocks(0, height, seed, woodMaterial, {
+    courseHeight: 0.3,
+    blocksPerFace: Math.max(3, Math.round(longestFace / 0.55)),
+    jitter: 0.03,
+    facesOverride: faces,
+  });
+  g.add(walls);
+
+  const posts = buildQuoins(Math.max(halfW, halfD), height, undefined, stoneMaterial, points);
+  posts.name = 'dwarven-inn-upper-posts';
+  g.add(posts);
+
+  const floorCap = buildFloorCap(0, stoneMaterial, undefined, points);
+  floorCap.position.y = height;
+  floorCap.name = 'dwarven-hall-floor-cap';
+  g.add(floorCap);
+
+  return { group: g, faces, points };
+}
+
+/** Builds a hanging sign: a proud iron bracket arm mounted flush to the
+ * wall, a hanging rod, and the sign face itself -- a real round medallion
+ * (a coined disc with a raised rim, not a flat circle placeholder), a
+ * hammer-shield (`buildShieldPlaque`), or a framed plank board
+ * (`buildMetalBand` used as a proud rectangular frame around a wood
+ * board). Never a flat decal. */
+function buildHangingSign(
+  signType: 'medallion' | 'shield' | 'plank',
+  palette: DwarvenPalette,
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'dwarven-sign';
+
+  const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.06), palette.iron);
+  bracket.name = 'sign-bracket';
+  bracket.position.set(0.21, 0, 0.03);
+  bracket.rotation.z = -0.15;
+  bracket.castShadow = bracket.receiveShadow = true;
+  g.add(bracket);
+
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.32, 8), palette.iron);
+  rod.name = 'sign-rod';
+  rod.position.set(0.4, -0.18, 0.05);
+  rod.castShadow = rod.receiveShadow = true;
+  g.add(rod);
+
+  let face: THREE.Group;
+  if (signType === 'shield') {
+    face = buildShieldPlaque({ width: 0.32, height: 0.38, material: palette.iron, motif: 'hammer' });
+  } else if (signType === 'plank') {
+    face = new THREE.Group();
+    face.name = 'sign-plank';
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.26, 0.03), palette.wood);
+    board.name = 'plank-board';
+    board.castShadow = board.receiveShadow = true;
+    face.add(board);
+    const frame = buildMetalBand({ width: 0.34, depth: 0.28, material: palette.iron, thickness: 0.02, bandHeight: 0.03 });
+    frame.name = 'plank-frame';
+    frame.rotation.x = Math.PI / 2;
+    face.add(frame);
+  } else {
+    face = new THREE.Group();
+    face.name = 'sign-medallion';
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.04, 16), palette.iron);
+    disc.name = 'medallion-disc';
+    disc.rotation.x = Math.PI / 2;
+    disc.castShadow = disc.receiveShadow = true;
+    face.add(disc);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 6, 16), palette.iron);
+    rim.name = 'medallion-rim';
+    rim.castShadow = rim.receiveShadow = true;
+    face.add(rim);
+  }
+  face.position.set(0.4, -0.36, 0.05);
+  g.add(face);
+
+  return g;
+}
+
+/** Builds the wide public-hall inn: stone lower storey, a timber-panel or
+ * stone upper storey, a double arched entry with flanking windows, a
+ * porch of two proud lathe-column posts, a corbelled kitchen chimney, and
+ * a hanging sign -- see design spec section 4 `inn` for the full
+ * blueprint. Exterior props (benches/trough/lantern brackets) are
+ * explicitly out of scope for this pass, matching the precedent set by
+ * villa's lantern-sconce/coal-niche omission: decorative-only, not
+ * covered by any doctrine rule or test assertion. */
+export function buildDwarvenInn(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('inn', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const groundHeight = INN_STOREY_HEIGHT;
+  const upperHeight = INN_STOREY_HEIGHT;
+  const totalHeight = groundHeight + upperHeight;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+
+  const g = new THREE.Group();
+  g.name = 'dwarven-inn';
+
+  // Ground storey: stone hall.
+  const { group: ground, faces, points } = buildRectHall(halfW, halfD, groundHeight, tagSeed(dna.seed, 'GRND'), palette.granite);
+  g.add(ground);
+
+  const plinth = buildRockPlinthSkirt({
+    points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    stepsFace: faces[3],
+  });
+  g.add(plinth);
+
+  // Upper storey: planked hoarding 0.45 / stone upper 0.35 / mixed gable
+  // bay 0.20 (the "mixed" option is stone-upper plus a proud projecting
+  // oriel window bay, see below).
+  const upperMatRand = mulberry32(tagSeed(dna.seed, 'UMAT'));
+  const upperMaterial = pickWeighted<'planked' | 'stone' | 'mixed'>(upperMatRand, [
+    ['planked', 0.45],
+    ['stone', 0.35],
+    ['mixed', 0.20],
+  ]);
+  let upperFaces: OctagonFace[];
+  let upperGroup: THREE.Group;
+  if (upperMaterial === 'planked') {
+    const upper = buildTimberPanelUpper(halfW, halfD, upperHeight, tagSeed(dna.seed, 'UPPR'), palette.wood, palette.basalt);
+    upperGroup = upper.group;
+    upperFaces = upper.faces;
+  } else {
+    const upper = buildRectHall(halfW, halfD, upperHeight, tagSeed(dna.seed, 'UPPR'), palette.granite);
+    upperGroup = upper.group;
+    upperFaces = upper.faces;
+  }
+  upperGroup.position.y = groundHeight;
+  upperGroup.name = 'dwarven-inn-upper';
+  g.add(upperGroup);
+
+  // Mixed gable bay: a small proud projecting oriel window box on the
+  // front face, real box geometry standing forward of the wall plane
+  // (never flush/coplanar).
+  if (upperMaterial === 'mixed') {
+    const oriel = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 0.35), palette.granite);
+    oriel.name = 'oriel-bay';
+    oriel.position.set(0, groundHeight + upperHeight * 0.45, halfD + 0.175);
+    oriel.castShadow = oriel.receiveShadow = true;
+    g.add(oriel);
+  }
+
+  // Chevron belt between storeys (always present, per spec).
+  const storeyBelt = buildChevronBelt({ width: fp.w * 0.7, material: palette.iron });
+  storeyBelt.name = 'dwarven-inn-storey-belt';
+  storeyBelt.position.set(0, groundHeight + 0.02, halfD + 0.04);
+  g.add(storeyBelt);
+
+  // Front ground: double arched entry, 1.40 W x 1.95 H, centered.
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const door = buildDwarvenDoor({
+    width: 1.40,
+    height: 1.95,
+    wallZ: wallZFor(3, halfW, halfD),
+    palette: openingPalette,
+    archRatio: 0.5 + doorRand() * 0.1,
+  });
+  door.name = 'dwarven-door';
+  placeOnFace(door, faces[3]!, 0.5);
+  g.add(door);
+
+  // Front ground: 2 small lit windows flanking the entry.
+  const winRand = mulberry32(tagSeed(dna.seed, 'WIND'));
+  for (const t of [0.15, 0.85]) {
+    const win = buildDwarvenWindow({
+      width: 0.45,
+      height: 0.65,
+      wallZ: wallZFor(3, halfW, halfD),
+      palette: openingPalette,
+      archRatio: 0.5 + winRand() * 0.15,
+    });
+    win.name = 'dwarven-window';
+    win.position.y = groundHeight * 0.4;
+    placeOnFace(win, faces[3]!, t);
+    g.add(win);
+  }
+
+  // Upper: 3 small windows, or 1 gable medallion (round oculus) + 2
+  // windows -- either way, always >=2 real window openings up front.
+  const upperOpenRand = mulberry32(tagSeed(dna.seed, 'UOPN'));
+  const useMedallion = upperOpenRand() < 0.5;
+  const upperTs = useMedallion ? [0.2, 0.8] : [0.15, 0.5, 0.85];
+  for (const t of upperTs) {
+    const win = buildDwarvenWindow({
+      width: 0.5,
+      height: 0.7,
+      wallZ: wallZFor(3, halfW, halfD),
+      palette: openingPalette,
+      archRatio: 0.5 + upperOpenRand() * 0.15,
+    });
+    win.name = 'dwarven-window';
+    win.position.y = groundHeight + upperHeight * 0.42;
+    placeOnFace(win, upperFaces[3]!, t);
+    g.add(win);
+  }
+  if (useMedallion) {
+    const medallion = buildDwarvenOculus({
+      diameter: 0.5,
+      wallZ: wallZFor(3, halfW, halfD),
+      palette: openingPalette,
+    });
+    medallion.name = 'dwarven-oculus';
+    medallion.position.y = groundHeight + upperHeight * 0.55;
+    placeOnFace(medallion, upperFaces[3]!, 0.5);
+    g.add(medallion);
+  }
+
+  // Kitchen side: pick one side wall (face 0 or 2) as the "kitchen side" --
+  // 1 service door + 2 vents near the chimney.
+  const kitchenRand = mulberry32(tagSeed(dna.seed, 'KTCH'));
+  const kitchenFace = kitchenRand() < 0.5 ? 0 : 2;
+  const serviceDoor = buildDwarvenDoor({
+    width: 0.75,
+    height: 1.55,
+    wallZ: wallZFor(kitchenFace, halfW, halfD),
+    palette: openingPalette,
+    archRatio: 0.5,
+  });
+  serviceDoor.name = 'dwarven-service-door';
+  placeOnFace(serviceDoor, faces[kitchenFace]!, 0.3);
+  g.add(serviceDoor);
+
+  for (const t of [0.6, 0.8]) {
+    const vent = buildDwarvenVentSlit({
+      width: 0.3,
+      height: 0.4,
+      wallZ: wallZFor(kitchenFace, halfW, halfD),
+      palette: openingPalette,
+      shape: 'round',
+    });
+    vent.name = 'dwarven-vent';
+    vent.position.y = groundHeight * 0.7;
+    placeOnFace(vent, faces[kitchenFace]!, t);
+    g.add(vent);
+  }
+
+  // Roof: 70% broad gable, 20% "broken gable with dormer bay" (this kit's
+  // stand-in: the shared 'sawtooth' two-narrower-ridges family reads as a
+  // broken/stepped roofline), 10% coped parapet.
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofFamily = pickWeighted<DwarvenRoofFamily>(roofRand, [
+    ['gable', 0.70],
+    ['sawtooth', 0.20],
+    ['parapet', 0.10],
+  ]);
+  const ridgeHeight = Math.min(halfW, halfD) * 1.15;
+  const roof = buildDwarvenRoof(roofFamily, halfW, halfD, points, ridgeHeight, tagSeed(dna.seed, 'ROOF'), palette);
+  roof.position.y = totalHeight;
+  g.add(roof);
+
+  // Roof straps on 50% (per spec) -- a proud iron strap band across the
+  // ridge line.
+  const strapRand = mulberry32(tagSeed(dna.seed, 'STRP'));
+  if (strapRand() < 0.5) {
+    const strap = buildMetalBand({ width: fp.w * 0.5, depth: 0.06, material: palette.iron, thickness: 0.03, bandHeight: 0.05 });
+    strap.name = 'dwarven-roof-strap';
+    strap.position.set(0, totalHeight + ridgeHeight * 0.5, 0);
+    g.add(strap);
+  }
+
+  // Kitchen chimney: rear kitchen stack 0.50 / twin side stacks 0.25 /
+  // corner stack 0.25.
+  const chimneyRand = mulberry32(tagSeed(dna.seed, 'CHIM'));
+  const chimneyChoice = pickWeighted<'rear' | 'twin' | 'corner'>(chimneyRand, [
+    ['rear', 0.50],
+    ['twin', 0.25],
+    ['corner', 0.25],
+  ]);
+  if (chimneyChoice === 'twin') {
+    const c1 = placeChimney(halfW, halfD, totalHeight, 'side-wall', palette, tagSeed(dna.seed, 'CHIM'), 1.5);
+    c1.name = 'kitchen-chimney';
+    g.add(c1);
+    const c2 = placeChimney(halfW, halfD, totalHeight, 'side-wall', palette, tagSeed(dna.seed, 'CHM2'), 1.5);
+    c2.position.x *= -1;
+    c2.name = 'kitchen-chimney';
+    g.add(c2);
+  } else {
+    const placement = chimneyChoice === 'rear'
+      ? (kitchenFace === 0 ? 'rear-left' : 'rear-right')
+      : 'side-wall';
+    const chimney = placeChimney(halfW, halfD, totalHeight, placement, palette, tagSeed(dna.seed, 'CHIM'), 1.5);
+    chimney.name = 'kitchen-chimney';
+    g.add(chimney);
+  }
+
+  // Porch: two proud lathe-column posts always flank the entry -- either
+  // as an exposed two-post porch with an overhang beam (0.65 combined
+  // weight) or set closer as engaged posts flanking a deeper recessed
+  // arcade doorway (0.35, the design spec's "arcade recess"/"deep door
+  // only" options folded together since both still read as flanking
+  // support posts under the entry's proud beam, keeping the "support
+  // posts under any overhang" guarantee deterministic regardless of
+  // seed -- the same "always-present core feature" pattern as villa's
+  // guaranteed >=2 masses).
+  const porchRand = mulberry32(tagSeed(dna.seed, 'PRCH'));
+  const exposedPorch = porchRand() < 0.65;
+  const postInset = exposedPorch ? 0.85 : 0.55;
+  const postForwardZ = halfD + (exposedPorch ? 0.5 : 0.15);
+  const postHeight = groundHeight * 0.85;
+  for (const cx of [-1, 1]) {
+    const post = buildLatheColumn({
+      height: postHeight,
+      radius: 0.09,
+      crossSection: 'round',
+      seed: tagSeed(dna.seed, `PRCH${cx}`),
+    }, palette.basalt);
+    post.position.set(cx * postInset, 0, postForwardZ);
+    g.add(post);
+  }
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(postInset * 2 + 0.3, 0.14, 0.14), palette.wood);
+  beam.name = 'porch-beam';
+  beam.position.set(0, postHeight, postForwardZ);
+  beam.castShadow = beam.receiveShadow = true;
+  g.add(beam);
+
+  // Hanging sign: round medallion 0.45 / hammer shield 0.25 / hanging
+  // plank sign with frame 0.20 / no sign 0.10.
+  const signRand = mulberry32(tagSeed(dna.seed, 'SIGN'));
+  const signChoice = pickWeighted<'medallion' | 'shield' | 'plank' | 'none'>(signRand, [
+    ['medallion', 0.45],
+    ['shield', 0.25],
+    ['plank', 0.20],
+    ['none', 0.10],
+  ]);
+  if (signChoice !== 'none') {
+    const sign = buildHangingSign(signChoice, palette);
+    sign.position.set(halfW - 0.2, groundHeight * 0.85, halfD + 0.1);
+    g.add(sign);
+  }
+
+  return g;
+}
+

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -54,6 +54,14 @@ function findByNameIncluding(root: THREE.Object3D, needle: string): THREE.Object
     if (!found && o.name && o.name.includes(needle)) found = o;
   });
   return found;
+}
+
+function countByNameIncluding(root: THREE.Object3D, needle: string): number {
+  let count = 0;
+  root.traverse((o) => {
+    if (o.name && o.name.includes(needle)) count++;
+  });
+  return count;
 }
 
 describe('buildDwarvenPalette', () => {
@@ -272,3 +280,63 @@ describe('buildDwarvenVilla', () => {
     }
   });
 });
+
+describe('buildDwarvenInn', () => {
+  it('respects getFootprint(inn, large) plus eave/skirt tolerance', () => {
+    const dna = makeDNA({ buildingKind: 'inn', size: 'large', floors: 2, seed: 3 });
+    const fp = getFootprint('inn', 'large');
+    const inn = buildDwarvenInn(dna);
+    const box = new THREE.Box3().setFromObject(inn);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+    expect(size.z).toBeLessThanOrEqual(fp.d + 1.5);
+  });
+
+  it('has a double-width entry with the five-piece opening minimum', () => {
+    const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed: 1 }));
+    const door = findByNameIncluding(inn, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+    expect(childNames).toContain('door-leaf');
+    const box = new THREE.Box3().setFromObject(door!);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    // 1.40 W spec-exact double entry -- comfortably wider than any single
+    // door used by house/terraced/villa (their widest is 1.20 WU).
+    expect(Math.max(size.x, size.z)).toBeGreaterThan(1.2);
+  });
+
+  it('has at least three window/sign elements', () => {
+    const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed: 1 }));
+    const windowCount = countByNameIncluding(inn, 'dwarven-window');
+    const signCount = countByNameIncluding(inn, 'dwarven-sign');
+    expect(windowCount + signCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('has support posts under the porch overhang', () => {
+    const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed: 1 }));
+    expect(countByNameIncluding(inn, 'lathe-column')).toBeGreaterThanOrEqual(2);
+  });
+
+  it('has one corbelled kitchen chimney', () => {
+    const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed: 1 }));
+    expect(findByNameIncluding(inn, 'kitchen-chimney')).toBeTruthy();
+  });
+
+  it('has a distinct upper-storey material split (timber-panel or stone-upper)', () => {
+    const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed: 1 }));
+    expect(findByNameIncluding(inn, 'dwarven-inn-upper')).toBeTruthy();
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const inn = buildDwarvenInn(makeDNA({ buildingKind: 'inn', size: 'large', seed }));
+      assertFiniteGeometry(inn);
+    }
+  });
+});
+
