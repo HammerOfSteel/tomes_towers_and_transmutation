@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../../../core/prng';
+import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { finishArchitecturalGeometry } from './Bevels';
 
 export type LatheColumnCrossSection = 'round' | 'fluted' | 'lobed';
@@ -74,6 +75,53 @@ const PART_SEED_TAGS: Record<PartName, number> = {
   capital: 0x4341_5054,
   impost: 0x494D_5054,
 };
+
+function triangleEdgeLengthSquared(
+  vertexData: number[],
+  firstOffset: number,
+  secondOffset: number,
+): number {
+  const dx = vertexData[firstOffset]! - vertexData[secondOffset]!;
+  const dy = vertexData[firstOffset + 1]! - vertexData[secondOffset + 1]!;
+  const dz = vertexData[firstOffset + 2]! - vertexData[secondOffset + 2]!;
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function minTriangleEdgeLength(vertexData: number[]): number {
+  let minEdgeLengthSquared = Number.POSITIVE_INFINITY;
+  for (let offset = 0; offset < vertexData.length; offset += 9) {
+    minEdgeLengthSquared = Math.min(
+      minEdgeLengthSquared,
+      triangleEdgeLengthSquared(vertexData, offset, offset + 3),
+      triangleEdgeLengthSquared(vertexData, offset + 3, offset + 6),
+      triangleEdgeLengthSquared(vertexData, offset + 6, offset),
+    );
+  }
+  return minEdgeLengthSquared === Number.POSITIVE_INFINITY
+    ? Number.POSITIVE_INFINITY
+    : Math.sqrt(minEdgeLengthSquared);
+}
+
+function adaptiveArchitecturalMergeTolerance(vertexData: number[]): number {
+  const minimumEdgeLength = minTriangleEdgeLength(vertexData);
+  if (!Number.isFinite(minimumEdgeLength)) return ARCHITECTURAL_VERTEX_MERGE_TOLERANCE;
+  return Math.min(
+    ARCHITECTURAL_VERTEX_MERGE_TOLERANCE,
+    Math.max(minimumEdgeLength * 0.5, NUMERIC_EPSILON),
+  );
+}
+
+function finishLatheGeometry(geometry: THREE.BufferGeometry, vertexData: number[]): THREE.BufferGeometry {
+  // Never let the architectural weld tolerance exceed half of the smallest authored edge,
+  // or mergeVertices can collapse intentional tiny-height ring spacing into zero-area faces.
+  const tolerance = adaptiveArchitecturalMergeTolerance(vertexData);
+  if (tolerance >= ARCHITECTURAL_VERTEX_MERGE_TOLERANCE) {
+    return finishArchitecturalGeometry(geometry);
+  }
+
+  const merged = mergeVertices(geometry.clone(), tolerance);
+  return toCreasedNormals(merged);
+}
 
 function clampPositive(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value! > 0 ? value! : fallback;
@@ -392,7 +440,7 @@ function buildSectionGeometry(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertexData, 3));
   geometry.computeVertexNormals();
-  return finishGeometry ? finishArchitecturalGeometry(geometry) : geometry;
+  return finishGeometry ? finishLatheGeometry(geometry, vertexData) : geometry;
 }
 
 function buildBrokenSectionGeometry(
@@ -447,7 +495,7 @@ function buildBrokenSectionGeometry(
       spec.height,
       finishShellGeometry,
     ),
-    fractureCapGeometry: finishArchitecturalGeometry(fractureCapGeometry),
+    fractureCapGeometry: finishLatheGeometry(fractureCapGeometry, fractureCapVertexData),
   };
 }
 

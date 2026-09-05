@@ -382,6 +382,8 @@ const internalProfileRingSweepCases: Array<{
   },
 ];
 
+const intactTinyHeightCases = [0.00001, 0.0001, 0.001, 0.005, 0.02];
+
 describe('buildLatheColumn', () => {
   it('builds a finite non-degenerate column whose overall height matches the request', async () => {
     const buildLatheColumn = await loadBuildLatheColumn();
@@ -739,6 +741,22 @@ describe('buildLatheColumn', () => {
           ),
           `${sweepCase.label} brokenAtHeight=${sample.brokenAtHeight}`,
         );
+      }
+    }
+  });
+
+  it('avoids zero-area triangles for intact tiny-height columns across all architectural parts', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+
+    for (const height of intactTinyHeightCases) {
+      const column = buildLatheColumn({ height }, makeStoneMaterial());
+      expectNoZeroAreaTriangles(column, `intact height=${height} whole-column`);
+
+      for (const partName of ['base', 'shaft', 'capital', 'impost'] as const) {
+        const part = column.getObjectByName(partName);
+        expect(part, `intact height=${height} is missing ${partName}`).toBeTruthy();
+        if (!part) continue;
+        expectNoZeroAreaTriangles(part, `intact height=${height} part=${partName}`);
       }
     }
   });
