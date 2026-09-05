@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop, buildDwarvenBlacksmith } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -393,6 +393,96 @@ describe('buildDwarvenShop', () => {
     for (const seed of [1, 2, 3, 42, 999]) {
       const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed }));
       assertFiniteGeometry(shop);
+    }
+  });
+});
+
+describe('buildDwarvenBlacksmith', () => {
+  it('respects getFootprint(blacksmith, medium) plus eave/skirt tolerance', () => {
+    const fp = getFootprint('blacksmith', 'medium');
+    expect(fp.w).toBe(5);
+    expect(fp.d).toBe(4);
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 2 }));
+    const box = new THREE.Box3().setFromObject(smith);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+    expect(size.z).toBeLessThanOrEqual(fp.d + 1.5);
+  });
+
+  it('has a dominant forge-chimney corbelled stack', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    const chimney = findByNameIncluding(smith, 'forge-chimney');
+    expect(chimney).toBeTruthy();
+    expect(findByNameIncluding(chimney!, 'chimney-course')).toBeTruthy();
+  });
+
+  it('has a forge-mouth opening with the five-piece minimum', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    const mouth = findByNameIncluding(smith, 'forge-mouth');
+    expect(mouth).toBeTruthy();
+    const childNames = mouth!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('sill');
+  });
+
+  it('has a named working-yard mass', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    expect(findByNameIncluding(smith, 'working-yard')).toBeTruthy();
+  });
+
+  it('has bellows and/or a quench trough in the yard', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    const bellows = findByNameIncluding(smith, 'bellows-housing');
+    const trough = findByNameIncluding(smith, 'quench-trough');
+    expect(bellows || trough).toBeTruthy();
+  });
+
+  it('has a heat/soot treatment node near the forge', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    expect(findByNameIncluding(smith, 'forge-heat-treatment')).toBeTruthy();
+  });
+
+  it('has a personnel door with the five-piece opening minimum', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    const door = findByNameIncluding(smith, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+  });
+
+  it('has 2 side vent slits and a rear coal hatch', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    expect(countByNameIncluding(smith, 'dwarven-vent')).toBeGreaterThanOrEqual(2);
+    expect(findByNameIncluding(smith, 'coal-hatch')).toBeTruthy();
+  });
+
+  it('has an anvil, ore/coal bin, and tool rack in the working yard', () => {
+    const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: 1 }));
+    expect(findByNameIncluding(smith, 'anvil')).toBeTruthy();
+    expect(findByNameIncluding(smith, 'ore-coal-bin')).toBeTruthy();
+    expect(findByNameIncluding(smith, 'tool-rack')).toBeTruthy();
+  });
+
+  it('keeps mass composition and props within the footprint across seeds', () => {
+    const fp = getFootprint('blacksmith', 'medium');
+    for (let seed = 0; seed < 8; seed++) {
+      const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed: seed * 555 }));
+      const box = new THREE.Box3().setFromObject(smith);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+      expect(size.z).toBeLessThanOrEqual(fp.d + 1.5);
+    }
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const smith = buildDwarvenBlacksmith(makeDNA({ buildingKind: 'blacksmith', size: 'medium', seed }));
+      assertFiniteGeometry(smith);
     }
   });
 });

@@ -37,7 +37,8 @@ import { buildVoussoirArch } from '../kit/VoussoirArch';
 import { layoutFacade } from '../kit/FacadeGrammar';
 import { buildPipeRun } from '../kit/PipeworkVent';
 import { buildDwarvenPalette, type DwarvenPalette } from './DwarvenMaterials';
-import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, buildDwarvenOculus, type DwarvenOpeningPalette } from './DwarvenOpenings';
+import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, buildDwarvenOculus, buildDwarvenForgeMouth, type DwarvenOpeningPalette } from './DwarvenOpenings';
+import { buildBellows, buildQuenchTrough, buildAnvil, buildOreCoalBin, buildToolRack } from './DwarvenWorkshopProps';
 
 /** Turns a short ASCII tag (e.g. 'HOUS') into a seed-mixing constant, so
  * every private helper below gets its own independent, deterministic RNG
@@ -213,9 +214,10 @@ function buildDwarvenRoof(
   ridgeHeight: number,
   seed: number,
   palette: DwarvenPalette,
+  eaveOverhangFrac?: number,
 ): THREE.Group {
   if (family === 'parapet') return buildParapetRoof(points, palette);
-  const opts: RoofMassingOptions = { shingle: { silhouette: 'rectangular' } };
+  const opts: RoofMassingOptions = { shingle: { silhouette: 'rectangular' }, eaveOverhangFrac };
   if (family === 'sawtooth') {
     const g = new THREE.Group();
     g.name = 'sawtooth-roof';
@@ -1634,6 +1636,421 @@ export function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
       g.add(dormer);
     }
   }
+
+  return g;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Blacksmith (flagship)
+// ─────────────────────────────────────────────────────────────────────────
+
+const FORGE_EAVE_HEIGHT = 2.65;
+const FORGE_HOUSE_HALF_W = 1.3;
+const YARD_HALF_W = 1.2;
+const YARD_LOW_WALL_HEIGHT = 1.15;
+
+/** Builds a low paver-grid yard floor: a grid of individually raised stone
+ * tile plates (never a bare flat plane), with a strip of heat-stained dark
+ * plates along the edge nearest the forge house. */
+function buildYardPaverFloor(
+  halfW: number,
+  halfD: number,
+  innerEdgeLocalX: number,
+  palette: DwarvenPalette,
+  seed: number,
+): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'yard-pavers';
+  const rand = mulberry32(seed >>> 0);
+  const cols = 5;
+  const rows = 7;
+  const tileW = (halfW * 2) / cols;
+  const tileD = (halfD * 2) / rows;
+  for (let cx = 0; cx < cols; cx++) {
+    for (let rz = 0; rz < rows; rz++) {
+      const x = -halfW + tileW * (cx + 0.5);
+      const z = -halfD + tileD * (rz + 0.5);
+      const nearForge = Math.abs(x - innerEdgeLocalX) < tileW * 1.5;
+      const material = nearForge ? palette.soot : palette.granite;
+      const tile = new THREE.Mesh(new THREE.BoxGeometry(tileW * 0.92, 0.05, tileD * 0.92), material);
+      tile.name = `paver-${cx}-${rz}`;
+      tile.position.set(x, 0.025 + (rand() - 0.5) * 0.01, z);
+      tile.castShadow = tile.receiveShadow = true;
+      g.add(tile);
+    }
+  }
+  return g;
+}
+
+/** Builds a small side coal/ore lean-to shed: a low battered box mass with
+ * a single-slope roof panel, attached at the yard's rear-outer corner --
+ * see design spec's blacksmith massing bullet ("side coal/ore lean-to").
+ * Houses the ore/coal bin prop. */
+function buildCoalOreLeanTo(seed: number, palette: DwarvenPalette): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'coal-ore-lean-to';
+  const halfW = 0.55;
+  const halfD = 0.45;
+  const height = YARD_LOW_WALL_HEIGHT * 0.9;
+  const mass = buildMassFromSpec({ points: rectanglePoints(halfW, halfD), faces: rectangleFaces(halfW, halfD), height }, seed, palette.basalt);
+  g.add(mass);
+  const roofSpan = Math.hypot(halfD * 2, height * 0.4);
+  const slopeAngle = Math.atan2(height * 0.4, halfD * 2);
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 + 0.15, 0.08, roofSpan), palette.roofMetal);
+  panel.name = 'lean-to-roof-panel';
+  panel.position.set(0, height + height * 0.2, 0);
+  panel.rotation.x = -slopeAngle;
+  panel.castShadow = panel.receiveShadow = true;
+  g.add(panel);
+  const bin = buildOreCoalBin({ width: halfW * 1.5, depth: halfD * 1.3, height: 0.3, seed: tagSeed(seed, 'BIN') }, palette);
+  bin.position.set(0, 0, 0);
+  g.add(bin);
+  return g;
+}
+
+/** Builds the flagship dwarven blacksmith: a rear enclosed forge house
+ * (darker basalt courses "around the furnace"), an open-front working
+ * yard on the opposite side (paver-grid floor, a low side wall, and
+ * lathe-column piers under a heavy lintel carrying the shared roof's open
+ * eave), a side coal/ore lean-to, and one dominant corbelled forge
+ * chimney -- see design spec section 4 `blacksmith` for the full
+ * blueprint. Bellows, quench trough, anvil, ore/coal bin, and tool rack
+ * are all always present in the yard (the design spec lists them as
+ * unconditional working-yard fixtures, not axis-gated options) so the
+ * yard reads "functional even from isometric distance" regardless of
+ * seed; the "forge prop focus" variation axis instead only changes which
+ * one prop sits most prominently front-and-center (the same
+ * always-present-core-feature pattern used by villa's >=2 masses and
+ * inn's porch posts). Tongs/scale/lantern-bracket clutter named in the
+ * spec's prop list beyond these five is out of scope for this pass,
+ * matching every prior kind's decorative-only omission precedent. */
+export function buildDwarvenBlacksmith(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('blacksmith', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+
+  const g = new THREE.Group();
+  g.name = 'dwarven-blacksmith';
+
+  // Yard layout axis: which side the open yard sits on, and whether it
+  // opens on a second (outer) face too ('side' variant).
+  const layoutRand = mulberry32(tagSeed(dna.seed, 'LAYT'));
+  const yardLayout = pickWeighted<'front-right' | 'front-left' | 'side' | 'covered'>(layoutRand, [
+    ['front-right', 0.45],
+    ['front-left', 0.25],
+    ['side', 0.20],
+    ['covered', 0.10],
+  ]);
+  const yardSide: 'left' | 'right' = yardLayout === 'front-left' ? 'left' : 'right';
+  const yardOpenOuterSide = yardLayout === 'side';
+  const mirror = yardSide === 'right' ? 1 : -1;
+
+  const forgeCenterX = yardSide === 'right' ? -halfW + FORGE_HOUSE_HALF_W : halfW - FORGE_HOUSE_HALF_W;
+  const yardCenterX = yardSide === 'right' ? halfW - YARD_HALF_W : -halfW + YARD_HALF_W;
+  // Face index (in the forge house's own local rectangleFaces()) that
+  // looks toward the yard: face 0 is the +X (right) face, face 2 is the
+  // -X (left) face (see StoneTowerShape.ts's rectangleFaces() winding).
+  const forgeToYardFaceIdx = yardSide === 'right' ? 0 : 2;
+  const forgeOuterFaceIdx = forgeToYardFaceIdx === 0 ? 2 : 0;
+
+  // ── Forge house: fully enclosed, darker basalt courses "around the
+  // furnace" per the wall-system spec. ──────────────────────────────────
+  const forgeGroup = new THREE.Group();
+  forgeGroup.name = 'forge-house';
+  const { group: forgeHall, faces: forgeFaces, points: forgePoints } = buildRectHall(
+    FORGE_HOUSE_HALF_W,
+    halfD,
+    FORGE_EAVE_HEIGHT,
+    tagSeed(dna.seed, 'FRGH'),
+    palette.basalt,
+  );
+  forgeGroup.add(forgeHall);
+
+  const forgePlinth = buildRockPlinthSkirt({
+    points: forgePoints,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+  });
+  forgeGroup.add(forgePlinth);
+
+  // Forge mouth: the large shouldered forge opening, 1.55 W x 1.85 H,
+  // opening toward the working yard so the bellows/anvil are reachable.
+  // Heat state axis drives whether the "glazing" throat is an emissive
+  // glow (glowing forge throat) or plain dark soot (cool/soot-heavy).
+  const heatRand = mulberry32(tagSeed(dna.seed, 'HEAT'));
+  const heatState = pickWeighted<'cool' | 'glowing' | 'sooty'>(heatRand, [
+    ['cool', 0.20],
+    ['glowing', 0.45],
+    ['sooty', 0.35],
+  ]);
+  const forgeMouthPalette: DwarvenOpeningPalette = heatState === 'glowing'
+    ? openingPalette
+    : { ...openingPalette, forgeEmissive: undefined };
+  const forgeMouth = buildDwarvenForgeMouth({
+    width: 1.55,
+    height: 1.85,
+    wallZ: wallZFor(forgeToYardFaceIdx, FORGE_HOUSE_HALF_W, halfD),
+    palette: forgeMouthPalette,
+  });
+  forgeMouth.name = 'forge-mouth';
+  placeOnFace(forgeMouth, forgeFaces[forgeToYardFaceIdx]!, 0.5);
+  forgeGroup.add(forgeMouth);
+
+  // Heat/soot treatment: a proud dark soot-stained patch above the forge
+  // mouth, always present (per the "always-present core feature" pattern)
+  // -- scaled up for the soot-heavy state, minimal for cool/pristine.
+  const sootScale = heatState === 'sooty' ? 1.4 : heatState === 'glowing' ? 1.0 : 0.55;
+  const sootPatch = new THREE.Mesh(new THREE.BoxGeometry(1.2 * sootScale, 0.5 * sootScale, 0.05), palette.soot);
+  sootPatch.name = 'forge-heat-treatment';
+  sootPatch.position.copy(forgeMouth.position);
+  sootPatch.position.y += 1.05;
+  sootPatch.rotation.y = forgeMouth.rotation.y;
+  sootPatch.position.x += Math.sin(forgeMouth.rotation.y) * 0.03;
+  sootPatch.position.z += Math.cos(forgeMouth.rotation.y) * 0.03;
+  sootPatch.castShadow = sootPatch.receiveShadow = true;
+  forgeGroup.add(sootPatch);
+
+  // Personnel door: 0.70 W x 1.55 H, on the forge house's own front face.
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const personnelDoor = buildDwarvenDoor({
+    width: 0.70,
+    height: 1.55,
+    wallZ: wallZFor(3, FORGE_HOUSE_HALF_W, halfD),
+    palette: openingPalette,
+    archRatio: 0.4 + doorRand() * 0.1,
+  });
+  personnelDoor.name = 'dwarven-door';
+  placeOnFace(personnelDoor, forgeFaces[3]!, 0.5);
+  forgeGroup.add(personnelDoor);
+
+  // Side wall: 2 high vent slits, on the forge house's OUTER face (away
+  // from the yard, which already carries the large forge mouth).
+  const ventRand = mulberry32(tagSeed(dna.seed, 'VENT'));
+  for (const t of [0.3, 0.7]) {
+    const vent = buildDwarvenVentSlit({
+      width: 0.28,
+      height: 0.55,
+      wallZ: wallZFor(forgeOuterFaceIdx, FORGE_HOUSE_HALF_W, halfD),
+      palette: openingPalette,
+      shape: 'round',
+      archRatio: 0.4 + ventRand() * 0.1,
+    });
+    vent.name = 'dwarven-vent';
+    vent.position.y = FORGE_EAVE_HEIGHT * 0.7;
+    placeOnFace(vent, forgeFaces[forgeOuterFaceIdx]!, t);
+    forgeGroup.add(vent);
+  }
+
+  // Rear: coal hatch, 0.55 x 0.55, on the back face.
+  const coalHatch = buildDwarvenDoor({
+    width: 0.55,
+    height: 0.55,
+    wallZ: wallZFor(1, FORGE_HOUSE_HALF_W, halfD),
+    palette: openingPalette,
+    archRatio: 0.15,
+  });
+  coalHatch.name = 'coal-hatch';
+  placeOnFace(coalHatch, forgeFaces[1]!, 0.5);
+  forgeGroup.add(coalHatch);
+
+  forgeGroup.position.x = forgeCenterX;
+  g.add(forgeGroup);
+
+  // ── Working yard: open-front paver yard with a low side wall and
+  // lathe-column piers holding up the shared roof's open eave. ─────────
+  const yardGroup = new THREE.Group();
+  yardGroup.name = 'working-yard';
+  const outerEdge = yardCenterX + mirror * YARD_HALF_W;
+  const innerEdge = yardCenterX - mirror * YARD_HALF_W;
+
+  const pavers = buildYardPaverFloor(YARD_HALF_W, halfD, innerEdge - yardCenterX, palette, tagSeed(dna.seed, 'PAVE'));
+  pavers.position.x = yardCenterX;
+  yardGroup.add(pavers);
+
+  // Low side wall: on the outer edge normally, or on the rear edge for
+  // the 'side' layout (whose outer edge is open instead, per the yard
+  // layout axis).
+  if (yardOpenOuterSide) {
+    const rearWall = new THREE.Mesh(new THREE.BoxGeometry(YARD_HALF_W * 2, YARD_LOW_WALL_HEIGHT, 0.14), palette.granite);
+    rearWall.name = 'yard-low-wall';
+    rearWall.position.set(yardCenterX, YARD_LOW_WALL_HEIGHT / 2, -halfD + 0.07);
+    rearWall.castShadow = rearWall.receiveShadow = true;
+    yardGroup.add(rearWall);
+  } else {
+    const outerWall = new THREE.Mesh(new THREE.BoxGeometry(0.14, YARD_LOW_WALL_HEIGHT, halfD * 2), palette.granite);
+    outerWall.name = 'yard-low-wall';
+    outerWall.position.set(outerEdge - mirror * 0.07, YARD_LOW_WALL_HEIGHT / 2, 0);
+    outerWall.castShadow = outerWall.receiveShadow = true;
+    yardGroup.add(outerWall);
+  }
+
+  // Piers + heavy lintel under the open front bay (always), plus a
+  // second open bay along the outer edge for the 'side' layout.
+  const pierHeight = FORGE_EAVE_HEIGHT;
+  const frontPierXs = [innerEdge, outerEdge];
+  for (const px of frontPierXs) {
+    const pier = buildLatheColumn({ height: pierHeight, radius: 0.11, crossSection: 'fluted', seed: tagSeed(dna.seed, `PIER${px}`) }, palette.basalt);
+    pier.name = 'yard-pier';
+    pier.position.set(px, 0, halfD - 0.08);
+    yardGroup.add(pier);
+  }
+  const frontLintel = new THREE.Mesh(new THREE.BoxGeometry(YARD_HALF_W * 2 + 0.2, 0.22, 0.22), palette.iron);
+  frontLintel.name = 'yard-lintel';
+  frontLintel.position.set(yardCenterX, pierHeight, halfD - 0.08);
+  frontLintel.castShadow = frontLintel.receiveShadow = true;
+  yardGroup.add(frontLintel);
+
+  if (yardOpenOuterSide) {
+    const outerPier = buildLatheColumn({ height: pierHeight, radius: 0.11, crossSection: 'fluted', seed: tagSeed(dna.seed, 'PIERO') }, palette.basalt);
+    outerPier.name = 'yard-pier';
+    outerPier.position.set(outerEdge - mirror * 0.08, 0, -halfD + 0.6);
+    yardGroup.add(outerPier);
+    const outerLintel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, halfD * 2 - 0.9), palette.iron);
+    outerLintel.name = 'yard-lintel';
+    outerLintel.position.set(outerEdge - mirror * 0.08, pierHeight, halfD * 0.15);
+    outerLintel.castShadow = outerLintel.receiveShadow = true;
+    yardGroup.add(outerLintel);
+  }
+
+  // Bellows: standing against the forge house's yard-facing wall, near
+  // the forge mouth.
+  const bellows = buildBellows({ width: 0.65, height: 0.85, seed: tagSeed(dna.seed, 'BELL') }, palette);
+  bellows.position.set(innerEdge + mirror * 0.35, 0.42, halfD * 0.35);
+  bellows.rotation.y = mirror * (Math.PI / 2);
+  yardGroup.add(bellows);
+
+  // Quench trough: elsewhere in the yard, with its adjacent tongs rack.
+  const trough = buildQuenchTrough({ width: 0.90, depth: 0.35, height: 0.35, seed: tagSeed(dna.seed, 'TRGH') }, palette);
+  trough.position.set(yardCenterX - mirror * 0.1, 0, -halfD * 0.45);
+  trough.rotation.y = mirror * (Math.PI / 2);
+  yardGroup.add(trough);
+
+  // Anvil block: central working spot.
+  const anvil = buildAnvil({ seed: tagSeed(dna.seed, 'ANVL') }, palette);
+  anvil.position.set(yardCenterX, 0, halfD * 0.1);
+  yardGroup.add(anvil);
+
+  // Tool rack: against the low side wall.
+  const toolRack = buildToolRack({ width: 0.75, height: 1.0, seed: tagSeed(dna.seed, 'RACK') }, palette);
+  toolRack.name = 'tool-rack';
+  toolRack.position.set(outerEdge - mirror * 0.12, 0, halfD * 0.55);
+  toolRack.rotation.y = -mirror * (Math.PI / 2);
+  yardGroup.add(toolRack);
+
+  g.add(yardGroup);
+
+  // ── Side coal/ore lean-to (always present, per the massing bullet). ──
+  const leanTo = buildCoalOreLeanTo(tagSeed(dna.seed, 'LEAN'), palette);
+  leanTo.position.set(outerEdge - mirror * 0.55, 0, -halfD - 0.35);
+  g.add(leanTo);
+
+  // ── Dominant forge chimney: single 0.55 / stack+short-vent 0.30 / twin
+  // narrow stacks 0.15. Rises from ground level against the forge house's
+  // outer wall, well above the roofline (a "dominant" landmark stack, per
+  // spec, unlike the smaller rooftop-only chimneys on house/inn). ───────
+  const chimneyRand = mulberry32(tagSeed(dna.seed, 'CHIM'));
+  const chimneyChoice = pickWeighted<'single' | 'stack-vent' | 'twin'>(chimneyRand, [
+    ['single', 0.55],
+    ['stack-vent', 0.30],
+    ['twin', 0.15],
+  ]);
+  const chimneyHeight = 3.80 + chimneyRand() * 0.80;
+  const chimneyX = forgeCenterX + mirror * (FORGE_HOUSE_HALF_W - 0.45);
+  const chimneyZ = -halfD + 0.5;
+  const flueOrientation = mirror > 0 ? 'east' : 'west';
+  if (chimneyChoice === 'twin') {
+    for (const sign of [-1, 1] as const) {
+      const stack = buildCorbelledChimneyStack({
+        width: 0.45,
+        depth: 0.55,
+        height: chimneyHeight * 0.92,
+        courseCount: 5 + Math.round(chimneyRand() * 2),
+        material: palette.basalt,
+        collarMaterial: palette.iron,
+        capMaterial: palette.basalt,
+        flueMaterial: palette.soot,
+        seed: tagSeed(dna.seed, `CHIM${sign}`),
+        flueOrientation,
+      });
+      stack.name = 'forge-chimney';
+      stack.position.set(chimneyX, 0, chimneyZ + sign * 0.35);
+      g.add(stack);
+    }
+  } else {
+    const stack = buildCorbelledChimneyStack({
+      width: 0.70,
+      depth: 0.85,
+      height: chimneyHeight,
+      courseCount: 5 + Math.round(chimneyRand() * 2),
+      material: palette.basalt,
+      collarMaterial: palette.iron,
+      capMaterial: palette.basalt,
+      flueMaterial: palette.soot,
+      seed: tagSeed(dna.seed, 'CHIM'),
+      flueOrientation,
+    });
+    stack.name = 'forge-chimney';
+    stack.position.set(chimneyX, 0, chimneyZ);
+    g.add(stack);
+    if (chimneyChoice === 'stack-vent') {
+      const vent = buildCorbelledChimneyStack({
+        width: 0.28,
+        depth: 0.32,
+        height: chimneyHeight * 0.35,
+        courseCount: 3,
+        material: palette.basalt,
+        collarMaterial: palette.iron,
+        capMaterial: palette.basalt,
+        flueMaterial: palette.soot,
+        seed: tagSeed(dna.seed, 'CVNT'),
+        flueOrientation,
+      });
+      vent.name = 'forge-secondary-vent';
+      vent.position.set(chimneyX, 0, chimneyZ + 0.55);
+      g.add(vent);
+    }
+  }
+
+  // ── Shared roof over the full footprint (spans both the forge house
+  // and the open yard, so the yard reads as a genuine open eave under
+  // the same roofline): 55% low gabled metal-plate roof, 25% sawtooth
+  // vent roof, 20% parapeted forge block. ──────────────────────────────
+  const overallPoints = rectanglePoints(halfW, halfD);
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofFamily = pickWeighted<DwarvenRoofFamily>(roofRand, [
+    ['gable', 0.55],
+    ['sawtooth', 0.25],
+    ['parapet', 0.20],
+  ]);
+  const ridgeHeight = Math.min(halfW, halfD) * 0.75;
+  const roofPalette: DwarvenPalette = { ...palette, roofTile: palette.roofMetal };
+  const eaveOverhangFrac = yardLayout === 'covered' ? 0.22 : 0.15;
+  const roof = buildDwarvenRoof(roofFamily, halfW, halfD, overallPoints, ridgeHeight, tagSeed(dna.seed, 'ROOF'), roofPalette, eaveOverhangFrac);
+  roof.position.y = FORGE_EAVE_HEIGHT;
+  g.add(roof);
+
+  // Ornament: hammer/anvil crest above the forge mouth, chevron heat
+  // shield band, and metal banding on the lintel and chimney (the
+  // chimney's own collar bands already provide its metal banding).
+  const crest = buildShieldPlaque({ width: 0.5, height: 0.4, material: palette.iron });
+  crest.name = 'dwarven-blacksmith-crest';
+  crest.position.set(forgeCenterX, FORGE_EAVE_HEIGHT + 0.3, halfD * 0.02);
+  crest.rotation.y = forgeFaces[3]!.normalAngle;
+  g.add(crest);
+
+  const heatShield = buildChevronBelt({ width: 1.0, material: palette.iron });
+  heatShield.name = 'dwarven-blacksmith-heat-shield';
+  heatShield.position.copy(forgeMouth.position);
+  heatShield.position.y += 1.3;
+  heatShield.rotation.y = forgeMouth.rotation.y;
+  forgeGroup.add(heatShield);
+
+  const lintelBand = buildMetalBand({ width: YARD_HALF_W * 2, depth: 0.24, material: palette.iron, thickness: 0.03, bandHeight: 0.05 });
+  lintelBand.name = 'dwarven-blacksmith-lintel-band';
+  lintelBand.position.set(yardCenterX, pierHeight - 0.15, halfD - 0.08);
+  g.add(lintelBand);
 
   return g;
 }
