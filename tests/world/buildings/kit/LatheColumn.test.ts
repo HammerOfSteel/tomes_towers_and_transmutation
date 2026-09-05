@@ -760,4 +760,33 @@ describe('buildLatheColumn', () => {
       }
     }
   });
+
+  // Regression guard: every lathe-column part (base/shaft/capital/impost, plus
+  // the broken-top shell + fracture cap) is built from hand-rolled lofted-ring
+  // BufferGeometry that previously set only a `position` attribute. mergeGroup
+  // MeshesByMaterial() (src/scene/MeshMergeUtils.ts) buckets meshes by material
+  // identity and merges the whole bucket in one call; if any sibling geometry
+  // in that bucket lacks an attribute another has, the merge fails silently
+  // (console.warn only) while the disposal loop still runs unconditionally,
+  // deleting the ENTIRE bucket's geometry with nothing left in its place --
+  // the same bug class already caught and fixed for StoneTowerFloorCap.ts,
+  // Ruinate.ts, and this shared kit's RoofMassing.ts/Buttress.ts.
+  it('every lathe column mesh (intact and broken variants) carries a uv attribute (regression guard)', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+    const columns = [
+      buildLatheColumn({ height: 3 }, makeStoneMaterial()),
+      buildLatheColumn({ height: 3, crossSection: 'fluted', fluteCount: 12 }, makeStoneMaterial()),
+      buildLatheColumn({ height: 3, crossSection: 'lobed', lobeCount: 4 }, makeStoneMaterial()),
+      buildLatheColumn({ height: 3, brokenAtHeight: 1.4, seed: 7 }, makeStoneMaterial()),
+    ];
+    for (const column of columns) {
+      let sawBareGeometry = false;
+      column.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        const uv = child.geometry.getAttribute('uv');
+        if (!uv || uv.count !== child.geometry.getAttribute('position').count) sawBareGeometry = true;
+      });
+      expect(sawBareGeometry).toBe(false);
+    }
+  });
 });

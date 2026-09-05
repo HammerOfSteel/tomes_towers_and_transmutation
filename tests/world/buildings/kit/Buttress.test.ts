@@ -364,4 +364,27 @@ describe('buildButtress', () => {
     expect(worldSize(defaultStage).z).toBeCloseTo(depthFor('BUTTRESS'), 2);
     expect(worldSize(customStage).z).toBeCloseTo(0.46, 2);
   });
+
+  // Regression guard: buttress stages are built from a hand-rolled
+  // BufferGeometry (createSolidBetweenProfiles(), a tapered solid between two
+  // rectangular profiles) that previously set only a `position` attribute.
+  // mergeGroupMeshesByMaterial() (src/scene/MeshMergeUtils.ts) buckets meshes
+  // by material identity and merges the whole bucket in a single call; if any
+  // sibling geometry in that bucket lacks an attribute another has, the merge
+  // fails silently (console.warn only) and the disposal loop still runs
+  // unconditionally, deleting the ENTIRE bucket's geometry with nothing left
+  // in its place -- the same bug class already caught and fixed for
+  // StoneTowerFloorCap.ts, Slime's Ruinate.ts/SlimeAccretionKit.ts, and this
+  // shared kit's RoofMassing.ts (see those files' own regression tests).
+  it('every buttress mesh carries a uv attribute (regression guard)', async () => {
+    const buildButtress = await loadBuildButtress();
+    const buttress = buildButtress({ height: 4, stages: 3, cap: 'pinnacle' }, makeStoneMaterial());
+    let sawBareGeometry = false;
+    buttress.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const uv = child.geometry.getAttribute('uv');
+      if (!uv || uv.count !== child.geometry.getAttribute('position').count) sawBareGeometry = true;
+    });
+    expect(sawBareGeometry).toBe(false);
+  });
 });

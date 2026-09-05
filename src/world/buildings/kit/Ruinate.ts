@@ -340,17 +340,39 @@ function createAngularRubbleGeometry(width: number, height: number, depth: numbe
     3, 7, 6, 3, 6, 2,
     0, 1, 5, 0, 5, 4,
   ];
+  // One in-plane axis pair per face group (2 triangles = 6 vertices each,
+  // matching `faces`'s 6 groups: back, front, left, right, top, bottom),
+  // used for a standard box-style planar UV unwrap below.
+  const faceAxisPairs: Array<['x' | 'y' | 'z', 'x' | 'y' | 'z']> = [
+    ['x', 'y'], ['x', 'y'], ['z', 'y'], ['z', 'y'], ['x', 'z'], ['x', 'z'],
+  ];
+  const halfExtentByAxis = { x: halfWidth, y: halfHeight, z: halfDepth };
   const positions = new Float32Array(faces.length * 3);
+  const uvs = new Float32Array(faces.length * 2);
 
   faces.forEach((cornerIndex, index) => {
     const corner = corners[cornerIndex]!;
     positions[(index * 3)] = corner.x;
     positions[(index * 3) + 1] = corner.y;
     positions[(index * 3) + 2] = corner.z;
+    // Required so this geometry merges cleanly with any other uv-having
+    // geometry it shares a material with (e.g. slime's contained-gel-vat
+    // base, both commonly wired to the same wetStain material) --
+    // a missing uv attribute here caused mergeGeometries() (called by
+    // mergeGroupMeshesByMaterial(), see MeshMergeUtils.ts) to fail
+    // silently, dropping the ENTIRE material bucket including unrelated
+    // meshes that DID merge fine on their own -- the same class of bug
+    // already caught once for StoneTowerFloorCap.ts. No texture map is
+    // ever applied to rubble material, so a simple per-face planar
+    // projection (not a seamless box unwrap) is sufficient.
+    const [uAxis, vAxis] = faceAxisPairs[Math.floor(index / 6)]!;
+    uvs[index * 2] = corner[uAxis] / (2 * halfExtentByAxis[uAxis]) + 0.5;
+    uvs[(index * 2) + 1] = corner[vAxis] / (2 * halfExtentByAxis[vAxis]) + 0.5;
   });
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

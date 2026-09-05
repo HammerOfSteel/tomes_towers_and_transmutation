@@ -44,6 +44,22 @@ function makeDoubleSidedTriangle(
     b.x, b.y, b.z,
   ]);
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  // A `uv` attribute is required here even though this triangle is never
+  // textured: mergeGroupMeshesByMaterial() (MeshMergeUtils.ts) buckets
+  // meshes by material identity, then calls
+  // THREE.BufferGeometryUtils.mergeGeometries() on the whole bucket --
+  // which silently returns null (only a console.warn, no thrown error)
+  // if ANY geometry in the bucket is missing an attribute a sibling has.
+  // The caller still disposes the original per-primitive meshes even when
+  // the merge fails, so a missing `uv` here would silently delete this
+  // triangle AND every other same-material mesh in the building (the
+  // exact bug class already caught and fixed twice: StoneTowerFloorCap.ts
+  // and Slime's SlimeAccretionKit.ts/Ruinate.ts). Simple planar UVs
+  // (front face 0,0/1,0/0.5,1, matching the winding above) are enough.
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
+    0, 0, 1, 0, 0.5, 1,
+    0, 0, 0.5, 1, 1, 0,
+  ], 2));
   geometry.computeVertexNormals();
   return markRoofMesh(new THREE.Mesh(geometry, material), name);
 }
