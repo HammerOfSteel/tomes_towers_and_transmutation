@@ -22,7 +22,7 @@ import {
 import { applySlimeDoorOverlay } from '@/world/buildings/slime/SlimeOpeningOverlay';
 import type { SlimeMaterialSet } from '@/world/buildings/slime/SlimeMaterials';
 
-type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith' | 'villa' | 'chapel';
+type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith' | 'villa' | 'chapel' | 'watchtower';
 type OpeningFace = SlimeKindBlueprintOpening['face'];
 
 type HouseDamageState = 'light-roof-loss' | 'broken-side-wall' | 'blocked-side-window' | 'exposed-rafters';
@@ -54,6 +54,11 @@ type VillaGelMotif = 'ring-lip-courses' | 'coral-crown-finials' | 'membrane-skyl
 
 type ChapelApseTreatment = 'oculus' | 'broken-rose-frame';
 type ChapelChoirTreatment = 'tendril-arcs' | 'gel-lens-screen';
+
+type WatchtowerTop = 'broken-parapet' | 'partial-conical-roof' | 'open-beacon-frame' | 'collapsed-cap-membrane';
+type WatchtowerGrowthPath = 'spiral-tendril' | 'vertical-drip-seam' | 'breach-repair-plates' | 'ground-puddle-skirt';
+type WatchtowerSlitTreatment = 'clear-dark' | 'gel-lenses-alternate' | 'blocked' | 'widened-lookout-breach';
+type WatchtowerDamageState = 'base-intact-top-ruined' | 'mid-level-breach' | 'roof-collapsed' | 'mostly-intact-sentinel';
 
 interface WeightedOption<T> {
   value: T;
@@ -124,6 +129,15 @@ interface ChapelVariation {
   ruinIntensity: number;
 }
 
+interface WatchtowerVariation {
+  top: WatchtowerTop;
+  growthPath: WatchtowerGrowthPath;
+  slitTreatment: WatchtowerSlitTreatment;
+  damageState: WatchtowerDamageState;
+  growthFace: OpeningFace;
+  ruinIntensity: number;
+}
+
 interface BuildContext<TVariation> {
   dna: BuildingDNA;
   group: THREE.Group;
@@ -161,6 +175,7 @@ const INN_BLUEPRINT_SALT = 0x4c40_0004;
 const BLACKSMITH_BLUEPRINT_SALT = 0x4d50_0005;
 const VILLA_BLUEPRINT_SALT = 0x4e60_0006;
 const CHAPEL_BLUEPRINT_SALT = 0x4f70_0007;
+const WATCHTOWER_BLUEPRINT_SALT = 0x5080_0008;
 
 const HOUSE_EXTRA_SALT = 0x5100_0001;
 const TERRACED_EXTRA_SALT = 0x5200_0002;
@@ -169,6 +184,7 @@ const INN_EXTRA_SALT = 0x5400_0004;
 const BLACKSMITH_EXTRA_SALT = 0x5500_0005;
 const VILLA_EXTRA_SALT = 0x5600_0006;
 const CHAPEL_EXTRA_SALT = 0x5700_0007;
+const WATCHTOWER_EXTRA_SALT = 0x5800_0008;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -367,6 +383,11 @@ function collectNamedGroups(root: THREE.Object3D, prefix: string): THREE.Group[]
     if (object instanceof THREE.Group && object.name.startsWith(prefix)) groups.push(object);
   });
   return groups;
+}
+
+function removeNamedObject(root: THREE.Object3D, name: string): void {
+  const object = root.getObjectByName(name);
+  object?.parent?.remove(object);
 }
 
 function inferNearestFace(box: THREE.Box3, hostBox: THREE.Box3): OpeningFace {
@@ -1285,6 +1306,104 @@ function createChapelBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprin
       apseTreatment,
       choirTreatment,
       lancetCloggingRatio,
+      ruinIntensity,
+    },
+  };
+}
+
+function createWatchtowerBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprint; variation: WatchtowerVariation } {
+  const rand = mulberry32(seedWithSalt(dna.seed, WATCHTOWER_BLUEPRINT_SALT));
+  const top = pickWeighted(rand, [
+    { value: 'broken-parapet' as const, weight: 0.35 },
+    { value: 'partial-conical-roof' as const, weight: 0.25 },
+    { value: 'open-beacon-frame' as const, weight: 0.25 },
+    { value: 'collapsed-cap-membrane' as const, weight: 0.15 },
+  ]);
+  const growthPath = pickWeighted(rand, [
+    { value: 'spiral-tendril' as const, weight: 0.40 },
+    { value: 'vertical-drip-seam' as const, weight: 0.25 },
+    { value: 'breach-repair-plates' as const, weight: 0.20 },
+    { value: 'ground-puddle-skirt' as const, weight: 0.15 },
+  ]);
+  const slitTreatment = pickWeighted(rand, [
+    { value: 'clear-dark' as const, weight: 0.35 },
+    { value: 'gel-lenses-alternate' as const, weight: 0.35 },
+    { value: 'blocked' as const, weight: 0.20 },
+    { value: 'widened-lookout-breach' as const, weight: 0.10 },
+  ]);
+  const damageState = pickWeighted(rand, [
+    { value: 'base-intact-top-ruined' as const, weight: 0.40 },
+    { value: 'mid-level-breach' as const, weight: 0.25 },
+    { value: 'roof-collapsed' as const, weight: 0.20 },
+    { value: 'mostly-intact-sentinel' as const, weight: 0.15 },
+  ]);
+  const growthFace = pickWeighted(rand, [
+    { value: 'front' as const, weight: 0.25 },
+    { value: 'back' as const, weight: 0.25 },
+    { value: 'left' as const, weight: 0.25 },
+    { value: 'right' as const, weight: 0.25 },
+  ]);
+
+  const ruinRanges: Record<WatchtowerDamageState, readonly [number, number]> = {
+    'base-intact-top-ruined': [0.38, 0.48],
+    'mid-level-breach': [0.40, 0.50],
+    'roof-collapsed': [0.45, 0.55],
+    'mostly-intact-sentinel': [0.22, 0.32],
+  };
+  const [ruinMin, ruinMax] = ruinRanges[damageState];
+  const ruinIntensity = rollRange(rand, ruinMin, ruinMax);
+
+  const cloggingRatio =
+    slitTreatment === 'blocked' ? rollRange(rand, 0.75, 0.95)
+    : slitTreatment === 'gel-lenses-alternate' ? rollRange(rand, 0.3, 0.5)
+    : slitTreatment === 'widened-lookout-breach' ? rollRange(rand, 0.05, 0.15)
+    : rollRange(rand, 0.1, 0.25);
+
+  const moduleWeights: ModuleWeights = {
+    'gel-lip-course': 0.5,
+    'membrane-sheet': top === 'collapsed-cap-membrane' ? 0.7 : 0.25,
+    'tendril-bridge': growthPath === 'spiral-tendril' ? 0.6 : 0.25,
+    'faceted-drip-run': growthPath === 'vertical-drip-seam' ? 0.6 : 0.25,
+    'gel-lens-infill': slitTreatment === 'gel-lenses-alternate' ? 0.5 : 0.2,
+    'puddle-skirt-tiles': growthPath === 'ground-puddle-skirt' ? 0.7 : 0.4,
+    'contained-gel-vat': 0.25,
+  };
+
+  const propWeights: PropWeights = {
+    rubble: clamp(0.35 + ruinIntensity * 0.4, 0.4, 0.65),
+    'contained-gel-vat': 0.15,
+  };
+
+  const slitFaces: OpeningFace[] = ['right', 'back', 'left', 'front'];
+  const openingSchedule: SlimeKindBlueprintOpening[] = [
+    { kind: 'door', face: 'front', offset: 0, baseY: 0, width: 0.65, straightHeight: 1.55, pointHeight: 0.45, cloggingRatio: 0.05 },
+    ...slitFaces.map((face, index) => ({
+      kind: 'window' as const,
+      face,
+      offset: 0,
+      baseY: 2.0 + index * FLOOR_HEIGHT,
+      width: 0.22,
+      straightHeight: 0.5,
+      pointHeight: 0.2,
+      cloggingRatio,
+    })),
+  ];
+
+  return {
+    blueprint: {
+      footprint: { width: 2, depth: 2, skirtAllowance: 0.5 },
+      floors: 4,
+      openingSchedule,
+      ruinIntensity,
+      moduleWeights,
+      propWeights,
+    },
+    variation: {
+      top,
+      growthPath,
+      slitTreatment,
+      damageState,
+      growthFace,
       ruinIntensity,
     },
   };
@@ -2297,7 +2416,40 @@ function buildShopHeavySign(context: BuildContext<ShopVariation>, seed: number):
   return sign;
 }
 
+function buildShopCounterLensDisplay(context: BuildContext<ShopVariation>, seed: number): THREE.Group {
+  const front = resolveShopFrontTransform(context);
+  const display = new THREE.Group();
+  display.name = 'shop-counter-lens-display';
+  display.position.copy(front.origin);
+  display.rotation.y = front.rotationY;
+
+  for (let index = 0; index < 2; index++) {
+    const lens = buildMembraneSheet({
+      seed: seedWithSalt(seed, index),
+      corners: [
+        new THREE.Vector3(-0.18 + index * 0.36, 1.36, depthFor('GLAZING')),
+        new THREE.Vector3(0 + index * 0.36, 1.36, depthFor('GLAZING')),
+        new THREE.Vector3(0 + index * 0.36, 1.02, depthFor('GLAZING')),
+        new THREE.Vector3(-0.18 + index * 0.36, 1.02, depthFor('GLAZING')),
+      ],
+      membraneMaterial: context.materials.containedGel,
+      rimMaterial: context.materials.hardenedGel,
+      ribMaterial: context.materials.gelDark,
+      sag: 0.03,
+      ribCount: 1,
+    });
+    lens.name = `counter-lens-cell-${index}`;
+    display.add(lens);
+  }
+
+  return display;
+}
+
 function addShopExtras(context: BuildContext<ShopVariation>): void {
+  removeNamedObject(context.group, 'facade-opening-lip-0');
+  removeNamedObject(context.group, 'facade-gel-lens-0');
+  removeNamedObject(context.group, 'fallback-front-lip');
+
   context.group.add(buildCounterBay(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT)));
   if (context.variation.canopy === 'broken-shingle-roof') {
     context.group.add(buildBrokenShingleCanopy(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT ^ 0x11)));
@@ -2305,6 +2457,9 @@ function addShopExtras(context: BuildContext<ShopVariation>): void {
     const awning = buildAwning(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT ^ 0x11));
     context.group.add(awning.frame);
     context.group.add(awning.membrane);
+  }
+  if (context.variation.slimeEmphasis === 'gel-lens-display') {
+    context.group.add(buildShopCounterLensDisplay(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT ^ 0x18)));
   }
   context.group.add(buildGoodsScatter(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT ^ 0x22)));
   context.group.add(buildShopTrail(context, seedWithSalt(context.dna.seed, SHOP_EXTRA_SALT ^ 0x33)));
@@ -3338,6 +3493,283 @@ function addChapelExtras(context: BuildContext<ChapelVariation>): void {
   context.group.add(buildChapelChoirScreen(context, seedWithSalt(seed, CHAPEL_EXTRA_SALT ^ 0x33)));
 }
 
+function buildWatchtowerSlits(context: BuildContext<WatchtowerVariation>, seed: number): THREE.Group[] {
+  const slits = context.blueprint.openingSchedule.filter(opening => opening.kind === 'window');
+  return slits.map((opening, index) => {
+    const slit = buildWindowOpening({
+      width: opening.width,
+      straightHeight: opening.straightHeight,
+      pointHeight: opening.pointHeight,
+      recessDepth: 0.12,
+      frameWidth: 0.06,
+      frameProud: 0.04,
+      wallZ: 0,
+      stoneMaterial: context.materials.hardenedGel,
+      glazingMaterial: context.variation.slitTreatment === 'blocked' ? context.materials.wetStain : context.materials.containedGel,
+      recessMaterial: context.materials.wetStain,
+      divisionStyle: 'vertical',
+      openingShape: 'arch',
+    });
+    slit.name = `watchtower-arrow-slit-${index}`;
+    const anchor = openingAnchor(context.hostBox, opening);
+    slit.position.copy(anchor);
+    slit.rotation.y = faceRotationY(opening.face);
+    slit.userData.overlayRole = 'watchtower-arrow-slit';
+
+    if (context.variation.slitTreatment === 'gel-lenses-alternate' && index % 2 === 0) {
+      const lens = buildGelLensInfill({
+        seed: seedWithSalt(seed, index),
+        width: opening.width * 0.8,
+        straightHeight: opening.straightHeight * 0.8,
+        pointHeight: opening.pointHeight * 0.8,
+        material: context.materials.gelGlow,
+        rimMaterial: context.materials.hardenedGel,
+        ribMaterial: context.materials.gelDark,
+        openingShape: 'arch',
+        insetDepth: 0.02,
+      });
+      lens.name = `watchtower-arrow-slit-lens-${index}`;
+      slit.add(lens);
+    }
+    return slit;
+  });
+}
+
+function buildWatchtowerEntrance(context: BuildContext<WatchtowerVariation>, seed: number): THREE.Group {
+  const doorSpec = context.blueprint.openingSchedule.find(opening => opening.kind === 'door');
+  const entrance = new THREE.Group();
+  entrance.name = 'watchtower-entrance';
+  if (!doorSpec) return entrance;
+
+  const door = buildDoorOpening({
+    width: doorSpec.width,
+    straightHeight: doorSpec.straightHeight,
+    pointHeight: doorSpec.pointHeight,
+    recessDepth: 0.18,
+    frameWidth: 0.09,
+    frameProud: 0.04,
+    wallZ: 0,
+    stoneMaterial: context.materials.hardenedGel,
+    recessMaterial: context.materials.wetStain,
+    woodMaterial: context.materials.gelDark,
+  });
+  door.name = 'watchtower-entrance-door';
+  const anchor = openingAnchor(context.hostBox, doorSpec);
+  door.position.copy(anchor);
+  door.rotation.y = faceRotationY(doorSpec.face);
+  entrance.add(door);
+  entrance.userData.overlayRole = 'watchtower-entrance';
+  void seed;
+  return entrance;
+}
+
+function buildWatchtowerTop(context: BuildContext<WatchtowerVariation>, seed: number): THREE.Group {
+  const top = new THREE.Group();
+  top.name = `watchtower-top-${context.variation.top}`;
+  const rand = mulberry32(seed);
+  const box = context.hostBox;
+  const cx = (box.min.x + box.max.x) * 0.5;
+  const cz = (box.min.z + box.max.z) * 0.5;
+  const radius = Math.min(box.max.x - box.min.x, box.max.z - box.min.z) * 0.5 * 0.9;
+  const parapetY = Math.max(box.min.y + 0.5, box.max.y - 1.3);
+
+  switch (context.variation.top) {
+    case 'broken-parapet': {
+      const merlonCount = 8;
+      const skipIndex = Math.floor(rand() * merlonCount);
+      for (let index = 0; index < merlonCount; index++) {
+        if (index === skipIndex) continue;
+        const angle = (index / merlonCount) * Math.PI * 2;
+        const merlon = beam(0.16, 0.34, 0.12, context.materials.hardenedGel, `parapet-merlon-${index}`);
+        merlon.position.set(cx + Math.cos(angle) * radius, parapetY + 0.17, cz + Math.sin(angle) * radius);
+        merlon.rotation.y = -angle;
+        top.add(merlon);
+      }
+      break;
+    }
+    case 'partial-conical-roof': {
+      const wedgeCount = 8;
+      const missingStart = Math.floor(rand() * wedgeCount);
+      const missingCount = 2;
+      for (let index = 0; index < wedgeCount; index++) {
+        const isMissing = ((index - missingStart + wedgeCount) % wedgeCount) < missingCount;
+        if (isMissing) continue;
+        const angle = (index / wedgeCount) * Math.PI * 2;
+        const shingle = createFacetedPlate(0.34, 0.5, 0.05, context.materials.hardenedGel, `roof-shingle-${index}`, 4);
+        shingle.position.set(cx + Math.cos(angle) * radius * 0.7, parapetY + 0.5, cz + Math.sin(angle) * radius * 0.7);
+        shingle.rotation.y = -angle;
+        shingle.rotation.x = 0.5;
+        top.add(shingle);
+      }
+      break;
+    }
+    case 'open-beacon-frame': {
+      const frameHeight = 0.9;
+      for (let index = 0; index < 4; index++) {
+        const angle = (index / 4) * Math.PI * 2 + Math.PI / 4;
+        const post = beam(0.09, frameHeight, 0.09, context.materials.hardenedGel, `beacon-post-${index}`);
+        post.position.set(cx + Math.cos(angle) * radius * 0.75, parapetY + frameHeight * 0.5, cz + Math.sin(angle) * radius * 0.75);
+        top.add(post);
+      }
+      const ring = createFacetedPlate(radius * 1.4, radius * 1.4, 0.08, context.materials.gelDark, 'beacon-ring', 8);
+      ring.position.set(cx, parapetY + frameHeight, cz);
+      top.add(ring);
+      const beacon = buildContainedGelVat({
+        seed: seedWithSalt(seed, 0x01),
+        radius: 0.22,
+        height: 0.4,
+        frameMaterial: context.materials.hardenedGel,
+        bandMaterial: context.materials.gelDark,
+        gelMaterial: context.materials.gelGlow,
+        baseMaterial: context.materials.wetStain,
+        bandCount: 2,
+      });
+      beacon.name = 'watchtower-beacon-core';
+      beacon.position.set(cx, parapetY + 0.05, cz);
+      top.add(beacon);
+      break;
+    }
+    case 'collapsed-cap-membrane': {
+      const half = radius * 0.75;
+      const y = parapetY + 0.3;
+      const patch = buildMembraneSheet({
+        seed: seedWithSalt(seed, 0x02),
+        corners: [
+          new THREE.Vector3(cx - half, y, cz - half),
+          new THREE.Vector3(cx + half, y, cz - half),
+          new THREE.Vector3(cx + half, y, cz + half),
+          new THREE.Vector3(cx - half, y, cz + half),
+        ],
+        membraneMaterial: context.materials.containedGel,
+        rimMaterial: context.materials.hardenedGel,
+        ribMaterial: context.materials.gelDark,
+        sag: 0.18,
+        ribCount: 4,
+      });
+      patch.name = 'watchtower-collapsed-cap-patch';
+      top.add(patch);
+      break;
+    }
+  }
+
+  return top;
+}
+
+function buildWatchtowerGrowthPath(context: BuildContext<WatchtowerVariation>, seed: number): THREE.Group {
+  const path = new THREE.Group();
+  path.name = 'watchtower-growth-path';
+  const box = context.hostBox;
+  const face = context.variation.growthFace;
+  const normal = faceNormal(face);
+  const groundY = groundYForBox(box);
+  const topY = Math.max(groundY + 1, box.max.y - 1.6);
+  const faceX = face === 'left' ? box.min.x : face === 'right' ? box.max.x : (box.min.x + box.max.x) * 0.5;
+  const faceZ = face === 'front' ? box.max.z : face === 'back' ? box.min.z : (box.min.z + box.max.z) * 0.5;
+  const outward = 0.06;
+
+  switch (context.variation.growthPath) {
+    case 'spiral-tendril': {
+      const segmentCount = 4;
+      for (let index = 0; index < segmentCount; index++) {
+        const t0 = index / segmentCount;
+        const t1 = (index + 1) / segmentCount;
+        const y0 = groundY + t0 * (topY - groundY);
+        const y1 = groundY + t1 * (topY - groundY);
+        const wobble = (index % 2 === 0 ? -1 : 1) * 0.18;
+        const start = new THREE.Vector3(
+          faceX + normal.x * outward + normal.z * wobble,
+          y0,
+          faceZ + normal.z * outward + normal.x * wobble,
+        );
+        const end = new THREE.Vector3(
+          faceX + normal.x * outward - normal.z * wobble,
+          y1,
+          faceZ + normal.z * outward - normal.x * wobble,
+        );
+        const seg = buildTendrilBridge({
+          seed: seedWithSalt(seed, index),
+          start,
+          end,
+          material: context.materials.gel,
+          anchorMaterial: context.materials.hardenedGel,
+          midRadius: 0.06,
+        });
+        seg.name = `watchtower-growth-path-segment-${index}`;
+        path.add(seg);
+      }
+      break;
+    }
+    case 'vertical-drip-seam': {
+      const run = buildFacetedDripRun({
+        seed,
+        start: new THREE.Vector3(faceX + normal.x * outward, topY, faceZ + normal.z * outward),
+        end: new THREE.Vector3(faceX + normal.x * outward, groundY, faceZ + normal.z * outward),
+        material: context.materials.gelDark,
+        dripCount: 6,
+      });
+      run.name = 'watchtower-growth-path-drip-seam';
+      path.add(run);
+      break;
+    }
+    case 'breach-repair-plates': {
+      const plateCount = 4;
+      for (let index = 0; index < plateCount; index++) {
+        const t = index / (plateCount - 1);
+        const y = groundY + 1.2 + t * Math.max(0, topY - groundY - 1.2);
+        const plate = createFacetedPlate(0.5, 0.4, 0.05, context.materials.hardenedGel, `watchtower-growth-path-plate-${index}`, 5);
+        plate.position.set(faceX + normal.x * (outward + 0.02), y, faceZ + normal.z * (outward + 0.02));
+        plate.rotation.y = faceRotationY(face);
+        path.add(plate);
+      }
+      break;
+    }
+    case 'ground-puddle-skirt': {
+      const tiles = buildPuddleSkirtTiles({
+        seed,
+        center: new THREE.Vector3(faceX + normal.x * 0.5, groundY + 0.01, faceZ + normal.z * 0.5),
+        radiusX: 0.7,
+        radiusZ: 0.6,
+        material: context.materials.wetStain,
+        tileCount: 6,
+      });
+      tiles.name = 'watchtower-growth-path-puddle-skirt';
+      path.add(tiles);
+      break;
+    }
+  }
+  path.userData.growthFace = face;
+  return path;
+}
+
+function buildWatchtowerGatePlaque(context: BuildContext<WatchtowerVariation>, seed: number): THREE.Group {
+  const plaque = new THREE.Group();
+  plaque.name = 'watchtower-gate-plaque';
+  const box = context.hostBox;
+  const doorSpec = context.blueprint.openingSchedule.find(opening => opening.kind === 'door');
+  const anchor = doorSpec
+    ? openingAnchor(box, doorSpec)
+    : new THREE.Vector3((box.min.x + box.max.x) * 0.5, groundYForBox(box) + 1.0, box.max.z);
+  const face = doorSpec?.face ?? 'front';
+
+  const plaqueMesh = shadowMesh(extrudeShape(createPlaqueShape(0.42, 0.3), 0.04), context.materials.hardenedGel, 'watchtower-gate-plaque-panel');
+  plaqueMesh.position.set(anchor.x + 0.55, anchor.y + 0.3, anchor.z + 0.02);
+  plaqueMesh.rotation.y = faceRotationY(face);
+  plaque.add(plaqueMesh);
+  void seed;
+  return plaque;
+}
+
+function addWatchtowerExtras(context: BuildContext<WatchtowerVariation>): void {
+  const seed = context.dna.seed;
+  for (const slit of buildWatchtowerSlits(context, seedWithSalt(seed, WATCHTOWER_EXTRA_SALT))) {
+    context.group.add(slit);
+  }
+  context.group.add(buildWatchtowerEntrance(context, seedWithSalt(seed, WATCHTOWER_EXTRA_SALT ^ 0x11)));
+  context.group.add(buildWatchtowerTop(context, seedWithSalt(seed, WATCHTOWER_EXTRA_SALT ^ 0x22)));
+  context.group.add(buildWatchtowerGrowthPath(context, seedWithSalt(seed, WATCHTOWER_EXTRA_SALT ^ 0x33)));
+  context.group.add(buildWatchtowerGatePlaque(context, seedWithSalt(seed, WATCHTOWER_EXTRA_SALT ^ 0x44)));
+}
+
 export function buildSlimeHouse(dna: BuildingDNA): THREE.Group {
   const normalized = normalizeDna(dna, 'house', 'small', 1, 'none');
   const { blueprint, variation } = createHouseBlueprint(normalized);
@@ -3391,5 +3823,13 @@ export function buildSlimeChapel(dna: BuildingDNA): THREE.Group {
   const { blueprint, variation } = createChapelBlueprint(normalized);
   const context = makeContext(normalized, blueprint, variation, 'chapel');
   addChapelExtras(context);
+  return context.group;
+}
+
+export function buildSlimeWatchtower(dna: BuildingDNA): THREE.Group {
+  const normalized = normalizeDna(dna, 'watchtower', 'small', 4, 'none');
+  const { blueprint, variation } = createWatchtowerBlueprint(normalized);
+  const context = makeContext(normalized, blueprint, variation, 'watchtower');
+  addWatchtowerExtras(context);
   return context.group;
 }
