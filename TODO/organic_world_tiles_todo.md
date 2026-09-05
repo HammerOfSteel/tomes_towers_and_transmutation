@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts) ✅ 4 of ~9 elven building types shipped, 2026-09-02/04
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime (8 canonical kinds) shipped, 2026-09-02/05 — 7 of 9 races still plan-only
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1230,7 +1230,72 @@ Slime, Human — Slime/Human last, since those already look best).
   `slime` has **no reference art**, so its spec presents three
   alternative directions with a recommendation and is explicitly
   blocked on a user decision.
-  **Status: awaiting user approval. No implementation started.**
+  **Status: user-approved. Implementation now underway race-by-race** — see
+  6.8 below for the first race (slime) shipped under this programme.
+  `race/dwarven-buildings`, `race/vampire-buildings`, `race/orcish-buildings`,
+  `race/undead-buildings`, `race/vulperia-buildings`, `race/fae-buildings`,
+  `race/human-buildings` each still carry only their design
+  spec + implementation plan from this round — no implementation commits
+  yet on any of them.
+
+- [x] **6.8 — Fifth race, first non-elven: slime "mimic culture" 8-kind
+  kit-of-parts (branch `race/slime-buildings`)** — elven's spec in 6.7 had
+  flagged slime as the one race with **no reference art**, presenting 3
+  alternative directions. User resolved this explicitly with a new brief
+  (Pokémon-Ditto-esque mimic/absorption culture: a slime colony observes
+  and reproduces another race's building shell, then re-skins it in a
+  rotating neon hue family — mint-green/azure-blue/bubblegum-pink/
+  violet-purple/cyan-teal, never one fixed green — plus a rounded
+  gel-mimic silhouette with mandatory drip points). Implemented as
+  host-shell → light `Ruinate` damage → slime accretion overlay (neon
+  hue + rounding pass), reusing the shared Tier 1-3 kit modules already
+  on `main` (lattice-dome canopy, interlace ornament, ruinate course
+  erosion/debris, lathe columns) rather than inventing new primitives —
+  slime is the first race to build on that shared kit end-to-end. All 8
+  canonical kinds shipped with bespoke builders (house/terraced/shop/inn/
+  blacksmith/villa/chapel/watchtower), wired into
+  `FACTION_BUILDING_VARIANTS['slime']`, replacing the old translucent
+  Sphere/Cylinder blob primitives entirely (deleted as dead code, merged
+  into the same commit once `tsconfig.json`'s `noUnusedLocals:true` made
+  leaving them in place a hard type error the moment the registry stopped
+  calling them). Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION` gained a
+  `slime` entry (forces the first building to `watchtower`, the one kind
+  with no `WARD_TO_KIND` entry, so all 8 kinds can be reviewed together in
+  one settlement — same pattern as elven's).
+  **Real bug found and fixed during this race's own verification** (the
+  same bug class first caught for `StoneTowerFloorCap.ts` in 6.6d, now
+  recurring on new geometry): `createSaggingMembraneGeometry()`
+  (`SlimeAccretionKit.ts`) and `createAngularRubbleGeometry()`
+  (`Ruinate.ts`, used by slime's rubble-from-lost-blocks damage) both
+  built custom `BufferGeometry` with no `uv` attribute while sharing a
+  material with sibling meshes that *do* have `uv` — `mergeGeometries()`
+  fails silently on that mismatch and `mergeGroupMeshesByMaterial()`
+  (`MeshMergeUtils.ts`) disposes the **entire** material bucket regardless
+  of merge success, so every one of the 8 slime kinds was silently
+  dropping real geometry in production (89 console warnings during
+  Settlement Lab verification pinpointed it). Fixed by adding a `uv`
+  attribute to both (membrane reuses its own grid-loop u/v; rubble gets a
+  standard per-face box-style planar projection); both affected materials
+  are flat-colour with no texture map, so neither fix has any visual-
+  precision requirement. Regression tests added mirroring
+  `StoneTowerFloorCap.test.ts`'s established pattern exactly.
+  **Live-verified via Playwright** against a dev server running from this
+  worktree (not a stale server from a different checkout): faction=slime
+  showcase renders all 8 kinds with zero console errors/warnings, visible
+  neon-hued roofs (teal/pink/purple/cyan) with organic rounded accretion
+  bulges and gel-drip pillars, the watchtower forced correctly, and no
+  visible holes/missing geometry at two different zoom levels and two
+  seeds — confirming the uv fix resolved the silent-drop bug in the
+  actual production render path, not just in tests.
+  **Full regression**: `tests/world/buildings/slime/` +
+  `tests/world/buildings/kit/` + `tests/scene/SettlementLabScene.test.ts` +
+  `tests/world/FactionBuildingVariants.test.ts` all green; full
+  `npx vitest run` is 13 failures / 3556 passing, all 13 pre-existing
+  baseline failures unrelated to any file this race touched (confirmed by
+  file-level cross-check, not just count-matching) plus one confirmed-
+  non-flaky test-runner timeout from parallel resource contention (passes
+  standalone in 4.2s against a 5s default timeout); `npx tsc --noEmit`
+  holds at the established 146-error baseline.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
