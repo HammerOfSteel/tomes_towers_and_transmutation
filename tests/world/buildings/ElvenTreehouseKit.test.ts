@@ -132,11 +132,19 @@ describe('buildElvenTreehouseHome', () => {
     // creased-normal shading, so `.geometry.type` no longer survives as a
     // marker. Instead, verify the real structural property the test cares
     // about directly: a named 'recess' group exists and sits measurably
-    // behind the wall face (genuine depth), not flush with it.
+    // behind the named 'surround' group (both share the same local wallZ
+    // origin, so comparing them isolates the actual reveal/frame depth from
+    // the large absolute wallZ offset rather than checking position.z's
+    // raw magnitude, which would mostly just reflect wallZ itself).
     const g = buildElvenTreehouseHome(makeDna('house', 5));
     let recess: THREE.Object3D | undefined;
-    g.traverse((o) => { if (o.name === 'recess') recess = o; });
+    let surround: THREE.Object3D | undefined;
+    g.traverse((o) => {
+      if (o.name === 'recess') recess = o;
+      if (o.name === 'surround') surround = o;
+    });
     expect(recess).toBeDefined();
-    expect(Math.abs(recess!.position.z)).toBeGreaterThan(0.1);
+    expect(surround).toBeDefined();
+    expect(surround!.position.z - recess!.position.z).toBeGreaterThan(0.1);
   });
 });
