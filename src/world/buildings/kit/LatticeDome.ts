@@ -47,6 +47,11 @@ const HELIX_TURNS = 1;
 const DEFAULT_RADIAL_SEGMENTS = 10;
 const DEFAULT_VINE_HOOK_DENSITY = 0.16;
 const EPSILON = 1e-6;
+const ICOSAHEDRON_INSCRIBED_RADIUS_RATIO = (
+  Math.sqrt(3) * (3 + Math.sqrt(5))
+) / (
+  3 * Math.sqrt(10 + 2 * Math.sqrt(5))
+);
 const FAMILY_TAGS: Record<FamilyKey, number> = {
   a: 0x4641_4D41,
   b: 0x4641_4D42,
@@ -229,6 +234,27 @@ function ribTubeRadiusAt(layout: LatticeDomeLayout, t: number): number {
   return THREE.MathUtils.lerp(layout.tubeRadius, layout.apexTubeRadius, Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.9));
 }
 
+function familyBRibIndexAtCrossing(layout: LatticeDomeLayout, familyARibIndex: number, crossingIndex: number): number {
+  return (familyARibIndex + crossingIndex) % layout.ribsPerFamily;
+}
+
+function adjacentCrossingSegmentIndices(crossingIndex: number): readonly [number, number] {
+  return [crossingIndex, crossingIndex + 1];
+}
+
+function crossingHasAllAdjacentSegments(
+  layout: LatticeDomeLayout,
+  familyARibIndex: number,
+  crossingIndex: number,
+  brokenSegmentIds: Set<string>,
+): boolean {
+  const familyBRibIndex = familyBRibIndexAtCrossing(layout, familyARibIndex, crossingIndex);
+  return adjacentCrossingSegmentIndices(crossingIndex).every(segmentIndex => (
+    !brokenSegmentIds.has(segmentId('a', familyARibIndex, segmentIndex))
+    && !brokenSegmentIds.has(segmentId('b', familyBRibIndex, segmentIndex))
+  ));
+}
+
 function segmentSamplePoints(
   layout: LatticeDomeLayout,
   family: FamilySpec,
@@ -304,24 +330,46 @@ function buildRibGroup(
   return rib;
 }
 
-function createKnuckleGroup(layout: LatticeDomeLayout, material: THREE.Material): THREE.Group {
+function createKnuckleGroup(
+  layout: LatticeDomeLayout,
+  familyA: FamilySpec,
+  familyB: FamilySpec,
+  material: THREE.Material,
+  brokenSegmentIds: Set<string>,
+): THREE.Group {
   const group = new THREE.Group();
   group.name = 'crossing-knuckles';
   group.userData.role = 'crossing-knuckles';
-
-  const knuckleRadius = Math.max(layout.tubeRadius * 0.55 + layout.halfWeaveOffset * 0.4, layout.tubeRadius * 0.45);
-  const geometry = new THREE.IcosahedronGeometry(knuckleRadius, 0);
+  const geometry = new THREE.IcosahedronGeometry(1, 0);
+  const midpoint = new THREE.Vector3();
 
   for (let ribIndex = 0; ribIndex < layout.ribsPerFamily; ribIndex++) {
     for (let crossingIndex = 0; crossingIndex < layout.crossingParameters.length; crossingIndex++) {
       const t = layout.crossingParameters[crossingIndex]!;
-      const theta = layout.stepAngle * ribIndex + layout.twistAngle * t;
+      if (!crossingHasAllAdjacentSegments(layout, ribIndex, crossingIndex, brokenSegmentIds)) continue;
+
+      const familyBRibIndex = familyBRibIndexAtCrossing(layout, ribIndex, crossingIndex);
+      const familyAPoint = ribPoint(layout, familyA, ribIndex, t);
+      const familyBPoint = ribPoint(layout, familyB, familyBRibIndex, t);
+      const tubeRadius = ribTubeRadiusAt(layout, t);
+      midpoint.copy(familyAPoint).add(familyBPoint).multiplyScalar(0.5);
+      const contactReach = Math.max(
+        midpoint.distanceTo(familyAPoint),
+        midpoint.distanceTo(familyBPoint),
+      ) + tubeRadius;
+      const knuckleRadius = contactReach / ICOSAHEDRON_INSCRIBED_RADIUS_RATIO;
       const mesh = createMesh(geometry, material, `knuckle-${ribIndex}-${crossingIndex}`, {
         role: 'crossing-knuckle',
         ribIndex,
         crossingIndex,
+        familyBRibIndex,
+        crossingT: t,
+        contactReach,
+        knuckleRadius,
+        adjacentSegmentIndices: [...adjacentCrossingSegmentIndices(crossingIndex)],
       });
-      mesh.position.copy(domePoint(layout, theta, t, 0));
+      mesh.position.copy(midpoint);
+      mesh.scale.setScalar(knuckleRadius);
       group.add(mesh);
     }
   }
@@ -415,7 +463,7 @@ export function buildLatticeDome(options: LatticeDomeOptions, material: THREE.Ma
     dome.add(familyGroup);
   }
 
-  dome.add(createKnuckleGroup(layout, material));
+  dome.add(createKnuckleGroup(layout, familyA, familyB, material, brokenSegmentIds));
 
   const vineHooks = createVineHookGroup(layout, material);
   if (vineHooks) dome.add(vineHooks);

@@ -204,6 +204,144 @@ function approximateKnuckleRadius(mesh: THREE.Mesh): number {
   return Math.max(size.x, size.y, size.z) * 0.5;
 }
 
+interface TestLatticeLayout {
+  radius: number;
+  ribsPerFamily: number;
+  tubeRadius: number;
+  apexTubeRadius: number;
+  halfWeaveOffset: number;
+  stepAngle: number;
+  twistAngle: number;
+  maxPhi: number;
+  crossingCount: number;
+}
+
+function clampPositive(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value! > 0 ? value! : fallback;
+}
+
+function buildTestLayout(options: LatticeDomeOptions): TestLatticeLayout {
+  const radius = clampPositive(options.radius, 2);
+  const ribsPerFamily = Math.max(4, Math.floor(clampPositive(options.ribsPerFamily, 8)));
+  const tubeRadius = Math.min(clampPositive(options.tubeRadius, Math.max(radius * 0.012, 0.01)), radius * 0.12);
+  const weaveOffset = Math.min(
+    clampPositive(options.weaveOffset, Math.max(tubeRadius * 0.75, radius * 0.01)),
+    radius * 0.18,
+  );
+  const halfWeaveOffset = weaveOffset * 0.5;
+  const apexTubeRadius = tubeRadius * 0.42;
+  const topSurfaceRadius = THREE.MathUtils.clamp(
+    Math.max(radius * 0.035, halfWeaveOffset + apexTubeRadius * 2.4),
+    radius * 0.01,
+    radius * 0.45,
+  );
+
+  return {
+    radius,
+    ribsPerFamily,
+    tubeRadius,
+    apexTubeRadius,
+    halfWeaveOffset,
+    stepAngle: (Math.PI * 2) / ribsPerFamily,
+    twistAngle: Math.PI * 2,
+    maxPhi: Math.acos(THREE.MathUtils.clamp(topSurfaceRadius / radius, 1e-6, 0.9999)),
+    crossingCount: ribsPerFamily * 2,
+  };
+}
+
+function testDomePoint(layout: TestLatticeLayout, theta: number, t: number, radialOffset: number): THREE.Vector3 {
+  const phi = layout.maxPhi * THREE.MathUtils.clamp(t, 0, 1);
+  const surfaceRadius = layout.radius * Math.cos(phi);
+  const planRadius = Math.max(surfaceRadius + radialOffset, layout.apexTubeRadius * 1.2);
+  return new THREE.Vector3(
+    Math.cos(theta) * planRadius,
+    layout.radius * Math.sin(phi),
+    Math.sin(theta) * planRadius,
+  );
+}
+
+function familyBRibIndexAtCrossing(layout: TestLatticeLayout, familyARibIndex: number, crossingIndex: number): number {
+  return (familyARibIndex + crossingIndex) % layout.ribsPerFamily;
+}
+
+function crossingMetrics(layout: TestLatticeLayout, familyARibIndex: number, crossingIndex: number) {
+  const t = (crossingIndex + 0.5) / layout.crossingCount;
+  const familyBRibIndex = familyBRibIndexAtCrossing(layout, familyARibIndex, crossingIndex);
+  const familyATheta = layout.stepAngle * familyARibIndex + layout.twistAngle * t;
+  const familyBTheta = (
+    layout.stepAngle * familyBRibIndex
+    + layout.stepAngle * 0.5
+    - layout.twistAngle * t
+  );
+
+  return {
+    t,
+    familyBRibIndex,
+    familyAPoint: testDomePoint(layout, familyATheta, t, layout.halfWeaveOffset),
+    familyBPoint: testDomePoint(layout, familyBTheta, t, -layout.halfWeaveOffset),
+    tubeRadius: THREE.MathUtils.lerp(layout.tubeRadius, layout.apexTubeRadius, Math.pow(t, 0.9)),
+  };
+}
+
+function actualBoundingSphereRadius(mesh: THREE.Mesh): number {
+  mesh.updateMatrixWorld(true);
+  mesh.geometry.computeBoundingSphere();
+  const scale = mesh.getWorldScale(new THREE.Vector3());
+  expect(Math.abs(scale.x - scale.y)).toBeLessThan(1e-6);
+  expect(Math.abs(scale.x - scale.z)).toBeLessThan(1e-6);
+  return (mesh.geometry.boundingSphere?.radius ?? 0) * scale.x;
+}
+
+function segmentKey(family: string, ribIndex: number, segmentIndex: number): string {
+  return `${family}:${ribIndex}:${segmentIndex}`;
+}
+
+function survivingSegmentIds(root: THREE.Object3D): Set<string> {
+  return new Set(
+    collectRoleMeshes(root, 'rib-segment').map(mesh => (
+      segmentKey(
+        String(mesh.userData.family),
+        Number(mesh.userData.ribIndex),
+        Number(mesh.userData.segmentIndex),
+      )
+    )),
+  );
+}
+
+function expectedKnuckleNames(layout: TestLatticeLayout, survivingSegments: Set<string>): string[] {
+  const names: string[] = [];
+  for (let familyARibIndex = 0; familyARibIndex < layout.ribsPerFamily; familyARibIndex++) {
+    for (let crossingIndex = 0; crossingIndex < layout.crossingCount; crossingIndex++) {
+      const familyBRibIndex = familyBRibIndexAtCrossing(layout, familyARibIndex, crossingIndex);
+      const adjacentSegments = [crossingIndex, crossingIndex + 1];
+      const crossingSurvives = adjacentSegments.every(segmentIndex => (
+        survivingSegments.has(segmentKey('a', familyARibIndex, segmentIndex))
+        && survivingSegments.has(segmentKey('b', familyBRibIndex, segmentIndex))
+      ));
+
+      if (crossingSurvives) names.push(`knuckle-${familyARibIndex}-${crossingIndex}`);
+    }
+  }
+  return names.sort();
+}
+
+function expectKnuckleTouchesBothRibs(mesh: THREE.Mesh, layout: TestLatticeLayout): void {
+  const familyARibIndex = Number(mesh.userData.ribIndex);
+  const crossingIndex = Number(mesh.userData.crossingIndex);
+  const { familyAPoint, familyBPoint, tubeRadius } = crossingMetrics(layout, familyARibIndex, crossingIndex);
+  const center = mesh.getWorldPosition(new THREE.Vector3());
+  const reach = actualBoundingSphereRadius(mesh);
+
+  expect(
+    reach,
+    `${mesh.name} reach ${reach} did not span family-a distance ${center.distanceTo(familyAPoint)} with tube radius ${tubeRadius}`,
+  ).toBeGreaterThanOrEqual(center.distanceTo(familyAPoint) + tubeRadius - 1e-6);
+  expect(
+    reach,
+    `${mesh.name} reach ${reach} did not span family-b distance ${center.distanceTo(familyBPoint)} with tube radius ${tubeRadius}`,
+  ).toBeGreaterThanOrEqual(center.distanceTo(familyBPoint) + tubeRadius - 1e-6);
+}
+
 describe('buildLatticeDome', () => {
   it('builds a finite non-degenerate canopy group', async () => {
     const buildLatticeDome = await loadBuildLatticeDome();
@@ -381,6 +519,60 @@ describe('buildLatticeDome', () => {
     expect(missingC).not.toEqual(missingA);
     expect(countTriangles(brokenA)).toBeLessThan(countTriangles(intact));
     expect(ribSegmentNames(brokenA).length).toBeLessThan(ribSegmentNames(intact).length);
+  });
+
+  it('sizes every knuckle to span both real rib centerlines even for extreme weave offsets', async () => {
+    const buildLatticeDome = await loadBuildLatticeDome();
+    const options = {
+      radius: 2,
+      ribsPerFamily: 8,
+      tubeRadius: 0.005,
+      weaveOffset: 0.36,
+    } satisfies LatticeDomeOptions;
+    const layout = buildTestLayout(options);
+    const dome = buildLatticeDome(options, makeMaterial());
+    const knuckles = dome.getObjectByName('crossing-knuckles');
+
+    expect(knuckles).toBeTruthy();
+    if (!knuckles) return;
+
+    const meshes = collectRoleMeshes(knuckles, 'crossing-knuckle');
+    expect(meshes).toHaveLength(layout.ribsPerFamily * layout.crossingCount);
+
+    for (const mesh of meshes) {
+      expectKnuckleTouchesBothRibs(mesh, layout);
+    }
+  });
+
+  it('only emits broken-canopy knuckles where both rib families keep every adjacent span', async () => {
+    const buildLatticeDome = await loadBuildLatticeDome();
+    const options = {
+      radius: 2,
+      ribsPerFamily: 8,
+      tubeRadius: 0.04,
+      weaveOffset: 0.06,
+      brokenSegments: true,
+      brokenSegmentDensity: 0.24,
+      seed: 7,
+    } satisfies LatticeDomeOptions;
+    const layout = buildTestLayout(options);
+    const dome = buildLatticeDome(options, makeMaterial());
+    const survivingSegments = survivingSegmentIds(dome);
+    const expectedNamesForPresentCrossings = expectedKnuckleNames(layout, survivingSegments);
+    const knuckles = dome.getObjectByName('crossing-knuckles');
+
+    expect(knuckles).toBeTruthy();
+    if (!knuckles) return;
+
+    const meshes = collectRoleMeshes(knuckles, 'crossing-knuckle');
+    const actualKnuckleNames = meshes.map(mesh => mesh.name).sort();
+
+    expect(expectedNamesForPresentCrossings.length).toBeLessThan(layout.ribsPerFamily * layout.crossingCount);
+    expect(actualKnuckleNames).toEqual(expectedNamesForPresentCrossings);
+
+    for (const mesh of meshes) {
+      expectKnuckleTouchesBothRibs(mesh, layout);
+    }
   });
 
   it('only emits optional vine hooks when enabled and gives them non-degenerate geometry', async () => {
