@@ -106,6 +106,7 @@ function normalizeWall(wall: WallCourseModel): NormalizedWall {
 
   const blockGrid = Array.from({ length: wall.numCourses }, () => Array<RuinateBlock>(wall.blocksPerCourse));
   const highestExemptByColumn = Array<number>(wall.blocksPerCourse).fill(-1);
+  const seenBlockIds = new Set<string>();
 
   for (const block of wall.blocks) {
     if (!Number.isInteger(block.course) || block.course < 0 || block.course >= wall.numCourses) {
@@ -114,6 +115,10 @@ function normalizeWall(wall: WallCourseModel): NormalizedWall {
     if (!Number.isInteger(block.index) || block.index < 0 || block.index >= wall.blocksPerCourse) {
       throw new Error(`ruinateCourses(): block ${block.id} has out-of-range index ${block.index}`);
     }
+    if (seenBlockIds.has(block.id)) {
+      throw new Error(`ruinateCourses(): duplicate block id "${block.id}"`);
+    }
+    seenBlockIds.add(block.id);
     if (blockGrid[block.course]![block.index] !== undefined) {
       throw new Error(`ruinateCourses(): duplicate block at course ${block.course}, index ${block.index}`);
     }

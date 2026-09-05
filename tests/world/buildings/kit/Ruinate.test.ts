@@ -72,6 +72,17 @@ function buildUpperHalfButtressWall(tagUpperHalf: boolean): WallCourseModel {
   return { numCourses, blocksPerCourse, blocks };
 }
 
+function buildTwoCourseSingleColumnWall(blockIds: readonly [string, string]): WallCourseModel {
+  return {
+    numCourses: 2,
+    blocksPerCourse: 1,
+    blocks: [
+      { id: blockIds[0], course: 0, index: 0 },
+      { id: blockIds[1], course: 1, index: 0 },
+    ],
+  };
+}
+
 function removalRate(
   result: RuinateResult,
   wall: WallCourseModel,
@@ -143,6 +154,27 @@ function structuralAdvantageMargin(result: RuinateResult, wall: WallCourseModel)
 }
 
 describe('ruinateCourses', () => {
+  it('throws when duplicate block ids would make Set-based results ambiguous', () => {
+    const wall = buildTwoCourseSingleColumnWall(['dup', 'dup']);
+
+    expect(() => ruinateCourses(wall, { seed: 0, damageIntensity: 1 })).toThrowError(
+      'ruinateCourses(): duplicate block id "dup"',
+    );
+  });
+
+  it('still ruinate a single-column wall normally when block ids are unique', () => {
+    const wall = buildTwoCourseSingleColumnWall(['lower', 'upper']);
+    const result = ruinateCourses(wall, { seed: 0, damageIntensity: 1 });
+
+    expect(result.breakHeightByColumn).toEqual([0]);
+    expect(result.occupancyMask).toEqual([
+      [true],
+      [false],
+    ]);
+    expect(result.survivingBlockIds).toEqual(new Set(['lower']));
+    expect(result.removedBlockIds).toEqual(new Set(['upper']));
+  });
+
   it('removes a meaningfully lower fraction of structural blocks than mid-span blocks across many seeds', () => {
     const wall = buildTaggedWall();
     let structuralRemoved = 0;
