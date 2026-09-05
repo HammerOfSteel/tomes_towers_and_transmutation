@@ -120,19 +120,35 @@ function buildLayout(options: InterlaceOptions): InterlaceLayout {
     length * 0.24,
   );
   const halfPathLength = length * 0.5;
+  const minimumSafeHalfRun = cordRadius * 0.6;
   const defaultRidgeHeight = Math.min(length * 0.22, halfPathLength * 0.82);
-  const ridgeHeight = variant === 'gableVerge'
-    ? Math.min(
+  let ridgeHeight = 0;
+  let halfRun = length * 0.5;
+
+  if (variant === 'gableVerge') {
+    const requestedRidgeHeight = Math.min(
       clampPositive(options.ridgeHeight, defaultRidgeHeight),
       Math.max(halfPathLength - cordRadius * 1.5, cordRadius * 1.5),
-    )
-    : 0;
-  const halfRun = variant === 'gableVerge'
-    ? Math.max(
-      Math.sqrt(Math.max(halfPathLength * halfPathLength - ridgeHeight * ridgeHeight, EPSILON)),
-      cordRadius * 0.6,
-    )
-    : length * 0.5;
+    );
+    const exactHalfRun = Math.sqrt(Math.max(
+      halfPathLength * halfPathLength - requestedRidgeHeight * requestedRidgeHeight,
+      0,
+    ));
+
+    if (halfPathLength <= minimumSafeHalfRun + EPSILON) {
+      halfRun = halfPathLength;
+      ridgeHeight = 0;
+    } else if (exactHalfRun >= minimumSafeHalfRun) {
+      halfRun = exactHalfRun;
+      ridgeHeight = requestedRidgeHeight;
+    } else {
+      halfRun = minimumSafeHalfRun;
+      ridgeHeight = Math.sqrt(Math.max(
+        halfPathLength * halfPathLength - halfRun * halfRun,
+        0,
+      ));
+    }
+  }
 
   return {
     length,

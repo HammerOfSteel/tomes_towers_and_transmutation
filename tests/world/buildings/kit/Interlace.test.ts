@@ -44,14 +44,17 @@ function worldVertices(root: THREE.Object3D): THREE.Vector3[] {
   root.updateMatrixWorld(true);
   const vertices: THREE.Vector3[] = [];
   for (const mesh of collectMeshes(root)) {
-    const position = mesh.geometry.getAttribute('position');
-    for (let index = 0; index < position.count; index++) {
-      vertices.push(
-        new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld),
-      );
-    }
+    vertices.push(...meshWorldVertices(mesh));
   }
   return vertices;
+}
+
+function meshWorldVertices(mesh: THREE.Mesh): THREE.Vector3[] {
+  mesh.updateMatrixWorld(true);
+  const position = mesh.geometry.getAttribute('position');
+  return Array.from({ length: position.count }, (_, index) => (
+    new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld)
+  ));
 }
 
 function worldBox(root: THREE.Object3D): THREE.Box3 {
@@ -74,6 +77,10 @@ function ringRowIndices(mesh: THREE.Mesh): Map<number, number[]> {
   return rows;
 }
 
+function rowIndicesWithoutSeam(indices: readonly number[]): readonly number[] {
+  return indices.length > 2 ? indices.slice(0, -1) : indices;
+}
+
 function ringVerticesAt(mesh: THREE.Mesh, normalizedT: number): THREE.Vector3[] {
   mesh.updateMatrixWorld(true);
   const rows = ringRowIndices(mesh);
@@ -81,7 +88,7 @@ function ringVerticesAt(mesh: THREE.Mesh, normalizedT: number): THREE.Vector3[] 
     Math.abs(candidate - normalizedT) < Math.abs(best - normalizedT) ? candidate : best
   ));
   const position = mesh.geometry.getAttribute('position');
-  return rows.get(nearest)!.map(index => (
+  return rowIndicesWithoutSeam(rows.get(nearest)!).map(index => (
     new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld)
   ));
 }
@@ -97,7 +104,7 @@ function ringCenterAt(mesh: THREE.Mesh, normalizedT: number): THREE.Vector3 {
   const lowerKey = [...keys].reverse().find(key => key <= clampedT) ?? keys[0]!;
   const upperKey = keys.find(key => key >= clampedT) ?? keys.at(-1)!;
 
-  const lowerCenter = meanPoint(rows.get(lowerKey)!.map(index => (
+  const lowerCenter = meanPoint(rowIndicesWithoutSeam(rows.get(lowerKey)!).map(index => (
     new THREE.Vector3()
       .fromBufferAttribute(mesh.geometry.getAttribute('position'), index)
       .applyMatrix4(mesh.matrixWorld)
@@ -105,7 +112,7 @@ function ringCenterAt(mesh: THREE.Mesh, normalizedT: number): THREE.Vector3 {
 
   if (upperKey === lowerKey) return lowerCenter;
 
-  const upperCenter = meanPoint(rows.get(upperKey)!.map(index => (
+  const upperCenter = meanPoint(rowIndicesWithoutSeam(rows.get(upperKey)!).map(index => (
     new THREE.Vector3()
       .fromBufferAttribute(mesh.geometry.getAttribute('position'), index)
       .applyMatrix4(mesh.matrixWorld)
@@ -139,6 +146,34 @@ function pointLineDistance(point: THREE.Vector3, start: THREE.Vector3, end: THRE
   const t = THREE.MathUtils.clamp(point.clone().sub(start).dot(line) / lineLengthSq, 0, 1);
   const closest = start.clone().addScaledVector(line, t);
   return point.distanceTo(closest);
+}
+
+function polylineLength(points: readonly THREE.Vector3[]): number {
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += points[index - 1]!.distanceTo(points[index]!);
+  }
+  return total;
+}
+
+function measuredBackboneLength(root: THREE.Object3D, sampleCount = 24): number {
+  const samples = Array.from({ length: sampleCount + 1 }, (_, index) => (
+    interlaceCenterAt(root, index / sampleCount)
+  ));
+  return polylineLength(samples);
+}
+
+function minimumPairwiseDistance(
+  left: readonly THREE.Vector3[],
+  right: readonly THREE.Vector3[],
+): number {
+  let minimum = Number.POSITIVE_INFINITY;
+  for (const leftPoint of left) {
+    for (const rightPoint of right) {
+      minimum = Math.min(minimum, leftPoint.distanceTo(rightPoint));
+    }
+  }
+  return minimum;
 }
 
 function crossingFractionsForPairZeroOne(length: number, period: number): number[] {
@@ -328,6 +363,22 @@ describe('Interlace', () => {
     const knotted = buildInterlace({ ...baseOptions, terminalKnots: true }, material);
     const plainBox = worldBox(plain);
     const knotBox = worldBox(knotted);
+    const strandEnds = {
+      start: strandMeshes(knotted).flatMap(mesh => ringVerticesAt(mesh, 0)),
+      end: strandMeshes(knotted).flatMap(mesh => ringVerticesAt(mesh, 1)),
+    };
+    const startKnot = knotted.getObjectByName('terminal-knot-start');
+    const endKnot = knotted.getObjectByName('terminal-knot-end');
+
+    expect(startKnot).toBeInstanceOf(THREE.Mesh);
+    expect(endKnot).toBeInstanceOf(THREE.Mesh);
+
+    const startKnotVertices = meshWorldVertices(startKnot as THREE.Mesh);
+    const endKnotVertices = meshWorldVertices(endKnot as THREE.Mesh);
+    const startAttachmentDistance = minimumPairwiseDistance(startKnotVertices, strandEnds.start);
+    const endAttachmentDistance = minimumPairwiseDistance(endKnotVertices, strandEnds.end);
+    const startWrongEndDistance = minimumPairwiseDistance(startKnotVertices, strandEnds.end);
+    const endWrongEndDistance = minimumPairwiseDistance(endKnotVertices, strandEnds.start);
 
     expect(knotBox.min.x).toBeLessThan(plainBox.min.x - 0.08);
     expect(knotBox.max.x).toBeGreaterThan(plainBox.max.x + 0.08);
@@ -336,6 +387,109 @@ describe('Interlace', () => {
     expect(countVerticesBeyondX(knotted, plainBox.min.x - 0.04, 'left')).toBeGreaterThan(18);
     expect(countVerticesBeyondX(knotted, plainBox.max.x + 0.04, 'right')).toBeGreaterThan(18);
     expect(collectMeshes(knotted).length).toBeGreaterThan(collectMeshes(plain).length);
+    expect(startAttachmentDistance).toBeLessThan(baseOptions.cordRadius! * 1.05);
+    expect(endAttachmentDistance).toBeLessThan(baseOptions.cordRadius! * 1.05);
+    expect(startAttachmentDistance).toBeLessThan(startWrongEndDistance * 0.15);
+    expect(endAttachmentDistance).toBeLessThan(endWrongEndDistance * 0.15);
+  });
+
+  it.each([
+    { label: 'review repro: length 0.10 ridge 0.04', length: 0.10, cordRadius: 0.06, ridgeHeight: 0.04 },
+    { label: 'review repro: length 0.18 ridge 0.085', length: 0.18, cordRadius: 0.06, ridgeHeight: 0.085 },
+    { label: 'short near safe-run floor', length: 0.12, cordRadius: 0.055, ridgeHeight: 0.051 },
+    { label: 'steep short run near cap', length: 0.16, cordRadius: 0.06, ridgeHeight: 0.076 },
+    { label: 'upper short-run reduction case', length: 0.19, cordRadius: 0.06, ridgeHeight: 0.088 },
+  ])('keeps the gable verge backbone length exact for $label by reducing ridge height instead of widening the run', async ({ length, cordRadius, ridgeHeight }) => {
+    const buildInterlace = await loadBuildInterlace();
+    const material = makeTrimMaterial();
+    const interlace = buildInterlace({
+      length,
+      variant: 'gableVerge',
+      ridgeHeight,
+      period: Math.max(length * 1.5, cordRadius * 6),
+      cordRadius,
+      raisedRelief: cordRadius * 2.5,
+      terminalKnots: false,
+      radialSegments: 6,
+    }, material);
+    const start = interlaceCenterAt(interlace, 0);
+    const mid = interlaceCenterAt(interlace, 0.5);
+    const end = interlaceCenterAt(interlace, 1);
+    const halfPathLength = length * 0.5;
+    const minimumSafeHalfRun = cordRadius * 0.6;
+    const expectedRidgeHeight = Math.sqrt(halfPathLength * halfPathLength - minimumSafeHalfRun * minimumSafeHalfRun);
+    const backboneLength = measuredBackboneLength(interlace, 40);
+
+    expect(Math.abs(backboneLength - length)).toBeLessThan(1e-6);
+    expect(Math.abs(start.distanceTo(mid) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(mid.distanceTo(end) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(start.x - mid.x)).toBeLessThan(minimumSafeHalfRun + 1e-6);
+    expect(Math.abs(start.x - mid.x)).toBeGreaterThan(minimumSafeHalfRun - 1e-6);
+    expect(Math.abs(end.x - mid.x)).toBeLessThan(minimumSafeHalfRun + 1e-6);
+    expect(Math.abs(end.x - mid.x)).toBeGreaterThan(minimumSafeHalfRun - 1e-6);
+    expect(Math.abs(mid.y - expectedRidgeHeight)).toBeLessThan(1e-6);
+    expect(mid.y).toBeGreaterThan(0);
+    expect(mid.y).toBeLessThan(ridgeHeight);
+  });
+
+  it('falls back to a flat run only when the safe minimum half-run exceeds half the requested length', async () => {
+    const buildInterlace = await loadBuildInterlace();
+    const material = makeTrimMaterial();
+    const length = 0.06;
+    const cordRadius = 0.06;
+    const interlace = buildInterlace({
+      length,
+      variant: 'gableVerge',
+      ridgeHeight: 0.04,
+      period: cordRadius * 6,
+      cordRadius,
+      raisedRelief: cordRadius * 2.5,
+      terminalKnots: false,
+      radialSegments: 6,
+    }, material);
+    const start = interlaceCenterAt(interlace, 0);
+    const mid = interlaceCenterAt(interlace, 0.5);
+    const end = interlaceCenterAt(interlace, 1);
+    const halfPathLength = length * 0.5;
+
+    expect(Math.abs(measuredBackboneLength(interlace, 20) - length)).toBeLessThan(1e-6);
+    expect(Math.abs(start.distanceTo(mid) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(mid.distanceTo(end) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(start.x - mid.x)).toBeLessThan(halfPathLength + 1e-6);
+    expect(Math.abs(start.x - mid.x)).toBeGreaterThan(halfPathLength - 1e-6);
+    expect(Math.abs(end.x - mid.x)).toBeLessThan(halfPathLength + 1e-6);
+    expect(Math.abs(end.x - mid.x)).toBeGreaterThan(halfPathLength - 1e-6);
+    expect(Math.abs(mid.y)).toBeLessThan(1e-6);
+  });
+
+  it('preserves the requested ridge height when the exact half-run is already above the safe minimum', async () => {
+    const buildInterlace = await loadBuildInterlace();
+    const material = makeTrimMaterial();
+    const length = 0.19;
+    const cordRadius = 0.06;
+    const ridgeHeight = 0.0875;
+    const interlace = buildInterlace({
+      length,
+      variant: 'gableVerge',
+      ridgeHeight,
+      period: cordRadius * 6,
+      cordRadius,
+      raisedRelief: cordRadius * 2.5,
+      terminalKnots: false,
+      radialSegments: 6,
+    }, material);
+    const start = interlaceCenterAt(interlace, 0);
+    const mid = interlaceCenterAt(interlace, 0.5);
+    const end = interlaceCenterAt(interlace, 1);
+    const halfPathLength = length * 0.5;
+    const expectedHalfRun = Math.sqrt(halfPathLength * halfPathLength - ridgeHeight * ridgeHeight);
+
+    expect(Math.abs(measuredBackboneLength(interlace, 40) - length)).toBeLessThan(1e-6);
+    expect(Math.abs(start.distanceTo(mid) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(mid.distanceTo(end) - halfPathLength)).toBeLessThan(1e-6);
+    expect(Math.abs(mid.y - ridgeHeight)).toBeLessThan(1e-6);
+    expect(Math.abs(Math.abs(start.x - mid.x) - expectedHalfRun)).toBeLessThan(1e-6);
+    expect(Math.abs(Math.abs(end.x - mid.x) - expectedHalfRun)).toBeLessThan(1e-6);
   });
 
   it('is deterministic and terminates within the requested run length without splayed strand ends', async () => {
