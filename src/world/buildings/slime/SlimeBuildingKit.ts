@@ -8,6 +8,7 @@ import { buildDoorOpening, buildWindowOpening } from '@/world/buildings/kit/Open
 import {
   buildContainedGelVat,
   buildFacetedDripRun,
+  buildGelLensInfill,
   buildGelLipCourse,
   buildMembraneSheet,
   buildPuddleSkirtTiles,
@@ -21,7 +22,7 @@ import {
 import { applySlimeDoorOverlay } from '@/world/buildings/slime/SlimeOpeningOverlay';
 import type { SlimeMaterialSet } from '@/world/buildings/slime/SlimeMaterials';
 
-type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith';
+type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith' | 'villa' | 'chapel';
 type OpeningFace = SlimeKindBlueprintOpening['face'];
 
 type HouseDamageState = 'light-roof-loss' | 'broken-side-wall' | 'blocked-side-window' | 'exposed-rafters';
@@ -46,6 +47,13 @@ type InnVentState = 'retained-chimney' | 'capped-vent-pipe-cluster' | 'broken-ch
 type BlacksmithHeatSource = 'glowing-acid-vat' | 'mineral-hardening-crucible' | 'steam-vent-furnace' | 'fungal-spore-kiln';
 type BlacksmithFrontComposition = 'central-arch' | 'offset-arch-tank' | 'double-pier-opening' | 'half-collapsed-front';
 type BlacksmithVentSilhouette = 'tall-chimney' | 'louvred-vent-box' | 'pipe-cluster' | 'broken-chimney-gel-repair';
+
+type VillaMassing = 'rectangular' | 'l-wing' | 'porch-balcony' | 'broken-annex';
+type VillaElderExposure = 'roof-skylight' | 'broken-front-bay' | 'side-wall-breach' | 'courtyard-pool';
+type VillaGelMotif = 'ring-lip-courses' | 'coral-crown-finials' | 'membrane-skylight' | 'tendril-buttresses';
+
+type ChapelApseTreatment = 'oculus' | 'broken-rose-frame';
+type ChapelChoirTreatment = 'tendril-arcs' | 'gel-lens-screen';
 
 interface WeightedOption<T> {
   value: T;
@@ -102,6 +110,20 @@ interface BlacksmithVariation {
   workArchOffset: number;
 }
 
+interface VillaVariation {
+  massing: VillaMassing;
+  elderExposure: VillaElderExposure;
+  gelMotif: VillaGelMotif;
+  damageIntensity: number;
+}
+
+interface ChapelVariation {
+  apseTreatment: ChapelApseTreatment;
+  choirTreatment: ChapelChoirTreatment;
+  lancetCloggingRatio: number;
+  ruinIntensity: number;
+}
+
 interface BuildContext<TVariation> {
   dna: BuildingDNA;
   group: THREE.Group;
@@ -137,12 +159,16 @@ const TERRACED_BLUEPRINT_SALT = 0x4a20_0002;
 const SHOP_BLUEPRINT_SALT = 0x4b30_0003;
 const INN_BLUEPRINT_SALT = 0x4c40_0004;
 const BLACKSMITH_BLUEPRINT_SALT = 0x4d50_0005;
+const VILLA_BLUEPRINT_SALT = 0x4e60_0006;
+const CHAPEL_BLUEPRINT_SALT = 0x4f70_0007;
 
 const HOUSE_EXTRA_SALT = 0x5100_0001;
 const TERRACED_EXTRA_SALT = 0x5200_0002;
 const SHOP_EXTRA_SALT = 0x5300_0003;
 const INN_EXTRA_SALT = 0x5400_0004;
 const BLACKSMITH_EXTRA_SALT = 0x5500_0005;
+const VILLA_EXTRA_SALT = 0x5600_0006;
+const CHAPEL_EXTRA_SALT = 0x5700_0007;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -1131,6 +1157,135 @@ function createBlacksmithBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlue
       frontComposition,
       ventSilhouette,
       workArchOffset,
+    },
+  };
+}
+
+function createVillaBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprint; variation: VillaVariation } {
+  const rand = mulberry32(seedWithSalt(dna.seed, VILLA_BLUEPRINT_SALT));
+  const massing = pickWeighted(rand, [
+    { value: 'rectangular' as const, weight: 0.40 },
+    { value: 'l-wing' as const, weight: 0.30 },
+    { value: 'porch-balcony' as const, weight: 0.20 },
+    { value: 'broken-annex' as const, weight: 0.10 },
+  ]);
+  const elderExposure = pickWeighted(rand, [
+    { value: 'roof-skylight' as const, weight: 0.35 },
+    { value: 'broken-front-bay' as const, weight: 0.25 },
+    { value: 'side-wall-breach' as const, weight: 0.20 },
+    { value: 'courtyard-pool' as const, weight: 0.20 },
+  ]);
+  const gelMotif = pickWeighted(rand, [
+    { value: 'ring-lip-courses' as const, weight: 0.35 },
+    { value: 'coral-crown-finials' as const, weight: 0.25 },
+    { value: 'membrane-skylight' as const, weight: 0.25 },
+    { value: 'tendril-buttresses' as const, weight: 0.15 },
+  ]);
+  const damageRanges: Record<VillaMassing, readonly [number, number]> = {
+    rectangular: [0.30, 0.38],
+    'l-wing': [0.32, 0.42],
+    'porch-balcony': [0.30, 0.40],
+    'broken-annex': [0.40, 0.50],
+  };
+  const [damageMin, damageMax] = damageRanges[massing];
+  const damageIntensity = rollRange(rand, damageMin, damageMax);
+
+  const moduleWeights: ModuleWeights = {
+    'gel-lip-course': 0.55,
+    'membrane-sheet': gelMotif === 'membrane-skylight' ? 0.55 : 0.28,
+    'tendril-bridge': gelMotif === 'tendril-buttresses' ? 0.5 : 0.24,
+    'faceted-drip-run': 0.26,
+    'gel-lens-infill': 0.30,
+    'puddle-skirt-tiles': 0.5,
+    'contained-gel-vat': 0.28,
+  };
+
+  const propWeights: PropWeights = {
+    rubble: clamp(0.28 + damageIntensity * 0.6, 0.32, 0.55),
+    'contained-gel-vat': 0.3,
+  };
+
+  const openingSchedule: SlimeKindBlueprintOpening[] = [
+    { kind: 'door', face: 'front', offset: 0, baseY: 0, width: 1.4, straightHeight: 1.65, pointHeight: 0.65, cloggingRatio: 0.05 },
+    { kind: 'window', face: 'front', offset: -2.15, baseY: 0.82, width: 0.78, straightHeight: 0.8, pointHeight: 0.26, cloggingRatio: 0.35 },
+    { kind: 'window', face: 'front', offset: -1.05, baseY: 0.82, width: 0.78, straightHeight: 0.8, pointHeight: 0.26, cloggingRatio: 0.35 },
+    { kind: 'window', face: 'front', offset: 1.05, baseY: 0.82, width: 0.78, straightHeight: 0.8, pointHeight: 0.26, cloggingRatio: 0.35 },
+    { kind: 'window', face: 'front', offset: 2.15, baseY: 0.82, width: 0.78, straightHeight: 0.8, pointHeight: 0.26, cloggingRatio: 0.35 },
+    { kind: 'window', face: 'front', offset: -2.35, baseY: FLOOR_HEIGHT + 0.7, width: 0.65, straightHeight: 0.72, pointHeight: 0.24, cloggingRatio: 0.4 },
+    { kind: 'window', face: 'front', offset: -1.15, baseY: FLOOR_HEIGHT + 0.7, width: 0.65, straightHeight: 0.72, pointHeight: 0.24, cloggingRatio: 0.4 },
+    { kind: 'window', face: 'front', offset: 0, baseY: FLOOR_HEIGHT + 0.7, width: 0.65, straightHeight: 0.72, pointHeight: 0.24, cloggingRatio: 0.4 },
+    { kind: 'window', face: 'front', offset: 1.15, baseY: FLOOR_HEIGHT + 0.7, width: 0.65, straightHeight: 0.72, pointHeight: 0.24, cloggingRatio: 0.4 },
+    { kind: 'window', face: 'front', offset: 2.35, baseY: FLOOR_HEIGHT + 0.7, width: 0.65, straightHeight: 0.72, pointHeight: 0.24, cloggingRatio: 0.4 },
+  ];
+
+  return {
+    blueprint: {
+      footprint: { width: 7, depth: 5, skirtAllowance: 0.35 },
+      floors: 3,
+      openingSchedule,
+      ruinIntensity: damageIntensity,
+      moduleWeights,
+      propWeights,
+    },
+    variation: {
+      massing,
+      elderExposure,
+      gelMotif,
+      damageIntensity,
+    },
+  };
+}
+
+function createChapelBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprint; variation: ChapelVariation } {
+  const rand = mulberry32(seedWithSalt(dna.seed, CHAPEL_BLUEPRINT_SALT));
+  const apseTreatment = pickWeighted(rand, [
+    { value: 'oculus' as const, weight: 0.55 },
+    { value: 'broken-rose-frame' as const, weight: 0.45 },
+  ]);
+  const choirTreatment = pickWeighted(rand, [
+    { value: 'tendril-arcs' as const, weight: 0.6 },
+    { value: 'gel-lens-screen' as const, weight: 0.4 },
+  ]);
+  const lancetCloggingRatio = rollRange(rand, 0.4, 0.7);
+  const ruinIntensity = rollRange(rand, 0.45, 0.65);
+
+  const moduleWeights: ModuleWeights = {
+    'gel-lip-course': 0.6,
+    'membrane-sheet': 0.3,
+    'tendril-bridge': choirTreatment === 'tendril-arcs' ? 0.55 : 0.25,
+    'faceted-drip-run': 0.3,
+    'gel-lens-infill': choirTreatment === 'gel-lens-screen' ? 0.55 : 0.35,
+    'puddle-skirt-tiles': 0.65,
+    'contained-gel-vat': 0.2,
+  };
+
+  const propWeights: PropWeights = {
+    rubble: clamp(0.35 + ruinIntensity * 0.4, 0.4, 0.6),
+    'contained-gel-vat': 0.15,
+  };
+
+  const openingSchedule: SlimeKindBlueprintOpening[] = [
+    { kind: 'door', face: 'front', offset: 0, baseY: 0, width: 1.0, straightHeight: 1.55, pointHeight: 0.55, cloggingRatio: 0.08 },
+    { kind: 'window', face: 'left', offset: -1.4, baseY: 1.35, width: 0.55, straightHeight: 1.15, pointHeight: 0.2, cloggingRatio: lancetCloggingRatio },
+    { kind: 'window', face: 'left', offset: 1.4, baseY: 1.35, width: 0.55, straightHeight: 1.15, pointHeight: 0.2, cloggingRatio: lancetCloggingRatio },
+    { kind: 'window', face: 'right', offset: -1.4, baseY: 1.35, width: 0.55, straightHeight: 1.15, pointHeight: 0.2, cloggingRatio: lancetCloggingRatio },
+    { kind: 'window', face: 'right', offset: 1.4, baseY: 1.35, width: 0.55, straightHeight: 1.15, pointHeight: 0.2, cloggingRatio: lancetCloggingRatio },
+  ];
+
+  return {
+    blueprint: {
+      footprint: { width: 4, depth: 8, skirtAllowance: 0.3 },
+      floors: 1,
+      openingSchedule,
+      ruinIntensity,
+      moduleWeights,
+      propWeights,
+    },
+    variation: {
+      apseTreatment,
+      choirTreatment,
+      lancetCloggingRatio,
+      ruinIntensity,
     },
   };
 }
@@ -2882,6 +3037,307 @@ function addBlacksmithExtras(context: BuildContext<BlacksmithVariation>): void {
   context.group.add(buildBlacksmithVent(context, 'right', seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x55)));
 }
 
+function buildVillaElderRing(context: BuildContext<VillaVariation>, seed: number): THREE.Group {
+  const ring = new THREE.Group();
+  ring.name = 'villa-elder-ring';
+  const box = context.hostBox;
+  const doorOpening = context.blueprint.openingSchedule.find(o => o.kind === 'door' && o.face === 'front');
+  if (!doorOpening) return ring;
+
+  const anchor = openingAnchor(box, doorOpening);
+  const halfWidth = doorOpening.width * 0.5 + 0.3;
+  const halfHeight = doorOpening.straightHeight * 0.5 + doorOpening.pointHeight + 0.35;
+  const centerY = anchor.y + doorOpening.straightHeight * 0.5;
+  const z = anchor.z + 0.04;
+
+  [0.32, 0.58].forEach((offset, ringIndex) => {
+    const hw = halfWidth + offset;
+    const hh = halfHeight + offset * 0.55;
+    const segments: Array<[THREE.Vector3, THREE.Vector3]> = [
+      [new THREE.Vector3(anchor.x - hw, centerY - hh, z), new THREE.Vector3(anchor.x + hw, centerY - hh, z)],
+      [new THREE.Vector3(anchor.x + hw, centerY - hh, z), new THREE.Vector3(anchor.x + hw, centerY + hh, z)],
+      [new THREE.Vector3(anchor.x + hw, centerY + hh, z), new THREE.Vector3(anchor.x - hw, centerY + hh, z)],
+      [new THREE.Vector3(anchor.x - hw, centerY + hh, z), new THREE.Vector3(anchor.x - hw, centerY - hh, z)],
+    ];
+    segments.forEach(([start, end], segIndex) => {
+      const seg = buildGelLipCourse({
+        seed: seedWithSalt(seed, (ringIndex << 4) | segIndex),
+        start,
+        end,
+        outwardNormal: new THREE.Vector3(0, 0, 1),
+        material: context.materials.hardenedGel,
+        plateCount: 4,
+      });
+      seg.name = `villa-elder-ring-${ringIndex}-${segIndex}`;
+      ring.add(seg);
+    });
+  });
+
+  return ring;
+}
+
+function buildVillaCoralCrown(context: BuildContext<VillaVariation>, seed: number): THREE.Group {
+  const crown = new THREE.Group();
+  crown.name = 'villa-coral-crown';
+  const rand = mulberry32(seed);
+  const box = context.hostBox;
+  const roofY = box.max.y;
+  const corners = [
+    new THREE.Vector3(box.min.x + 0.4, roofY, box.min.z + 0.4),
+    new THREE.Vector3(box.max.x - 0.4, roofY, box.min.z + 0.4),
+    new THREE.Vector3(box.min.x + 0.4, roofY, box.max.z - 0.4),
+    new THREE.Vector3(box.max.x - 0.4, roofY, box.max.z - 0.4),
+  ];
+
+  corners.forEach((corner, cornerIndex) => {
+    const finial = new THREE.Group();
+    finial.name = `villa-coral-crown-finial-${cornerIndex}`;
+    const branchCount = 3 + Math.floor(rand() * 2);
+    for (let index = 0; index < branchCount; index++) {
+      const height = 0.12 + rand() * 0.14;
+      const width = 0.05 + rand() * 0.04;
+      const branch = createFacetedPlate(width, width, height, context.materials.hardenedGel, `coral-branch-${index}`, 5);
+      branch.position.set(
+        corner.x + (rand() - 0.5) * 0.14,
+        corner.y + height * 0.5 + index * 0.02,
+        corner.z + (rand() - 0.5) * 0.14,
+      );
+      branch.rotation.z = (rand() - 0.5) * 0.5;
+      branch.rotation.x = (rand() - 0.5) * 0.3;
+      finial.add(branch);
+    }
+    crown.add(finial);
+  });
+
+  return crown;
+}
+
+function buildVillaGelMotifExtra(context: BuildContext<VillaVariation>, seed: number): THREE.Group | null {
+  const box = context.hostBox;
+  if (context.variation.gelMotif === 'membrane-skylight') {
+    const cx = (box.min.x + box.max.x) * 0.5;
+    const cz = (box.min.z + box.max.z) * 0.5;
+    const roofY = box.max.y;
+    const sheet = buildMembraneSheet({
+      seed,
+      corners: [
+        new THREE.Vector3(cx - 0.9, roofY, cz - 0.7),
+        new THREE.Vector3(cx + 0.9, roofY, cz - 0.7),
+        new THREE.Vector3(cx + 0.9, roofY, cz + 0.7),
+        new THREE.Vector3(cx - 0.9, roofY, cz + 0.7),
+      ],
+      membraneMaterial: context.materials.containedGel,
+      rimMaterial: context.materials.hardenedGel,
+      ribMaterial: context.materials.gelDark,
+      sag: 0.1,
+      ribCount: 4,
+    });
+    sheet.name = 'villa-elder-skylight';
+    return sheet;
+  }
+
+  if (context.variation.gelMotif === 'tendril-buttresses') {
+    const group = new THREE.Group();
+    group.name = 'villa-tendril-buttresses';
+    const groundY = groundYForBox(box);
+    (['left', 'right'] as const).forEach((side, index) => {
+      const x = side === 'left' ? box.min.x : box.max.x;
+      const bridge = buildTendrilBridge({
+        seed: seedWithSalt(seed, index),
+        start: new THREE.Vector3(x, groundY, box.min.z + 0.6),
+        end: new THREE.Vector3(x, groundY + (box.max.y - groundY) * 0.6, box.min.z + 0.6),
+        material: context.materials.gel,
+        anchorMaterial: context.materials.hardenedGel,
+      });
+      bridge.name = `villa-tendril-buttress-${side}`;
+      group.add(bridge);
+    });
+    return group;
+  }
+
+  return null;
+}
+
+function addVillaExtras(context: BuildContext<VillaVariation>): void {
+  context.group.add(buildVillaElderRing(context, seedWithSalt(context.dna.seed, VILLA_EXTRA_SALT)));
+  context.group.add(buildVillaCoralCrown(context, seedWithSalt(context.dna.seed, VILLA_EXTRA_SALT ^ 0x11)));
+  const motif = buildVillaGelMotifExtra(context, seedWithSalt(context.dna.seed, VILLA_EXTRA_SALT ^ 0x22));
+  if (motif) context.group.add(motif);
+}
+
+function buildChapelLancets(context: BuildContext<ChapelVariation>, seed: number): THREE.Group[] {
+  const windows = context.blueprint.openingSchedule.filter(opening => opening.kind === 'window');
+  return windows.map((opening, index) => {
+    const lancet = buildWindowOpening({
+      width: opening.width,
+      straightHeight: opening.straightHeight,
+      pointHeight: opening.pointHeight,
+      recessDepth: 0.16,
+      frameWidth: 0.08,
+      frameProud: 0.03,
+      wallZ: 0,
+      stoneMaterial: context.materials.hardenedGel,
+      glazingMaterial: context.materials.containedGel,
+      recessMaterial: context.materials.wetStain,
+      divisionStyle: 'vertical',
+      openingShape: 'arch',
+    });
+    lancet.name = `chapel-lancet-${index}`;
+    const anchor = openingAnchor(context.hostBox, opening);
+    lancet.position.copy(anchor);
+    lancet.rotation.y = faceRotationY(opening.face);
+    const rand = mulberry32(seedWithSalt(seed, index));
+    lancet.rotation.y += (rand() - 0.5) * 0.01;
+    lancet.userData.overlayRole = 'chapel-lancet';
+    return lancet;
+  });
+}
+
+function buildChapelEntrance(context: BuildContext<ChapelVariation>, seed: number): THREE.Group {
+  const doorSpec = context.blueprint.openingSchedule.find(opening => opening.kind === 'door');
+  const entrance = new THREE.Group();
+  entrance.name = 'chapel-entrance';
+  if (!doorSpec) return entrance;
+
+  const door = buildDoorOpening({
+    width: doorSpec.width,
+    straightHeight: doorSpec.straightHeight,
+    pointHeight: doorSpec.pointHeight,
+    recessDepth: 0.2,
+    frameWidth: 0.1,
+    frameProud: 0.05,
+    wallZ: 0,
+    stoneMaterial: context.materials.hardenedGel,
+    recessMaterial: context.materials.wetStain,
+    woodMaterial: context.materials.gelDark,
+  });
+  door.name = 'chapel-entrance-door';
+  const anchor = openingAnchor(context.hostBox, doorSpec);
+  door.position.copy(anchor);
+  door.rotation.y = faceRotationY(doorSpec.face);
+  entrance.add(door);
+  entrance.userData.overlayRole = 'chapel-entrance';
+  void seed;
+  return entrance;
+}
+
+function buildChapelPulsePool(context: BuildContext<ChapelVariation>, seed: number): THREE.Group {
+  const pool = new THREE.Group();
+  pool.name = 'chapel-pulse-pool';
+  const box = context.hostBox;
+  const groundY = groundYForBox(box);
+  const cx = (box.min.x + box.max.x) * 0.5;
+  const z = box.min.z + 0.9;
+  const halfW = 1.1;
+  const halfD = 0.85;
+
+  const rim = new THREE.Group();
+  rim.name = 'chapel-pulse-pool-rim';
+  const segments: Array<[THREE.Vector3, THREE.Vector3, THREE.Vector3]> = [
+    [new THREE.Vector3(cx - halfW, groundY + 0.14, z - halfD), new THREE.Vector3(cx + halfW, groundY + 0.14, z - halfD), new THREE.Vector3(0, 0, -1)],
+    [new THREE.Vector3(cx + halfW, groundY + 0.14, z - halfD), new THREE.Vector3(cx + halfW, groundY + 0.14, z + halfD), new THREE.Vector3(1, 0, 0)],
+    [new THREE.Vector3(cx + halfW, groundY + 0.14, z + halfD), new THREE.Vector3(cx - halfW, groundY + 0.14, z + halfD), new THREE.Vector3(0, 0, 1)],
+    [new THREE.Vector3(cx - halfW, groundY + 0.14, z + halfD), new THREE.Vector3(cx - halfW, groundY + 0.14, z - halfD), new THREE.Vector3(-1, 0, 0)],
+  ];
+  segments.forEach(([start, end, normal], index) => {
+    const seg = buildGelLipCourse({
+      seed: seedWithSalt(seed, index),
+      start,
+      end,
+      outwardNormal: normal,
+      material: context.materials.hardenedGel,
+      plateCount: 5,
+    });
+    seg.name = `chapel-pulse-pool-rim-segment-${index}`;
+    rim.add(seg);
+  });
+  pool.add(rim);
+
+  const basin = buildPuddleSkirtTiles({
+    seed: seedWithSalt(seed, 0x10),
+    center: new THREE.Vector3(cx, groundY + 0.01, z),
+    radiusX: halfW * 0.85,
+    radiusZ: halfD * 0.85,
+    material: context.materials.containedGel,
+    tileCount: 8,
+  });
+  basin.name = 'chapel-pulse-pool-basin';
+  pool.add(basin);
+
+  const candleCount = 3;
+  for (let index = 0; index < candleCount; index++) {
+    const t = index / (candleCount - 1);
+    const cup = buildContainedGelVat({
+      seed: seedWithSalt(seed, 0x20 + index),
+      radius: 0.09,
+      height: 0.2,
+      frameMaterial: context.materials.hardenedGel,
+      bandMaterial: context.materials.gelDark,
+      gelMaterial: context.materials.gelGlow,
+      baseMaterial: context.materials.wetStain,
+      bandCount: 1,
+    });
+    cup.name = `chapel-pulse-pool-candle-${index}`;
+    cup.position.set(cx - halfW + t * halfW * 2, groundY + 0.14, z - halfD + 0.06);
+    cup.scale.setScalar(0.6);
+    pool.add(cup);
+  }
+
+  return pool;
+}
+
+function buildChapelChoirScreen(context: BuildContext<ChapelVariation>, seed: number): THREE.Group {
+  const screen = new THREE.Group();
+  screen.name = 'chapel-choir-screen';
+  const box = context.hostBox;
+  const groundY = groundYForBox(box);
+  const cx = (box.min.x + box.max.x) * 0.5;
+  const archZ = box.min.z + 1.8;
+
+  if (context.variation.choirTreatment === 'tendril-arcs') {
+    for (let index = 0; index < 2; index++) {
+      const x = cx + (index === 0 ? -0.9 : 0.9);
+      const arc = buildTendrilBridge({
+        seed: seedWithSalt(seed, index),
+        start: new THREE.Vector3(x, groundY + 0.1, archZ - 0.5),
+        end: new THREE.Vector3(x, groundY + 0.1, archZ + 0.5),
+        material: context.materials.gel,
+        anchorMaterial: context.materials.hardenedGel,
+        midRadius: 0.05,
+      });
+      arc.name = `chapel-choir-screen-arc-${index}`;
+      screen.add(arc);
+    }
+  } else {
+    const lens = buildGelLensInfill({
+      seed,
+      width: 1.6,
+      straightHeight: 1.0,
+      pointHeight: 0.3,
+      material: context.materials.containedGel,
+      rimMaterial: context.materials.hardenedGel,
+      ribMaterial: context.materials.gelDark,
+      openingShape: 'arch',
+      insetDepth: 0,
+    });
+    lens.name = 'chapel-choir-screen-lens';
+    lens.position.set(cx, groundY + 1.0, archZ);
+    screen.add(lens);
+  }
+
+  return screen;
+}
+
+function addChapelExtras(context: BuildContext<ChapelVariation>): void {
+  const seed = context.dna.seed;
+  for (const lancet of buildChapelLancets(context, seedWithSalt(seed, CHAPEL_EXTRA_SALT))) {
+    context.group.add(lancet);
+  }
+  context.group.add(buildChapelEntrance(context, seedWithSalt(seed, CHAPEL_EXTRA_SALT ^ 0x11)));
+  context.group.add(buildChapelPulsePool(context, seedWithSalt(seed, CHAPEL_EXTRA_SALT ^ 0x22)));
+  context.group.add(buildChapelChoirScreen(context, seedWithSalt(seed, CHAPEL_EXTRA_SALT ^ 0x33)));
+}
+
 export function buildSlimeHouse(dna: BuildingDNA): THREE.Group {
   const normalized = normalizeDna(dna, 'house', 'small', 1, 'none');
   const { blueprint, variation } = createHouseBlueprint(normalized);
@@ -2919,5 +3375,21 @@ export function buildSlimeBlacksmith(dna: BuildingDNA): THREE.Group {
   const { blueprint, variation } = createBlacksmithBlueprint(normalized);
   const context = makeContext(normalized, blueprint, variation, 'blacksmith');
   addBlacksmithExtras(context);
+  return context.group;
+}
+
+export function buildSlimeVilla(dna: BuildingDNA): THREE.Group {
+  const normalized = normalizeDna(dna, 'villa', 'large', 3, 'none');
+  const { blueprint, variation } = createVillaBlueprint(normalized);
+  const context = makeContext(normalized, blueprint, variation, 'villa');
+  addVillaExtras(context);
+  return context.group;
+}
+
+export function buildSlimeChapel(dna: BuildingDNA): THREE.Group {
+  const normalized = normalizeDna(dna, 'chapel', 'medium', 1, 'none');
+  const { blueprint, variation } = createChapelBlueprint(normalized);
+  const context = makeContext(normalized, blueprint, variation, 'chapel');
+  addChapelExtras(context);
   return context.group;
 }
