@@ -257,6 +257,7 @@ function createSaggingMembraneGeometry(
 ): THREE.BufferGeometry {
   const [topLeft, topRight, bottomRight, bottomLeft] = corners;
   const positions: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
   const segmentsX = 6;
   const segmentsY = 4;
@@ -272,6 +273,17 @@ function createSaggingMembraneGeometry(
       point.addScaledVector(WORLD_UP, -sag * edgeHold);
       point.addScaledVector(outwardNormal, 0.008 * edgeHold);
       positions.push(point.x, point.y, point.z);
+      // Reuse the grid's own u/v parametrization directly as the uv
+      // attribute -- required so this geometry merges cleanly with any
+      // other uv-having geometry it shares a material with (e.g.
+      // buildGelLensInfill's ExtrudeGeometry-based gel-lens-pane, both
+      // commonly wired to the same containedGel material). A missing uv
+      // attribute here caused mergeGeometries() (called by
+      // mergeGroupMeshesByMaterial(), see MeshMergeUtils.ts) to fail
+      // silently, dropping the ENTIRE material bucket including
+      // unrelated meshes that DID merge fine on their own -- the same
+      // class of bug already caught once for StoneTowerFloorCap.ts.
+      uvs.push(u, v);
     }
   }
 
@@ -287,6 +299,7 @@ function createSaggingMembraneGeometry(
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();

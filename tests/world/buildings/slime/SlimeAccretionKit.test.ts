@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
+import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
 import { createSlimeMaterialSet } from '@/world/buildings/slime/SlimeMaterials';
 import {
   buildGelLipCourse,
@@ -266,5 +267,83 @@ describe('SlimeAccretionKit', () => {
     expect(new Set([first, middle, last].map(value => value.toFixed(3))).size).toBeGreaterThan(1);
     expect(middle).toBeGreaterThan(first + 0.005);
     expect(middle).toBeGreaterThan(last + 0.005);
+  });
+});
+
+// Regression guard (found while validating slime's Task 16 Settlement Lab
+// showcase, docs/superpowers/plans/2026-09-04-slime-buildings.md): the
+// sagging membrane panel geometry (createSaggingMembraneGeometry, a hand-
+// built BufferGeometry) had no `uv` attribute, so whenever a
+// 'membrane-panel' mesh shared a material bucket with any other uv-having
+// mesh using the same membraneMaterial (e.g. buildGelLensInfill's
+// ExtrudeGeometry-based 'gel-lens-pane', which THREE.ExtrudeGeometry
+// generates uv for by default -- both commonly wired to
+// materials.containedGel in SlimeOccupiedShell.ts/SlimeBuildingKit.ts),
+// mergeGeometries() (called by SettlementRenderer.ts via
+// mergeGroupMeshesByMaterial() on every real settlement building) failed
+// SILENTLY and dropped the ENTIRE material bucket with nothing left in its
+// place -- the exact same class of bug already caught once for
+// StoneTowerFloorCap.ts (see that file's own regression test for the
+// precedent this mirrors).
+describe('membrane sheet geometry — uv attribute regression guard', () => {
+  it('the membrane-panel mesh has a uv attribute (2 components per vertex) matching every other kit primitive', () => {
+    const materials = makeMaterials();
+    const membrane = buildMembraneSheet({
+      seed: 37,
+      corners: [
+        new THREE.Vector3(-0.8, 1.05, 0),
+        new THREE.Vector3(0.8, 1.05, 0),
+        new THREE.Vector3(0.7, 0.05, 0),
+        new THREE.Vector3(-0.7, 0.05, 0),
+      ],
+      membraneMaterial: materials.containedGel,
+      rimMaterial: materials.hardenedGel,
+      ribMaterial: materials.gelDark,
+    });
+    const panel = membrane.getObjectByName('membrane-panel') as THREE.Mesh;
+    expect(panel).toBeInstanceOf(THREE.Mesh);
+    const uv = panel.geometry.attributes.uv;
+    expect(uv).toBeDefined();
+    expect(uv.itemSize).toBe(2);
+    expect(uv.count).toBe(panel.geometry.attributes.position.count);
+  });
+
+  it('merges cleanly via mergeGroupMeshesByMaterial() alongside uv-having geometry sharing the same material (regression guard)', () => {
+    const materials = makeMaterials();
+    const g = new THREE.Group();
+    const membrane = buildMembraneSheet({
+      seed: 37,
+      corners: [
+        new THREE.Vector3(-0.8, 1.05, 0),
+        new THREE.Vector3(0.8, 1.05, 0),
+        new THREE.Vector3(0.7, 0.05, 0),
+        new THREE.Vector3(-0.7, 0.05, 0),
+      ],
+      membraneMaterial: materials.containedGel,
+      rimMaterial: materials.hardenedGel,
+      ribMaterial: materials.gelDark,
+    });
+    g.add(membrane);
+    // A standard uv-having primitive sharing the SAME membraneMaterial
+    // reference, mirroring gel-lens-pane's ExtrudeGeometry sharing
+    // containedGel with membrane-panel in real slime buildings.
+    const lensPane = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.05), materials.containedGel);
+    g.add(lensPane);
+
+    const errors: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(String(args[0])); };
+    try {
+      mergeGroupMeshesByMaterial(g);
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(errors).toEqual([]);
+    const meshesUsingContainedGel = collectMeshes(g).filter(m => m.material === materials.containedGel);
+    expect(meshesUsingContainedGel.length).toBeGreaterThan(0);
+    for (const mesh of meshesUsingContainedGel) {
+      expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+    }
   });
 });

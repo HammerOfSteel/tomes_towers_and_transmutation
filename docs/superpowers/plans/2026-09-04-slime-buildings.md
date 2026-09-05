@@ -473,6 +473,20 @@ occurred when the damage roll is non-trivial).
 
 ### Task 17: Delete superseded blob builders as dead code
 
+**STATUS: merged into Task 15's commit (`d3e5f4c`), not a separate step.**
+Deviation note: `tsconfig.json` has `noUnusedLocals: true`, so the moment
+Task 15's registry rewire stopped calling the legacy
+`buildSlimeVilla`/`buildSlimeChapel`/`buildSlimeShop` (and their
+`buildSlimeBlobBase`/`slimeBlobMaterial` helpers), they became genuinely
+unused top-level declarations and `tsc --noEmit` immediately reported 3
+new errors above the established 146-error baseline. Leaving them in
+place for a whole extra task cycle (as originally planned) would have
+meant either accepting a transient regression or carrying a `// @ts-
+ignore`-style workaround, neither of which is better than just deleting
+already-fully-dead code in the same commit that made it dead. Confirmed
+via repo-wide grep before deleting that none of the 5 legacy names had
+any other callers.
+
 **Goal:** Remove the old slime blob architecture path so it cannot reappear in screenshots.
 
 **Files:**
