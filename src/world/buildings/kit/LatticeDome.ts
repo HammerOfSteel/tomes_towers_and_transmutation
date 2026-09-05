@@ -41,6 +41,15 @@ interface LatticeDomeLayout {
   seed: number;
 }
 
+interface CrossingGeometry {
+  t: number;
+  familyBRibIndex: number;
+  familyAPoint: THREE.Vector3;
+  familyBPoint: THREE.Vector3;
+  familyATangent: THREE.Vector3;
+  tubeRadius: number;
+}
+
 const DEFAULT_RIBS_PER_FAMILY = 8;
 const DEFAULT_SEED = 0x1A77_1CE0;
 const HELIX_TURNS = 1;
@@ -230,6 +239,15 @@ function ribPoint(layout: LatticeDomeLayout, family: FamilySpec, ribIndex: numbe
   return domePoint(layout, ribTheta(layout, family, ribIndex, t), t, family.radialOffset);
 }
 
+function ribTangent(layout: LatticeDomeLayout, family: FamilySpec, ribIndex: number, t: number): THREE.Vector3 {
+  const delta = Math.max(1e-4, Math.min(1e-3, 0.5 / layout.crossingParameters.length));
+  const tStart = Math.max(0, t - delta);
+  const tEnd = Math.min(1, t + delta);
+  const tangent = ribPoint(layout, family, ribIndex, tEnd).sub(ribPoint(layout, family, ribIndex, tStart));
+  if (tangent.lengthSq() <= EPSILON) return new THREE.Vector3(0, 1, 0);
+  return tangent.normalize();
+}
+
 function ribTubeRadiusAt(layout: LatticeDomeLayout, t: number): number {
   return THREE.MathUtils.lerp(layout.tubeRadius, layout.apexTubeRadius, Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.9));
 }
@@ -242,6 +260,26 @@ function adjacentCrossingSegmentIndices(crossingIndex: number): readonly [number
   return [crossingIndex, crossingIndex + 1];
 }
 
+function crossingGeometry(
+  layout: LatticeDomeLayout,
+  familyA: FamilySpec,
+  familyB: FamilySpec,
+  familyARibIndex: number,
+  crossingIndex: number,
+): CrossingGeometry {
+  const t = layout.crossingParameters[crossingIndex]!;
+  const familyBRibIndex = familyBRibIndexAtCrossing(layout, familyARibIndex, crossingIndex);
+
+  return {
+    t,
+    familyBRibIndex,
+    familyAPoint: ribPoint(layout, familyA, familyARibIndex, t),
+    familyBPoint: ribPoint(layout, familyB, familyBRibIndex, t),
+    familyATangent: ribTangent(layout, familyA, familyARibIndex, t),
+    tubeRadius: ribTubeRadiusAt(layout, t),
+  };
+}
+
 function crossingHasAllAdjacentSegments(
   layout: LatticeDomeLayout,
   familyARibIndex: number,
@@ -252,6 +290,17 @@ function crossingHasAllAdjacentSegments(
   return adjacentCrossingSegmentIndices(crossingIndex).every(segmentIndex => (
     !brokenSegmentIds.has(segmentId('a', familyARibIndex, segmentIndex))
     && !brokenSegmentIds.has(segmentId('b', familyBRibIndex, segmentIndex))
+  ));
+}
+
+function crossingHasSupportingSegment(
+  family: FamilySpec,
+  ribIndex: number,
+  crossingIndex: number,
+  brokenSegmentIds: Set<string>,
+): boolean {
+  return adjacentCrossingSegmentIndices(crossingIndex).some(segmentIndex => (
+    !brokenSegmentIds.has(segmentId(family.key, ribIndex, segmentIndex))
   ));
 }
 
@@ -348,21 +397,18 @@ function createKnuckleGroup(
       const t = layout.crossingParameters[crossingIndex]!;
       if (!crossingHasAllAdjacentSegments(layout, ribIndex, crossingIndex, brokenSegmentIds)) continue;
 
-      const familyBRibIndex = familyBRibIndexAtCrossing(layout, ribIndex, crossingIndex);
-      const familyAPoint = ribPoint(layout, familyA, ribIndex, t);
-      const familyBPoint = ribPoint(layout, familyB, familyBRibIndex, t);
-      const tubeRadius = ribTubeRadiusAt(layout, t);
-      midpoint.copy(familyAPoint).add(familyBPoint).multiplyScalar(0.5);
+      const crossing = crossingGeometry(layout, familyA, familyB, ribIndex, crossingIndex);
+      midpoint.copy(crossing.familyAPoint).add(crossing.familyBPoint).multiplyScalar(0.5);
       const contactReach = Math.max(
-        midpoint.distanceTo(familyAPoint),
-        midpoint.distanceTo(familyBPoint),
-      ) + tubeRadius;
+        midpoint.distanceTo(crossing.familyAPoint),
+        midpoint.distanceTo(crossing.familyBPoint),
+      ) + crossing.tubeRadius;
       const knuckleRadius = contactReach / ICOSAHEDRON_INSCRIBED_RADIUS_RATIO;
       const mesh = createMesh(geometry, material, `knuckle-${ribIndex}-${crossingIndex}`, {
         role: 'crossing-knuckle',
         ribIndex,
         crossingIndex,
-        familyBRibIndex,
+        familyBRibIndex: crossing.familyBRibIndex,
         crossingT: t,
         contactReach,
         knuckleRadius,
@@ -387,7 +433,13 @@ function buildVineHookGeometry(anchor: THREE.Vector3, outward: THREE.Vector3, si
   return buildTaperedTubeGeometry(points, rodRadius, rodRadius * 0.8, 8);
 }
 
-function createVineHookGroup(layout: LatticeDomeLayout, material: THREE.Material): THREE.Group | null {
+function createVineHookGroup(
+  layout: LatticeDomeLayout,
+  familyA: FamilySpec,
+  familyB: FamilySpec,
+  material: THREE.Material,
+  brokenSegmentIds: Set<string>,
+): THREE.Group | null {
   if (!layout.vineHooks) return null;
 
   const group = new THREE.Group();
@@ -401,12 +453,17 @@ function createVineHookGroup(layout: LatticeDomeLayout, material: THREE.Material
     for (let crossingIndex = 0; crossingIndex < layout.crossingParameters.length; crossingIndex++) {
       const rand = pieceRandom(layout.seed, 0x5649_4E45, ribIndex, crossingIndex);
       if (rand() >= layout.vineHookDensity) continue;
+      if (!crossingHasSupportingSegment(familyA, ribIndex, crossingIndex, brokenSegmentIds)) continue;
 
-      const t = layout.crossingParameters[crossingIndex]!;
-      const theta = layout.stepAngle * ribIndex + layout.twistAngle * t;
-      const anchor = domePoint(layout, theta, t, layout.halfWeaveOffset * 0.25);
-      const outward = new THREE.Vector3(anchor.x, 0, anchor.z).normalize();
+      const crossing = crossingGeometry(layout, familyA, familyB, ribIndex, crossingIndex);
+      const anchor = crossing.familyAPoint;
+      const outward = new THREE.Vector3(anchor.x, 0, anchor.z);
+      outward.addScaledVector(crossing.familyATangent, -outward.dot(crossing.familyATangent));
+      if (outward.lengthSq() <= EPSILON) {
+        outward.crossVectors(new THREE.Vector3(0, 1, 0), crossing.familyATangent);
+      }
       if (outward.lengthSq() <= EPSILON) continue;
+      outward.normalize();
 
       const geometry = buildVineHookGeometry(
         anchor.clone().addScaledVector(outward, layout.tubeRadius * 0.35),
@@ -465,7 +522,7 @@ export function buildLatticeDome(options: LatticeDomeOptions, material: THREE.Ma
 
   dome.add(createKnuckleGroup(layout, familyA, familyB, material, brokenSegmentIds));
 
-  const vineHooks = createVineHookGroup(layout, material);
+  const vineHooks = createVineHookGroup(layout, familyA, familyB, material, brokenSegmentIds);
   if (vineHooks) dome.add(vineHooks);
 
   return dome;

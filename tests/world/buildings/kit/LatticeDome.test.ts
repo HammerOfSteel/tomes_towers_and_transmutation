@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
+import { mulberry32 } from '../../../../src/core/prng';
 
 interface LatticeDomeOptions {
   radius: number;
@@ -12,6 +13,11 @@ interface LatticeDomeOptions {
   brokenSegmentDensity?: number;
   seed?: number;
 }
+
+const DEFAULT_SEED = 0x1A77_1CE0;
+const DEFAULT_VINE_HOOK_DENSITY = 0.16;
+const EPSILON = 1e-6;
+const VINE_HOOK_TAG = 0x5649_4E45;
 
 async function loadLatticeDomeModule() {
   return import('../../../../src/world/buildings/kit/LatticeDome');
@@ -220,6 +226,20 @@ function clampPositive(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value! > 0 ? value! : fallback;
 }
 
+function clampUnit(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return THREE.MathUtils.clamp(value!, 0, 1);
+}
+
+function pieceRandom(seed: number, ...tags: number[]): () => number {
+  let hashed = seed >>> 0;
+  for (const tag of tags) {
+    hashed = (hashed ^ Math.imul((tag + 1) >>> 0, 0x9E37_79B9)) >>> 0;
+    hashed = ((hashed << 13) | (hashed >>> 19)) >>> 0;
+  }
+  return mulberry32(hashed >>> 0);
+}
+
 function buildTestLayout(options: LatticeDomeOptions): TestLatticeLayout {
   const radius = clampPositive(options.radius, 2);
   const ribsPerFamily = Math.max(4, Math.floor(clampPositive(options.ribsPerFamily, 8)));
@@ -283,13 +303,69 @@ function crossingMetrics(layout: TestLatticeLayout, familyARibIndex: number, cro
   };
 }
 
-function actualBoundingSphereRadius(mesh: THREE.Mesh): number {
+function triangleDistanceToPoint(mesh: THREE.Mesh, point: THREE.Vector3): number {
   mesh.updateMatrixWorld(true);
-  mesh.geometry.computeBoundingSphere();
-  const scale = mesh.getWorldScale(new THREE.Vector3());
-  expect(Math.abs(scale.x - scale.y)).toBeLessThan(1e-6);
-  expect(Math.abs(scale.x - scale.z)).toBeLessThan(1e-6);
-  return (mesh.geometry.boundingSphere?.radius ?? 0) * scale.x;
+  const position = mesh.geometry.getAttribute('position');
+  const index = mesh.geometry.getIndex();
+  const triangle = new THREE.Triangle();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const closest = new THREE.Vector3();
+  let best = Number.POSITIVE_INFINITY;
+  const triangleCount = index ? index.count / 3 : position.count / 3;
+
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+    const readIndex = (corner: number) => (
+      index ? index.getX(triangleIndex * 3 + corner) : triangleIndex * 3 + corner
+    );
+    triangle.set(
+      a.fromBufferAttribute(position, readIndex(0)).applyMatrix4(mesh.matrixWorld),
+      b.fromBufferAttribute(position, readIndex(1)).applyMatrix4(mesh.matrixWorld),
+      c.fromBufferAttribute(position, readIndex(2)).applyMatrix4(mesh.matrixWorld),
+    );
+    triangle.closestPointToPoint(point, closest);
+    best = Math.min(best, closest.distanceTo(point));
+  }
+
+  expect(Number.isFinite(best), `${mesh.name} had no measurable triangle distance`).toBe(true);
+  return best;
+}
+
+function rayTriangleReach(mesh: THREE.Mesh, origin: THREE.Vector3, target: THREE.Vector3): number {
+  mesh.updateMatrixWorld(true);
+  const direction = target.clone().sub(origin);
+  expect(direction.lengthSq(), `${mesh.name} ray target collapsed to origin`).toBeGreaterThan(EPSILON);
+  direction.normalize();
+
+  const ray = new THREE.Ray(origin.clone(), direction);
+  const position = mesh.geometry.getAttribute('position');
+  const index = mesh.geometry.getIndex();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const hit = new THREE.Vector3();
+  let best = Number.POSITIVE_INFINITY;
+  const triangleCount = index ? index.count / 3 : position.count / 3;
+
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+    const readIndex = (corner: number) => (
+      index ? index.getX(triangleIndex * 3 + corner) : triangleIndex * 3 + corner
+    );
+    const intersection = ray.intersectTriangle(
+      a.fromBufferAttribute(position, readIndex(0)).applyMatrix4(mesh.matrixWorld),
+      b.fromBufferAttribute(position, readIndex(1)).applyMatrix4(mesh.matrixWorld),
+      c.fromBufferAttribute(position, readIndex(2)).applyMatrix4(mesh.matrixWorld),
+      false,
+      hit,
+    );
+    if (!intersection) continue;
+    const distance = origin.distanceTo(intersection);
+    if (distance > EPSILON) best = Math.min(best, distance);
+  }
+
+  expect(Number.isFinite(best), `${mesh.name} had no triangle hit toward ${target.toArray().join(', ')}`).toBe(true);
+  return best;
 }
 
 function segmentKey(family: string, ribIndex: number, segmentIndex: number): string {
@@ -325,21 +401,65 @@ function expectedKnuckleNames(layout: TestLatticeLayout, survivingSegments: Set<
   return names.sort();
 }
 
+function crossingHasSupportingRibSegment(
+  survivingSegments: Set<string>,
+  familyARibIndex: number,
+  crossingIndex: number,
+): boolean {
+  return [crossingIndex, crossingIndex + 1].some(segmentIndex => (
+    survivingSegments.has(segmentKey('a', familyARibIndex, segmentIndex))
+  ));
+}
+
+function expectedVineHookNames(
+  options: LatticeDomeOptions,
+  survivingSegments?: Set<string>,
+): string[] {
+  const layout = buildTestLayout(options);
+  const vineHookDensity = clampUnit(options.vineHookDensity, DEFAULT_VINE_HOOK_DENSITY);
+  const seed = (options.seed ?? DEFAULT_SEED) >>> 0;
+  const names: string[] = [];
+
+  for (let ribIndex = 0; ribIndex < layout.ribsPerFamily; ribIndex++) {
+    for (let crossingIndex = 0; crossingIndex < layout.crossingCount; crossingIndex++) {
+      const rand = pieceRandom(seed, VINE_HOOK_TAG, ribIndex, crossingIndex);
+      if (rand() >= vineHookDensity) continue;
+      if (survivingSegments && !crossingHasSupportingRibSegment(survivingSegments, ribIndex, crossingIndex)) continue;
+      names.push(`vine-hook-${ribIndex}-${crossingIndex}`);
+    }
+  }
+
+  return names.sort();
+}
+
 function expectKnuckleTouchesBothRibs(mesh: THREE.Mesh, layout: TestLatticeLayout): void {
   const familyARibIndex = Number(mesh.userData.ribIndex);
   const crossingIndex = Number(mesh.userData.crossingIndex);
   const { familyAPoint, familyBPoint, tubeRadius } = crossingMetrics(layout, familyARibIndex, crossingIndex);
   const center = mesh.getWorldPosition(new THREE.Vector3());
-  const reach = actualBoundingSphereRadius(mesh);
+  for (const [label, point] of [
+    ['family-a', familyAPoint],
+    ['family-b', familyBPoint],
+  ] as const) {
+    const reach = rayTriangleReach(mesh, center, point);
+    const gapToCenterline = center.distanceTo(point);
+    expect(
+      reach + tubeRadius,
+      `${mesh.name} actual ${label} reach ${reach} plus tube radius ${tubeRadius} did not span gap ${gapToCenterline}`,
+    ).toBeGreaterThanOrEqual(gapToCenterline - EPSILON);
+  }
+}
+
+function expectVineHookTouchesSupportingRib(mesh: THREE.Mesh, layout: TestLatticeLayout): void {
+  const ribIndex = Number(mesh.userData.ribIndex);
+  const crossingIndex = Number(mesh.userData.crossingIndex);
+  const { familyAPoint, tubeRadius } = crossingMetrics(layout, ribIndex, crossingIndex);
+  const gap = triangleDistanceToPoint(mesh, familyAPoint) - tubeRadius;
 
   expect(
-    reach,
-    `${mesh.name} reach ${reach} did not span family-a distance ${center.distanceTo(familyAPoint)} with tube radius ${tubeRadius}`,
-  ).toBeGreaterThanOrEqual(center.distanceTo(familyAPoint) + tubeRadius - 1e-6);
-  expect(
-    reach,
-    `${mesh.name} reach ${reach} did not span family-b distance ${center.distanceTo(familyBPoint)} with tube radius ${tubeRadius}`,
-  ).toBeGreaterThanOrEqual(center.distanceTo(familyBPoint) + tubeRadius - 1e-6);
+    gap,
+    `${mesh.name} left a hook-to-rib surface gap of ${gap} at family-a crossing ${ribIndex}/${crossingIndex}`,
+  ).toBeLessThanOrEqual(EPSILON);
 }
 
 describe('buildLatticeDome', () => {
@@ -592,6 +712,79 @@ describe('buildLatticeDome', () => {
     expect(size.x).toBeGreaterThan(0.001);
     expect(size.y).toBeGreaterThan(0.001);
     expect(size.z).toBeGreaterThan(0.001);
+  });
+
+  it('anchors thin high-weave vine hooks to the actual supporting rib geometry', async () => {
+    const buildLatticeDome = await loadBuildLatticeDome();
+    const options = {
+      radius: 2,
+      ribsPerFamily: 8,
+      tubeRadius: 0.005,
+      weaveOffset: 0.36,
+      vineHooks: true,
+      seed: 5,
+    } satisfies LatticeDomeOptions;
+    const layout = buildTestLayout(options);
+    const dome = buildLatticeDome(options, makeMaterial());
+    const hookGroup = dome.getObjectByName('vine-hooks');
+
+    expect(hookGroup).toBeTruthy();
+    if (!hookGroup) return;
+
+    const hookMeshes = collectRoleMeshes(hookGroup, 'vine-hook');
+    const actualHookNames = hookMeshes.map(mesh => mesh.name).sort();
+    const expectedHookNames = expectedVineHookNames(options);
+
+    expect(actualHookNames).toEqual(expectedHookNames);
+    expect(hookMeshes).toHaveLength(23);
+
+    for (const hook of hookMeshes) {
+      expectVineHookTouchesSupportingRib(hook, layout);
+    }
+  });
+
+  it('culls dead-crossing vine hooks and keeps surviving broken-canopy hooks attached', async () => {
+    const buildLatticeDome = await loadBuildLatticeDome();
+    const options = {
+      radius: 2,
+      ribsPerFamily: 8,
+      tubeRadius: 0.04,
+      weaveOffset: 0.06,
+      brokenSegments: true,
+      brokenSegmentDensity: 0.55,
+      vineHooks: true,
+      seed: 19,
+    } satisfies LatticeDomeOptions;
+    const deadCrossingHookNames = [
+      'vine-hook-0-4',
+      'vine-hook-3-7',
+      'vine-hook-4-5',
+      'vine-hook-4-6',
+      'vine-hook-5-1',
+      'vine-hook-7-12',
+    ];
+    const layout = buildTestLayout(options);
+    const dome = buildLatticeDome(options, makeMaterial());
+    const hookGroup = dome.getObjectByName('vine-hooks');
+
+    expect(hookGroup).toBeTruthy();
+    if (!hookGroup) return;
+
+    const survivingSegments = survivingSegmentIds(dome);
+    const unculledHookNames = expectedVineHookNames(options);
+    const expectedHookNames = expectedVineHookNames(options, survivingSegments);
+    const hookMeshes = collectRoleMeshes(hookGroup, 'vine-hook');
+    const actualHookNames = hookMeshes.map(mesh => mesh.name).sort();
+
+    expect(unculledHookNames).toHaveLength(22);
+    expect(unculledHookNames).toEqual(expect.arrayContaining(deadCrossingHookNames));
+    expect(expectedHookNames).toHaveLength(16);
+    expect(actualHookNames).toEqual(expectedHookNames);
+    expect(actualHookNames).not.toEqual(expect.arrayContaining(deadCrossingHookNames));
+
+    for (const hook of hookMeshes) {
+      expectVineHookTouchesSupportingRib(hook, layout);
+    }
   });
 
   it('keeps micro-scale ribs tapering toward the apex instead of widening from an absolute floor', async () => {
