@@ -230,6 +230,31 @@ closed off.
 
 **Goal:** Implement host shell → light ruin → slime overlay composition shared by all slime kinds, applying the neon hue rotation and rounded gel-mimic silhouette from spec §2.4.
 
+**Architecture note on `Ruinate.ts` integration (added while preparing this task, 2026-09-05):**
+`Ruinate.ts`'s `ruinateCourses()` operates on an abstract `WallCourseModel` (course/index
+grid), independent of any real mesh — it does not know how to reach inside an opaque
+`THREE.Group` returned by a host-shell builder and delete blocks from it. This is fine and
+expected for Task 6's *generic* slime-built shells (house/terraced/villa/inn/blacksmith):
+since slime's own code lays out their `BlockGrid` directly, it can build a matching
+`WallCourseModel` in lockstep (course = floor/vertical layer, index = position around the
+wall perimeter) and a `BlockPlacementLookup` that maps 1:1 back to real `BlockGrid`
+coordinates, so `RuinateResult.removedBlockIds` can drive REAL `clearBlock()` calls before
+re-meshing. It does NOT work the same way for the 3 kinds that reuse a real opaque elven
+kit builder (chapel/shop/watchtower) — there is no access to `ElvenChapelKit.ts`'s internal
+block layout from the outside, and this task must not modify those files just to expose one.
+
+For those 3 reused-shell kinds, still call `ruinateShell()` (build a synthetic
+`WallCourseModel` from the kind's own footprint/floor-count, independent of the host
+builder's real internals) and still get a real `RuinateResult`, but use its occupancy data
+only to (a) decide accretion-overlay density/placement (more patches/lip-courses near
+"removed" columns) and (b) drive `buildRubbleFromLostBlocks()`-style ground debris via a
+synthetic `BlockPlacementLookup` derived from the shell's known footprint/wall-height —
+without attempting to delete any of the reused shell's real geometry. Document this
+distinction clearly in `SlimeOccupiedShell.ts`'s header comment and in the Task 8 test file
+(a reused-shell kind's test should assert host geometry survives untouched aside from
+overlay additions; a generic-shell kind's test should assert some real block removal
+occurred when the damage roll is non-trivial).
+
 **Files:**
 - Create: `src/world/buildings/slime/SlimeOccupiedShell.ts`
 - Test: `tests/world/buildings/slime/SlimeOccupiedShell.test.ts`
