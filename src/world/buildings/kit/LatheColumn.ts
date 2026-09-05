@@ -88,6 +88,10 @@ function scaledTolerance(...values: number[]): number {
   return Math.max(scale * 1e-8, NUMERIC_EPSILON);
 }
 
+function ringRepresentationTolerance(...values: number[]): number {
+  return Math.max(scaledTolerance(...values), ARCHITECTURAL_VERTEX_MERGE_TOLERANCE);
+}
+
 function computeLayout(height: number, radius: number): ColumnLayout {
   const slenderness = THREE.MathUtils.clamp(height / Math.max(radius * 8, EPSILON), 0, 1);
   const baseShare = THREE.MathUtils.lerp(0.19, 0.14, slenderness);
@@ -200,14 +204,16 @@ function buildImpostRadiusFn(halfWidth: number, halfDepth: number, exponent = 12
 }
 
 function interpolateRingRadius(rings: RingSpec[], height: number): number {
-  const firstTolerance = scaledTolerance(height, rings[0]!.y);
+  const firstTolerance = ringRepresentationTolerance(height, rings[0]!.y);
   if (height <= rings[0]!.y + firstTolerance) return rings[0]!.radius;
 
   for (let index = 1; index < rings.length; index++) {
     const lower = rings[index - 1]!;
     const upper = rings[index]!;
-    const tolerance = scaledTolerance(height, lower.y, upper.y);
+    const tolerance = ringRepresentationTolerance(height, lower.y, upper.y);
     if (height <= upper.y + tolerance) {
+      if (Math.abs(height - lower.y) <= tolerance) return lower.radius;
+      if (Math.abs(height - upper.y) <= tolerance) return upper.radius;
       const span = Math.max(upper.y - lower.y, tolerance);
       const t = THREE.MathUtils.clamp((height - lower.y) / span, 0, 1);
       return THREE.MathUtils.lerp(lower.radius, upper.radius, t);
@@ -219,7 +225,8 @@ function interpolateRingRadius(rings: RingSpec[], height: number): number {
 
 function sliceRingsToHeight(rings: RingSpec[], visibleHeight: number): RingSpec[] {
   const tolerance = scaledTolerance(visibleHeight, rings[rings.length - 1]!.y);
-  const sliced = rings.filter(ring => ring.y < visibleHeight - tolerance).map(ring => ({
+  const ringTolerance = Math.max(tolerance, ARCHITECTURAL_VERTEX_MERGE_TOLERANCE);
+  const sliced = rings.filter(ring => ring.y < visibleHeight - ringTolerance).map(ring => ({
     y: ring.y,
     radius: ring.radius,
   }));
@@ -228,22 +235,30 @@ function sliceRingsToHeight(rings: RingSpec[], visibleHeight: number): RingSpec[
     sliced.unshift({ y: 0, radius: rings[0]!.radius });
   }
 
-  const topSource = rings.find(ring => Math.abs(ring.y - visibleHeight) <= tolerance);
+  const topSource = rings.find(ring => Math.abs(ring.y - visibleHeight) <= ringTolerance);
   const topRing = topSource
     ? { y: visibleHeight, radius: topSource.radius }
     : { y: visibleHeight, radius: interpolateRingRadius(rings, visibleHeight) };
 
   const lastRing = sliced[sliced.length - 1];
-  const radiusTolerance = lastRing ? scaledTolerance(lastRing.radius, topRing.radius) : tolerance;
-  if (
-    !lastRing
-    || Math.abs(lastRing.y - topRing.y) > tolerance
-    || Math.abs(lastRing.radius - topRing.radius) > radiusTolerance
-  ) {
+  const radiusTolerance = lastRing
+    ? Math.max(scaledTolerance(lastRing.radius, topRing.radius), ARCHITECTURAL_VERTEX_MERGE_TOLERANCE)
+    : ringTolerance;
+  const isNearDuplicate = !!lastRing
+    && Math.abs(lastRing.y - topRing.y) <= ringTolerance
+    && Math.abs(lastRing.radius - topRing.radius) <= radiusTolerance;
+  const preservesBaseAnchor = !!lastRing && Math.abs(lastRing.y) <= tolerance;
+  if (!lastRing) {
+    sliced.push(topRing);
+  } else if (isNearDuplicate) {
+    if (!preservesBaseAnchor) {
+      sliced[sliced.length - 1] = topRing;
+    }
+  } else {
     sliced.push(topRing);
   }
 
-  if (sliced.length === 1 && visibleHeight > tolerance) {
+  if (sliced.length === 1 && sliced[0]!.y > tolerance && visibleHeight > tolerance) {
     sliced.unshift({ y: 0, radius: sliced[0]!.radius });
   }
 

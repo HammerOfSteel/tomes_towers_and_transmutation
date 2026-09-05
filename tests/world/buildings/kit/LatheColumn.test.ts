@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 
+interface LatheColumnBuildOptions {
+  height: number;
+  radius?: number;
+  crossSection?: 'round' | 'fluted' | 'lobed';
+  fluteCount?: number;
+  lobeCount?: number;
+  brokenAtHeight?: number;
+  seed?: number;
+}
+
+const ARCHITECTURAL_VERTEX_MERGE_TOLERANCE = 1e-4;
+const NUMERIC_EPSILON = Number.EPSILON * 64;
+
 async function loadBuildLatheColumn() {
   const module = await import('../../../../src/world/buildings/kit/LatheColumn');
-  return module.buildLatheColumn as (
-    options: {
-      height: number;
-      radius?: number;
-      crossSection?: 'round' | 'fluted' | 'lobed';
-      fluteCount?: number;
-      lobeCount?: number;
-      brokenAtHeight?: number;
-      seed?: number;
-    },
-    material: THREE.Material,
-  ) => THREE.Group;
+  return module.buildLatheColumn as (options: LatheColumnBuildOptions, material: THREE.Material) => THREE.Group;
 }
 
 function makeStoneMaterial(): THREE.Material {
@@ -190,6 +192,18 @@ function triangleAreaMetrics(
   };
 }
 
+function expectNoZeroAreaTriangles(root: THREE.Object3D, label: string): void {
+  const metrics = triangleAreaMetrics(root);
+  expect(
+    metrics.zeroAreaCount,
+    `${label} emitted ${metrics.zeroAreaCount}/${metrics.total} zero-area triangles`,
+  ).toBe(0);
+  expect(
+    metrics.minDoubleArea,
+    `${label} had min double-area ${metrics.minDoubleArea}`,
+  ).toBeGreaterThan(1e-12);
+}
+
 function partTopY(root: THREE.Object3D, name: string): number {
   const part = root.getObjectByName(name);
   expect(part).toBeTruthy();
@@ -269,6 +283,104 @@ function ySpan(vertices: THREE.Vector3[]): number {
   const ys = vertices.map(vertex => vertex.y);
   return Math.max(...ys) - Math.min(...ys);
 }
+
+function scaledToleranceForTest(...values: number[]): number {
+  const scale = Math.max(...values.map(value => Math.abs(value)), 1e-9);
+  return Math.max(scale * 1e-8, NUMERIC_EPSILON);
+}
+
+const reportedInternalRingDegeneracyCases: Array<{
+  label: string;
+  options: LatheColumnBuildOptions;
+}> = [
+  {
+    label: 'default shaft support ring repro',
+    options: { height: 3, brokenAtHeight: 2.39055 },
+  },
+  {
+    label: 'default capital support ring repro',
+    options: { height: 3, brokenAtHeight: 2.7472 },
+  },
+  {
+    label: 'small impost support ring repro',
+    options: { height: 0.5, radius: 0.08, brokenAtHeight: 0.4973 },
+  },
+  {
+    label: 'fluted shaft support ring repro',
+    options: {
+      height: 4.2,
+      radius: 0.24,
+      crossSection: 'fluted',
+      fluteCount: 9,
+      brokenAtHeight: 3.34000007,
+    },
+  },
+];
+
+const internalProfileRingSweepCases: Array<{
+  label: string;
+  options: Omit<LatheColumnBuildOptions, 'brokenAtHeight'>;
+  part: 'base' | 'shaft' | 'capital';
+  targetRingY: number;
+  samples: Array<{
+    brokenAtHeight: number;
+    supportSliceHeight: number;
+  }>;
+}> = [
+  {
+    label: 'default base ring 1',
+    options: { height: 3 },
+    part: 'base',
+    targetRingY: 0.0504,
+    samples: [
+      { brokenAtHeight: 0.10355, supportSliceHeight: 0.05041127 },
+      { brokenAtHeight: 0.10356, supportSliceHeight: 0.05042287 },
+      { brokenAtHeight: 0.10357, supportSliceHeight: 0.05043447 },
+      { brokenAtHeight: 0.10358, supportSliceHeight: 0.05044607 },
+    ],
+  },
+  {
+    label: 'default base ring 2',
+    options: { height: 3 },
+    part: 'base',
+    targetRingY: 0.1344,
+    samples: [
+      { brokenAtHeight: 0.18499, supportSliceHeight: 0.13440545 },
+      { brokenAtHeight: 0.185, supportSliceHeight: 0.13441498 },
+      { brokenAtHeight: 0.18501, supportSliceHeight: 0.13442451 },
+      { brokenAtHeight: 0.18502, supportSliceHeight: 0.13443404 },
+    ],
+  },
+  {
+    label: 'small base ring 1',
+    options: { height: 0.5, radius: 0.08 },
+    part: 'base',
+    targetRingY: 0.00905625,
+    samples: [
+      { brokenAtHeight: 0.049058, supportSliceHeight: 0.009058 },
+      { brokenAtHeight: 0.049062, supportSliceHeight: 0.009062 },
+      { brokenAtHeight: 0.049067, supportSliceHeight: 0.009067 },
+      { brokenAtHeight: 0.049071, supportSliceHeight: 0.009071 },
+    ],
+  },
+  {
+    label: 'fluted base ring 1',
+    options: {
+      height: 4.2,
+      radius: 0.24,
+      crossSection: 'fluted',
+      fluteCount: 9,
+    },
+    part: 'base',
+    targetRingY: 0.07056,
+    samples: [
+      { brokenAtHeight: 0.14189, supportSliceHeight: 0.07056923 },
+      { brokenAtHeight: 0.1419, supportSliceHeight: 0.07058076 },
+      { brokenAtHeight: 0.14191, supportSliceHeight: 0.07059228 },
+      { brokenAtHeight: 0.14192, supportSliceHeight: 0.0706038 },
+    ],
+  },
+];
 
 describe('buildLatheColumn', () => {
   it('builds a finite non-degenerate column whose overall height matches the request', async () => {
@@ -487,6 +599,28 @@ describe('buildLatheColumn', () => {
     expect(worldBox(tinyCut).max.y - worldBox(tinyCut).min.y).toBeLessThanOrEqual(0.0000001 + 0.00000002);
   });
 
+  it('keeps a deduplicated micro support slice anchored to the surviving part base', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+    const column = buildLatheColumn({
+      height: 0.5,
+      radius: 0.08,
+      brokenAtHeight: 0.4973,
+    }, makeStoneMaterial());
+    const capital = column.getObjectByName('capital');
+    const impostShell = column.getObjectByName('impost-shell');
+
+    expect(capital).toBeTruthy();
+    expect(impostShell).toBeTruthy();
+    if (!capital || !impostShell) return;
+
+    column.updateMatrixWorld(true);
+    const seamDelta = new THREE.Box3().setFromObject(impostShell).min.y - new THREE.Box3().setFromObject(capital).max.y;
+    expect(
+      Math.abs(seamDelta),
+      `deduplicated support slice drifted ${seamDelta} away from the part base seam`,
+    ).toBeLessThanOrEqual(1e-6);
+  });
+
   it('orients intact top and bottom cap surfaces outward instead of inward', async () => {
     const buildLatheColumn = await loadBuildLatheColumn();
     const column = buildLatheColumn({ height: 3 }, makeStoneMaterial());
@@ -565,18 +699,47 @@ describe('buildLatheColumn', () => {
     ])).filter(height => height > 0 && height < 3);
 
     for (const brokenAtHeight of sampleHeights) {
-      const metrics = triangleAreaMetrics(
+      expectNoZeroAreaTriangles(
         buildLatheColumn({ height: 3, brokenAtHeight }, makeStoneMaterial()),
+        `brokenAtHeight=${brokenAtHeight}`,
       );
+    }
+  });
 
-      expect(
-        metrics.zeroAreaCount,
-        `brokenAtHeight=${brokenAtHeight} emitted ${metrics.zeroAreaCount}/${metrics.total} zero-area triangles`,
-      ).toBe(0);
-      expect(
-        metrics.minDoubleArea,
-        `brokenAtHeight=${brokenAtHeight} had min double-area ${metrics.minDoubleArea}`,
-      ).toBeGreaterThan(1e-12);
+  it('eliminates the reported zero-area triangle repros caused by support slices near profile rings', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+
+    for (const { label, options } of reportedInternalRingDegeneracyCases) {
+      expectNoZeroAreaTriangles(
+        buildLatheColumn(options, makeStoneMaterial()),
+        `${label} brokenAtHeight=${options.brokenAtHeight}`,
+      );
+    }
+  });
+
+  it('avoids zero-area triangles when a broken support slice lands within vertex-merge tolerance of an internal profile ring', async () => {
+    const buildLatheColumn = await loadBuildLatheColumn();
+
+    for (const sweepCase of internalProfileRingSweepCases) {
+      for (const sample of sweepCase.samples) {
+        const offset = Math.abs(sample.supportSliceHeight - sweepCase.targetRingY);
+        expect(
+          offset,
+          `${sweepCase.label} brokenAtHeight=${sample.brokenAtHeight} missed the intended internal ${sweepCase.part} ring target`,
+        ).toBeGreaterThan(scaledToleranceForTest(sample.supportSliceHeight, sweepCase.targetRingY));
+        expect(
+          offset,
+          `${sweepCase.label} brokenAtHeight=${sample.brokenAtHeight} exceeded the architectural merge tolerance`,
+        ).toBeLessThanOrEqual(ARCHITECTURAL_VERTEX_MERGE_TOLERANCE);
+
+        expectNoZeroAreaTriangles(
+          buildLatheColumn(
+            { ...sweepCase.options, brokenAtHeight: sample.brokenAtHeight },
+            makeStoneMaterial(),
+          ),
+          `${sweepCase.label} brokenAtHeight=${sample.brokenAtHeight}`,
+        );
+      }
     }
   });
 });
