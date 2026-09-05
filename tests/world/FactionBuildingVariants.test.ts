@@ -176,6 +176,51 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 });
 
+// Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): slime is
+// the first faction with a bespoke builder for ALL 8 canonical BuildingKit
+// kinds (house/terraced/shop/inn/blacksmith/villa/chapel/watchtower), built
+// via src/world/buildings/slime/SlimeBuildingKit.ts's real gel-block/
+// pseudopod construction technique rather than the old raw Sphere/Cylinder
+// "blob" primitives. Previously house/terraced/inn/blacksmith/watchtower
+// either had no slime override (fell through to generic) or reused
+// buildSlimeVilla's blob shape; watchtower had no slime override at all.
+describe('FACTION_BUILDING_VARIANTS — slime full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('slime', kind)).not.toBeNull();
+    }
+  });
+
+  it('also resolves the generic "tower" kind to the slime watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('slime', 'tower')).not.toBeNull();
+  });
+
+  for (const kind of kinds) {
+    it(`slime/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
+    });
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11))));
+    expect(new Set(counts).size).toBe(kinds.length);
+  });
+
+  it('no longer routes any of the 8 kinds through the legacy blob group names', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.toLowerCase().includes('blob'))).toBe(false);
+    }
+  });
+});
+
 // ── Vulperia deep-quality pass (settlement visual fidelity follow-up) ──────
 // Phase 2e §2e.3: regression guards for the grounded BlockKit heightfield
 // den mound (small earth/grass/facade blocks with marching-squares-style
