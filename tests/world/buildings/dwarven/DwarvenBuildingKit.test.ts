@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -149,5 +149,50 @@ describe('buildDwarvenHouse', () => {
   it('produces finite geometry for the tiny size too', () => {
     const house = buildDwarvenHouse(makeDNA({ size: 'tiny', seed: 55 }));
     assertFiniteGeometry(house);
+  });
+});
+
+describe('buildDwarvenTerraced', () => {
+  it('respects getFootprint(terraced, size) plus eave/skirt tolerance, and is narrower than a villa footprint', () => {
+    const dna = makeDNA({ buildingKind: 'terraced', size: 'medium' });
+    const fp = getFootprint('terraced', 'medium');
+    const villaFp = getFootprint('villa', 'medium');
+    const terraced = buildDwarvenTerraced(dna);
+    const box = new THREE.Box3().setFromObject(terraced);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.2);
+    expect(size.z).toBeLessThanOrEqual(fp.d + 1.2);
+    expect(fp.w).toBeLessThan(villaFp.w);
+  });
+
+  it('has no side windows when terrace is both (shared party walls)', () => {
+    const terraced = buildDwarvenTerraced(makeDNA({ buildingKind: 'terraced', terrace: 'both' }));
+    const sideWindows = terraced.children.filter((c) => c.name === 'dwarven-window');
+    expect(sideWindows.length).toBe(0);
+  });
+
+  it('has a front door with the five-piece opening minimum', () => {
+    const terraced = buildDwarvenTerraced(makeDNA({ buildingKind: 'terraced' }));
+    const door = findByNameIncluding(terraced, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+  });
+
+  it('has a front chevron ornament belt', () => {
+    const terraced = buildDwarvenTerraced(makeDNA({ buildingKind: 'terraced' }));
+    expect(findByNameIncluding(terraced, 'dwarven-front-ornament')).toBeTruthy();
+  });
+
+  it('produces finite geometry across seeds and terrace states', () => {
+    for (const terrace of ['none', 'left', 'right', 'both'] as const) {
+      for (const seed of [1, 42, 999]) {
+        const terraced = buildDwarvenTerraced(makeDNA({ buildingKind: 'terraced', terrace, seed }));
+        assertFiniteGeometry(terraced);
+      }
+    }
   });
 });

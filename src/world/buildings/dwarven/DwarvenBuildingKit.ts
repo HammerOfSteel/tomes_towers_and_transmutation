@@ -26,8 +26,9 @@ import { buildGableRoof, buildHipRoof, type RoofMassingOptions } from '../kit/Ro
 import { buildRockPlinthSkirt } from '../kit/RockPlinthSkirt';
 import { buildCorbelledChimneyStack } from '../kit/CorbelledChimneyStack';
 import { buildChevronBelt, buildShieldPlaque, buildXLatticePanel, buildCorbelRow } from '../kit/AngularOrnament';
+import { buildMetalBand } from '../kit/MetalBanding';
 import { buildDwarvenPalette, type DwarvenPalette } from './DwarvenMaterials';
-import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, type DwarvenOpeningPalette } from './DwarvenOpenings';
+import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, buildDwarvenOculus, type DwarvenOpeningPalette } from './DwarvenOpenings';
 
 /** Turns a short ASCII tag (e.g. 'HOUS') into a seed-mixing constant, so
  * every private helper below gets its own independent, deterministic RNG
@@ -158,7 +159,18 @@ function buildParapetRoof(
     const len = Math.hypot(bx - ax, bz - az);
     const midX = (ax + bx) / 2;
     const midZ = (az + bz) / 2;
-    const angle = Math.atan2(bx - ax, bz - az);
+    // A BoxGeometry's un-rotated length runs along local +X. Rotation.y=θ
+    // maps local +X to world (cosθ, -sinθ) in the XZ-plane (THREE's
+    // standard Y-axis rotation matrix), so aligning the box's length with
+    // the face's own tangent vector (bx-ax, bz-az) needs
+    // θ = atan2(-(bz-az), bx-ax) -- NOT atan2(bx-ax, bz-az) (that formula
+    // is `normalAngle`'s convention for rotating a local +Z-forward
+    // object onto the face's outward NORMAL, a different axis/purpose;
+    // reusing it here left the coping band's length running along world
+    // X instead of the face's own direction, blowing the footprint out by
+    // the full unrotated box length on every non-axis-aligned-by-luck
+    // face).
+    const angle = Math.atan2(-(bz - az), bx - ax);
     const coping = new THREE.Mesh(
       new THREE.BoxGeometry(len + copingThickness, copingHeight, copingThickness),
       palette.basalt,
@@ -175,11 +187,14 @@ function buildParapetRoof(
 /** Weighted roof-family pick shared by every kind's own variation table
  * (each kind supplies its own weights): 'gable' (steep stone-tile gable,
  * `buildGableRoof`), 'parapet' (coped flat terrace, `buildParapetRoof`),
- * or 'hip' (a 4-sided hip roof, used as this kit's pragmatic stand-in for
+ * 'hip' (a 4-sided hip roof, used as this kit's pragmatic stand-in for
  * the design spec's "small octagonal/conical cottage cap" on near-square
  * footprints -- a true radial cone cap is out of scope for a rectangular
- * hall; a 4-sided hip silhouette reads as the same compact pavilion form). */
-export type DwarvenRoofFamily = 'gable' | 'parapet' | 'hip';
+ * hall; a 4-sided hip silhouette reads as the same compact pavilion form),
+ * or 'sawtooth' (terraced-only: two narrower gable ridges side by side,
+ * this kit's stand-in for a saw-tooth service roofline -- real stepped
+ * ridge geometry, not a single flat slope). */
+export type DwarvenRoofFamily = 'gable' | 'parapet' | 'hip' | 'sawtooth';
 
 function buildDwarvenRoof(
   family: DwarvenRoofFamily,
@@ -192,6 +207,17 @@ function buildDwarvenRoof(
 ): THREE.Group {
   if (family === 'parapet') return buildParapetRoof(points, palette);
   const opts: RoofMassingOptions = { shingle: { silhouette: 'rectangular' } };
+  if (family === 'sawtooth') {
+    const g = new THREE.Group();
+    g.name = 'sawtooth-roof';
+    const halfBay = halfW / 2;
+    const bay0 = buildGableRoof(halfBay, halfD, ridgeHeight * 0.75, seed, palette.roofTile, opts);
+    bay0.position.x = -halfBay;
+    const bay1 = buildGableRoof(halfBay, halfD, ridgeHeight * 0.75, tagSeed(seed, 'BAY1'), palette.roofTile, opts);
+    bay1.position.x = halfBay;
+    g.add(bay0, bay1);
+    return g;
+  }
   const roof = family === 'hip'
     ? buildHipRoof(halfW, halfD, ridgeHeight, seed, palette.roofTile, opts)
     : buildGableRoof(halfW, halfD, ridgeHeight, seed, palette.roofTile, opts);
@@ -369,6 +395,189 @@ export function buildDwarvenHouse(dna: BuildingDNA): THREE.Group {
   ornament.name = 'dwarven-front-ornament';
   ornament.position.set(0, wallHeight * 0.92, halfD + 0.04);
   g.add(ornament);
+
+  return g;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Terraced
+// ─────────────────────────────────────────────────────────────────────────
+
+const TERRACED_STOREY_HEIGHT = 2.55;
+
+/** Builds a small proud iron balcony: a boxed platform on two corbel
+ * brackets plus a metal-band rail -- real layered depth, never a flat
+ * plane -- used by the terraced kind's rare (15%) projecting-balcony
+ * ornament option. */
+function buildIronBalcony(width: number, palette: DwarvenPalette): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'dwarven-iron-balcony';
+
+  const brackets = buildCorbelRow({ count: 2, spacing: width * 0.6, material: palette.basalt });
+  brackets.position.y = -0.06;
+  g.add(brackets);
+
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(width, 0.06, 0.28), palette.basalt);
+  platform.castShadow = platform.receiveShadow = true;
+  g.add(platform);
+
+  const rail = buildMetalBand({ width, depth: 0.28, material: palette.iron, bandHeight: 0.24 });
+  rail.position.set(0, 0.15, 0);
+  g.add(rail);
+
+  return g;
+}
+
+/** Builds a narrow dwarven terraced (row) house: a tall narrow rectangular
+ * hall on a rock plinth, an off-centre arched door, one upper cross-mullion
+ * window (or oculus/blind panel), party-wall-aware side treatment (no side
+ * windows on any face flagged `dna.terrace`), a rear service vent, one of
+ * three roof families (gabled/coped-parapet/sawtooth), a continuous front
+ * chevron ornament belt, and a rare proud iron balcony -- see design spec
+ * section 4 `terraced` for the full blueprint this follows. */
+export function buildDwarvenTerraced(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('terraced', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const wallHeight = TERRACED_STOREY_HEIGHT * Math.max(2, dna.floors);
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+
+  const g = new THREE.Group();
+  g.name = 'dwarven-terraced';
+
+  const { group: hall, faces, points } = buildRectHall(halfW, halfD, wallHeight, tagSeed(dna.seed, 'HALL'), palette.granite);
+  g.add(hall);
+
+  const plinth = buildRockPlinthSkirt({
+    points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    stepsFace: faces[3],
+  });
+  g.add(plinth);
+
+  // Off-centre front door: left-third 0.45 / right-third 0.45 / centred 0.10.
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const doorT = pickWeighted<number>(doorRand, [
+    [0.3, 0.45],
+    [0.7, 0.45],
+    [0.5, 0.10],
+  ]);
+  const door = buildDwarvenDoor({
+    width: 0.75,
+    height: 1.6,
+    wallZ: wallZFor(3, halfW, halfD),
+    palette: openingPalette,
+    archRatio: 0.5 + doorRand() * 0.15,
+  });
+  door.name = 'dwarven-door';
+  placeOnFace(door, faces[3]!, doorT);
+  g.add(door);
+
+  // Front upper detail: cross-mullion window 0.55 / oculus 0.20 / blind
+  // chevron panel 0.25 -- mirrored to the opposite third from the door so
+  // the facade reads as balanced rather than doubled-up on one side.
+  const upperRand = mulberry32(tagSeed(dna.seed, 'UPPR'));
+  const upperChoice = pickWeighted<'mullion' | 'oculus' | 'blind'>(upperRand, [
+    ['mullion', 0.55],
+    ['oculus', 0.20],
+    ['blind', 0.25],
+  ]);
+  const upperT = doorT === 0.5 ? 0.5 : 1 - doorT;
+  const upperY = wallHeight * (Math.max(2, dna.floors) > 1 ? 0.78 : 0.6);
+  if (upperChoice === 'mullion') {
+    const win = buildDwarvenWindow({
+      width: 0.55,
+      height: 0.65,
+      wallZ: wallZFor(3, halfW, halfD),
+      palette: openingPalette,
+      archRatio: 0.5 + upperRand() * 0.1,
+    });
+    win.name = 'dwarven-window';
+    win.position.y = upperY;
+    placeOnFace(win, faces[3]!, upperT);
+    g.add(win);
+  } else if (upperChoice === 'oculus') {
+    const oculus = buildDwarvenOculus({
+      diameter: 0.5,
+      wallZ: wallZFor(3, halfW, halfD),
+      palette: openingPalette,
+    });
+    oculus.name = 'dwarven-oculus';
+    oculus.position.y = upperY;
+    placeOnFace(oculus, faces[3]!, upperT);
+    g.add(oculus);
+  } else {
+    const panel = buildXLatticePanel({ width: 0.5, height: 0.55, material: palette.iron });
+    panel.name = 'dwarven-blind-panel';
+    panel.position.y = upperY;
+    placeOnFace(panel, faces[3]!, upperT);
+    g.add(panel);
+  }
+
+  // Side windows: only on a genuinely exposed side (terrace === 'none');
+  // any face flagged as a shared party wall gets no window at all, per the
+  // design spec's "party sides are plainer coursed stone with no windows".
+  if (dna.terrace === 'none') {
+    const sideRand = mulberry32(tagSeed(dna.seed, 'SIDE'));
+    for (const fi of [0, 2]) {
+      const win = buildDwarvenWindow({
+        width: 0.4,
+        height: 0.6,
+        wallZ: wallZFor(fi, halfW, halfD),
+        palette: openingPalette,
+        archRatio: 0.5 + sideRand() * 0.15,
+      });
+      win.name = 'dwarven-window';
+      win.position.y = wallHeight * 0.42;
+      placeOnFace(win, faces[fi]!, 0.5);
+      g.add(win);
+    }
+  }
+
+  // Rear service hatch/vent, present on 60% of terraced units.
+  const rearRand = mulberry32(tagSeed(dna.seed, 'REAR'));
+  if (rearRand() < 0.6) {
+    const vent = buildDwarvenVentSlit({
+      width: 0.35,
+      height: 0.5,
+      wallZ: wallZFor(1, halfW, halfD),
+      palette: openingPalette,
+      shape: 'arch',
+    });
+    vent.name = 'dwarven-vent';
+    vent.position.y = wallHeight * 0.5;
+    placeOnFace(vent, faces[1]!, 0.5);
+    g.add(vent);
+  }
+
+  // Roof family: gabled 0.50 / coped-parapet 0.30 / sawtooth service roof 0.20.
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofFamily = pickWeighted<DwarvenRoofFamily>(roofRand, [
+    ['gable', 0.50],
+    ['parapet', 0.30],
+    ['sawtooth', 0.20],
+  ]);
+  const ridgeHeight = Math.min(halfW, halfD) * 1.1;
+  const roof = buildDwarvenRoof(roofFamily, halfW, halfD, points, ridgeHeight, tagSeed(dna.seed, 'ROOF'), palette);
+  roof.position.y = wallHeight;
+  g.add(roof);
+
+  // Continuous front chevron ornament belt (the design spec calls for this
+  // on every unit, unlike house's weighted ornament pick).
+  const ornament = buildChevronBelt({ width: fp.w * 0.8, material: palette.iron });
+  ornament.name = 'dwarven-front-ornament';
+  ornament.position.set(0, wallHeight * 0.5, halfD + 0.03);
+  g.add(ornament);
+
+  // Rare (15%) proud iron balcony bracketed above the door.
+  const balconyRand = mulberry32(tagSeed(dna.seed, 'BALC'));
+  if (balconyRand() < 0.15) {
+    const balcony = buildIronBalcony(fp.w * 0.5, palette);
+    balcony.position.set(0, wallHeight * 0.35, halfD + 0.1);
+    g.add(balcony);
+  }
 
   return g;
 }
