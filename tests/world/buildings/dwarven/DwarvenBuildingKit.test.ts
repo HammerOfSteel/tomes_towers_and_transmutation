@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop, buildDwarvenBlacksmith, buildDwarvenChapel } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop, buildDwarvenBlacksmith, buildDwarvenChapel, buildDwarvenWatchtower } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -581,6 +581,97 @@ describe('buildDwarvenChapel', () => {
     for (const seed of [1, 2, 3, 42, 999]) {
       const chapel = buildDwarvenChapel(makeDNA({ buildingKind: 'chapel', size: 'medium', seed }));
       assertFiniteGeometry(chapel);
+    }
+  });
+});
+
+describe('buildDwarvenWatchtower', () => {
+  it('respects the fixed 2x2 footprint plus batter/skirt/buttress tolerance', () => {
+    const fp = getFootprint('watchtower', 'small');
+    expect(fp.w).toBe(2);
+    expect(fp.d).toBe(2);
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    const box = new THREE.Box3().setFromObject(tower);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.0);
+    expect(size.z).toBeLessThanOrEqual(fp.d + 1.0);
+  });
+
+  it('is taller than wide -- a genuine tower silhouette, not a squat box', () => {
+    for (const seed of [1, 2, 3]) {
+      const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed }));
+      const box = new THREE.Box3().setFromObject(tower);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      expect(size.y).toBeGreaterThan(size.x * 2);
+      expect(size.y).toBeGreaterThan(size.z * 2);
+    }
+  });
+
+  it('has 3 or 4 stepped tiers with a genuinely narrowing silhouette', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    const tierCount = countByNameIncluding(tower, 'watchtower-tier-');
+    expect(tierCount).toBeGreaterThanOrEqual(3);
+    expect(tierCount).toBeLessThanOrEqual(4);
+  });
+
+  it('has a ground door with the five-piece opening minimum', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    const door = findByNameIncluding(tower, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+  });
+
+  it('has alternating slit vents on upper tiers built from the real five-piece opening frame', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    const vent = findByNameIncluding(tower, 'dwarven-vent');
+    expect(vent).toBeTruthy();
+    const childNames = vent!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('vent-louvre');
+  });
+
+  it('has a crown -- coped parapet, signal vent cap, or conical cap -- never a flat-capped box', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed }));
+      const hasParapet = !!findByNameIncluding(tower, 'parapet-roof');
+      const hasVentCap = !!findByNameIncluding(tower, 'corbelled-chimney-stack');
+      const hasConicalCap = !!findByNameIncluding(tower, 'watchtower-conical-cap');
+      expect(hasParapet || hasVentCap || hasConicalCap).toBe(true);
+    }
+  });
+
+  it('has a tight rock plinth at the base', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    expect(findByNameIncluding(tower, 'plinth-course')).toBeTruthy();
+  });
+
+  it('has exactly 4 vertical buttress strips running the tower height', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    const topLevelButtresses = tower.children.filter((c) => /^buttress-\d+$/.test(c.name));
+    expect(topLevelButtresses.length).toBe(4);
+  });
+
+  it('has an unconditional chevron belt and metal band near the crown', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    expect(findByNameIncluding(tower, 'chevron-belt')).toBeTruthy();
+    expect(findByNameIncluding(tower, 'metal-band')).toBeTruthy();
+  });
+
+  it('has a signal brazier prop on the top platform', () => {
+    const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed: 1 }));
+    expect(findByNameIncluding(tower, 'brazier')).toBeTruthy();
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const tower = buildDwarvenWatchtower(makeDNA({ buildingKind: 'watchtower', size: 'small', seed }));
+      assertFiniteGeometry(tower);
     }
   });
 });

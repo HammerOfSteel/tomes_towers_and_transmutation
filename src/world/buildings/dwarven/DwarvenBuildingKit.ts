@@ -30,7 +30,7 @@ import { buildCorbelledChimneyStack } from '../kit/CorbelledChimneyStack';
 import { buildChevronBelt, buildShieldPlaque, buildXLatticePanel, buildCorbelRow } from '../kit/AngularOrnament';
 import { buildMetalBand } from '../kit/MetalBanding';
 import { composeMainAndWing, type MassSpec } from '../kit/MassComposer';
-import { makeBatteredRectangleTiers } from '../kit/SteppedBatterProfile';
+import { makeBatteredRectangleTiers, makeSteppedOctagonTiers } from '../kit/SteppedBatterProfile';
 import { buildButtress } from '../kit/Buttress';
 import { buildLatheColumn } from '../kit/LatheColumn';
 import { buildVoussoirArch } from '../kit/VoussoirArch';
@@ -2075,7 +2075,7 @@ const CHAPEL_APSE_DOCK_FRAC = 0.55;
 function buildBrazier(seed: number, palette: DwarvenPalette): THREE.Group {
   const rand = mulberry32(seed >>> 0);
   const g = new THREE.Group();
-  g.name = 'dwarven-chapel-brazier';
+  g.name = 'dwarven-brazier';
 
   const bowlHeight = 0.22;
   const legHeight = 0.55;
@@ -2500,5 +2500,344 @@ export function buildDwarvenChapel(dna: BuildingDNA): THREE.Group {
 
   return g;
 }
+
+// ── Watchtower ────────────────────────────────────────────────────────────
+
+const WATCHTOWER_TIER_HEIGHT_MIN = 2.40;
+const WATCHTOWER_TIER_HEIGHT_MAX = 2.60;
+
+/** Perpendicular distance from a regular octagon's own center to any of
+ * its 8 faces (the "apothem"), given the vertex/circumradius `radius` --
+ * `wallZFor()` only covers `rectangleFaces()`'s 4-face convention, so
+ * octagonal-plan watchtower openings need this instead. For a regular
+ * n-gon the apothem is `radius * cos(pi/n)`; n=8 here. */
+function octagonApothem(radius: number): number {
+  return radius * Math.cos(Math.PI / 8);
+}
+
+/**
+ * Builds a tiny-footprint (fixed 2x2 WU), tall, tiered signal/mine-head
+ * watchtower -- see design spec section 4 `watchtower`. A stepped drum of
+ * 3-4 compressed tiers (`SteppedBatterProfile.makeSteppedOctagonTiers()`
+ * for the octagonal plan, `makeBatteredRectangleTiers()` for the
+ * square-chamfered plan -- both already batter 8% wider at the base and
+ * inset 10% per tier out of the box, squarely inside the spec's own
+ * "8-12% per tier" requirement) rising from a tight rock plinth, with a
+ * low ground-floor door, alternating slit vents on the middle tiers (or
+ * an oculus-only top per the openings axis), 4 full-height vertical
+ * buttress strips, a string course + corbel row at every tier line, an
+ * unconditional chevron belt + metal band near the crown, a signal
+ * brazier on the top platform, and a coped-parapet / signal-vent-cap /
+ * conical-cap crown (never a flat-capped box).
+ *
+ * Plan axis deviates from the spec's literal 3-way table (octagonal 0.60
+ * / square-chamfered 0.25 / hexagonal 0.15): the shared kit
+ * (`StoneTowerShape.ts`) has no true hexagon primitive today (its
+ * `octagonFaces()`/`rectanglePoints()` are fixed at 8/4 sides), and this
+ * is the LAST of 8 dwarven kinds -- adding brand-new shared shape
+ * geometry for a single 15%-weighted sub-variant isn't justified
+ * reuse-first scope. Documented, deliberate simplification: the
+ * "hexagonal" weight folds into "octagonal" (both read as a many-sided
+ * drum), giving a 2-way axis of octagonal 0.70 / square-chamfered 0.30.
+ */
+export function buildDwarvenWatchtower(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('watchtower', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+  const g = new THREE.Group();
+  g.name = 'dwarven-watchtower';
+
+  const planRand = mulberry32(tagSeed(dna.seed, 'PLAN'));
+  const plan = pickWeighted(planRand, [
+    ['octagonal', 0.70],
+    ['square', 0.30],
+  ] as Array<['octagonal' | 'square', number]>);
+
+  const tierRand = mulberry32(tagSeed(dna.seed, 'TIER'));
+  const tierCount = tierRand() < 0.5 ? 3 : 4;
+  const tierHeight = WATCHTOWER_TIER_HEIGHT_MIN + tierRand() * (WATCHTOWER_TIER_HEIGHT_MAX - WATCHTOWER_TIER_HEIGHT_MIN);
+  const tierHeights = Array.from({ length: tierCount }, () => tierHeight);
+  const baseRadius = Math.min(halfW, halfD);
+
+  interface ResolvedTier {
+    y: number;
+    height: number;
+    points: [number, number][];
+    faces: OctagonFace[];
+    halfW: number;
+    halfD: number;
+  }
+
+  let resolvedTiers: ResolvedTier[];
+  if (plan === 'octagonal') {
+    resolvedTiers = makeSteppedOctagonTiers(baseRadius, tierHeights).map((t) => ({
+      y: t.y,
+      height: t.height,
+      points: octagonPoints(t.radius),
+      faces: t.faces,
+      halfW: t.radius,
+      halfD: t.radius,
+    }));
+  } else {
+    resolvedTiers = makeBatteredRectangleTiers(baseRadius, baseRadius, tierHeights).map((t) => ({
+      y: t.y,
+      height: t.height,
+      points: t.points,
+      faces: t.faces,
+      halfW: t.halfW,
+      halfD: t.halfD,
+    }));
+  }
+
+  const totalHeight = resolvedTiers.reduce((s, t) => s + t.height, 0);
+  const groundTier = resolvedTiers[0]!;
+  const topTier = resolvedTiers[resolvedTiers.length - 1]!;
+  const doorFaceIndex = plan === 'octagonal' ? 0 : 3;
+  const doorFace = groundTier.faces[doorFaceIndex]!;
+
+  const wallZForTier = (tier: ResolvedTier, faceIndex: number): number =>
+    plan === 'octagonal' ? octagonApothem(tier.halfW) : wallZFor(faceIndex, tier.halfW, tier.halfD);
+
+  // Tiered wall masses: each a real per-course-block ring (`buildMassFromSpec`)
+  // with its own quoins + floor cap (the floor cap is required, not just
+  // decorative -- a narrower upper tier sitting on a wider one below
+  // otherwise leaves an unfloored "shelf" exposing the hollow interior
+  // through the block gaps, the exact bug StoneTowerFloorCap.ts's own doc
+  // comment warns about), plus a string course and one corbel row (on the
+  // door-facing face) marking every tier transition per spec.
+  for (let i = 0; i < resolvedTiers.length; i++) {
+    const tier = resolvedTiers[i]!;
+    const mass = buildMassFromSpec(
+      { points: tier.points, faces: tier.faces, height: tier.height },
+      tagSeed(dna.seed, `TIER${i}`),
+      palette.granite,
+    );
+    mass.name = `watchtower-tier-${i}`;
+    mass.position.y = tier.y;
+    g.add(mass);
+
+    const course = buildStringCourse(tier.points, palette.basalt, 0.09);
+    course.position.y = tier.y + tier.height;
+    g.add(course);
+
+    const corbels = buildCorbelRow({
+      count: 3,
+      spacing: Math.max(0.3, tier.halfW * 0.7),
+      material: palette.basalt,
+    });
+    corbels.name = `watchtower-corbel-row-${i}`;
+    corbels.position.y = tier.y + tier.height - 0.05;
+    corbels.position.z = wallZForTier(tier, doorFaceIndex);
+    placeOnFace(corbels, tier.faces[doorFaceIndex]!, 0.5);
+    g.add(corbels);
+  }
+
+  // Ground door: a low, narrow arch (spec: 0.55 W x 1.35 H).
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const door = buildDwarvenDoor({
+    width: 0.55,
+    height: 1.35,
+    wallZ: wallZForTier(groundTier, doorFaceIndex),
+    palette: openingPalette,
+    archRatio: 0.5 + doorRand() * 0.1,
+  });
+  door.name = 'dwarven-door';
+  placeOnFace(door, doorFace, 0.5);
+  g.add(door);
+
+  // Openings axis: alternating slits 0.55 / oculus top only 0.15 / mostly
+  // blind 0.30 -- governs whether the middle tiers (everything between
+  // the ground door tier and the crown-facing top tier) get a real slit
+  // vent each, none at all (leaving bare coursed masonry, itself already
+  // a real, non-flat block-relief surface), or just the first one.
+  const openingsRand = mulberry32(tagSeed(dna.seed, 'OPEN'));
+  const openingsAxis = pickWeighted(openingsRand, [
+    ['alternating-slits', 0.55],
+    ['oculus-top-only', 0.15],
+    ['mostly-blind', 0.30],
+  ] as Array<['alternating-slits' | 'oculus-top-only' | 'mostly-blind', number]>);
+
+  for (let i = 1; i < resolvedTiers.length - 1; i++) {
+    if (openingsAxis === 'oculus-top-only') continue;
+    if (openingsAxis === 'mostly-blind' && i !== 1) continue;
+    const tier = resolvedTiers[i]!;
+    const faceCount = tier.faces.length;
+    // Alternate which face gets the slit tier-to-tier so the silhouette
+    // doesn't read as one continuous vertical slot.
+    const faceIndex = (doorFaceIndex + i * Math.max(1, Math.floor(faceCount / 2))) % faceCount;
+    const face = tier.faces[faceIndex]!;
+    const ventRand = mulberry32(tagSeed(dna.seed, `VENT${i}`));
+    const vent = buildDwarvenVentSlit({
+      width: 0.22,
+      height: 0.55,
+      wallZ: wallZForTier(tier, faceIndex),
+      palette: openingPalette,
+      shape: 'arch',
+      archRatio: 0.5 + ventRand() * 0.1,
+    });
+    vent.name = 'dwarven-vent';
+    vent.position.y = tier.y + tier.height * 0.5;
+    placeOnFace(vent, face, 0.5);
+    g.add(vent);
+  }
+
+  // Top: either 2-4 lookout slots under the crown coping, or (when the
+  // openings axis rolled 'oculus-top-only') a single round oculus in
+  // place of the middle-tier slits this axis omitted entirely.
+  if (openingsAxis === 'oculus-top-only') {
+    const oculusFaceIndex = (doorFaceIndex + Math.floor(topTier.faces.length / 2)) % topTier.faces.length;
+    const oculusFace = topTier.faces[oculusFaceIndex]!;
+    const oculus = buildDwarvenOculus({
+      diameter: 0.4,
+      wallZ: wallZForTier(topTier, oculusFaceIndex),
+      palette: openingPalette,
+    });
+    oculus.name = 'dwarven-oculus';
+    oculus.position.y = topTier.y + topTier.height * 0.55;
+    placeOnFace(oculus, oculusFace, 0.5);
+    g.add(oculus);
+  } else {
+    const lookoutRand = mulberry32(tagSeed(dna.seed, 'LOOK'));
+    const lookoutCount = 2 + Math.floor(lookoutRand() * 3);
+    const faceCount = topTier.faces.length;
+    for (let k = 0; k < lookoutCount; k++) {
+      const faceIndex = Math.floor((k / lookoutCount) * faceCount) % faceCount;
+      const face = topTier.faces[faceIndex]!;
+      const lookout = buildDwarvenVentSlit({
+        width: 0.2,
+        height: 0.4,
+        wallZ: wallZForTier(topTier, faceIndex),
+        palette: openingPalette,
+        shape: 'round',
+      });
+      lookout.name = 'dwarven-vent';
+      lookout.position.y = topTier.y + topTier.height * 0.78;
+      placeOnFace(lookout, face, 0.5);
+      g.add(lookout);
+    }
+  }
+
+  // Four full-height vertical buttress strips at (near-)cardinal faces --
+  // for the square plan all 4 faces already ARE true N/S/E/W, for the
+  // octagonal plan 4 faces spaced 90 degrees apart in index-terms
+  // (indices 0/2/4/6) approximate cardinal placement (a regular octagon
+  // has no face sitting at exactly 0/90/180/270, the same "no perfectly
+  // symmetric cardinal subset on 8 faces" constraint already documented
+  // for the chapel's apse). Buttresses stay flush with the GROUND tier's
+  // own wall plane for their full run (they don't step in with the
+  // tiers above), the same real "buttress ignores the tower's own
+  // taper" silhouette read used on real fortified towers.
+  const buttressFaceIndices = plan === 'octagonal' ? [0, 2, 4, 6] : [0, 1, 2, 3];
+  for (const fi of buttressFaceIndices) {
+    const face = groundTier.faces[fi]!;
+    const buttressRand = tagSeed(dna.seed, `BUTT${fi}`);
+    const buttress = buildButtress(
+      { height: totalHeight, width: 0.22, depth: 0.16, stages: Math.max(2, resolvedTiers.length - 1), cap: 'flat', seed: buttressRand },
+      palette.granite,
+    );
+    buttress.name = `buttress-${fi}`;
+    buttress.position.z = wallZForTier(groundTier, fi) - 0.04;
+    placeOnFace(buttress, face, 0.5);
+    g.add(buttress);
+  }
+
+  // Ground axis: tight rock plinth 0.50 / stair-wrapped base 0.30 / rear
+  // rock cheek 0.20 -- all 3 use `buildRockPlinthSkirt()`'s own existing
+  // options, no new kit code needed (mirrors the chapel's reuse of the
+  // same function's rearRockCheek feature).
+  const groundRand = mulberry32(tagSeed(dna.seed, 'GRND'));
+  const groundAxis = pickWeighted(groundRand, [
+    ['tight-plinth', 0.50],
+    ['stair-wrapped', 0.30],
+    ['rock-cheek', 0.20],
+  ] as Array<['tight-plinth' | 'stair-wrapped' | 'rock-cheek', number]>);
+  const rearFaceIndex = (doorFaceIndex + Math.floor(groundTier.faces.length / 2)) % groundTier.faces.length;
+
+  const plinth = buildRockPlinthSkirt({
+    points: groundTier.points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    plinthLevels: 1,
+    plinthCourseHeight: 0.18,
+    skirtMargin: 0.14,
+    stepsFace: groundAxis !== 'rock-cheek' ? doorFace : undefined,
+    stepCount: groundAxis === 'stair-wrapped' ? 3 : 2,
+    stepWidth: groundAxis === 'stair-wrapped' ? 0.7 : 0.42,
+    rearRockCheek: groundAxis === 'rock-cheek',
+    rearCheekFace: groundTier.faces[rearFaceIndex],
+  });
+  g.add(plinth);
+
+  // Crown axis: coped parapet 0.45 / signal vent cap 0.30 (a corbelled
+  // stack standing on its own coped-parapet platform) / small conical
+  // stone cap 0.25 (a steep hip-roof reused as a stone cone, the exact
+  // technique already proven on the dwarven chapel's own apse cap) --
+  // every branch is real volumetric roof geometry, never a flat-capped
+  // box (per spec: "Merlons need coping, not teeth on a box").
+  const crownRand = mulberry32(tagSeed(dna.seed, 'CROWN'));
+  const crownFamily = pickWeighted(crownRand, [
+    ['parapet', 0.45],
+    ['vent-cap', 0.30],
+    ['conical-cap', 0.25],
+  ] as Array<['parapet' | 'vent-cap' | 'conical-cap', number]>);
+
+  if (crownFamily === 'conical-cap') {
+    const coneRise = Math.min(topTier.halfW, topTier.halfD) * 1.6;
+    const cone = buildHipRoof(
+      topTier.halfW, topTier.halfD, coneRise, tagSeed(dna.seed, 'CONE'), palette.roofTile,
+      { shingle: { silhouette: 'rectangular' } },
+    );
+    cone.name = 'watchtower-conical-cap';
+    cone.position.y = totalHeight;
+    g.add(cone);
+  } else {
+    const parapet = buildParapetRoof(topTier.points, palette, 0.26);
+    parapet.position.y = totalHeight;
+    g.add(parapet);
+    if (crownFamily === 'vent-cap') {
+      const stack = buildCorbelledChimneyStack({
+        width: 0.5,
+        depth: 0.5,
+        height: 1.1,
+        courseCount: 5,
+        material: palette.basalt,
+        seed: tagSeed(dna.seed, 'STACK'),
+      });
+      stack.position.y = totalHeight + 0.26;
+      g.add(stack);
+    }
+  }
+
+  // Unconditional ornament (present regardless of crown/openings axis
+  // rolls, per the spec's own separate "Ornament" bullet): a chevron
+  // belt + a metal reinforcement band near the crown line.
+  const chevron = buildChevronBelt({ width: Math.max(0.6, topTier.halfW * 1.4), material: palette.iron });
+  chevron.position.y = totalHeight - 0.18;
+  chevron.position.z = wallZForTier(topTier, doorFaceIndex);
+  placeOnFace(chevron, topTier.faces[doorFaceIndex]!, 0.5);
+  g.add(chevron);
+
+  const metalBand = buildMetalBand({
+    width: topTier.halfW * 2,
+    depth: topTier.halfD * 2,
+    material: palette.iron,
+    bandHeight: 0.08,
+    thickness: 0.02,
+  });
+  metalBand.position.y = totalHeight - 0.4;
+  g.add(metalBand);
+
+  // Signal brazier prop on the crown's own floor cap (spec: "small signal
+  // brazier/lantern"), reusing the chapel's own 3-part bowl+legs+ember
+  // brazier helper verbatim.
+  const brazier = buildBrazier(tagSeed(dna.seed, 'BRZR'), palette);
+  brazier.position.set(topTier.halfW * 0.3, totalHeight + 0.02, topTier.halfD * 0.3);
+  g.add(brazier);
+
+  return g;
+}
+
 
 
