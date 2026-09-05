@@ -10,6 +10,7 @@ import type {
 import { FLOOR_HEIGHT, getFootprint } from '@/world/buildings/BuildingDNA';
 import {
   BLOCK_UNIT,
+  clearBlock,
   createBlockGrid,
   meshBlockGrid,
   setBlock,
@@ -24,6 +25,10 @@ import {
   type DivisionStyle,
   type OpeningShape,
 } from '@/world/buildings/kit/OpeningParts';
+import type {
+  BlockPlacementLookup,
+  WallCourseModel,
+} from '@/world/buildings/kit/Ruinate';
 import { depthFor } from '@/world/buildings/kit/DepthLadder';
 import { buildPlinthCourses, buildStringCourse } from '@/world/buildings/kit/StringCourse';
 
@@ -51,17 +56,36 @@ export const SLIME_HOST_SHELL_KINDS = [
 
 export type SlimeHostShellKind = (typeof SLIME_HOST_SHELL_KINDS)[number];
 
+export const SLIME_GENERIC_HOST_CHAMFER_RADIUS = BLOCK_UNIT * 0.14;
+
+export interface SlimeHostShellBuiltLayout {
+  group: THREE.Group;
+  hostChamferRadius: number;
+  wallModel?: WallCourseModel;
+  placementLookup?: BlockPlacementLookup;
+  remeshWithRemovedBlocks?: (removedBlockIds: Iterable<string>) => THREE.Group;
+}
+
 export interface SlimeHostShellDescriptor {
   kind: SlimeHostShellKind;
   shellId: string;
   sourceLabel: string;
   weight: number;
+  isGenericShell: boolean;
   build: (dna: BuildingDNA) => THREE.Group;
+  buildWithLayout?: (dna: BuildingDNA) => SlimeHostShellBuiltLayout;
 }
 
 type WallFace = 'front' | 'back' | 'left' | 'right';
 type GenericShellMaterialMode = 'stone' | 'timber' | 'manor' | 'forge' | 'mixed';
 type RoofStyle = 'flat' | 'gable' | 'hip';
+
+interface PerimeterColumn {
+  bx: number;
+  bz: number;
+  corner: boolean;
+  outwardNormal: THREE.Vector3;
+}
 
 interface ShellPalette {
   wall: THREE.MeshStandardMaterial;
@@ -501,17 +525,94 @@ function openingCarvesCell(
   return Math.abs(cellHorizontal - lateralCenter) <= (opening.width / 2) + BLOCK_UNIT * 0.2;
 }
 
-function fillPerimeterWalls(grid: ReturnType<typeof createBlockGrid>, bw: number, bd: number, wallBlocksH: number, openings: OpeningSpec[]): void {
+function fillSolidPerimeterWalls(grid: ReturnType<typeof createBlockGrid>, bw: number, bd: number, wallBlocksH: number): void {
+  for (let bx = 0; bx < bw; bx++) {
+    for (let bz = 0; bz < bd; bz++) {
+      const isPerimeter = bx === 0 || bz === 0 || bx === bw - 1 || bz === bd - 1;
+      if (!isPerimeter) continue;
+      for (let by = 0; by < wallBlocksH; by++) {
+        setBlock(grid, bx, by, bz, 'wall');
+      }
+    }
+  }
+}
+
+function carveOpeningCells(grid: ReturnType<typeof createBlockGrid>, bw: number, bd: number, wallBlocksH: number, openings: OpeningSpec[]): void {
   for (let bx = 0; bx < bw; bx++) {
     for (let bz = 0; bz < bd; bz++) {
       const isPerimeter = bx === 0 || bz === 0 || bx === bw - 1 || bz === bd - 1;
       if (!isPerimeter) continue;
       for (let by = 0; by < wallBlocksH; by++) {
         const carved = openings.some(opening => openingCarvesCell(opening, bx, by, bz, bw, bd));
-        if (!carved) setBlock(grid, bx, by, bz, 'wall');
+        if (carved) clearBlock(grid, bx, by, bz);
       }
     }
   }
+}
+
+function outwardNormalForPerimeterCell(bx: number, bz: number, bw: number, bd: number): THREE.Vector3 {
+  const outward = new THREE.Vector3(
+    bx === 0 ? -1 : bx === bw - 1 ? 1 : 0,
+    0,
+    bz === 0 ? -1 : bz === bd - 1 ? 1 : 0,
+  );
+  return outward.normalize();
+}
+
+function buildPerimeterColumns(bw: number, bd: number): PerimeterColumn[] {
+  const columns: PerimeterColumn[] = [];
+  const push = (bx: number, bz: number) => {
+    columns.push({
+      bx,
+      bz,
+      corner: (bx === 0 || bx === bw - 1) && (bz === 0 || bz === bd - 1),
+      outwardNormal: outwardNormalForPerimeterCell(bx, bz, bw, bd),
+    });
+  };
+
+  for (let bx = 0; bx < bw; bx++) push(bx, bd - 1);
+  for (let bz = bd - 2; bz >= 0; bz--) push(bw - 1, bz);
+  for (let bx = bw - 2; bx >= 0; bx--) push(bx, 0);
+  for (let bz = 1; bz < bd - 1; bz++) push(0, bz);
+
+  return columns;
+}
+
+function buildPerimeterWallCourseModel(
+  columns: readonly PerimeterColumn[],
+  wallBlocksH: number,
+  idPrefix: string,
+): { wallModel: WallCourseModel; placementsById: Map<string, { bx: number; by: number; bz: number; outwardNormal: THREE.Vector3 }> } {
+  const blocks: WallCourseModel['blocks'] = [];
+  const placementsById = new Map<string, { bx: number; by: number; bz: number; outwardNormal: THREE.Vector3 }>();
+
+  for (let course = 0; course < wallBlocksH; course++) {
+    columns.forEach((column, index) => {
+      const id = `${idPrefix}-c${course}-i${index}`;
+      blocks.push({
+        id,
+        course,
+        index,
+        tags: column.corner ? { corner: true } : undefined,
+      });
+      placementsById.set(id, {
+        bx: column.bx,
+        by: course,
+        bz: column.bz,
+        outwardNormal: column.outwardNormal.clone(),
+      });
+    });
+  }
+
+  return {
+    wallModel: {
+      numCourses: wallBlocksH,
+      blocksPerCourse: columns.length,
+      blocks,
+      leaf: 'outer',
+    },
+    placementsById,
+  };
 }
 
 function fillRoof(grid: ReturnType<typeof createBlockGrid>, bw: number, bd: number, wallBlocksH: number, roofStyle: RoofStyle, roofLayers: number): void {
@@ -601,40 +702,50 @@ function buildOpeningMesh(opening: OpeningSpec, palette: ShellPalette): THREE.Gr
   });
 }
 
-function buildGenericShellGroup(shellId: string, sourceLabel: string, dna: BuildingDNA, profile: GenericShellProfile): THREE.Group {
-  const { w, d } = getFootprint(profile.kind, profile.size);
-  const width = w;
-  const depth = d;
-  const wallHeight = profile.wallHeight ?? (profile.floors * FLOOR_HEIGHT);
-  const wallBlocksH = Math.max(2, Math.round(wallHeight / BLOCK_UNIT));
-  const bw = Math.max(2, Math.round(width / BLOCK_UNIT));
-  const bd = Math.max(2, Math.round(depth / BLOCK_UNIT));
-  const palette = createShellPalette(profile.materialMode);
-
-  const group = new THREE.Group();
-  group.name = shellId;
-  group.userData.sourceLabel = sourceLabel;
-  group.userData.slimeHostShellId = shellId;
-  group.userData.slimeHostKind = profile.kind;
-
-  const grid = createBlockGrid();
-  fillPerimeterWalls(grid, bw, bd, wallBlocksH, profile.openings);
-  fillRoof(grid, bw, bd, wallBlocksH, profile.roofStyle, profile.roofLayers ?? 1);
-  fillChimneys(grid, wallBlocksH, profile.chimneys);
-
+function createGenericShellMassMesh(
+  grid: ReturnType<typeof createBlockGrid>,
+  palette: ShellPalette,
+  bw: number,
+  bd: number,
+): THREE.Group {
   const shell = meshBlockGrid(grid, {
-    wall: palette.wall,
-    roof: palette.roof,
-    chimney: palette.chimney,
+   wall: palette.wall,
+   roof: palette.roof,
+   chimney: palette.chimney,
   }, {
-    topBevel: true,
-    chamferRadius: BLOCK_UNIT * 0.14,
-    chamferSegments: 2,
+   topBevel: true,
+   chamferRadius: SLIME_GENERIC_HOST_CHAMFER_RADIUS,
+   chamferSegments: 2,
   });
   shell.name = 'host-shell-mass';
   shell.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
   shell.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
   shell.position.y += BLOCK_UNIT / 2;
+  return shell;
+}
+
+function finalizeGenericShellGroup(
+  shellId: string,
+  sourceLabel: string,
+  dna: BuildingDNA,
+  profile: GenericShellProfile,
+  palette: ShellPalette,
+  width: number,
+  depth: number,
+  shell: THREE.Group,
+  shellGridCellCount: number,
+  wallGridCellCount: number,
+): THREE.Group {
+  const { w, d } = getFootprint(profile.kind, profile.size);
+  const group = new THREE.Group();
+  group.name = shellId;
+  group.userData.sourceLabel = sourceLabel;
+  group.userData.slimeHostShellId = shellId;
+  group.userData.slimeHostKind = profile.kind;
+  group.userData.isGenericShell = true;
+  group.userData.hostChamferRadius = SLIME_GENERIC_HOST_CHAMFER_RADIUS;
+  group.userData.shellGridCellCount = shellGridCellCount;
+  group.userData.wallGridCellCount = wallGridCellCount;
   group.add(shell);
 
   const footprint = rectangleLoop(width, depth);
@@ -665,8 +776,88 @@ function buildGenericShellGroup(shellId: string, sourceLabel: string, dna: Build
     size: shellDna.size,
     floors: shellDna.floors,
   };
+  group.userData.hostFootprint = { w, d };
 
   return group;
+}
+
+function buildGenericShellLayout(
+  shellId: string,
+  sourceLabel: string,
+  dna: BuildingDNA,
+  profile: GenericShellProfile,
+): SlimeHostShellBuiltLayout {
+  const { w, d } = getFootprint(profile.kind, profile.size);
+  const width = w;
+  const depth = d;
+  const wallHeight = profile.wallHeight ?? (profile.floors * FLOOR_HEIGHT);
+  const wallBlocksH = Math.max(2, Math.round(wallHeight / BLOCK_UNIT));
+  const bw = Math.max(2, Math.round(width / BLOCK_UNIT));
+  const bd = Math.max(2, Math.round(depth / BLOCK_UNIT));
+  const palette = createShellPalette(profile.materialMode);
+  const columns = buildPerimeterColumns(bw, bd);
+  const { wallModel, placementsById } = buildPerimeterWallCourseModel(columns, wallBlocksH, shellId);
+
+  const buildShellGroup = (removedBlockIds?: Iterable<string>): THREE.Group => {
+    const grid = createBlockGrid();
+    fillSolidPerimeterWalls(grid, bw, bd, wallBlocksH);
+    fillRoof(grid, bw, bd, wallBlocksH, profile.roofStyle, profile.roofLayers ?? 1);
+    fillChimneys(grid, wallBlocksH, profile.chimneys);
+
+    for (const blockId of removedBlockIds ?? []) {
+      const placement = placementsById.get(blockId);
+      if (!placement) continue;
+      clearBlock(grid, placement.bx, placement.by, placement.bz);
+    }
+
+    carveOpeningCells(grid, bw, bd, wallBlocksH, profile.openings);
+    const shellGridCellCount = grid.cells.size;
+    const wallGridCellCount = [...grid.cells.values()].filter(materialKey => materialKey === 'wall').length;
+    const shell = createGenericShellMassMesh(grid, palette, bw, bd);
+    return finalizeGenericShellGroup(
+      shellId,
+      sourceLabel,
+      dna,
+      profile,
+      palette,
+      width,
+      depth,
+      shell,
+      shellGridCellCount,
+      wallGridCellCount,
+    );
+  };
+
+  const placementLookup: BlockPlacementLookup = (block) => {
+    const placement = placementsById.get(block.id);
+    if (!placement) {
+      throw new Error(`Unknown generic slime host-shell block "${block.id}"`);
+    }
+
+    return {
+      center: new THREE.Vector3(
+        (placement.bx - ((bw - 1) / 2)) * BLOCK_UNIT,
+        (placement.by * BLOCK_UNIT) + (BLOCK_UNIT / 2),
+        (placement.bz - ((bd - 1) / 2)) * BLOCK_UNIT,
+      ),
+      width: BLOCK_UNIT,
+      height: BLOCK_UNIT,
+      depth: BLOCK_UNIT,
+      outwardNormal: placement.outwardNormal.clone(),
+    };
+  };
+
+  return {
+    group: buildShellGroup(),
+    hostChamferRadius: SLIME_GENERIC_HOST_CHAMFER_RADIUS,
+    wallModel,
+    placementLookup,
+    remeshWithRemovedBlocks: removedBlockIds => buildShellGroup(removedBlockIds),
+  };
+}
+
+function buildGenericShellGroup(shellId: string, sourceLabel: string, dna: BuildingDNA, profile: GenericShellProfile): THREE.Group {
+  return buildGenericShellLayout(shellId, sourceLabel, dna, profile).group;
 }
 
 function makeGenericDescriptor(
@@ -681,7 +872,9 @@ function makeGenericDescriptor(
     shellId,
     sourceLabel,
     weight,
+    isGenericShell: true,
     build: (dna) => buildGenericShellGroup(shellId, sourceLabel, dna, profile),
+    buildWithLayout: (dna) => buildGenericShellLayout(shellId, sourceLabel, dna, profile),
   };
 }
 
@@ -699,6 +892,7 @@ function makeElvenDescriptor(
     shellId,
     sourceLabel,
     weight,
+    isGenericShell: false,
     build: (dna) => builder(canonicalizeDna(dna, kind, style, colors, 'weathered')),
   };
 }
