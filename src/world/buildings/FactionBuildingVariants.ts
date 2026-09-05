@@ -42,6 +42,22 @@ import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
 import { buildElvenChapelShrine } from './ElvenChapelKit';
+// Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): the real
+// gel-block/pseudopod kit-of-parts builders, one per canonical BuildingKind,
+// replacing this file's own legacy buildSlimeVilla/buildSlimeChapel/
+// buildSlimeShop blob functions below (raw Sphere/Cylinder primitives).
+// Aliased on import because the old local functions still exist under the
+// same names pending their Task 17 removal.
+import {
+  buildSlimeHouse as buildSlimeKitHouse,
+  buildSlimeTerraced as buildSlimeKitTerraced,
+  buildSlimeShop as buildSlimeKitShop,
+  buildSlimeInn as buildSlimeKitInn,
+  buildSlimeBlacksmith as buildSlimeKitBlacksmith,
+  buildSlimeVilla as buildSlimeKitVilla,
+  buildSlimeChapel as buildSlimeKitChapel,
+  buildSlimeWatchtower as buildSlimeKitWatchtower,
+} from './slime/SlimeBuildingKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -370,84 +386,17 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
 }
 
 // ── Slime — translucent gelatinous blob architecture ─────────────────────────
-// Elder Blob (patriciate), Pulse Pool (church), Goo Stall (market):
-// no walls at all — glossy translucent domes with a glowing inner core and
-// bubble motes, matching the Slime Pool park feature's material language.
-
-function slimeBlobMaterial(color: string, opacity = 0.55): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(color), transparent: true, opacity,
-    roughness: 0.15, metalness: 0.05, side: THREE.DoubleSide,
-  });
-}
-
-function buildSlimeBlobBase(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x51117E00);
-  const blobMat = slimeBlobMaterial(dna.colors.walls, 0.5);
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(dna.colors.trim), emissive: new THREE.Color(dna.colors.trim),
-    emissiveIntensity: 0.9, roughness: 0.3, transparent: true, opacity: 0.85,
-  });
-
-  // Main gelatinous dome (irregular via slightly randomized scale).
-  const dome = addMesh(g, new THREE.SphereGeometry(Math.max(w, d) / 2, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), blobMat, 0, 0, 0);
-  dome.scale.set(1 + (r() - 0.5) * 0.1, h / (Math.max(w, d) / 2), 1 + (r() - 0.5) * 0.1);
-
-  // Glowing inner core, visible through the translucent membrane.
-  addMesh(g, new THREE.SphereGeometry(Math.max(w, d) * 0.18, 10, 8), coreMat, 0, h * 0.4, 0);
-
-  // Small satellite ooze bubbles around the base.
-  const bubbleMat = slimeBlobMaterial(dna.colors.door, 0.6);
-  const nBubbles = 4 + Math.floor(r() * 3);
-  for (let i = 0; i < nBubbles; i++) {
-    const ang = (i / nBubbles) * Math.PI * 2 + r() * 0.4;
-    const rad = Math.max(w, d) * 0.5 + 0.2 + r() * 0.3;
-    const bs = 0.15 + r() * 0.2;
-    addMesh(g, new THREE.SphereGeometry(bs, 8, 6), bubbleMat, Math.cos(ang) * rad, bs * 0.7, Math.sin(ang) * rad);
-  }
-  return g;
-}
-
-function buildSlimeVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  return buildSlimeBlobBase(dna, fp.w, fp.d, FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.95);
-}
-
-function buildSlimeChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = buildSlimeBlobBase(dna, fp.w, fp.d * 0.7, FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.05);
-  // Pulse Pool: drip strands hanging from the dome apex (thin tapered cylinders).
-  const r = mulberry32(dna.seed ^ 0x51117E01);
-  const dripMat = slimeBlobMaterial(dna.colors.trim, 0.65);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.05;
-  for (let i = 0; i < 5; i++) {
-    const ang = (i / 5) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.25;
-    const len = 0.3 + r() * 0.3;
-    addMesh(g, new THREE.CylinderGeometry(0.03, 0.06, len, 5), dripMat, Math.cos(ang) * rad, h - len / 2, Math.sin(ang) * rad);
-  }
-  return g;
-}
-
-function buildSlimeShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.5;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x51117E02);
-  // Goo Stall: small blob mound with a bulging "counter" lump out front.
-  const blobMat = slimeBlobMaterial(dna.colors.walls, 0.55);
-  addMesh(g, new THREE.SphereGeometry(Math.max(fp.w, fp.d) / 2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), blobMat, 0, 0, -fp.d * 0.1)
-    .scale.set(1, h / (Math.max(fp.w, fp.d) / 2), 1);
-  addMesh(g, new THREE.SphereGeometry(fp.w * 0.28, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), blobMat, 0, 0, fp.d * 0.35)
-    .scale.set(1.3, 0.5, 1);
-  // Jar props for sale.
-  const jarMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c8e8d0'), transparent: true, opacity: 0.7, roughness: 0.2 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.CylinderGeometry(0.12, 0.12, 0.25, 8), jarMat, -fp.w * 0.3 + i * fp.w * 0.3, 0.35, fp.d * 0.35 + r() * 0.1);
-  }
-  return g;
-}
+// REMOVED (Task 15/17, docs/superpowers/plans/2026-09-04-slime-buildings.md):
+// the old slimeBlobMaterial/buildSlimeBlobBase/buildSlimeVilla/
+// buildSlimeChapel/buildSlimeShop raw Sphere/Cylinder "blob" functions that
+// used to live here have been fully replaced by
+// src/world/buildings/slime/SlimeBuildingKit.ts's real gel-block/pseudopod
+// kit-of-parts builders (imported above as buildSlimeKit*), which now cover
+// all 8 canonical kinds via the slime registry entry below. Deleted in the
+// same pass as the Task 15 registry rewire (rather than deferred to a
+// separate Task 17) because tsconfig's noUnusedLocals:true turns leaving
+// them in place unused into real new tsc errors -- there is no benefit to
+// keeping now-dead code around for an extra task cycle.
 
 // ── Undead — bone/crypt ossuary architecture ─────────────────────────────────
 // Lich Tower (patriciate), Bone Shrine (church), Wraith Bazaar (market):
@@ -1234,19 +1183,21 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     blacksmith: buildVulperiaVilla,
   },
   slime: {
-    villa:  buildSlimeVilla,
-    chapel: buildSlimeChapel,
-    shop:   buildSlimeShop,
-    // Phase 2b increment 3: house/terraced/inn/blacksmith previously had
-    // no slime override at all — every ordinary house, row house, inn,
-    // and smithy in a slime settlement fell through to the generic
-    // default builder, so most of the settlement had no slime identity.
-    // buildSlimeVilla is footprint-dynamic (getFootprint(dna.
-    // buildingKind, dna.size)), so reuse is safe across all four kinds.
-    house:      buildSlimeVilla,
-    terraced:   buildSlimeVilla,
-    inn:        buildSlimeVilla,
-    blacksmith: buildSlimeVilla,
+    // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): slime
+    // is the first faction with a real bespoke kit builder for every
+    // canonical kind (SlimeBuildingKit.ts's gel-block/pseudopod
+    // construction), replacing the earlier "every kind reuses the villa
+    // blob" stopgap. watchtower/tower previously had NO slime override at
+    // all (fell through to the generic square box-stacked builder).
+    house:      buildSlimeKitHouse,
+    terraced:   buildSlimeKitTerraced,
+    shop:       buildSlimeKitShop,
+    inn:        buildSlimeKitInn,
+    blacksmith: buildSlimeKitBlacksmith,
+    villa:      buildSlimeKitVilla,
+    chapel:     buildSlimeKitChapel,
+    watchtower: buildSlimeKitWatchtower,
+    tower:      buildSlimeKitWatchtower,
   },
   undead_common: {
     villa:  buildUndeadVilla,
