@@ -34,82 +34,42 @@
 
 ---
 
-### Task 1: [SHARED KIT] Verify/complete shared modular-building prerequisites
+### Task 1 (resolved, adapted): Shared modular-building prerequisites already exist under different real names
 
-**Goal:** Ensure every Part 4 module required by slime exists and exposes the interfaces this plan consumes.
+**Original goal:** Ensure every Part 4 module required by slime exists and exposes the interfaces this plan consumes.
 
-**Files:**
-- Create or modify as needed: `src/world/buildings/kit/DepthLadder.ts`
-- Create or modify as needed: `src/world/buildings/kit/OpeningParts.ts`
-- Create or modify as needed: `src/world/buildings/kit/FacadeGrammar.ts`
-- Create or modify as needed: `src/world/buildings/kit/ModuleSocket.ts`
-- Create or modify as needed: `src/world/buildings/kit/StringCourse.ts`
-- Test: `tests/world/buildings/kit/SlimeSharedKitPrerequisites.test.ts`
+**2026-09-05 reconciliation:** This task's failing-test draft was written speculatively, before the shared building-kit Tier-1 plan (`docs/superpowers/plans/2026-09-04-shared-building-kit-tier1.md`) actually landed on `main` (PR #48, merged). The real, shipped shared kit satisfies every one of this task's requirements, but under its own real names rather than the guessed ones below:
 
-**Failing test to write first:**
-- `tests/world/buildings/kit/SlimeSharedKitPrerequisites.test.ts`
-- Assert these exports exist and can be called/imported: `DEPTH_LADDER`, `assertDepthLadderCompliance`, `buildCompleteWindowOpening`, `buildCompleteDoorOpening`, `splitFacade`, `repeatBays`, `createSocket`, `findSockets`, `buildStringCourse`.
-- Assert opening helpers emit or describe all five required pieces: recess, proud surround, sill/threshold, internal division, set-back glazing/door face.
+| Guessed name in original draft | Real shipped equivalent |
+|---|---|
+| `DEPTH_LADDER` | `DEPTH_LADDER` (`kit/DepthLadder.ts`) — same name, ships as-is |
+| `assertDepthLadderCompliance` | `assertDepthSeparated(entries)` (`kit/DepthLadder.ts`) — same intent (guards against two pieces sharing/crossing a depth rung) |
+| `buildCompleteWindowOpening` / `buildCompleteDoorOpening` | `buildWindowOpening` / `buildDoorOpening` (`kit/OpeningParts.ts`) — both already produce the required five pieces (recess, proud surround, sill/threshold, internal division, set-back glazing/door face) per `docs/superpowers/specs/2026-09-04-modular-building-kit-doctrine.md` Rule 2 |
+| `splitFacade` / `repeatBays` | `layoutFacade(totalWidth, spec, seed)` with `FixedSegmentSpec`/`RelativeSegmentSpec`/`RepeatSegmentSpec`/`FloatSegmentSpec` (`kit/FacadeGrammar.ts`) — same fixed/relative/repeat/float bay-layout capability |
+| `createSocket` / `findSockets` | No shared `ModuleSocket.ts` module exists, and none is needed — see Task 2's adaptation below |
+| `buildStringCourse` | `buildStringCourse` (`kit/StringCourse.ts`) — same name, ships as-is |
 
-**Implementation outline:**
-- If modules already exist from prior race work, add only compatibility exports/adapters required by the test.
-- If missing, implement minimal shared modules per doctrine Part 4; keep them race-agnostic.
-- Do not place slime colours or slime-specific names in shared kit files.
-
-**Verification command:**
-- `npx vitest run tests/world/buildings/kit/SlimeSharedKitPrerequisites.test.ts`
+**Decision:** do not create duplicate wrapper functions purely to match the originally-guessed names — that would violate the "do not re-invent existing infra" instruction and add pointless indirection. Slime-specific code (Tasks 4+) imports the real names directly. No new shared-kit file or test is needed for this task; it is satisfied by the already-merged, already-tested shared kit.
 
 ---
 
-### Task 2: [SHARED KIT] `Ruinate` exposes attachment sockets
+### Task 2 (resolved, adapted): Attachment-point derivation moves to slime-scoped code, not a `Ruinate.ts` core change
 
-**Goal:** Let slime overlay modules attach to structurally meaningful ruin edges instead of arbitrary positions.
+**Original goal:** Let slime overlay modules attach to structurally meaningful ruin edges instead of arbitrary positions.
 
-**Files:**
-- Create or modify: `src/world/buildings/kit/Ruinate.ts`
-- Test: `tests/world/buildings/kit/Ruinate.test.ts`
+**2026-09-05 reconciliation:** `Ruinate.ts`'s real, shipped design (see `.superpowers/sdd/progress.md` Task 16/17 ledger entries and `docs/superpowers/specs/2026-09-04-modular-building-kit-doctrine.md` Part 4) is deliberately abstracted away from concrete wall/roof/opening geometry: it operates purely on an abstract `WallCourseModel` (course/index grid) and returns `RuinateResult` (`survivingBlockIds`, `removedBlockIds`, `breakHeightByColumn`, `occupancyMask`) plus a caller-supplied `BlockPlacementLookup` for real-world positions. It intentionally has **no** built-in concept of "eave"/"rafter"/"plinth"/"opening-edge" — those are concrete-geometry concepts that belong to the caller (the host shell builder), not to the abstract damage-field module. This is the same reasoning already used for `buildIvyAttachmentPoints()` (a `VegetationHook` deriver that takes a `BlockPlacementLookup` and produces real anchor points from real block geometry — i.e. exactly the "socket" pattern this task wants, just implemented at the call site rather than inside `Ruinate.ts` itself).
 
-**Failing test to write first:**
-- Add tests asserting `ruinateShell(shell, opts)` returns a result with:
-  - non-empty `group` / geometry;
-  - same-material rubble derived from removed wall/roof material;
-  - `sockets` tagged at least `breach-edge`, `eave`, `rafter`, `plinth`, and `opening-edge` when those source features exist;
-  - protected corners/buttresses remain intact under a high damage seed.
-
-**Implementation outline:**
-- Extend `Ruinate` result type with `sockets: ModuleSocket[]`.
-- Tag sockets deterministically from damaged facade/roof/opening data.
-- Preserve existing callers by defaulting socket collection to an empty array when no metadata is supplied.
-
-**Verification command:**
-- `npx vitest run tests/world/buildings/kit/Ruinate.test.ts`
+**Decision:** add a small **slime-scoped** `src/world/buildings/slime/SlimeSockets.ts` (folded into Task 6/8's work, not a separate shared-kit file) that derives attachment points from (a) the host shell's real footprint/opening/plinth/roof-edge metadata (from `SlimeHostShells.ts`'s descriptor, Task 6) and (b) `RuinateResult`'s occupancy mask/break heights (to find real breach edges), the same way `buildIvyAttachmentPoints()` derives real hook points today. `Ruinate.ts` itself is not modified — it remains race-agnostic per doctrine, and this avoids inventing a speculative generic `ModuleSocket[]` abstraction that no other race currently needs. If a second race later needs the same socket-derivation pattern, promoting `SlimeSockets.ts`'s logic into the shared `kit/` folder at that point is the right sequencing (YAGNI now).
 
 ---
 
-### Task 3: [SHARED KIT] Shell descriptors for host-building reuse
+### Task 3 (resolved, adapted): Host-shell descriptor is slime-scoped (folds into Task 6), not a new shared `HostShell.ts`
 
-**Goal:** Provide a race-agnostic descriptor that lets slime consume already-built shells without importing every prior race builder ad hoc.
+**Original goal:** Provide a race-agnostic descriptor that lets slime consume already-built shells without importing every prior race builder ad hoc.
 
-**Files:**
-- Create or modify: `src/world/buildings/kit/HostShell.ts`
-- Test: `tests/world/buildings/kit/HostShell.test.ts`
+**2026-09-05 reconciliation:** Task 6 (below) already specs `SlimeHostShells.ts` with `pickSlimeHostShell(kind, seed)` returning a `{ shellId, sourceLabel }` pair "plus shell descriptor ids/callbacks... so later tasks can compose lazily" — this is the same descriptor concept Task 3 asks for. Rather than add a separate, more generic `kit/HostShell.ts` abstraction that nothing else currently consumes (no other race has asked for this pattern yet, and inventing one speculatively risks guessing wrong about what a second consumer would need), the descriptor type (footprint, opening schedule, socket-relevant geometry, protected regions for `Ruinate`) is defined directly in `SlimeHostShells.ts` as `SlimeHostShellDescriptor`, scoped to slime for now. Per the same YAGNI reasoning as Task 2: promote to shared `kit/` only once a second race needs the identical shape.
 
-**Failing test to write first:**
-- Assert `createHostShellDescriptor(kind, faction, dna)` returns:
-  - a `THREE.Group` or lazy builder reference;
-  - footprint data;
-  - opening descriptors;
-  - socket descriptors;
-  - protected regions for `Ruinate`.
-- Assert every canonical slime kind can request a descriptor without throwing when using a generic fallback shell.
-
-**Implementation outline:**
-- Add a small shared adapter layer around existing builders / shell blueprints.
-- Avoid circular imports with `FactionBuildingVariants.ts`; prefer shell blueprints or factory callbacks injected by the race-specific slime kit.
-- If previous race work already has an equivalent shell descriptor, add a compatibility adapter instead of a duplicate module.
-
-**Verification command:**
-- `npx vitest run tests/world/buildings/kit/HostShell.test.ts`
+**Decision:** merged into Task 6's implementation; no separate `HostShell.ts` file or test.
 
 ---
 
