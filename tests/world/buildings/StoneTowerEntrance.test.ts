@@ -85,6 +85,13 @@ describe('buildEntrance', () => {
     expect(countVerts(flanked)).toBeGreaterThan(countVerts(plain));
   });
 
+  it('exposes the named opening parts from the shared door builder', () => {
+    const entrance = buildEntrance('plain_arch', radius, 42, makePalette());
+    for (const name of ['recess', 'surround', 'threshold', 'door-leaf']) {
+      expect(entrance.getObjectByName(name), `${name} should exist in the entrance hierarchy`).toBeTruthy();
+    }
+  });
+
   it('has real carved depth: a dark cavity material genuinely recesses behind the wall surface, and a stone frame material genuinely projects proud of it, with a real gap between them (not a flat decal, and not incidental cone-radius Z-extent)', () => {
     const g = buildEntrance('plain_arch', radius, 42, makePalette());
     g.updateMatrixWorld(true);
