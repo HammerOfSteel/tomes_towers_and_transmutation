@@ -130,9 +130,56 @@
 
 ---
 
-### Task 6: Slime host-shell selection weights (mimicry source)
+### Task 6 (adapted): Slime host-shell selection weights (mimicry source)
 
-**Goal:** Encode the approved mimic-culture direction as deterministic host-shell ("mimicry source") weights per building kind.
+**Reconciliation with real codebase state (2026-09-05, discovered while preparing this task for implementation):**
+
+Spec §4's per-kind host-shell weight tables were written aspirationally and name shell
+families that do not exist as real, buildable code anywhere in this repo — e.g. "human
+rural cottage", "generic stone cottage", "dwarven hall remnant", "timber row shell".
+Auditing `src/world/buildings/FactionBuildingVariants.ts` confirms only ONE race has been
+migrated to the new depth-laddered, five-piece-opening kit technique so far: **elven**,
+via four real builders — `buildElvenStoneTower` (`StoneTowerKit.ts`), `buildElvenTreehouseHome`
+(`ElvenTreehouseKit.ts`), `buildElvenMarketStall` (`ElvenMarketStallKit.ts`), and
+`buildElvenChapelShrine` (`ElvenChapelKit.ts`). Every other race (`vulperia`, `undead_common`,
+`dwarven`, `orcish`, `vampire`, `fae`, and slime's own current builders) is still on the
+legacy `BlockKit.ts` voxel-occupancy-grid technique (`Build*Villa`/`Build*Chapel`/`Build*Shop`
+in `FactionBuildingVariants.ts`), explicitly slated for its own future race-by-race rebuild
+pass per this initiative's standing plan — not something slime's task should either wait on
+or silently re-skin, since it is a moving target of inconsistent quality today.
+
+**Decision:** `SlimeHostShells.ts` sources host shells from two real strategies, never from
+a shell family that doesn't exist:
+
+1. **Direct reuse of a real elven kit builder** where it is a strong functional/silhouette
+   fit: `chapel` → `buildElvenChapelShrine`, `shop` → `buildElvenMarketStall`,
+   `watchtower` → `buildElvenStoneTower`. These are called through their real exported
+   signatures (a `BuildingDNA`-shaped input) and labelled with a `sourceLabel` naming the
+   real mimicked race/shell (e.g. `"elven chapel ruin"`, `"elven market-stall frame"`,
+   `"elven stone watchtower"`).
+2. **New slime-scoped "generic shell" builders**, for kinds with no existing analog
+   (`house`, `terraced`, `villa`, `inn`, `blacksmith`): small dedicated builders written
+   directly in `SlimeHostShells.ts`, assembled from the SAME shared low-level primitives
+   every other kit already uses — `BlockKit.ts`'s `meshBlockGrid`/`BLOCK_UNIT` for the
+   wall-course mass, `kit/OpeningParts.ts` for every door/window (five-piece minimum,
+   never skipped even though the shell will later be damaged/covered), `kit/StringCourse.ts`
+   for plinth/floor lines, `kit/Bevels.ts` for all trim. These are honestly labelled as
+   generic (`sourceLabel` values like `"generic stone shell"`, `"generic timber shell"`,
+   `"generic manor shell"`) rather than pretending to be a fully-fledged human/dwarven kit —
+   they exist only to give slime's occupied-shell composer something real and
+   depth-laddered to ruin and grow on, sized/opening-scheduled per spec §4's blueprint
+   tables for that kind (footprint, storey count, opening counts/sizes).
+   This satisfies spec Rule 4 ("variety from module swapping") because footprint,
+   opening schedule, damage roll, and overlay module weights still vary per kind and per
+   seed even though two kinds may share the same underlying generic-shell *technique*.
+
+Each kind's weight table is re-normalized across only the options that are real per the
+above (documented per kind in `SlimeHostShells.ts`'s own header comment, mapping spec's
+original aspirational host-option name to its real substitute) rather than the spec's
+literal aspirational percentages. If a future race's rebuild lands a new depth-laddered
+kit builder that is a better mimicry fit for some slime kind, it should be added to that
+kind's weight table at that time — this is intentionally left open for extension, not
+closed off.
 
 **Files:**
 - Create: `src/world/buildings/slime/SlimeHostShells.ts`
@@ -141,12 +188,13 @@
 **Failing test to write first:**
 - Assert all 8 canonical kinds have host-shell weight tables.
 - Assert each weight table sums to `1.0 ± 0.001`.
-- Assert `pickSlimeHostShell(kind, seed)` is deterministic and returns a `{ shellId, sourceLabel }` pair, where `sourceLabel` names the mimicked race/shell family (e.g. `"elven small-shell"`) for use in generated metadata/comments per spec §2.4 rule 12.
+- Assert `pickSlimeHostShell(kind, seed)` is deterministic and returns a `{ shellId, sourceLabel, build }` triple (or equivalent), where `sourceLabel` names the real mimicked race/shell per the reconciliation above, and `build` is a callable that returns a `THREE.Group` when given whatever inputs that shell strategy needs (either a `BuildingDNA`-shaped object for reused elven builders, or the kind's footprint/seed for generic shells).
 - Assert `house`, `terraced`, `villa`, `inn`, `shop`, `blacksmith`, `chapel`, and `watchtower` do not all collapse to the same host shell id.
+- Assert every generic-shell builder produces a non-empty, finite, named-group result with at least one real five-piece opening (reuse the shared `hasFivePieceOpening`-style check pattern from `kit/OpeningParts.ts`'s own tests, or write an equivalent local assertion).
 
 **Implementation outline:**
-- Encode weights from `spec.md` Section 4.
-- Bias grassland/forest-compatible shells (human rural, elven, generic stone) but allow occasional reclaimed prior-race shell; a settlement may freely mix mimicry sources across its buildings (spec §8 "remaining open items").
+- Encode weights using the real-substitution mapping above, keyed off spec.md Section 4's intent (footprint, storey count, opening schedule) even where the literal host-family name changes.
+- Bias grassland/forest-compatible generic shells but allow the "prior-race leftover shell" concept to mean "reuse of a real elven kit builder" specifically, since elven is the only race with a second, independently-styled kit family available today.
 - Return shell descriptor ids/callbacks plus the source label, not full built groups, so later tasks can compose lazily.
 
 **Verification command:**
