@@ -301,8 +301,16 @@ export function buildWindowOpening(opts: WindowOpeningOptions): THREE.Group {
   const opening = new THREE.Group();
   const depths = getOpeningDepths(opts.recessDepth, opts.frameProud);
   const recessMaterial = opts.recessMaterial ?? opts.glazingMaterial;
+  const shape: OpeningShape = opts.openingShape ?? 'arch';
+  // Tagged so callers/tests can identify which shape variant was built without
+  // reaching into geometry internals -- finishArchitecturalGeometry() (see
+  // Bevels.ts) intentionally rebakes every extruded/lathed piece into a plain
+  // BufferGeometry for correct creased-normal shading, so `.geometry.type`
+  // markers (e.g. 'TorusGeometry', 'ExtrudeGeometry') never survive as a
+  // reliable structural signal for this module's output.
+  opening.userData.openingShape = shape;
 
-  if ((opts.openingShape ?? 'arch') === 'round') {
+  if (shape === 'round') {
     const clearRadius = Math.max(opts.width * 0.34, opts.width * 0.5 - opts.frameWidth * 0.7);
     opening.add(
       buildRoundRecess(opts, depths, clearRadius, recessMaterial),

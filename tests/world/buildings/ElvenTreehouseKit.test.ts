@@ -125,9 +125,18 @@ describe('buildElvenTreehouseHome', () => {
   });
 
   it('has a carved entrance doorway (reusing buildTowerBase unchanged) -- a genuine recessed opening, not a flat surface', () => {
+    // Note: the entrance opening moved to kit/OpeningParts.ts's
+    // buildDoorOpening(), which routes its recess mesh through
+    // finishArchitecturalGeometry() (Bevels.ts) -- this intentionally
+    // rebakes ExtrudeGeometry into a plain BufferGeometry for correct
+    // creased-normal shading, so `.geometry.type` no longer survives as a
+    // marker. Instead, verify the real structural property the test cares
+    // about directly: a named 'recess' group exists and sits measurably
+    // behind the wall face (genuine depth), not flush with it.
     const g = buildElvenTreehouseHome(makeDna('house', 5));
-    let sawExtrude = false;
-    g.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'ExtrudeGeometry') sawExtrude = true; });
-    expect(sawExtrude).toBe(true);
+    let recess: THREE.Object3D | undefined;
+    g.traverse((o) => { if (o.name === 'recess') recess = o; });
+    expect(recess).toBeDefined();
+    expect(Math.abs(recess!.position.z)).toBeGreaterThan(0.1);
   });
 });
