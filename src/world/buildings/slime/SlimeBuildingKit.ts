@@ -4,7 +4,7 @@ import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
 import { FLOOR_HEIGHT } from '@/world/buildings/BuildingDNA';
 import { finishArchitecturalGeometry } from '@/world/buildings/kit/Bevels';
 import { depthFor } from '@/world/buildings/kit/DepthLadder';
-import { buildDoorOpening } from '@/world/buildings/kit/OpeningParts';
+import { buildDoorOpening, buildWindowOpening } from '@/world/buildings/kit/OpeningParts';
 import {
   buildContainedGelVat,
   buildFacetedDripRun,
@@ -21,7 +21,7 @@ import {
 import { applySlimeDoorOverlay } from '@/world/buildings/slime/SlimeOpeningOverlay';
 import type { SlimeMaterialSet } from '@/world/buildings/slime/SlimeMaterials';
 
-type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn';
+type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith';
 type OpeningFace = SlimeKindBlueprintOpening['face'];
 
 type HouseDamageState = 'light-roof-loss' | 'broken-side-wall' | 'blocked-side-window' | 'exposed-rafters';
@@ -42,6 +42,10 @@ type InnFrontSpecial = 'hanging-sign' | 'porch-trough' | 'broken-balcony' | 'sid
 type InnSocialFeature = 'interior-vat-visible' | 'floor-channel-visible' | 'membrane-awning-patch' | 'glowing-window-lenses';
 type InnDamageState = 'light' | 'roof-corner-missing' | 'side-wall-breach' | 'upper-balcony-collapse';
 type InnVentState = 'retained-chimney' | 'capped-vent-pipe-cluster' | 'broken-chimney-gel-seam' | 'none';
+
+type BlacksmithHeatSource = 'glowing-acid-vat' | 'mineral-hardening-crucible' | 'steam-vent-furnace' | 'fungal-spore-kiln';
+type BlacksmithFrontComposition = 'central-arch' | 'offset-arch-tank' | 'double-pier-opening' | 'half-collapsed-front';
+type BlacksmithVentSilhouette = 'tall-chimney' | 'louvred-vent-box' | 'pipe-cluster' | 'broken-chimney-gel-repair';
 
 interface WeightedOption<T> {
   value: T;
@@ -91,6 +95,13 @@ interface InnVariation {
   entranceOffset: number;
 }
 
+interface BlacksmithVariation {
+  heatSource: BlacksmithHeatSource;
+  frontComposition: BlacksmithFrontComposition;
+  ventSilhouette: BlacksmithVentSilhouette;
+  workArchOffset: number;
+}
+
 interface BuildContext<TVariation> {
   dna: BuildingDNA;
   group: THREE.Group;
@@ -125,11 +136,13 @@ const HOUSE_BLUEPRINT_SALT = 0x4810_0001;
 const TERRACED_BLUEPRINT_SALT = 0x4a20_0002;
 const SHOP_BLUEPRINT_SALT = 0x4b30_0003;
 const INN_BLUEPRINT_SALT = 0x4c40_0004;
+const BLACKSMITH_BLUEPRINT_SALT = 0x4d50_0005;
 
 const HOUSE_EXTRA_SALT = 0x5100_0001;
 const TERRACED_EXTRA_SALT = 0x5200_0002;
 const SHOP_EXTRA_SALT = 0x5300_0003;
 const INN_EXTRA_SALT = 0x5400_0004;
+const BLACKSMITH_EXTRA_SALT = 0x5500_0005;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -1028,6 +1041,96 @@ function createInnBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprint; 
       signSide,
       stableSide,
       entranceOffset,
+    },
+  };
+}
+
+function createBlacksmithBlueprint(dna: BuildingDNA): { blueprint: SlimeKindBlueprint; variation: BlacksmithVariation } {
+  const rand = mulberry32(seedWithSalt(dna.seed, BLACKSMITH_BLUEPRINT_SALT));
+  const heatSource = pickWeighted(rand, [
+    { value: 'glowing-acid-vat' as const, weight: 0.35 },
+    { value: 'mineral-hardening-crucible' as const, weight: 0.30 },
+    { value: 'steam-vent-furnace' as const, weight: 0.20 },
+    { value: 'fungal-spore-kiln' as const, weight: 0.15 },
+  ]);
+  const frontComposition = pickWeighted(rand, [
+    { value: 'central-arch' as const, weight: 0.45 },
+    { value: 'offset-arch-tank' as const, weight: 0.25 },
+    { value: 'double-pier-opening' as const, weight: 0.20 },
+    { value: 'half-collapsed-front' as const, weight: 0.10 },
+  ]);
+  const ventSilhouette = pickWeighted(rand, [
+    { value: 'tall-chimney' as const, weight: 0.35 },
+    { value: 'louvred-vent-box' as const, weight: 0.30 },
+    { value: 'pipe-cluster' as const, weight: 0.20 },
+    { value: 'broken-chimney-gel-repair' as const, weight: 0.15 },
+  ]);
+  const workArchOffset = frontComposition === 'offset-arch-tank' ? (rand() < 0.5 ? -0.55 : 0.55) : 0;
+
+  const ruinRanges: Record<BlacksmithFrontComposition, readonly [number, number]> = {
+    'central-arch': [0.10, 0.18],
+    'offset-arch-tank': [0.14, 0.20],
+    'double-pier-opening': [0.16, 0.22],
+    'half-collapsed-front': [0.20, 0.25],
+  };
+  const [ruinMin, ruinMax] = ruinRanges[frontComposition];
+  const ruinIntensity = rollRange(rand, ruinMin, ruinMax);
+
+  const moduleWeights: ModuleWeights = {
+    'gel-lip-course': 0.62,
+    'membrane-sheet': 0.40,
+    'tendril-bridge': 0.32,
+    'faceted-drip-run': 0.30,
+    'gel-lens-infill': 0.18,
+    'puddle-skirt-tiles': 0.85,
+    'contained-gel-vat': 0.45,
+  };
+  if (heatSource === 'glowing-acid-vat') withBoostedWeight(moduleWeights, 'contained-gel-vat', 0.2);
+  if (heatSource === 'steam-vent-furnace') withBoostedWeight(moduleWeights, 'membrane-sheet', 0.15);
+  if (frontComposition === 'half-collapsed-front') withBoostedWeight(moduleWeights, 'tendril-bridge', 0.15);
+
+  const propWeights: PropWeights = {
+    rubble: clamp(0.22 + ruinIntensity * 0.7, 0.28, 0.5),
+    'contained-gel-vat': heatSource === 'glowing-acid-vat' ? 0.5 : 0.22,
+  };
+
+  const openingSchedule: SlimeKindBlueprintOpening[] = [
+    {
+      kind: 'door',
+      face: 'front',
+      offset: workArchOffset,
+      baseY: 0,
+      width: 2.2,
+      straightHeight: 1.55,
+      pointHeight: 0.32,
+      cloggingRatio: 0.06 + rand() * 0.06,
+    },
+    {
+      kind: 'door',
+      face: 'back',
+      offset: 0,
+      baseY: 0,
+      width: 0.9,
+      straightHeight: 1.5,
+      pointHeight: 0.28,
+      cloggingRatio: 0.12 + rand() * 0.08,
+    },
+  ];
+
+  return {
+    blueprint: {
+      footprint: { width: 5, depth: 4, skirtAllowance: 0.3 },
+      floors: 1,
+      openingSchedule,
+      ruinIntensity,
+      moduleWeights,
+      propWeights,
+    },
+    variation: {
+      heatSource,
+      frontComposition,
+      ventSilhouette,
+      workArchOffset,
     },
   };
 }
@@ -2536,6 +2639,249 @@ function addInnExtras(context: BuildContext<InnVariation>): void {
   }
 }
 
+function buildBlacksmithVentSilhouette(context: BuildContext<BlacksmithVariation>, seed: number): THREE.Group {
+  const vent = new THREE.Group();
+  vent.name = 'blacksmith-vent-silhouette';
+  const rand = mulberry32(seed);
+  const box = context.hostBox;
+  const roofY = box.max.y;
+  const cornerX = box.max.x - 0.5;
+  const cornerZ = box.min.z + 0.5;
+
+  switch (context.variation.ventSilhouette) {
+    case 'tall-chimney': {
+      const ringCount = 4 + Math.floor(rand() * 2);
+      let y = roofY;
+      for (let index = 0; index < ringCount; index++) {
+        const ringHeight = 0.34 + rand() * 0.08;
+        const ringRadius = 0.26 - index * 0.012;
+        const ring = createFacetedPlate(ringRadius * 2, ringRadius * 2, ringHeight, context.materials.hardenedGel, `chimney-ring-${index}`, 6);
+        ring.position.set(cornerX, y + ringHeight * 0.5, cornerZ);
+        vent.add(ring);
+        const strap = beam(ringRadius * 1.9, 0.04, ringRadius * 1.9, context.materials.gelDark, `chimney-strap-${index}`);
+        strap.position.set(cornerX, y + ringHeight, cornerZ);
+        vent.add(strap);
+        y += ringHeight;
+      }
+      break;
+    }
+    case 'louvred-vent-box': {
+      const boxWidth = 0.55;
+      const boxHeight = 0.62;
+      const frame = beam(boxWidth, boxHeight, 0.4, context.materials.hardenedGel, 'louvre-frame');
+      frame.position.set(cornerX, roofY + boxHeight * 0.5, cornerZ);
+      vent.add(frame);
+      const slatCount = 4;
+      for (let index = 0; index < slatCount; index++) {
+        const slat = beam(boxWidth * 0.94, 0.05, 0.42, context.materials.gelDark, `louvre-slat-${index}`);
+        slat.position.set(cornerX, roofY + 0.1 + index * (boxHeight * 0.78) / slatCount, cornerZ);
+        slat.rotation.x = -0.35;
+        vent.add(slat);
+      }
+      break;
+    }
+    case 'pipe-cluster': {
+      const pipeCount = 3;
+      for (let index = 0; index < pipeCount; index++) {
+        const height = 0.5 + rand() * 0.4;
+        const radius = 0.09 + rand() * 0.03;
+        const pipe = createFacetedPlate(radius * 2, radius * 2, height, context.materials.hardenedGel, `vent-pipe-${index}`, 6);
+        pipe.position.set(
+          cornerX + (index - 1) * 0.22,
+          roofY + height * 0.5,
+          cornerZ + (rand() - 0.5) * 0.1,
+        );
+        vent.add(pipe);
+        const cap = createFacetedPlate(radius * 2.3, radius * 2.3, 0.06, context.materials.gelDark, `vent-pipe-cap-${index}`, 6);
+        cap.position.set(pipe.position.x, roofY + height + 0.03, pipe.position.z);
+        vent.add(cap);
+      }
+      break;
+    }
+    case 'broken-chimney-gel-repair': {
+      const stubHeight = 0.4;
+      const stub = createFacetedPlate(0.5, 0.5, stubHeight, context.materials.hardenedGel, 'chimney-stub', 6);
+      stub.position.set(cornerX, roofY + stubHeight * 0.5, cornerZ);
+      vent.add(stub);
+      const patch = buildMembraneSheet({
+        seed: seedWithSalt(seed, 0x01),
+        corners: [
+          new THREE.Vector3(cornerX - 0.24, roofY + stubHeight, cornerZ - 0.24),
+          new THREE.Vector3(cornerX + 0.24, roofY + stubHeight, cornerZ - 0.24),
+          new THREE.Vector3(cornerX + 0.24, roofY + stubHeight, cornerZ + 0.24),
+          new THREE.Vector3(cornerX - 0.24, roofY + stubHeight, cornerZ + 0.24),
+        ],
+        membraneMaterial: context.materials.containedGel,
+        rimMaterial: context.materials.hardenedGel,
+        ribMaterial: context.materials.gelDark,
+        sag: 0.06,
+        ribCount: 3,
+      });
+      patch.name = 'chimney-gel-repair-patch';
+      vent.add(patch);
+      break;
+    }
+  }
+
+  return vent;
+}
+
+function buildBlacksmithChannelLip(context: BuildContext<BlacksmithVariation>, seed: number): THREE.Group {
+  const lip = new THREE.Group();
+  lip.name = 'blacksmith-channel-lip';
+  const box = context.hostBox;
+  const groundY = groundYForBox(box) + 0.1;
+
+  const front = buildGelLipCourse({
+    seed,
+    start: new THREE.Vector3(box.min.x + 0.1, groundY, box.max.z + 0.03),
+    end: new THREE.Vector3(box.max.x - 0.1, groundY, box.max.z + 0.03),
+    outwardNormal: new THREE.Vector3(0, 0, 1),
+    material: context.materials.hardenedGel,
+    plateCount: 7,
+  });
+  front.name = 'blacksmith-channel-lip-front';
+  lip.add(front);
+
+  const returnDepth = Math.min(0.8, (box.max.z - box.min.z) * 0.3);
+  const rightReturn = buildGelLipCourse({
+    seed: seedWithSalt(seed, 0x01),
+    start: new THREE.Vector3(box.max.x - 0.05, groundY, box.max.z - returnDepth),
+    end: new THREE.Vector3(box.max.x - 0.05, groundY, box.max.z + 0.03),
+    outwardNormal: new THREE.Vector3(1, 0, 0),
+    material: context.materials.hardenedGel,
+    plateCount: 4,
+  });
+  rightReturn.name = 'blacksmith-channel-lip-return';
+  lip.add(rightReturn);
+
+  return lip;
+}
+
+function buildBlacksmithPlateRack(context: BuildContext<BlacksmithVariation>, seed: number): THREE.Group {
+  const rack = new THREE.Group();
+  rack.name = 'blacksmith-plate-rack';
+  const rand = mulberry32(seed);
+  const box = context.hostBox;
+  const groundY = groundYForBox(box);
+  const x = box.max.x - 0.65;
+  const z = box.max.z + 0.34;
+
+  const postLeft = beam(0.06, 0.62, 0.06, context.materials.wetStain, 'rack-post-left');
+  postLeft.position.set(x - 0.32, groundY + 0.31, z);
+  rack.add(postLeft);
+  const postRight = beam(0.06, 0.62, 0.06, context.materials.wetStain, 'rack-post-right');
+  postRight.position.set(x + 0.32, groundY + 0.31, z);
+  rack.add(postRight);
+  const rail = beam(0.72, 0.05, 0.08, context.materials.wetStain, 'rack-rail');
+  rail.position.set(x, groundY + 0.58, z);
+  rack.add(rail);
+
+  const plateCount = 4 + Math.floor(rand() * 2);
+  for (let index = 0; index < plateCount; index++) {
+    const plate = createFacetedPlate(
+      0.18 + rand() * 0.04,
+      0.24 + rand() * 0.05,
+      0.03,
+      context.materials.hardenedGel,
+      `rack-plate-${index}`,
+      5,
+    );
+    plate.position.set(x - 0.28 + index * (0.56 / (plateCount - 1)), groundY + 0.34, z + 0.05);
+    plate.rotation.z = (rand() - 0.5) * 0.18;
+    rack.add(plate);
+  }
+
+  return rack;
+}
+
+function buildBlacksmithHeatSource(context: BuildContext<BlacksmithVariation>, seed: number): THREE.Group {
+  const heat = new THREE.Group();
+  heat.name = 'blacksmith-heat-source';
+  const box = context.hostBox;
+  const groundY = groundYForBox(box);
+  const x = box.min.x + 0.7;
+  const z = box.max.z + 0.4;
+
+  const vat = buildContainedGelVat({
+    seed,
+    radius: context.variation.heatSource === 'glowing-acid-vat' ? 0.4 : 0.32,
+    height: 0.5,
+    frameMaterial: context.materials.hardenedGel,
+    bandMaterial: context.materials.gelDark,
+    gelMaterial: context.variation.heatSource === 'glowing-acid-vat' ? context.materials.gelGlow : context.materials.containedGel,
+    baseMaterial: context.materials.wetStain,
+    bandCount: 3,
+  });
+  vat.name = 'blacksmith-heat-source-vessel';
+  vat.position.set(x, groundY, z);
+  heat.add(vat);
+
+  const tiles = buildPuddleSkirtTiles({
+    seed: seedWithSalt(seed, 0x01),
+    center: new THREE.Vector3(x, groundY + 0.01, z),
+    radiusX: 0.62,
+    radiusZ: 0.6,
+    material: context.materials.wetStain,
+    tileCount: 6,
+  });
+  tiles.name = 'blacksmith-heat-source-apron';
+  heat.add(tiles);
+
+  return heat;
+}
+
+function buildBlacksmithVent(
+  context: BuildContext<BlacksmithVariation>,
+  side: 'left' | 'right',
+  seed: number,
+): THREE.Group {
+  const face: OpeningFace = side;
+  const width = 0.35;
+  const straightHeight = 0.55;
+  const pointHeight = 0.22;
+  const opening = buildWindowOpening({
+    width,
+    straightHeight,
+    pointHeight,
+    recessDepth: 0.16,
+    frameWidth: 0.07,
+    frameProud: 0.03,
+    wallZ: 0,
+    stoneMaterial: context.materials.hardenedGel,
+    glazingMaterial: context.materials.gelGlow,
+    recessMaterial: context.materials.wetStain,
+    divisionStyle: 'cross',
+    openingShape: 'round',
+  });
+  opening.name = `blacksmith-vent-${side}`;
+
+  const anchor = openingAnchor(context.hostBox, {
+    kind: 'window',
+    face,
+    offset: side === 'left' ? -0.9 : 0.9,
+    baseY: 1.45,
+    width,
+    straightHeight,
+    pointHeight,
+  });
+  const rand = mulberry32(seed);
+  opening.position.copy(anchor);
+  opening.rotation.y = faceRotationY(face);
+  opening.rotation.y += (rand() - 0.5) * 0.01;
+  opening.userData.overlayRole = 'blacksmith-vent';
+  return opening;
+}
+
+function addBlacksmithExtras(context: BuildContext<BlacksmithVariation>): void {
+  context.group.add(buildBlacksmithVentSilhouette(context, seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT)));
+  context.group.add(buildBlacksmithChannelLip(context, seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x11)));
+  context.group.add(buildBlacksmithPlateRack(context, seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x22)));
+  context.group.add(buildBlacksmithHeatSource(context, seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x33)));
+  context.group.add(buildBlacksmithVent(context, 'left', seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x44)));
+  context.group.add(buildBlacksmithVent(context, 'right', seedWithSalt(context.dna.seed, BLACKSMITH_EXTRA_SALT ^ 0x55)));
+}
+
 export function buildSlimeHouse(dna: BuildingDNA): THREE.Group {
   const normalized = normalizeDna(dna, 'house', 'small', 1, 'none');
   const { blueprint, variation } = createHouseBlueprint(normalized);
@@ -2565,5 +2911,13 @@ export function buildSlimeInn(dna: BuildingDNA): THREE.Group {
   const { blueprint, variation } = createInnBlueprint(normalized);
   const context = makeContext(normalized, blueprint, variation, 'inn');
   addInnExtras(context);
+  return context.group;
+}
+
+export function buildSlimeBlacksmith(dna: BuildingDNA): THREE.Group {
+  const normalized = normalizeDna(dna, 'blacksmith', 'medium', 1, 'none');
+  const { blueprint, variation } = createBlacksmithBlueprint(normalized);
+  const context = makeContext(normalized, blueprint, variation, 'blacksmith');
+  addBlacksmithExtras(context);
   return context.group;
 }
