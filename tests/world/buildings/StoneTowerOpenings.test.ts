@@ -30,6 +30,19 @@ function countVerts(obj: THREE.Object3D): number {
   return n;
 }
 
+function lineXAtY(start: THREE.Vector2, end: THREE.Vector2, y: number): number {
+  const t = (y - start.y) / (end.y - start.y);
+  return start.x + (end.x - start.x) * t;
+}
+
+function closestPointToY(points: THREE.Vector2[], targetY: number, predicate: (point: THREE.Vector2) => boolean): THREE.Vector2 | undefined {
+  const matches = points.filter(predicate);
+  return matches.reduce<THREE.Vector2 | undefined>((best, point) => {
+    if (!best) return point;
+    return Math.abs(point.y - targetY) < Math.abs(best.y - targetY) ? point : best;
+  }, undefined);
+}
+
 describe('buildArchShape', () => {
   it('produces a valid THREE.Shape with the expected pointed-arch outline', () => {
     const shape = buildArchShape(1, 2, 0.6);
@@ -46,6 +59,58 @@ describe('buildArchShape', () => {
     const pts = shape.getPoints();
     const maxY = Math.max(...pts.map((p) => p.y));
     expect(maxY).toBeCloseTo(2, 1);
+  });
+
+  it('uses curved sides near the apex instead of the old straight triangular point', () => {
+    const shape = buildArchShape(1, 2, 0.6);
+    const pts = shape.getPoints(64);
+    const apex = pts.reduce((best, p) => (p.y > best.y ? p : best), pts[0]!);
+    const spring = new THREE.Vector2(-1, 2);
+    const leftArcPoint = closestPointToY(
+      pts,
+      2 + (apex.y - 2) * 0.35,
+      (p) => p.x < 0 && p.y > 2 && p.y < apex.y - 0.02,
+    );
+
+    expect(leftArcPoint).toBeDefined();
+    if (!leftArcPoint) return;
+
+    const straightLineX = lineXAtY(spring, apex, leftArcPoint.y);
+    expect(Math.abs(leftArcPoint.x - straightLineX)).toBeGreaterThan(0.01);
+  });
+
+  it('uses a shouldered/depressed-arch compromise for shallow pointHeight: a narrower Romanesque cap with flat shoulders instead of forcing an unrealistic full-span arch', () => {
+    // For this shallow case (halfWidth=1, straightHeight=2, pointHeight=0.6),
+    // the curvedWidth becomes Math.min(2, 0.6*2) = 1.2, and shoulders exist.
+    const shape = buildArchShape(1, 2, 0.6);
+    const pts = shape.getPoints(128);
+    const straightHeight = 2;
+    const fullWidth = 2;
+    const expectedCurvedHalfWidth = 0.6; // curvedWidth = 1.2, half = 0.6
+    const yTolerance = 0.02;
+
+    // Points at the springing line (y ≈ straightHeight, within tolerance)
+    const springPoints = pts.filter((p) => Math.abs(p.y - straightHeight) < yTolerance);
+    expect(springPoints.length).toBeGreaterThan(0);
+
+    // At the shoulder region (y ≈ straightHeight), there should be:
+    // 1. Points with |x| ≈ fullWidth/2 (1.0) — the outer edge of the shoulder
+    const outerShoulderPoints = springPoints.filter((p) => Math.abs(Math.abs(p.x) - fullWidth / 2) < 0.15);
+    expect(outerShoulderPoints.length).toBeGreaterThan(0);
+
+    // 2. Points with |x| ≈ expectedCurvedHalfWidth (0.6) — where shoulder meets curved cap
+    const innerShoulderPoints = springPoints.filter((p) => Math.abs(Math.abs(p.x) - expectedCurvedHalfWidth) < 0.15);
+    expect(innerShoulderPoints.length).toBeGreaterThan(0);
+
+    // 3. Above the springing line (y > straightHeight + small margin), all points
+    // should have |x| <= expectedCurvedHalfWidth (inside the curved cap, not the
+    // shoulder) — a tight tolerance here (not the ±0.15 band used for the spring-line
+    // checks above) so a too-wide cap/shoulder bleed above the springing line would
+    // still fail this assertion.
+    const aboveSpringPoints = pts.filter((p) => p.y > straightHeight + 0.01);
+    expect(aboveSpringPoints.length).toBeGreaterThan(0);
+    const tooWideAboveSpring = aboveSpringPoints.filter((p) => Math.abs(p.x) > expectedCurvedHalfWidth + 0.005);
+    expect(tooWideAboveSpring.length).toBe(0);
   });
 });
 
