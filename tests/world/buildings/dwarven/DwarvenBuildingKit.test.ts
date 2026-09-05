@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla, buildDwarvenInn, buildDwarvenShop } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -339,4 +339,62 @@ describe('buildDwarvenInn', () => {
     }
   });
 });
+
+describe('buildDwarvenShop', () => {
+  it('respects getFootprint(shop, small) plus eave/skirt tolerance', () => {
+    const dna = makeDNA({ buildingKind: 'shop', size: 'small', seed: 2 });
+    const fp = getFootprint('shop', 'small');
+    const shop = buildDwarvenShop(dna);
+    const box = new THREE.Box3().setFromObject(shop);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+    expect(size.z).toBeLessThanOrEqual(fp.d + 1.5);
+  });
+
+  it('has a customer door with the five-piece opening minimum', () => {
+    const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed: 1 }));
+    const door = findByNameIncluding(shop, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+  });
+
+  it('has a recessed display/service opening distinct from the door', () => {
+    const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed: 1 }));
+    expect(findByNameIncluding(shop, 'dwarven-display')).toBeTruthy();
+  });
+
+  it('lays out the front facade with fixed-size FacadeGrammar bays', () => {
+    const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed: 1 }));
+    const door = findByNameIncluding(shop, 'dwarven-door')!;
+    const display = findByNameIncluding(shop, 'dwarven-display')!;
+    // FacadeGrammar-driven bays are laid out left-to-right with fixed,
+    // non-overlapping widths -- the door and display bay centers must be
+    // distinct (not stacked on the same X).
+    expect(door.position.x).not.toBeCloseTo(display.position.x, 1);
+  });
+
+  it('keeps optional pipe/vent/sign stack variants within the footprint', () => {
+    const fp = getFootprint('shop', 'small');
+    for (let seed = 0; seed < 8; seed++) {
+      const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed: seed * 777 }));
+      const box = new THREE.Box3().setFromObject(shop);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      expect(size.x).toBeLessThanOrEqual(fp.w + 1.5);
+      expect(size.z).toBeLessThanOrEqual(fp.d + 1.5);
+    }
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const shop = buildDwarvenShop(makeDNA({ buildingKind: 'shop', size: 'small', seed }));
+      assertFiniteGeometry(shop);
+    }
+  });
+});
+
 

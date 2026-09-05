@@ -17,6 +17,7 @@ import {
   rectanglePoints,
   rectangleFaces,
   octagonFaces,
+  octagonPoints,
   facePointAt,
   type OctagonFace,
 } from '../StoneTowerShape';
@@ -33,6 +34,8 @@ import { makeBatteredRectangleTiers } from '../kit/SteppedBatterProfile';
 import { buildButtress } from '../kit/Buttress';
 import { buildLatheColumn } from '../kit/LatheColumn';
 import { buildVoussoirArch } from '../kit/VoussoirArch';
+import { layoutFacade } from '../kit/FacadeGrammar';
+import { buildPipeRun } from '../kit/PipeworkVent';
 import { buildDwarvenPalette, type DwarvenPalette } from './DwarvenMaterials';
 import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, buildDwarvenOculus, type DwarvenOpeningPalette } from './DwarvenOpenings';
 
@@ -1325,4 +1328,314 @@ export function buildDwarvenInn(dna: BuildingDNA): THREE.Group {
 
   return g;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shop
+// ─────────────────────────────────────────────────────────────────────────
+
+const SHOP_GROUND_HEIGHT = 2.80;
+const SHOP_LOFT_HEIGHT = 2.40;
+
+/** Builds a small rooftop "sign stack": a proud square iron mast standing
+ * on the roof plane with a small crossed finial -- the design spec's
+ * "sign stack" upper-feature option, a real multi-part rooftop assembly
+ * distinct from the wall-mounted hanging sign. */
+function buildSignStack(palette: DwarvenPalette): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'sign-stack';
+  const mast = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.6, 0.1), palette.iron);
+  mast.name = 'stack-mast';
+  mast.position.y = 0.3;
+  mast.castShadow = mast.receiveShadow = true;
+  g.add(mast);
+  const finial = buildXLatticePanel({ width: 0.3, height: 0.22, material: palette.iron });
+  finial.name = 'stack-finial';
+  finial.position.y = 0.62;
+  g.add(finial);
+  return g;
+}
+
+/** Builds a compact octagonal "hex equipment bay": a small raised loft
+ * standing on the roof plane, using the same wall/quoin/floor-cap
+ * composition `buildMassFromSpec()` already provides for villa's
+ * octagonal upper core, at a much smaller radius. */
+function buildHexEquipmentBay(radius: number, height: number, seed: number, material: THREE.Material): THREE.Group {
+  const mass = buildMassFromSpec(
+    { points: octagonPoints(radius), faces: octagonFaces(radius), height },
+    seed,
+    material,
+  );
+  mass.name = 'hex-equipment-bay';
+  return mass;
+}
+
+/** Builds a small proud gable dormer: a pitched box roof over a shallow
+ * wall stub with one small window, projecting from the main roof plane. */
+function buildDormer(seed: number, palette: DwarvenPalette, openingPalette: DwarvenOpeningPalette): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'dormer';
+  const stubHalfW = 0.35;
+  const stubHalfD = 0.22;
+  const stubHeight = 0.35;
+  const { group: stub, faces, points } = buildRectHall(stubHalfW, stubHalfD, stubHeight, seed, palette.granite);
+  g.add(stub);
+  const roof = buildGableRoof(stubHalfW, stubHalfD, 0.3, seed, palette.roofTile, { shingle: { silhouette: 'rectangular' } });
+  roof.position.y = stubHeight;
+  g.add(roof);
+  const win = buildDwarvenWindow({
+    width: 0.28,
+    height: 0.3,
+    wallZ: wallZFor(3, stubHalfW, stubHalfD),
+    palette: openingPalette,
+    archRatio: 0.5,
+  });
+  win.name = 'dwarven-window';
+  win.position.y = stubHeight * 0.5;
+  placeOnFace(win, faces[3]!, 0.5);
+  g.add(win);
+  void points;
+  return g;
+}
+
+/** Builds the trade-vault/alchemist storefront: a squat stone box with a
+ * split front facade (door bay + display bay laid out via
+ * `FacadeGrammar.layoutFacade()`), a real recessed display/counter
+ * opening (never a glass box), and an optional raised upper feature --
+ * see design spec section 4 `shop` for the full blueprint. Props
+ * (strapped crates/ore trays/scales-anvil sign) are out of scope for
+ * this pass, matching villa/inn's precedent of omitting decorative-only
+ * exterior clutter not covered by any doctrine rule or test assertion. */
+export function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('shop', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const groundHeight = SHOP_GROUND_HEIGHT;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+
+  const g = new THREE.Group();
+  g.name = 'dwarven-shop';
+
+  const { group: hall, faces, points } = buildRectHall(halfW, halfD, groundHeight, tagSeed(dna.seed, 'HALL'), palette.granite);
+  g.add(hall);
+
+  const plinth = buildRockPlinthSkirt({
+    points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    stepsFace: faces[3],
+  });
+  g.add(plinth);
+
+  // Front facade split: door bay + display bay, laid out via
+  // FacadeGrammar.layoutFacade() so each bay is a fixed-size module that
+  // never stretches to fit the footprint -- two float margins absorb
+  // whatever width is left over.
+  const doorBayWidth = 1.0;
+  const displayBayWidth = 1.5;
+  const layout = layoutFacade(fp.w, [
+    { kind: 'float', id: 'margin-left' },
+    { kind: 'fixed', id: 'door-bay', width: doorBayWidth },
+    { kind: 'fixed', id: 'display-bay', width: displayBayWidth },
+    { kind: 'float', id: 'margin-right' },
+  ], tagSeed(dna.seed, 'FACD'));
+  const doorBay = layout.bays.find((b) => b.id === 'door-bay')!;
+  const displayBay = layout.bays.find((b) => b.id === 'display-bay')!;
+  const frontNormalAngle = faces[3]!.normalAngle;
+
+  // Customer door: 0.80 W x 1.70 H arched, five-piece opening, positioned
+  // at the door bay's own center (facade-grammar bay.x is measured from
+  // the front face's left corner, matching rectangleFaces() face 3's own
+  // a->b winding from -halfW to +halfW).
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const door = buildDwarvenDoor({
+    width: 0.80,
+    height: 1.70,
+    wallZ: wallZFor(3, halfW, halfD),
+    palette: openingPalette,
+    archRatio: 0.5 + doorRand() * 0.15,
+  });
+  door.name = 'dwarven-door';
+  door.rotation.y = frontNormalAngle;
+  door.position.x = -halfW + doorBay.x + doorBay.width / 2;
+  g.add(door);
+
+  // Display/service opening: 1.10 W x 0.85 H, counter-height, real
+  // recessed counter with sill/grille/side posts and a set-back dark
+  // glazing/display void (the five-piece window opening's own recess +
+  // set-back glazing already satisfy this; horizontal division bars read
+  // as the counter grille).
+  const display = buildDwarvenWindow({
+    width: 1.10,
+    height: 0.85,
+    wallZ: wallZFor(3, halfW, halfD),
+    palette: openingPalette,
+    archRatio: 0.5,
+    divisionStyle: 'cross',
+  });
+  display.name = 'dwarven-display';
+  display.rotation.y = frontNormalAngle;
+  display.position.x = -halfW + displayBay.x + displayBay.width / 2;
+  display.position.y = groundHeight * 0.32;
+  g.add(display);
+
+  // Side: 1 small high oculus/vent on 70%.
+  const sideRand = mulberry32(tagSeed(dna.seed, 'SIDE'));
+  if (sideRand() < 0.7) {
+    const sideFace = sideRand() < 0.5 ? 0 : 2;
+    const vent = buildDwarvenVentSlit({
+      width: 0.3,
+      height: 0.35,
+      wallZ: wallZFor(sideFace, halfW, halfD),
+      palette: openingPalette,
+      shape: 'round',
+    });
+    vent.name = 'dwarven-vent';
+    vent.position.y = groundHeight * 0.75;
+    placeOnFace(vent, faces[sideFace]!, 0.5);
+    g.add(vent);
+  }
+
+  // Optional upper machine loft: adds a second, narrower storey (only
+  // when rolled) plus its own small round cross-mullion window.
+  const loftRand = mulberry32(tagSeed(dna.seed, 'LOFT'));
+  const hasLoft = loftRand() < 0.4;
+  let roofBaseY = groundHeight;
+  let loftHalfW = halfW;
+  let loftHalfD = halfD;
+  let loftFaces = faces;
+  let loftPoints = points;
+  if (hasLoft) {
+    loftHalfW = halfW * 0.7;
+    loftHalfD = halfD * 0.7;
+    const loft = buildRectHall(loftHalfW, loftHalfD, SHOP_LOFT_HEIGHT, tagSeed(dna.seed, 'LOFT'), palette.granite);
+    loft.group.position.y = groundHeight;
+    loft.group.name = 'dwarven-shop-loft';
+    g.add(loft.group);
+    loftFaces = loft.faces;
+    loftPoints = loft.points;
+    roofBaseY = groundHeight + SHOP_LOFT_HEIGHT;
+
+    const loftWin = buildDwarvenOculus({
+      diameter: 0.35,
+      wallZ: wallZFor(3, loftHalfW, loftHalfD),
+      palette: openingPalette,
+      divisionStyle: 'cross',
+    });
+    loftWin.name = 'dwarven-oculus';
+    loftWin.position.y = groundHeight + SHOP_LOFT_HEIGHT * 0.5;
+    placeOnFace(loftWin, loftFaces[3]!, 0.5);
+    g.add(loftWin);
+  }
+
+  // Roof archetype: 35% parapet terrace / 35% shallow gable / 20% hex
+  // equipment cap (this kit's compact-pavilion 'hip' stand-in, matching
+  // house/villa's own established substitution) / 10% lean-to awning
+  // with metal plates (a bespoke single-slope shed roof, shop-specific).
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofChoice = pickWeighted<'parapet' | 'gable' | 'hip' | 'lean-to'>(roofRand, [
+    ['parapet', 0.35],
+    ['gable', 0.35],
+    ['hip', 0.20],
+    ['lean-to', 0.10],
+  ]);
+  const ridgeHeight = Math.min(loftHalfW, loftHalfD) * 1.0;
+  if (roofChoice === 'lean-to') {
+    const leanTo = new THREE.Group();
+    leanTo.name = 'lean-to-roof';
+    const span = Math.hypot(loftHalfD * 2, ridgeHeight);
+    const slopeAngle = Math.atan2(ridgeHeight, loftHalfD * 2);
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(loftHalfW * 2 + 0.2, 0.1, span), palette.roofMetal);
+    panel.name = 'lean-to-panel';
+    panel.position.set(0, ridgeHeight * 0.5, 0);
+    panel.rotation.x = -slopeAngle;
+    panel.castShadow = panel.receiveShadow = true;
+    leanTo.add(panel);
+    const trim = buildMetalBand({ width: loftHalfW * 2, depth: 0.05, material: palette.iron, thickness: 0.03, bandHeight: 0.05 });
+    trim.name = 'lean-to-trim';
+    trim.position.set(0, 0.05, loftHalfD);
+    leanTo.add(trim);
+    leanTo.position.y = roofBaseY;
+    g.add(leanTo);
+  } else {
+    const roof = buildDwarvenRoof(roofChoice, loftHalfW, loftHalfD, loftPoints, ridgeHeight, tagSeed(dna.seed, 'ROOF'), palette);
+    roof.position.y = roofBaseY;
+    g.add(roof);
+  }
+
+  // Ornament: framed sign medallion above the door + chevron belt +
+  // metal band around the loft (if present).
+  const sign = buildHangingSign('medallion', palette);
+  sign.position.set(-halfW + doorBay.x + doorBay.width / 2, groundHeight * 0.85, halfD + 0.05);
+  g.add(sign);
+
+  const belt = buildChevronBelt({ width: fp.w * 0.6, material: palette.iron });
+  belt.name = 'dwarven-shop-chevron-belt';
+  belt.position.set(0, groundHeight - 0.2, halfD + 0.04);
+  g.add(belt);
+
+  if (hasLoft) {
+    const loftBand = buildMetalBand({ width: loftHalfW * 2, depth: loftHalfD * 2, material: palette.iron, thickness: 0.03, bandHeight: 0.06 });
+    loftBand.name = 'dwarven-shop-loft-band';
+    loftBand.position.y = groundHeight + 0.05;
+    g.add(loftBand);
+  }
+
+  // Trade sub-type: general vault shop 0.40 / alchemist-vent shop 0.25 /
+  // toolmaker 0.25 / jeweller-crest shop 0.10. Only the alchemist variant
+  // adds a distinct prop (an exterior pipe/vent stack); the others are
+  // ornament-only distinctions already covered by the sign/roof/loft
+  // rolls above (a bespoke toolmaker/jeweller geometry pass is out of
+  // scope for this builder).
+  const tradeRand = mulberry32(tagSeed(dna.seed, 'TRAD'));
+  const trade = pickWeighted<'vault' | 'alchemist' | 'toolmaker' | 'jeweller'>(tradeRand, [
+    ['vault', 0.40],
+    ['alchemist', 0.25],
+    ['toolmaker', 0.25],
+    ['jeweller', 0.10],
+  ]);
+  if (trade === 'alchemist') {
+    const pipeRun = buildPipeRun({
+      segments: [
+        { dir: 'up', length: roofBaseY * 0.8 },
+        { dir: 'right', length: 0.2 },
+        { dir: 'up', length: 0.3 },
+      ],
+      radius: 0.045,
+      material: palette.iron,
+      start: new THREE.Vector3(halfW - 0.15, 0, halfD - 0.3),
+    });
+    pipeRun.name = 'dwarven-shop-pipe-vent';
+    g.add(pipeRun);
+  }
+
+  // Upper feature (only meaningful when no loft already occupies the
+  // roof plane): none 0.45 / sign stack 0.25 / hex equipment bay 0.20 /
+  // dormer 0.10.
+  if (!hasLoft) {
+    const featureRand = mulberry32(tagSeed(dna.seed, 'FEAT'));
+    const feature = pickWeighted<'none' | 'stack' | 'hexbay' | 'dormer'>(featureRand, [
+      ['none', 0.45],
+      ['stack', 0.25],
+      ['hexbay', 0.20],
+      ['dormer', 0.10],
+    ]);
+    if (feature === 'stack') {
+      const stack = buildSignStack(palette);
+      stack.position.set(0, roofBaseY + ridgeHeight * 0.6, 0);
+      g.add(stack);
+    } else if (feature === 'hexbay') {
+      const hexBay = buildHexEquipmentBay(Math.min(halfW, halfD) * 0.4, 0.5, tagSeed(dna.seed, 'HEXB'), palette.granite);
+      hexBay.position.y = roofBaseY + ridgeHeight * 0.3;
+      g.add(hexBay);
+    } else if (feature === 'dormer') {
+      const dormer = buildDormer(tagSeed(dna.seed, 'DORM'), palette, openingPalette);
+      dormer.position.set(0, roofBaseY + ridgeHeight * 0.3, loftHalfD * 0.6);
+      g.add(dormer);
+    }
+  }
+
+  return g;
+}
+
 
