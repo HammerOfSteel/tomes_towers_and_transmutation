@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildDwarvenHouse, buildDwarvenTerraced } from '@/world/buildings/dwarven/DwarvenBuildingKit';
+import { buildDwarvenHouse, buildDwarvenTerraced, buildDwarvenVilla } from '@/world/buildings/dwarven/DwarvenBuildingKit';
 import { buildDwarvenPalette } from '@/world/buildings/dwarven/DwarvenMaterials';
 import { getFootprint } from '@/world/buildings/BuildingDNA';
 import type { BuildingDNA } from '@/world/buildings/BuildingDNA';
@@ -193,6 +193,82 @@ describe('buildDwarvenTerraced', () => {
         const terraced = buildDwarvenTerraced(makeDNA({ buildingKind: 'terraced', terrace, seed }));
         assertFiniteGeometry(terraced);
       }
+    }
+  });
+});
+
+describe('buildDwarvenVilla', () => {
+  it('respects getFootprint(villa, size) plus eave/skirt/mass tolerance', () => {
+    const dna = makeDNA({ buildingKind: 'villa', size: 'medium', seed: 7 });
+    const fp = getFootprint('villa', 'medium');
+    const villa = buildDwarvenVilla(dna);
+    const box = new THREE.Box3().setFromObject(villa);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    // `fp` describes the main hall's own nominal footprint only. A
+    // flush-attached L/T-plan wing is a real, intentional additional mass
+    // that can extend the OVERALL building footprint by up to its own full
+    // width/depth beyond the main hall's far edge (worst case: wing pushed
+    // fully to one side), plus the usual batter/buttress/quoin/column
+    // fringe on top of that -- not a bug, the same "real architecture
+    // legitimately exceeds the nominal collision footprint" principle as
+    // house/terraced's eave-overhang tolerance, just with a wing instead
+    // of a roof eave as the dominant extra term.
+    const maxWingWidth = fp.w * 0.55;
+    const maxWingDepth = fp.d * 0.6;
+    expect(size.x).toBeLessThanOrEqual(fp.w + maxWingWidth + 1.5);
+    expect(size.z).toBeLessThanOrEqual(fp.d + maxWingDepth + 1.5);
+  });
+
+  it('has at least two distinct masses (main + wing/upper-core)', () => {
+    const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa', seed: 1 }));
+    const massNames = new Set(villa.children.map((c) => c.name).filter((n) => n.includes('dwarven-villa-mass')));
+    expect(massNames.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('has string courses at the floor line', () => {
+    const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa' }));
+    expect(findByNameIncluding(villa, 'string-course')).toBeTruthy();
+  });
+
+  it('has a monumental door with the five-piece opening minimum plus a voussoir arch', () => {
+    const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa' }));
+    const door = findByNameIncluding(villa, 'dwarven-door');
+    expect(door).toBeTruthy();
+    const childNames = door!.children.map((c) => c.name);
+    expect(childNames).toContain('recess');
+    expect(childNames).toContain('surround');
+    expect(childNames).toContain('threshold');
+    expect(findByNameIncluding(villa, 'voussoir-arch')).toBeTruthy();
+  });
+
+  it('has proud corner buttresses and lathe columns flanking the door', () => {
+    const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa' }));
+    expect(findByNameIncluding(villa, 'buttress')).toBeTruthy();
+    expect(findByNameIncluding(villa, 'lathe-column')).toBeTruthy();
+  });
+
+  it('has both a chevron frieze and X-lattice panels, plus a hammer crest over the door', () => {
+    const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa' }));
+    expect(findByNameIncluding(villa, 'chevron-frieze')).toBeTruthy();
+    expect(findByNameIncluding(villa, 'xlattice-panel')).toBeTruthy();
+    expect(findByNameIncluding(villa, 'crest')).toBeTruthy();
+  });
+
+  it('varies mass composition across seeds', () => {
+    const compositions = new Set<number>();
+    for (let seed = 0; seed < 12; seed++) {
+      const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa', seed: seed * 6151 }));
+      const massCount = villa.children.filter((c) => c.name.includes('dwarven-villa-mass')).length;
+      compositions.add(massCount);
+    }
+    expect(compositions.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('produces finite geometry across seeds', () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const villa = buildDwarvenVilla(makeDNA({ buildingKind: 'villa', seed }));
+      assertFiniteGeometry(villa);
     }
   });
 });

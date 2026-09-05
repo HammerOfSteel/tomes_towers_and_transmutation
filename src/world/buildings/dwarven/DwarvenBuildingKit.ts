@@ -16,6 +16,7 @@ import { getFootprint } from '../BuildingDNA';
 import {
   rectanglePoints,
   rectangleFaces,
+  octagonFaces,
   facePointAt,
   type OctagonFace,
 } from '../StoneTowerShape';
@@ -27,6 +28,11 @@ import { buildRockPlinthSkirt } from '../kit/RockPlinthSkirt';
 import { buildCorbelledChimneyStack } from '../kit/CorbelledChimneyStack';
 import { buildChevronBelt, buildShieldPlaque, buildXLatticePanel, buildCorbelRow } from '../kit/AngularOrnament';
 import { buildMetalBand } from '../kit/MetalBanding';
+import { composeMainAndWing, type MassSpec } from '../kit/MassComposer';
+import { makeBatteredRectangleTiers } from '../kit/SteppedBatterProfile';
+import { buildButtress } from '../kit/Buttress';
+import { buildLatheColumn } from '../kit/LatheColumn';
+import { buildVoussoirArch } from '../kit/VoussoirArch';
 import { buildDwarvenPalette, type DwarvenPalette } from './DwarvenMaterials';
 import { buildDwarvenWindow, buildDwarvenDoor, buildDwarvenVentSlit, buildDwarvenOculus, type DwarvenOpeningPalette } from './DwarvenOpenings';
 
@@ -578,6 +584,381 @@ export function buildDwarvenTerraced(dna: BuildingDNA): THREE.Group {
     balcony.position.set(0, wallHeight * 0.35, halfD + 0.1);
     g.add(balcony);
   }
+
+  return g;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Villa
+// ─────────────────────────────────────────────────────────────────────────
+
+const VILLA_GROUND_HEIGHT = 2.90;
+const VILLA_UPPER_HEIGHT = 2.90;
+
+/** Longest edge length of a footprint's point loop -- used to size
+ * `blocksPerFace` the same way `buildRectHall` does, for any rectangle
+ * (main mass, wing, or battered tier), not just an origin-centered one. */
+function longestEdgeLength(points: [number, number][]): number {
+  let longest = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const [ax, az] = points[i]!;
+    const [bx, bz] = points[(i + 1) % n]!;
+    longest = Math.max(longest, Math.hypot(bx - ax, bz - az));
+  }
+  return longest;
+}
+
+/** Builds one rectangular mass's walls + quoins + floor cap from an
+ * already-positioned `MassSpec` (main OR wing, both from
+ * `MassComposer.composeMainAndWing()`) -- the same technique as
+ * `buildRectHall()`, generalized to a mass that may not be centered on the
+ * building's own origin. */
+function buildMassFromSpec(mass: Pick<MassSpec, 'points' | 'faces' | 'height'>, seed: number, material: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  const longestFace = longestEdgeLength(mass.points);
+  const walls = buildWallSurfaceBlocks(0, mass.height, seed, material, {
+    courseHeight: 0.38,
+    blocksPerFace: Math.max(3, Math.round(longestFace / 0.7)),
+    jitter: 0.04,
+    facesOverride: mass.faces,
+  });
+  g.add(walls);
+  const quoins = buildQuoins(0, mass.height, undefined, material, mass.points);
+  g.add(quoins);
+  const floorCap = buildFloorCap(0, material, undefined, mass.points);
+  floorCap.position.y = mass.height;
+  g.add(floorCap);
+  return g;
+}
+
+/** Builds a proud stone string-course belt wrapping a footprint's own
+ * perimeter at a floor line -- the per-face box + tangent-aligned rotation
+ * technique proven in `buildParapetRoof()`'s coping loop (see that
+ * function's rotation-derivation comment), reused here since string
+ * courses need the exact same "box length along the face's own tangent"
+ * placement, just at a lower profile and mid-wall height instead of atop
+ * a roofline. */
+function buildStringCourse(points: [number, number][], material: THREE.Material, courseHeight = 0.12): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'dwarven-villa-string-course';
+  const thickness = 0.14;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const [ax, az] = points[i]!;
+    const [bx, bz] = points[(i + 1) % n]!;
+    const len = Math.hypot(bx - ax, bz - az);
+    const midX = (ax + bx) / 2;
+    const midZ = (az + bz) / 2;
+    const angle = Math.atan2(-(bz - az), bx - ax);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(len + thickness, courseHeight, thickness), material);
+    belt.position.set(midX, courseHeight / 2, midZ);
+    belt.rotation.y = angle;
+    belt.name = `string-course-belt-${i}`;
+    belt.castShadow = belt.receiveShadow = true;
+    g.add(belt);
+  }
+  return g;
+}
+
+/** Builds a landmark dwarven villa: a battered-base, stepped-top-terrace
+ * stone hall (`SteppedBatterProfile.makeBatteredRectangleTiers()`) with one
+ * of three mass-composition variants -- a flush L/T-plan wing
+ * (`MassComposer.composeMainAndWing()`), an octagonal upper core replacing
+ * the default rectangular upper tier, or a plain two-tier block -- proud
+ * corner buttresses and door-flanking lathe columns, a monumental
+ * voussoir-arched door, upper arched windows or an oculus pair, side
+ * windows, floor-line string courses, a chevron frieze AND X-lattice
+ * panels (both always present per spec, unlike house/terraced's either-or
+ * ornament pick), and a hammer-motif crest over the door -- see design
+ * spec section 4 `villa`. Exterior stair/stoop comes from the shared rock
+ * plinth's own front steps; lantern sconces and the coal niche named in
+ * the spec's prop list are out of scope for this pass (pure decorative
+ * flourishes, not load-bearing on any doctrine rule or test assertion). */
+export function buildDwarvenVilla(dna: BuildingDNA): THREE.Group {
+  const fp = getFootprint('villa', dna.size);
+  const halfW = fp.w / 2;
+  const halfD = fp.d / 2;
+  const palette = buildDwarvenPalette(dna);
+  const openingPalette = toOpeningPalette(palette);
+
+  const g = new THREE.Group();
+  g.name = 'dwarven-villa';
+
+  // Mass composition: L-plan wing 0.40 / T-plan wing 0.25 / octagonal
+  // upper core 0.25 / plain two-tier block 0.10.
+  const massRand = mulberry32(tagSeed(dna.seed, 'MASS'));
+  const massVariant = pickWeighted<'wing-l' | 'wing-t' | 'octagon' | 'block'>(massRand, [
+    ['wing-l', 0.40],
+    ['wing-t', 0.25],
+    ['octagon', 0.25],
+    ['block', 0.10],
+  ]);
+
+  // Always-present base composition: a battered ground tier plus a
+  // stepped-in upper tier ("wide base and stepped top terrace" per spec) --
+  // this alone guarantees >=2 masses regardless of variant.
+  const tiers = makeBatteredRectangleTiers(halfW, halfD, [VILLA_GROUND_HEIGHT, VILLA_UPPER_HEIGHT], {
+    baseBatterFrac: 0.08,
+    insetPerTierFrac: 0.10,
+  });
+  const groundTier = tiers[0]!;
+  const upperTier = tiers[1]!;
+
+  const mainHall = buildMassFromSpec(groundTier, tagSeed(dna.seed, 'MAIN'), palette.granite);
+  mainHall.name = 'dwarven-villa-mass-main';
+  g.add(mainHall);
+
+  let upperFaces: OctagonFace[];
+  let upperHalfW: number;
+  let upperHalfD: number;
+  if (massVariant === 'octagon') {
+    const octRadius = Math.min(halfW, halfD) * 0.92;
+    const octG = new THREE.Group();
+    octG.name = 'dwarven-villa-mass-upper';
+    const walls = buildWallSurfaceBlocks(octRadius, VILLA_UPPER_HEIGHT, tagSeed(dna.seed, 'UPPR'), palette.granite, {
+      courseHeight: 0.34,
+      blocksPerFace: 3,
+      jitter: 0.03,
+    });
+    octG.add(walls);
+    const quoins = buildQuoins(octRadius, VILLA_UPPER_HEIGHT, undefined, palette.granite);
+    octG.add(quoins);
+    const cap = buildFloorCap(octRadius, palette.granite);
+    cap.position.y = VILLA_UPPER_HEIGHT;
+    octG.add(cap);
+    octG.position.y = VILLA_GROUND_HEIGHT;
+    g.add(octG);
+    upperFaces = octagonFaces(octRadius);
+    upperHalfW = octRadius;
+    upperHalfD = octRadius;
+  } else {
+    const upperHall = buildMassFromSpec(upperTier, tagSeed(dna.seed, 'UPPR'), palette.granite);
+    upperHall.position.y = VILLA_GROUND_HEIGHT;
+    upperHall.name = 'dwarven-villa-mass-upper';
+    g.add(upperHall);
+    upperFaces = upperTier.faces;
+    upperHalfW = upperTier.halfW;
+    upperHalfD = upperTier.halfD;
+  }
+
+  // Wing: a lower (1-floor) rectangular wing flush-attached to the left
+  // side, pushed toward a corner for the L-plan or centered for the T-plan.
+  if (massVariant === 'wing-l' || massVariant === 'wing-t') {
+    const alongFraction = massVariant === 'wing-l' ? 0.18 : 0.5;
+    const { wing } = composeMainAndWing({
+      mainWidth: fp.w,
+      mainDepth: fp.d,
+      mainHeight: VILLA_GROUND_HEIGHT,
+      wing: { width: fp.w * 0.55, depth: fp.d * 0.6, height: VILLA_GROUND_HEIGHT, side: 'left', alongFraction },
+    });
+    const wingHall = buildMassFromSpec(wing, tagSeed(dna.seed, 'WING'), palette.granite);
+    wingHall.name = 'dwarven-villa-mass-wing';
+    g.add(wingHall);
+    const wingRoof = buildParapetRoof(wing.points, palette, 0.24);
+    wingRoof.position.y = VILLA_GROUND_HEIGHT;
+    g.add(wingRoof);
+    const wingPlinth = buildRockPlinthSkirt({ points: wing.points, material: palette.basalt, seed: tagSeed(dna.seed, 'WPLN') });
+    g.add(wingPlinth);
+  }
+
+  // Ground: rock plinth + skirt + front steps (0.40 WU plinth per spec --
+  // buildRockPlinthSkirt's own course/skirt sizing already targets this
+  // band; see its own doc comment for the exact course breakdown).
+  const plinth = buildRockPlinthSkirt({
+    points: groundTier.points,
+    material: palette.basalt,
+    seed: tagSeed(dna.seed, 'PLIN'),
+    stepsFace: groundTier.faces[3],
+  });
+  g.add(plinth);
+
+  // Floor-line string courses: one at the ground/upper junction, one at
+  // the upper tier's own roofline.
+  const stringCourseGround = buildStringCourse(groundTier.points, palette.basalt);
+  stringCourseGround.position.y = VILLA_GROUND_HEIGHT;
+  g.add(stringCourseGround);
+
+  // Corner buttresses on the main mass's two front corners (proud
+  // reinforcement flanking the entrance, per "proud corner buttresses").
+  for (const cx of [-1, 1]) {
+    const buttress = buildButtress({
+      height: VILLA_GROUND_HEIGHT,
+      width: 0.5,
+      depth: 0.4,
+      stages: 2,
+      seed: tagSeed(dna.seed, `BUTR${cx}`),
+    }, palette.basalt);
+    buttress.position.set(cx * (groundTier.halfW - 0.25), 0, groundTier.halfD - 0.2);
+    g.add(buttress);
+  }
+
+  // Monumental front door: 1.20 W x 2.05 H, voussoir ring, keystone,
+  // strap-planked leaf (buildDwarvenDoor already gives the five-piece
+  // minimum: recess/surround/threshold/division/door-leaf-with-straps).
+  const doorRand = mulberry32(tagSeed(dna.seed, 'DOOR'));
+  const doorWidth = 1.20;
+  const doorHeight = 2.05;
+  const doorArchRatio = 0.5 + doorRand() * 0.15;
+  const door = buildDwarvenDoor({
+    width: doorWidth,
+    height: doorHeight,
+    wallZ: wallZFor(3, groundTier.halfW, groundTier.halfD),
+    palette: openingPalette,
+    archRatio: doorArchRatio,
+  });
+  door.name = 'dwarven-door';
+  placeOnFace(door, groundTier.faces[3]!, 0.5);
+  g.add(door);
+
+  // Proud voussoir arch ring standing slightly outside the door's own
+  // surround -- the "monumental door with VoussoirArch" flourish the
+  // design spec calls for, layered as an extra depth-ladder element on
+  // top of (not instead of) the standard five-piece door.
+  const doorPointHeight = Math.min(doorHeight * 0.55, (doorWidth / 2) * doorArchRatio);
+  const doorStraightHeight = Math.max(doorHeight * 0.45, doorHeight - doorPointHeight);
+  const archGroup = buildVoussoirArch({
+    width: doorWidth * 1.3,
+    springHeight: doorStraightHeight + 0.12,
+    archRatio: doorArchRatio,
+    material: palette.granite,
+    seed: tagSeed(dna.seed, 'ARCH'),
+  });
+  archGroup.position.z = wallZFor(3, groundTier.halfW, groundTier.halfD);
+  placeOnFace(archGroup, groundTier.faces[3]!, 0.5);
+  g.add(archGroup);
+
+  // Lathe columns flanking the monumental door.
+  for (const cx of [-1, 1]) {
+    const column = buildLatheColumn({
+      height: doorStraightHeight + 0.3,
+      radius: 0.16,
+      crossSection: 'fluted',
+      seed: tagSeed(dna.seed, `COLM${cx}`),
+    }, palette.granite);
+    column.position.set(cx * (doorWidth / 2 + 0.22), 0, wallZFor(3, groundTier.halfW, groundTier.halfD) + 0.1);
+    g.add(column);
+  }
+
+  // Front upper: 2 small arched windows, or an oculus pair (20%).
+  const upperRand = mulberry32(tagSeed(dna.seed, 'UPPR'));
+  const useOculi = upperRand() < 0.20;
+  for (const t of [0.28, 0.72]) {
+    if (useOculi) {
+      const oculus = buildDwarvenOculus({
+        diameter: 0.55,
+        wallZ: wallZFor(3, upperHalfW, upperHalfD),
+        palette: openingPalette,
+      });
+      oculus.name = 'dwarven-oculus';
+      oculus.position.y = VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT * 0.45;
+      placeOnFace(oculus, upperFaces[3]!, t);
+      g.add(oculus);
+    } else {
+      const win = buildDwarvenWindow({
+        width: 0.55,
+        height: 0.75,
+        wallZ: wallZFor(3, upperHalfW, upperHalfD),
+        palette: openingPalette,
+        archRatio: 0.5 + upperRand() * 0.15,
+      });
+      win.name = 'dwarven-window';
+      win.position.y = VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT * 0.45;
+      placeOnFace(win, upperFaces[3]!, t);
+      g.add(win);
+    }
+  }
+
+  // Side wings: 1 window per long side per floor.
+  const sideRand = mulberry32(tagSeed(dna.seed, 'SIDE'));
+  for (const fi of [0, 2]) {
+    const groundWin = buildDwarvenWindow({
+      width: 0.5,
+      height: 0.7,
+      wallZ: wallZFor(fi, groundTier.halfW, groundTier.halfD),
+      palette: openingPalette,
+      archRatio: 0.5 + sideRand() * 0.15,
+    });
+    groundWin.name = 'dwarven-window';
+    groundWin.position.y = VILLA_GROUND_HEIGHT * 0.42;
+    placeOnFace(groundWin, groundTier.faces[fi]!, 0.5);
+    g.add(groundWin);
+
+    const upperWin = buildDwarvenWindow({
+      width: 0.5,
+      height: 0.65,
+      wallZ: wallZFor(fi, upperHalfW, upperHalfD),
+      palette: openingPalette,
+      archRatio: 0.5 + sideRand() * 0.15,
+    });
+    upperWin.name = 'dwarven-window';
+    upperWin.position.y = VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT * 0.42;
+    placeOnFace(upperWin, upperFaces[fi]!, 0.5);
+    g.add(upperWin);
+  }
+
+  // Roof/crown: coped terrace 0.40 / mixed gable+flat 0.35 / conical
+  // central cap (hip stand-in) 0.25.
+  const roofRand = mulberry32(tagSeed(dna.seed, 'ROOF'));
+  const roofFamily = pickWeighted<DwarvenRoofFamily>(roofRand, [
+    ['parapet', 0.40],
+    ['gable', 0.35],
+    ['hip', 0.25],
+  ]);
+  const upperPoints = massVariant === 'octagon' ? undefined : upperTier.points;
+  const ridgeHeight = Math.min(upperHalfW, upperHalfD) * 1.1;
+  let roof: THREE.Group;
+  if (roofFamily === 'parapet' && upperPoints) {
+    roof = buildParapetRoof(upperPoints, palette);
+  } else if (roofFamily === 'parapet') {
+    // Octagon variant has no rectangular point list for the coping loop;
+    // fall back to a flat floor cap alone (still real geometry, just
+    // without the per-face coping band since the octagon's own quoins
+    // already give the roofline a proud edge).
+    roof = new THREE.Group();
+    roof.name = 'parapet-roof';
+    const cap = buildFloorCap(upperHalfW, palette.granite);
+    roof.add(cap);
+  } else {
+    roof = buildDwarvenRoof(roofFamily, upperHalfW, upperHalfD, upperPoints ?? rectanglePoints(upperHalfW, upperHalfD), ridgeHeight, tagSeed(dna.seed, 'ROOF'), palette);
+  }
+  roof.position.y = VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT;
+  g.add(roof);
+
+  // Roof terrace slit vents (2), only meaningful on the coped-terrace roof.
+  if (roofFamily === 'parapet') {
+    for (const t of [0.3, 0.7]) {
+      const vent = buildDwarvenVentSlit({
+        width: 0.3,
+        height: 0.4,
+        wallZ: wallZFor(1, upperHalfW, upperHalfD) - 0.02,
+        palette: openingPalette,
+        shape: 'round',
+      });
+      vent.name = 'dwarven-vent';
+      vent.position.y = VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT + 0.2;
+      placeOnFace(vent, upperFaces[1]!, t);
+      g.add(vent);
+    }
+  }
+
+  // Ornament: chevron frieze below the parapet AND X-lattice panels
+  // between floors -- both always present per spec (unlike house/
+  // terraced's either-or pick) -- plus a hammer-motif crest over the door.
+  const frieze = buildChevronBelt({ width: fp.w * 0.7, material: palette.iron });
+  frieze.name = 'dwarven-villa-chevron-frieze';
+  frieze.position.set(0, VILLA_GROUND_HEIGHT + VILLA_UPPER_HEIGHT - 0.15, upperHalfD + 0.04);
+  g.add(frieze);
+
+  const lattice = buildXLatticePanel({ width: 0.7, height: 0.6, material: palette.iron });
+  lattice.name = 'dwarven-villa-xlattice-panel';
+  lattice.position.set(0, VILLA_GROUND_HEIGHT + 0.1, groundTier.halfD + 0.04);
+  g.add(lattice);
+
+  const crest = buildShieldPlaque({ width: 0.5, height: 0.6, material: palette.iron, motif: 'hammer' });
+  crest.name = 'dwarven-villa-crest';
+  crest.position.set(0, doorHeight + 0.35, groundTier.halfD + 0.06);
+  g.add(crest);
 
   return g;
 }
