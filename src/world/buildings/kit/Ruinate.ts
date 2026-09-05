@@ -126,6 +126,11 @@ const DEFAULT_CRACK_GROOVE_DEPTH = 0.02;
 const MIN_CRACK_GROOVE_WIDTH = 0.04;
 const MIN_CRACK_GROOVE_DEPTH = 0.015;
 const GEOMETRY_EPSILON = 1e-4;
+// Crack seams share the wall face plane with uncarved masonry, so keep them a
+// hair proud of the surface to avoid coplanar z-fighting. This epsilon is not
+// part of the visible crack depth; the segment body still projects outward by
+// the full grooveDepth.
+const CRACK_SURFACE_EPSILON = GEOMETRY_EPSILON;
 const FIELD_STREAM_SALT = 0x9E37_79B9;
 const OUTER_LEAF_SALT = 0xA24B_AED4;
 const INNER_LEAF_SALT = 0x51C6_8E19;
@@ -374,7 +379,7 @@ function createCrackSegmentMesh(
   const mesh = new THREE.Mesh(geometry, material);
   const rotation = new THREE.Matrix4().makeBasis(direction, widthAxis, outwardNormal);
   mesh.quaternion.setFromRotationMatrix(rotation);
-  mesh.position.copy(start).lerp(end, 0.5).addScaledVector(outwardNormal, -grooveDepth * 0.5);
+  mesh.position.copy(start).lerp(end, 0.5).addScaledVector(outwardNormal, grooveDepth * 0.5);
   mesh.name = name;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -741,7 +746,7 @@ export function buildIvyAttachmentPoints(
   return hooks;
 }
 
-/** Build jagged groove geometry along surviving wall faces near break lines. */
+/** Build jagged proud fracture seams along surviving wall faces near break lines. */
 export function buildCrackCurves(
   wall: WallCourseModel,
   result: RuinateResult,
@@ -790,7 +795,7 @@ export function buildCrackCurves(
 
     const points: THREE.Vector3[] = [
       placement.center.clone()
-        .addScaledVector(normal, placement.depth * 0.501)
+        .addScaledVector(normal, (placement.depth * 0.5) + CRACK_SURFACE_EPSILON)
         .addScaledVector(WORLD_UP, placement.height * 0.32)
         .addScaledVector(tangent, (anchorColumn.index - spanCenter) * placement.width * 0.12),
     ];

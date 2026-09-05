@@ -258,6 +258,63 @@ function buildPlacementBasis(placement: BlockPlacementLike): {
   return { normal, tangent, up };
 }
 
+function findCrackAnchorPlacement(
+  wall: WallCourseModel,
+  result: RuinateResult,
+  placementsById: Map<string, BlockPlacementLike>,
+  spanStart: number,
+  spanEnd: number,
+): BlockPlacementLike {
+  const eligibleColumns = Array.from({ length: ((spanEnd - spanStart) + 1) }, (_unused, offset) => {
+    const index = spanStart + offset;
+    return { index, breakHeight: result.breakHeightByColumn[index]! };
+  }).filter(candidate => candidate.breakHeight >= 0 && candidate.breakHeight < wall.numCourses - 1);
+  const spanCenter = (spanStart + spanEnd) * 0.5;
+  const anchorColumn = eligibleColumns.reduce((best, candidate) => {
+    if (candidate.breakHeight !== best.breakHeight) {
+      return candidate.breakHeight > best.breakHeight ? candidate : best;
+    }
+    return Math.abs(candidate.index - spanCenter) < Math.abs(best.index - spanCenter) ? candidate : best;
+  });
+  const anchorBlock = wall.blocks.find(
+    block => block.course === anchorColumn.breakHeight && block.index === anchorColumn.index,
+  );
+  if (!anchorBlock) {
+    throw new Error(`Missing crack anchor block for span ${spanStart}-${spanEnd}`);
+  }
+  const placement = placementsById.get(anchorBlock.id);
+  if (!placement) {
+    throw new Error(`Missing crack anchor placement for block ${anchorBlock.id}`);
+  }
+  return placement;
+}
+
+function projectMeshExtentsAlongAxis(
+  mesh: THREE.Mesh,
+  axis: THREE.Vector3,
+): {
+  min: number;
+  max: number;
+} {
+  const position = mesh.geometry.getAttribute('position');
+  const worldVertex = new THREE.Vector3();
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < position.count; index++) {
+    worldVertex.set(
+      position.getX(index),
+      position.getY(index),
+      position.getZ(index),
+    ).applyMatrix4(mesh.matrixWorld);
+    const projection = worldVertex.dot(axis);
+    min = Math.min(min, projection);
+    max = Math.max(max, projection);
+  }
+
+  return { min, max };
+}
+
 function findCollapsedSpans(
   wall: WallCourseModel,
   result: RuinateResult,
@@ -722,6 +779,58 @@ describe('ruin geometry helpers', () => {
       .length();
 
     expect(crossMagnitude).toBeGreaterThan(0.005);
+  });
+
+  it('keeps crack groove geometry deliberately proud of the true wall face', () => {
+    const wall = buildTaggedWall();
+    const result = ruinateCourses(wall, { seed: 314159, damageIntensity: 0.57 });
+    const { lookup, placementsById } = buildPlacementLookup(wall);
+    const material = new THREE.MeshStandardMaterial({ color: 0x8f8b83, roughness: 0.9 });
+    const buildCrackCurves = geometryExports.buildCrackCurves;
+    const grooveWidth = 0.05;
+    const grooveDepth = 0.02;
+
+    expect(buildCrackCurves).toBeTypeOf('function');
+
+    const cracks = buildCrackCurves!(
+      wall,
+      result,
+      lookup,
+      material,
+      { seed: 444, grooveWidth, grooveDepth },
+    );
+    cracks.updateMatrixWorld(true);
+
+    expect(cracks.children.length).toBeGreaterThan(0);
+
+    const minimumOuterMargin = grooveDepth * 0.75;
+    const maximumRearInset = grooveDepth * 0.1;
+
+    for (const crack of cracks.children) {
+      const match = /^crack-span-(\d+)-(\d+)$/.exec(crack.name);
+      if (!match) throw new Error(`Unexpected crack group name ${crack.name}`);
+
+      const spanStart = Number.parseInt(match[1]!, 10);
+      const spanEnd = Number.parseInt(match[2]!, 10);
+      const placement = findCrackAnchorPlacement(wall, result, placementsById, spanStart, spanEnd);
+      const normal = placement.outwardNormal.clone().normalize();
+      const wallSurfaceProjection = placement.center
+        .clone()
+        .addScaledVector(normal, placement.depth * 0.5)
+        .dot(normal);
+      const segmentMeshes = collectMeshNodes(crack);
+
+      expect(segmentMeshes.length).toBeGreaterThan(0);
+
+      for (const mesh of segmentMeshes) {
+        const { min, max } = projectMeshExtentsAlongAxis(mesh, normal);
+        const outerMargin = max - wallSurfaceProjection;
+        const rearInset = Math.max(0, wallSurfaceProjection - min);
+
+        expect(outerMargin).toBeGreaterThanOrEqual(minimumOuterMargin);
+        expect(rearInset).toBeLessThanOrEqual(maximumRearInset);
+      }
+    }
   });
 
   it('keeps crack groove geometry above the surviving wall base on short collapsed walls', () => {
