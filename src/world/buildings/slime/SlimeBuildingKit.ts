@@ -22,7 +22,7 @@ import {
 import { applySlimeDoorOverlay } from '@/world/buildings/slime/SlimeOpeningOverlay';
 import type { SlimeMaterialSet } from '@/world/buildings/slime/SlimeMaterials';
 
-type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith' | 'villa' | 'chapel' | 'watchtower';
+export type BuildingKitKind = 'house' | 'terraced' | 'shop' | 'inn' | 'blacksmith' | 'villa' | 'chapel' | 'watchtower';
 type OpeningFace = SlimeKindBlueprintOpening['face'];
 
 type HouseDamageState = 'light-roof-loss' | 'broken-side-wall' | 'blocked-side-window' | 'exposed-rafters';
@@ -3833,3 +3833,19 @@ export function buildSlimeWatchtower(dna: BuildingDNA): THREE.Group {
   addWatchtowerExtras(context);
   return context.group;
 }
+
+/**
+ * All 8 slime kind builders, keyed by their canonical `BuildingKind` string,
+ * for aggregate quality-bar tests and any future registry/showcase code that
+ * wants to iterate every slime kind without hand-maintaining a parallel list.
+ */
+export const SLIME_BUILDING_BUILDERS: Record<BuildingKitKind, (dna: BuildingDNA) => THREE.Group> = {
+  house: buildSlimeHouse,
+  terraced: buildSlimeTerraced,
+  shop: buildSlimeShop,
+  inn: buildSlimeInn,
+  blacksmith: buildSlimeBlacksmith,
+  villa: buildSlimeVilla,
+  chapel: buildSlimeChapel,
+  watchtower: buildSlimeWatchtower,
+};

@@ -250,6 +250,12 @@ describe('SlimeCommerce', () => {
     expect(shingleShop.getObjectByName('shop-awning-membrane')).toBeFalsy();
   });
 
+  it('suppresses generic front-lip and front-lens overlays when the shop reorients its frontage', () => {
+    const shop = buildSlimeShop(makeDna('shop', SHOP_SEED));
+    expect(shop.getObjectByName('facade-opening-lip-0')).toBeFalsy();
+    expect(shop.getObjectByName('facade-gel-lens-0')).toBeFalsy();
+  });
+
   it('decorates reusable inn side doors in place instead of adding a second full opening shell', () => {
     const inn = buildSlimeInn(makeDna('inn', INN_TAVERN_REUSED_DOOR_SEED));
     const serviceArch = requireGroup(inn, 'inn-service-arch');

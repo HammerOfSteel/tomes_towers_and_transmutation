@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
+import { depthFor } from '@/world/buildings/kit/DepthLadder';
 import type { BuildingDNA, BuildingSize } from '@/world/buildings/BuildingDNA';
 import { FLOOR_HEIGHT, factionBuildingDna, getFootprint } from '@/world/buildings/BuildingDNA';
 import { pickSlimeHostShell, type SlimeHostShellKind } from '@/world/buildings/slime/SlimeHostShells';
@@ -73,6 +74,41 @@ function collectGroups(root: THREE.Object3D, predicate: (group: THREE.Group) => 
 
 function collectNamedGroups(root: THREE.Object3D, prefix: string): THREE.Group[] {
   return collectGroups(root, group => group.name.startsWith(prefix));
+}
+
+function localBounds(root: THREE.Object3D, target: THREE.Object3D): THREE.Box3 {
+  root.updateWorldMatrix(true, true);
+  const rootInverse = root.matrixWorld.clone().invert();
+  const box = new THREE.Box3();
+  let found = false;
+  target.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+    const relative = rootInverse.clone().multiply(object.matrixWorld);
+    const meshBox = object.geometry.boundingBox!.clone().applyMatrix4(relative);
+    if (!found) {
+      box.copy(meshBox);
+      found = true;
+    } else {
+      box.union(meshBox);
+    }
+  });
+  if (!found) throw new Error(`No meshes found under ${target.name}`);
+  return box;
+}
+
+function largestSphereLikeVolumeRatio(root: THREE.Object3D): number {
+  const totalBox = new THREE.Box3().setFromObject(root);
+  const totalSize = totalBox.getSize(new THREE.Vector3());
+  const totalVolume = Math.max(totalSize.x * totalSize.y * totalSize.z, 1e-6);
+
+  let ratio = 0;
+  for (const mesh of collectMeshes(root)) {
+    if (!['SphereGeometry', 'IcosahedronGeometry'].includes(mesh.geometry.type)) continue;
+    const size = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
+    ratio = Math.max(ratio, (size.x * size.y * size.z) / totalVolume);
+  }
+  return ratio;
 }
 
 function requireGroup<T extends THREE.Object3D = THREE.Object3D>(root: THREE.Object3D, name: string): T {
@@ -221,5 +257,24 @@ describe('SlimeResidential', () => {
     const terraced = buildSlimeTerraced(makeDna('terraced', TERRACED_ROOF_GAP_SEED));
     expect(terraced.userData.kindVariation.partyWallCondition).toBe('roof-gap-between-units');
     expect(requireGroup(terraced, 'terraced-roof-gap-marker')).toBeTruthy();
+  });
+
+  it('keeps representative residential details on the depth ladder', () => {
+    const house = buildSlimeHouse(makeDna('house', HOUSE_DORMER_SEED));
+    const dormer = requireGroup<THREE.Group>(house, 'house-dormer-remnant');
+    const dormerPost = requireGroup(dormer, 'dormer-post-left');
+    const dormerSill = requireGroup(dormer, 'dormer-sill');
+    const dormerPatch = requireGroup(dormer, 'dormer-membrane-patch');
+
+    expect(localBounds(dormer, dormerPost).max.z).toBeCloseTo(depthFor('FRAME'), 1);
+    expect(localBounds(dormer, dormerSill).max.z).toBeCloseTo(depthFor('TRIM'), 1);
+    expect(localBounds(dormer, dormerPatch).max.z).toBeLessThanOrEqual(depthFor('GLAZING') + 0.05);
+  });
+
+  it('does not use a dominant sphere or icosahedron mesh as the main residential massing', () => {
+    const house = buildSlimeHouse(makeDna('house', HOUSE_SEED));
+    const terraced = buildSlimeTerraced(makeDna('terraced', TERRACED_SEED));
+    expect(largestSphereLikeVolumeRatio(house)).toBeLessThan(0.1);
+    expect(largestSphereLikeVolumeRatio(terraced)).toBeLessThan(0.1);
   });
 });
