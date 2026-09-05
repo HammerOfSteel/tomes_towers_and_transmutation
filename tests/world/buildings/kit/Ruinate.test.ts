@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import * as RuinateModule from '@/world/buildings/kit/Ruinate';
+import { mergeGroupMeshesByMaterial } from '@/scene/MeshMergeUtils';
 import {
   ruinateCourses,
   ruinateTwoLeafWall,
@@ -897,5 +898,73 @@ describe('ruin geometry helpers', () => {
     expect(collectMeshNodes(rubble)).toHaveLength(0);
     expect(hooks).toEqual([]);
     expect(collectMeshNodes(cracks)).toHaveLength(0);
+  });
+});
+
+// Regression guard (found while validating slime's Task 16 Settlement Lab
+// showcase, docs/superpowers/plans/2026-09-04-slime-buildings.md): rubble
+// chunk geometry had no `uv` attribute, so whenever a rubble-chunk mesh
+// shared a material bucket with any other uv-having mesh (e.g. slime's
+// contained-gel-vat base, which reuses the same wetStain material —
+// src/world/buildings/slime/SlimeOccupiedShell.ts), mergeGeometries()
+// (called by SettlementRenderer.ts via mergeGroupMeshesByMaterial() on
+// every real settlement building) failed SILENTLY and dropped the ENTIRE
+// material bucket with nothing left in its place -- the exact same class
+// of bug already caught once for StoneTowerFloorCap.ts (see that file's
+// own regression test for the precedent this mirrors).
+describe('rubble chunk geometry — uv attribute regression guard', () => {
+  it('rubble chunk meshes have a uv attribute (2 components per vertex) matching every other kit primitive', () => {
+    const wall = buildTaggedWall();
+    const result = ruinateCourses(wall, { seed: 314159, damageIntensity: 0.57 });
+    const { lookup } = buildPlacementLookup(wall);
+    const material = new THREE.MeshStandardMaterial({ color: 0x91816f, roughness: 0.92 });
+    const rubble = geometryExports.buildRubbleFromLostBlocks!(
+      wall, result, lookup, material,
+      { seed: 12345, survivingVolumeFraction: 0.45, chunksPerPile: 4 },
+    );
+    const chunkMeshes = collectMeshNodes(rubble);
+    expect(chunkMeshes.length).toBeGreaterThan(0);
+    for (const mesh of chunkMeshes) {
+      const uv = mesh.geometry.attributes.uv;
+      expect(uv).toBeDefined();
+      expect(uv.itemSize).toBe(2);
+      expect(uv.count).toBe(mesh.geometry.attributes.position.count);
+    }
+  });
+
+  it('merges cleanly via mergeGroupMeshesByMaterial() alongside uv-having geometry sharing the same material (regression guard)', () => {
+    const wall = buildTaggedWall();
+    const result = ruinateCourses(wall, { seed: 314159, damageIntensity: 0.57 });
+    const { lookup } = buildPlacementLookup(wall);
+    const sharedMat = new THREE.MeshStandardMaterial({ color: 0x91816f, roughness: 0.92 });
+    const rubble = geometryExports.buildRubbleFromLostBlocks!(
+      wall, result, lookup, sharedMat,
+      { seed: 12345, survivingVolumeFraction: 0.45, chunksPerPile: 4 },
+    );
+    // A standard uv-having primitive sharing the SAME material reference,
+    // mirroring slime's contained-gel-vat base sharing wetStain with rubble.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), sharedMat);
+    rubble.add(box);
+
+    const errors: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => { errors.push(String(args[0])); };
+    try {
+      mergeGroupMeshesByMaterial(rubble);
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(errors).toEqual([]);
+    // A successful merge collapses every same-material mesh (rubble chunks
+    // across all piles + the box) into exactly one merged mesh per pile
+    // group -- the key regression assertion is simply that SOME non-empty
+    // merged geometry survives (the real symptom was the whole bucket
+    // vanishing with nothing left in its place).
+    const mergedMeshes = collectMeshNodes(rubble);
+    expect(mergedMeshes.length).toBeGreaterThan(0);
+    for (const mesh of mergedMeshes) {
+      expect(mesh.geometry.attributes.position.count).toBeGreaterThan(0);
+    }
   });
 });
