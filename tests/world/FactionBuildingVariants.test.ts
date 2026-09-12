@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 import { buildElvenChapelShrine } from '@/world/buildings/ElvenChapelKit';
 
@@ -322,80 +322,56 @@ describe('Vulperia — BlockKit heightfield den mound (not a deformed sphere blo
 });
 
 // ── Orcish deep-quality pass (settlement visual fidelity follow-up) ─────────
-// Regression guards for the block-kit lashed-hut rework that replaced a
-// bolted-on log-palisade ring plus a separate noise-perturbed cone roof.
-describe('Orcish — BlockKit lashed hut with jagged patchwork roofline (not palisade logs + a cone)', () => {
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.orcish![kind]!(makeDna(kind, 'orcish', 55)));
+// Regression guards for the real bespoke lashed-timber/hide kit-of-parts
+// builders (OrcishBuildingKit.ts, docs/superpowers/plans/
+// 2026-09-04-orcish-buildings.md), one per canonical BuildingKind,
+// replacing the earlier `buildOrcishHutGrid()` BlockKit lashed hut (a
+// single mismatched-patch occupancy-grid hut reused/rescaled for
+// villa/chapel/shop only, with no watchtower coverage at all).
+describe('FACTION_BUILDING_VARIANTS — orcish full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('orcish', kind)).not.toBeNull();
     }
   });
 
-  it('builds the villa (Warlord Hall) main hut as one merged, dense block-kit mesh (not 16 palisade log cylinders + a lone cone roof), plus skull/tusk trophy accents', () => {
-    const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    let sawCone = false;
-    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'ConeGeometry') sawCone = true; });
-    // greedy-meshed block-kit output is a single merged BufferGeometry with a
-    // dense vertex count reflecting the underlying block construction, not a
-    // pile of separate log-cylinder/cone primitives; the tusk trophies are
-    // the only ConeGeometry expected on the villa.
-    const stalk = findBiggestMesh(g);
-    const pos = stalk.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
-    expect(sawCone).toBe(true); // the tusk trophy cones, not a roof cone
+  it('also resolves the generic "tower" kind to the orcish watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('orcish', 'tower')).not.toBeNull();
   });
 
-  it('produces an asymmetric footprint and a jagged (non-uniform) roofline from the live grid', () => {
-    const grid = buildOrcishHutGrid(9, 6, 6, 4, {});
-    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bh = Math.max(6, Math.round(4 / BLOCK_UNIT));
-    function colTop(bx: number, bz: number): number {
-      let top = -1;
-      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
-      return top;
+  it('blacksmith is not the same function as villa (no longer a shared hut-grid reuse)', () => {
+    expect(FACTION_BUILDING_VARIANTS.orcish!.blacksmith).not.toBe(FACTION_BUILDING_VARIANTS.orcish!.villa);
+  });
+
+  for (const kind of kinds) {
+    it(`orcish/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
+    });
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11))));
+    expect(new Set(counts).size).toBe(kinds.length);
+  });
+
+  it('is deterministic for the same faction/kind/seed', () => {
+    const gA = getFactionBuildingVariant('orcish', 'villa')!(makeDna('villa', 'orcish', 5));
+    const gB = getFactionBuildingVariant('orcish', 'villa')!(makeDna('villa', 'orcish', 5));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
+  });
+
+  it('no longer routes any of the 8 kinds through the legacy BlockKit hut-grid group names', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.toLowerCase().includes('hutgrid'))).toBe(false);
     }
-    const cx = Math.round(bw / 2);
-    const heights = new Set<number>();
-    for (let bz = 1; bz < bd - 1; bz++) heights.add(colTop(cx, bz));
-    expect(heights.size).toBeGreaterThanOrEqual(2);
-  });
-
-  it('assigns wall columns mismatched "patch" materials, not a single uniform material', () => {
-    const grid = buildOrcishHutGrid(9, 10, 10, 4, {});
-    const patchMaterials = new Set<string>();
-    for (const matKey of grid.cells.values()) {
-      if (matKey.startsWith('patch')) patchMaterials.add(matKey);
-    }
-    expect(patchMaterials.size).toBeGreaterThanOrEqual(2);
-  });
-
-  it('retains the praised skull-and-tusk trophy, bonfire/totem-pole, and loot-crate/blade accent props', () => {
-    const villa = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    let sawSkull = false;
-    villa.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawSkull = true; });
-    expect(sawSkull).toBe(true);
-    const chapel = FACTION_BUILDING_VARIANTS.orcish!.chapel!(makeDna('chapel', 'orcish', 9));
-    let sawTotemPole = false;
-    chapel.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawTotemPole = true; });
-    expect(sawTotemPole).toBe(true);
-    const shop = FACTION_BUILDING_VARIANTS.orcish!.shop!(makeDna('shop', 'orcish', 9));
-    let sawCrate = false;
-    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawCrate = true; });
-    expect(sawCrate).toBe(true);
-  });
-
-  it('produces a different hut silhouette per seed (deterministic but seed-varied)', () => {
-    const gA = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
-    const gB = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
-    expect(countMeshes(gA)).toBe(countMeshes(gA2));
-    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
-    const posB = findBiggestMesh(gB).geometry.getAttribute('position') as THREE.BufferAttribute;
-    let sumA = 0, sumB = 0;
-    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
-    for (let i = 0; i < posB.count; i++) sumB += posB.getY(i);
-    expect(sumA).not.toBe(sumB);
   });
 });
 
