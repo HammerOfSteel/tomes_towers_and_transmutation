@@ -24,9 +24,10 @@
  * (translucent gelatinous blob, no walls at all), undead (bone/crypt
  * ossuary spires), elven (living-tree trunks + leaf canopies), dwarven
  * (squat carved-stone blocks + iron-banded vault doors), orcish (crude
- * lashed-hide huts + bone/skull totems), vampire (gothic spires + ribbed
- * buttresses + stained-glass motifs), fae (glowing mushroom caps + petal
- * ornaments). Remaining follow-up: extend to human sub-factions and to
+ * lashed-hide huts + bone/skull totems), vampire (Gothic-Revival/Second-
+ * Empire manors with mansard roofs, oriel bays, shuttered lancet windows
+ * and wrought iron), fae (glowing mushroom caps + petal ornaments).
+ * Remaining follow-up: extend to human sub-factions and to
  * the 8 ward kinds beyond patriciate/church/market (see plan doc Phase
  * 2b/2c scoping) for the generic prop shape library.
  */
@@ -36,8 +37,8 @@ import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { earthTexture, ashStoneTexture, toadstoolTexture } from './FactionBlockTextures';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
@@ -76,6 +77,27 @@ import {
   buildOrcishChapel as buildOrcishKitChapel,
   buildOrcishWatchtower as buildOrcishKitWatchtower,
 } from './orcish/OrcishBuildingKit';
+// docs/superpowers/specs/2026-09-04-vampire-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-vampire-buildings.md: the real
+// bespoke Gothic-Revival/Second-Empire kit-of-parts builders, one per
+// canonical BuildingKind (VampireBuildingKit.ts — shuttered lancet
+// windows, oriel bays, mansard/gable roofs, wrought-iron railings,
+// ornate chimneys), replacing this file's own legacy
+// addBlockVampireSpire()/buildVampireVilla()/buildVampireChapel()/
+// buildVampireShop() BlockKit tapering obsidian spire (villa/chapel/shop
+// only, no house/terraced/inn/blacksmith/watchtower coverage at all)
+// removed in the same commit. Aliased on import to the `VampireKit`
+// suffix, mirroring orcish/slime's own aliasing convention above.
+import {
+  buildVampireHouse as buildVampireKitHouse,
+  buildVampireTerraced as buildVampireKitTerraced,
+  buildVampireShop as buildVampireKitShop,
+  buildVampireInn as buildVampireKitInn,
+  buildVampireBlacksmith as buildVampireKitBlacksmith,
+  buildVampireVilla as buildVampireKitVilla,
+  buildVampireChapel as buildVampireKitChapel,
+  buildVampireWatchtower as buildVampireKitWatchtower,
+} from './vampire/VampireBuildingKit';
 // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): the real
 // gel-block/pseudopod kit-of-parts builders, one per canonical BuildingKind,
 // replacing this file's own legacy buildSlimeVilla/buildSlimeChapel/
@@ -447,8 +469,9 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
 
 /**
  * Builds + meshes + centers a `buildUndeadTierGrid()` decayed ossuary
- * spire into `g` at the origin (same centering convention as
- * `addBlockVampireSpire()`). The weathered `'ashstone'` body is left
+ * spire into `g` at the origin (same block-grid centering convention as
+ * this file's other addBlock*Grid helpers). The weathered `'ashstone'`
+ * body is left
  * softly chamfered (centuries-worn stone should read rounded and eroded,
  * not crisp), while the load-bearing `'ossuary'` bone/reliquary corners
  * and the carved `'facade'` doorway jambs are chamfer-suppressed for a
@@ -659,154 +682,15 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 // villa/chapel/shop only, with no house/terraced/inn/blacksmith/watchtower
 // coverage at all) was removed in the same commit that added the new kit.
 
-// ── Vampire — tapering gothic-spire block-kit architecture ────────────────────
-// Count's Tower (patriciate), Blood Chapel (church), Blood Market (market):
-// Phase 2e (vampire): a genuine `buildVampireSpireGrid()` occupancy grid —
-// a gaunt, monotonically-tapering obsidian spire ending in a real
-// block-built crenellated iron parapet and a carved pointed-arch doorway —
-// replacing the old boxy `gothicBase()` (a flat slab + bolted-on cone roof +
-// bolted-on stepped-slab "buttresses", the same primitive-cone-roof pattern
-// already rejected for vulperia/dwarven/elven). Small bolted-on accents
-// (gargoyles, rose window, blood orb, candelabra) remain acceptable per the
-// established "small props are fine, only large primitive-built main
-// structures are not" precedent.
+// ── Vampire — real bespoke Gothic-Revival/Second-Empire kit-of-parts
+// builders live in vampire/VampireBuildingKit.ts (docs/superpowers/specs/
+// 2026-09-04-vampire-buildings-design.md + docs/superpowers/plans/
+// 2026-09-04-vampire-buildings.md), imported above as buildVampireKit*.
+// The old addBlockVampireSpire()/buildVampireVilla()/buildVampireChapel()/
+// buildVampireShop() BlockKit tapering obsidian spire (villa/chapel/shop
+// only, with no house/terraced/inn/blacksmith/watchtower coverage at all)
+// was removed in the same commit that added the new kit.
 
-/**
- * A gothic rose window: stone tracery mullions — 8 radial spoke blocks
- * plus an outer ring of chunky stone segments (reusing the same
- * "many small solid pieces, never a flat torus" principle as vulperia's
- * timber-stave ring) — framing a dark stained-glass disc, instead of a
- * flat colour disc standing in for an entire rose window.
- */
-function addRoseWindow(g: THREE.Group, cx: number, cy: number, cz: number, radius: number, stoneMat: THREE.Material, glassMat: THREE.Material): void {
-  addMesh(g, new THREE.CircleGeometry(radius * 0.85, 16), glassMat, cx, cy, cz);
-  const spokes = 8;
-  for (let i = 0; i < spokes; i++) {
-    const ang = (i / spokes) * Math.PI * 2;
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.8, radius * 0.1, 0.06), stoneMat);
-    spoke.position.set(cx, cy, cz + 0.02);
-    spoke.rotation.z = ang;
-    g.add(spoke);
-  }
-  addTimberRingSegments(g, cx, cy, cz + 0.01, radius * 0.95, stoneMat, 10, radius * 0.22, 0.08);
-}
-
-/**
- * Builds + meshes + centers a `buildVampireSpireGrid()` gothic spire into
- * `g` at the origin (same centering convention as `addBlockElvenTrunk()`).
- * The 'iron' crenellations and 'facade' door jambs are chamfer-suppressed —
- * a battlement merlon or a carved door-post reads as *cut, precise*
- * stonework, in deliberate contrast to the softly-chamfered 'obsidian' body
- * that keeps the tapering silhouette from looking aliased/blocky.
- */
-function addBlockVampireSpire(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, doorColor: string,
-  opts: VampireSpireOptions = {},
-): void {
-  const grid = buildVampireSpireGrid(seed, w, d, h, opts);
-  const palette = {
-    obsidian:  mat(wallColor, { roughness: 0.55, metalness: 0.1, map: obsidianTexture() }),
-    iron:      mat('#3a3a42', { roughness: 0.45, metalness: 0.55 }),
-    facade:    mat(doorColor, { roughness: 0.6 }),
-    bloodglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#c81030'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.85, roughness: 0.35 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'iron' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildVampireVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.7; // tall, gaunt
-  const g = new THREE.Group();
-  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.door, {
-    facade: true,
-  });
-  // Count's Tower: a smaller companion turret (the same spire profile at a
-  // reduced scale, mirroring vulperia's Fox Den / elven's satellite-lobe
-  // pattern) plus bat-gargoyle silhouettes and a balcony sitting flush
-  // against the main spire's real constructed parapet-deck radius.
-  const turretH = h * 0.62;
-  const turret = new THREE.Group();
-  addBlockVampireSpire(turret, dna.seed ^ 0xB100D_0011, fp.w * 0.5, fp.d * 0.5, turretH, dna.colors.walls, dna.colors.door, {
-    waistFrac: 0.4,
-  });
-  turret.position.set(fp.w * 0.48, 0, fp.d * 0.3);
-  g.add(turret);
-  const gargoyleMat = mat('#2a2020', { roughness: 0.6 });
-  const deckR = vampireSpireDeckRadius(fp.w, fp.d);
-  for (const ang of [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75]) {
-    const gargoyle = addMesh(g, new THREE.ConeGeometry(0.13, 0.28, 4), gargoyleMat, Math.cos(ang) * deckR * 0.95, vampireSpireTopY(h) - h * 0.12, Math.sin(ang) * deckR * 0.95);
-    gargoyle.rotation.x = Math.PI;
-  }
-  const balconyMat = mat(dna.colors.trim, { roughness: 0.6, metalness: 0.2 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.5, 0.08, 0.28), balconyMat, 0, h * 0.5, fp.d * 0.4);
-  return g;
-}
-
-function buildVampireChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.3; // shorter & wider than the villa's tower
-  const g = new THREE.Group();
-  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0002, fp.w * 1.15, fp.d * 1.0, h, dna.colors.walls, dna.colors.door, {
-    facade: true, parapetStartFrac: 0.7, waistFrac: 0.45,
-  });
-  // Blood Chapel: twin flanking spirelets (miniature spires, reusing the
-  // same shape profile at a much smaller scale) + a dark red stained-glass
-  // rose window with real stone tracery + a hovering blood-red orb.
-  for (const sx of [-fp.w * 0.5, fp.w * 0.5]) {
-    const spirelet = new THREE.Group();
-    addBlockVampireSpire(spirelet, dna.seed ^ 0xB100D_0003 ^ (sx > 0 ? 1 : 2), fp.w * 0.3, fp.d * 0.3, h * 0.5, dna.colors.walls, dna.colors.door, {
-      waistFrac: 0.3,
-    });
-    spirelet.position.set(sx, 0, 0);
-    g.add(spirelet);
-  }
-  const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a1020'), emissive: new THREE.Color('#a01830'), emissiveIntensity: 0.5, roughness: 0.3 });
-  addRoseWindow(g, 0, h * 0.62, fp.d * 0.5 + 0.02, fp.w * 0.16, trimMat, glassMat);
-  const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#4a0510'), emissive: new THREE.Color('#c81030'), emissiveIntensity: 0.9, roughness: 0.3 });
-  addMesh(g, new THREE.SphereGeometry(0.15, 10, 8), orbMat, 0, h * 0.55, fp.d * 0.55);
-  return g;
-}
-
-function buildVampireShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xB100D_0004);
-  // Blood Market: a dark iron-framed stall — the same pole-and-canvas
-  // canopy technique used to fix vulperia's shop (a flat, slightly-tilted
-  // panel resting on real support poles), replacing the old floating
-  // `ConeGeometry` awning that shared the same disconnected-roof bug class.
-  const ironMat = mat('#1a1818', { roughness: 0.5, metalness: 0.4 });
-  const poleH = h * 0.95;
-  const awningHalfW = fp.w * 0.42;
-  const counterZ = fp.d * 0.3;
-  for (const sx of [-awningHalfW, awningHalfW]) {
-    addMesh(g, new THREE.CylinderGeometry(0.04, 0.05, poleH, 6), ironMat, sx, poleH / 2, counterZ);
-  }
-  const woodMat = mat('#241818', { roughness: 0.85 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.75, 0.35, 0.32), woodMat, 0, 0.175, counterZ);
-  const canopyMat = mat('#5a0818', { roughness: 0.6, side: THREE.DoubleSide });
-  const canopy = addMesh(g, new THREE.BoxGeometry(awningHalfW * 2 + 0.25, 0.06, fp.d * 0.42), canopyMat, 0, poleH, counterZ);
-  canopy.rotation.x = -0.1;
-  const candelabraMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#b01828'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.8 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), candelabraMat, -fp.w * 0.25 + i * fp.w * 0.25, poleH * 0.7, counterZ);
-  }
-  return g;
-}
 
 // ── Fae — whimsical mushroom/flower block-kit architecture ────────────────────
 // Fae Court (patriciate), Faerie Ring (church), Twilight Market (market):
@@ -839,11 +723,12 @@ function addMushroomGills(g: THREE.Group, capY: number, gillSpan: number, materi
 
 /**
  * Builds + meshes + centers a `buildFaeStalkGrid()` toadstool into `g` at
- * the origin (same centering convention as `addBlockVampireSpire()`). No
- * materials are chamfer-suppressed here — unlike vampire's hard-edged
- * iron/dwarven's buttress corners, fae's whimsical theme calls for
- * everything (stalk, cap, portal frame) reading soft and organic, mirroring
- * elven's "everything gently chamfered" choice.
+ * the origin (same block-grid centering convention as this file's other
+ * addBlock*Grid helpers). No materials are chamfer-suppressed here —
+ * unlike vampire's hard-edged iron/dwarven's buttress corners, fae's
+ * whimsical theme calls for everything (stalk, cap, portal frame) reading
+ * soft and organic, mirroring elven's "everything gently chamfered"
+ * choice.
  */
 function addBlockFaeStalk(
   g: THREE.Group,
@@ -1089,14 +974,22 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     tower:      buildOrcishKitWatchtower,
   },
   vampire: {
-    villa:  buildVampireVilla,
-    chapel: buildVampireChapel,
-    shop:   buildVampireShop,
-    // Phase 2b increment 3: same gap as slime/undead above.
-    house:      buildVampireVilla,
-    terraced:   buildVampireVilla,
-    inn:        buildVampireVilla,
-    blacksmith: buildVampireVilla,
+    // docs/superpowers/plans/2026-09-04-vampire-buildings.md: vampire is
+    // the fourth faction (after slime/dwarven/orcish) with a real bespoke
+    // kit builder for every canonical kind (VampireBuildingKit.ts's
+    // Gothic-Revival/Second-Empire manor construction — shuttered lancet
+    // windows, oriel bays, mansard/gable roofs, wrought-iron railings),
+    // replacing the earlier "villa spire reused for house/terraced/inn/
+    // blacksmith, no watchtower at all" stopgap.
+    house:      buildVampireKitHouse,
+    terraced:   buildVampireKitTerraced,
+    shop:       buildVampireKitShop,
+    inn:        buildVampireKitInn,
+    blacksmith: buildVampireKitBlacksmith,
+    villa:      buildVampireKitVilla,
+    chapel:     buildVampireKitChapel,
+    watchtower: buildVampireKitWatchtower,
+    tower:      buildVampireKitWatchtower,
   },
   fae: {
     villa:  buildFaeVilla,
