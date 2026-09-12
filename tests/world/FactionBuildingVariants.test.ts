@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildElvenTrunkGrid, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildElvenTrunkGrid } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock } from '@/world/buildings/BlockKit';
 import { buildElvenChapelShrine } from '@/world/buildings/ElvenChapelKit';
 
@@ -30,19 +30,6 @@ function countMeshes(g: THREE.Group): number {
   let n = 0;
   g.traverse(o => { if (o instanceof THREE.Mesh) n++; });
   return n;
-}
-
-function findBiggestMesh(g: THREE.Group): THREE.Mesh {
-  let biggest: THREE.Mesh | null = null;
-  let biggestCount = 0;
-  g.traverse(o => {
-    if (o instanceof THREE.Mesh) {
-      const count = (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-      if (count > biggestCount) { biggestCount = count; biggest = o; }
-    }
-  });
-  expect(biggest).not.toBeNull();
-  return biggest!;
 }
 
 function expectAllVerticesFinite(g: THREE.Group): void {
@@ -80,7 +67,7 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
 
   it('returns null for an uncovered (faction, kind) pair', () => {
     expect(getFactionBuildingVariant('human_town', 'villa')).toBeNull();
-    expect(getFactionBuildingVariant('fae', 'watchtower')).toBeNull();
+    expect(getFactionBuildingVariant('human_town', 'watchtower')).toBeNull();
   });
 
   it('returns null when faction is undefined', () => {
@@ -163,8 +150,11 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 
   it('falls back to the shared shape + style overlay when faction has no variant for this kind', () => {
-    // fae has no 'watchtower' variant -> falls back to buildWatchtower().
-    const inst = buildBuilding(makeDna('watchtower', 'fae', 5));
+    // human_town has no bespoke building-variant kit at all -> falls back
+    // to buildWatchtower(). (fae now has a real bespoke watchtower variant
+    // -- FaeBuildingKit.ts's Moonmoth Lookout -- so it no longer serves as
+    // an example of an uncovered kind.)
+    const inst = buildBuilding(makeDna('watchtower', 'human_town', 5));
     expect(inst.exteriorGroup).toBeInstanceOf(THREE.Group);
     expect(countMeshes(inst.exteriorGroup)).toBeGreaterThan(0);
   });
@@ -582,110 +572,92 @@ describe('FACTION_BUILDING_VARIANTS — vampire full kit-of-parts coverage', () 
   });
 });
 
-// ── Fae deep-quality pass (settlement visual fidelity follow-up) ───────────
-// Regression guards for the block-kit toadstool rework that replaced a
-// primitive cylinder stem and a deformed half-sphere dome standing in for
-// an entire mushroom.
-describe('Fae — BlockKit toadstool stalk with scalloped flared cap (not a cylinder + deformed sphere)', () => {
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.fae![kind]!(makeDna(kind, 'fae', 33)));
-    }
-  });
+      // ── Fae kit-of-parts coverage (2026-09-04 rebuild) ──────────────────────────
+      // Replaces the old "Fae deep-quality pass" BlockKit toadstool-stalk-grid
+      // describe block above (removed in the same commit that added
+      // FaeBuildingKit.ts) -- the old block tested buildFaeStalkGrid() directly
+      // and asserted villa/chapel/shop-only coverage; the new kit covers all 8
+      // canonical kinds via FaeBuildingKit.ts's storybook stump/fungal cottage
+      // construction (coursed bark walls, five-piece oversized petal-lancet/
+      // oculus openings, real ribbed mushroom-cap/curled shingle-cone roofs,
+      // bounded organic lattice-deform, root-flare grounding).
+      describe('FACTION_BUILDING_VARIANTS — fae full kit-of-parts coverage', () => {
+        const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
 
-  it('builds the villa (Fae Court) from many discrete block meshes (a Lego-style assembly, not a cylinder + a sphere), plus satellite toadstools and firefly accents', () => {
-    const g = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
-    let sawCylinder = false;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawCylinder = true;
-    });
-    // The old version's main stalk was a CylinderGeometry stem; the block
-    // toadstool's merged mesh is many small unit blocks, so no cylinder
-    // primitive should remain (small SphereGeometry firefly motes are
-    // still fine — those were never the "stem" being replaced).
-    expect(sawCylinder).toBe(false);
-    const stalk = findBiggestMesh(g);
-    const pos = stalk.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
-  });
+        it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+          for (const kind of kinds) {
+            expect(getFactionBuildingVariant('fae', kind)).not.toBeNull();
+          }
+        });
 
-  it('flares the cap out well beyond the stalk width, then domes back in at the crown (a real mushroom silhouette, not a uniform column)', () => {
-    const grid = buildFaeStalkGrid(3, 6, 6, 8, {});
-    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bh = Math.max(8, Math.round(8 / BLOCK_UNIT));
-    function rowSpan(by: number): number {
-      const cz = Math.round((bd - 1) / 2);
-      let min = Infinity, max = -Infinity;
-      for (let bx = 0; bx < bw; bx++) {
-        if (hasBlock(grid, bx, by, cz)) { min = Math.min(min, bx); max = Math.max(max, bx); }
-      }
-      return max >= min ? max - min : 0;
-    }
-    // Mirrors the grid's own `t = by / (bh - 1)` normalization (not
-    // `by / bh`) so these sample points land at the intended phase
-    // boundaries instead of one row short of them.
-    const stalkSpan = rowSpan(Math.round(0.2 * (bh - 1)));
-    const peakSpan = rowSpan(Math.round(0.86 * (bh - 1)));
-    const topSpan = rowSpan(bh - 1);
-    expect(peakSpan).toBeGreaterThan(stalkSpan);
-    expect(topSpan).toBeLessThan(peakSpan);
-  });
+        it('also resolves the generic "tower" kind to the fae watchtower kit builder', () => {
+          expect(getFactionBuildingVariant('fae', 'tower')).not.toBeNull();
+        });
 
-  it('marks the cap with a distinct "spore" bioluminescent accent material, not plain cap colour', () => {
-    const grid = buildFaeStalkGrid(3, 6, 6, 8, {});
-    let sawSpore = false;
-    for (const matKey of grid.cells.values()) {
-      if (matKey === 'spore') { sawSpore = true; break; }
-    }
-    expect(sawSpore).toBe(true);
-  });
+        it('blacksmith is not the same function as villa (no longer a shared toadstool-stalk-grid reuse)', () => {
+          expect(FACTION_BUILDING_VARIANTS.fae!.blacksmith).not.toBe(FACTION_BUILDING_VARIANTS.fae!.villa);
+        });
 
-  it('carves a real circular portal-sized gap in the block stalk at the front (a genuine hole floating above the ground, not a ground-level arch)', () => {
-    const grid = buildFaeStalkGrid(5, 6, 6, 8, { facade: true });
-    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const cx = Math.round(bw / 2);
-    // Ground level must stay solid (unlike vampire's/elven's ground-level
-    // arches) — the portal floats above it.
-    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(true);
-    let sawCarvedGap = false;
-    for (let by = 1; by < bd + 4; by++) {
-      if (!hasBlock(grid, cx, by, bd - 1)) { sawCarvedGap = true; break; }
-    }
-    expect(sawCarvedGap).toBe(true);
-  });
+        for (const kind of kinds) {
+          it(`fae/${kind} builds a non-empty, all-finite group without throwing`, () => {
+            const g = getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11));
+            expect(g).toBeInstanceOf(THREE.Group);
+            expect(countMeshes(g)).toBeGreaterThan(0);
+            expectAllVerticesFinite(g);
+          });
+        }
 
-  it('retains the praised gill-fin, petal, and firefly small accent props', () => {
-    const villa = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 5));
-    let sawGillBox = false, sawFirefly = false;
-    villa.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawGillBox = true;
-      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawFirefly = true;
-    });
-    expect(sawGillBox).toBe(true); // gill fins
-    expect(sawFirefly).toBe(true); // firefly motes
-    const shop = FACTION_BUILDING_VARIANTS.fae!.shop!(makeDna('shop', 'fae', 5));
-    let sawPetal = false;
-    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CircleGeometry') sawPetal = true; });
-    expect(sawPetal).toBe(true); // petal decorations
-  });
+        it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+          const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11))));
+          expect(new Set(counts).size).toBe(kinds.length);
+        });
 
-  it('is deterministic for the same seed and varies with a different seed', () => {
-    const gA = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 1));
-    const gB = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 1));
-    const gC = FACTION_BUILDING_VARIANTS.fae!.villa!(makeDna('villa', 'fae', 2));
-    expect(countMeshes(gA)).toBe(countMeshes(gB));
-    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
-    const posC = findBiggestMesh(gC).geometry.getAttribute('position') as THREE.BufferAttribute;
-    let sumA = 0, sumC = 0;
-    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
-    for (let i = 0; i < posC.count; i++) sumC += posC.getY(i);
-    expect(sumA).not.toBe(sumC);
-  });
-});
+        it('is deterministic for the same faction/kind/seed', () => {
+          const gA = getFactionBuildingVariant('fae', 'villa')!(makeDna('villa', 'fae', 5));
+          const gB = getFactionBuildingVariant('fae', 'villa')!(makeDna('villa', 'fae', 5));
+          expect(countMeshes(gA)).toBe(countMeshes(gB));
+        });
 
-describe('elven watchtower/tower -- stone-tower kit POC', () => {
+        it('no longer routes any of the 8 kinds through the legacy BlockKit toadstool-stalk-grid group names', () => {
+          for (const kind of kinds) {
+            const g = getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11));
+            const names: string[] = [];
+            g.traverse(o => names.push(o.name));
+            expect(names.some(n => n.toLowerCase().includes('stalkgrid'))).toBe(false);
+          }
+        });
+
+        it('every kind has at least one glowing five-piece opening (recess + surround, never a flat dark box/circle)', () => {
+          for (const kind of kinds) {
+            const g = getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11));
+            const names: string[] = [];
+            g.traverse(o => names.push(o.name));
+            expect(names.some(n => n.includes('recess'))).toBe(true);
+            expect(names.some(n => n.includes('surround'))).toBe(true);
+          }
+        });
+
+        it('every kind builds a real constructed roof (radial mushroom cap, curled shingle cone, or gable shingle course — never a bare cone/sphere stand-in)', () => {
+          for (const kind of kinds) {
+            const g = getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11));
+            const names: string[] = [];
+            g.traverse(o => names.push(o.name));
+            const hasRealRoof = names.some(n => n.includes('radial-mushroom-cap') || n.includes('curled-cone-shingle-roof') || n.includes('shingle'));
+            expect(hasRealRoof).toBe(true);
+          }
+        });
+
+        it('every kind has real root-flare grounding (never floating flush with bare ground)', () => {
+          for (const kind of kinds) {
+            const g = getFactionBuildingVariant('fae', kind)!(makeDna(kind, 'fae', 11));
+            const names: string[] = [];
+            g.traverse(o => names.push(o.name));
+            expect(names.some(n => n.includes('fae-root-flare'))).toBe(true);
+          }
+        });
+      });
+
+      describe('elven watchtower/tower -- stone-tower kit POC', () => {
   it('elven watchtower resolves to a distinct builder from the generic default', () => {
     const inst = buildBuilding(makeDna('watchtower', 'elven', 5));
     // Generic buildWatchtower() has a fixed square footprint; the elven

@@ -1797,6 +1797,123 @@ Slime, Human — Slime/Human last, since those already look best).
   Remaining 2 races (fae/human) still carry only their design spec +
   implementation plan from 6.7 — no implementation commits yet.
 
+- [x] **6.14 — Eleventh race, seventh non-elven: fae 8-kind
+  kit-of-parts (branch `race/fae-buildings`)** — TINY INHABITED FAIRY
+  ARCHITECTURE: stump/fungal cottages, petal-roof shops, curled
+  shingle-tower spires, root-flare foundations, and oversized warmly
+  glowing doors/windows, built as legible kit-of-parts assemblies
+  (ribs, bark strips, shingles, mullions, plinths) that may be
+  *optionally deformed as a bounded assembly* afterward — never
+  free-form sculpted blobs. Re-validated the existing design spec +
+  implementation plan against the current shared kit (`TurfRoof.ts`,
+  `RockPlinthSkirt.ts`, `Shutter.ts`, `LanternKit.ts` etc. added by
+  vulperia/undead/vampire/orcish/dwarven since the plan was written)
+  and confirmed none was a drop-in fit for fae's two signature asks —
+  a genuinely curled/coiled conical shingle roof and a scalloped
+  radial mushroom-cap roof — so built two new shared-kit primitives:
+  `RadialMushroomCap.ts` (a radial rib/gill construction — cap dome +
+  N radial ribs + underside gill fins + a rolled rim lip — reusable by
+  any future race wanting a real toadstool-cap roof, never a
+  UV-sphere/lathe blob) and `ShingleSurface.ts`'s new
+  `buildCurledConeShingleRoof()` (extends the existing tile-course
+  roof module with a curved directrix so tile courses spiral/curl
+  toward the apex like a real storybook tower roof while keeping
+  every individual tile butt and eave edge as real, separately-shaded
+  geometry). Also built `AssemblyLatticeDeform.ts` — a bounded,
+  seeded lattice-deformation utility (lean/bulge/twist/taper axes
+  applied to a control lattice, not per-vertex noise) that lets a
+  fully-legible kit-of-parts "body" sub-assembly read as an organic,
+  slightly wonky fairy-tale silhouette without ever becoming a smooth
+  sculpted blob — applied to each building's hall+openings+roof
+  group while deliberately excluding grounding/lot-dressing props so
+  ground-contact never desyncs from the deformed body.
+  Added fae-specific `FaePalette.ts` (weathered bark/toadstool-cap/
+  petal/glow-window materials), `FaeOpenings.ts` (oversized
+  round-arch/petal-lancet/oculus door and window presets — 30-45%
+  facade width, satisfying the five-piece minimum: recess, proud
+  surround, sill, mullion, set-back glazing — layered over the shared
+  `OpeningParts.ts` primitives), `FaeGrounding.ts` (root-flare/berm
+  foundation treatment, following dwarven's `RockPlinthSkirt.ts` and
+  vulperia's earth-berm precedent but with gnarled root-like flare
+  geometry instead of stacked stone or turf), and `FaeLotDressing.ts`
+  (toadstool clusters, glowing fairy-ring ground markers, lantern
+  posts). All 8 canonical kinds shipped in `FaeBuildingKit.ts` (~1230
+  lines) per the design spec's own per-kind blueprint: house/inn/shop/
+  villa-main-hall/chapel-nave use the new radial mushroom-cap roof;
+  terraced/watchtower/villa-turret use the new curled-cone shingle
+  roof; blacksmith uses a plain gable (documented pragmatic
+  simplification vs. the spec's literal "asymmetric leaf shed roof" —
+  the doctrine's actual priorities, depth ladder + five-piece openings
+  + real tile-course construction, are all still satisfied). Villa's
+  side turret is a second independently-walled-and-roofed hall
+  rigidly offset against the main hall (an L-plan simplification vs.
+  `MassComposer.ts`'s more general wing machinery); chapel's "8-12
+  stump/toadstool columns" become attached proud bark-cylinder
+  pilasters along the long walls (simplification vs. a free-standing
+  colonnade), with its canopy using the spec's own explicitly-
+  sanctioned "elongated mushroom cap over nave" alternative. Wired
+  into `FACTION_BUILDING_VARIANTS['fae']` (all 8 kinds + a `tower`
+  alias), replacing the old BlockKit toadstool-stalk-grid functions
+  (`buildFaeStalkGrid()`/`faeCapTopY()`/`faeCapRimRadius()`/
+  `FaeStalkOptions`, villa/chapel/shop only, no house/terraced/inn/
+  blacksmith/watchtower coverage) entirely, deleted as dead code in
+  the same commit that stopped referencing them — this also exposed
+  and removed two now-fully-unused generic helpers (`mat()`/
+  `addMesh()` in `FactionBuildingVariants.ts`) that turned out to have
+  had no callers left except fae's old code. Settlement Lab's
+  `POC_KIND_OVERRIDE_BY_FACTION` gained a `fae` entry (forces the
+  first building to `watchtower`, the one kind with no `WARD_TO_KIND`
+  entry, so all 8 kinds review together — same pattern as every prior
+  race).
+  **uv-attribute merge-drop bug class**: a targeted sweep of every
+  custom `THREE.BufferGeometry`/`setAttribute` call across all new fae
+  files, `RadialMushroomCap.ts`, and the new
+  `buildCurledConeShingleRoof()` found none — every mesh is built from
+  stock `BoxGeometry`/`CylinderGeometry`/`ConeGeometry`/
+  `ExtrudeGeometry` via `finishArchitecturalGeometry()`, so no new
+  instance of the bug class that hit elven's `StoneTowerFloorCap.ts`
+  or slime's `SlimeAccretionKit.ts`/`Ruinate.ts`; `FaeBuildingKit.test.ts`
+  includes an explicit `assertEveryMeshHasUv` regression test across
+  all 8 kinds × 4 seeds.
+  **Live-verified via Playwright** against a dev server started from
+  this worktree on an unused port (5199): faction=fae showcase across
+  3 seeds (1/42/777), using the `V` WoW-camera-mode key binding
+  (orbit/pitch/zoom via mouse) to get real facade close-ups rather
+  than the isometric camera's fixed pitch/zoom clamp — confirmed real
+  curled tile-course roofs with clearly visible individual tile
+  butts, shadow gaps and eave thickness (never a smooth cone/dome),
+  real scalloped radial mushroom-cap roofs with visible rib/gill
+  segmentation, oversized (~30-45% facade width) five-piece openings
+  — pointed-arch lancet windows and a large arched door with a real
+  proud purple mullion surround, dark recess shadow, and warm amber
+  glow (never a flat dark box/circle) — bark-plank wall coursing with
+  mossy green accent trim, dense toadstool/fairy-ring lot dressing,
+  and no floating/back-geometry across any seed or building kind.
+  Zero new console warnings/errors across all screenshots — only the
+  same pre-existing `[PrincessDefaults] unknown charId "undefined"`
+  warning seen in every prior race's verification.
+  **Full regression**: `tests/world/buildings/fae/` +
+  `tests/world/buildings/kit/RadialMushroomCap.test.ts` +
+  `tests/world/buildings/kit/AssemblyLatticeDeform.test.ts` +
+  `tests/world/buildings/kit/CurledConeShingleRoof.test.ts` (6 files,
+  61 tests) all passing; `tests/world/FactionBuildingVariants.test.ts`
+  + `tests/world/FactionBlockProfiles.test.ts` (both re-verified after
+  removing all now-dead fae BlockKit references) all passing (274
+  tests across the combined targeted run). Whole-suite run: 17 failed/
+  4154 passed/4 skipped (out of 4175) — reproduced identically across
+  two independent full runs, confirming these are deterministic (not
+  flaky-timeout) pre-existing failures with zero overlap with any fae
+  or registry file (`talentSystem`/`WaterMaterial`/`enemyLoader`/
+  `towerGenerator`/`OverworldScene` chunk-streaming/`main.startup.smoke`/
+  `ResourceNodePlacer`/`WorldGenerator`/`StoneTowerKit`/`Tracery`/one
+  `SettlementLabScene.test.ts` slime-POC test) — the same
+  pre-existing/flaky baseline pattern documented for every prior race
+  (6.8-6.13). `npx tsc --noEmit` holds at the established 146-error
+  baseline throughout, zero fae-related errors.
+  Remaining: human — deprioritized per this phase's own scoping note
+  ("Slime, Human last, since those already look best"); all other 8
+  races now have full 8-kind bespoke kits shipped.
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
