@@ -168,6 +168,16 @@ import {
   buildFaeChapel as buildFaeKitChapel,
   buildFaeWatchtower as buildFaeKitWatchtower,
 } from './fae/FaeBuildingKit';
+import {
+  buildHumanHouse as buildHumanKitHouse,
+  buildHumanTerraced as buildHumanKitTerraced,
+  buildHumanVilla as buildHumanKitVilla,
+  buildHumanInn as buildHumanKitInn,
+  buildHumanShop as buildHumanKitShop,
+  buildHumanBlacksmith as buildHumanKitBlacksmith,
+  buildHumanChapel as buildHumanKitChapel,
+  buildHumanWatchtower as buildHumanKitWatchtower,
+} from './human/HumanBuildingsKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -480,6 +490,59 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     chapel:     buildFaeKitChapel,
     watchtower: buildFaeKitWatchtower,
     tower:      buildFaeKitWatchtower,
+  },
+  // Human is the LAST of the 9 races (docs/superpowers/specs/
+  // 2026-09-04-human-buildings-design.md +
+  // docs/superpowers/plans/2026-09-04-human-buildings.md): the baseline
+  // medieval-European settlement kit (HumanBuildingsKit.ts's timber-frame/
+  // jetty construction -- proud post-and-brace `TimberFrame.ts` structural
+  // frames with recessed plaster/brick infill, real projecting
+  // `HumanJetty.ts` upper storeys on a bressummer beam with exposed joist
+  // ends and corbels, stone ground floors, both thatch
+  // `ThatchRoofSurface.ts` and tile/slate `ShingleSurface`-course roofs),
+  // registered identically for all three human sub-factions
+  // (human_rural/human_town/human_noble -- `buildHumanPalette()` reads
+  // `dna.faction` itself to pick thatched/timber/tudor materials, so one
+  // set of kind builders covers all three). Replaces the previous
+  // "no FACTION_BUILDING_VARIANTS entry at all" state, where human fell
+  // through entirely to the generic shared-shape system + STYLE_COLORS
+  // overlay (BuildingBuilder.ts's legacy default path) -- this doc's own
+  // top comment historically called that acceptable ("already reads as a
+  // normal fantasy village and wasn't part of the complaint"), but with
+  // all 8 other factions now on bespoke kit-of-parts geometry, human is
+  // the only faction left without one.
+  human_rural: {
+    house:      buildHumanKitHouse,
+    terraced:   buildHumanKitTerraced,
+    shop:       buildHumanKitShop,
+    inn:        buildHumanKitInn,
+    blacksmith: buildHumanKitBlacksmith,
+    villa:      buildHumanKitVilla,
+    chapel:     buildHumanKitChapel,
+    watchtower: buildHumanKitWatchtower,
+    tower:      buildHumanKitWatchtower,
+  },
+  human_town: {
+    house:      buildHumanKitHouse,
+    terraced:   buildHumanKitTerraced,
+    shop:       buildHumanKitShop,
+    inn:        buildHumanKitInn,
+    blacksmith: buildHumanKitBlacksmith,
+    villa:      buildHumanKitVilla,
+    chapel:     buildHumanKitChapel,
+    watchtower: buildHumanKitWatchtower,
+    tower:      buildHumanKitWatchtower,
+  },
+  human_noble: {
+    house:      buildHumanKitHouse,
+    terraced:   buildHumanKitTerraced,
+    shop:       buildHumanKitShop,
+    inn:        buildHumanKitInn,
+    blacksmith: buildHumanKitBlacksmith,
+    villa:      buildHumanKitVilla,
+    chapel:     buildHumanKitChapel,
+    watchtower: buildHumanKitWatchtower,
+    tower:      buildHumanKitWatchtower,
   },
 };
 

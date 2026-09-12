@@ -163,6 +163,19 @@ const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind | ((b: P
   // settlement's ward mix, so the same one-forced-slot pattern as the
   // other 7 races' is sufficient here too.
   fae: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Human is the LAST of the 9 races and now has all 8 canonical
+  // building kits shipped (house/terraced/shop/inn/blacksmith/villa/
+  // chapel/watchtower) via src/world/buildings/human/HumanBuildingsKit.ts,
+  // registered for all three human sub-factions (human_rural/human_town/
+  // human_noble) in FactionBuildingVariants.ts — the same "enough kinds
+  // shipped, showcase instead of isolate" situation every other race hit.
+  // watchtower/tower is the only human kind with no WARD_TO_KIND entry
+  // (buildingToDungeonPlan.ts) and so never spawns naturally; the other 7
+  // are already reachable through a normal settlement's ward mix, so the
+  // same one-forced-slot pattern as the other 8 races' is sufficient
+  // here too. This completes the full 9-race procedural building
+  // programme's Settlement Lab coverage.
+  human: (_b, index) => (index === 0 ? 'watchtower' : undefined),
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────
