@@ -1297,6 +1297,81 @@ Slime, Human — Slime/Human last, since those already look best).
   standalone in 4.2s against a 5s default timeout); `npx tsc --noEmit`
   holds at the established 146-error baseline.
 
+- [x] **6.9 — Sixth race, second non-elven: dwarven 8-kind kit-of-parts
+  (branch `race/dwarven-buildings`)** — unlike slime, dwarven had rich
+  reference art from the start (6 images in
+  `concept_art/reference/buildings/dwarf/`), so no art-direction brief was
+  needed: compressed, weighty stonecraft — low masses on rock plinths,
+  stepped/battered walls, small deep-set openings, heavy lintels,
+  corbelled chimneys, angular chevron ornament, metal banding, and
+  visible industry (workshops/vents). Reused the shared Tier 1-3 kit
+  already on `main` (lattice-dome canopy, interlace ornament, ruinate
+  course erosion/debris, lathe columns) and added 6 new dwarven-flavoured
+  shared-kit modules under `src/world/buildings/kit/` in the same style
+  (`RockPlinthSkirt.ts`, `SteppedBatterProfile.ts`,
+  `CorbelledChimneyStack.ts`, `AngularOrnament.ts`, `MetalBanding.ts`,
+  `PipeworkVent.ts`), plus a `MassComposer.ts` helper (multi-mass
+  composition — main hall + wing/upper-core — needed once villa/inn
+  required "at least two distinct masses" per the doctrine) and dwarven-
+  specific `DwarvenMaterials.ts`/`DwarvenOpenings.ts`/
+  `DwarvenWorkshopProps.ts`. All 8 canonical kinds shipped with bespoke
+  builders in `DwarvenBuildingKit.ts` (house/terraced/villa/inn/shop/
+  blacksmith/chapel/watchtower — watchtower last, using a stepped
+  octagonal-or-square tier stack, alternating slit vents, 4 corner
+  buttresses, a rock-plinth ground axis, and an unconditional signal
+  brazier crown), wired into `FACTION_BUILDING_VARIANTS['dwarven']`,
+  replacing the old stepped-tier BlockKit hall (`addVaultWheel`/
+  `addBlockDwarvenHall`/`dwarvenBlock` and the old BlockKit
+  villa/chapel/shop) entirely — deleted as dead code in the same commit
+  that stopped referencing them, per `noUnusedLocals:true`. Settlement
+  Lab's `POC_KIND_OVERRIDE_BY_FACTION` gained a `dwarven` entry (forces
+  the first building to `watchtower`, the one kind with no
+  `WARD_TO_KIND` entry, so all 8 kinds review together in one
+  settlement — same pattern as elven/slime). `FactionBlockProfiles.ts`'s
+  dwarven tier-layout primitives (`buildDwarvenHallGrid`/
+  `dwarvenRoofTopY`/`dwarvenTopTierExtents`/`planDwarvenTiers`) were kept
+  in place rather than deleted — undead still aliases onto them
+  (`undeadRoofTopY = dwarvenRoofTopY`) even though dwarven itself no
+  longer calls them directly.
+  **Bugs found and fixed during this race's own build/verification** (no
+  new instance of the uv-attribute merge-drop bug class this time — a
+  static sweep confirmed every custom `BufferGeometry` in the shared kit
+  and dwarven's own files sets a matching `uv` attribute, and none of
+  dwarven's own modules construct raw `BufferGeometry` at all): (a) a
+  test-authoring bug, not a builder bug — the watchtower's "exactly 4
+  buttress strips" assertion counted by a `buttress` substring match,
+  which also matched each buttress's own internal child names, inflating
+  16 hits for 4 real buttresses; fixed by filtering to the exact
+  top-level name pattern instead. (b) dwarven's per-course stone masonry
+  is measurably geometry-heavier than slime's/elven's kit — the
+  Settlement Lab dwarven showcase test takes ~5.1s, over vitest's 5s
+  default, so it needed the same explicit `15000`ms per-test timeout
+  already used by `LatticeDome.test.ts`/`Tracery.test.ts`.
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout): faction=dwarven showcase across two seeds and multiple zoom
+  levels renders real pitched/gabled roofs with course-by-course relief,
+  recessed door/window openings with proud surrounds and lit interiors,
+  visible rock-plinth bases, corner buttresses, and multi-mass villa/inn
+  silhouettes — zero console errors, and no visible holes, back-geometry,
+  or floating pieces at any zoom level.
+  **Full regression**: `tests/world/buildings/dwarven/` (91 tests) +
+  `tests/world/FactionBuildingVariants.test.ts` (131 tests) +
+  `tests/scene/SettlementLabScene.test.ts` (13 tests) +
+  `tests/world/FactionBlockProfiles.test.ts` all green (301/301 combined).
+  Full `npx vitest run`: 14 failed tests across 10 files — 9 of those are
+  the same established pre-existing baseline (enemyLoader×3,
+  towerGenerator×2, talentSystem×3, WaterMaterial×1); the remaining 5
+  (main.startup.smoke×3, a slime `SettlementLabScene` showcase timeout,
+  `ResourceNodePlacer`×1) plus 3 further `OverworldScene` suite-level
+  `beforeAll` hook timeouts all re-ran green in isolation, confirming
+  pre-existing parallel-load contention flakiness (same pattern
+  documented for slime in 6.8), not a regression from this race.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 6 races (vampire/orcish/undead/vulperia/fae/human) still
+  carry only their design spec + implementation plan from 6.7 — no
+  implementation commits yet.
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
