@@ -119,6 +119,17 @@ const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind | ((b: P
   // same one-forced-slot pattern as elven's/slime's/dwarven's is
   // sufficient here too.
   orcish: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Vampire now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/vampire/VampireBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish hit.
+  // watchtower/tower is the only vampire kind with no WARD_TO_KIND entry
+  // (buildingToDungeonPlan.ts) and so never spawns naturally; the other 7
+  // are already reachable through a normal settlement's ward mix, so the
+  // same one-forced-slot pattern as elven's/slime's/dwarven's/orcish's is
+  // sufficient here too.
+  vampire: (_b, index) => (index === 0 ? 'watchtower' : undefined),
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────

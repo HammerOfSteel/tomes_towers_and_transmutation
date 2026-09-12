@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime/Dwarven/Orcish (8 canonical kinds each) shipped, 2026-09-02/06 — 5 of 9 races still plan-only
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime/Dwarven/Orcish/Vampire (8 canonical kinds each) shipped, 2026-09-02/06 — 4 of 9 races still plan-only
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1456,6 +1456,111 @@ Slime, Human — Slime/Human last, since those already look best).
   `npx tsc --noEmit` holds at the established 146-error baseline.
   Remaining 5 races (vampire/undead/vulperia/fae/human) still carry only
   their design spec + implementation plan from 6.7 — no implementation
+  commits yet.
+
+- [x] **6.11 — Eighth race, fourth non-elven: vampire 8-kind
+  kit-of-parts (branch `race/vampire-buildings`)** — the 6.7 design spec
+  called for a deliberately different family from every prior race:
+  vertical, aristocratic, MAINTAINED architecture (Gothic-Revival /
+  Second-Empire manor forms) — explicitly not "undead but purple": where
+  undead (still unimplemented) is communal/horizontal/decaying/funerary,
+  vampire is private/vertical/kept/occupied, with closed shuttered
+  windows (not broken ones) and intact steep roofs (not missing walls).
+  Reference art was 2 viewable JPGs plus 1 GIF a prior tool session
+  could not view; this session re-attempted viewing the GIF and still
+  could not render it, so proceeded on the spec's documented fallback —
+  the 2 JPGs plus Gothic-Revival/Second-Empire research — per the user's
+  own explicit instruction for this exact contingency. Added 2 new
+  vampire-flavoured shared-kit modules under `src/world/buildings/kit/`:
+  `Shutter.ts` (paired louvred/panelled shutters, closed by default,
+  hinge-side mirroring) and `OrielBay.ts` (a corbel-supported projecting
+  bay window with its own mullioned glazing) — both new primitives the
+  6.7 plan called for that did not already exist; every other named kit
+  module the plan cited (`MassComposer`, `FacadeGrammar`, `GothicArch`,
+  `VoussoirArch`, `ShingleSurface`, `RoofMassing`, `StringCourse`,
+  `BatchedDetail`) already existed from dwarven/orcish and was reused
+  as-is. `RoofMassing.ts` gained one new archetype, `buildMansardRoof()`
+  (steep near-vertical lower slope + shallow upper slope, matching the
+  Second-Empire silhouette the reference art and doctrine both call
+  for), plus vampire-specific `VampireMaterials.ts` (dark dressed stone,
+  wrought-iron, aged-copper roof, warm interior-glow glazing) and
+  `VampireOpenings.ts` (the doctrine's five-piece recess/surround/sill/
+  mullion/glazing opening, composed with `Shutter` in the closed
+  position). All 8 canonical kinds shipped in `VampireBuildingKit.ts`
+  (house/terraced/shop/inn/blacksmith/villa/chapel/watchtower — chapel
+  built as a private family chapel with a gated forecourt, not a
+  mausoleum, to keep the "inhabited, not funerary" distinction the spec
+  insists on; watchtower as a slender corner turret with a conical
+  mansard cap and a wrought-iron widow's-walk rail), wired into
+  `FACTION_BUILDING_VARIANTS['vampire']`, replacing the old BlockKit
+  spire/villa/chapel/shop functions (`addRoseWindow`/
+  `addBlockVampireSpire`/`buildVampireVilla`/`buildVampireChapel`/
+  `buildVampireShop`, ~148 lines) entirely, deleted as dead code in the
+  same commit that stopped referencing them. Settlement Lab's
+  `POC_KIND_OVERRIDE_BY_FACTION` gained a `vampire` entry (forces the
+  first building to `watchtower`, the one kind with no `WARD_TO_KIND`
+  entry, so all 8 kinds review together in one settlement — same
+  pattern as elven/slime/dwarven/orcish).
+  **Bugs found and fixed during this race's own build/verification**: a
+  real z-extent bbox-overflow bug in the terraced and shop builders —
+  both had explicitly overridden `buildWallSurfaceBlocks()`'s
+  `blocksPerFace` default down to 2 for a narrow footprint; running-bond
+  masonry's alternating-course row-offset math then placed a block
+  exactly at a face corner (`t=0`) on odd courses, and with only 2 wide
+  blocks per face the block's half-width overhung far past the nominal
+  wall boundary (size.z=5.867 vs an expected <5.6, caught by this race's
+  own TDD contract test, not live verification). Root-caused via a
+  throwaway debug test that traversed the built mesh tree and printed
+  each block's placement; fixed by removing the inappropriate
+  `blocksPerFace: 2` override so the function's own smart default
+  (`Math.max(3, Math.round(longestFace / 0.75))`, which scales block
+  count with face length and keeps overhang proportionally small)
+  applies instead — this is not a bug in the shared kit itself (real
+  masonry does have corner overlap), only in passing an unusually small
+  `blocksPerFace` for a narrow footprint, so no shared-kit change was
+  needed. No new instance of the uv-attribute merge-drop bug class: a
+  targeted sweep of every custom `BufferGeometry`/`setAttribute` call in
+  both new shared-kit modules (`Shutter.ts`, `OrielBay.ts`) and vampire's
+  own files found none — their custom geometry is limited to boxed/
+  extruded primitives built through existing shared-kit helpers, not raw
+  hand-rolled `BufferGeometry`, so no regression test was needed for
+  this class this round.
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout, confirmed via `lsof`/`ps` cwd check): faction=vampire
+  showcase across three seeds (42/12345/918273) at multiple zoom levels
+  (including hiding the unrelated in-game Dev Sandbox panel via
+  `display:none` purely for screenshot clarity) renders dark, vertical,
+  aristocratic manor silhouettes with steep mansard/pyramidal roofs
+  (visible ridge lines, chimney/finial details, roof-surface tile
+  texture — not smooth cones or flat planes), coursed masonry walls with
+  visible corner quoins, dark-red closed shuttered window openings
+  reading as recessed with proud surrounds (not blob/square holes), and
+  an arched entrance canopy with wrought-iron rail supports — visually
+  distinct from elven's living-tree/stone-tower look and, per the
+  doctrine's intent, reading as maintained/occupied rather than
+  decayed/funerary — zero new console errors/warnings across all three
+  seeds. The game's isometric camera has a fixed pitch and a zoom-in
+  clamp (confirmed by testing a further mouse-wheel zoom step, which
+  produced no additional close-up beyond what multiple earlier zoom
+  ticks already reached), so true facade-level macro shots (individual
+  shutter louvres, sill mouldings) are not obtainable through this
+  verification path — the same constraint every prior race's live
+  verification operated under.
+  **Full regression**: `tests/world/buildings/vampire/` (63 tests) +
+  `tests/world/FactionBuildingVariants.test.ts` (147 tests) all passing;
+  whole-suite run: 14 failed / 3907 passed / 4 skipped, rigorously
+  confirmed via `git stash -u` (stashing all vampire changes) and
+  re-running the identical failing test files against the clean
+  merge-base to reproduce the exact same 14 failures with zero vampire
+  code present — these are the same pre-existing/flaky baseline
+  failures already documented for slime (6.8)/dwarven (6.9)/orcish
+  (6.10) (`main.startup.smoke`, `Tracery.test.ts`, `WaterMaterial.test.ts`,
+  `OverworldScene` chunk-streaming tests, `ResourceNodePlacer`, and a
+  handful of parallel-load-timeout flakes), none touching vampire code.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 4 races (undead/vulperia/fae/human) still carry only their
+  design spec + implementation plan from 6.7 — no implementation
   commits yet.
 
 **Non-goal for this phase**: applying lessons learned here back to
