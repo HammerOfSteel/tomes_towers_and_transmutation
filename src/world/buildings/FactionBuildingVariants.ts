@@ -36,9 +36,9 @@ import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
-import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, ashStoneTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { meshBlockGrid, BLOCK_UNIT } from './BlockKit';
+import { earthTexture, toadstoolTexture } from './FactionBlockTextures';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
@@ -98,6 +98,27 @@ import {
   buildVampireChapel as buildVampireKitChapel,
   buildVampireWatchtower as buildVampireKitWatchtower,
 } from './vampire/VampireBuildingKit';
+// docs/superpowers/specs/2026-09-04-undead-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-undead-buildings.md: the real
+// bespoke communal/funerary/horizontal necropolis kit-of-parts builders,
+// one per canonical BuildingKind (UndeadNecropolisKit.ts — tomb/arcade
+// openings, classical friezes/pediments, spolia patches, shored cracks,
+// columbarium bands, cemetery lot dressing), replacing this file's own
+// legacy addBlockUndeadSpire()/buildUndeadVilla()/buildUndeadChapel()/
+// buildUndeadShop() BlockKit decayed ossuary spire (villa/chapel/shop
+// only, no house/terraced/inn/blacksmith/watchtower coverage at all).
+// Aliased on import to the `UndeadKit` suffix, mirroring vampire/orcish/
+// slime's own aliasing convention above.
+import {
+  buildUndeadHouse as buildUndeadKitHouse,
+  buildUndeadTerraced as buildUndeadKitTerraced,
+  buildUndeadShop as buildUndeadKitShop,
+  buildUndeadInn as buildUndeadKitInn,
+  buildUndeadBlacksmith as buildUndeadKitBlacksmith,
+  buildUndeadVilla as buildUndeadKitVilla,
+  buildUndeadChapel as buildUndeadKitChapel,
+  buildUndeadWatchtower as buildUndeadKitWatchtower,
+} from './undead/UndeadNecropolisKit';
 // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): the real
 // gel-block/pseudopod kit-of-parts builders, one per canonical BuildingKind,
 // replacing this file's own legacy buildSlimeVilla/buildSlimeChapel/
@@ -454,197 +475,23 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
 // them in place unused into real new tsc errors -- there is no benefit to
 // keeping now-dead code around for an extra task cycle.
 
-// ── Undead — bone/crypt ossuary architecture ─────────────────────────────────
-// Lich Tower (patriciate), Bone Shrine (church), Wraith Bazaar (market):
-// gaunt stone spires, rib-cage bone arches, skull motifs — a "haunted crypt"
-// rather than a house. Phase 2e (undead): a genuine `buildUndeadTierGrid()`
-// occupancy grid — this is the rollout's deliberate *decay/erosion* case,
-// reusing dwarven's exact stepped-tower tier-inset layout (the same
-// centuries-old masonry technique, left to crumble) rather than a different
-// silhouette family — replacing the old `addWeatheredTier()` (3 separate
-// noise-perturbed `CylinderGeometry` tiers) and `addStoneArchDoorway()`
-// (bolted-on voussoir boxes). Sparse block-omission decay, a broken/jagged
-// crenellation, and bioluminescent rune-glow accents are now baked directly
-// into the block grid instead of applied as separate crumbling props.
-
-/**
- * Builds + meshes + centers a `buildUndeadTierGrid()` decayed ossuary
- * spire into `g` at the origin (same block-grid centering convention as
- * this file's other addBlock*Grid helpers). The weathered `'ashstone'`
- * body is left
- * softly chamfered (centuries-worn stone should read rounded and eroded,
- * not crisp), while the load-bearing `'ossuary'` bone/reliquary corners
- * and the carved `'facade'` doorway jambs are chamfer-suppressed for a
- * hard "still standing proud amid the decay" contrast — the same
- * soft-body/hard-corner split dwarven's tier-inset layout (see
- * `planDwarvenTiers()` in FactionBlockProfiles.ts, still reused here)
- * originally established, undead being explicitly its decayed
- * reflection.
- */
-function addBlockUndeadSpire(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, doorColor: string,
-  opts: UndeadTierOptions = {},
-): void {
-  const grid = buildUndeadTierGrid(seed, w, d, h, opts);
-  const palette = {
-    ashstone: mat(wallColor, { roughness: 0.98, map: ashStoneTexture() }),
-    ossuary:  mat('#d8d0b8', { roughness: 0.9 }),
-    facade:   mat(doorColor, { roughness: 0.9 }),
-    runeglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.9, roughness: 0.4 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'ossuary' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B011);
-  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.6; // gaunt and tall
-  // Lich Tower: a narrower-than-lot decayed ossuary spire (gaunt, not
-  // filling the whole footprint) with 4 stepped tiers so the decay/crumble
-  // reads clearly across several distinct courses.
-  const w = fp.w * 0.72, d = fp.d * 0.72;
-  addBlockUndeadSpire(g, dna.seed ^ 0xDEAD_1010, w, d, h, dna.colors.walls, dna.colors.trim, {
-    tiers: 4, facade: true, decayFrac: 0.18, crownJitterBlocks: 3, runeglowCount: 6,
-  });
-  // Floating dark orb near the top (lich's power source) -- kept from the
-  // old design, now floating above the genuinely broken/crumbled crown
-  // rather than a separate bolted-on crenellation ring.
-  const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.8, roughness: 0.3 });
-  addMesh(g, new THREE.IcosahedronGeometry(0.28, 1), orbMat, 0, undeadRoofTopY(h) + 0.35, 0);
-  // Narrow arrow-slit windows -- naturally thin/flat geometry ill-suited to
-  // block-kit's cubic cells, kept as a small bolted-on prop.
-  const slitMat = mat('#0a0a10', { roughness: 0.9 });
-  for (let fl = 0; fl < 3; fl++) {
-    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), d * 0.36 + 0.02);
-  }
-  // Fallen rubble blocks scattered at the base (decay storytelling) --
-  // small debris chunks knocked loose from the crumbling tower above.
-  const rubbleMat = mat(dna.colors.walls, { roughness: 1 });
-  for (let i = 0; i < 4; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = Math.max(w, d) * 0.55 + r() * 0.4;
-    addMesh(g, new THREE.BoxGeometry(0.2 + r() * 0.15, 0.15 + r() * 0.1, 0.2 + r() * 0.15), rubbleMat, Math.cos(ang) * rad, 0.1, Math.sin(ang) * rad, r() * Math.PI);
-  }
-  return g;
-}
-
-function buildUndeadChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B012);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.15; // squat mausoleum, not a tall spire
-  const boneMat = mat('#d8d0b8', { roughness: 0.92 });
-  // Bone Shrine: a small decayed ossuary mausoleum (block-kit, same
-  // technique as the villa's tower at a much squatter scale) at the rear
-  // of a graveyard scene -- headstones and a low bone-post fence ring it,
-  // per the "headstone/fence" props called for by this phase's plan.
-  const shrine = new THREE.Group();
-  addBlockUndeadSpire(shrine, dna.seed ^ 0xDEAD_1020, fp.w * 0.42, fp.d * 0.4, h, dna.colors.walls, dna.colors.trim, {
-    tiers: 2, facade: true, decayFrac: 0.14, crownJitterBlocks: 2, runeglowCount: 3,
-  });
-  shrine.position.set(0, 0, -fp.d * 0.28);
-  g.add(shrine);
-  // Ribcage-arch entrance in front of the shrine: paired tapered "rib"
-  // struts curving inward -- naturally thin curved geometry, kept as a
-  // bolted-on prop rather than block-carved.
-  const nRibs = 5;
-  for (let i = 0; i < nRibs; i++) {
-    const t = i / (nRibs - 1);
-    const zOff = fp.d * 0.05;
-    for (const side of [-1, 1]) {
-      const rib = addMesh(g, new THREE.CylinderGeometry(0.05, 0.1, h * 0.65, 5), boneMat,
-        side * (fp.w * 0.4 - t * fp.w * 0.12), h * 0.32, zOff);
-      rib.rotation.z = side * (0.15 + t * 0.25);
-    }
-  }
-  // Bone altar slab in front of the ribcage arch.
-  const altarMat = mat(dna.colors.walls, { roughness: 0.95 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.4, 0.4, fp.d * 0.22), altarMat, 0, 0.2, fp.d * 0.2);
-  // Headstones scattered across the graveyard plot in front of the shrine.
-  const stoneMat = mat('#8a8878', { roughness: 0.95 });
-  const headstonePositions: [number, number][] = [
-    [-fp.w * 0.4, fp.d * 0.32], [fp.w * 0.38, fp.d * 0.3], [-fp.w * 0.22, fp.d * 0.42],
-    [fp.w * 0.2, fp.d * 0.44], [-fp.w * 0.4, fp.d * 0.5], [fp.w * 0.4, fp.d * 0.48],
-  ];
-  for (const [hx, hz] of headstonePositions) {
-    const lean = (r() - 0.5) * 0.3;
-    const stone = addMesh(g, new THREE.BoxGeometry(0.18, 0.28 + r() * 0.12, 0.06), stoneMat, hx + (r() - 0.5) * 0.15, 0.16, hz + (r() - 0.5) * 0.15);
-    stone.rotation.z = lean;
-    stone.rotation.y = r() * 0.3;
-  }
-  // Low bone-post fence ringing the graveyard plot.
-  const fenceMat = mat('#c8c0a8', { roughness: 0.9 });
-  const fenceHalfW = fp.w * 0.55, fenceHalfD = fp.d * 0.62, fenceZOffset = fp.d * 0.15;
-  const fencePosts: [number, number][] = [];
-  const postsPerSide = 5;
-  for (let i = 0; i <= postsPerSide; i++) {
-    const t = i / postsPerSide;
-    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset - fenceHalfD]);
-    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset + fenceHalfD]);
-  }
-  for (let i = 0; i <= postsPerSide; i++) {
-    const t = i / postsPerSide;
-    fencePosts.push([-fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
-    fencePosts.push([fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
-  }
-  for (const [fx, fz] of fencePosts) {
-    addMesh(g, new THREE.CylinderGeometry(0.03, 0.035, 0.42, 5), fenceMat, fx, 0.21, fz);
-  }
-  // Candle sconces (small glowing orange dots) along the sides.
-  const candleMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f0a040'), emissive: new THREE.Color('#f0a040'), emissiveIntensity: 0.7 });
-  for (let i = 0; i < 4; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05, 6, 6), candleMat, (r() - 0.5) * fp.w * 0.6, 0.55 + r() * 0.2, fp.d * 0.05 + (r() - 0.5) * fp.d * 0.2);
-  }
-  return g;
-}
-
-function buildUndeadShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B013);
-  const boneMat = mat('#d8d0b8', { roughness: 0.92 });
-  const h = FLOOR_HEIGHT * 0.6;
-  // Wraith Bazaar: the stall huddles against a low, single-tier decayed
-  // wall stub (a fragment of some older ruin the bazaar has been built
-  // into), tying it to the same block-kit decay language as the villa and
-  // chapel even at this small scale.
-  const wallStub = new THREE.Group();
-  addBlockUndeadSpire(wallStub, dna.seed ^ 0xDEAD_1030, fp.w * 0.9, fp.d * 0.22, h * 1.4, dna.colors.walls, dna.colors.trim, {
-    tiers: 1, decayFrac: 0.22, crownJitterBlocks: 3, runeglowCount: 2,
-  });
-  wallStub.position.set(0, 0, -fp.d * 0.42);
-  g.add(wallStub);
-  // Bone-strut stall frame with a tattered cloth canopy.
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, -fp.d / 2], [-fp.w / 2, fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, h, 6), boneMat, sx, h / 2, sz);
-  }
-  const clothMat = mat(dna.colors.trim, { roughness: 0.8, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
-  addMesh(g, new THREE.BoxGeometry(fp.w + 0.1, 0.06, fp.d + 0.1), clothMat, 0, h, 0);
-  // Skull lanterns hanging from the corners.
-  const lanternMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#a0e090'), emissive: new THREE.Color('#60c050'), emissiveIntensity: 0.7, roughness: 0.6 });
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.SphereGeometry(0.1 + r() * 0.03, 7, 6), lanternMat, sx, h - 0.15, sz);
-  }
-  // Counter with tattered goods -- a warm rotten-wood brown, deliberately
-  // a different hue family from the cool stone-grey walls (#5a5048) so it
-  // reads as a distinct material, not the same stone darkened.
-  const woodMat = mat('#3a2818', { roughness: 0.9 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.6, 0.4, 0.35), woodMat, 0, 0.2, fp.d * 0.3);
-  return g;
-}
+// docs/superpowers/specs/2026-09-04-undead-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-undead-buildings.md: the real
+// bespoke communal/funerary/horizontal necropolis kit-of-parts builders,
+// one per canonical BuildingKind (UndeadNecropolisKit.ts — tomb/arcade
+// openings, table-tomb lid roofs, classical friezes/pediments, spolia
+// patches, shored cracks, columbarium bands, cemetery lot dressing),
+// replacing this file's own legacy addBlockUndeadSpire()/
+// buildUndeadVilla()/buildUndeadChapel()/buildUndeadShop() BlockKit
+// decayed ossuary spire (villa/chapel/shop only, no house/terraced/inn/
+// blacksmith/watchtower coverage at all, and a private/vertical "lich
+// tower" silhouette at odds with undead's communal/horizontal/decaying
+// doctrine addendum). Aliased on import to the `UndeadKit` suffix,
+// mirroring vampire/orcish/slime's own aliasing convention above.
+// `buildUndeadTierGrid`/`undeadRoofTopY`/`UndeadTierOptions` remain
+// exported, tested, reusable primitives in FactionBlockProfiles.ts for
+// any future kind that wants them — not deleted, just no longer wired
+// into a live undead builder here.
 
 // ── Elven — living-tree architecture ──────────────────────────────────────────
 // The Elder's Hall (patriciate/house/terraced/inn/blacksmith), Moonlit
@@ -873,14 +720,23 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     tower:      buildSlimeKitWatchtower,
   },
   undead_common: {
-    villa:  buildUndeadVilla,
-    chapel: buildUndeadChapel,
-    shop:   buildUndeadShop,
-    // Phase 2b increment 3: same gap as slime above.
-    house:      buildUndeadVilla,
-    terraced:   buildUndeadVilla,
-    inn:        buildUndeadVilla,
-    blacksmith: buildUndeadVilla,
+    // docs/superpowers/plans/2026-09-04-undead-buildings.md: undead is
+    // the fifth faction (after slime/dwarven/orcish/vampire) with a real
+    // bespoke kit builder for every canonical kind
+    // (UndeadNecropolisKit.ts's communal/funerary/horizontal necropolis
+    // construction — tomb/arcade openings, table-tomb lid roofs,
+    // classical friezes/pediments/spolia, cemetery lot dressing),
+    // replacing the earlier "villa spire reused for house/terraced/inn/
+    // blacksmith, no watchtower at all" stopgap.
+    house:      buildUndeadKitHouse,
+    terraced:   buildUndeadKitTerraced,
+    shop:       buildUndeadKitShop,
+    inn:        buildUndeadKitInn,
+    blacksmith: buildUndeadKitBlacksmith,
+    villa:      buildUndeadKitVilla,
+    chapel:     buildUndeadKitChapel,
+    watchtower: buildUndeadKitWatchtower,
+    tower:      buildUndeadKitWatchtower,
   },
   elven: {
     villa:    buildElvenTreehouseHome,
