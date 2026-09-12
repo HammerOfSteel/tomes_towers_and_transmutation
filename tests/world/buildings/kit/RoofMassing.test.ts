@@ -150,6 +150,17 @@ describe('RoofMassing', () => {
     materials.forEach(meshMaterial => expect(meshMaterial).toBe(material));
   });
 
+  it('every hand-rolled BufferGeometry mesh (gable-end triangles) carries a uv attribute, so merging it into a shared-material bucket alongside a uv-having sibling never silently drops the whole bucket (see MeshMergeUtils.ts mergeGroupMeshesByMaterial() / StoneTowerFloorCap.ts\'s prior fix for this exact bug class)', () => {
+    const material = makeRoofMaterial();
+    const roof = buildGableRoof(4, 8, 3.2, 0xCAFE_BABE, material);
+    let sawBareGeometry = false;
+    roof.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      if (!child.geometry.getAttribute('uv')) sawBareGeometry = true;
+    });
+    expect(sawBareGeometry).toBe(false);
+  });
+
   it('buildHipRoof creates four tiled slopes with tapered hip-end faces, finite geometry, and deterministic output', () => {
     const material = makeRoofMaterial();
     const halfWidth = 3;

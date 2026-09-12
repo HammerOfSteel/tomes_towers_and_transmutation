@@ -394,15 +394,35 @@ function pushTriangle(vertexData: number[], a: THREE.Vector3, b: THREE.Vector3, 
   );
 }
 
-function appendRingCap(vertexData: number[], ring: THREE.Vector3[], upward: boolean): void {
+// Companion to pushTriangle: every hand-rolled BufferGeometry in this file must carry
+// a `uv` attribute alongside `position`, even though lathe columns are never
+// photographically textured. mergeGroupMeshesByMaterial() (MeshMergeUtils.ts) buckets
+// meshes by material identity and merges the whole bucket in one call; if any sibling
+// geometry in that bucket lacks an attribute another has, the merge silently fails
+// (console.warn only) and the ENTIRE bucket's meshes are dropped -- the exact bug class
+// already caught and fixed in StoneTowerFloorCap.ts, Slime's SlimeAccretionKit.ts /
+// Ruinate.ts, and RoofMassing.ts's makeDoubleSidedTriangle(). A rough cylindrical
+// unwrap is enough here.
+function pushTriangleUV(uvData: number[], a: [number, number], b: [number, number], c: [number, number]): void {
+  uvData.push(a[0], a[1], b[0], b[1], c[0], c[1]);
+}
+
+function appendRingCap(vertexData: number[], uvData: number[], ring: THREE.Vector3[], upward: boolean): void {
   const center = ring.reduce((sum, vertex) => sum.add(vertex), new THREE.Vector3()).multiplyScalar(1 / ring.length);
+  const centerUV: [number, number] = [0.5, 0.5];
   for (let index = 0; index < ring.length; index++) {
     const current = ring[index]!;
     const next = ring[(index + 1) % ring.length]!;
+    const angleCurrent = (index / ring.length) * Math.PI * 2;
+    const angleNext = ((index + 1) / ring.length) * Math.PI * 2;
+    const currentUV: [number, number] = [0.5 + Math.cos(angleCurrent) * 0.5, 0.5 + Math.sin(angleCurrent) * 0.5];
+    const nextUV: [number, number] = [0.5 + Math.cos(angleNext) * 0.5, 0.5 + Math.sin(angleNext) * 0.5];
     if (upward) {
       pushTriangle(vertexData, center, next, current);
+      pushTriangleUV(uvData, centerUV, nextUV, currentUV);
     } else {
       pushTriangle(vertexData, center, current, next);
+      pushTriangleUV(uvData, centerUV, currentUV, nextUV);
     }
   }
 }
@@ -419,26 +439,37 @@ function buildSectionGeometry(
 ): THREE.BufferGeometry {
   const ringVertices = rings.map(ring => buildRingVertices(ring, profileHeight, radialSegments, radiusFn));
   const vertexData: number[] = [];
+  const uvData: number[] = [];
+  const ringCount = ringVertices.length;
 
-  for (let ringIndex = 0; ringIndex < ringVertices.length - 1; ringIndex++) {
+  for (let ringIndex = 0; ringIndex < ringCount - 1; ringIndex++) {
     const lower = ringVertices[ringIndex]!;
     const upper = ringVertices[ringIndex + 1]!;
+    const vLower = ringCount > 1 ? ringIndex / (ringCount - 1) : 0;
+    const vUpper = ringCount > 1 ? (ringIndex + 1) / (ringCount - 1) : 1;
     for (let segmentIndex = 0; segmentIndex < radialSegments; segmentIndex++) {
       const nextSegment = (segmentIndex + 1) % radialSegments;
       const a = lower[segmentIndex]!;
       const b = lower[nextSegment]!;
       const c = upper[nextSegment]!;
       const d = upper[segmentIndex]!;
+      const uvA: [number, number] = [segmentIndex / radialSegments, vLower];
+      const uvB: [number, number] = [nextSegment / radialSegments, vLower];
+      const uvC: [number, number] = [nextSegment / radialSegments, vUpper];
+      const uvD: [number, number] = [segmentIndex / radialSegments, vUpper];
       pushTriangle(vertexData, a, c, b);
+      pushTriangleUV(uvData, uvA, uvC, uvB);
       pushTriangle(vertexData, a, d, c);
+      pushTriangleUV(uvData, uvA, uvD, uvC);
     }
   }
 
-  if (closeBottom) appendRingCap(vertexData, ringVertices[0]!, false);
-  if (closeTop) appendRingCap(vertexData, ringVertices[ringVertices.length - 1]!, true);
+  if (closeBottom) appendRingCap(vertexData, uvData, ringVertices[0]!, false);
+  if (closeTop) appendRingCap(vertexData, uvData, ringVertices[ringVertices.length - 1]!, true);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertexData, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvData, 2));
   geometry.computeVertexNormals();
   return finishGeometry ? finishLatheGeometry(geometry, vertexData) : geometry;
 }
@@ -476,12 +507,15 @@ function buildBrokenSectionGeometry(
 
   const fractureCapGeometry = new THREE.BufferGeometry();
   const fractureCapVertexData: number[] = [];
+  const fractureCapUVData: number[] = [];
   appendRingCap(
     fractureCapVertexData,
+    fractureCapUVData,
     buildRingVertices(fracturedTopRing, spec.height, radialSegments, spec.radiusFn),
     true,
   );
   fractureCapGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fractureCapVertexData, 3));
+  fractureCapGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(fractureCapUVData, 2));
   fractureCapGeometry.computeVertexNormals();
 
   return {

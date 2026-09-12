@@ -130,8 +130,18 @@ function createSolidBetweenProfiles(
   topOffsets: readonly number[] = [0, 0, 0, 0],
 ): THREE.BufferGeometry {
   const vertexData: number[] = [];
+  // See RoofMassing.ts's makeDoubleSidedTriangle for the exact bug class
+  // this guards against: mergeGroupMeshesByMaterial() silently drops an
+  // ENTIRE shared-material bucket (not just this mesh) if any sibling
+  // mesh in that bucket lacks a `uv` attribute. A rough planar projection
+  // is enough here -- this tapered prism is always stone/plain-coloured,
+  // never a photographically-mapped texture that needs precise UVs.
+  const uvData: number[] = [];
   const bottoms = bottomOutline.map(point => new THREE.Vector3(point.x, 0, point.y));
   const tops = topOutline.map((point, index) => new THREE.Vector3(point.x, height + (topOffsets[index] ?? 0), point.y));
+  const safeHeight = Math.max(height, EPSILON);
+
+  const planarUV = (v: THREE.Vector3): [number, number] => [(v.x + v.z) * 0.5, v.y / safeHeight];
 
   const pushTriangle = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
     vertexData.push(
@@ -139,6 +149,7 @@ function createSolidBetweenProfiles(
       b.x, b.y, b.z,
       c.x, c.y, c.z,
     );
+    for (const vertex of [a, b, c]) uvData.push(...planarUV(vertex));
   };
 
   for (let index = 1; index < tops.length - 1; index++) {
@@ -154,6 +165,7 @@ function createSolidBetweenProfiles(
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertexData, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvData, 2));
   geometry.computeVertexNormals();
   return finishArchitecturalGeometry(geometry);
 }

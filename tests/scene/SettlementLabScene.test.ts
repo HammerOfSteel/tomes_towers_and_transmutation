@@ -320,3 +320,51 @@ describe('SettlementLabScene — race-by-race POC override (slime building-kit s
     lab.exit();
   });
 });
+// Task 24 (docs/superpowers/plans/2026-09-04-dwarven-buildings.md): dwarven
+// now has 8 shipped kit-of-parts building kinds (house/terraced/shop/inn/
+// blacksmith/villa/chapel/watchtower), the full canonical set — mirrors the
+// elven/slime showcase precedent above exactly. watchtower/tower is the only
+// kind with no WARD_TO_KIND entry (src/buildingToDungeonPlan.ts), so it
+// never spawns naturally and must be forced the same way elven's/slime's is;
+// the other 7 kinds are all reachable through a 'city' settlement's normal
+// ward mix (market/church/inn/smithy/craftsmen-or-merchant-or-patriciate/
+// slum/gateward-or-farm).
+describe('SettlementLabScene — race-by-race POC override (dwarven building-kit showcase)', () => {
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+
+  beforeAll(async () => {
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+  });
+
+  // Dwarven's per-course stone-masonry builders are geometry-heavier than
+  // slime/elven's kit -- rendering a full 'city' settlement's worth of
+  // buildings synchronously runs right at the default 5000ms test timeout
+  // (observed ~5075ms), so this test gets the same explicit longer timeout
+  // already used for other heavy full-scene tests (e.g.
+  // SettlementModelGenerator.test.ts, RoadGenerator.test.ts).
+  it('selecting faction=dwarven shows a mix of dwarven building kinds via natural ward mapping PLUS a forced watchtower (the only dwarven kind with no WARD_TO_KIND entry, so it never appears naturally) -- letting every shipped dwarven building kit be reviewed together in one settlement', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    lab.enter({ seed: 7, type: 'city', faction: 'dwarven', layout: 'auto' });
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.size).toBeGreaterThan(1);
+    expect(kinds.has('watchtower')).toBe(true);
+    const watchtowerCount = result.buildingRecords.filter(r => r.dna.buildingKind === 'watchtower').length;
+    expect(watchtowerCount).toBe(1);
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
+    expect(readoutEl.textContent).toContain('POC override: showcase');
+
+    lab.exit();
+  }, 15000);
+});
