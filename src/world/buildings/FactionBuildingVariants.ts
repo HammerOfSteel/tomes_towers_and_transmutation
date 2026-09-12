@@ -24,9 +24,10 @@
  * (translucent gelatinous blob, no walls at all), undead (bone/crypt
  * ossuary spires), elven (living-tree trunks + leaf canopies), dwarven
  * (squat carved-stone blocks + iron-banded vault doors), orcish (crude
- * lashed-hide huts + bone/skull totems), vampire (gothic spires + ribbed
- * buttresses + stained-glass motifs), fae (glowing mushroom caps + petal
- * ornaments). Remaining follow-up: extend to human sub-factions and to
+ * lashed-hide huts + bone/skull totems), vampire (Gothic-Revival/Second-
+ * Empire manors with mansard roofs, oriel bays, shuttered lancet windows
+ * and wrought iron), fae (glowing mushroom caps + petal ornaments).
+ * Remaining follow-up: extend to human sub-factions and to
  * the 8 ward kinds beyond patriciate/church/market (see plan doc Phase
  * 2b/2c scoping) for the generic prop shape library.
  */
@@ -35,13 +36,105 @@ import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
-import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, graniteTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildDwarvenHallGrid, dwarvenRoofTopY, dwarvenTopTierExtents, type DwarvenHallOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { meshBlockGrid, BLOCK_UNIT } from './BlockKit';
+import { earthTexture, toadstoolTexture } from './FactionBlockTextures';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
 import { buildElvenChapelShrine } from './ElvenChapelKit';
+// Task 22 (docs/superpowers/plans/2026-09-04-dwarven-buildings.md): the real
+// bespoke depth-laddered stone-masonry kit-of-parts builders, one per
+// canonical BuildingKind, replacing this file's own legacy
+// dwarvenBlock()/addBlockDwarvenHall() BlockKit stepped-tier hall (smooth
+// coursed boxes + a vault-wheel door) removed in the same commit.
+import {
+  buildDwarvenHouse,
+  buildDwarvenTerraced,
+  buildDwarvenShop,
+  buildDwarvenInn,
+  buildDwarvenBlacksmith,
+  buildDwarvenVilla,
+  buildDwarvenChapel,
+  buildDwarvenWatchtower,
+} from './dwarven/DwarvenBuildingKit';
+// docs/superpowers/plans/2026-09-04-orcish-buildings.md: the real bespoke
+// lashed-timber/hide kit-of-parts builders, one per canonical BuildingKind
+// (OrcishBuildingKit.ts), replacing this file's own legacy
+// addBlockOrcishHut()/buildOrcishVilla()/buildOrcishChapel()/
+// buildOrcishShop() BlockKit lashed hut (a single mismatched-patch
+// occupancy-grid hut reused/rescaled for villa/chapel/shop only, with no
+// house/terraced/inn/blacksmith/watchtower coverage at all) removed in the
+// same commit. Aliased on import to the `OrcishKit` suffix, mirroring
+// slime's own aliasing convention below.
+import {
+  buildOrcishHouse as buildOrcishKitHouse,
+  buildOrcishTerraced as buildOrcishKitTerraced,
+  buildOrcishShop as buildOrcishKitShop,
+  buildOrcishInn as buildOrcishKitInn,
+  buildOrcishBlacksmith as buildOrcishKitBlacksmith,
+  buildOrcishVilla as buildOrcishKitVilla,
+  buildOrcishChapel as buildOrcishKitChapel,
+  buildOrcishWatchtower as buildOrcishKitWatchtower,
+} from './orcish/OrcishBuildingKit';
+// docs/superpowers/specs/2026-09-04-vampire-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-vampire-buildings.md: the real
+// bespoke Gothic-Revival/Second-Empire kit-of-parts builders, one per
+// canonical BuildingKind (VampireBuildingKit.ts — shuttered lancet
+// windows, oriel bays, mansard/gable roofs, wrought-iron railings,
+// ornate chimneys), replacing this file's own legacy
+// addBlockVampireSpire()/buildVampireVilla()/buildVampireChapel()/
+// buildVampireShop() BlockKit tapering obsidian spire (villa/chapel/shop
+// only, no house/terraced/inn/blacksmith/watchtower coverage at all)
+// removed in the same commit. Aliased on import to the `VampireKit`
+// suffix, mirroring orcish/slime's own aliasing convention above.
+import {
+  buildVampireHouse as buildVampireKitHouse,
+  buildVampireTerraced as buildVampireKitTerraced,
+  buildVampireShop as buildVampireKitShop,
+  buildVampireInn as buildVampireKitInn,
+  buildVampireBlacksmith as buildVampireKitBlacksmith,
+  buildVampireVilla as buildVampireKitVilla,
+  buildVampireChapel as buildVampireKitChapel,
+  buildVampireWatchtower as buildVampireKitWatchtower,
+} from './vampire/VampireBuildingKit';
+// docs/superpowers/specs/2026-09-04-undead-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-undead-buildings.md: the real
+// bespoke communal/funerary/horizontal necropolis kit-of-parts builders,
+// one per canonical BuildingKind (UndeadNecropolisKit.ts — tomb/arcade
+// openings, classical friezes/pediments, spolia patches, shored cracks,
+// columbarium bands, cemetery lot dressing), replacing this file's own
+// legacy addBlockUndeadSpire()/buildUndeadVilla()/buildUndeadChapel()/
+// buildUndeadShop() BlockKit decayed ossuary spire (villa/chapel/shop
+// only, no house/terraced/inn/blacksmith/watchtower coverage at all).
+// Aliased on import to the `UndeadKit` suffix, mirroring vampire/orcish/
+// slime's own aliasing convention above.
+import {
+  buildUndeadHouse as buildUndeadKitHouse,
+  buildUndeadTerraced as buildUndeadKitTerraced,
+  buildUndeadShop as buildUndeadKitShop,
+  buildUndeadInn as buildUndeadKitInn,
+  buildUndeadBlacksmith as buildUndeadKitBlacksmith,
+  buildUndeadVilla as buildUndeadKitVilla,
+  buildUndeadChapel as buildUndeadKitChapel,
+  buildUndeadWatchtower as buildUndeadKitWatchtower,
+} from './undead/UndeadNecropolisKit';
+// Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): the real
+// gel-block/pseudopod kit-of-parts builders, one per canonical BuildingKind,
+// replacing this file's own legacy buildSlimeVilla/buildSlimeChapel/
+// buildSlimeShop blob functions below (raw Sphere/Cylinder primitives).
+// Aliased on import because the old local functions still exist under the
+// same names pending their Task 17 removal.
+import {
+  buildSlimeHouse as buildSlimeKitHouse,
+  buildSlimeTerraced as buildSlimeKitTerraced,
+  buildSlimeShop as buildSlimeKitShop,
+  buildSlimeInn as buildSlimeKitInn,
+  buildSlimeBlacksmith as buildSlimeKitBlacksmith,
+  buildSlimeVilla as buildSlimeKitVilla,
+  buildSlimeChapel as buildSlimeKitChapel,
+  buildSlimeWatchtower as buildSlimeKitWatchtower,
+} from './slime/SlimeBuildingKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -370,273 +463,35 @@ function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
 }
 
 // ── Slime — translucent gelatinous blob architecture ─────────────────────────
-// Elder Blob (patriciate), Pulse Pool (church), Goo Stall (market):
-// no walls at all — glossy translucent domes with a glowing inner core and
-// bubble motes, matching the Slime Pool park feature's material language.
+// REMOVED (Task 15/17, docs/superpowers/plans/2026-09-04-slime-buildings.md):
+// the old slimeBlobMaterial/buildSlimeBlobBase/buildSlimeVilla/
+// buildSlimeChapel/buildSlimeShop raw Sphere/Cylinder "blob" functions that
+// used to live here have been fully replaced by
+// src/world/buildings/slime/SlimeBuildingKit.ts's real gel-block/pseudopod
+// kit-of-parts builders (imported above as buildSlimeKit*), which now cover
+// all 8 canonical kinds via the slime registry entry below. Deleted in the
+// same pass as the Task 15 registry rewire (rather than deferred to a
+// separate Task 17) because tsconfig's noUnusedLocals:true turns leaving
+// them in place unused into real new tsc errors -- there is no benefit to
+// keeping now-dead code around for an extra task cycle.
 
-function slimeBlobMaterial(color: string, opacity = 0.55): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(color), transparent: true, opacity,
-    roughness: 0.15, metalness: 0.05, side: THREE.DoubleSide,
-  });
-}
-
-function buildSlimeBlobBase(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x51117E00);
-  const blobMat = slimeBlobMaterial(dna.colors.walls, 0.5);
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(dna.colors.trim), emissive: new THREE.Color(dna.colors.trim),
-    emissiveIntensity: 0.9, roughness: 0.3, transparent: true, opacity: 0.85,
-  });
-
-  // Main gelatinous dome (irregular via slightly randomized scale).
-  const dome = addMesh(g, new THREE.SphereGeometry(Math.max(w, d) / 2, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), blobMat, 0, 0, 0);
-  dome.scale.set(1 + (r() - 0.5) * 0.1, h / (Math.max(w, d) / 2), 1 + (r() - 0.5) * 0.1);
-
-  // Glowing inner core, visible through the translucent membrane.
-  addMesh(g, new THREE.SphereGeometry(Math.max(w, d) * 0.18, 10, 8), coreMat, 0, h * 0.4, 0);
-
-  // Small satellite ooze bubbles around the base.
-  const bubbleMat = slimeBlobMaterial(dna.colors.door, 0.6);
-  const nBubbles = 4 + Math.floor(r() * 3);
-  for (let i = 0; i < nBubbles; i++) {
-    const ang = (i / nBubbles) * Math.PI * 2 + r() * 0.4;
-    const rad = Math.max(w, d) * 0.5 + 0.2 + r() * 0.3;
-    const bs = 0.15 + r() * 0.2;
-    addMesh(g, new THREE.SphereGeometry(bs, 8, 6), bubbleMat, Math.cos(ang) * rad, bs * 0.7, Math.sin(ang) * rad);
-  }
-  return g;
-}
-
-function buildSlimeVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  return buildSlimeBlobBase(dna, fp.w, fp.d, FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.95);
-}
-
-function buildSlimeChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = buildSlimeBlobBase(dna, fp.w, fp.d * 0.7, FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.05);
-  // Pulse Pool: drip strands hanging from the dome apex (thin tapered cylinders).
-  const r = mulberry32(dna.seed ^ 0x51117E01);
-  const dripMat = slimeBlobMaterial(dna.colors.trim, 0.65);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.05;
-  for (let i = 0; i < 5; i++) {
-    const ang = (i / 5) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.25;
-    const len = 0.3 + r() * 0.3;
-    addMesh(g, new THREE.CylinderGeometry(0.03, 0.06, len, 5), dripMat, Math.cos(ang) * rad, h - len / 2, Math.sin(ang) * rad);
-  }
-  return g;
-}
-
-function buildSlimeShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.5;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x51117E02);
-  // Goo Stall: small blob mound with a bulging "counter" lump out front.
-  const blobMat = slimeBlobMaterial(dna.colors.walls, 0.55);
-  addMesh(g, new THREE.SphereGeometry(Math.max(fp.w, fp.d) / 2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), blobMat, 0, 0, -fp.d * 0.1)
-    .scale.set(1, h / (Math.max(fp.w, fp.d) / 2), 1);
-  addMesh(g, new THREE.SphereGeometry(fp.w * 0.28, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), blobMat, 0, 0, fp.d * 0.35)
-    .scale.set(1.3, 0.5, 1);
-  // Jar props for sale.
-  const jarMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#c8e8d0'), transparent: true, opacity: 0.7, roughness: 0.2 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.CylinderGeometry(0.12, 0.12, 0.25, 8), jarMat, -fp.w * 0.3 + i * fp.w * 0.3, 0.35, fp.d * 0.35 + r() * 0.1);
-  }
-  return g;
-}
-
-// ── Undead — bone/crypt ossuary architecture ─────────────────────────────────
-// Lich Tower (patriciate), Bone Shrine (church), Wraith Bazaar (market):
-// gaunt stone spires, rib-cage bone arches, skull motifs — a "haunted crypt"
-// rather than a house. Phase 2e (undead): a genuine `buildUndeadTierGrid()`
-// occupancy grid — this is the rollout's deliberate *decay/erosion* case,
-// reusing dwarven's exact stepped-tower tier-inset layout (the same
-// centuries-old masonry technique, left to crumble) rather than a different
-// silhouette family — replacing the old `addWeatheredTier()` (3 separate
-// noise-perturbed `CylinderGeometry` tiers) and `addStoneArchDoorway()`
-// (bolted-on voussoir boxes). Sparse block-omission decay, a broken/jagged
-// crenellation, and bioluminescent rune-glow accents are now baked directly
-// into the block grid instead of applied as separate crumbling props.
-
-/**
- * Builds + meshes + centers a `buildUndeadTierGrid()` decayed ossuary
- * spire into `g` at the origin (same centering convention as
- * `addBlockVampireSpire()`/`addBlockDwarvenHall()`). The weathered
- * `'ashstone'` body is left softly chamfered (centuries-worn stone should
- * read rounded and eroded, not crisp), while the load-bearing `'ossuary'`
- * bone/reliquary corners and the carved `'facade'` doorway jambs are
- * chamfer-suppressed for a hard "still standing proud amid the decay"
- * contrast — the same soft-body/hard-corner split dwarven established,
- * reused here since undead is explicitly dwarven's decayed reflection.
- */
-function addBlockUndeadSpire(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, doorColor: string,
-  opts: UndeadTierOptions = {},
-): void {
-  const grid = buildUndeadTierGrid(seed, w, d, h, opts);
-  const palette = {
-    ashstone: mat(wallColor, { roughness: 0.98, map: ashStoneTexture() }),
-    ossuary:  mat('#d8d0b8', { roughness: 0.9 }),
-    facade:   mat(doorColor, { roughness: 0.9 }),
-    runeglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.9, roughness: 0.4 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'ossuary' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildUndeadVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B011);
-  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.6; // gaunt and tall
-  // Lich Tower: a narrower-than-lot decayed ossuary spire (gaunt, not
-  // filling the whole footprint) with 4 stepped tiers so the decay/crumble
-  // reads clearly across several distinct courses.
-  const w = fp.w * 0.72, d = fp.d * 0.72;
-  addBlockUndeadSpire(g, dna.seed ^ 0xDEAD_1010, w, d, h, dna.colors.walls, dna.colors.trim, {
-    tiers: 4, facade: true, decayFrac: 0.18, crownJitterBlocks: 3, runeglowCount: 6,
-  });
-  // Floating dark orb near the top (lich's power source) -- kept from the
-  // old design, now floating above the genuinely broken/crumbled crown
-  // rather than a separate bolted-on crenellation ring.
-  const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1050'), emissive: new THREE.Color('#8020c0'), emissiveIntensity: 0.8, roughness: 0.3 });
-  addMesh(g, new THREE.IcosahedronGeometry(0.28, 1), orbMat, 0, undeadRoofTopY(h) + 0.35, 0);
-  // Narrow arrow-slit windows -- naturally thin/flat geometry ill-suited to
-  // block-kit's cubic cells, kept as a small bolted-on prop.
-  const slitMat = mat('#0a0a10', { roughness: 0.9 });
-  for (let fl = 0; fl < 3; fl++) {
-    addMesh(g, new THREE.BoxGeometry(0.1, 0.5, 0.05), slitMat, 0, h * (0.25 + fl * 0.2), d * 0.36 + 0.02);
-  }
-  // Fallen rubble blocks scattered at the base (decay storytelling) --
-  // small debris chunks knocked loose from the crumbling tower above.
-  const rubbleMat = mat(dna.colors.walls, { roughness: 1 });
-  for (let i = 0; i < 4; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = Math.max(w, d) * 0.55 + r() * 0.4;
-    addMesh(g, new THREE.BoxGeometry(0.2 + r() * 0.15, 0.15 + r() * 0.1, 0.2 + r() * 0.15), rubbleMat, Math.cos(ang) * rad, 0.1, Math.sin(ang) * rad, r() * Math.PI);
-  }
-  return g;
-}
-
-function buildUndeadChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B012);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.15; // squat mausoleum, not a tall spire
-  const boneMat = mat('#d8d0b8', { roughness: 0.92 });
-  // Bone Shrine: a small decayed ossuary mausoleum (block-kit, same
-  // technique as the villa's tower at a much squatter scale) at the rear
-  // of a graveyard scene -- headstones and a low bone-post fence ring it,
-  // per the "headstone/fence" props called for by this phase's plan.
-  const shrine = new THREE.Group();
-  addBlockUndeadSpire(shrine, dna.seed ^ 0xDEAD_1020, fp.w * 0.42, fp.d * 0.4, h, dna.colors.walls, dna.colors.trim, {
-    tiers: 2, facade: true, decayFrac: 0.14, crownJitterBlocks: 2, runeglowCount: 3,
-  });
-  shrine.position.set(0, 0, -fp.d * 0.28);
-  g.add(shrine);
-  // Ribcage-arch entrance in front of the shrine: paired tapered "rib"
-  // struts curving inward -- naturally thin curved geometry, kept as a
-  // bolted-on prop rather than block-carved.
-  const nRibs = 5;
-  for (let i = 0; i < nRibs; i++) {
-    const t = i / (nRibs - 1);
-    const zOff = fp.d * 0.05;
-    for (const side of [-1, 1]) {
-      const rib = addMesh(g, new THREE.CylinderGeometry(0.05, 0.1, h * 0.65, 5), boneMat,
-        side * (fp.w * 0.4 - t * fp.w * 0.12), h * 0.32, zOff);
-      rib.rotation.z = side * (0.15 + t * 0.25);
-    }
-  }
-  // Bone altar slab in front of the ribcage arch.
-  const altarMat = mat(dna.colors.walls, { roughness: 0.95 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.4, 0.4, fp.d * 0.22), altarMat, 0, 0.2, fp.d * 0.2);
-  // Headstones scattered across the graveyard plot in front of the shrine.
-  const stoneMat = mat('#8a8878', { roughness: 0.95 });
-  const headstonePositions: [number, number][] = [
-    [-fp.w * 0.4, fp.d * 0.32], [fp.w * 0.38, fp.d * 0.3], [-fp.w * 0.22, fp.d * 0.42],
-    [fp.w * 0.2, fp.d * 0.44], [-fp.w * 0.4, fp.d * 0.5], [fp.w * 0.4, fp.d * 0.48],
-  ];
-  for (const [hx, hz] of headstonePositions) {
-    const lean = (r() - 0.5) * 0.3;
-    const stone = addMesh(g, new THREE.BoxGeometry(0.18, 0.28 + r() * 0.12, 0.06), stoneMat, hx + (r() - 0.5) * 0.15, 0.16, hz + (r() - 0.5) * 0.15);
-    stone.rotation.z = lean;
-    stone.rotation.y = r() * 0.3;
-  }
-  // Low bone-post fence ringing the graveyard plot.
-  const fenceMat = mat('#c8c0a8', { roughness: 0.9 });
-  const fenceHalfW = fp.w * 0.55, fenceHalfD = fp.d * 0.62, fenceZOffset = fp.d * 0.15;
-  const fencePosts: [number, number][] = [];
-  const postsPerSide = 5;
-  for (let i = 0; i <= postsPerSide; i++) {
-    const t = i / postsPerSide;
-    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset - fenceHalfD]);
-    fencePosts.push([-fenceHalfW + t * fenceHalfW * 2, fenceZOffset + fenceHalfD]);
-  }
-  for (let i = 0; i <= postsPerSide; i++) {
-    const t = i / postsPerSide;
-    fencePosts.push([-fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
-    fencePosts.push([fenceHalfW, fenceZOffset - fenceHalfD + t * fenceHalfD * 2]);
-  }
-  for (const [fx, fz] of fencePosts) {
-    addMesh(g, new THREE.CylinderGeometry(0.03, 0.035, 0.42, 5), fenceMat, fx, 0.21, fz);
-  }
-  // Candle sconces (small glowing orange dots) along the sides.
-  const candleMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#f0a040'), emissive: new THREE.Color('#f0a040'), emissiveIntensity: 0.7 });
-  for (let i = 0; i < 4; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05, 6, 6), candleMat, (r() - 0.5) * fp.w * 0.6, 0.55 + r() * 0.2, fp.d * 0.05 + (r() - 0.5) * fp.d * 0.2);
-  }
-  return g;
-}
-
-function buildUndeadShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xDEAD_B013);
-  const boneMat = mat('#d8d0b8', { roughness: 0.92 });
-  const h = FLOOR_HEIGHT * 0.6;
-  // Wraith Bazaar: the stall huddles against a low, single-tier decayed
-  // wall stub (a fragment of some older ruin the bazaar has been built
-  // into), tying it to the same block-kit decay language as the villa and
-  // chapel even at this small scale.
-  const wallStub = new THREE.Group();
-  addBlockUndeadSpire(wallStub, dna.seed ^ 0xDEAD_1030, fp.w * 0.9, fp.d * 0.22, h * 1.4, dna.colors.walls, dna.colors.trim, {
-    tiers: 1, decayFrac: 0.22, crownJitterBlocks: 3, runeglowCount: 2,
-  });
-  wallStub.position.set(0, 0, -fp.d * 0.42);
-  g.add(wallStub);
-  // Bone-strut stall frame with a tattered cloth canopy.
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, -fp.d / 2], [-fp.w / 2, fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, h, 6), boneMat, sx, h / 2, sz);
-  }
-  const clothMat = mat(dna.colors.trim, { roughness: 0.8, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
-  addMesh(g, new THREE.BoxGeometry(fp.w + 0.1, 0.06, fp.d + 0.1), clothMat, 0, h, 0);
-  // Skull lanterns hanging from the corners.
-  const lanternMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#a0e090'), emissive: new THREE.Color('#60c050'), emissiveIntensity: 0.7, roughness: 0.6 });
-  for (const [sx, sz] of [[-fp.w / 2, -fp.d / 2], [fp.w / 2, fp.d / 2]] as [number, number][]) {
-    addMesh(g, new THREE.SphereGeometry(0.1 + r() * 0.03, 7, 6), lanternMat, sx, h - 0.15, sz);
-  }
-  // Counter with tattered goods -- a warm rotten-wood brown, deliberately
-  // a different hue family from the cool stone-grey walls (#5a5048) so it
-  // reads as a distinct material, not the same stone darkened.
-  const woodMat = mat('#3a2818', { roughness: 0.9 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.6, 0.4, 0.35), woodMat, 0, 0.2, fp.d * 0.3);
-  return g;
-}
+// docs/superpowers/specs/2026-09-04-undead-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-undead-buildings.md: the real
+// bespoke communal/funerary/horizontal necropolis kit-of-parts builders,
+// one per canonical BuildingKind (UndeadNecropolisKit.ts — tomb/arcade
+// openings, table-tomb lid roofs, classical friezes/pediments, spolia
+// patches, shored cracks, columbarium bands, cemetery lot dressing),
+// replacing this file's own legacy addBlockUndeadSpire()/
+// buildUndeadVilla()/buildUndeadChapel()/buildUndeadShop() BlockKit
+// decayed ossuary spire (villa/chapel/shop only, no house/terraced/inn/
+// blacksmith/watchtower coverage at all, and a private/vertical "lich
+// tower" silhouette at odds with undead's communal/horizontal/decaying
+// doctrine addendum). Aliased on import to the `UndeadKit` suffix,
+// mirroring vampire/orcish/slime's own aliasing convention above.
+// `buildUndeadTierGrid`/`undeadRoofTopY`/`UndeadTierOptions` remain
+// exported, tested, reusable primitives in FactionBlockProfiles.ts for
+// any future kind that wants them — not deleted, just no longer wired
+// into a live undead builder here.
 
 // ── Elven — living-tree architecture ──────────────────────────────────────────
 // The Elder's Hall (patriciate/house/terraced/inn/blacksmith), Moonlit
@@ -652,424 +507,37 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 // any future kind that wants them -- not deleted, just no longer wired
 // into a live elven builder here.
 
-// ── Dwarven — carved-stone mountain architecture ──────────────────────────────
-// Guild Hall (patriciate), Stone Temple (church), Trade Vault (market):
-// squat, heavy, precise stepped-tier stone blockwork with un-chamfered
-// monumental buttress corners and iron-banded vault doors — built to
-// endure, not to charm. Phase 2e (§2e.4): the tiered tower body is now a
-// genuine BlockKit stepped-tier grid (`buildDwarvenHallGrid()`), not a
-// stack of smooth inset boxes — the deliberate *contrast case* proving the
-// block-kit engine generalises beyond vulperia's organic mound to crisp,
-// monumental masonry (see plan doc §2e.4).
+// ── Dwarven — bespoke depth-laddered stone masonry kit-of-parts ───────────────
+// Guild Hall (patriciate), Stone Temple (church), Trade Vault (market), and
+// all 5 other canonical kinds: real per-course stone masonry with a genuine
+// depth ladder (recessed/proud geometry, never flat colour changes) and
+// five-piece openings (recess/surround/sill/mullion/set-back glazing) on
+// every window and door, built via src/world/buildings/dwarven/
+// DwarvenBuildingKit.ts (docs/superpowers/plans/2026-09-04-dwarven-
+// buildings.md) — replacing the earlier BlockKit stepped-tier hall
+// (buildDwarvenHallGrid(), smooth coursed boxes + a vault-wheel door) that
+// only covered villa/chapel/shop, reused as a stopgap for house/terraced/
+// inn/blacksmith, and had no watchtower coverage at all. Dwarven is the
+// second faction (after slime) with a bespoke builder for every canonical
+// BuildingKind.
 
-/**
- * A vault-door wheel mechanism: a hub + radiating spoke boxes (never a
- * flat torus/ring — spokes are boxes crossing through the hub, so the
- * shape stays legible from any camera angle instead of degenerating to a
- * hairline edge-on).
- */
-function addVaultWheel(g: THREE.Group, cx: number, cy: number, cz: number, radius: number, material: THREE.Material): void {
-  const hub = addMesh(g, new THREE.CylinderGeometry(radius * 0.28, radius * 0.28, radius * 0.18, 10), material, cx, cy, cz);
-  hub.rotation.x = Math.PI / 2;
-  for (let i = 0; i < 6; i++) {
-    const ang = (i / 6) * Math.PI * 2;
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.8, radius * 0.16, radius * 0.14), material);
-    spoke.position.set(cx, cy, cz);
-    spoke.rotation.z = ang;
-    spoke.castShadow = true;
-    g.add(spoke);
-  }
-}
+// ── Orcish — real bespoke lashed-timber/hide kit-of-parts builders live in
+// OrcishBuildingKit.ts (docs/superpowers/plans/2026-09-04-orcish-buildings.
+// md), imported above as buildOrcishKit*. The old addBlockOrcishHut()/
+// buildOrcishVilla()/buildOrcishChapel()/buildOrcishShop() BlockKit lashed
+// hut (a single mismatched-patch occupancy-grid hut reused/rescaled for
+// villa/chapel/shop only, with no house/terraced/inn/blacksmith/watchtower
+// coverage at all) was removed in the same commit that added the new kit.
 
-/**
- * Builds + meshes + centers a `buildDwarvenHallGrid()` stepped-tier tower
- * into `g` at the origin (same centering convention as `addBlockDenMound()`).
- * Corner "buttress" columns are exempted from edge-chamfering via
- * `suppressChamfer` — dwarven monumental masonry should read as
- * *deliberately* hard-edged at its load-bearing corners, in contrast to
- * vulperia's uniformly-softened organic hill.
- */
-function addBlockDwarvenHall(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  stoneColor: string, buttressColor: string, facadeColor: string,
-  opts: DwarvenHallOptions = {},
-): void {
-  const grid = buildDwarvenHallGrid(seed, w, d, h, opts);
-  const palette = {
-    stone:    mat(stoneColor, { roughness: 0.92, map: graniteTexture() }),
-    buttress: mat(buttressColor, { roughness: 0.6, metalness: 0.25 }),
-    facade:   mat(facadeColor, { roughness: 0.85, metalness: 0.15 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => getMaterialKey(grid, bx, by, bz) === 'buttress',
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
+// ── Vampire — real bespoke Gothic-Revival/Second-Empire kit-of-parts
+// builders live in vampire/VampireBuildingKit.ts (docs/superpowers/specs/
+// 2026-09-04-vampire-buildings-design.md + docs/superpowers/plans/
+// 2026-09-04-vampire-buildings.md), imported above as buildVampireKit*.
+// The old addBlockVampireSpire()/buildVampireVilla()/buildVampireChapel()/
+// buildVampireShop() BlockKit tapering obsidian spire (villa/chapel/shop
+// only, with no house/terraced/inn/blacksmith/watchtower coverage at all)
+// was removed in the same commit that added the new kit.
 
-function dwarvenBlock(dna: BuildingDNA, w: number, d: number, h: number): THREE.Group {
-  const g = new THREE.Group();
-  const trimMat = mat(dna.colors.trim, { roughness: 0.7, metalness: 0.3 });
-  // Deliberately darker/desaturated iron-grey buttress colour (distinct from
-  // the warm stone body) so the un-chamfered corners actually read as a
-  // contrasting structural material, not just "the same stone with sharp
-  // edges" — the same colour-contrast lesson vulperia's v2 fix established.
-  const buttressColor = '#4a4a48';
-  const facadeColor = dna.colors.trim;
-
-  addBlockDwarvenHall(g, dna.seed ^ 0xD4A4_0010, w, d, h, dna.colors.walls, buttressColor, facadeColor, {
-    tiers: 3, facade: true,
-  });
-
-  // Iron-banded vault-style door with a wheel mechanism, sitting in the
-  // block grid's carved facade notch.
-  const doorMat = mat(dna.colors.door, { roughness: 0.6, metalness: 0.4 });
-  const doorH = h * 0.5;
-  addMesh(g, new THREE.BoxGeometry(w * 0.28, doorH, 0.1), doorMat, 0, doorH / 2, d / 2 + 0.02);
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.BoxGeometry(w * 0.28, 0.04, 0.11), trimMat, 0, doorH * (0.2 + i * 0.28), d / 2 + 0.03);
-  }
-  addVaultWheel(g, 0, doorH * 0.5, d / 2 + 0.07, Math.min(w, d) * 0.14, trimMat);
-  return g;
-}
-
-function buildDwarvenVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.75;
-  const g = dwarvenBlock(dna, fp.w, fp.d, h);
-  // Guild Hall: a raised banner-crest above the entrance and a low
-  // chimney-forge stack. Positioned off the tower's *actual* block-
-  // quantized height (not the raw continuous `h`), and clamped within the
-  // topmost tier's real (post-inset) footprint — the tiers step inward as
-  // they rise, so placing a roofline prop using the *base* footprint's
-  // width/depth can land it beyond the actual (narrower) top tier's edge,
-  // floating with nothing built underneath it.
-  const roofH = dwarvenRoofTopY(h);
-  const topExtents = dwarvenTopTierExtents(fp.w, fp.d, h, { tiers: 3 });
-  const bannerMat = mat(dna.colors.trim, { roughness: 0.7, side: THREE.DoubleSide });
-  addMesh(g, new THREE.BoxGeometry(0.5, 0.7, 0.04), bannerMat, 0, roofH + 0.35, Math.min(fp.d / 2 - 0.2, topExtents.halfD));
-  const chimneyMat = mat('#3a3a38', { roughness: 0.9 });
-  addMesh(g, new THREE.CylinderGeometry(0.18, 0.22, 0.6, 8), chimneyMat, Math.min(fp.w * 0.35, topExtents.halfW), roofH + 0.3, -Math.min(fp.d * 0.3, topExtents.halfD));
-  return g;
-}
-
-function buildDwarvenChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.8;
-  const g = dwarvenBlock(dna, fp.w * 0.9, fp.d, h);
-  // Stone Temple: flanking column pillars either side of the entrance + a
-  // brazier. Sized off the tower's actual constructed roof height (not
-  // `h * 1.1`, which — since `h` is itself already close to the tower's
-  // full height — produced free-standing columns *taller than the temple
-  // they were meant to flank*. A believable classical flanking pillar
-  // rises to a bit under the roofline, not past it.
-  const roofH = dwarvenRoofTopY(h);
-  const columnH = roofH * 0.7;
-  const columnMat = mat('#8a8478', { roughness: 0.9 });
-  for (const cx of [-fp.w * 0.38, fp.w * 0.38]) {
-    addMesh(g, new THREE.CylinderGeometry(0.15, 0.18, columnH, 8), columnMat, cx, columnH / 2, fp.d * 0.42);
-  }
-  const brazierMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a2818'), emissive: new THREE.Color('#e07020'), emissiveIntensity: 0.7, roughness: 0.6 });
-  addMesh(g, new THREE.CylinderGeometry(0.16, 0.1, 0.3, 8), brazierMat, 0, 0.15, fp.d / 2 + 0.4);
-  return g;
-}
-
-function buildDwarvenShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.9;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xD4A4_0003);
-  // Trade Vault: a single-tier block hall (no stepped tiers — a squat
-  // strongroom front, not a full guild tower) with the same vault-door
-  // wheel mechanism, anvil and ore-crate clutter. The hall is built
-  // shallower than the nominal footprint (`d`, not `fp.d`) — every prop
-  // below is positioned relative to `d` too, not `fp.d`, so the door,
-  // wheel, anvil and crates land against the vault's *actual* front wall
-  // instead of floating past it into open air.
-  const d = fp.d * 0.6;
-  addBlockDwarvenHall(g, dna.seed ^ 0xD4A4_0011, fp.w, d, h, dna.colors.walls, '#4a4a48', dna.colors.trim, {
-    tiers: 1, facade: true,
-  });
-  const doorMat = mat('#6a6858', { roughness: 0.5, metalness: 0.5 });
-  // A vault door sized as a believable doorway (~1/4 of the wall width),
-  // not the ~44%-of-width oversized disc the old `fp.w * 0.22` radius
-  // produced on smaller shop footprints.
-  const doorRadius = Math.min(fp.w * 0.13, d * 0.4);
-  addMesh(g, new THREE.CylinderGeometry(doorRadius, doorRadius, 0.08, 16), doorMat, 0, h * 0.42, d / 2 + 0.05)
-    .rotation.x = Math.PI / 2;
-  addVaultWheel(g, 0, h * 0.42, d / 2 + 0.1, doorRadius * 0.65, mat(dna.colors.trim, { roughness: 0.6, metalness: 0.5 }));
-  const anvilMat = mat('#2a2a28', { roughness: 0.6, metalness: 0.5 });
-  addMesh(g, new THREE.BoxGeometry(0.3, 0.25, 0.15), anvilMat, fp.w * 0.35, 0.13, d / 2 + 0.2);
-  const crateMat = mat('#7a6040', { roughness: 0.9 });
-  for (let i = 0; i < 2; i++) {
-    addMesh(g, new THREE.BoxGeometry(0.3, 0.3, 0.3), crateMat, -fp.w * 0.35 + i * 0.15, 0.15, d / 2 + 0.35, r() * 0.5);
-  }
-  return g;
-}
-
-// ── Orcish — lashed/asymmetric block-kit hut architecture ─────────────────────
-// Warlord Hall (patriciate), War Shrine (church), Loot Pile (market):
-// Phase 2e (orcish): a genuine `buildOrcishHutGrid()` occupancy grid — an
-// asymmetric, lashed-together hut body in mismatched "patch" materials
-// topped with a jagged, single-pitch lean-to roof — replacing the old
-// `addPalisadeWall()` (a ring of bolted-on log cylinders) + separate
-// `addRoughConeRoof()` (a single noise-perturbed cone). Small bolted-on
-// accents (bone/spike totems, skull-and-tusk trophy, bonfire, loot
-// crates/blade) remain acceptable per the established "small props are
-// fine, only large primitive-built main structures are not" precedent.
-
-/**
- * Builds + meshes + centers a `buildOrcishHutGrid()` hut into `g` at the
- * origin (same centering convention as `addBlockFaeStalk()`). The
- * mismatched wall "patch" materials (rough-hewn scavenged planks/hide/
- * bone) and the crude door frame are chamfer-suppressed for a hard-edged,
- * hand-hacked-carpentry read; the roof patches stay softly chamfered
- * (draped hide/thatch reads better rounded than sharp), the same
- * body-vs-accent contrast convention as dwarven's buttress/vampire's iron.
- */
-function addBlockOrcishHut(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, trimColor: string, roofColor: string, doorColor: string,
-  opts: OrcishHutOptions = {},
-): void {
-  const grid = buildOrcishHutGrid(seed, w, d, h, opts);
-  const palette = {
-    patchA: mat(wallColor, { roughness: 0.92, map: hideTexture() }),
-    patchB: mat(trimColor, { roughness: 0.92, map: hideTexture() }),
-    patchC: mat('#c8ba94', { roughness: 0.88, map: hideTexture() }), // hardcoded pale bone/scrap patch (checked distinct from wallColor/trimColor: shifted lighter/greyer than the warm tan trim so it reads as a genuinely mismatched scavenged patch, not just a shade of the same brown)
-    roofpatchA: mat(roofColor, { roughness: 0.85, map: hideTexture() }),
-    roofpatchB: mat('#5a4a30', { roughness: 0.88, map: hideTexture() }), // hardcoded weathered-thatch/hide contrast patch
-    facade: mat(doorColor, { roughness: 0.8 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'patchA' || k === 'patchB' || k === 'patchC' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildOrcishVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.1;
-  const g = new THREE.Group();
-  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
-    facade: true,
-  });
-  // Warlord Hall: a mounted skull-and-tusk trophy above the entrance.
-  const skullMat = mat('#e8dcc0', { roughness: 0.8 });
-  const wallTopY = orcishWallTopY(h);
-  addMesh(g, new THREE.SphereGeometry(0.2, 8, 6), skullMat, 0, wallTopY * 0.95, fp.d / 2 - 0.1);
-  const tuskMat = mat('#f0e8d0', { roughness: 0.6 });
-  for (const tx of [-0.12, 0.12]) {
-    const tusk = addMesh(g, new THREE.ConeGeometry(0.04, 0.35, 5), tuskMat, tx, wallTopY * 0.85, fp.d / 2 - 0.05);
-    tusk.rotation.z = tx > 0 ? -0.6 : 0.6;
-  }
-  return g;
-}
-
-function buildOrcishChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x0AC1_0002);
-  // War Shrine: a central bonfire pit ringed by bone/weapon totem poles.
-  const poleMat = mat('#3a2c1a', { roughness: 0.9 });
-  const nPoles = 5;
-  for (let i = 0; i < nPoles; i++) {
-    const ang = (i / nPoles) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.4;
-    const ph = 1.2 + r() * 0.6;
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, ph, 6), poleMat, Math.cos(ang) * rad, ph / 2, Math.sin(ang) * rad);
-    const skullMat = mat('#e0d4b8', { roughness: 0.8 });
-    addMesh(g, new THREE.SphereGeometry(0.12, 6, 6), skullMat, Math.cos(ang) * rad, ph + 0.1, Math.sin(ang) * rad);
-  }
-  const fireMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1808'), emissive: new THREE.Color('#ff5010'), emissiveIntensity: 1.1, roughness: 0.6 });
-  addMesh(g, new THREE.ConeGeometry(0.3, 0.5, 6), fireMat, 0, 0.25, 0);
-  return g;
-}
-
-function buildOrcishShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x0AC1_0003);
-  // Loot Pile: a small block-built lean-to hut over a heap of plundered
-  // crates/weapons — no facade (an open-fronted stall), reusing the same
-  // jagged patchwork silhouette at a reduced scale.
-  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0013, fp.w * 0.7, fp.d * 0.7, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
-    wallHeightFrac: 0.3,
-  });
-  const crateMat = mat('#6a5030', { roughness: 0.9 });
-  for (let i = 0; i < 4; i++) {
-    const cx = (r() - 0.5) * fp.w * 0.6;
-    const cz = (r() - 0.5) * fp.d * 0.6;
-    addMesh(g, new THREE.BoxGeometry(0.28, 0.2 + r() * 0.2, 0.28), crateMat, cx, 0.15, cz, r() * 0.6);
-  }
-  // Crossed scavenged weapons jutting from the pile.
-  const bladeMat = mat('#909090', { roughness: 0.4, metalness: 0.6 });
-  const blade = addMesh(g, new THREE.ConeGeometry(0.03, 0.6, 4), bladeMat, fp.w * 0.2, 0.4, fp.d * 0.2);
-  blade.rotation.z = 0.5;
-  return g;
-}
-
-// ── Vampire — tapering gothic-spire block-kit architecture ────────────────────
-// Count's Tower (patriciate), Blood Chapel (church), Blood Market (market):
-// Phase 2e (vampire): a genuine `buildVampireSpireGrid()` occupancy grid —
-// a gaunt, monotonically-tapering obsidian spire ending in a real
-// block-built crenellated iron parapet and a carved pointed-arch doorway —
-// replacing the old boxy `gothicBase()` (a flat slab + bolted-on cone roof +
-// bolted-on stepped-slab "buttresses", the same primitive-cone-roof pattern
-// already rejected for vulperia/dwarven/elven). Small bolted-on accents
-// (gargoyles, rose window, blood orb, candelabra) remain acceptable per the
-// established "small props are fine, only large primitive-built main
-// structures are not" precedent.
-
-/**
- * A gothic rose window: stone tracery mullions — 8 radial spoke blocks
- * plus an outer ring of chunky stone segments (reusing the same
- * "many small solid pieces, never a flat torus" principle as vulperia's
- * timber-stave ring) — framing a dark stained-glass disc, instead of a
- * flat colour disc standing in for an entire rose window.
- */
-function addRoseWindow(g: THREE.Group, cx: number, cy: number, cz: number, radius: number, stoneMat: THREE.Material, glassMat: THREE.Material): void {
-  addMesh(g, new THREE.CircleGeometry(radius * 0.85, 16), glassMat, cx, cy, cz);
-  const spokes = 8;
-  for (let i = 0; i < spokes; i++) {
-    const ang = (i / spokes) * Math.PI * 2;
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.8, radius * 0.1, 0.06), stoneMat);
-    spoke.position.set(cx, cy, cz + 0.02);
-    spoke.rotation.z = ang;
-    g.add(spoke);
-  }
-  addTimberRingSegments(g, cx, cy, cz + 0.01, radius * 0.95, stoneMat, 10, radius * 0.22, 0.08);
-}
-
-/**
- * Builds + meshes + centers a `buildVampireSpireGrid()` gothic spire into
- * `g` at the origin (same centering convention as `addBlockElvenTrunk()`).
- * The 'iron' crenellations and 'facade' door jambs are chamfer-suppressed —
- * a battlement merlon or a carved door-post reads as *cut, precise*
- * stonework, in deliberate contrast to the softly-chamfered 'obsidian' body
- * that keeps the tapering silhouette from looking aliased/blocky.
- */
-function addBlockVampireSpire(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, doorColor: string,
-  opts: VampireSpireOptions = {},
-): void {
-  const grid = buildVampireSpireGrid(seed, w, d, h, opts);
-  const palette = {
-    obsidian:  mat(wallColor, { roughness: 0.55, metalness: 0.1, map: obsidianTexture() }),
-    iron:      mat('#3a3a42', { roughness: 0.45, metalness: 0.55 }),
-    facade:    mat(doorColor, { roughness: 0.6 }),
-    bloodglow: new THREE.MeshStandardMaterial({ color: new THREE.Color('#c81030'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.85, roughness: 0.35 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'iron' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildVampireVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(2, dna.floors) * 1.7; // tall, gaunt
-  const g = new THREE.Group();
-  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.door, {
-    facade: true,
-  });
-  // Count's Tower: a smaller companion turret (the same spire profile at a
-  // reduced scale, mirroring vulperia's Fox Den / elven's satellite-lobe
-  // pattern) plus bat-gargoyle silhouettes and a balcony sitting flush
-  // against the main spire's real constructed parapet-deck radius.
-  const turretH = h * 0.62;
-  const turret = new THREE.Group();
-  addBlockVampireSpire(turret, dna.seed ^ 0xB100D_0011, fp.w * 0.5, fp.d * 0.5, turretH, dna.colors.walls, dna.colors.door, {
-    waistFrac: 0.4,
-  });
-  turret.position.set(fp.w * 0.48, 0, fp.d * 0.3);
-  g.add(turret);
-  const gargoyleMat = mat('#2a2020', { roughness: 0.6 });
-  const deckR = vampireSpireDeckRadius(fp.w, fp.d);
-  for (const ang of [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75]) {
-    const gargoyle = addMesh(g, new THREE.ConeGeometry(0.13, 0.28, 4), gargoyleMat, Math.cos(ang) * deckR * 0.95, vampireSpireTopY(h) - h * 0.12, Math.sin(ang) * deckR * 0.95);
-    gargoyle.rotation.x = Math.PI;
-  }
-  const balconyMat = mat(dna.colors.trim, { roughness: 0.6, metalness: 0.2 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.5, 0.08, 0.28), balconyMat, 0, h * 0.5, fp.d * 0.4);
-  return g;
-}
-
-function buildVampireChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.3; // shorter & wider than the villa's tower
-  const g = new THREE.Group();
-  addBlockVampireSpire(g, dna.seed ^ 0xB100D_0002, fp.w * 1.15, fp.d * 1.0, h, dna.colors.walls, dna.colors.door, {
-    facade: true, parapetStartFrac: 0.7, waistFrac: 0.45,
-  });
-  // Blood Chapel: twin flanking spirelets (miniature spires, reusing the
-  // same shape profile at a much smaller scale) + a dark red stained-glass
-  // rose window with real stone tracery + a hovering blood-red orb.
-  for (const sx of [-fp.w * 0.5, fp.w * 0.5]) {
-    const spirelet = new THREE.Group();
-    addBlockVampireSpire(spirelet, dna.seed ^ 0xB100D_0003 ^ (sx > 0 ? 1 : 2), fp.w * 0.3, fp.d * 0.3, h * 0.5, dna.colors.walls, dna.colors.door, {
-      waistFrac: 0.3,
-    });
-    spirelet.position.set(sx, 0, 0);
-    g.add(spirelet);
-  }
-  const trimMat = mat(dna.colors.trim, { roughness: 0.5, metalness: 0.15 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#7a1020'), emissive: new THREE.Color('#a01830'), emissiveIntensity: 0.5, roughness: 0.3 });
-  addRoseWindow(g, 0, h * 0.62, fp.d * 0.5 + 0.02, fp.w * 0.16, trimMat, glassMat);
-  const orbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#4a0510'), emissive: new THREE.Color('#c81030'), emissiveIntensity: 0.9, roughness: 0.3 });
-  addMesh(g, new THREE.SphereGeometry(0.15, 10, 8), orbMat, 0, h * 0.55, fp.d * 0.55);
-  return g;
-}
-
-function buildVampireShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0xB100D_0004);
-  // Blood Market: a dark iron-framed stall — the same pole-and-canvas
-  // canopy technique used to fix vulperia's shop (a flat, slightly-tilted
-  // panel resting on real support poles), replacing the old floating
-  // `ConeGeometry` awning that shared the same disconnected-roof bug class.
-  const ironMat = mat('#1a1818', { roughness: 0.5, metalness: 0.4 });
-  const poleH = h * 0.95;
-  const awningHalfW = fp.w * 0.42;
-  const counterZ = fp.d * 0.3;
-  for (const sx of [-awningHalfW, awningHalfW]) {
-    addMesh(g, new THREE.CylinderGeometry(0.04, 0.05, poleH, 6), ironMat, sx, poleH / 2, counterZ);
-  }
-  const woodMat = mat('#241818', { roughness: 0.85 });
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.75, 0.35, 0.32), woodMat, 0, 0.175, counterZ);
-  const canopyMat = mat('#5a0818', { roughness: 0.6, side: THREE.DoubleSide });
-  const canopy = addMesh(g, new THREE.BoxGeometry(awningHalfW * 2 + 0.25, 0.06, fp.d * 0.42), canopyMat, 0, poleH, counterZ);
-  canopy.rotation.x = -0.1;
-  const candelabraMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#b01828'), emissive: new THREE.Color('#e02840'), emissiveIntensity: 0.8 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.05 + r() * 0.02, 6, 6), candelabraMat, -fp.w * 0.25 + i * fp.w * 0.25, poleH * 0.7, counterZ);
-  }
-  return g;
-}
 
 // ── Fae — whimsical mushroom/flower block-kit architecture ────────────────────
 // Fae Court (patriciate), Faerie Ring (church), Twilight Market (market):
@@ -1102,11 +570,12 @@ function addMushroomGills(g: THREE.Group, capY: number, gillSpan: number, materi
 
 /**
  * Builds + meshes + centers a `buildFaeStalkGrid()` toadstool into `g` at
- * the origin (same centering convention as `addBlockVampireSpire()`). No
- * materials are chamfer-suppressed here — unlike vampire's hard-edged
- * iron/dwarven's buttress corners, fae's whimsical theme calls for
- * everything (stalk, cap, portal frame) reading soft and organic, mirroring
- * elven's "everything gently chamfered" choice.
+ * the origin (same block-grid centering convention as this file's other
+ * addBlock*Grid helpers). No materials are chamfer-suppressed here —
+ * unlike vampire's hard-edged iron/dwarven's buttress corners, fae's
+ * whimsical theme calls for everything (stalk, cap, portal frame) reading
+ * soft and organic, mirroring elven's "everything gently chamfered"
+ * choice.
  */
 function addBlockFaeStalk(
   g: THREE.Group,
@@ -1234,29 +703,40 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     blacksmith: buildVulperiaVilla,
   },
   slime: {
-    villa:  buildSlimeVilla,
-    chapel: buildSlimeChapel,
-    shop:   buildSlimeShop,
-    // Phase 2b increment 3: house/terraced/inn/blacksmith previously had
-    // no slime override at all — every ordinary house, row house, inn,
-    // and smithy in a slime settlement fell through to the generic
-    // default builder, so most of the settlement had no slime identity.
-    // buildSlimeVilla is footprint-dynamic (getFootprint(dna.
-    // buildingKind, dna.size)), so reuse is safe across all four kinds.
-    house:      buildSlimeVilla,
-    terraced:   buildSlimeVilla,
-    inn:        buildSlimeVilla,
-    blacksmith: buildSlimeVilla,
+    // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): slime
+    // is the first faction with a real bespoke kit builder for every
+    // canonical kind (SlimeBuildingKit.ts's gel-block/pseudopod
+    // construction), replacing the earlier "every kind reuses the villa
+    // blob" stopgap. watchtower/tower previously had NO slime override at
+    // all (fell through to the generic square box-stacked builder).
+    house:      buildSlimeKitHouse,
+    terraced:   buildSlimeKitTerraced,
+    shop:       buildSlimeKitShop,
+    inn:        buildSlimeKitInn,
+    blacksmith: buildSlimeKitBlacksmith,
+    villa:      buildSlimeKitVilla,
+    chapel:     buildSlimeKitChapel,
+    watchtower: buildSlimeKitWatchtower,
+    tower:      buildSlimeKitWatchtower,
   },
   undead_common: {
-    villa:  buildUndeadVilla,
-    chapel: buildUndeadChapel,
-    shop:   buildUndeadShop,
-    // Phase 2b increment 3: same gap as slime above.
-    house:      buildUndeadVilla,
-    terraced:   buildUndeadVilla,
-    inn:        buildUndeadVilla,
-    blacksmith: buildUndeadVilla,
+    // docs/superpowers/plans/2026-09-04-undead-buildings.md: undead is
+    // the fifth faction (after slime/dwarven/orcish/vampire) with a real
+    // bespoke kit builder for every canonical kind
+    // (UndeadNecropolisKit.ts's communal/funerary/horizontal necropolis
+    // construction — tomb/arcade openings, table-tomb lid roofs,
+    // classical friezes/pediments/spolia, cemetery lot dressing),
+    // replacing the earlier "villa spire reused for house/terraced/inn/
+    // blacksmith, no watchtower at all" stopgap.
+    house:      buildUndeadKitHouse,
+    terraced:   buildUndeadKitTerraced,
+    shop:       buildUndeadKitShop,
+    inn:        buildUndeadKitInn,
+    blacksmith: buildUndeadKitBlacksmith,
+    villa:      buildUndeadKitVilla,
+    chapel:     buildUndeadKitChapel,
+    watchtower: buildUndeadKitWatchtower,
+    tower:      buildUndeadKitWatchtower,
   },
   elven: {
     villa:    buildElvenTreehouseHome,
@@ -1315,36 +795,57 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     tower:      buildElvenStoneTower,
   },
   dwarven: {
-    villa:    buildDwarvenVilla,
-    chapel:   buildDwarvenChapel,
-    shop:     buildDwarvenShop,
-    // See elven's `house`/`terraced` comment above for why these two
-    // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
-    house:    buildDwarvenVilla,
-    terraced: buildDwarvenVilla,
-    // Phase 2b increment 3: inn/blacksmith had no dwarven override either.
-    inn:        buildDwarvenVilla,
-    blacksmith: buildDwarvenVilla,
+    // Task 22 (docs/superpowers/plans/2026-09-04-dwarven-buildings.md):
+    // dwarven is the second faction (after slime) with a real bespoke kit
+    // builder for every canonical kind (DwarvenBuildingKit.ts's
+    // depth-laddered stone-masonry construction), replacing the earlier
+    // "every kind reuses the villa BlockKit hall" stopgap. watchtower/tower
+    // previously had NO dwarven override at all (fell through to the
+    // generic square box-stacked builder).
+    house:      buildDwarvenHouse,
+    terraced:   buildDwarvenTerraced,
+    shop:       buildDwarvenShop,
+    inn:        buildDwarvenInn,
+    blacksmith: buildDwarvenBlacksmith,
+    villa:      buildDwarvenVilla,
+    chapel:     buildDwarvenChapel,
+    watchtower: buildDwarvenWatchtower,
+    tower:      buildDwarvenWatchtower,
   },
   orcish: {
-    villa:  buildOrcishVilla,
-    chapel: buildOrcishChapel,
-    shop:   buildOrcishShop,
-    // Phase 2b increment 3: same gap as slime/undead above.
-    house:      buildOrcishVilla,
-    terraced:   buildOrcishVilla,
-    inn:        buildOrcishVilla,
-    blacksmith: buildOrcishVilla,
+    // docs/superpowers/plans/2026-09-04-orcish-buildings.md: orcish is the
+    // third faction (after slime/dwarven) with a real bespoke kit builder
+    // for every canonical kind (OrcishBuildingKit.ts's lashed-timber +
+    // hide-panel + bone/tusk trophy construction), replacing the earlier
+    // "villa hut reused for house/terraced/inn/blacksmith, no watchtower
+    // at all" stopgap.
+    house:      buildOrcishKitHouse,
+    terraced:   buildOrcishKitTerraced,
+    shop:       buildOrcishKitShop,
+    inn:        buildOrcishKitInn,
+    blacksmith: buildOrcishKitBlacksmith,
+    villa:      buildOrcishKitVilla,
+    chapel:     buildOrcishKitChapel,
+    watchtower: buildOrcishKitWatchtower,
+    tower:      buildOrcishKitWatchtower,
   },
   vampire: {
-    villa:  buildVampireVilla,
-    chapel: buildVampireChapel,
-    shop:   buildVampireShop,
-    // Phase 2b increment 3: same gap as slime/undead above.
-    house:      buildVampireVilla,
-    terraced:   buildVampireVilla,
-    inn:        buildVampireVilla,
-    blacksmith: buildVampireVilla,
+    // docs/superpowers/plans/2026-09-04-vampire-buildings.md: vampire is
+    // the fourth faction (after slime/dwarven/orcish) with a real bespoke
+    // kit builder for every canonical kind (VampireBuildingKit.ts's
+    // Gothic-Revival/Second-Empire manor construction — shuttered lancet
+    // windows, oriel bays, mansard/gable roofs, wrought-iron railings),
+    // replacing the earlier "villa spire reused for house/terraced/inn/
+    // blacksmith, no watchtower at all" stopgap.
+    house:      buildVampireKitHouse,
+    terraced:   buildVampireKitTerraced,
+    shop:       buildVampireKitShop,
+    inn:        buildVampireKitInn,
+    blacksmith: buildVampireKitBlacksmith,
+    villa:      buildVampireKitVilla,
+    chapel:     buildVampireKitChapel,
+    watchtower: buildVampireKitWatchtower,
+    tower:      buildVampireKitWatchtower,
   },
   fae: {
     villa:  buildFaeVilla,
