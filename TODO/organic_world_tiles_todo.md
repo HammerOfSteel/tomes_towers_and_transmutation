@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime (8 canonical kinds) shipped, 2026-09-02/05 — 7 of 9 races still plan-only
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime/Dwarven/Orcish (8 canonical kinds each) shipped, 2026-09-02/06 — 5 of 9 races still plan-only
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1371,6 +1371,92 @@ Slime, Human — Slime/Human last, since those already look best).
   Remaining 6 races (vampire/orcish/undead/vulperia/fae/human) still
   carry only their design spec + implementation plan from 6.7 — no
   implementation commits yet.
+
+- [x] **6.10 — Seventh race, third non-elven: orcish 8-kind kit-of-parts
+  (branch `race/orcish-buildings`)** — reference art
+  (`concept_art/reference/buildings/orc/`) and the existing 6.7 design
+  spec both pointed the same direction as dwarven's "heavy/rough" family
+  but with a distinct silhouette language: lashed round-timber framing
+  (not dressed stone courses), stretched-hide/leather roof panels and
+  wall infill instead of shingles or slate, raw round or ellipse
+  openings framed by exposed timber (not chamfered stone reveals), and
+  visible tribal "salvage" ornament — banners, hung shields, bone/skull
+  trophies, scavenged-metal patches. Added 4 new orcish-flavoured
+  shared-kit modules under `src/world/buildings/kit/` in the same
+  reusable style as dwarven's Tier-1-3 additions: `LashedTimber.ts`
+  (rope-lashed pole joints/frames), `HidePanel.ts` (stretched-hide
+  roof/wall panels with stitched seams), `RibbedRoof.ts` (exposed
+  roof-rib silhouette over hide panels), and `SalvageSpoils.ts`
+  (banners/shields/trophy props) — plus orcish-specific
+  `OrcishMaterials.ts`/`OrcishOpenings.ts`. All 8 canonical kinds shipped
+  with bespoke builders in `OrcishBuildingKit.ts` (house/terraced/villa/
+  inn/shop/blacksmith/chapel/watchtower — watchtower last, using 4
+  tapered-log legs on a stance axis (straight/splayed/asymmetric-
+  repaired) braced by 2 tiers of X cross-bracing, a rung ladder, a
+  boxed plank platform with a framed ladder-hatch, a parapet-rail axis
+  (log/shield/spike/broken) with 3-4 framed lookout slits, a roof-cap
+  axis (hip/conical/open), and a signal-prop axis (pennant/horn/skull/
+  none) plus always-present corner spikes and a side shield), wired into
+  `FACTION_BUILDING_VARIANTS['orcish']`, replacing the old lashed-hut
+  BlockKit grid (`addBlockOrcishHut`/`buildOrcishVilla`/
+  `buildOrcishChapel`/`buildOrcishShop`) entirely — deleted as dead code
+  in the same commit that stopped referencing it, per
+  `noUnusedLocals:true`. Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION`
+  gained an `orcish` entry (forces the first building to `watchtower`,
+  the one kind with no `WARD_TO_KIND` entry, so all 8 kinds review
+  together in one settlement — same pattern as elven/slime/dwarven).
+  `FactionBlockProfiles.ts`'s orcish grid primitives
+  (`buildOrcishHutGrid`/`orcishWallTopY`/`OrcishHutOptions`) were kept in
+  place rather than deleted, with their own dedicated tests still
+  passing — same "leave the grid generator, delete only the
+  glue-in-`FactionBuildingVariants`" pattern dwarven established in 6.9.
+  **Bugs found and fixed during this race's own build/verification**: no
+  new instance of the uv-attribute merge-drop bug class (a targeted
+  sweep of every custom `BufferGeometry`/`setAttribute` call across the
+  new orcish kit + shared-kit modules found none — orcish's own custom
+  geometry is limited to boxed/extruded primitives, not raw hand-rolled
+  `BufferGeometry`), but a related merge-utility footgun was found and
+  fixed in the watchtower's plank-platform helper: calling
+  `mergeGroupMeshesByMaterial()` on the platform sub-group collapsed all
+  same-material plank/hatch-lip meshes into one merged mesh, destroying
+  the named `hatch-lip-*` children the tests looked up by name (not a
+  uv-drop, since no attribute was missing — a *named-child-loss* variant
+  of the same "don't merge groups whose children are individually
+  addressed" lesson); fixed by not merging that particular sub-group.
+  Also cleaned up two now-unused parameters (`halfW`/`halfD`) on the
+  shared local `mountOnWall()` helper, and an unused
+  `mergeGroupMeshesByMaterial` import left over in `HidePanel.ts` from
+  an earlier session (this one briefly regressed the tsc baseline by
+  +1 error until removed).
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout): faction=orcish showcase across five seeds (1/5/42/777 plus
+  the default) and multiple camera heights/zoom levels renders real
+  proud/recessed round and arched openings with visible depth (dark
+  recesses behind timber-framed rings, glowing lit interiors), lashed
+  round-timber framing, staggered hide-panel roofs with visible ribbing,
+  banner/hide roof accents, corbelled-stone forge chimneys with glowing
+  arch hearths (blacksmith), and the forced watchtower's tapered legs,
+  X cross-bracing, plank platform, and conical roof with lit lookout
+  slits — zero new console errors/warnings (only the pre-existing,
+  unrelated `[PrincessDefaults] unknown charId "undefined"` warning and
+  benign WebGL driver perf messages), and no visible holes,
+  back-geometry, or floating pieces at any zoom level.
+  **Full regression**: `tests/world/buildings/orcish/` (45 tests) +
+  `tests/world/buildings/kit/` + `tests/world/FactionBuildingVariants.test.ts`
+  + `tests/world/FactionBlockProfiles.test.ts` +
+  `tests/scene/SettlementLabScene.test.ts` combined: 528/530 passing,
+  the only 2 failures being the same pre-existing parallel-load-timeout
+  flakes already documented for slime (6.8)/dwarven (6.9) — the slime
+  `SettlementLabScene` showcase test (default 5000ms timeout, no
+  explicit override) and `Tracery.test.ts`'s rose-window test (passes in
+  10.8s standalone against a 15s timeout, only flaking under concurrent
+  suite load) — neither references orcish code, and both were confirmed
+  to reproduce identically without this race's changes present.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 5 races (vampire/undead/vulperia/fae/human) still carry only
+  their design spec + implementation plan from 6.7 — no implementation
+  commits yet.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
