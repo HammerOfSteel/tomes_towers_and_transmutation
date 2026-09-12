@@ -1672,6 +1672,131 @@ Slime, Human — Slime/Human last, since those already look best).
   races (vulperia/fae/human) still carry only their design spec +
   implementation plan from 6.7 — no implementation commits yet.
 
+- [x] **6.13 — Tenth race, sixth non-elven: vulperia 8-kind
+  kit-of-parts (branch `race/vulperia-buildings`)** — fox-folk WARREN
+  architecture: warm, watchful, clever buildings tucked into grassland/
+  savanna earth — low coursed cob/timber walls, many small framed
+  openings, and thick sod/turf roofs that sweep down like sheltering
+  hills WITHOUT ever becoming smooth green blobs (the doctrine's
+  anti-smooth-geometry rule applied to turf specifically: the roof
+  must read as visibly segmented planes with ridge/hip seams and dark
+  verge trim). Re-validated the existing design spec + implementation
+  plan against the current shared kit (unchanged relevant modules since
+  written) and confirmed 2 were directly reusable: dwarven's
+  `RockPlinthSkirt.ts` as the direct precedent for vulperia's own
+  earth-berm/skirt module, and vampire's `Shutter.ts` reused as-is for
+  a shuttered-window opening preset (vulperia's "many small framed
+  openings" fits vampire's "closed, not broken" shutter vocabulary just
+  as well). No existing shared-kit module did genuine sod/turf ROOF
+  surfacing (segmented turf planes, not smooth), so built a brand-new
+  `TurfRoof.ts`, generalizing `ShingleSurface.ts`'s course/tile-based
+  roof-surfacing pattern to turf: six named layers per slope
+  (`turf-roof-rafters`/`turf-roof-board-deck`/`turf-roof-board-ends`/
+  `turf-roof-turf-stop`/`turf-roof-soil-edge`/`turf-roof-grass-top`),
+  named dormers with real proud projection, and porch cutouts.
+  **A real, cross-race shared-kit bug was found and fixed while
+  building `TurfRoof.ts`**: `computeSlope()` computes
+  `outDir = crossVectors(spanDir, climbDir)` then does
+  `if (outDir.y < 0) outDir.negate()` to force the outward normal
+  upward — negating `outDir` ALONE breaks the defining relationship
+  `outDir === cross(spanDir, climbDir)` that `makeBasis(spanDir,
+  climbDir, outDir)` needs to build a valid right-handed rotation
+  matrix, so `Quaternion.setFromRotationMatrix()` silently produces a
+  corrupted/skewed rotation for any slope with `sign=+1` — confirmed via
+  direct vector-algebra derivation and empirical debug dumps that one
+  of every gable's two fascia meshes had its local axes smeared across
+  the wrong world axes, producing correct-looking geometry parameters
+  but a wildly wrong world-space bounding box. This affects ANY future
+  race's use of `TurfRoof.ts`, not just vulperia's own calls. Fixed by
+  flipping BOTH `spanDir` and `outDir` together when correction is
+  needed — mathematically guaranteed to preserve
+  `outDir = cross(spanDir, climbDir)` exactly (since
+  `cross(-a,b) = -cross(a,b)`), keeping the basis proper; added a
+  regression test to `TurfRoof.test.ts`. The fix incidentally made one
+  existing dormer-projection test fail because its numeric threshold
+  had been implicitly calibrated against the old buggy (accidentally
+  more-outward) geometry — fixed by genuinely increasing the dormer's
+  `projection` constant (a real design parameter, not test-fudging),
+  which also makes dormers read more clearly as proud features.
+  Added vulperia-specific `VulperiaPalette.ts` (warm cob/timber/thatch
+  materials), `VulperiaGrounding.ts` (earth berm + grass-berm cap +
+  front steps, following dwarven's rock-plinth-skirt precedent for the
+  doctrine's "rigorous berm/skirt at every terrain contact" rule),
+  `VulperiaOpenings.ts` (round-watch/eyebrow-dormer/shuttered-window
+  presets layered over the shared five-piece `OpeningParts.ts`
+  primitives — low aspect ratio, round/shallow-arch profiles, distinct
+  from vampire's tall lancets and undead's funerary arcades), and
+  `VulperiaLotDressing.ts` (planter barrels, twig den markers, crate
+  stacks, low fences). All 8 canonical kinds shipped in
+  `VulperiaBuildingKit.ts` per the design spec's own per-kind blueprint
+  (villa as a multi-mass cross-gabled "Wanderer's Den" with lantern
+  posts, shop as an awninged "Night Market" stall, blacksmith as a
+  "Tinkerer's Shop", plus bespoke house/terraced/inn/chapel/
+  watchtower), wired into `FACTION_BUILDING_VARIANTS['vulperia']`,
+  replacing the old BlockKit earthen "den mound" functions
+  (`vulperiaMound()`/`addBlockDenMound()`/`addRoundDoor()`/
+  `addRoundWindow()`/`addChimneyStack()`/`addGrassTufts()`/
+  `addGardenFence()`/`addPlanterBarrel()`/`addTimberRingSegments()`/
+  `glassLikeMat()`, ~300 lines, villa/chapel/shop only, no
+  house/terraced/inn/blacksmith/watchtower coverage) entirely, deleted
+  as dead code in the same commit that stopped referencing them.
+  `buildVulperiaDenMoundGrid()` (`FactionBlockProfiles.ts`) was
+  explicitly preserved untouched, per its own independent consumer in
+  `FactionTerritoryProps.ts` (lore/ground-dressing den mounds,
+  unrelated to the building-kind system) and its own separate test
+  coverage. Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION` gained a
+  `vulperia` entry (forces the first building to `watchtower`, the one
+  kind with no `WARD_TO_KIND` entry, so all 8 kinds review together —
+  same pattern as every prior race).
+  **Bugs found and fixed during this race's own build/verification**:
+  the `TurfRoof.ts` handedness bug above (the significant one); 4
+  bounding-box-tolerance test failures (house/terraced/villa/chapel)
+  traced entirely to that bug's downstream effect on fascia mesh
+  placement, resolved by the fix itself; one further villa-only
+  bounding-box overrun after the fix, traced to an overly generous
+  `+0.6` lot-dressing margin (reduced to `+0.3`, matching other kinds'
+  margins) rather than any roof geometry issue. A targeted sweep of
+  every custom `BufferGeometry`/`setAttribute` call across the new
+  vulperia files and `TurfRoof.ts` found all set a matching `uv`
+  attribute — no new instance of the uv-attribute merge-drop bug class
+  that hit elven's `StoneTowerFloorCap.ts` and slime's
+  `SlimeAccretionKit.ts`/`Ruinate.ts`.
+  **Live-verified via Playwright** against a dev server started from
+  this worktree on an unused port (5199, confirmed via `lsof` cwd
+  check, not a stale server from another checkout): faction=vulperia
+  showcase across 3 seeds (7/42/99), including close-ups reached by
+  teleporting the player near specific buildings via the dev-only
+  `window.__game.teleportPlayer()` test hook (the isometric camera's
+  fixed pitch/zoom-in clamp meant scroll-zoom alone couldn't get close
+  enough to a chosen facade — the same constraint every prior race's
+  live verification hit) confirmed: real segmented turf roofs with
+  clearly visible ridge/hip seams, dark verge/eave trim, and chimney
+  stacks on every building (never a smooth dome/blob), small recessed
+  framed window openings and lantern wall-fixtures giving a warm/
+  watchful night-time read, porch/awning entrance structures, the
+  legacy earthen den-mound genuinely preserved as separate
+  ground-dressing lore (not part of the building kit, sitting
+  independently in the settlement), and no floating/back-geometry
+  across any seed. Zero new console errors/warnings across all 3 seeds
+  — only the same benign `GPU stall due to ReadPixels` driver-perf
+  message and pre-existing `[PrincessDefaults] unknown charId
+  "undefined"` warning seen in every prior race's verification.
+  **Full regression**: `tests/world/buildings/vulperia/` +
+  `tests/world/buildings/kit/TurfRoof.test.ts` (5 files, 63 tests) all
+  passing; `tests/world/FactionBuildingVariants.test.ts` (167 tests)
+  all passing; `tests/scene/SettlementLabScene.test.ts` (16 tests) all
+  passing. Whole-suite run: 15 failed/4090 passed/4 skipped (out of
+  4109) — confirmed all 15 failures are pre-existing/unrelated to any
+  vulperia file: 13 fail deterministically in isolation
+  (`talentSystem`/`WaterMaterial`/`enemyLoader`/`towerGenerator`/
+  `OverworldScene` chunk-streaming/`main.startup.smoke`, none touching
+  buildings), and the remaining 2 (`SettlementLabScene.test.ts`
+  timeouts) pass 16/16 when that file is re-run alone, i.e.
+  full-suite parallel-load flakiness, not a regression. `npx tsc
+  --noEmit` holds at the established 146-error baseline throughout.
+  Remaining 2 races (fae/human) still carry only their design spec +
+  implementation plan from 6.7 — no implementation commits yet.
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
