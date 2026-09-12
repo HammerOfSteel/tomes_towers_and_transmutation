@@ -152,6 +152,17 @@ const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind | ((b: P
   // so the same one-forced-slot pattern as the other 6 races' is
   // sufficient here too.
   vulperia: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Fae now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/fae/FaeBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish/vampire/
+  // undead/vulperia hit. watchtower/tower is the only fae kind with no
+  // WARD_TO_KIND entry (buildingToDungeonPlan.ts) and so never spawns
+  // naturally; the other 7 are already reachable through a normal
+  // settlement's ward mix, so the same one-forced-slot pattern as the
+  // other 7 races' is sufficient here too.
+  fae: (_b, index) => (index === 0 ? 'watchtower' : undefined),
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────
