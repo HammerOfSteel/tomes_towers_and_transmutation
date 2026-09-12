@@ -1796,17 +1796,33 @@ function buildHumanCrenellatedParapet(
   return g;
 }
 
-/** Builds a tiny-footprint (2x2 WU), tall, battered-tier stone watchtower:
- * see design spec §4.8. 4 stacked tiers (`makeBatteredRectangleTiers()` --
- * the same shared batter/inset profile the dwarven kit's own watchtower
- * uses) taper 3-5% per floor, each with a string course at the transition,
- * a ground door with a relieving arch, arrow loops per upper floor per
+/** Builds a battered-tier stone watchtower: see design spec §4.8. 4
+ * stacked tiers (`makeBatteredRectangleTiers()` -- the same shared
+ * batter/inset profile the dwarven kit's own watchtower uses) taper
+ * 3-5% per floor, each with a string course at the transition, a
+ * ground door with a relieving arch, arrow loops per upper floor per
  * exposed face, and a coped-parapet / slate-pyramidal / tile-hipped-cap
- * crown -- never a flat-capped box. */
+ * crown -- never a flat-capped box.
+ *
+ * Footprint: the shared `KIND_FOOTPRINT.watchtower` table (2x2 WU) is
+ * deliberately NOT used verbatim here. At the spec's own literal
+ * "minimum 4 floors (12.8 WU)" height, a 2 WU base gives a 1:6-1:8
+ * height:width ratio -- structurally implausible for solid masonry
+ * (real medieval stone towers, even the most extreme historical
+ * examples, stay closer to 1:4-1:5) and, worse, it *reads* on screen as
+ * a thin dark monotonous needle/smokestack rather than a building --
+ * exactly the "basic/broken-looking geometry" the doctrine calls out as
+ * a rejection reason. Found via live visual QA after the first merge
+ * (dwarven's precedent watchtower stays proportionate by using shorter
+ * 2.4-2.6 WU tiers over the same 2x2 footprint; human's spec instead
+ * fixed the *tier height* at a taller 3.2 WU/floor, which is what
+ * breaks the ratio). Fix: widen the human watchtower's OWN base to
+ * 3x3 WU (still visibly narrower than any human house footprint, so it
+ * keeps its "tower" identity) instead of touching the shared table and
+ * affecting every other race's watchtower. */
 export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint('watchtower', dna.size);
-  const baseHalfW = fp.w / 2;
-  const baseHalfD = fp.d / 2;
+  const baseHalfW = 1.5;
+  const baseHalfD = 1.5;
   const palette = buildHumanPalette(dna);
   const openingPalette = toOpeningPalette(palette);
 
@@ -1814,8 +1830,11 @@ export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
   g.name = 'human-watchtower';
 
   const tierRand = mulberry32(tagSeed(dna.seed, 'TIER'));
-  const tierCount = 4 + (tierRand() < 0.3 ? 1 : 0);
-  const taper = 0.03 + tierRand() * 0.02;
+  // Fixed at the spec's literal "minimum 4 floors" -- the previous 30%
+  // chance of a 5th tier only made the disproportion worse and is
+  // dropped rather than compensated for.
+  const tierCount = 4;
+  const taper = 0.04 + tierRand() * 0.03;
   const tiers = makeBatteredRectangleTiers(
     baseHalfW,
     baseHalfD,
