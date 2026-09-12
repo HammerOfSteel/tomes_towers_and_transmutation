@@ -18,7 +18,8 @@
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { StoneTowerPalette } from './StoneTowerKit';
-import { buildRecessedArchOpening, type RecessedArchOptions } from './StoneTowerOpenings';
+import { type RecessedArchOptions } from './StoneTowerOpenings';
+import { buildWindowOpening } from './kit/OpeningParts';
 
 export type WindowType = 'pointed_arch' | 'oculus' | 'cross_mullion';
 export type WindowSize = 'small' | 'medium' | 'large';
@@ -62,8 +63,16 @@ function _buildPointedArch(size: WindowSize, radius: number, ringHeight: number,
     frameWidth: radius * 0.045,
     frameProud: radius * 0.03,
   };
-  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.4 });
-  const g = buildRecessedArchOpening(opts, radius, glassMat, palette.stone);
+  const recessMat = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.95 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.85, emissive: '#0b120b' });
+  const g = buildWindowOpening({
+    ...opts,
+    wallZ: radius,
+    stoneMaterial: palette.stone,
+    recessMaterial: recessMat,
+    glazingMaterial: glassMat,
+    divisionStyle: 'vertical',
+  });
   g.position.y = ringHeight * 0.35;
 
   // Small moonstone oculus accent inset near the arch's point, proud of
@@ -84,20 +93,26 @@ function _buildPointedArch(size: WindowSize, radius: number, ringHeight: number,
  * feature, a distinct silhouette from the pointed arch.
  */
 function _buildOculus(size: WindowSize, radius: number, ringHeight: number, palette: StoneTowerPalette): THREE.Group {
-  const g = new THREE.Group();
   const scale = SIZE_SCALE[size];
-  const outerR = radius * 0.16 * scale;
-  const recessDepth = radius * 0.08;
-  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.4 });
-  const glass = new THREE.Mesh(new THREE.CylinderGeometry(outerR * 0.8, outerR * 0.8, 0.05, 12), glassMat);
-  glass.rotation.x = Math.PI / 2;
-  glass.position.set(0, ringHeight * 0.5, radius - recessDepth);
-  g.add(glass);
-  const frameProud = radius * 0.03;
-  const frame = new THREE.Mesh(new THREE.TorusGeometry(outerR * 0.85, outerR * 0.18, 6, 14), palette.stone);
-  frame.position.set(0, ringHeight * 0.5, radius + frameProud);
-  frame.castShadow = frame.receiveShadow = true;
-  g.add(frame);
+  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.85, emissive: '#0b120b' });
+  const recessMat = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.95 });
+  // Oculus windows use a dedicated round variant so the five-piece opening
+  // rule is preserved without faking the circle through an over-tall arch.
+  const g = buildWindowOpening({
+    width: radius * 0.32 * scale,
+    straightHeight: radius * 0.32 * scale,
+    pointHeight: 0,
+    recessDepth: radius * 0.08,
+    frameWidth: radius * 0.03,
+    frameProud: radius * 0.03,
+    wallZ: radius,
+    stoneMaterial: palette.stone,
+    recessMaterial: recessMat,
+    glazingMaterial: glassMat,
+    openingShape: 'round',
+    divisionStyle: 'cross',
+  });
+  g.position.y = ringHeight * 0.34;
   return g;
 }
 
@@ -118,18 +133,17 @@ function _buildCrossMullion(size: WindowSize, radius: number, ringHeight: number
     frameWidth: radius * 0.045,
     frameProud: radius * 0.03,
   };
-  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.4 });
-  const g = buildRecessedArchOpening(opts, radius, glassMat, palette.stone);
+  const glassMat = new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.85, emissive: '#0b120b' });
+  const recessMat = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.95 });
+  const g = buildWindowOpening({
+    ...opts,
+    wallZ: radius,
+    stoneMaterial: palette.stone,
+    recessMaterial: recessMat,
+    glazingMaterial: glassMat,
+    divisionStyle: 'cross',
+  });
   g.position.y = ringHeight * 0.35;
-
-  const barThickness = Math.min(opts.width, opts.straightHeight) * 0.09;
-  const barProud = radius + opts.frameProud * 0.7;
-  const vBar = new THREE.Mesh(new THREE.BoxGeometry(barThickness, opts.straightHeight, barThickness), palette.stone);
-  vBar.position.set(0, g.position.y + opts.straightHeight / 2, barProud);
-  g.add(vBar);
-  const hBar = new THREE.Mesh(new THREE.BoxGeometry(opts.width, barThickness, barThickness), palette.stone);
-  hBar.position.set(0, g.position.y + opts.straightHeight / 2, barProud);
-  g.add(hBar);
   return g;
 }
 
