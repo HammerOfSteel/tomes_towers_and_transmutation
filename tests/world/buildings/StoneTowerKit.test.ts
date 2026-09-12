@@ -156,17 +156,25 @@ describe('buildTowerWallRing', () => {
     expect(meshCount).toBe(8);
   });
 
-  it('window type varies across seeds (a round oculus TorusGeometry appears for at least one seed but not another)', () => {
-    let sawTorus = false;
-    let sawNonTorus = false;
+  it('window type varies across seeds (a round oculus opening appears for at least one seed but not another)', () => {
+    // Note: the underlying oculus geometry moved from a raw TorusGeometry
+    // mesh to a real 5-piece dual-grid-style recessed opening (kit/
+    // OpeningParts.ts's buildWindowOpening with openingShape: 'round'), and
+    // finishArchitecturalGeometry() (Bevels.ts) intentionally rebakes every
+    // extruded/lathed piece into a plain BufferGeometry for correct
+    // creased-normal shading -- so `.geometry.type` no longer survives as a
+    // structural marker. buildWindowOpening() tags its returned group with
+    // userData.openingShape instead, which is what we check for here.
+    let sawRound = false;
+    let sawNonRound = false;
     for (let seed = 0; seed < 30; seed++) {
       const g = buildTowerWallRing(2, 2.9, seed, makePalette(), true);
-      let hasTorus = false;
-      g.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry.type === 'TorusGeometry') hasTorus = true; });
-      if (hasTorus) sawTorus = true; else sawNonTorus = true;
+      let hasRound = false;
+      g.traverse((o) => { if (o.userData?.openingShape === 'round') hasRound = true; });
+      if (hasRound) sawRound = true; else sawNonRound = true;
     }
-    expect(sawTorus).toBe(true);
-    expect(sawNonTorus).toBe(true);
+    expect(sawRound).toBe(true);
+    expect(sawNonRound).toBe(true);
   });
 
   it('omitting the new optional params (vertexScales/offset/rotation) leaves the group at local origin with zero rotation', () => {

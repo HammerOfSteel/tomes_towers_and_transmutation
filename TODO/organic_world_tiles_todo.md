@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts) ✅ 4 of ~9 elven building types shipped, 2026-09-02/04
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime/Dwarven/Orcish/Vampire (8 canonical kinds each) shipped, 2026-09-02/06 — 4 of 9 races still plan-only
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1230,7 +1230,338 @@ Slime, Human — Slime/Human last, since those already look best).
   `slime` has **no reference art**, so its spec presents three
   alternative directions with a recommendation and is explicitly
   blocked on a user decision.
-  **Status: awaiting user approval. No implementation started.**
+  **Status: user-approved. Implementation now underway race-by-race** — see
+  6.8 below for the first race (slime) shipped under this programme.
+  `race/dwarven-buildings`, `race/vampire-buildings`, `race/orcish-buildings`,
+  `race/undead-buildings`, `race/vulperia-buildings`, `race/fae-buildings`,
+  `race/human-buildings` each still carry only their design
+  spec + implementation plan from this round — no implementation commits
+  yet on any of them.
+
+- [x] **6.8 — Fifth race, first non-elven: slime "mimic culture" 8-kind
+  kit-of-parts (branch `race/slime-buildings`)** — elven's spec in 6.7 had
+  flagged slime as the one race with **no reference art**, presenting 3
+  alternative directions. User resolved this explicitly with a new brief
+  (Pokémon-Ditto-esque mimic/absorption culture: a slime colony observes
+  and reproduces another race's building shell, then re-skins it in a
+  rotating neon hue family — mint-green/azure-blue/bubblegum-pink/
+  violet-purple/cyan-teal, never one fixed green — plus a rounded
+  gel-mimic silhouette with mandatory drip points). Implemented as
+  host-shell → light `Ruinate` damage → slime accretion overlay (neon
+  hue + rounding pass), reusing the shared Tier 1-3 kit modules already
+  on `main` (lattice-dome canopy, interlace ornament, ruinate course
+  erosion/debris, lathe columns) rather than inventing new primitives —
+  slime is the first race to build on that shared kit end-to-end. All 8
+  canonical kinds shipped with bespoke builders (house/terraced/shop/inn/
+  blacksmith/villa/chapel/watchtower), wired into
+  `FACTION_BUILDING_VARIANTS['slime']`, replacing the old translucent
+  Sphere/Cylinder blob primitives entirely (deleted as dead code, merged
+  into the same commit once `tsconfig.json`'s `noUnusedLocals:true` made
+  leaving them in place a hard type error the moment the registry stopped
+  calling them). Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION` gained a
+  `slime` entry (forces the first building to `watchtower`, the one kind
+  with no `WARD_TO_KIND` entry, so all 8 kinds can be reviewed together in
+  one settlement — same pattern as elven's).
+  **Real bug found and fixed during this race's own verification** (the
+  same bug class first caught for `StoneTowerFloorCap.ts` in 6.6d, now
+  recurring on new geometry): `createSaggingMembraneGeometry()`
+  (`SlimeAccretionKit.ts`) and `createAngularRubbleGeometry()`
+  (`Ruinate.ts`, used by slime's rubble-from-lost-blocks damage) both
+  built custom `BufferGeometry` with no `uv` attribute while sharing a
+  material with sibling meshes that *do* have `uv` — `mergeGeometries()`
+  fails silently on that mismatch and `mergeGroupMeshesByMaterial()`
+  (`MeshMergeUtils.ts`) disposes the **entire** material bucket regardless
+  of merge success, so every one of the 8 slime kinds was silently
+  dropping real geometry in production (89 console warnings during
+  Settlement Lab verification pinpointed it). Fixed by adding a `uv`
+  attribute to both (membrane reuses its own grid-loop u/v; rubble gets a
+  standard per-face box-style planar projection); both affected materials
+  are flat-colour with no texture map, so neither fix has any visual-
+  precision requirement. Regression tests added mirroring
+  `StoneTowerFloorCap.test.ts`'s established pattern exactly.
+  **Live-verified via Playwright** against a dev server running from this
+  worktree (not a stale server from a different checkout): faction=slime
+  showcase renders all 8 kinds with zero console errors/warnings, visible
+  neon-hued roofs (teal/pink/purple/cyan) with organic rounded accretion
+  bulges and gel-drip pillars, the watchtower forced correctly, and no
+  visible holes/missing geometry at two different zoom levels and two
+  seeds — confirming the uv fix resolved the silent-drop bug in the
+  actual production render path, not just in tests.
+  **Full regression**: `tests/world/buildings/slime/` +
+  `tests/world/buildings/kit/` + `tests/scene/SettlementLabScene.test.ts` +
+  `tests/world/FactionBuildingVariants.test.ts` all green; full
+  `npx vitest run` is 13 failures / 3556 passing, all 13 pre-existing
+  baseline failures unrelated to any file this race touched (confirmed by
+  file-level cross-check, not just count-matching) plus one confirmed-
+  non-flaky test-runner timeout from parallel resource contention (passes
+  standalone in 4.2s against a 5s default timeout); `npx tsc --noEmit`
+  holds at the established 146-error baseline.
+
+- [x] **6.9 — Sixth race, second non-elven: dwarven 8-kind kit-of-parts
+  (branch `race/dwarven-buildings`)** — unlike slime, dwarven had rich
+  reference art from the start (6 images in
+  `concept_art/reference/buildings/dwarf/`), so no art-direction brief was
+  needed: compressed, weighty stonecraft — low masses on rock plinths,
+  stepped/battered walls, small deep-set openings, heavy lintels,
+  corbelled chimneys, angular chevron ornament, metal banding, and
+  visible industry (workshops/vents). Reused the shared Tier 1-3 kit
+  already on `main` (lattice-dome canopy, interlace ornament, ruinate
+  course erosion/debris, lathe columns) and added 6 new dwarven-flavoured
+  shared-kit modules under `src/world/buildings/kit/` in the same style
+  (`RockPlinthSkirt.ts`, `SteppedBatterProfile.ts`,
+  `CorbelledChimneyStack.ts`, `AngularOrnament.ts`, `MetalBanding.ts`,
+  `PipeworkVent.ts`), plus a `MassComposer.ts` helper (multi-mass
+  composition — main hall + wing/upper-core — needed once villa/inn
+  required "at least two distinct masses" per the doctrine) and dwarven-
+  specific `DwarvenMaterials.ts`/`DwarvenOpenings.ts`/
+  `DwarvenWorkshopProps.ts`. All 8 canonical kinds shipped with bespoke
+  builders in `DwarvenBuildingKit.ts` (house/terraced/villa/inn/shop/
+  blacksmith/chapel/watchtower — watchtower last, using a stepped
+  octagonal-or-square tier stack, alternating slit vents, 4 corner
+  buttresses, a rock-plinth ground axis, and an unconditional signal
+  brazier crown), wired into `FACTION_BUILDING_VARIANTS['dwarven']`,
+  replacing the old stepped-tier BlockKit hall (`addVaultWheel`/
+  `addBlockDwarvenHall`/`dwarvenBlock` and the old BlockKit
+  villa/chapel/shop) entirely — deleted as dead code in the same commit
+  that stopped referencing them, per `noUnusedLocals:true`. Settlement
+  Lab's `POC_KIND_OVERRIDE_BY_FACTION` gained a `dwarven` entry (forces
+  the first building to `watchtower`, the one kind with no
+  `WARD_TO_KIND` entry, so all 8 kinds review together in one
+  settlement — same pattern as elven/slime). `FactionBlockProfiles.ts`'s
+  dwarven tier-layout primitives (`buildDwarvenHallGrid`/
+  `dwarvenRoofTopY`/`dwarvenTopTierExtents`/`planDwarvenTiers`) were kept
+  in place rather than deleted — undead still aliases onto them
+  (`undeadRoofTopY = dwarvenRoofTopY`) even though dwarven itself no
+  longer calls them directly.
+  **Bugs found and fixed during this race's own build/verification** (no
+  new instance of the uv-attribute merge-drop bug class this time — a
+  static sweep confirmed every custom `BufferGeometry` in the shared kit
+  and dwarven's own files sets a matching `uv` attribute, and none of
+  dwarven's own modules construct raw `BufferGeometry` at all): (a) a
+  test-authoring bug, not a builder bug — the watchtower's "exactly 4
+  buttress strips" assertion counted by a `buttress` substring match,
+  which also matched each buttress's own internal child names, inflating
+  16 hits for 4 real buttresses; fixed by filtering to the exact
+  top-level name pattern instead. (b) dwarven's per-course stone masonry
+  is measurably geometry-heavier than slime's/elven's kit — the
+  Settlement Lab dwarven showcase test takes ~5.1s, over vitest's 5s
+  default, so it needed the same explicit `15000`ms per-test timeout
+  already used by `LatticeDome.test.ts`/`Tracery.test.ts`.
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout): faction=dwarven showcase across two seeds and multiple zoom
+  levels renders real pitched/gabled roofs with course-by-course relief,
+  recessed door/window openings with proud surrounds and lit interiors,
+  visible rock-plinth bases, corner buttresses, and multi-mass villa/inn
+  silhouettes — zero console errors, and no visible holes, back-geometry,
+  or floating pieces at any zoom level.
+  **Full regression**: `tests/world/buildings/dwarven/` (91 tests) +
+  `tests/world/FactionBuildingVariants.test.ts` (131 tests) +
+  `tests/scene/SettlementLabScene.test.ts` (13 tests) +
+  `tests/world/FactionBlockProfiles.test.ts` all green (301/301 combined).
+  Full `npx vitest run`: 14 failed tests across 10 files — 9 of those are
+  the same established pre-existing baseline (enemyLoader×3,
+  towerGenerator×2, talentSystem×3, WaterMaterial×1); the remaining 5
+  (main.startup.smoke×3, a slime `SettlementLabScene` showcase timeout,
+  `ResourceNodePlacer`×1) plus 3 further `OverworldScene` suite-level
+  `beforeAll` hook timeouts all re-ran green in isolation, confirming
+  pre-existing parallel-load contention flakiness (same pattern
+  documented for slime in 6.8), not a regression from this race.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 6 races (vampire/orcish/undead/vulperia/fae/human) still
+  carry only their design spec + implementation plan from 6.7 — no
+  implementation commits yet.
+
+- [x] **6.10 — Seventh race, third non-elven: orcish 8-kind kit-of-parts
+  (branch `race/orcish-buildings`)** — reference art
+  (`concept_art/reference/buildings/orc/`) and the existing 6.7 design
+  spec both pointed the same direction as dwarven's "heavy/rough" family
+  but with a distinct silhouette language: lashed round-timber framing
+  (not dressed stone courses), stretched-hide/leather roof panels and
+  wall infill instead of shingles or slate, raw round or ellipse
+  openings framed by exposed timber (not chamfered stone reveals), and
+  visible tribal "salvage" ornament — banners, hung shields, bone/skull
+  trophies, scavenged-metal patches. Added 4 new orcish-flavoured
+  shared-kit modules under `src/world/buildings/kit/` in the same
+  reusable style as dwarven's Tier-1-3 additions: `LashedTimber.ts`
+  (rope-lashed pole joints/frames), `HidePanel.ts` (stretched-hide
+  roof/wall panels with stitched seams), `RibbedRoof.ts` (exposed
+  roof-rib silhouette over hide panels), and `SalvageSpoils.ts`
+  (banners/shields/trophy props) — plus orcish-specific
+  `OrcishMaterials.ts`/`OrcishOpenings.ts`. All 8 canonical kinds shipped
+  with bespoke builders in `OrcishBuildingKit.ts` (house/terraced/villa/
+  inn/shop/blacksmith/chapel/watchtower — watchtower last, using 4
+  tapered-log legs on a stance axis (straight/splayed/asymmetric-
+  repaired) braced by 2 tiers of X cross-bracing, a rung ladder, a
+  boxed plank platform with a framed ladder-hatch, a parapet-rail axis
+  (log/shield/spike/broken) with 3-4 framed lookout slits, a roof-cap
+  axis (hip/conical/open), and a signal-prop axis (pennant/horn/skull/
+  none) plus always-present corner spikes and a side shield), wired into
+  `FACTION_BUILDING_VARIANTS['orcish']`, replacing the old lashed-hut
+  BlockKit grid (`addBlockOrcishHut`/`buildOrcishVilla`/
+  `buildOrcishChapel`/`buildOrcishShop`) entirely — deleted as dead code
+  in the same commit that stopped referencing it, per
+  `noUnusedLocals:true`. Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION`
+  gained an `orcish` entry (forces the first building to `watchtower`,
+  the one kind with no `WARD_TO_KIND` entry, so all 8 kinds review
+  together in one settlement — same pattern as elven/slime/dwarven).
+  `FactionBlockProfiles.ts`'s orcish grid primitives
+  (`buildOrcishHutGrid`/`orcishWallTopY`/`OrcishHutOptions`) were kept in
+  place rather than deleted, with their own dedicated tests still
+  passing — same "leave the grid generator, delete only the
+  glue-in-`FactionBuildingVariants`" pattern dwarven established in 6.9.
+  **Bugs found and fixed during this race's own build/verification**: no
+  new instance of the uv-attribute merge-drop bug class (a targeted
+  sweep of every custom `BufferGeometry`/`setAttribute` call across the
+  new orcish kit + shared-kit modules found none — orcish's own custom
+  geometry is limited to boxed/extruded primitives, not raw hand-rolled
+  `BufferGeometry`), but a related merge-utility footgun was found and
+  fixed in the watchtower's plank-platform helper: calling
+  `mergeGroupMeshesByMaterial()` on the platform sub-group collapsed all
+  same-material plank/hatch-lip meshes into one merged mesh, destroying
+  the named `hatch-lip-*` children the tests looked up by name (not a
+  uv-drop, since no attribute was missing — a *named-child-loss* variant
+  of the same "don't merge groups whose children are individually
+  addressed" lesson); fixed by not merging that particular sub-group.
+  Also cleaned up two now-unused parameters (`halfW`/`halfD`) on the
+  shared local `mountOnWall()` helper, and an unused
+  `mergeGroupMeshesByMaterial` import left over in `HidePanel.ts` from
+  an earlier session (this one briefly regressed the tsc baseline by
+  +1 error until removed).
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout): faction=orcish showcase across five seeds (1/5/42/777 plus
+  the default) and multiple camera heights/zoom levels renders real
+  proud/recessed round and arched openings with visible depth (dark
+  recesses behind timber-framed rings, glowing lit interiors), lashed
+  round-timber framing, staggered hide-panel roofs with visible ribbing,
+  banner/hide roof accents, corbelled-stone forge chimneys with glowing
+  arch hearths (blacksmith), and the forced watchtower's tapered legs,
+  X cross-bracing, plank platform, and conical roof with lit lookout
+  slits — zero new console errors/warnings (only the pre-existing,
+  unrelated `[PrincessDefaults] unknown charId "undefined"` warning and
+  benign WebGL driver perf messages), and no visible holes,
+  back-geometry, or floating pieces at any zoom level.
+  **Full regression**: `tests/world/buildings/orcish/` (45 tests) +
+  `tests/world/buildings/kit/` + `tests/world/FactionBuildingVariants.test.ts`
+  + `tests/world/FactionBlockProfiles.test.ts` +
+  `tests/scene/SettlementLabScene.test.ts` combined: 528/530 passing,
+  the only 2 failures being the same pre-existing parallel-load-timeout
+  flakes already documented for slime (6.8)/dwarven (6.9) — the slime
+  `SettlementLabScene` showcase test (default 5000ms timeout, no
+  explicit override) and `Tracery.test.ts`'s rose-window test (passes in
+  10.8s standalone against a 15s timeout, only flaking under concurrent
+  suite load) — neither references orcish code, and both were confirmed
+  to reproduce identically without this race's changes present.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 5 races (vampire/undead/vulperia/fae/human) still carry only
+  their design spec + implementation plan from 6.7 — no implementation
+  commits yet.
+
+- [x] **6.11 — Eighth race, fourth non-elven: vampire 8-kind
+  kit-of-parts (branch `race/vampire-buildings`)** — the 6.7 design spec
+  called for a deliberately different family from every prior race:
+  vertical, aristocratic, MAINTAINED architecture (Gothic-Revival /
+  Second-Empire manor forms) — explicitly not "undead but purple": where
+  undead (still unimplemented) is communal/horizontal/decaying/funerary,
+  vampire is private/vertical/kept/occupied, with closed shuttered
+  windows (not broken ones) and intact steep roofs (not missing walls).
+  Reference art was 2 viewable JPGs plus 1 GIF a prior tool session
+  could not view; this session re-attempted viewing the GIF and still
+  could not render it, so proceeded on the spec's documented fallback —
+  the 2 JPGs plus Gothic-Revival/Second-Empire research — per the user's
+  own explicit instruction for this exact contingency. Added 2 new
+  vampire-flavoured shared-kit modules under `src/world/buildings/kit/`:
+  `Shutter.ts` (paired louvred/panelled shutters, closed by default,
+  hinge-side mirroring) and `OrielBay.ts` (a corbel-supported projecting
+  bay window with its own mullioned glazing) — both new primitives the
+  6.7 plan called for that did not already exist; every other named kit
+  module the plan cited (`MassComposer`, `FacadeGrammar`, `GothicArch`,
+  `VoussoirArch`, `ShingleSurface`, `RoofMassing`, `StringCourse`,
+  `BatchedDetail`) already existed from dwarven/orcish and was reused
+  as-is. `RoofMassing.ts` gained one new archetype, `buildMansardRoof()`
+  (steep near-vertical lower slope + shallow upper slope, matching the
+  Second-Empire silhouette the reference art and doctrine both call
+  for), plus vampire-specific `VampireMaterials.ts` (dark dressed stone,
+  wrought-iron, aged-copper roof, warm interior-glow glazing) and
+  `VampireOpenings.ts` (the doctrine's five-piece recess/surround/sill/
+  mullion/glazing opening, composed with `Shutter` in the closed
+  position). All 8 canonical kinds shipped in `VampireBuildingKit.ts`
+  (house/terraced/shop/inn/blacksmith/villa/chapel/watchtower — chapel
+  built as a private family chapel with a gated forecourt, not a
+  mausoleum, to keep the "inhabited, not funerary" distinction the spec
+  insists on; watchtower as a slender corner turret with a conical
+  mansard cap and a wrought-iron widow's-walk rail), wired into
+  `FACTION_BUILDING_VARIANTS['vampire']`, replacing the old BlockKit
+  spire/villa/chapel/shop functions (`addRoseWindow`/
+  `addBlockVampireSpire`/`buildVampireVilla`/`buildVampireChapel`/
+  `buildVampireShop`, ~148 lines) entirely, deleted as dead code in the
+  same commit that stopped referencing them. Settlement Lab's
+  `POC_KIND_OVERRIDE_BY_FACTION` gained a `vampire` entry (forces the
+  first building to `watchtower`, the one kind with no `WARD_TO_KIND`
+  entry, so all 8 kinds review together in one settlement — same
+  pattern as elven/slime/dwarven/orcish).
+  **Bugs found and fixed during this race's own build/verification**: a
+  real z-extent bbox-overflow bug in the terraced and shop builders —
+  both had explicitly overridden `buildWallSurfaceBlocks()`'s
+  `blocksPerFace` default down to 2 for a narrow footprint; running-bond
+  masonry's alternating-course row-offset math then placed a block
+  exactly at a face corner (`t=0`) on odd courses, and with only 2 wide
+  blocks per face the block's half-width overhung far past the nominal
+  wall boundary (size.z=5.867 vs an expected <5.6, caught by this race's
+  own TDD contract test, not live verification). Root-caused via a
+  throwaway debug test that traversed the built mesh tree and printed
+  each block's placement; fixed by removing the inappropriate
+  `blocksPerFace: 2` override so the function's own smart default
+  (`Math.max(3, Math.round(longestFace / 0.75))`, which scales block
+  count with face length and keeps overhang proportionally small)
+  applies instead — this is not a bug in the shared kit itself (real
+  masonry does have corner overlap), only in passing an unusually small
+  `blocksPerFace` for a narrow footprint, so no shared-kit change was
+  needed. No new instance of the uv-attribute merge-drop bug class: a
+  targeted sweep of every custom `BufferGeometry`/`setAttribute` call in
+  both new shared-kit modules (`Shutter.ts`, `OrielBay.ts`) and vampire's
+  own files found none — their custom geometry is limited to boxed/
+  extruded primitives built through existing shared-kit helpers, not raw
+  hand-rolled `BufferGeometry`, so no regression test was needed for
+  this class this round.
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (not a stale server from another
+  checkout, confirmed via `lsof`/`ps` cwd check): faction=vampire
+  showcase across three seeds (42/12345/918273) at multiple zoom levels
+  (including hiding the unrelated in-game Dev Sandbox panel via
+  `display:none` purely for screenshot clarity) renders dark, vertical,
+  aristocratic manor silhouettes with steep mansard/pyramidal roofs
+  (visible ridge lines, chimney/finial details, roof-surface tile
+  texture — not smooth cones or flat planes), coursed masonry walls with
+  visible corner quoins, dark-red closed shuttered window openings
+  reading as recessed with proud surrounds (not blob/square holes), and
+  an arched entrance canopy with wrought-iron rail supports — visually
+  distinct from elven's living-tree/stone-tower look and, per the
+  doctrine's intent, reading as maintained/occupied rather than
+  decayed/funerary — zero new console errors/warnings across all three
+  seeds. The game's isometric camera has a fixed pitch and a zoom-in
+  clamp (confirmed by testing a further mouse-wheel zoom step, which
+  produced no additional close-up beyond what multiple earlier zoom
+  ticks already reached), so true facade-level macro shots (individual
+  shutter louvres, sill mouldings) are not obtainable through this
+  verification path — the same constraint every prior race's live
+  verification operated under.
+  **Full regression**: `tests/world/buildings/vampire/` (63 tests) +
+  `tests/world/FactionBuildingVariants.test.ts` (147 tests) all passing;
+  whole-suite run: 14 failed / 3907 passed / 4 skipped, rigorously
+  confirmed via `git stash -u` (stashing all vampire changes) and
+  re-running the identical failing test files against the clean
+  merge-base to reproduce the exact same 14 failures with zero vampire
+  code present — these are the same pre-existing/flaky baseline
+  failures already documented for slime (6.8)/dwarven (6.9)/orcish
+  (6.10) (`main.startup.smoke`, `Tracery.test.ts`, `WaterMaterial.test.ts`,
+  `OverworldScene` chunk-streaming tests, `ResourceNodePlacer`, and a
+  handful of parallel-load-timeout flakes), none touching vampire code.
+  `npx tsc --noEmit` holds at the established 146-error baseline.
+  Remaining 4 races (undead/vulperia/fae/human) still carry only their
+  design spec + implementation plan from 6.7 — no implementation
+  commits yet.
 
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
