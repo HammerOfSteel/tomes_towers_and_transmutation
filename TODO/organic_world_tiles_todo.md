@@ -1563,6 +1563,115 @@ Slime, Human — Slime/Human last, since those already look best).
   design spec + implementation plan from 6.7 — no implementation
   commits yet.
 
+- [x] **6.12 — Ninth race, fifth non-elven: undead 8-kind
+  kit-of-parts (branch `race/undead-buildings`)** — the doctrine's
+  Part 9 addendum explicitly distinguishes undead from the just-shipped
+  vampire race: undead architecture is communal, funerary, HORIZONTAL,
+  and decaying — mausolea, ossuaries, monuments, retained ruins,
+  graveyards, crypt walls, classical friezes, spolia, broken-but-
+  meaningful remnants — whereas vampire is private/vertical/maintained/
+  aristocratic, with damage that CONCEALS (closed shutters, intact
+  roofs) rather than undead's damage that EXPOSES age. Re-validated the
+  existing 6.7 design spec + implementation plan against the current
+  shared kit (`src/world/buildings/kit/` had grown 11 new modules since
+  the plan was written — `Ruinate.ts`, `SalvageSpoils.ts`, `Shutter.ts`,
+  `OrielBay.ts`, `RockPlinthSkirt.ts`, `SteppedBatterProfile.ts`,
+  `CorbelledChimneyStack.ts`, `AngularOrnament.ts`, `MetalBanding.ts`,
+  `PipeworkVent.ts`, `HidePanel.ts`/`LashedTimber.ts`/`RibbedRoof.ts`)
+  and confirmed 2 were directly reusable as-is with zero modification:
+  `Ruinate.ts` (seeded per-course occupancy erosion + rubble/rafters/
+  cracks debris geometry, originally built for elven's chapel ruin and
+  already reused by slime) for undead's decay/erosion detail, and
+  `SalvageSpoils.ts` (orcish's spolia primitive) for undead's reused-
+  masonry ornament — `Shutter.ts` was explicitly NOT reused (closed/
+  maintained windows are the opposite of undead's exposed-decay
+  language, per the doctrine's own guidance). Added 5 new shared-kit
+  modules the plan called for that did not already exist: `Frieze.ts`
+  (classical entablature banding for funerary friezes), `Pediment.ts`
+  (triangular/segmental pediment caps), `Railing.ts` (iron cemetery
+  rails + gates, `buildRailGate()`), `LanternKit.ts` (funerary lantern
+  posts), and `MonumentKit.ts` (freestanding obelisks/mausolea/grave-
+  marker props) — plus race-specific `UndeadNecropolisPalette.ts`
+  (bone-grey/lichen/verdigris materials), `UndeadOpenings.ts` (the
+  doctrine's five-piece recess/surround/sill/mullion/glazing opening in
+  tomb/arcade styles, including deliberately-broken variants that still
+  carry full backing geometry — no bare holes, per the doctrine's
+  no-back-geometry rule), `UndeadFacadeModules.ts`, and
+  `UndeadLotDressing.ts` (graveyard ground dressing: iron rails, pale
+  headstones, grounded rubble). All 8 canonical kinds shipped in
+  `UndeadNecropolisKit.ts` (house/terraced/shop/inn/blacksmith/villa/
+  chapel/watchtower — chapel built as a ruined shrine rather than an
+  intact building, watchtower as a crumbling stepped-battered tower
+  with a broken parapet and jagged remnant railings rather than an
+  intact cap), wired into `FACTION_BUILDING_VARIANTS['undead']`,
+  replacing the old BlockKit lich-tower/ossuary-spire functions
+  (`addBlockUndeadSpire`/`buildUndeadVilla`/`buildUndeadChapel`/
+  `buildUndeadShop`, ~192 lines) entirely, deleted as dead code in the
+  same commit that stopped referencing them (`buildUndeadTierGrid`/
+  `undeadRoofTopY`/`UndeadTierOptions` in `FactionBlockProfiles.ts` were
+  left in place, per the dwarven/orcish/vampire precedent, since they
+  still carry independent test coverage). Settlement Lab's
+  `POC_KIND_OVERRIDE_BY_FACTION` gained an `undead` entry (forces the
+  first building to `watchtower`, the one kind with no `WARD_TO_KIND`
+  entry, so all 8 kinds review together — same pattern as elven/slime/
+  dwarven/orcish/vampire).
+  **Bugs found and fixed during this race's own build/verification**:
+  3 tsc errors caught before any test run (unused `PedimentVariant` and
+  `buildLanternCage` imports, and an invalid `seed` option passed to
+  `buildRailGate()` — its `RailGateOptions` interface has no `seed`
+  field, only `{width, height?, material, finialMaterial?, openAngle?}`
+  — fixed by removing the invalid argument). No new instance of the
+  uv-attribute merge-drop bug class: a targeted sweep of every custom
+  `BufferGeometry`/`setAttribute` call across all of
+  `src/world/buildings/undead/*.ts` found none — despite undead's heavy
+  reliance on `Ruinate.ts`'s debris/rubble geometry (the exact module
+  that caused this bug class for both elven's `StoneTowerFloorCap.ts`
+  and slime's own `Ruinate.ts` usage), undead's own files build only
+  through existing shared-kit helpers, so no regression test was needed
+  for this class this round.
+  **Live-verified via Playwright** against a fresh dev server started
+  from this worktree on an unused port (confirmed via `ps`/`lsof` cwd
+  check, not a stale server from another checkout): faction=undead
+  showcase across three seeds (42/12345/918273), including digitally
+  cropped-and-brightened close-ups of individual buildings (the
+  isometric camera's fixed pitch and zoom-in clamp meant in-engine
+  zoom alone was insufficient for facade-level inspection, the same
+  constraint every prior race's live verification hit — cropping
+  screenshots after capture, not any code or camera change, is what
+  resolved it) confirmed: real recessed arcade/tomb-style doorway
+  openings with visible interior depth (not bare holes or blob
+  windows), grounded rubble/debris piles and small pyramidal-roofed
+  mausoleum props sitting directly on the ground (never floating),
+  visibly stepped-plinth masonry courses with corner buttresses, an
+  iron-railed graveyard with pale grouped headstones and a gated
+  entrance, low horizontal single-mass building silhouettes with
+  textured (non-smooth) shingle roofs and roof-ridge ornaments, and a
+  showcased watchtower reading as a genuinely crumbling stepped-
+  battered tower with a broken, jagged remnant parapet rail — visually
+  distinct from vampire's neat conical mansard cap and, per the
+  doctrine's intent, reading as communal/horizontal/decayed rather than
+  private/vertical/maintained. Zero new console errors/warnings across
+  all three seeds — only a benign headless-GPU driver performance
+  message (`GPU stall due to ReadPixels`) and a pre-existing
+  `[PrincessDefaults] unknown charId "undefined" → using HUMAN default`
+  warning (player-character boilerplate, unrelated to buildings,
+  present regardless of faction).
+  **Full regression**: `tests/world/buildings/undead/` +
+  `tests/world/buildings/kit/` (39 files, 374 tests) all passing;
+  `tests/world/FactionBuildingVariants.test.ts` +
+  `tests/world/FactionBlockProfiles.test.ts` together (222 tests) all
+  passing; `tests/scene/SettlementLabScene.test.ts` (15 tests) all
+  passing. Whole-suite run twice: 20 failed/4010 passed/4 skipped, then
+  15 failed/4015 passed/4 skipped — a non-deterministic, overlapping-
+  but-different failure set across the two runs (dwarven/Tracery/
+  vampire/WorldGenerator failures in run 1 only, `StoneTowerKit` in run
+  2 only), matching the same pre-existing environment-flake pattern
+  documented for slime (6.8)/dwarven (6.9)/orcish (6.10)/vampire
+  (6.11), none touching any undead-related file. `npx tsc --noEmit`
+  holds at the established 146-error baseline throughout. Remaining 3
+  races (vulperia/fae/human) still carry only their design spec +
+  implementation plan from 6.7 — no implementation commits yet.
+
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
