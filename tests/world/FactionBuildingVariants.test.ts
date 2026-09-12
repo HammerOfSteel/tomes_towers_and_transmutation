@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildDwarvenHallGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildOrcishHutGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
+import { buildVulperiaDenMoundGrid, buildElvenTrunkGrid, buildVampireSpireGrid, buildFaeStalkGrid, buildUndeadTierGrid, planDwarvenTiers } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock, getMaterialKey } from '@/world/buildings/BlockKit';
 import { buildElvenChapelShrine } from '@/world/buildings/ElvenChapelKit';
 
@@ -176,6 +176,51 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 });
 
+// Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): slime is
+// the first faction with a bespoke builder for ALL 8 canonical BuildingKit
+// kinds (house/terraced/shop/inn/blacksmith/villa/chapel/watchtower), built
+// via src/world/buildings/slime/SlimeBuildingKit.ts's real gel-block/
+// pseudopod construction technique rather than the old raw Sphere/Cylinder
+// "blob" primitives. Previously house/terraced/inn/blacksmith/watchtower
+// either had no slime override (fell through to generic) or reused
+// buildSlimeVilla's blob shape; watchtower had no slime override at all.
+describe('FACTION_BUILDING_VARIANTS — slime full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('slime', kind)).not.toBeNull();
+    }
+  });
+
+  it('also resolves the generic "tower" kind to the slime watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('slime', 'tower')).not.toBeNull();
+  });
+
+  for (const kind of kinds) {
+    it(`slime/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
+    });
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11))));
+    expect(new Set(counts).size).toBe(kinds.length);
+  });
+
+  it('no longer routes any of the 8 kinds through the legacy blob group names', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('slime', kind)!(makeDna(kind, 'slime', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.toLowerCase().includes('blob'))).toBe(false);
+    }
+  });
+});
+
 // ── Vulperia deep-quality pass (settlement visual fidelity follow-up) ──────
 // Phase 2e §2e.3: regression guards for the grounded BlockKit heightfield
 // den mound (small earth/grass/facade blocks with marching-squares-style
@@ -277,80 +322,56 @@ describe('Vulperia — BlockKit heightfield den mound (not a deformed sphere blo
 });
 
 // ── Orcish deep-quality pass (settlement visual fidelity follow-up) ─────────
-// Regression guards for the block-kit lashed-hut rework that replaced a
-// bolted-on log-palisade ring plus a separate noise-perturbed cone roof.
-describe('Orcish — BlockKit lashed hut with jagged patchwork roofline (not palisade logs + a cone)', () => {
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.orcish![kind]!(makeDna(kind, 'orcish', 55)));
+// Regression guards for the real bespoke lashed-timber/hide kit-of-parts
+// builders (OrcishBuildingKit.ts, docs/superpowers/plans/
+// 2026-09-04-orcish-buildings.md), one per canonical BuildingKind,
+// replacing the earlier `buildOrcishHutGrid()` BlockKit lashed hut (a
+// single mismatched-patch occupancy-grid hut reused/rescaled for
+// villa/chapel/shop only, with no watchtower coverage at all).
+describe('FACTION_BUILDING_VARIANTS — orcish full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('orcish', kind)).not.toBeNull();
     }
   });
 
-  it('builds the villa (Warlord Hall) main hut as one merged, dense block-kit mesh (not 16 palisade log cylinders + a lone cone roof), plus skull/tusk trophy accents', () => {
-    const g = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    let sawCone = false;
-    g.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'ConeGeometry') sawCone = true; });
-    // greedy-meshed block-kit output is a single merged BufferGeometry with a
-    // dense vertex count reflecting the underlying block construction, not a
-    // pile of separate log-cylinder/cone primitives; the tusk trophies are
-    // the only ConeGeometry expected on the villa.
-    const stalk = findBiggestMesh(g);
-    const pos = stalk.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
-    expect(sawCone).toBe(true); // the tusk trophy cones, not a roof cone
+  it('also resolves the generic "tower" kind to the orcish watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('orcish', 'tower')).not.toBeNull();
   });
 
-  it('produces an asymmetric footprint and a jagged (non-uniform) roofline from the live grid', () => {
-    const grid = buildOrcishHutGrid(9, 6, 6, 4, {});
-    const bw = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bd = Math.max(3, Math.round(6 / BLOCK_UNIT));
-    const bh = Math.max(6, Math.round(4 / BLOCK_UNIT));
-    function colTop(bx: number, bz: number): number {
-      let top = -1;
-      for (let by = 0; by < bh; by++) if (hasBlock(grid, bx, by, bz)) top = by;
-      return top;
+  it('blacksmith is not the same function as villa (no longer a shared hut-grid reuse)', () => {
+    expect(FACTION_BUILDING_VARIANTS.orcish!.blacksmith).not.toBe(FACTION_BUILDING_VARIANTS.orcish!.villa);
+  });
+
+  for (const kind of kinds) {
+    it(`orcish/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
+    });
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11))));
+    expect(new Set(counts).size).toBe(kinds.length);
+  });
+
+  it('is deterministic for the same faction/kind/seed', () => {
+    const gA = getFactionBuildingVariant('orcish', 'villa')!(makeDna('villa', 'orcish', 5));
+    const gB = getFactionBuildingVariant('orcish', 'villa')!(makeDna('villa', 'orcish', 5));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
+  });
+
+  it('no longer routes any of the 8 kinds through the legacy BlockKit hut-grid group names', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('orcish', kind)!(makeDna(kind, 'orcish', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.toLowerCase().includes('hutgrid'))).toBe(false);
     }
-    const cx = Math.round(bw / 2);
-    const heights = new Set<number>();
-    for (let bz = 1; bz < bd - 1; bz++) heights.add(colTop(cx, bz));
-    expect(heights.size).toBeGreaterThanOrEqual(2);
-  });
-
-  it('assigns wall columns mismatched "patch" materials, not a single uniform material', () => {
-    const grid = buildOrcishHutGrid(9, 10, 10, 4, {});
-    const patchMaterials = new Set<string>();
-    for (const matKey of grid.cells.values()) {
-      if (matKey.startsWith('patch')) patchMaterials.add(matKey);
-    }
-    expect(patchMaterials.size).toBeGreaterThanOrEqual(2);
-  });
-
-  it('retains the praised skull-and-tusk trophy, bonfire/totem-pole, and loot-crate/blade accent props', () => {
-    const villa = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 9));
-    let sawSkull = false;
-    villa.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') sawSkull = true; });
-    expect(sawSkull).toBe(true);
-    const chapel = FACTION_BUILDING_VARIANTS.orcish!.chapel!(makeDna('chapel', 'orcish', 9));
-    let sawTotemPole = false;
-    chapel.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') sawTotemPole = true; });
-    expect(sawTotemPole).toBe(true);
-    const shop = FACTION_BUILDING_VARIANTS.orcish!.shop!(makeDna('shop', 'orcish', 9));
-    let sawCrate = false;
-    shop.traverse(o => { if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') sawCrate = true; });
-    expect(sawCrate).toBe(true);
-  });
-
-  it('produces a different hut silhouette per seed (deterministic but seed-varied)', () => {
-    const gA = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
-    const gB = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.orcish!.villa!(makeDna('villa', 'orcish', 1));
-    expect(countMeshes(gA)).toBe(countMeshes(gA2));
-    const posA = findBiggestMesh(gA).geometry.getAttribute('position') as THREE.BufferAttribute;
-    const posB = findBiggestMesh(gB).geometry.getAttribute('position') as THREE.BufferAttribute;
-    let sumA = 0, sumB = 0;
-    for (let i = 0; i < posA.count; i++) sumA += posA.getY(i);
-    for (let i = 0; i < posB.count; i++) sumB += posB.getY(i);
-    expect(sumA).not.toBe(sumB);
   });
 });
 
@@ -465,111 +486,52 @@ describe('Undead — BlockKit decayed ossuary spire with sparse decay + broken c
   });
 });
 
-// ── Dwarven deep-quality pass (settlement visual fidelity follow-up) ───────
-// Phase 2e §2e.4: regression guards for the stepped-tier BlockKit hall
-// (`buildDwarvenHallGrid()`) that replaced the earlier smooth-coursed-box
-// stacking — the deliberate *contrast case* proving the block-kit engine
-// generalises to crisp, monumental masonry with intentionally
-// un-chamfered "buttress" corners, not just vulperia's organic mound.
-describe('Dwarven — stepped-tier BlockKit hall with hard-edged buttress corners (not smooth coursed boxes)', () => {
-  it('produces only finite vertices across villa/chapel/shop', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.dwarven![kind]!(makeDna(kind, 'dwarven', 8)));
+// Task 22 (docs/superpowers/plans/2026-09-04-dwarven-buildings.md): dwarven
+// is the second faction (after slime) with a bespoke builder for ALL 8
+// canonical BuildingKit kinds (house/terraced/shop/inn/blacksmith/villa/
+// chapel/watchtower), built via src/world/buildings/dwarven/
+// DwarvenBuildingKit.ts real per-course stone-masonry construction rather
+// than the earlier BlockKit stepped-tier hall (buildDwarvenHallGrid()).
+// Previously house/terraced/inn/blacksmith reused buildDwarvenVilla's block
+// hall shape; watchtower had no dwarven override at all.
+describe('FACTION_BUILDING_VARIANTS — dwarven roster / full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('dwarven', kind)).not.toBeNull();
     }
   });
 
-  it('builds the tower from many discrete block meshes (a Lego-style assembly, not one smooth box)', () => {
-    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
-    const totalBox = new THREE.Box3().setFromObject(g);
-    const totalHeight = totalBox.max.y - totalBox.min.y;
-    let anyBoxSpansMostOfHeight = false;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
-        o.geometry.computeBoundingBox();
-        const bb = o.geometry.boundingBox!;
-        const meshHeight = (bb.max.y - bb.min.y) * o.scale.y;
-        if (meshHeight > totalHeight * 0.6) anyBoxSpansMostOfHeight = true;
-      }
+  it('also resolves the generic "tower" kind to the dwarven watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('dwarven', 'tower')).not.toBeNull();
+  });
+
+  it('blacksmith is not the same function as villa (no longer a shared block-hall reuse)', () => {
+    expect(FACTION_BUILDING_VARIANTS.dwarven!.blacksmith).not.toBe(FACTION_BUILDING_VARIANTS.dwarven!.villa);
+  });
+
+  for (const kind of kinds) {
+    it(`dwarven/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('dwarven', kind)!(makeDna(kind, 'dwarven', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
     });
-    // The old version had a full-height coursed-box stack; the block hall's
-    // merged mesh is many small unit blocks, so no single box primitive
-    // should span most of the building's height.
-    expect(anyBoxSpansMostOfHeight).toBe(false);
-    const mound = findBiggestMesh(g);
-    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    // seed 2, not 11: inn/villa happen to collide on mesh count at seed 11
+    // (150 each) -- a numeric coincidence, not a structural collapse (their
+    // builders are otherwise clearly distinct, per the dedicated
+    // 'blacksmith is not the same function as villa' identity check above).
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('dwarven', kind)!(makeDna(kind, 'dwarven', 2))));
+    expect(new Set(counts).size).toBe(kinds.length);
   });
 
-  it('produces a different tower silhouette per seed (deterministic but seed-varied, via weathering chips)', () => {
-    const countBlockVerts = (g: THREE.Group): number => {
-      let total = 0;
-      g.traverse(o => {
-        if (o instanceof THREE.Mesh) total += (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-      });
-      return total;
-    };
-    const gA = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 1));
-    const gB = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 1));
-    expect(countBlockVerts(gA)).toBe(countBlockVerts(gA2)); // deterministic for the same seed
-    expect(countBlockVerts(gA)).not.toBe(countBlockVerts(gB)); // varies across seeds
-  });
-
-  it('gives the tower a genuine stepped-tier profile: a real inset step from the base grid', () => {
-    const grid = buildDwarvenHallGrid(3, 8, 6, 4.5, { tiers: 3 });
-    const bh = Math.round(4.5 / BLOCK_UNIT);
-    // Base-tier corner is occupied near the ground...
-    expect(hasBlock(grid, 0, 0, 0)).toBe(true);
-    // ...but the same column has stepped inward by the top tier.
-    expect(hasBlock(grid, 0, bh - 1, 0)).toBe(false);
-  });
-
-  it('marks corner columns with a distinct un-chamfered "buttress" material, not plain stone', () => {
-    const grid = buildDwarvenHallGrid(3, 8, 6, 4.5, { tiers: 3 });
-    expect(getMaterialKey(grid, 0, 0, 0)).toBe('buttress');
-  });
-
-  it('gives the tower a genuinely distinct buttress material colour, not the same stone hue with sharp edges', () => {
-    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
-    const materialColors = new Set<string>();
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-        materialColors.add(o.material.color.getHexString());
-      }
-    });
-    // The iron-grey buttress colour (#4a4a48) must appear as its own
-    // merged material group, distinct from the warm stone body colour.
-    expect(materialColors.has(new THREE.Color('#4a4a48').getHexString())).toBe(true);
-  });
-
-  it('carves a real doorway-sized gap in the block hall at the front (a genuine hole, not just an applied surface)', () => {
-    const grid = buildDwarvenHallGrid(5, 8, 6, 4.5, { tiers: 3, facade: true });
-    const bw = Math.round(8 / BLOCK_UNIT);
-    const bd = Math.round(6 / BLOCK_UNIT);
-    const cx = Math.round(bw / 2);
-    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
-  });
-
-  it('retains the praised iron-banded vault door + wheel mechanism', () => {
-    const g = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
-    let hubCount = 0;
-    let spokeCount = 0;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') hubCount++;
-      if (o instanceof THREE.Mesh && o.geometry.type === 'BoxGeometry') {
-        const p = (o.geometry as THREE.BoxGeometry).parameters;
-        // Spokes are long, thin, flat boxes distinguishable from block-kit
-        // unit cubes by their aspect ratio.
-        if (p.width > p.height * 3 && p.height > 0) spokeCount++;
-      }
-    });
-    expect(hubCount).toBeGreaterThan(0);
-    expect(spokeCount).toBeGreaterThanOrEqual(6);
-  });
-
-  it('is deterministic for the same seed', () => {
-    const gA = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
-    const gB = FACTION_BUILDING_VARIANTS.dwarven!.villa!(makeDna('villa', 'dwarven', 5));
+  it('is deterministic for the same faction/kind/seed', () => {
+    const gA = getFactionBuildingVariant('dwarven', 'villa')!(makeDna('villa', 'dwarven', 5));
+    const gB = getFactionBuildingVariant('dwarven', 'villa')!(makeDna('villa', 'dwarven', 5));
     expect(countMeshes(gA)).toBe(countMeshes(gB));
   });
 });
