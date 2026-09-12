@@ -11,7 +11,7 @@ import { buildBuilding } from '@/world/buildings/BuildingBuilder';
 import { FACTION_BUILDING_VARIANTS, getFactionBuildingVariant } from '@/world/buildings/FactionBuildingVariants';
 import type { BuildingDNA, BuildingKind, Faction } from '@/world/buildings/BuildingDNA';
 import { STYLE_COLORS } from '@/world/buildings/BuildingDNA';
-import { buildVulperiaDenMoundGrid, buildElvenTrunkGrid, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
+import { buildElvenTrunkGrid, buildFaeStalkGrid } from '@/world/buildings/FactionBlockProfiles';
 import { BLOCK_UNIT, hasBlock } from '@/world/buildings/BlockKit';
 import { buildElvenChapelShrine } from '@/world/buildings/ElvenChapelKit';
 
@@ -80,7 +80,7 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
 
   it('returns null for an uncovered (faction, kind) pair', () => {
     expect(getFactionBuildingVariant('human_town', 'villa')).toBeNull();
-    expect(getFactionBuildingVariant('vulperia', 'watchtower')).toBeNull();
+    expect(getFactionBuildingVariant('fae', 'watchtower')).toBeNull();
   });
 
   it('returns null when faction is undefined', () => {
@@ -163,8 +163,8 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 
   it('falls back to the shared shape + style overlay when faction has no variant for this kind', () => {
-    // vulperia has no 'watchtower' variant -> falls back to buildWatchtower().
-    const inst = buildBuilding(makeDna('watchtower', 'vulperia', 5));
+    // fae has no 'watchtower' variant -> falls back to buildWatchtower().
+    const inst = buildBuilding(makeDna('watchtower', 'fae', 5));
     expect(inst.exteriorGroup).toBeInstanceOf(THREE.Group);
     expect(countMeshes(inst.exteriorGroup)).toBeGreaterThan(0);
   });
@@ -222,102 +222,91 @@ describe('FACTION_BUILDING_VARIANTS — slime full kit-of-parts coverage', () =>
 });
 
 // ── Vulperia deep-quality pass (settlement visual fidelity follow-up) ──────
-// Phase 2e §2e.3: regression guards for the grounded BlockKit heightfield
-// den mound (small earth/grass/facade blocks with marching-squares-style
-// corner rounding) that replaced the earlier noise-perturbed deformed-
-// sphere ("organic mound") body, plus the timber-stave round door/window
-// kit (unchanged/reused across both mound implementations).
-describe('Vulperia — BlockKit heightfield den mound (not a deformed sphere blob)', () => {
-  it('produces only finite (non-NaN/non-infinite) vertices for the block mound + props', () => {
-    for (const kind of ['villa', 'chapel', 'shop'] as BuildingKind[]) {
-      expectAllVerticesFinite(FACTION_BUILDING_VARIANTS.vulperia![kind]!(makeDna(kind, 'vulperia', 123)));
+// Regression guards for the real bespoke fox-folk warren kit-of-parts
+// builders (VulperiaBuildingKit.ts, docs/superpowers/plans/
+// 2026-09-04-vulperia-buildings.md), one per canonical BuildingKind --
+// coursed cob/timber walls, five-piece framed openings, segmented
+// sod/turf roofs (via the shared TurfRoof.ts kit module) with visible
+// ridge/hip seams and dark verge trim, raised porches/dormers, and a
+// rigorous berm/skirt at every terrain contact -- replacing the earlier
+// `addBlockDenMound()`/`vulperiaMound()` BlockKit earthen-mound builder
+// (villa/chapel/shop only, no house/terraced/inn/blacksmith/watchtower
+// coverage at all, and never a real constructed building per the design
+// spec's explicit "move to modular constructed architecture" directive).
+describe('FACTION_BUILDING_VARIANTS — vulperia full kit-of-parts coverage', () => {
+  const kinds: BuildingKind[] = ['house', 'terraced', 'shop', 'inn', 'blacksmith', 'villa', 'chapel', 'watchtower'];
+
+  it('has a non-null bespoke variant for every canonical kind, including watchtower', () => {
+    for (const kind of kinds) {
+      expect(getFactionBuildingVariant('vulperia', kind)).not.toBeNull();
     }
   });
 
-  it('builds the mound from many discrete block meshes (a Lego-style assembly, not one smooth primitive)', () => {
-    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 7));
-    // No large SphereGeometry mound body anywhere (the old deformed-
-    // hemisphere body is gone) -- small decorative spheres (door handle,
-    // chimney smoke puff, flower/plant heads) are fine and expected.
-    let hasLargeSphere = false;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'SphereGeometry') {
-        const params = (o.geometry as THREE.SphereGeometry).parameters;
-        if (params.radius > 0.5) hasLargeSphere = true;
-      }
+  it('also resolves the generic "tower" kind to the vulperia watchtower kit builder', () => {
+    expect(getFactionBuildingVariant('vulperia', 'tower')).not.toBeNull();
+  });
+
+  it('blacksmith is not the same function as villa (no longer a shared earthen-mound reuse)', () => {
+    expect(FACTION_BUILDING_VARIANTS.vulperia!.blacksmith).not.toBe(FACTION_BUILDING_VARIANTS.vulperia!.villa);
+  });
+
+  for (const kind of kinds) {
+    it(`vulperia/${kind} builds a non-empty, all-finite group without throwing`, () => {
+      const g = getFactionBuildingVariant('vulperia', kind)!(makeDna(kind, 'vulperia', 11));
+      expect(g).toBeInstanceOf(THREE.Group);
+      expect(countMeshes(g)).toBeGreaterThan(0);
+      expectAllVerticesFinite(g);
     });
-    expect(hasLargeSphere).toBe(false);
-    // A block mound's merged geometry has far more vertices than a single
-    // low-poly primitive would, reflecting many individually-culled block
-    // faces assembled together.
-    const mound = findBiggestMesh(g);
-    const pos = mound.geometry.getAttribute('position') as THREE.BufferAttribute;
-    expect(pos.count).toBeGreaterThan(60);
+  }
+
+  it('produces 8 pairwise-distinct mesh-count signatures across the 8 kinds (no silent collapse to one shared builder)', () => {
+    const counts = kinds.map(kind => countMeshes(getFactionBuildingVariant('vulperia', kind)!(makeDna(kind, 'vulperia', 11))));
+    expect(new Set(counts).size).toBe(kinds.length);
   });
 
-  it('produces a different mound silhouette per seed (deterministic but seed-varied)', () => {
-    const countBlockVerts = (g: THREE.Group): number => {
-      let total = 0;
-      g.traverse(o => {
-        if (o instanceof THREE.Mesh) total += (o.geometry.getAttribute('position') as THREE.BufferAttribute).count;
-      });
-      return total;
-    };
-    const gA = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
-    const gB = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 2));
-    const gA2 = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 1));
-    expect(countBlockVerts(gA)).toBe(countBlockVerts(gA2)); // deterministic for the same seed
-    expect(countBlockVerts(gA)).not.toBe(countBlockVerts(gB)); // varies across seeds
+  it('is deterministic for the same faction/kind/seed', () => {
+    const gA = getFactionBuildingVariant('vulperia', 'villa')!(makeDna('villa', 'vulperia', 5));
+    const gB = getFactionBuildingVariant('vulperia', 'villa')!(makeDna('villa', 'vulperia', 5));
+    expect(countMeshes(gA)).toBe(countMeshes(gB));
   });
 
-  // ── v2 fix, still honoured by the block mound: a real flat facade so the
-  // door sits on a genuinely "built" surface, not a bare curved bank. The
-  // block system achieves this via a carved notch framed by dedicated
-  // `'facade'`-material post/lintel blocks rather than a separate bolted-on
-  // BoxGeometry panel.
-  it('gives the mound a dedicated facade-material block group (a genuinely built surface around the door), distinct from the earth/grass body', () => {
-    const dna = makeDna('villa', 'vulperia', 5);
-    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(dna);
-    const materialColors = new Set<string>();
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshStandardMaterial) {
-        materialColors.add(o.material.color.getHexString());
+  it('produces a different silhouette per seed (deterministic but seed-varied)', () => {
+    const gA = getFactionBuildingVariant('vulperia', 'villa')!(makeDna('villa', 'vulperia', 1));
+    const gB = getFactionBuildingVariant('vulperia', 'villa')!(makeDna('villa', 'vulperia', 2));
+    const gA2 = getFactionBuildingVariant('vulperia', 'villa')!(makeDna('villa', 'vulperia', 1));
+    expect(countMeshes(gA)).toBe(countMeshes(gA2));
+    expect(countMeshes(gA)).not.toBe(countMeshes(gB));
+  });
+
+  it('no longer routes any of the 8 kinds through the legacy earthen block-mound group names', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('vulperia', kind)!(makeDna(kind, 'vulperia', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.toLowerCase().includes('mound'))).toBe(false);
+    }
+  });
+
+  it('every kind has real ground-contact grounding (plinth + earth berm) and lot dressing (never a floating building)', () => {
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('vulperia', kind)!(makeDna(kind, 'vulperia', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      expect(names.some(n => n.includes('vulperia-grounding'))).toBe(true);
+      expect(names.some(n => n.includes('vulperia-lot-dressing'))).toBe(true);
+    }
+  });
+
+  it('every kind has a real segmented turf roof (never a smooth dome/blob): all 6 named layers present', () => {
+    const requiredLayers = ['turf-roof-rafters', 'turf-roof-board-deck', 'turf-roof-board-ends', 'turf-roof-turf-stop', 'turf-roof-soil-edge', 'turf-roof-grass-top'];
+    for (const kind of kinds) {
+      const g = getFactionBuildingVariant('vulperia', kind)!(makeDna(kind, 'vulperia', 11));
+      const names: string[] = [];
+      g.traverse(o => names.push(o.name));
+      for (const layer of requiredLayers) {
+        expect(names).toContain(layer);
       }
-    });
-    // Earth (dna.colors.walls), grass (#3d6b35) and facade (#4a3520) block
-    // materials should all be present as distinct merged meshes.
-    expect(materialColors.has(new THREE.Color(dna.colors.walls).getHexString())).toBe(true);
-    expect(materialColors.has(new THREE.Color('#3d6b35').getHexString())).toBe(true);
-    expect(materialColors.has(new THREE.Color('#4a3520').getHexString())).toBe(true);
-  });
-
-  it('carves a real doorway-sized gap in the block mound at the front (a genuine hole, not just an applied surface)', () => {
-    // The block occupancy grid itself (which the mound mesh is built from)
-    // must have an actual notch carved into the front face so the round
-    // door prop sits in a real recess rather than floating in front of a
-    // solid bank.
-    const grid = buildVulperiaDenMoundGrid(5, 6, 5, 3, { facade: true });
-    const bw = Math.round(6 / BLOCK_UNIT);
-    const bd = Math.round(5 / BLOCK_UNIT);
-    const cx = Math.round(bw / 2);
-    expect(hasBlock(grid, cx, 0, bd - 1)).toBe(false);
-  });
-
-  it('gives the door a colour that genuinely contrasts against the wall colour (not a same-hue near-match)', () => {
-    const g = FACTION_BUILDING_VARIANTS.vulperia!.villa!(makeDna('villa', 'vulperia', 5));
-    const wallColor = new THREE.Color('#d4a060'); // vulperia's FACTION_PRESETS wall colour
-    const colorDistance = (a: THREE.Color, b: THREE.Color) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
-    let maxDoorDistance = 0;
-    g.traverse(o => {
-      if (o instanceof THREE.Mesh && o.geometry.type === 'CircleGeometry' && o.material instanceof THREE.MeshStandardMaterial) {
-        const dist = colorDistance(o.material.color, wallColor);
-        if (dist > maxDoorDistance) maxDoorDistance = dist;
-      }
-    });
-    // A same-hue near-match (the original #6a3810 door vs #d4a060 wall) is
-    // only ~0.5 apart in this RGB colour-distance metric; a genuinely
-    // contrasting accent colour should be well clear of that.
-    expect(maxDoorDistance).toBeGreaterThan(0.6);
+    }
   });
 });
 

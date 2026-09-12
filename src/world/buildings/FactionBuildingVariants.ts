@@ -37,8 +37,8 @@ import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
+import { toadstoolTexture } from './FactionBlockTextures';
+import { buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
@@ -135,6 +135,34 @@ import {
   buildSlimeChapel as buildSlimeKitChapel,
   buildSlimeWatchtower as buildSlimeKitWatchtower,
 } from './slime/SlimeBuildingKit';
+// docs/superpowers/specs/2026-09-04-vulperia-buildings-design.md +
+// docs/superpowers/plans/2026-09-04-vulperia-buildings.md: the real
+// bespoke fox-folk warren kit-of-parts builders, one per canonical
+// BuildingKind (VulperiaBuildingKit.ts — coursed cob/timber walls,
+// five-piece framed openings, segmented sod/turf roofs with visible
+// ridge/hip seams and dark verge trim built via the new shared
+// `TurfRoof.ts` kit module, raised porches/dormers, rigorous berm/skirt
+// grounding), replacing this file's own legacy `vulperiaMound()`/
+// `buildVulperiaVilla()`/`buildVulperiaChapel()`/`buildVulperiaShop()`
+// BlockKit earthen-mound builders (villa/chapel/shop only, no house/
+// terraced/inn/blacksmith/watchtower coverage at all, and never a real
+// constructed building per the design spec's explicit "move to modular
+// constructed architecture" directive). `buildVulperiaDenMoundGrid()`
+// itself (the BlockKit heightfield helper) is preserved and still used
+// by WardFeatureClusters.ts for lore/ground-dressing den mounds outside
+// the building kind system. Aliased on import to the `VulperiaKit`
+// suffix, mirroring slime/dwarven/orcish/vampire/undead's own aliasing
+// convention above.
+import {
+  buildVulperiaHouse as buildVulperiaKitHouse,
+  buildVulperiaTerraced as buildVulperiaKitTerraced,
+  buildVulperiaShop as buildVulperiaKitShop,
+  buildVulperiaInn as buildVulperiaKitInn,
+  buildVulperiaBlacksmith as buildVulperiaKitBlacksmith,
+  buildVulperiaVilla as buildVulperiaKitVilla,
+  buildVulperiaChapel as buildVulperiaKitChapel,
+  buildVulperiaWatchtower as buildVulperiaKitWatchtower,
+} from './vulperia/VulperiaBuildingKit';
 
 // ── Shared helpers (mirrors WardFeatureClusters.ts's conventions) ────────────
 
@@ -162,305 +190,23 @@ function addMesh(g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x
 // §2e.3 — replaced by the grounded BlockKit heightfield mound,
 // `addBlockDenMound()`/`buildVulperiaDenMoundGrid()`, below.)
 
-/**
- * A ring of small chunky timber-stave blocks (BoxGeometry), each genuinely
- * 3D. Unlike `TorusGeometry` or an extruded annulus, no single piece is a
- * thin/hollow shape, so the ring can never degenerate into a hollow-loop
- * "hook" silhouette when a building's cardinal rotation (0/90/180/270) turns
- * it away from face-on to the fixed isometric camera — worst case (viewed
- * dead edge-on) it just reads as a scattered cluster of wood blocks, which
- * still looks like intentional timber framing rather than a rendering
- * artifact.
- */
-function addTimberRingSegments(
-  g: THREE.Group,
-  cx: number, cy: number, cz: number,
-  radius: number, material: THREE.Material,
-  count: number, segSize: number, segDepth: number,
-): void {
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * Math.PI * 2;
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(segSize, segSize, segDepth), material);
-    seg.position.set(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius, cz);
-    seg.rotation.z = ang;
-    seg.castShadow = true;
-    g.add(seg);
-  }
-}
-
-/**
- * A round, timber-framed door dug into an earthen bank (Bag-End style): a
- * ring of chunky timber staves standing in for the frame, a recessed shadow
- * disc, a round door panel with vertical plank strips (boxes — real volume,
- * robust from any angle), a brass handle, and a stone step/apron leading up
- * to it. Faces +Z (the building's canonical front).
- */
-function addRoundDoor(g: THREE.Group, cx: number, doorY: number, cz: number, frameColor: string, doorColor: string, radius = 0.55): void {
-  const frameMat = mat(frameColor, { roughness: 0.85 });
-  const doorMat = mat(doorColor, { roughness: 0.7 });
-  const shadowMat = mat('#120c08', { roughness: 1 });
-
-  // Recess shadow — a flat disc degrades safely to a thin line (not a
-  // distracting artifact) when viewed edge-on, unlike a hollow ring.
-  addMesh(g, new THREE.CircleGeometry(radius * 0.85, 16), shadowMat, cx, doorY, cz - 0.04);
-
-  // Round timber-stave frame.
-  addTimberRingSegments(g, cx, doorY, cz, radius * 0.92, frameMat, 10, radius * 0.34, radius * 0.3);
-
-  // The door itself + vertical plank strips (boxes, real volume, robust).
-  addMesh(g, new THREE.CircleGeometry(radius * 0.72, 16), doorMat, cx, doorY, cz + 0.02);
-  for (const [i, plankH] of [[-1, 1.0], [0, 1.3], [1, 1.0]] as const) {
-    addMesh(g, new THREE.BoxGeometry(radius * 0.16, radius * plankH, 0.035), frameMat, cx + i * radius * 0.36, doorY, cz + 0.04);
-  }
-
-  // Brass handle.
-  const handleMat = mat('#c9a24a', { metalness: 0.6, roughness: 0.35 });
-  addMesh(g, new THREE.SphereGeometry(radius * 0.1, 8, 8), handleMat, cx + radius * 0.4, doorY, cz + 0.08);
-
-  // Stone step/apron.
-  const stepMat = mat('#8a8578', { roughness: 0.95 });
-  addMesh(g, new THREE.CylinderGeometry(radius * 1.1, radius * 1.15, 0.08, 12), stepMat, cx, 0.04, cz + radius * 0.8);
-}
-
-/** A small round port-hole window: a timber-stave ring + inset glass disc, facing +Z. */
-function addRoundWindow(g: THREE.Group, cx: number, cy: number, cz: number, frameColor: string, lit: boolean, radius = 0.22): void {
-  const frameMat = mat(frameColor, { roughness: 0.85 });
-  addTimberRingSegments(g, cx, cy, cz, radius * 0.95, frameMat, 8, radius * 0.36, radius * 0.28);
-  addMesh(g, new THREE.CircleGeometry(radius * 0.65, 12), glassLikeMat(lit), cx, cy, cz + 0.02);
-}
-
-function glassLikeMat(lit: boolean): THREE.MeshStandardMaterial {
-  return lit
-    ? mat('#f0c878', { emissive: new THREE.Color('#f0c060'), emissiveIntensity: 0.7, roughness: 0.4 })
-    : mat('#2a3038', { roughness: 0.3, metalness: 0.1 });
-}
-
-/** A stubby stone chimney stack with a small wisp of smoke. */
-function addChimneyStack(g: THREE.Group, cx: number, apexY: number, cz: number, dna: BuildingDNA): void {
-  const stoneMat = mat(dna.colors.trim, { roughness: 0.95 });
-  addMesh(g, new THREE.CylinderGeometry(0.16, 0.2, 0.55, 8), stoneMat, cx, apexY + 0.28, cz);
-  addMesh(g, new THREE.CylinderGeometry(0.22, 0.22, 0.08, 8), stoneMat, cx, apexY + 0.55, cz);
-  const smokeMat = mat('#e8e4dc', { transparent: true, opacity: 0.35, roughness: 1 });
-  addMesh(g, new THREE.SphereGeometry(0.18, 8, 6), smokeMat, cx + 0.05, apexY + 0.85, cz);
-}
-
-/** A scatter of grass-tuft blades and the odd wildflower over the mound's crown. */
-function addGrassTufts(g: THREE.Group, seed: number, apexY: number, capRadius: number, count: number): void {
-  const r = mulberry32(seed);
-  const grassMat = mat('#6a8a3a', { roughness: 0.9 });
-  const flowerMat = mat('#e8d868', { emissive: new THREE.Color('#e8d868'), emissiveIntensity: 0.15, roughness: 0.6 });
-  for (let i = 0; i < count; i++) {
-    const ang = r() * Math.PI * 2;
-    const rad = r() * capRadius;
-    const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
-    const bladeH = 0.18 + r() * 0.16;
-    addMesh(g, new THREE.ConeGeometry(0.045, bladeH, 5), grassMat, x, apexY + bladeH / 2 - 0.05, z, r() * Math.PI);
-    if (r() < 0.3) {
-      addMesh(g, new THREE.SphereGeometry(0.035, 6, 5), flowerMat, x + 0.05, apexY, z);
-    }
-  }
-}
-
-/** A small wood-plank garden fence flanking the path, either side of `cz`. */
-function addGardenFence(g: THREE.Group, cz: number, halfSpan: number, dna: BuildingDNA): void {
-  const postMat = mat(dna.colors.trim, { roughness: 0.9 });
-  for (const side of [-1, 1]) {
-    const px = side * halfSpan;
-    addMesh(g, new THREE.CylinderGeometry(0.04, 0.045, 0.45, 6), postMat, px, 0.22, cz);
-    addMesh(g, new THREE.CylinderGeometry(0.04, 0.045, 0.45, 6), postMat, px, 0.22, cz + 0.35);
-    addMesh(g, new THREE.BoxGeometry(0.4, 0.05, 0.05), postMat, px, 0.32, cz + 0.17, Math.PI / 2);
-  }
-}
-
-/** A wooden planter barrel with a small bush/sprig — cosy dooryard clutter. */
-function addPlanterBarrel(g: THREE.Group, x: number, z: number): void {
-  const woodMat = mat('#6a4a28', { roughness: 0.9 });
-  addMesh(g, new THREE.CylinderGeometry(0.18, 0.2, 0.4, 10), woodMat, x, 0.2, z);
-  const plantMat = mat('#4a7a30', { roughness: 0.9 });
-  addMesh(g, new THREE.ConeGeometry(0.16, 0.35, 6), plantMat, x, 0.55, z);
-  addMesh(g, new THREE.SphereGeometry(0.14, 8, 6), plantMat, x, 0.42, z);
-}
-
-// ── Vulperia — earthen burrow/den architecture ───────────────────────────────
-// Fox Den (patriciate), Den Mother's Hall (church), Night Market (market):
-// dug-in earthen mounds, hobbit-hole-style — a grounded BlockKit heightfield
-// hill (Phase 2e §2e.3; small grid-aligned earth/grass blocks with
-// marching-squares-style corner rounding at the silhouette, NOT a deformed
-// sphere primitive), a real round timber door dug into a carved facade
-// notch with a proud frame, handle and stone step, port-hole windows either
-// side, a chimney stack, a grassy/wildflower crown, and dooryard clutter
-// (fence, planter, crates).
-
-/**
- * Build+mesh+center a vulperia den mound from the BlockKit heightfield
- * profile (`buildVulperiaDenMoundGrid`) — the Phase 2e replacement for the
- * old `addOrganicMound()` deformed-sphere body. Returns a group already
- * positioned so (0,0,0) is the footprint centre at ground level, matching
- * the coordinate convention the rest of this file's prop placement
- * (facade, door, windows, chimney, grass) assumes.
- */
-function addBlockDenMound(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  earthColor: string, grassColor: string, facadeColor: string,
-  opts: DenMoundOptions = {},
-): void {
-  const grid = buildVulperiaDenMoundGrid(seed, w, d, h, opts);
-  const palette = {
-    earth:  mat(earthColor, { roughness: 0.98, map: earthTexture() }),
-    grass:  mat(grassColor, { roughness: 0.9 }),
-    facade: mat(facadeColor, { roughness: 0.92 }),
-  };
-  const mesh = meshBlockGrid(grid, palette);
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function vulperiaMound(dna: BuildingDNA, w: number, d: number, h: number, opts: { chimney?: boolean; garden?: boolean } = {}): THREE.Group {
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x5011_DE41);
-  // Hardcoded, saturated accent colours rather than the faction palette's
-  // own trim/door tones: vulperia's palette (walls #d4a060, trim #c88030,
-  // door #6a3810) is all one warm-brown hue family with almost no value/hue
-  // contrast between "wall", "trim" and "door" — which is exactly why the
-  // first attempt at this mound read as a uniform blob with no legible
-  // features: nothing on it actually contrasted against anything else.
-  const grassGreen = '#3d6b35';
-  const facadeColor = '#4a3520';
-  const doorGreen = '#2f5233';
-
-  // Main earthen bank — a grounded BlockKit heightfield hill built from
-  // small earth/grass blocks with a carved facade/doorway notch (Phase 2e
-  // §2e.3), replacing the old deformed-sphere-plus-noise body. Silhouette
-  // irregularity now comes from per-column height variation + the shared
-  // engine's marching-squares-style corner rounding, not mesh deformation.
-  addBlockDenMound(g, dna.seed ^ 0x5011_DE40, w, d, h, dna.colors.walls, grassGreen, facadeColor, {
-    facade: true, jitter: 0.24,
-  });
-  const facadeMat = mat(facadeColor, { roughness: 0.92 });
-  const facadeW = w * 0.42; // matches buildVulperiaDenMoundGrid's default facadeWidthFrac
-  const facadeH = h * 0.62;
-
-  // Round timber-framed door, sized to dominate the facade (a large,
-  // obviously-primary feature, not a token detail lost against the hill),
-  // painted a colour that actually contrasts against the warm earth tones.
-  const doorR = facadeH * 0.4;
-  const doorY = doorR * 1.05;
-  addRoundDoor(g, 0, doorY, d / 2 + 0.07, facadeColor, doorGreen, doorR);
-
-  // Round port-hole windows flanking the door, also enlarged.
-  const lit = (dna.seed & 1) === 0;
-  for (const wx of [-facadeW * 0.32, facadeW * 0.32]) {
-    addRoundWindow(g, wx, facadeH * 0.78, d / 2 + 0.07, facadeColor, lit, doorR * 0.42);
-  }
-
-  // Timber lintel beam over the door.
-  addMesh(g, new THREE.BoxGeometry(doorR * 2.4, 0.12, 0.18), facadeMat, 0, doorY + doorR * 1.2, d / 2 + 0.06);
-
-  // Fox-tail banner on a pole beside the entrance.
-  const poleMat = mat('#5a4020', { roughness: 0.85 });
-  addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, h * 0.9, 6), poleMat, w / 2 + 0.15, h * 0.45, d / 2 - 0.3);
-  const bannerMat = mat(doorGreen, { roughness: 0.7, side: THREE.DoubleSide });
-  addMesh(g, new THREE.ConeGeometry(0.14, 0.5, 6), bannerMat, w / 2 + 0.15, h * 0.75, d / 2 - 0.3);
-
-  // Grass tufts + wildflowers scattered over the (now visibly green) crown.
-  addGrassTufts(g, dna.seed ^ 0x5011_DE44, h * 0.88, Math.min(w, d) * 0.3, 9);
-
-  if (opts.chimney !== false) {
-    addChimneyStack(g, -w * 0.2, h * 0.92, -d * 0.05, dna);
-  }
-  if (opts.garden) {
-    addPlanterBarrel(g, -Math.min(w, d) * 0.45, d / 2 + 0.15);
-    addGardenFence(g, d / 2 + 0.2, Math.min(w, d) * 0.55, dna);
-  }
-
-  // Tinker-scrap: small crate clutter typical of a den market/hall.
-  const crateMat = mat('#8a6840', { roughness: 0.9 });
-  for (let i = 0; i < 2; i++) {
-    const cx = (r() - 0.5) * w * 0.6;
-    const cz = -d / 2 + 0.3 + r() * 0.4;
-    addMesh(g, new THREE.BoxGeometry(0.35, 0.35, 0.35), crateMat, cx, 0.18, cz, r() * 0.6);
-  }
-
-  return g;
-}
-
-function buildVulperiaVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.85;
-  const g = vulperiaMound(dna, fp.w, fp.d, h, { chimney: true, garden: true });
-  // Fox Den (seat of the settlement's leader): a second, smaller den mound
-  // overlapping the main bank so the pair reads as one dug-in burrow complex.
-  const r = mulberry32(dna.seed ^ 0x5011_DE42);
-  const sideSize = Math.min(fp.w, fp.d) * 0.56;
-  const sideCx = fp.w / 2 + sideSize * 0.3, sideCz = -fp.d * 0.15 + r() * 0.2;
-  const sideGroup = new THREE.Group();
-  addBlockDenMound(sideGroup, dna.seed ^ 0x5011_DE45, sideSize, sideSize, sideSize * 0.42, dna.colors.walls, '#3d6b35', '#4a3520');
-  sideGroup.position.set(sideCx, 0, sideCz);
-  g.add(sideGroup);
-  return g;
-}
-
-function buildVulperiaChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 0.9;
-  const g = vulperiaMound(dna, fp.w, fp.d * 0.6, h, { chimney: false, garden: false });
-  // Den Mother's Hall: flanking smaller burrow-pups either side of the main mound.
-  const pupSize = Math.min(fp.w, fp.d) * 0.36;
-  let pupSeed = 0x5011_DE46;
-  for (const px of [-fp.w * 0.42, fp.w * 0.42]) {
-    const pupGroup = new THREE.Group();
-    addBlockDenMound(pupGroup, dna.seed ^ pupSeed, pupSize, pupSize, pupSize * 0.4, dna.colors.walls, '#3d6b35', '#4a3520');
-    pupGroup.position.set(px, 0, fp.d * 0.15);
-    g.add(pupGroup);
-    pupSeed += 1;
-  }
-  return g;
-}
-
-function buildVulperiaShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.55;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x5011_DE43);
-  // Night Market den-mouth stall: low earthen mound base with a pole-and-
-  // canvas market awning over the counter (not a pointy witch-hat "roof"
-  // stuck on top of the mound -- the mound's own grassy crown already
-  // reads as its roof, and a separate peaked cap floating above/behind it
-  // just looked disconnected and wrong).
-  const baseGroup = new THREE.Group();
-  addBlockDenMound(baseGroup, dna.seed ^ 0x5011_DE47, Math.max(fp.w, fp.d), Math.max(fp.w, fp.d), h, dna.colors.walls, '#3d6b35', '#4a3520');
-  baseGroup.position.set(0, 0, -fp.d * 0.15);
-  g.add(baseGroup);
-  // Counter/table + hanging pelts + string lanterns.
-  const woodMat = mat('#6a4a28', { roughness: 0.9 });
-  const counterZ = fp.d * 0.35;
-  addMesh(g, new THREE.BoxGeometry(fp.w * 0.7, 0.4, 0.4), woodMat, 0, 0.2, counterZ);
-  // Awning: two corner poles planted at the counter's front edge, and a
-  // single flat, gently-tilted canvas panel resting across their tops --
-  // a real pole-supported stall canopy over the counter, not a shape
-  // floating disconnected from anything.
-  const poleH = h * 0.95;
-  const awningHalfW = fp.w * 0.42;
-  for (const px of [-awningHalfW, awningHalfW]) {
-    addMesh(g, new THREE.CylinderGeometry(0.05, 0.05, poleH, 6), woodMat, px, poleH / 2, counterZ + 0.25);
-  }
-  const canvasMat = mat(dna.colors.roof, { roughness: 0.75, side: THREE.DoubleSide });
-  const canopy = addMesh(g, new THREE.BoxGeometry(awningHalfW * 2 + 0.3, 0.06, fp.d * 0.4), canvasMat, 0, poleH, counterZ - fp.d * 0.05);
-  canopy.rotation.x = -0.12; // slight forward tilt so it reads as taut cloth, not a flat slab
-  const peltMat = mat('#a88060', { roughness: 0.95 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.BoxGeometry(0.2, 0.5, 0.05), peltMat, -fp.w * 0.3 + i * fp.w * 0.3, h * 0.7, fp.d * 0.3 + 0.1);
-  }
-  const lanternMat = mat('#f0c060', { emissive: new THREE.Color('#f0c060'), emissiveIntensity: 0.6, roughness: 0.6 });
-  for (let i = 0; i < 3; i++) {
-    addMesh(g, new THREE.SphereGeometry(0.08 + r() * 0.02, 6, 6), lanternMat, -fp.w * 0.35 + i * fp.w * 0.35, h + 0.4, fp.d * 0.1);
-  }
-  return g;
-}
+// ── Vulperia — fox-folk warren architecture ─────────────────────────────────
+// REMOVED (docs/superpowers/plans/2026-09-04-vulperia-buildings.md): the old
+// addTimberRingSegments/addRoundDoor/addRoundWindow/glassLikeMat/
+// addChimneyStack/addGrassTufts/addGardenFence/addPlanterBarrel/
+// addBlockDenMound/vulperiaMound/buildVulperiaVilla/buildVulperiaChapel/
+// buildVulperiaShop earthen-mound functions that used to live here have
+// been fully replaced by src/world/buildings/vulperia/VulperiaBuildingKit.ts's
+// real coursed cob/timber + segmented turf-roof kit-of-parts builders
+// (imported above as buildVulperiaKit*), which now cover all 8 canonical
+// kinds via the vulperia registry entry below. `buildVulperiaDenMoundGrid()`
+// itself (FactionBlockProfiles.ts) is NOT removed -- it remains a genuine,
+// separately-used BlockKit heightfield helper for lore/ground-dressing den
+// mounds (FactionTerritoryProps.ts), just no longer for building kinds.
+// Deleted (rather than left in place unused) because tsconfig's
+// noUnusedLocals:true turns dead code into real new tsc errors, matching
+// the precedent set by slime/dwarven/orcish/vampire/undead's own registry
+// rewires above.
 
 // ── Slime — translucent gelatinous blob architecture ─────────────────────────
 // REMOVED (Task 15/17, docs/superpowers/plans/2026-09-04-slime-buildings.md):
@@ -685,22 +431,24 @@ function buildFaeShop(dna: BuildingDNA): THREE.Group {
 
 export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<BuildingKind, (dna: BuildingDNA) => THREE.Group>>>> = {
   vulperia: {
-    villa:    buildVulperiaVilla,
-    chapel:   buildVulperiaChapel,
-    shop:     buildVulperiaShop,
-    // See elven's `house`/`terraced` comment above for why these two
-    // extra WARD_TO_KIND-driven kinds matter — same fix applied here.
-    house:    buildVulperiaVilla,
-    terraced: buildVulperiaVilla,
-    // Phase 2b increment 3: `inn` (inn ward) and `blacksmith` (smithy
-    // ward) are the two remaining WARD_TO_KIND-driven kinds that had no
-    // faction override at all (fell through to the generic default
-    // builder even here). Reusing the villa builder is safe — it derives
-    // its footprint dynamically from getFootprint(dna.buildingKind,
-    // dna.size), so it scales correctly to inn's larger lot and
-    // blacksmith's medium lot rather than assuming villa's fixed size.
-    inn:        buildVulperiaVilla,
-    blacksmith: buildVulperiaVilla,
+    // docs/superpowers/plans/2026-09-04-vulperia-buildings.md: vulperia is
+    // the sixth faction (after slime/dwarven/orcish/vampire/undead) with a
+    // real bespoke kit builder for every canonical kind
+    // (VulperiaBuildingKit.ts's fox-folk warren construction — coursed
+    // cob/timber walls, five-piece framed openings, segmented sod/turf
+    // roofs with visible ridge/hip seams via the new shared TurfRoof.ts
+    // kit module, raised porches/dormers, rigorous berm/skirt grounding),
+    // replacing the earlier "earthen mound reused for villa/chapel/shop,
+    // no house/terraced/inn/blacksmith/watchtower at all" stopgap.
+    house:      buildVulperiaKitHouse,
+    terraced:   buildVulperiaKitTerraced,
+    shop:       buildVulperiaKitShop,
+    inn:        buildVulperiaKitInn,
+    blacksmith: buildVulperiaKitBlacksmith,
+    villa:      buildVulperiaKitVilla,
+    chapel:     buildVulperiaKitChapel,
+    watchtower: buildVulperiaKitWatchtower,
+    tower:      buildVulperiaKitWatchtower,
   },
   slime: {
     // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): slime
