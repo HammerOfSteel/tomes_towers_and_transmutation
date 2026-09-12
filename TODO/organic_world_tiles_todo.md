@@ -532,7 +532,7 @@ prop can stretch to fit a variable gap instead of only uniform-scaling, and so h
 
 ---
 
-## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ Elven (4 building types) + Slime/Dwarven/Orcish/Vampire (8 canonical kinds each) shipped, 2026-09-02/06 — 4 of 9 races still plan-only
+## Phase 6 — Procedural race-by-race building construction (Elven stone-tower kit + living-tree home + market stall + chapel kit-of-parts; Slime mimic-culture 8-kind kit) ✅ COMPLETE 2026-09-02 through 2026-09-12 — all 9 races (elven, slime, dwarven, orcish, vampire, undead, vulperia, fae, human) now have full 8-canonical-kind bespoke kit-of-parts building implementations
 
 **Goal:** move past "stacking blocks looks okayish" toward a genuinely
 researched, modular "kit of parts" construction method per race,
@@ -1917,6 +1917,144 @@ Slime, Human — Slime/Human last, since those already look best).
 **Non-goal for this phase**: applying lessons learned here back to
 terrain/nature tile-connection — explicitly a *future* step the user
 named, after all races' buildings are done.
+
+- [x] **6.15 — Ninth and FINAL race: human 8-kind kit-of-parts
+  (branch `race/human-buildings`) — PROCEDURAL BUILDING PROGRAMME
+  COMPLETE** — human is the deliberately-deprioritized BASELINE
+  settlement kit (the last race precisely because it's the one that
+  "already looks best" with generic/legacy geometry): familiar
+  medieval-European vernacular — timber frame, plaster infill, stone
+  ground floors, jetties/overhangs, clay tile, slate, and thatch
+  roofs — designed so a human street reads as "built by many hands
+  over centuries" via internal variety (split grammar + module
+  swapping + seeded jitter) rather than an exotic silhouette.
+  Established a fresh baseline by merging `origin/main` (elven +
+  slime + dwarven + orcish + vampire + undead + vulperia + fae all
+  already merged) into `race/human-buildings` first — no conflicts —
+  then confirmed the 146-error tsc baseline and ~11-17 known-flaky
+  vitest failures still held before making any change.
+  Delivered the programme's two flagship `[SHARED KIT]` contributions
+  (both built generically for reuse by any future race, not
+  human-only): **`TimberFrame.ts`** — a proud structural half-timber
+  frame (posts/rails/braces/studs at +0.08 WU) with recessed infill
+  panels (0.00/-0.04 WU), satisfying the depth-ladder doctrine with
+  real per-member geometry, never a flat printed half-timber texture
+  — and **`HumanJetty.ts`** — upper floors projecting 0.28-0.45 WU
+  past the lower wall on a real bressummer beam with exposed joist
+  ends and corbel/knee-brace supports, not a simple enlarged upper
+  box. Also shipped **`ThatchRoofSurface.ts`** (stacked fibrous
+  bands, a thick rolled eave course, and a pegged ridge cap) as a
+  sibling to the existing `ShingleSurface.ts` (reused unmodified for
+  tile/slate coursing with running-bond stagger), plus
+  human-specific `HumanBuildingMaterials.ts` (thatched/timber/tudor
+  palettes keyed off `dna.faction`), `HumanOpenings.ts` (five-piece
+  recess/proud-surround/sill/mullion/set-back-glazing windows and
+  doors, including an oculus variant reused as the chapel's rose
+  window and, at extreme narrow-tall proportions, the watchtower's
+  arrow loops — deliberately reusing the same real construction
+  rather than hand-rolling new geometry for either), and
+  `HumanBuildingProps.ts` (window boxes, hanging shop signs, barrels,
+  lanterns, banner poles, grave markers, flower pots).
+  All 8 canonical kinds shipped in `HumanBuildingsKit.ts` (~2000
+  lines) per the human design spec's per-kind blueprint: house/
+  terraced/villa/inn/shop/blacksmith all combine `TimberFrame.ts` +
+  `HumanJetty.ts` in varying proportions (villa additionally earns a
+  dentil cornice frieze band via the shared `FriezeBand.ts` as "the
+  grandest human kind"); chapel is a 4x8 stone nave built via the
+  shared `buildStoneHall` helper with real corner/long-wall
+  `Buttress.ts` buttresses, `VoussoirArch.ts` relieving arches over
+  its arched windows and west door, a gable oculus, and a hand-built
+  timber bellcote; watchtower is a 4-tier battered stone taper
+  reusing dwarven's `SteppedBatterProfile.ts` (`makeBatteredRectangleTiers()`)
+  and `StringCourse.ts` for tier transitions, with 3 weighted crown
+  variants (crenellated parapet / slate pyramidal / tile hipped) and
+  an **unconditional** small timber lookout hoarding — added
+  specifically so this one all-stone kind still always carries a
+  genuine `TimberFrame` member, which the cross-kind regression test
+  (`HumanBuildingsKit.test.ts`, 69 tests) checks for across every
+  kind. Mandatory per-facade asymmetry (off-centre doors, one
+  differing shutter/panel/chimney/dormer) implemented throughout via
+  seeded per-facade jitter, matching the doctrine's "orderly but not
+  mirrored" framing for humans specifically.
+  Wired into `FACTION_BUILDING_VARIANTS` for all three human
+  sub-factions (`human_rural`/`human_town`/`human_noble` — confirmed
+  via the registry file's own doc comment that human had *never*
+  been wired in before, so this was a pure addition, not a replace of
+  legacy code, unlike dwarven/orcish/etc.'s BlockKit removals) and
+  into Settlement Lab's `POC_KIND_OVERRIDE_BY_FACTION` (a `human`
+  entry forcing the first building to `watchtower`, the one kind
+  with no `WARD_TO_KIND` entry and so otherwise unreachable — the
+  same one-forced-slot pattern used by every one of the other 8
+  races).
+  **uv-attribute merge-drop bug class**: a targeted sweep of every
+  custom `THREE.BufferGeometry`/`setAttribute` call across all new
+  human files found only `ThatchRoofSurface.ts`'s gable-end geometry,
+  confirmed it already sets both `position` and `uv` plus computed
+  normals correctly — no new instance of the bug class that hit
+  elven's `StoneTowerFloorCap.ts` or slime's `SlimeAccretionKit.ts`/
+  `Ruinate.ts`, no new regression test needed.
+  **Two real regressions caught by the fresh full-suite run after
+  wiring** (both pre-existing tests that had used human as their
+  canonical "uncovered faction" example, now stale since human is
+  wired): `FactionBuildingVariants.test.ts`'s "returns null for an
+  uncovered (faction, kind) pair" and `buildBuilding()`'s "falls back
+  to the shared shape... when faction has no variant" both switched
+  their example from `human_town` to `draconic` (a `Faction` value
+  genuinely outside the 9-race programme, confirmed via a registry
+  grep); `SettlementLabScene.test.ts`'s "other factions without a
+  shipped POC override" test switched from `faction: 'human'` to an
+  unrecognized faction string (since literally every `STUDIO_FACTIONS`
+  entry now has an override, there is no real remaining "uncovered"
+  example) — and a new dedicated "selecting faction=human shows a
+  mix of human building kinds... " showcase test was added, mirroring
+  every other race's equivalent test exactly.
+  **Live-verified via Playwright** against a dev server started from
+  this worktree on an unused port (5199, confirmed via `lsof` it was
+  this worktree's own `node_modules/.bin/vite` process, not a stale
+  server from a different checkout): all 9 factions (elven, slime,
+  dwarven, orcish, vampire, undead, vulperia, fae, human) render real
+  building counts (27-78 buildings for a city-sized settlement, 4
+  roads, ~37 lamps) with **zero console errors**, and each shows its
+  own `POC override: showcase (all <faction> kits)` readout,
+  confirming every faction is reachable and shows real kit-of-parts
+  geometry, never leftover placeholder/BlockKit primitives. Human
+  close-ups (WASD movement + the `V` WoW-camera-mode key binding for
+  mouse-driven orbit/zoom, following fae's precedent) confirmed real
+  proud diagonal timber cross-bracing over recessed lighter infill
+  panels (genuine `TimberFrame` construction, not a flat texture), a
+  rolled/bundled thatch roof with visible stacked-fiber texture, dark
+  angled tile/slate roof coursing, a visible chimney stack, and
+  varied per-building silhouettes across the settlement (no two
+  adjacent buildings identical).
+  **Full regression**: `npx tsc --noEmit` holds at the established
+  146-error baseline throughout (zero human-related errors, including
+  after the `FactionBuildingVariants.ts`/`SettlementLabScene.ts`
+  wiring changes). Whole-suite `npx vitest run`: all human test files
+  (`tests/world/buildings/human/`, 4 files) plus the 3 targeted
+  registry files (`FactionBuildingVariants.test.ts`/
+  `SettlementLabScene.test.ts`/`SettlementRenderer.test.ts`, 204
+  tests) pass cleanly in isolation; a full-suite run showed the same
+  pre-existing/flaky timeout-driven failures documented for every
+  prior race (`main.startup.smoke`/`enemyLoader`/`towerGenerator`/
+  `talentSystem`/`OverworldScene` chunk-streaming/`ResourceNodePlacer`/
+  `WaterMaterial`/`WorldGenerator`/`StoneTowerKit`/`Tracery`/
+  `VampireBuildingKit`) — re-running the two registry-adjacent
+  failures (a slime Settlement Lab test, a slime villa
+  `FactionBuildingVariants` test) in isolation with a longer timeout
+  confirmed they pass every time, proving these are load-dependent
+  5-second-default-timeout flakes on unrelated slime files, not
+  deterministic failures and not caused by this race's changes.
+  **THIS COMPLETES THE FULL 9-RACE PROCEDURAL BUILDING PROGRAMME**:
+  elven, slime, dwarven, orcish, vampire, undead, vulperia, fae, and
+  human all now have complete, tested, live-verified 8-canonical-kind
+  (house/terraced/shop/inn/blacksmith/villa/chapel/watchtower)
+  kit-of-parts building implementations, reachable both through
+  normal settlement generation (7 of 8 kinds via each faction's
+  `WARD_TO_KIND` ward mix) and through Settlement Lab's per-faction
+  showcase override (the 8th kind, watchtower, which has no
+  `WARD_TO_KIND` mapping for any race). Zero leftover BlockKit/
+  primitive-blob placeholder geometry remains for any of the 9
+  factions in the live settlement generator.
 
 ---
 
