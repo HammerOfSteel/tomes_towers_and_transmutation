@@ -414,3 +414,40 @@ describe('SettlementLabScene — race-by-race POC override (orcish building-kit 
     lab.exit();
   }, 15000);
 });
+
+describe('SettlementLabScene — race-by-race POC override (undead building-kit showcase)', () => {
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+
+  beforeAll(async () => {
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+  });
+
+  // Same rationale as orcish's equivalent test above: a full 'city'
+  // settlement's worth of necropolis kit buildings is geometry-heavy enough
+  // to warrant the same explicit longer timeout.
+  it('selecting faction=undead shows a mix of undead building kinds via natural ward mapping PLUS a forced watchtower (the only undead kind with no WARD_TO_KIND entry, so it never appears naturally) -- letting every shipped undead building kit be reviewed together in one settlement', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    lab.enter({ seed: 7, type: 'city', faction: 'undead', layout: 'auto' });
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.size).toBeGreaterThan(1);
+    expect(kinds.has('watchtower')).toBe(true);
+    const watchtowerCount = result.buildingRecords.filter(r => r.dna.buildingKind === 'watchtower').length;
+    expect(watchtowerCount).toBe(1);
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
+    expect(readoutEl.textContent).toContain('POC override: showcase');
+
+    lab.exit();
+  }, 15000);
+});
