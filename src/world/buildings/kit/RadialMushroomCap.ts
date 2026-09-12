@@ -210,6 +210,34 @@ function buildTileShape(width: number, height: number, silhouette: 'rectangular'
   return shape;
 }
 
+/**
+ * Computes the orientation for a single shingle tile bridging `base` (the
+ * outer/lower sample point on the cap profile) to `top` (the inner/upper
+ * sample point) at radial angle `angle`. Local X (the tile shape's WIDTH
+ * axis) must map to the circumferential/band-tangent direction so each
+ * tile's flat wide face runs along the ring, tiling edge-to-edge with its
+ * neighbors; local Y (the tile shape's HEIGHT axis) maps to the slope
+ * direction (base -> top); local Z (the small extrude DEPTH axis) must
+ * map to the outward-facing surface normal, giving only a slight physical
+ * relief bump -- never the reverse, which turns every tile into a thin
+ * spike poking straight out of the roof with gaps between them (the
+ * "shard explosion" bug fixed here: swapping which axis got the tile's
+ * large width vs. its tiny extrude depth).
+ */
+export function computeTileOrientation(base: THREE.Vector3, top: THREE.Vector3, angle: number): THREE.Quaternion {
+  const slopeDir = top.clone().sub(base).normalize();
+  const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+  // Purely circumferential (always exactly horizontal: base and top share
+  // the same angle, so slopeDir and outward both lie in the vertical-radial
+  // plane at this angle, and their cross product is perpendicular to it).
+  const bandTangent = new THREE.Vector3().crossVectors(slopeDir, outward).normalize();
+  // Perpendicular to both slopeDir and bandTangent -- the true outward-and-
+  // up-facing surface normal.
+  const faceNormal = new THREE.Vector3().crossVectors(bandTangent, slopeDir).normalize();
+  const basis = new THREE.Matrix4().makeBasis(bandTangent, slopeDir, faceNormal);
+  return new THREE.Quaternion().setFromRotationMatrix(basis);
+}
+
 /** Concentric bands of discrete overlapping tiles riding on top of the ribs -- the same "individually readable pieces forming a curve" discipline `ShingleSurface.ts` uses for pitched roofs, wrapped circularly here. */
 function buildShingleBands(
   bandCount: number,
@@ -248,14 +276,11 @@ function buildShingleBands(
       const tile = new THREE.Mesh(tileGeom, material);
       tile.name = `tile-${band}-${i}`;
       tile.position.copy(base);
-      // Orient the tile so it lies along the local slope (base -> top) and
-      // faces outward radially, matching ShingleSurface's per-tile "kick".
-      const slopeDir = top.clone().sub(base).normalize();
-      const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-      const tileNormal = new THREE.Vector3().crossVectors(slopeDir, outward).normalize();
-      const tangent = new THREE.Vector3().crossVectors(tileNormal, slopeDir).normalize();
-      const basis = new THREE.Matrix4().makeBasis(tangent, slopeDir, tileNormal);
-      tile.quaternion.setFromRotationMatrix(basis);
+      // Orient the tile so its width runs along the ring (circumferential),
+      // its height climbs the local slope (base -> top), and only its thin
+      // extrude depth faces outward -- matching ShingleSurface's per-tile
+      // "kick", never a spike poking straight out of the roof.
+      tile.quaternion.copy(computeTileOrientation(base, top, angle));
       tile.castShadow = tile.receiveShadow = true;
       bandGroup.add(tile);
     }

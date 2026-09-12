@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildRadialMushroomCap, type RadialMushroomCapPalette } from '@/world/buildings/kit/RadialMushroomCap';
+import { buildRadialMushroomCap, computeTileOrientation, type RadialMushroomCapPalette } from '@/world/buildings/kit/RadialMushroomCap';
 
 function makePalette(): RadialMushroomCapPalette {
   return {
@@ -100,6 +100,70 @@ describe('buildRadialMushroomCap', () => {
     for (let i = 0; i < posA.count; i++) sumA += posA.getX(i);
     for (let i = 0; i < posC.count; i++) sumC += posC.getX(i);
     expect(sumA).not.toBe(sumC);
+  });
+
+  describe('computeTileOrientation (regression: shard-explosion bug)', () => {
+    // Regression test for a real bug shipped in the fae race PR: the
+    // width/depth axes of each shingle tile were swapped, so every tile's
+    // large WIDTH dimension pointed straight out along the surface normal
+    // (a spike) while its tiny extrude DEPTH ran along the ring
+    // (near-invisible), producing a field of thin spikes with gaps between
+    // them instead of a tiled shingle band. Verified visually via
+    // Playwright screenshots showing a chaotic shard/spike mess instead of
+    // a curved roof surface.
+    function sampleCase(angle: number, alpha: number, beta: number) {
+      // A synthetic (base, top) pair matching the real profile geometry's
+      // invariant: both points share the same angle (pure radial-vertical
+      // motion, no circumferential drift), base further out/down, top
+      // further in/up.
+      const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+      const base = new THREE.Vector3(outward.x * 2, 0, outward.z * 2);
+      const slope = new THREE.Vector3(outward.x * alpha, beta, outward.z * alpha).normalize();
+      const top = base.clone().add(slope);
+      return { base, top, angle, outward };
+    }
+
+    it('maps the tile WIDTH axis (local X) to the purely-horizontal circumferential direction, never tilting toward the surface normal', () => {
+      for (const angle of [0, 0.7, Math.PI / 2, 2.3, Math.PI * 1.6]) {
+        const { base, top } = sampleCase(angle, -0.5, 0.8);
+        const quat = computeTileOrientation(base, top, angle);
+        const widthAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+        expect(Math.abs(widthAxis.y)).toBeLessThan(1e-6);
+      }
+    });
+
+    it('maps the tile DEPTH axis (local Z) to the outward-facing surface normal, not the circumferential direction', () => {
+      for (const angle of [0, 0.7, Math.PI / 2, 2.3, Math.PI * 1.6]) {
+        const { base, top, outward } = sampleCase(angle, -0.5, 0.8);
+        const quat = computeTileOrientation(base, top, angle);
+        const depthAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
+        // A true outward-facing normal has a large positive component along
+        // `outward`; the (buggy) circumferential direction would have ~0.
+        expect(depthAxis.dot(outward)).toBeGreaterThan(0.5);
+      }
+    });
+
+    it('every rendered shingle band stays close to the designed profile radius (no tile-width spikes ballooning the silhouette)', () => {
+      const cap = buildRadialMushroomCap({ radius: 2, rise: 1.4, palette: makePalette(), seed: 21 });
+      const bands = cap.getObjectByName('mushroom-cap-shingle-bands') as THREE.Group;
+      // With the bug fixed, tiles are thin along the true outward normal
+      // (tileDepth, ~radius*0.02) and wide along the ring -- so the overall
+      // radial footprint of the merged band geometry should stay close to
+      // the designed profile radius, not balloon outward by the tile WIDTH
+      // (which would be the case if width were still mapped to the normal).
+      for (const bandGroup of bands.children) {
+        const box = new THREE.Box3().setFromObject(bandGroup);
+        const maxRadius = Math.max(
+          Math.abs(box.min.x), Math.abs(box.max.x),
+          Math.abs(box.min.z), Math.abs(box.max.z),
+        );
+        // The outermost band's designed rim radius is 2; correct tile-depth
+        // relief keeps its footprint around ~2.07. The bug (tile WIDTH
+        // mapped to the outward normal instead of tile DEPTH) measurably
+        // balloons this to ~2.42 for the same seed/params.
+        expect(maxRadius).toBeLessThan(2.2);
+      }
+    });
   });
 
   it('rim sits below and outside the rib springing line (a real thick drip edge, not flush)', () => {
