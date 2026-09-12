@@ -66,8 +66,13 @@ describe('FACTION_BUILDING_VARIANTS registry', () => {
   }
 
   it('returns null for an uncovered (faction, kind) pair', () => {
-    expect(getFactionBuildingVariant('human_town', 'villa')).toBeNull();
-    expect(getFactionBuildingVariant('human_town', 'watchtower')).toBeNull();
+    // human_town gained a full bespoke kit (all 8 canonical kinds, see
+    // HumanBuildingsKit.ts) as the 9th and final race in the procedural
+    // building programme, so it no longer serves as an example of an
+    // uncovered faction. 'draconic'/'celestial' are Faction values that
+    // were never part of this programme and remain genuinely uncovered.
+    expect(getFactionBuildingVariant('draconic', 'villa')).toBeNull();
+    expect(getFactionBuildingVariant('draconic', 'watchtower')).toBeNull();
   });
 
   it('returns null when faction is undefined', () => {
@@ -150,11 +155,12 @@ describe('buildBuilding() dispatch — faction variant precedence', () => {
   });
 
   it('falls back to the shared shape + style overlay when faction has no variant for this kind', () => {
-    // human_town has no bespoke building-variant kit at all -> falls back
-    // to buildWatchtower(). (fae now has a real bespoke watchtower variant
-    // -- FaeBuildingKit.ts's Moonmoth Lookout -- so it no longer serves as
-    // an example of an uncovered kind.)
-    const inst = buildBuilding(makeDna('watchtower', 'human_town', 5));
+    // draconic has no bespoke building-variant kit at all (it was never
+    // part of the 9-race procedural building programme) -> falls back
+    // to buildWatchtower(). (fae and now human_town both have real bespoke
+    // watchtower variants, so neither serves as an example of an uncovered
+    // kind any more.)
+    const inst = buildBuilding(makeDna('watchtower', 'draconic', 5));
     expect(inst.exteriorGroup).toBeInstanceOf(THREE.Group);
     expect(countMeshes(inst.exteriorGroup)).toBeGreaterThan(0);
   });

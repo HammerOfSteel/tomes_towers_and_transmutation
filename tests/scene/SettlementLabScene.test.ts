@@ -238,10 +238,18 @@ describe('SettlementLabScene — race-by-race POC override (elven building-kit s
     expect(readoutEl.textContent).toContain('POC override: showcase');
   });
 
-  it('other factions without a shipped POC override keep the normal per-ward BuildingKind mix', () => {
+  it('an unrecognized faction string falls back to the default human faction with its showcase override still applied', () => {
+    // Every STUDIO_FACTIONS entry now has a shipped POC override -- human
+    // was the 9th and final race to get one (see the 'human' entry in
+    // POC_KIND_OVERRIDE_BY_FACTION's doc comment), completing the full
+    // 9-race procedural building programme. There is no longer any real
+    // faction left to demonstrate the "no override" fallback path with, so
+    // this instead documents enter()'s validation behavior: an
+    // unrecognized faction string (not in STUDIO_FACTIONS) is clamped to
+    // the 'human' default, which itself now carries a showcase override.
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' });
+    lab.enter({ seed: 7, type: 'city', faction: 'unmapped-faction', layout: 'auto' });
 
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
@@ -250,7 +258,7 @@ describe('SettlementLabScene — race-by-race POC override (elven building-kit s
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
-    expect(readoutEl.textContent).not.toContain('POC override');
+    expect(readoutEl.textContent).toContain('POC override: showcase (all human kits)');
 
     lab.exit();
   });
@@ -258,7 +266,7 @@ describe('SettlementLabScene — race-by-race POC override (elven building-kit s
   it('switching the panel faction dropdown to elven and clicking Regenerate applies the showcase override live', () => {
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
-    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' }); // starts with no override
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' }); // starts with human's own showcase override
 
     const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
     document.body.appendChild(panelEl);
@@ -479,6 +487,55 @@ describe('SettlementLabScene — race-by-race POC override (vulperia building-ki
     const scene = new THREE.Scene();
     const lab = new SettlementLabScene(scene, physics, player);
     lab.enter({ seed: 7, type: 'city', faction: 'vulperia', layout: 'auto' });
+
+    const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
+      ._renderResult;
+    expect(result.buildingRecords.length).toBeGreaterThan(0);
+
+    const kinds = new Set(result.buildingRecords.map(r => r.dna.buildingKind));
+    expect(kinds.size).toBeGreaterThan(1);
+    expect(kinds.has('watchtower')).toBe(true);
+    const watchtowerCount = result.buildingRecords.filter(r => r.dna.buildingKind === 'watchtower').length;
+    expect(watchtowerCount).toBe(1);
+
+    const panelEl = (lab as unknown as { _panel: { rootEl: HTMLElement } })._panel.rootEl;
+    const readoutEl = panelEl.querySelector('[data-role="readout"]') as HTMLElement;
+    expect(readoutEl.textContent).toContain('POC override: showcase');
+
+    lab.exit();
+  }, 15000);
+});
+
+// docs/superpowers/plans/2026-09-04-human-buildings.md: human is the 9th
+// and LAST race in the procedural building programme, completing it. Human
+// now has 8 shipped kit-of-parts building kinds (house/terraced/shop/inn/
+// blacksmith/villa/chapel/watchtower), registered for all three human
+// sub-factions (human_rural/human_town/human_noble) in
+// FactionBuildingVariants.ts — mirrors the elven/slime/dwarven/orcish/
+// vampire/undead/vulperia/fae showcase precedent above exactly.
+// watchtower/tower is the only kind with no WARD_TO_KIND entry
+// (src/buildingToDungeonPlan.ts), so it never spawns naturally and must be
+// forced the same way; the other 7 kinds are all reachable through a
+// 'city' settlement's normal ward mix (market/church/inn/smithy/
+// craftsmen-or-merchant-or-patriciate/slum/gateward-or-farm).
+describe('SettlementLabScene — race-by-race POC override (human building-kit showcase)', () => {
+  let physics: PhysicsWorld;
+  let player: PlayerController;
+
+  beforeAll(async () => {
+    physics = new PhysicsWorld();
+    await physics.init();
+    player = new PlayerController(physics, new THREE.Vector3(0, 5, 0));
+    player.applyDNA(DEFAULT_PLAYER_DNA);
+  });
+
+  // Same rationale as vulperia's/undead's equivalent test above: a full
+  // 'city' settlement's worth of timber-frame/jetty kit buildings is
+  // geometry-heavy enough to warrant the same explicit longer timeout.
+  it('selecting faction=human shows a mix of human building kinds via natural ward mapping PLUS a forced watchtower (the only human kind with no WARD_TO_KIND entry, so it never appears naturally) -- letting every shipped human building kit be reviewed together in one settlement', () => {
+    const scene = new THREE.Scene();
+    const lab = new SettlementLabScene(scene, physics, player);
+    lab.enter({ seed: 7, type: 'city', faction: 'human', layout: 'auto' });
 
     const result = (lab as unknown as { _renderResult: { buildingRecords: { dna: { buildingKind: string } }[] } })
       ._renderResult;
