@@ -36,8 +36,8 @@ import { mulberry32 } from '@/core/prng';
 import type { BuildingDNA, BuildingKind, Faction } from './BuildingDNA';
 import { getFootprint, FLOOR_HEIGHT } from './BuildingDNA';
 import { meshBlockGrid, getMaterialKey, BLOCK_UNIT } from './BlockKit';
-import { earthTexture, hideTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
-import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildOrcishHutGrid, orcishWallTopY, type OrcishHutOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
+import { earthTexture, ashStoneTexture, obsidianTexture, toadstoolTexture } from './FactionBlockTextures';
+import { buildVulperiaDenMoundGrid, type DenMoundOptions, buildVampireSpireGrid, vampireSpireTopY, vampireSpireDeckRadius, type VampireSpireOptions, buildFaeStalkGrid, faeCapTopY, faeCapRimRadius, type FaeStalkOptions, buildUndeadTierGrid, undeadRoofTopY, type UndeadTierOptions } from './FactionBlockProfiles';
 import { buildElvenStoneTower } from './StoneTowerKit';
 import { buildElvenTreehouseHome } from './ElvenTreehouseKit';
 import { buildElvenMarketStall } from './ElvenMarketStallKit';
@@ -57,6 +57,25 @@ import {
   buildDwarvenChapel,
   buildDwarvenWatchtower,
 } from './dwarven/DwarvenBuildingKit';
+// docs/superpowers/plans/2026-09-04-orcish-buildings.md: the real bespoke
+// lashed-timber/hide kit-of-parts builders, one per canonical BuildingKind
+// (OrcishBuildingKit.ts), replacing this file's own legacy
+// addBlockOrcishHut()/buildOrcishVilla()/buildOrcishChapel()/
+// buildOrcishShop() BlockKit lashed hut (a single mismatched-patch
+// occupancy-grid hut reused/rescaled for villa/chapel/shop only, with no
+// house/terraced/inn/blacksmith/watchtower coverage at all) removed in the
+// same commit. Aliased on import to the `OrcishKit` suffix, mirroring
+// slime's own aliasing convention below.
+import {
+  buildOrcishHouse as buildOrcishKitHouse,
+  buildOrcishTerraced as buildOrcishKitTerraced,
+  buildOrcishShop as buildOrcishKitShop,
+  buildOrcishInn as buildOrcishKitInn,
+  buildOrcishBlacksmith as buildOrcishKitBlacksmith,
+  buildOrcishVilla as buildOrcishKitVilla,
+  buildOrcishChapel as buildOrcishKitChapel,
+  buildOrcishWatchtower as buildOrcishKitWatchtower,
+} from './orcish/OrcishBuildingKit';
 // Task 15 (docs/superpowers/plans/2026-09-04-slime-buildings.md): the real
 // gel-block/pseudopod kit-of-parts builders, one per canonical BuildingKind,
 // replacing this file's own legacy buildSlimeVilla/buildSlimeChapel/
@@ -632,116 +651,13 @@ function buildUndeadShop(dna: BuildingDNA): THREE.Group {
 // second faction (after slime) with a bespoke builder for every canonical
 // BuildingKind.
 
-// ── Orcish — lashed/asymmetric block-kit hut architecture ─────────────────────
-// Warlord Hall (patriciate), War Shrine (church), Loot Pile (market):
-// Phase 2e (orcish): a genuine `buildOrcishHutGrid()` occupancy grid — an
-// asymmetric, lashed-together hut body in mismatched "patch" materials
-// topped with a jagged, single-pitch lean-to roof — replacing the old
-// `addPalisadeWall()` (a ring of bolted-on log cylinders) + separate
-// `addRoughConeRoof()` (a single noise-perturbed cone). Small bolted-on
-// accents (bone/spike totems, skull-and-tusk trophy, bonfire, loot
-// crates/blade) remain acceptable per the established "small props are
-// fine, only large primitive-built main structures are not" precedent.
-
-/**
- * Builds + meshes + centers a `buildOrcishHutGrid()` hut into `g` at the
- * origin (same centering convention as `addBlockFaeStalk()`). The
- * mismatched wall "patch" materials (rough-hewn scavenged planks/hide/
- * bone) and the crude door frame are chamfer-suppressed for a hard-edged,
- * hand-hacked-carpentry read; the roof patches stay softly chamfered
- * (draped hide/thatch reads better rounded than sharp), the same
- * body-vs-accent contrast convention as dwarven's buttress/vampire's iron.
- */
-function addBlockOrcishHut(
-  g: THREE.Group,
-  seed: number, w: number, d: number, h: number,
-  wallColor: string, trimColor: string, roofColor: string, doorColor: string,
-  opts: OrcishHutOptions = {},
-): void {
-  const grid = buildOrcishHutGrid(seed, w, d, h, opts);
-  const palette = {
-    patchA: mat(wallColor, { roughness: 0.92, map: hideTexture() }),
-    patchB: mat(trimColor, { roughness: 0.92, map: hideTexture() }),
-    patchC: mat('#c8ba94', { roughness: 0.88, map: hideTexture() }), // hardcoded pale bone/scrap patch (checked distinct from wallColor/trimColor: shifted lighter/greyer than the warm tan trim so it reads as a genuinely mismatched scavenged patch, not just a shade of the same brown)
-    roofpatchA: mat(roofColor, { roughness: 0.85, map: hideTexture() }),
-    roofpatchB: mat('#5a4a30', { roughness: 0.88, map: hideTexture() }), // hardcoded weathered-thatch/hide contrast patch
-    facade: mat(doorColor, { roughness: 0.8 }),
-  };
-  const mesh = meshBlockGrid(grid, palette, {
-    suppressChamfer: (bx, by, bz) => {
-      const k = getMaterialKey(grid, bx, by, bz);
-      return k === 'patchA' || k === 'patchB' || k === 'patchC' || k === 'facade';
-    },
-  });
-  const bw = Math.max(3, Math.round(w / BLOCK_UNIT));
-  const bd = Math.max(3, Math.round(d / BLOCK_UNIT));
-  mesh.position.x -= ((bw - 1) / 2) * BLOCK_UNIT;
-  mesh.position.z -= ((bd - 1) / 2) * BLOCK_UNIT;
-  g.add(mesh);
-}
-
-function buildOrcishVilla(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * Math.max(1, dna.floors) * 1.1;
-  const g = new THREE.Group();
-  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0010, fp.w, fp.d, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
-    facade: true,
-  });
-  // Warlord Hall: a mounted skull-and-tusk trophy above the entrance.
-  const skullMat = mat('#e8dcc0', { roughness: 0.8 });
-  const wallTopY = orcishWallTopY(h);
-  addMesh(g, new THREE.SphereGeometry(0.2, 8, 6), skullMat, 0, wallTopY * 0.95, fp.d / 2 - 0.1);
-  const tuskMat = mat('#f0e8d0', { roughness: 0.6 });
-  for (const tx of [-0.12, 0.12]) {
-    const tusk = addMesh(g, new THREE.ConeGeometry(0.04, 0.35, 5), tuskMat, tx, wallTopY * 0.85, fp.d / 2 - 0.05);
-    tusk.rotation.z = tx > 0 ? -0.6 : 0.6;
-  }
-  return g;
-}
-
-function buildOrcishChapel(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x0AC1_0002);
-  // War Shrine: a central bonfire pit ringed by bone/weapon totem poles.
-  const poleMat = mat('#3a2c1a', { roughness: 0.9 });
-  const nPoles = 5;
-  for (let i = 0; i < nPoles; i++) {
-    const ang = (i / nPoles) * Math.PI * 2;
-    const rad = Math.min(fp.w, fp.d) * 0.4;
-    const ph = 1.2 + r() * 0.6;
-    addMesh(g, new THREE.CylinderGeometry(0.06, 0.08, ph, 6), poleMat, Math.cos(ang) * rad, ph / 2, Math.sin(ang) * rad);
-    const skullMat = mat('#e0d4b8', { roughness: 0.8 });
-    addMesh(g, new THREE.SphereGeometry(0.12, 6, 6), skullMat, Math.cos(ang) * rad, ph + 0.1, Math.sin(ang) * rad);
-  }
-  const fireMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#3a1808'), emissive: new THREE.Color('#ff5010'), emissiveIntensity: 1.1, roughness: 0.6 });
-  addMesh(g, new THREE.ConeGeometry(0.3, 0.5, 6), fireMat, 0, 0.25, 0);
-  return g;
-}
-
-function buildOrcishShop(dna: BuildingDNA): THREE.Group {
-  const fp = getFootprint(dna.buildingKind, dna.size);
-  const h = FLOOR_HEIGHT * 0.6;
-  const g = new THREE.Group();
-  const r = mulberry32(dna.seed ^ 0x0AC1_0003);
-  // Loot Pile: a small block-built lean-to hut over a heap of plundered
-  // crates/weapons — no facade (an open-fronted stall), reusing the same
-  // jagged patchwork silhouette at a reduced scale.
-  addBlockOrcishHut(g, dna.seed ^ 0x0AC1_0013, fp.w * 0.7, fp.d * 0.7, h, dna.colors.walls, dna.colors.trim, dna.colors.roof, dna.colors.door, {
-    wallHeightFrac: 0.3,
-  });
-  const crateMat = mat('#6a5030', { roughness: 0.9 });
-  for (let i = 0; i < 4; i++) {
-    const cx = (r() - 0.5) * fp.w * 0.6;
-    const cz = (r() - 0.5) * fp.d * 0.6;
-    addMesh(g, new THREE.BoxGeometry(0.28, 0.2 + r() * 0.2, 0.28), crateMat, cx, 0.15, cz, r() * 0.6);
-  }
-  // Crossed scavenged weapons jutting from the pile.
-  const bladeMat = mat('#909090', { roughness: 0.4, metalness: 0.6 });
-  const blade = addMesh(g, new THREE.ConeGeometry(0.03, 0.6, 4), bladeMat, fp.w * 0.2, 0.4, fp.d * 0.2);
-  blade.rotation.z = 0.5;
-  return g;
-}
+// ── Orcish — real bespoke lashed-timber/hide kit-of-parts builders live in
+// OrcishBuildingKit.ts (docs/superpowers/plans/2026-09-04-orcish-buildings.
+// md), imported above as buildOrcishKit*. The old addBlockOrcishHut()/
+// buildOrcishVilla()/buildOrcishChapel()/buildOrcishShop() BlockKit lashed
+// hut (a single mismatched-patch occupancy-grid hut reused/rescaled for
+// villa/chapel/shop only, with no house/terraced/inn/blacksmith/watchtower
+// coverage at all) was removed in the same commit that added the new kit.
 
 // ── Vampire — tapering gothic-spire block-kit architecture ────────────────────
 // Count's Tower (patriciate), Blood Chapel (church), Blood Market (market):
@@ -1156,14 +1072,21 @@ export const FACTION_BUILDING_VARIANTS: Partial<Record<Faction, Partial<Record<B
     tower:      buildDwarvenWatchtower,
   },
   orcish: {
-    villa:  buildOrcishVilla,
-    chapel: buildOrcishChapel,
-    shop:   buildOrcishShop,
-    // Phase 2b increment 3: same gap as slime/undead above.
-    house:      buildOrcishVilla,
-    terraced:   buildOrcishVilla,
-    inn:        buildOrcishVilla,
-    blacksmith: buildOrcishVilla,
+    // docs/superpowers/plans/2026-09-04-orcish-buildings.md: orcish is the
+    // third faction (after slime/dwarven) with a real bespoke kit builder
+    // for every canonical kind (OrcishBuildingKit.ts's lashed-timber +
+    // hide-panel + bone/tusk trophy construction), replacing the earlier
+    // "villa hut reused for house/terraced/inn/blacksmith, no watchtower
+    // at all" stopgap.
+    house:      buildOrcishKitHouse,
+    terraced:   buildOrcishKitTerraced,
+    shop:       buildOrcishKitShop,
+    inn:        buildOrcishKitInn,
+    blacksmith: buildOrcishKitBlacksmith,
+    villa:      buildOrcishKitVilla,
+    chapel:     buildOrcishKitChapel,
+    watchtower: buildOrcishKitWatchtower,
+    tower:      buildOrcishKitWatchtower,
   },
   vampire: {
     villa:  buildVampireVilla,
