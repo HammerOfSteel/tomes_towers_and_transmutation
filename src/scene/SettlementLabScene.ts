@@ -88,6 +88,81 @@ const POC_KIND_OVERRIDE_BY_FACTION: Partial<Record<string, BuildingKind | ((b: P
   // reviewed together in one "Play in 3D" session instead of forcing the
   // whole settlement to a single isolated kind.
   elven: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Slime now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/slime/SlimeBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven hit at 4 kits. watchtower/tower is
+  // the only slime kind with no WARD_TO_KIND entry (buildingToDungeonPlan.ts)
+  // and so never spawns naturally; the other 7 are already reachable
+  // through a normal settlement's ward mix, so the same one-forced-slot
+  // pattern as elven's is sufficient here too.
+  slime: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Dwarven now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/dwarven/DwarvenBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime hit. watchtower/tower is the
+  // only dwarven kind with no WARD_TO_KIND entry (buildingToDungeonPlan.ts)
+  // and so never spawns naturally; the other 7 are already reachable
+  // through a normal settlement's ward mix, so the same one-forced-slot
+  // pattern as elven's/slime's is sufficient here too.
+  dwarven: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Orcish now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/orcish/OrcishBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven hit. watchtower/tower
+  // is the only orcish kind with no WARD_TO_KIND entry
+  // (buildingToDungeonPlan.ts) and so never spawns naturally; the other 7
+  // are already reachable through a normal settlement's ward mix, so the
+  // same one-forced-slot pattern as elven's/slime's/dwarven's is
+  // sufficient here too.
+  orcish: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Vampire now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/vampire/VampireBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish hit.
+  // watchtower/tower is the only vampire kind with no WARD_TO_KIND entry
+  // (buildingToDungeonPlan.ts) and so never spawns naturally; the other 7
+  // are already reachable through a normal settlement's ward mix, so the
+  // same one-forced-slot pattern as elven's/slime's/dwarven's/orcish's is
+  // sufficient here too.
+  vampire: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Undead now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/undead/UndeadNecropolisKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish/vampire hit.
+  // watchtower/tower is the only undead kind with no WARD_TO_KIND entry
+  // (buildingToDungeonPlan.ts) and so never spawns naturally; the other 7
+  // are already reachable through a normal settlement's ward mix, so the
+  // same one-forced-slot pattern as the other 5 races' is sufficient
+  // here too.
+  undead: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Vulperia now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/vulperia/VulperiaBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish/vampire/undead
+  // hit. watchtower/tower is the only vulperia kind with no WARD_TO_KIND
+  // entry (buildingToDungeonPlan.ts) and so never spawns naturally; the
+  // other 7 are already reachable through a normal settlement's ward mix,
+  // so the same one-forced-slot pattern as the other 6 races' is
+  // sufficient here too.
+  vulperia: (_b, index) => (index === 0 ? 'watchtower' : undefined),
+  // Fae now has all 8 canonical building kits shipped (house/terraced/
+  // shop/inn/blacksmith/villa/chapel/watchtower) via
+  // src/world/buildings/fae/FaeBuildingKit.ts, registered in
+  // FactionBuildingVariants.ts — the same "enough kinds shipped, showcase
+  // instead of isolate" situation elven/slime/dwarven/orcish/vampire/
+  // undead/vulperia hit. watchtower/tower is the only fae kind with no
+  // WARD_TO_KIND entry (buildingToDungeonPlan.ts) and so never spawns
+  // naturally; the other 7 are already reachable through a normal
+  // settlement's ward mix, so the same one-forced-slot pattern as the
+  // other 7 races' is sufficient here too.
+  fae: (_b, index) => (index === 0 ? 'watchtower' : undefined),
 };
 
 // ── Regenerate params type ────────────────────────────────────────────────────

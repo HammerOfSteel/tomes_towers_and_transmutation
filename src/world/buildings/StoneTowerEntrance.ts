@@ -15,7 +15,8 @@
 import * as THREE from 'three';
 import { mulberry32 } from '@/core/prng';
 import type { StoneTowerPalette } from './StoneTowerKit';
-import { buildRecessedArchOpening, type RecessedArchOptions } from './StoneTowerOpenings';
+import { type RecessedArchOptions } from './StoneTowerOpenings';
+import { buildDoorOpening } from './kit/OpeningParts';
 
 export type EntranceStyle = 'plain_arch' | 'flanked_pillars';
 const ALL_STYLES: EntranceStyle[] = ['plain_arch', 'flanked_pillars'];
@@ -43,7 +44,13 @@ function _buildArch(radius: number, doorH: number, doorW: number, palette: Stone
     frameProud: radius * 0.035,
   };
   const doorMat = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.9 });
-  const g = buildRecessedArchOpening(opts, radius, doorMat, palette.stone);
+  const g = buildDoorOpening({
+    ...opts,
+    wallZ: radius,
+    stoneMaterial: palette.stone,
+    recessMaterial: doorMat,
+    woodMaterial: palette.bark,
+  });
 
   const accentR = opts.width * 0.14;
   const accent = new THREE.Mesh(new THREE.CylinderGeometry(accentR, accentR, radius * 0.025, 8), palette.moonstone);
