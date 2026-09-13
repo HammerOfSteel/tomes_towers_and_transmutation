@@ -25,6 +25,7 @@ import { buildWallBracket, buildLanternCage } from '../kit/LanternKit';
 import { buildStringCourse } from '../kit/StringCourse';
 import { makeBatteredRectangleTiers } from '../kit/SteppedBatterProfile';
 import { buildButtress } from '../kit/Buttress';
+import { buildCorbelRow } from '../kit/AngularOrnament';
 import { buildPlankCrate, buildStaveKeg, buildAnvil, buildCoalBin, buildSlagTrough, buildFirewoodBundle } from '../kit/SalvageSpoils';
 import {
   buildFlowerBox,
@@ -156,6 +157,82 @@ function mountHangingProp(obj: THREE.Object3D): THREE.Group {
  * every other race kit's own `wallZFor()`). */
 function wallZFor(faceIndex: number, halfW: number, halfD: number): number {
   return faceIndex === 0 || faceIndex === 2 ? halfW : halfD;
+}
+
+/** BUGFIX (post-merge geometry audit): places a prop built with a
+ * WALL-ATTACHMENT-PLANE-at-local-z=0 convention (`buildButtress()`,
+ * `buildCorbelRow()`, `buildFriezeBand()`, `buildPediment()`,
+ * `buildWallBracket()`, `buildOrielBay()`, `buildAwning()`,
+ * `buildRailSection()`, `buildToolRack()`, `buildDrainSpout()`,
+ * `buildHangingSign()`'s mount, `buildHumanJetty()`, and the parapet's
+ * own merlons -- none of which accept a `wallZ` construction parameter
+ * the way `buildHumanWindow`/`buildHumanDoor`/`buildHumanOculus`/
+ * `buildShutterPair`/`buildArrowLoop` do) at the CORRECT depth from the
+ * building's center axis, for ANY face (not just the rotation-0 front
+ * face) -- including composed/absolute-coordinate faces (e.g. a wing's
+ * own footprint from `composeMainAndWing()`), not just faces of a
+ * rectangle centered at the origin.
+ *
+ * `placeOnFace()` alone only sets `obj.rotation.y` and an ALONG-FACE
+ * (x/z) offset computed *relative to the face's own midpoint* -- for an
+ * axis-aligned rectangle face that delta is ALWAYS zero in the
+ * perpendicular (depth) direction, because both endpoints of any one
+ * face share the same perpendicular coordinate. So a plain
+ * `placeOnFace(obj, face, t)` leaves a depth-agnostic prop sitting
+ * offset only relative to the face's own midpoint -- for a rectangle
+ * centered at the world origin that means it lands ON the center axis
+ * (`x=0` for a side face, `z=0` for a front/back face), and for an
+ * off-center/composed face (a wing) it lands back at the WORLD origin,
+ * nowhere near that face at all. Setting `obj.position.z =
+ * wallZFor(...)` *before* calling `placeOnFace` (a pattern this file's
+ * watchtower code briefly introduced, mirrored from the dwarven kit) is
+ * ALSO wrong for any face whose `normalAngle` isn't 0:
+ * `Object3D.position` is a translation in the PARENT's space and is
+ * never itself re-rotated by that same object's own `rotation.y` --
+ * only its children are.
+ *
+ * This was confirmed empirically (a standalone reproduction placed a
+ * depth-only child at `(halfW, y, 0)`/`(0, y, -halfD)`/etc. instead of
+ * the correct wall-plane position) and was found to affect real,
+ * already-shipped geometry: the villa's `human-villa-cornice` was
+ * landing at world Z=~0.01 (the building's OWN CENTERLINE) instead of
+ * the front wall, and the chapel's nave buttresses were landing at
+ * `|x|~0.15` (buried near the nave's centre) instead of flush against
+ * the long walls at `|x|=halfW`.
+ *
+ * Fix: after `placeOnFace()` sets rotation, add back the face's own
+ * absolute midpoint (which the along-face delta was computed relative
+ * to, and which `placeOnFace` itself never adds) PLUS an optional small
+ * `depth` delta along the face's own outward unit normal (`sin`/`cos`
+ * of `face.normalAngle`) for props that sit slightly proud (positive)
+ * or recessed (negative) of the wall's own flush surface -- both added
+ * directly to `position` in WORLD/parent space, which is valid
+ * regardless of the object's own rotation because it never goes
+ * through a rotated local frame.
+ *
+ * IMPORTANT: `depth` here is a SMALL delta beyond the wall's own flush
+ * position (typically -0.3..+0.3), NOT the full wall-distance value --
+ * `midX`/`midZ` alone already reproduce the flush position (equal to
+ * `wallZFor(faceIndex, halfW, halfD)` for a centered rectangle, or the
+ * correct absolute wall position for an off-centre composed face like a
+ * wing's), so passing `wallZFor(...)` itself as `depth` double-counts
+ * the wall distance and places the object roughly TWICE as far from the
+ * building as intended -- a mistake this file's own first draft of this
+ * helper's call sites made and had to correct (verified numerically:
+ * `depth=0` on a `halfD=2.0` front face correctly lands at world
+ * `z=2.0`, matching `wallZFor`; passing `depth=halfD` there instead
+ * wrongly lands at `z=4.0`). Use `depth=0` for a prop whose own local
+ * z=0 already represents "at the wall" (confirmed true for every
+ * builder listed above by inspecting its own geometry), and a small
+ * nonzero `depth` only for props that need an explicit extra
+ * proud/recessed push (e.g. a counter slab or awning meant to sit
+ * further out than a flush wall bracket). */
+function placeOnFaceAtDepth(obj: THREE.Object3D, face: OctagonFace, t: number, depth: number): void {
+  placeOnFace(obj, face, t);
+  const midX = (face.a[0] + face.b[0]) / 2;
+  const midZ = (face.a[1] + face.b[1]) / 2;
+  obj.position.x += midX + depth * Math.sin(face.normalAngle);
+  obj.position.z += midZ + depth * Math.cos(face.normalAngle);
 }
 
 function toOpeningPalette(palette: HumanPalette): HumanOpeningPalette {
@@ -574,7 +651,7 @@ export function buildHumanHouse(dna: BuildingDNA): THREE.Group {
   const lantern = buildWallBracket({ material: palette.iron, paneMaterial: palette.litGlazing, lit: true });
   lantern.name = 'human-lantern';
   lantern.position.y = doorHeight + 0.2;
-  placeOnFace(lantern, doorFace, doorT + (doorT < 0.5 ? 0.18 : -0.18));
+  placeOnFaceAtDepth(lantern, doorFace, doorT + (doorT < 0.5 ? 0.18 : -0.18), 0);
   g.add(lantern);
 
   return g;
@@ -666,7 +743,7 @@ export function buildHumanTerraced(dna: BuildingDNA): THREE.Group {
       timberMaterial: palette.oakTimber,
       shadowMaterial: palette.darkTimber,
     });
-    placeOnFace(jettyGroup, frontFace, 0.5);
+    placeOnFaceAtDepth(jettyGroup, frontFace, 0.5, 0);
     jettyGroup.position.y = 0;
     g.add(jettyGroup);
   }
@@ -730,7 +807,7 @@ export function buildHumanTerraced(dna: BuildingDNA): THREE.Group {
         });
         oriel.name = 'human-oriel';
         oriel.position.y = floorBaseY + STOREY_HEIGHT * 0.12;
-        placeOnFace(oriel, face, 0.5);
+        placeOnFaceAtDepth(oriel, face, 0.5, 0);
         upperGroup.add(oriel);
       }
     }
@@ -783,7 +860,7 @@ export function buildHumanTerraced(dna: BuildingDNA): THREE.Group {
     icon: pickWeighted<TradeIcon>(mulberry32(tagSeed(dna.seed, 'ICON')), [['boot', 0.25], ['loaf', 0.25], ['mug', 0.25], ['shears', 0.25]]),
   }));
   signMount.position.y = STOREY_HEIGHT + 0.4;
-  placeOnFace(signMount, frontFace, doorT < 0.5 ? 0.75 : 0.25);
+  placeOnFaceAtDepth(signMount, frontFace, doorT < 0.5 ? 0.75 : 0.25, 0);
   g.add(signMount);
 
   const shutters = buildShutterPair({ width: doorWidth, height: doorHeight * 0.5, material: palette.darkTimber, hingeMaterial: palette.iron, wallZ: halfD + 0.02 });
@@ -793,7 +870,7 @@ export function buildHumanTerraced(dna: BuildingDNA): THREE.Group {
 
   const spout = buildDrainSpout({ material: palette.iron });
   spout.position.y = roofBaseY - 0.15;
-  placeOnFace(spout, faces[0]!, 0.85);
+  placeOnFaceAtDepth(spout, faces[0]!, 0.85, 0);
   g.add(spout);
 
   const laundry = buildLaundryPole({ poleMaterial: palette.darkTimber, clothMaterials: [palette.plasterAlt, palette.plaster], seed: tagSeed(dna.seed, 'LNDY') });
@@ -866,7 +943,7 @@ export function buildHumanVilla(dna: BuildingDNA): THREE.Group {
 
   const canopy = buildPediment({ width: doorWidth + 0.5, variant: 'triangular', rise: 0.5, material: palette.weatheredStone, tympanumMaterial: palette.plaster });
   canopy.position.y = doorHeight + 0.15;
-  placeOnFace(canopy, frontFace, doorT);
+  placeOnFaceAtDepth(canopy, frontFace, doorT, 0);
   g.add(canopy);
 
   // Ground windows (2-4), spread across the non-door bays when stone.
@@ -950,7 +1027,7 @@ export function buildHumanVilla(dna: BuildingDNA): THREE.Group {
     wingWin.name = 'human-window';
     const wingFrontFace = composed.wing.faces[3]!;
     wingWin.position.y = wingHeight * 0.5;
-    placeOnFace(wingWin, wingFrontFace, 0.5);
+    placeOnFaceAtDepth(wingWin, wingFrontFace, 0.5, 0);
     g.add(wingWin);
   }
 
@@ -985,7 +1062,7 @@ export function buildHumanVilla(dna: BuildingDNA): THREE.Group {
   const cornice = buildFriezeBand({ length: faceLength(frontFace), variant: 'dentil', material: palette.weatheredStone, seed: tagSeed(dna.seed, 'CORNICE') });
   cornice.name = 'human-villa-cornice';
   cornice.position.y = wallHeight - 0.12;
-  placeOnFace(cornice, frontFace, 0.5);
+  placeOnFaceAtDepth(cornice, frontFace, 0.5, 0);
   g.add(cornice);
 
   // Ground contact + plinth.
@@ -1001,7 +1078,7 @@ export function buildHumanVilla(dna: BuildingDNA): THREE.Group {
     const lantern = buildWallBracket({ material: palette.iron, paneMaterial: palette.litGlazing, lit: true });
     lantern.name = 'human-lantern';
     lantern.position.y = doorHeight * 0.55;
-    placeOnFace(lantern, frontFace, doorT + side * 0.16);
+    placeOnFaceAtDepth(lantern, frontFace, doorT + side * 0.16, 0);
     g.add(lantern);
   }
   const pot = buildFlowerBox({ width: 0.4, boxMaterial: palette.weatheredStone, seed: tagSeed(dna.seed, 'POT') });
@@ -1092,15 +1169,13 @@ export function buildHumanInn(dna: BuildingDNA): THREE.Group {
     upperHalfD = footprint.halfDUpper;
     upperZOffset = footprint.zOffset;
     const { group: jettyGroup } = buildHumanJetty({ width: frontLen, floorY: groundHeight, projection, seed: tagSeed(dna.seed, 'JETTY'), timberMaterial: palette.oakTimber, shadowMaterial: palette.darkTimber });
-    placeOnFace(jettyGroup, frontFace, 0.5);
+    placeOnFaceAtDepth(jettyGroup, frontFace, 0.5, 0);
     g.add(jettyGroup);
 
     const rail = buildRailSection({ length: frontLen * 0.94, height: 0.75, material: palette.iron, seed: tagSeed(dna.seed, 'RAIL') });
     rail.name = 'human-balcony-rail';
     rail.position.y = groundHeight + 0.02;
-    placeOnFace(rail, frontFace, 0.5);
-    rail.position.z += Math.cos(frontFace.normalAngle) * (projection - 0.05);
-    rail.position.x += Math.sin(frontFace.normalAngle) * (projection - 0.05);
+    placeOnFaceAtDepth(rail, frontFace, 0.5, projection - 0.05);
     g.add(rail);
   }
 
@@ -1166,7 +1241,7 @@ export function buildHumanInn(dna: BuildingDNA): THREE.Group {
     g.add(kitchen);
     const serviceDoor = buildHumanDoor({ width: 0.75, height: 1.9, wallZ: 0, palette: openingPalette });
     serviceDoor.name = 'human-door';
-    placeOnFace(serviceDoor, rearFace, 0.5);
+    placeOnFaceAtDepth(serviceDoor, rearFace, 0.5, 0);
     g.add(serviceDoor);
   }
 
@@ -1205,14 +1280,14 @@ export function buildHumanInn(dna: BuildingDNA): THREE.Group {
   // crates, cellar hatch.
   const signMount = mountHangingProp(buildHangingSign({ bracketMaterial: palette.iron, boardMaterial: palette.darkTimber, icon: 'mug' }));
   signMount.position.y = groundHeight + 0.4;
-  placeOnFace(signMount, frontFace, 0.12);
+  placeOnFaceAtDepth(signMount, frontFace, 0.12, 0);
   g.add(signMount);
 
   for (const t of [0.06, 0.94]) {
     const lantern = buildWallBracket({ material: palette.iron, paneMaterial: palette.litGlazing, lit: true });
     lantern.name = 'human-lantern';
     lantern.position.y = doorHeight * 0.5;
-    placeOnFace(lantern, frontFace, t);
+    placeOnFaceAtDepth(lantern, frontFace, t, 0);
     g.add(lantern);
   }
   for (let i = 0; i < 3; i++) {
@@ -1338,9 +1413,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
   slab.name = 'counter-slab';
   slab.castShadow = slab.receiveShadow = true;
   slab.position.y = 0.1;
-  placeOnFace(slab, frontFace, counterT);
-  slab.position.z += Math.cos(frontFace.normalAngle) * 0.15;
-  slab.position.x += Math.sin(frontFace.normalAngle) * 0.15;
+  placeOnFaceAtDepth(slab, frontFace, counterT, 0.15);
   g.add(slab);
 
   // Fabric awning over the counter, projecting 0.45-0.7 WU.
@@ -1348,7 +1421,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
   const awning = buildAwning({ width: totalWidth + 0.3, projection: awningProjection, fabricMaterial: palette.plasterAlt, ribMaterial: palette.darkTimber });
   awning.name = 'human-awning';
   awning.position.y = doorHeight + 0.1;
-  placeOnFace(awning, frontFace, 0.5);
+  placeOnFaceAtDepth(awning, frontFace, 0.5, 0);
   g.add(awning);
 
   // Upper storey (40% chance): jettied living floor (35% of those).
@@ -1364,7 +1437,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
       upperHalfD = footprint.halfDUpper;
       upperZOffset = footprint.zOffset;
       const { group: jettyGroup } = buildHumanJetty({ width: frontLen, floorY: groundHeight, projection, seed: tagSeed(dna.seed, 'JETTYB'), timberMaterial: palette.oakTimber, shadowMaterial: palette.darkTimber });
-      placeOnFace(jettyGroup, frontFace, 0.5);
+      placeOnFaceAtDepth(jettyGroup, frontFace, 0.5, 0);
       g.add(jettyGroup);
     }
     const upperFaces = rectangleFaces(halfW, upperHalfD);
@@ -1410,9 +1483,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
     pent.castShadow = pent.receiveShadow = true;
     pent.rotation.x = -0.25;
     pent.position.y = doorHeight + 0.55;
-    placeOnFace(pent, frontFace, 0.5);
-    pent.position.z += Math.cos(frontFace.normalAngle) * 0.3;
-    pent.position.x += Math.sin(frontFace.normalAngle) * 0.3;
+    placeOnFaceAtDepth(pent, frontFace, 0.5, 0.3);
     g.add(pent);
   }
 
@@ -1427,7 +1498,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
   const icon = pickWeighted<TradeIcon>(mulberry32(tagSeed(dna.seed, 'ICON')), [['boot', 0.25], ['loaf', 0.25], ['mug', 0.25], ['shears', 0.25]]);
   const signMount = mountHangingProp(buildHangingSign({ bracketMaterial: palette.iron, boardMaterial: palette.darkTimber, icon, iconMaterial: palette.iron }));
   signMount.position.y = doorHeight + 0.5;
-  placeOnFace(signMount, frontFace, doorLeft ? 0.08 : 0.92);
+  placeOnFaceAtDepth(signMount, frontFace, doorLeft ? 0.08 : 0.92, 0);
   g.add(signMount);
 
   const shutters = buildShutterPair({ width: counterWidth, height: counterHeight, material: palette.darkTimber, hingeMaterial: palette.iron, wallZ: halfD + 0.05 });
@@ -1443,7 +1514,7 @@ export function buildHumanShop(dna: BuildingDNA): THREE.Group {
   const lantern = buildWallBracket({ material: palette.iron, paneMaterial: palette.litGlazing, lit: true });
   lantern.name = 'human-lantern';
   lantern.position.y = doorHeight + 0.15;
-  placeOnFace(lantern, frontFace, doorT);
+  placeOnFaceAtDepth(lantern, frontFace, doorT, 0);
   g.add(lantern);
 
   return g;
@@ -1529,12 +1600,16 @@ export function buildHumanBlacksmith(dna: BuildingDNA): THREE.Group {
       placeOnFace(win, face, 0.6);
       g.add(win);
       // Iron security bars: 3 thin vertical bars set proud of the glazing.
+      // (Spaced by an along-face `t` delta, not a raw local x offset --
+      // a raw offset only reads correctly on a rotation.y=0 face, which
+      // this loop's side faces are not.)
+      const barLen = faceLength(face);
       for (let b = 0; b < 3; b++) {
         const bar = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.5, 0.015), palette.iron);
         bar.name = `window-bar-${b}`;
-        bar.position.set(-0.16 + b * 0.16, win.position.y, 0);
         bar.castShadow = bar.receiveShadow = true;
-        placeOnFace(bar, face, 0.6);
+        const barT = 0.6 + (-0.16 + b * 0.16) / barLen;
+        placeOnFaceAtDepth(bar, face, barT, 0.02);
         bar.position.y = win.position.y;
         g.add(bar);
       }
@@ -1604,14 +1679,14 @@ export function buildHumanBlacksmith(dna: BuildingDNA): THREE.Group {
   const rack = buildToolRack({ woodMaterial: palette.darkTimber, toolMaterial: palette.iron, seed: tagSeed(dna.seed, 'RACK') });
   rack.name = 'human-tool-rack';
   rack.position.y = 0.3;
-  placeOnFace(rack, faces[1]!, 0.75);
+  placeOnFaceAtDepth(rack, faces[1]!, 0.75, 0);
   g.add(rack);
   const coalPile = buildCoalBin({ material: palette.weatheredStone, chunkMaterial: palette.iron });
   coalPile.position.set(halfW - 0.6, 0, halfD - 0.5);
   g.add(coalPile);
   const signMount = mountHangingProp(buildHangingSign({ bracketMaterial: palette.iron, boardMaterial: palette.darkTimber, icon: 'shears', iconMaterial: palette.iron }));
   signMount.position.y = wallHeight * 0.7;
-  placeOnFace(signMount, faces[doorSide]!, 0.55);
+  placeOnFaceAtDepth(signMount, faces[doorSide]!, 0.55, 0);
   g.add(signMount);
 
   return g;
@@ -1650,7 +1725,7 @@ export function buildHumanChapel(dna: BuildingDNA): THREE.Group {
     for (const t of [0.2, 0.5, 0.8]) {
       const buttress = buildButtress({ height: wallHeight * 0.7, width: 0.5, stages: 2, depth: 0.3, seed: tagSeed(dna.seed, `BUT${face.normalAngle}${t}`) }, palette.weatheredStone);
       buttress.name = 'human-buttress';
-      placeOnFace(buttress, face, t);
+      placeOnFaceAtDepth(buttress, face, t, 0);
       g.add(buttress);
     }
   }
@@ -1658,13 +1733,14 @@ export function buildHumanChapel(dna: BuildingDNA): THREE.Group {
   // 2-3 arched windows per long side.
   const winPerSide = 2 + Math.floor(mulberry32(tagSeed(dna.seed, 'WPS'))() * 2);
   for (const face of longFaces) {
+    const faceIdx = face === faces[0] ? 0 : 2;
     for (let i = 0; i < winPerSide; i++) {
       const t = (i + 1) / (winPerSide + 1);
       const arch = buildVoussoirArch({ width: 0.95, springHeight: wallHeight * 0.55, archRatio: 0.6, material: palette.weatheredStone, seed: tagSeed(dna.seed, `ARCH${i}`) });
       arch.name = 'human-chapel-arch';
-      placeOnFace(arch, face, t);
+      placeOnFaceAtDepth(arch, face, t, 0);
       g.add(arch);
-      const win = buildHumanWindow({ width: 0.7, height: 1.8, wallZ: wallZFor(face === faces[0] ? 0 : 2, halfW, halfD), palette: openingPalette, stoneSurround: true, archRatio: 1.0 });
+      const win = buildHumanWindow({ width: 0.7, height: 1.8, wallZ: wallZFor(faceIdx, halfW, halfD), palette: openingPalette, stoneSurround: true, archRatio: 1.0 });
       win.name = 'human-window';
       win.position.y = wallHeight * 0.55 - 1.8 * 0.15;
       placeOnFace(win, face, t);
@@ -1679,7 +1755,7 @@ export function buildHumanChapel(dna: BuildingDNA): THREE.Group {
   g.add(door);
   const doorArch = buildVoussoirArch({ width: 1.3, springHeight: 2.2, archRatio: 0.65, material: palette.weatheredStone, seed: tagSeed(dna.seed, 'DOORARCH') });
   doorArch.name = 'human-chapel-arch';
-  placeOnFace(doorArch, frontFace, 0.5);
+  placeOnFaceAtDepth(doorArch, frontFace, 0.5, 0);
   g.add(doorArch);
   const oculus = buildHumanOculus({ diameter: 0.9, wallZ: halfD, palette: openingPalette, divisionStyle: 'cross' });
   oculus.name = 'human-chapel-rose';
@@ -1731,7 +1807,7 @@ export function buildHumanChapel(dna: BuildingDNA): THREE.Group {
   const lantern = buildWallBracket({ material: palette.iron, paneMaterial: palette.litGlazing, lit: true });
   lantern.name = 'human-lantern';
   lantern.position.y = 2.0;
-  placeOnFace(lantern, frontFace, 0.85);
+  placeOnFaceAtDepth(lantern, frontFace, 0.85, 0);
   g.add(lantern);
   for (let i = 0; i < 3; i++) {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.4), palette.weatheredStone);
@@ -1789,7 +1865,7 @@ function buildHumanCrenellatedParapet(
       merlon.name = 'parapet-merlon';
       merlon.castShadow = merlon.receiveShadow = true;
       merlon.position.y = merlonH / 2 + 0.12;
-      placeOnFace(merlon, face, t);
+      placeOnFaceAtDepth(merlon, face, t, 0);
       g.add(merlon);
     }
   }
@@ -1799,10 +1875,11 @@ function buildHumanCrenellatedParapet(
 /** Builds a battered-tier stone watchtower: see design spec §4.8. 4
  * stacked tiers (`makeBatteredRectangleTiers()` -- the same shared
  * batter/inset profile the dwarven kit's own watchtower uses) taper
- * 3-5% per floor, each with a string course at the transition, a
- * ground door with a relieving arch, arrow loops per upper floor per
- * exposed face, and a coped-parapet / slate-pyramidal / tile-hipped-cap
- * crown -- never a flat-capped box.
+ * 9-13% per floor, each with a PROMINENT string course + a full
+ * corbel-table ring at the transition, corner buttresses stepping in
+ * tier-by-tier, TWO arrow loops per exposed face per upper floor, a
+ * ground door with a relieving arch, and a coped-parapet /
+ * slate-pyramidal / tile-hipped-cap crown -- never a flat-capped box.
  *
  * Footprint: the shared `KIND_FOOTPRINT.watchtower` table (2x2 WU) is
  * deliberately NOT used verbatim here. At the spec's own literal
@@ -1812,14 +1889,31 @@ function buildHumanCrenellatedParapet(
  * examples, stay closer to 1:4-1:5) and, worse, it *reads* on screen as
  * a thin dark monotonous needle/smokestack rather than a building --
  * exactly the "basic/broken-looking geometry" the doctrine calls out as
- * a rejection reason. Found via live visual QA after the first merge
- * (dwarven's precedent watchtower stays proportionate by using shorter
- * 2.4-2.6 WU tiers over the same 2x2 footprint; human's spec instead
- * fixed the *tier height* at a taller 3.2 WU/floor, which is what
- * breaks the ratio). Fix: widen the human watchtower's OWN base to
+ * a rejection reason. Fix: widen the human watchtower's OWN base to
  * 3x3 WU (still visibly narrower than any human house footprint, so it
  * keeps its "tower" identity) instead of touching the shared table and
- * affecting every other race's watchtower. */
+ * affecting every other race's watchtower.
+ *
+ * SECOND ROUND FIX (post-merge live-QA follow-up): the first fix (base
+ * widen + fixed 4-tier count) corrected the raw height:width RATIO but
+ * left the tower reading as a flat, monotonous, almost-featureless
+ * shaft, because (a) the 4-7%/tier taper was too subtle to perceive at
+ * all once rendered, (b) each tier had only ONE tiny arrow loop per
+ * face to break up ~3x3 WU of blank coursed stone, and (c) unlike the
+ * dwarven precedent tower (which places a `buildCorbelRow()` at every
+ * tier transition), the human tower had no per-tier corbelling and no
+ * corner buttresses at all -- objectively less detailed than its own
+ * sibling kind's precedent. This pass: (1) raises the taper to 9-13%,
+ * matching/exceeding `SteppedBatterProfile`'s own dwarven-precedent
+ * default (10%) so each tier visibly steps in; (2) adds a full
+ * corbel-table ring (`buildCorbelRow()`, all 4 faces) at every tier
+ * transition, directly mirroring the dwarven watchtower's own
+ * technique; (3) adds tapering corner buttresses
+ * (`buildButtress()`) at each of the 4 corners, one stage per tier so
+ * they set back at every string course exactly like real stepped
+ * masonry buttresses; (4) doubles the arrow-loop count per face per
+ * upper floor (two loops flanking centre, not one dead-centre) so no
+ * single wall plane reads as a blank rectangle. */
 export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
   const baseHalfW = 1.5;
   const baseHalfD = 1.5;
@@ -1834,7 +1928,11 @@ export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
   // chance of a 5th tier only made the disproportion worse and is
   // dropped rather than compensated for.
   const tierCount = 4;
-  const taper = 0.04 + tierRand() * 0.03;
+  // 9-13%: matches/exceeds SteppedBatterProfile's own dwarven-precedent
+  // default (insetPerTierFrac 0.10) so the taper is actually visible per
+  // tier, rather than the imperceptible 4-7% the first fix pass left in
+  // place (see this function's own doc comment for the full history).
+  const taper = 0.09 + tierRand() * 0.04;
   const tiers = makeBatteredRectangleTiers(
     baseHalfW,
     baseHalfD,
@@ -1849,9 +1947,46 @@ export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
     g.add(hall);
 
     if (i > 0) {
-      const course = buildStringCourse(tier.points, palette.weatheredStone, { y: tier.y, proudDepth: 0.07, outset: 0.03 });
+      // Prominent string course (nearly double the first-pass proudDepth/
+      // outset) so every tier transition reads as a real shading break,
+      // not a barely-there seam -- doctrine Rule 1, the depth ladder.
+      const course = buildStringCourse(tier.points, palette.weatheredStone, { y: tier.y, proudDepth: 0.13, outset: 0.08 });
       course.name = `human-watchtower-string-${i}`;
       g.add(course);
+
+      // Full corbel-table ring at the same transition, on all 4 faces --
+      // directly mirrors the dwarven watchtower's own per-tier
+      // `buildCorbelRow()` technique (previously entirely absent here).
+      for (let f = 0; f < tier.faces.length; f++) {
+        const face = tier.faces[f]!;
+        const corbels = buildCorbelRow({ count: 3, spacing: Math.max(0.3, tier.halfW * 0.7), material: palette.weatheredStone });
+        corbels.name = `human-watchtower-corbel-row-${i}-${f}`;
+        corbels.position.y = tier.y - 0.05;
+        placeOnFaceAtDepth(corbels, face, 0.5, 0);
+        g.add(corbels);
+      }
+    }
+
+    // Tapering corner buttresses: one stage per tier, so they physically
+    // set back at every string-course line like real stepped masonry
+    // buttresses -- adds vertical relief breaking up each face's blank
+    // stone expanse and reinforces the corners of an otherwise slender
+    // tower. Two per corner (one on each adjoining face, near its edge)
+    // approximate a real clasping/angle buttress without new diagonal-
+    // placement math.
+    const buttressWidth = Math.max(0.22, tier.halfW * 0.26);
+    for (let f = 0; f < tier.faces.length; f++) {
+      const face = tier.faces[f]!;
+      for (const t of [0.08, 0.92]) {
+        const buttress = buildButtress(
+          { height: tier.height, width: buttressWidth, stages: 1, depth: 0.26, cap: 'flat', seed: tagSeed(dna.seed, `BUT${i}${f}${t}`) },
+          palette.weatheredStone,
+        );
+        buttress.name = `human-watchtower-buttress-${i}-${f}`;
+        buttress.position.y = tier.y;
+        placeOnFaceAtDepth(buttress, face, t, 0);
+        g.add(buttress);
+      }
     }
   }
 
@@ -1863,7 +1998,7 @@ export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
   g.add(door);
   const doorArch = buildVoussoirArch({ width: 1.05, springHeight: 2.0, archRatio: 0.55, material: palette.weatheredStone, seed: tagSeed(dna.seed, 'TOWERARCH') });
   doorArch.name = 'human-chapel-arch';
-  placeOnFace(doorArch, doorFace, 0.5);
+  placeOnFaceAtDepth(doorArch, doorFace, 0.5, 0);
   g.add(doorArch);
 
   // Arrow loops: one per exposed face per upper floor.
@@ -1934,7 +2069,7 @@ export function buildHumanWatchtower(dna: BuildingDNA): THREE.Group {
   railFrame.position.set(-topTier.halfW * 0.8, 0.14, 0.45);
   hoarding.add(railFrame);
   hoarding.position.y = topY - 0.3;
-  placeOnFace(hoarding, topTier.faces[1]!, 0.5);
+  placeOnFaceAtDepth(hoarding, topTier.faces[1]!, 0.5, 0);
   g.add(hoarding);
 
   // Banner pole + lantern cage at the crown, hoisted on the parapet lip

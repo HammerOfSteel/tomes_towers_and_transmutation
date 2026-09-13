@@ -1059,7 +1059,27 @@ async function main() {
     settlementLab.enter(initialParams);
     gameMode = 'settlementlab';
     _sandboxLocation = 'lab';
-    scene.fog = new THREE.Fog(0x0a0a0f, 30, 60);
+    // Settlement Lab is a wide-open exterior scene (settlements can span
+    // 60-100+ WU), not a cramped interior room -- so it must NOT reuse the
+    // interior/dungeon fog config (0x0a0a0f, near 30/far 60). That tight
+    // near-distance was fogging every building toward near-black by the
+    // midpoint of a typical camera-to-building distance, on top of
+    // `scene.background` never being reset off its dark interior-default
+    // colour (0x0a0a0f, set at scene creation) since `gameMode ===
+    // 'exterior'` is what normally drives DayNightSystem's sky/fog lerp
+    // (main.ts's per-frame update loop), which never runs for
+    // 'settlementlab'. Net effect: every faction's buildings have been
+    // reviewed through this tool under a near-black backdrop + fog that
+    // was hiding real surface/depth-ladder detail regardless of how the
+    // geometry was actually built -- discovered while investigating a
+    // human-buildings visual complaint, but it predates human (and this
+    // whole 9-race programme) and affects all factions equally, since it
+    // is unrelated to any one race's building code. Fix: use the exact
+    // same colour + distances DayNightSystem's `day` phase applies to a
+    // live exterior scene at midday, so Settlement Lab actually shows
+    // buildings the way the real overworld renders them.
+    scene.background = new THREE.Color(0xb8d4e8);
+    scene.fog = new THREE.Fog(0x0a1408, 60, 180);
     _sandboxUi?.setLocation('lab');
   }
 
