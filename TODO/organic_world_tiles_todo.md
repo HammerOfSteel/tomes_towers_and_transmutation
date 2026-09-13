@@ -2056,6 +2056,63 @@ named, after all races' buildings are done.
   primitive-blob placeholder geometry remains for any of the 9
   factions in the live settlement generator.
 
+- [x] **6.16 — Human buildings follow-up: pervasive wall-flush placement
+  bug fix (branch `fix/human-buildings-geometry-audit`, PR #60)** —
+  the 6.15 entry above's live-verification pass was insufficient: a
+  user visual review after merge found the human kit's decorative/
+  structural props (lanterns, jetties, cornices, buttresses, signs,
+  merlons, corbels, hoardings, oriel/canopy/window-arch trim) reading
+  as structurally implausible up close. Root-cause investigation
+  found `placeOnFace(obj, face, t)` only ever set rotation plus an
+  along-face offset *relative to the face's own midpoint* — it never
+  added that midpoint's own absolute world position back in. Every
+  depth-agnostic prop placed this way across **all 8 human building
+  kinds** was landing pinned near the building's own vertical
+  centerline instead of flush against the wall it was nominally
+  attached to. This was a coordinate-math bug present since 6.15's
+  original implementation — it affected already-shipped villa/
+  chapel/watchtower geometry, not just anything added afterward, and
+  was not caught by 6.15's dark, unlit Settlement Lab screenshots (a
+  second bug: entering Settlement Lab never reset `scene.background`/
+  `fog` off the dark interior-scene defaults, hiding real surface
+  detail on every faction reviewed through that tool, not just
+  human — also fixed here).
+  **Fix**: new `placeOnFaceAtDepth(obj, face, t, depth)` helper adds
+  the face's absolute midpoint plus a small outward-normal depth
+  delta; replaced ~30 broken call sites in `HumanBuildingsKit.ts`;
+  deleted the now-dead `faceWallDistance()` helper. Settlement Lab now
+  uses the same background/fog values `DayNightSystem` applies to a
+  live exterior scene at midday.
+  **Verification**: new regression test
+  `HumanFacePlacementRegression.test.ts` (8 cases, one per kind)
+  asserts named props land at a minimum radial distance from the
+  building's vertical axis — all 8 pass. `npx tsc --noEmit` holds at
+  the 146-error baseline (zero new). Targeted suite
+  (`tests/world/buildings/human/`, `SettlementLabScene.test.ts`):
+  94/94 pass. Live Playwright pass against a dev server from this
+  worktree, faction=human, multiple seeds, zero console errors;
+  cropped/upscaled screenshots confirm real wall-flush corner
+  buttresses following the watchtower's tapering silhouette, nave
+  buttresses on the chapel, and varied timber cross-bracing/jetty
+  overhangs/plaster infill/thatch+tile roof mix across inn and
+  blacksmith clusters. Full `npx vitest run` shows the same
+  known-flaky failure set as baseline; a handful of additional
+  failures under one contended full-suite run (vampire/elven/tracery/
+  world-grid, all untouched by this diff per `git diff --stat`)
+  passed cleanly re-run in isolation. Merged to `main` as a real merge
+  commit (`gh pr merge --merge --delete-branch=false`), confirmed
+  directly on `origin/main` (not just the GitHub UI) that the changed
+  files and new test are present.
+  **Lesson for future races/fixes**: a kit-of-parts helper that
+  "looks reasonable in isolated unit tests" (all of 6.15's cross-kind
+  sweep tests passed throughout, because they only assert finite/
+  non-NaN geometry, not *where* it lands) can still be structurally
+  wrong in a way only a real rendered close-up catches — prefer
+  asserting concrete positional/geometric invariants (e.g. "this prop
+  is at least N units from the building's own axis") over purely
+  existential ones ("this prop exists and has finite coordinates")
+  when a helper's whole job is correct spatial placement.
+
 ---
 
 ## Cross-cutting notes for whoever picks this up
