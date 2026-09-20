@@ -264,6 +264,15 @@ export class OverworldScene {
    *  `this._seed` are set (needs both, so it can't be a field initializer default like
    *  `_slimeIM` above, which has no such dependency). */
   private _grassFields!: GrassField[];
+  /** Default OFF per live playtest feedback: the always-on grass field was both a
+   *  significant contributor to low FPS (up to `maxBlades` per biome, always
+   *  submitted — `mesh.frustumCulled = false`) and, separately, an art-direction fit
+   *  concern ("too alien"/neon) not yet resolved. Toggle-able from the Dev Sandbox's
+   *  Cheats tab "Grass" section (see DevSandbox.ts) rather than removed outright, so
+   *  it stays available to iterate on. See
+   *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md
+   *  "Playtest follow-up". */
+  private _grassEnabled = false;
 
   // ── Asset-upgraded geometry (added async after construction) ──────────────
   /** River tile GLBs replacing the procedural water mesh. */
@@ -470,7 +479,7 @@ export class OverworldScene {
     for (const ru of this._ruins)        this.scene.add(ru);
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
-    for (const gf of this._grassFields) this.scene.add(gf.mesh);
+    if (this._grassEnabled) for (const gf of this._grassFields) this.scene.add(gf.mesh);
     for (const c of this._activeAmbientCreatures) this.scene.add(c.root);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
@@ -624,9 +633,12 @@ export class OverworldScene {
     // only when the player has moved past REBUILD_HYSTERESIS; tick wind uniforms every
     // frame. A given tile is only ever one biome, so at most one field actually places
     // blades near the player at a time — the others just do a cheap no-op update() call.
-    for (const gf of this._grassFields) {
-      gf.update(pos.x, pos.z);
-      gf.tickWind(dt);
+    // Skipped entirely when grass is disabled (default) — see `_grassEnabled`.
+    if (this._grassEnabled) {
+      for (const gf of this._grassFields) {
+        gf.update(pos.x, pos.z);
+        gf.tickWind(dt);
+      }
     }
 
     for (const creature of this._activeAmbientCreatures) creature.update(this._wg, pos, dt);
@@ -787,6 +799,36 @@ export class OverworldScene {
   }
 
   getActiveEnemies(): SlimeEnemy[] { return this._enemies; }
+
+  // ── Grass (Dev Sandbox toggle — see `_grassEnabled`) ───────────────────────
+
+  getGrassEnabled(): boolean { return this._grassEnabled; }
+
+  /** Adds/removes each `GrassField`'s mesh from the scene immediately (no
+   *  re-enter() needed) and starts/stops its per-frame `update()`/`tickWind()`
+   *  work. Safe to call even if the scene is not currently `enter()`ed —
+   *  `scene.add`/`scene.remove` are idempotent. */
+  setGrassEnabled(enabled: boolean): void {
+    if (enabled === this._grassEnabled) return;
+    this._grassEnabled = enabled;
+    if (enabled) {
+      for (const gf of this._grassFields) this.scene.add(gf.mesh);
+    } else {
+      for (const gf of this._grassFields) this.scene.remove(gf.mesh);
+    }
+  }
+
+  /** Dev-panel tunable: multiplies every biome preset's own tuned blade density
+   *  (1 = unchanged, matching the preset defaults). */
+  setGrassDensityScale(scale: number): void {
+    for (const gf of this._grassFields) gf.setDensityScale(scale);
+  }
+
+  /** Dev-panel tunable: overrides `GRASS_RADIUS` (world units, player-centered) for
+   *  every biome preset. */
+  setGrassRadius(radius: number): void {
+    for (const gf of this._grassFields) gf.setRadius(radius);
+  }
 
   /** Returns all settlements with their world-space position for fast travel. */
   getSettlementPositions(): Array<{ name: string; worldPos: { x: number; y: number; z: number } }> {

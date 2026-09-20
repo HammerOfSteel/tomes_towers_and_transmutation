@@ -86,6 +86,16 @@ export interface DevSandboxOptions {
   onFlyMode?: (v: boolean) => void;
   getSettlements?: () => Array<{ name: string; worldPos: { x: number; y: number; z: number } }>;
   onFastTravel?: (pos: { x: number; y: number; z: number }) => void;
+  /** Procedural grass toggle — default OFF (see OverworldScene's `_grassEnabled` doc
+   *  comment: a live playtest found it both a major FPS contributor and an unresolved
+   *  art-direction fit issue). Density/radius are dev-tunable multipliers/overrides
+   *  layered on top of each biome preset's own tuned defaults (1x / GRASS_RADIUS). */
+  getGrassEnabled?: () => boolean;
+  onGrassEnabled?: (v: boolean) => void;
+  getGrassDensityScale?: () => number;
+  onGrassDensityScale?: (v: number) => void;
+  getGrassRadius?: () => number;
+  onGrassRadius?: (v: number) => void;
 
   // ── NPC Generator tab ─────────────────────────────────────────────────────
   /** Spawn a hostile sandbox stand-in whose visual is driven by NpcDNA. hp/damage override defaults. */
@@ -1807,6 +1817,29 @@ export class DevSandbox {
       return row;
     };
 
+    const mkSlider = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void): HTMLElement => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:5px;';
+      const lbl = document.createElement('span');
+      lbl.className = 'ds-label';
+      lbl.textContent = label;
+      lbl.style.minWidth = '90px';
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = String(min);
+      slider.max = String(max);
+      slider.step = String(step);
+      slider.value = String(get());
+      slider.style.cssText = 'flex:1;accent-color:#7040cc;';
+      const val = document.createElement('span');
+      val.className = 'ds-label';
+      val.style.minWidth = '32px';
+      val.textContent = slider.value;
+      slider.oninput = () => { val.textContent = slider.value; set(+slider.value); };
+      row.append(lbl, slider, val);
+      return row;
+    };
+
     // ── Princess Power ────────────────────────────────────────────────────
     const powerSec = mk('Princess Power');
     if (o.getGodMode && o.onGodMode) {
@@ -1927,6 +1960,22 @@ export class DevSandbox {
         owSec.appendChild(ftRow);
       }
       wrap.appendChild(owSec);
+    }
+
+    // ── Grass (experimental, default OFF — see live playtest follow-up) ────
+    if (o.getGrassEnabled && o.onGrassEnabled) {
+      const grassSec = mk('Grass (experimental)');
+      grassSec.appendChild(mkToggle(
+        'Procedural Grass', 'Off by default — FPS cost + art direction still being tuned',
+        o.getGrassEnabled, o.onGrassEnabled,
+      ));
+      if (o.getGrassDensityScale && o.onGrassDensityScale) {
+        grassSec.appendChild(mkSlider('Density ×', 0, 2, 0.1, o.getGrassDensityScale, o.onGrassDensityScale));
+      }
+      if (o.getGrassRadius && o.onGrassRadius) {
+        grassSec.appendChild(mkSlider('Radius (WU)', 4, 48, 2, o.getGrassRadius, o.onGrassRadius));
+      }
+      wrap.appendChild(grassSec);
     }
 
     return wrap;

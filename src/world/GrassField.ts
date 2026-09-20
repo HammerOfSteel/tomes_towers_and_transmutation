@@ -606,6 +606,11 @@ export class GrassField {
   private readonly _neighborColor: THREE.InstancedBufferAttribute;
   private _lastBuildX = Infinity;
   private _lastBuildZ = Infinity;
+  /** Dev-panel-tunable overrides — see `setRadius()`/`setDensityScale()`. Default to
+   *  this field's own module constant / a neutral 1x multiplier so behavior is
+   *  unchanged until a caller (the Dev Sandbox's Grass section) actually touches them. */
+  private _radius = GRASS_RADIUS;
+  private _densityScale = 1;
 
   constructor(
     private readonly _wg: WorldGrid,
@@ -666,8 +671,8 @@ export class GrassField {
     this._lastBuildZ = playerZ;
 
     const placements = selectGrassPlacements(
-      this._wg, playerX, playerZ, GRASS_RADIUS, this._seed,
-      this.preset.biome, this.preset.densityPerUnit2,
+      this._wg, playerX, playerZ, this._radius, this._seed,
+      this.preset.biome, this.preset.densityPerUnit2 * this._densityScale,
     );
     const count = Math.min(placements.length, this.preset.maxBlades);
     const { positionRotation, scaleAndVariation, edgeBlend, neighborColor } =
@@ -682,6 +687,25 @@ export class GrassField {
     this._edgeBlend.needsUpdate = true;
     this._neighborColor.needsUpdate = true;
     this.mesh.count = count;
+  }
+
+  /** Dev-panel override for this field's placement radius (world units, player-
+   *  centered) — see `GRASS_RADIUS`'s own doc comment for why grass uses a smaller
+   *  radius than terrain streaming. Forces the next `update()` call to rebuild
+   *  immediately, regardless of `REBUILD_HYSTERESIS`, so the change is visible at once. */
+  setRadius(radius: number): void {
+    this._radius = Math.max(0, radius);
+    this._lastBuildX = Infinity;
+    this._lastBuildZ = Infinity;
+  }
+
+  /** Dev-panel override for this field's blade density, as a multiplier on the
+   *  preset's own tuned `densityPerUnit2` (1 = unchanged). Forces an immediate rebuild
+   *  like `setRadius()`. */
+  setDensityScale(scale: number): void {
+    this._densityScale = Math.max(0, scale);
+    this._lastBuildX = Infinity;
+    this._lastBuildZ = Infinity;
   }
 
   /** Per-frame, cheap — only updates shader uniforms, no CPU instance-data work.

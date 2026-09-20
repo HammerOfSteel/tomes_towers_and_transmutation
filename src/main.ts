@@ -40,6 +40,7 @@ import { TelescopeView } from '@/ui/TelescopeView';
 import { TELESCOPE_FOG_NEAR, TELESCOPE_FOG_FAR } from '@/rendering/FogConfig';
 import { CreativeMode, type CreativeModeContext } from '@/creative/CreativeMode';
 import { OverworldScene } from '@/scene/OverworldScene';
+import { GRASS_RADIUS } from '@/world/GrassField';
 import { WaterLabScene } from '@/scene/WaterLabScene';
 import { SettlementLabScene } from '@/scene/SettlementLabScene';
 import type { RegenParams } from '@/scene/SettlementLabScene';
@@ -307,6 +308,14 @@ async function main() {
   // ── Scene mode (interior ↔ exterior ↔ telescope) ──────────────────
   let gameMode: 'interior' | 'exterior' | 'telescope' | 'waterlab' | 'settlementlab' = 'interior';
   let overworld: OverworldScene | null = null;
+  // Dev Sandbox "Grass" section prefs — persist across overworld
+  // recreations (world regen / settings changes) since `overworld` itself
+  // gets disposed and rebuilt but the player's toggle choice shouldn't
+  // reset. Default OFF per live playtest feedback (see OverworldScene's
+  // `_grassEnabled` doc comment).
+  let _grassEnabledPref = false;
+  let _grassDensityScalePref = 1;
+  let _grassRadiusPref = GRASS_RADIUS;
   let waterLab: WaterLabScene | null = null;
   let settlementLab: SettlementLabScene | null = null;
   let minimap:   OWMinimap | null = null;
@@ -375,6 +384,12 @@ async function main() {
     console.log('[_makeOverworld] creating OverworldScene...');
     const ow = new OverworldScene(scene, physics, player, worldData);
     console.log('[_makeOverworld] OverworldScene created');
+    // Re-apply the Dev Sandbox's Grass toggle/params so they survive a world
+    // regen (a fresh OverworldScene instance otherwise always starts with
+    // grass off, per `_grassEnabled`'s default).
+    ow.setGrassEnabled(_grassEnabledPref);
+    ow.setGrassDensityScale(_grassDensityScalePref);
+    ow.setGrassRadius(_grassRadiusPref);
     // Inject already-cleared camps so they aren't re-spawned
     ow.clearedCamps = discoveryTracker.clearedCamps;
     ow.onCampCleared = (wx, wz) => {
@@ -1286,6 +1301,12 @@ async function main() {
       onFlyMode:     (v) => { player.flyMode = v; },
       getSettlements: () => gameMode === 'exterior' ? (overworld?.getSettlementPositions() ?? []) : [],
       onFastTravel:  (pos) => { if (gameMode !== 'exterior') switchToExterior(); player.teleport(new THREE.Vector3(pos.x, pos.y + 2, pos.z)); },
+      getGrassEnabled: () => _grassEnabledPref,
+      onGrassEnabled:  (v) => { _grassEnabledPref = v; overworld?.setGrassEnabled(v); },
+      getGrassDensityScale: () => _grassDensityScalePref,
+      onGrassDensityScale:  (v) => { _grassDensityScalePref = v; overworld?.setGrassDensityScale(v); },
+      getGrassRadius: () => _grassRadiusPref,
+      onGrassRadius:  (v) => { _grassRadiusPref = v; overworld?.setGrassRadius(v); },
       onRunWave: (_count, _interval, hp, damage) => {
         // Called once per enemy by the wave timer in DevSandbox
         const playerPos = player.group.position;
