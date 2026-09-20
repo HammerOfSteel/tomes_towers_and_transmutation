@@ -80,11 +80,18 @@ function _straightEdgePoints(x0: number, z0: number, x1: number, z1: number): Ar
  * pass the same direct-water-adjacency check callers already compute
  * today (e.g. ShorelineWobble.ts's waterAdjacency() or an equivalent
  * per-side `waterDepth > 0` check).
+ *
+ * `cornerPullFn` defaults to shorelineCornerPull (water/land) but can be
+ * overridden (e.g. TerrainGeometryBuilder.ts's merged water+land-biome
+ * pull) so a differently-sourced corner-pull actually reaches this
+ * boundary line's geometry, not just gating checks at the call site --
+ * see docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md.
  */
 export function shorelineBoundaryPoints(
   wg: WorldGrid, T: number, GHW: number, GHH: number,
   gx0: number, gz0: number, gx1: number, gz1: number,
   includeNoiseWobble: boolean,
+  cornerPullFn: (wg: WorldGrid, gx: number, gz: number) => readonly [number, number] = shorelineCornerPull,
 ): Array<[number, number]> {
   const x0 = (gx0 - GHW) * T, z0 = (gz0 - GHH) * T;
   const x1 = (gx1 - GHW) * T, z1 = (gz1 - GHH) * T;
@@ -92,8 +99,8 @@ export function shorelineBoundaryPoints(
     ? shorelineEdgePoints(x0, z0, x1, z1)
     : _straightEdgePoints(x0, z0, x1, z1);
 
-  const pull0 = shorelineCornerPull(wg, gx0, gz0);
-  const pull1 = shorelineCornerPull(wg, gx1, gz1);
+  const pull0 = cornerPullFn(wg, gx0, gz0);
+  const pull1 = cornerPullFn(wg, gx1, gz1);
   const n = base.length - 1;
   return base.map(([px, pz], i) => {
     const t = i / n;

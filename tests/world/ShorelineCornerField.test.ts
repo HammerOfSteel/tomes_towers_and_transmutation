@@ -180,3 +180,23 @@ describe('shorelineBoundaryPoints', () => {
     expect(backward.slice().reverse()).toEqual(forward);
   });
 });
+
+describe('shorelineBoundaryPoints with a custom cornerPullFn', () => {
+  it('uses the provided cornerPullFn instead of shorelineCornerPull when given', () => {
+    const wg = makeGrid(5, []); // all land -- shorelineCornerPull would give zero pull everywhere
+    const T = 2, GHW = 2, GHH = 2;
+    const customPull = (_wg: WorldGrid, gx: number, gz: number): readonly [number, number] =>
+      (gx === 2 && gz === 2) ? [0.3, 0.3] : [0, 0];
+    const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, 2, 2, 3, 2, false, customPull);
+    expect(pts[0]![0]).toBeCloseTo(0.3, 10); // plain corner (0,0) + custom pull
+    expect(pts[0]![1]).toBeCloseTo(0.3, 10);
+  });
+
+  it('defaults to shorelineCornerPull when no cornerPullFn is passed (unchanged behavior)', () => {
+    const wg = makeGrid(5, [[2, 1], [2, 2], [1, 2]]); // vertex (2,2) is outer_corner
+    const T = 2, GHW = 2, GHH = 2;
+    const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, 2, 2, 3, 2, false);
+    expect(pts[0]![0]).toBeCloseTo(-0.5, 10);
+    expect(pts[0]![1]).toBeCloseTo(-0.5, 10);
+  });
+});

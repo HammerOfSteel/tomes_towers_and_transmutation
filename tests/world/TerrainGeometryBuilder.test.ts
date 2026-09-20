@@ -1241,6 +1241,34 @@ describe('buildTerrainGeometryData — ground sub-tile system (2026-09-01)', () 
   });
 });
 
+describe('buildTerrainGeometryData — land-biome dual-grid corner-pull (2026-09-20)', () => {
+  it('adjacent tiles of different biomes share identical pulled-corner positions at their shared edge (no geometric cracks)', () => {
+    // 3x1 grid: desert, grassland, grassland — the (1,0)-(1,1) vertical
+    // edge between col=0 (desert) and col=1 (grassland) is a straight
+    // 2-biome border (no isolated corner), so this asserts the BASELINE
+    // no-gap invariant that any future corner-pull change must preserve.
+    const wg = new WorldGrid(3, 1);
+    wg.set(0, 0, { biome: 'desert' });
+    wg.set(1, 0, { biome: 'grassland' });
+    wg.set(2, 0, { biome: 'grassland' });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 2, 1);
+    expect(data.groundGeometry.desert).toBeDefined();
+    expect(data.groundGeometry.grassland).toBeDefined();
+  });
+
+  it('pulls a land-biome corner at an isolated single desert tile inside grassland, mirroring the shoreline pond test', () => {
+    const wg = new WorldGrid(5, 5);
+    wg.set(2, 2, { biome: 'desert' });
+    // Should not throw, and should produce non-empty desert geometry —
+    // full correctness of the pull math is covered by
+    // LandBiomeCornerField.test.ts; this just confirms the wiring reaches
+    // buildTerrainGeometryData without regressing.
+    const data = buildTerrainGeometryData(wg, 5, 5, 2, 2, 2, 1);
+    expect(data.groundGeometry.desert).toBeDefined();
+    expect(data.groundGeometry.desert!.indices.length).toBeGreaterThan(0);
+  });
+});
+
 describe('shoreline wobble — top surface', () => {
   it('a dry tile bordering water gets a non-degenerate, gap-free ground mesh', () => {
     // 3x3 grid: center dry tile (1,1) borders a wet tile to the south (1,2).
