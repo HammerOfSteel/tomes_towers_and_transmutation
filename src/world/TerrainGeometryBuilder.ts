@@ -13,7 +13,7 @@ import type { WorldGrid, BiomeId, WorldCell } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
-import { GROUND_TERRAIN_VARIANTS } from './TerrainTextures';
+import { GROUND_TERRAIN_VARIANTS, regionTextureVariantKey } from './TerrainTextures';
 import { waterAdjacency, type WaterAdjacency } from './ShorelineWobble';
 import { shorelineCornerPull, shorelineBoundaryPoints } from './ShorelineCornerField';
 import { landBiomeCornerPull } from './LandBiomeCornerField';
@@ -555,14 +555,16 @@ export function buildTerrainGeometryData(
    *  spec docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md
    *  §2a) — `river_ford` is intentionally excluded (a dry, walkable road crossing,
    *  not a submerged floor) and keeps its existing null/flat-quad behavior. */
-  const _groundTextureVariant = (cell: WorldCell): string | null => {
+  const _groundTextureVariant = (cell: WorldCell, col: number, row: number): string | null => {
     if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return 'ocean_floor';
     if (cell.feature === 'river')       return 'river_floor';
     if (cell.feature === 'lake')        return 'lake_floor';
     if (cell.feature === 'river_ford')  return null;
     if (cell.feature === 'river_bank')  return 'river_bank';
     if (cell.biome === 'beach')         return 'beach';
-    return (GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome) ? cell.biome : null;
+    if (!(GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome)) return null;
+    const wx = (col - GHW) * T, wz = (row - GHH) * T;
+    return regionTextureVariantKey(cell.biome, wx, wz);
   };
 
   /** Append a quad face into a ground-variant's own buffers (created lazily
@@ -613,10 +615,10 @@ export function buildTerrainGeometryData(
       swY * (1 - u) * (1 - w) + seY * u * (1 - w) + nwY * (1 - u) * w + neY * u * w;
 
     const neighborVariant = {
-      south: _groundTextureVariant(wg.get(col, row + 1)),
-      north: _groundTextureVariant(wg.get(col, row - 1)),
-      east:  _groundTextureVariant(wg.get(col + 1, row)),
-      west:  _groundTextureVariant(wg.get(col - 1, row)),
+      south: _groundTextureVariant(wg.get(col, row + 1), col, row + 1),
+      north: _groundTextureVariant(wg.get(col, row - 1), col, row - 1),
+      east:  _groundTextureVariant(wg.get(col + 1, row), col + 1, row),
+      west:  _groundTextureVariant(wg.get(col - 1, row), col - 1, row),
     };
 
     // Shoreline boundary points for each edge that either (a) directly
@@ -889,7 +891,7 @@ export function buildTerrainGeometryData(
         }
       } else if (shape === 'flat' || shape === 'all-four-down' || !rampEligible) {
         // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb,
@@ -912,7 +914,7 @@ export function buildTerrainGeometryData(
         };
         const [v0, v1, v2, v3] = orderCornersForDiagonal(corners, diagonal);
         const n = triangleNormal(v0, v1, v2);
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
           // NOTE: emitGroundSubTiles interpolates from the tile's raw
           // (pre-jitter) swY/nwY/neY/seY, not the jittered v0..v3 corners
@@ -942,7 +944,7 @@ export function buildTerrainGeometryData(
           se: [wx1, seY + jSE, wz]  as [number, number, number],
         };
         const { positions: rampPos, normals: rampNrm } = buildQuadFace(corners, diagonal);
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
           let geo = groundGeometry[groundVariant];
           if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[groundVariant] = geo; }

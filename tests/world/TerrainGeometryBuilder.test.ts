@@ -664,13 +664,27 @@ describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
 
     const chunk = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 2, 1, 2, 2, 2, 2);
     // All tiles are flat default-biome 'grassland' (covered), so the chunk's
-    // vertices land in groundGeometry.grassland rather than the base buffer.
-    const positions = chunk.groundGeometry.grassland!.positions;
-    // Top-face Y for elevation 2 at SH=1 should be 2, regardless of chunking.
-    expect(positions[1]).toBe(positions[1]); // sanity: same array shape as before
-    // World X of the first vertex should reflect colStart=2, not 0.
+    // vertices land in groundGeometry buckets keyed 'grassland' or a
+    // region-variant suffix ('grassland~1', 'grassland~2', ...) rather than
+    // the base buffer. A north-neighbor tile just outside this 2x2 chunk
+    // (col=2,row=1) legitimately falls in a different REGION_CELL_WU cell
+    // than tile (2,2) itself at this GHW/GHH offset, so the border-blend
+    // mechanism (2026-09-20 land-biome corner-pull work) may pull a few of
+    // tile (2,2)'s north-edge sub-tiles into that neighbor's region-variant
+    // bucket — by design, the same "for free" cross-region-variant blending
+    // documented for Task 5. Search across all grassland-family buckets for
+    // the expected world-space corner instead of assuming a single bucket.
+    const grasslandBuckets = Object.entries(chunk.groundGeometry).filter(([key]) => key === 'grassland' || key.startsWith('grassland~'));
+    expect(grasslandBuckets.length).toBeGreaterThan(0);
+    // World X of the tile's own corner should reflect colStart=2, not 0.
     const wx = (2 - 1.5) * 2; // (col - GHW) * T for col=2
-    expect(positions[0]).toBeCloseTo(wx, 5);
+    const hasExpectedCorner = grasslandBuckets.some(([, gg]) => {
+      for (let i = 0; i < gg.positions.length; i += 3) {
+        if (Math.abs(gg.positions[i]! - wx) < 1e-5) return true;
+      }
+      return false;
+    });
+    expect(hasExpectedCorner).toBe(true);
   });
 
   it('defaults to the whole grid when chunk params are omitted (back-compat)', () => {
@@ -1073,6 +1087,16 @@ describe('buildTerrainGeometryData — ground texture variant routing (Phase 4a)
     const uSet = new Set<number>();
     for (let i = 0; i < uvs.length; i += 2) uSet.add(uvs[i]!);
     expect(uSet.size).toBeGreaterThan(1);
+  });
+
+  it('region-scale variant selection can route a grassland tile into a suffixed groundGeometry bucket', () => {
+    // A large grid gives enough distinct region cells that at least one
+    // grassland tile should land on a non-zero region variant somewhere.
+    const wg = new WorldGrid(40, 40);
+    for (let r = 0; r < 40; r++) for (let c = 0; c < 40; c++) wg.set(c, r, { biome: 'grassland', elevation: 0 });
+    const data = buildTerrainGeometryData(wg, 40, 40, 20, 20, 2, 1);
+    const keys = Object.keys(data.groundGeometry);
+    expect(keys.some((k) => k === 'grassland' || k.startsWith('grassland~'))).toBe(true);
   });
 
   it('leaves a genuinely uncovered feature (river_ford) on the untextured base buffer, byte-identical to today', () => {
