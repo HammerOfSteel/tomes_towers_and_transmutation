@@ -63,6 +63,29 @@ const ROAD_UV_TILE_WU = 1.0;
  *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
 const GROUND_UV_TILE_WU = 2.5;
 
+/** Deterministic per-tile UV rotation index in [0, 4) — 0/90/180/270°.
+ *  "Hex-bombing-lite": a cheap rotation-only approximation of full
+ *  hex-bombing (which resamples from irregular cells) that still breaks
+ *  large-scale periodic-tiling visibility, since GROUND_UV_TILE_WU (2.5 WU)
+ *  already doesn't align with the 2 WU tile grid — a per-tile rotation
+ *  introduces no NEW seam beyond what that non-aligned tiling already has. */
+function _tileUvRotation(col: number, row: number): number {
+  let h = (col * 668265263 + row * 374761393) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  h = h ^ (h >>> 16);
+  return (h >>> 0) % 4;
+}
+
+/** Rotates a (u, v) pair 90°*rotation clockwise in UV space. */
+function _rotateUv(u: number, v: number, rotation: number): [number, number] {
+  switch (rotation) {
+    case 1: return [-v, u];
+    case 2: return [-u, -v];
+    case 3: return [v, -u];
+    default: return [u, v];
+  }
+}
+
 /** Sub-tile grid resolution for ground tiles — same N=4 convention roads
  *  already established (RoadPathSampler.ts's roadSubdivisions default),
  *  for consistency rather than a new magic number. */
@@ -577,6 +600,7 @@ export function buildTerrainGeometryData(
     v2: [number, number, number], v3: [number, number, number],
     nx: number, ny: number, nz: number,
     r: number, g: number, b: number,
+    uvRotation: number,
   ): void => {
     let geo = groundGeometry[variant];
     if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[variant] = geo; }
@@ -585,7 +609,8 @@ export function buildTerrainGeometryData(
     geo.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
     geo.colors.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
     for (const [vx, , vz] of [v0, v1, v2, v3]) {
-      geo.uvs.push(vx / GROUND_UV_TILE_WU, vz / GROUND_UV_TILE_WU);
+      const [ru, rv] = _rotateUv(vx / GROUND_UV_TILE_WU, vz / GROUND_UV_TILE_WU, uvRotation);
+      geo.uvs.push(ru, rv);
     }
     geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
@@ -609,6 +634,7 @@ export function buildTerrainGeometryData(
     tr: number, tg: number, tb: number,
     adjacency: WaterAdjacency,
     cornerPulls: { nw: readonly [number, number]; ne: readonly [number, number]; se: readonly [number, number]; sw: readonly [number, number] },
+    uvRotation: number,
   ): void => {
     const N = GROUND_SUBDIVISIONS;
     const heightAt = (u: number, w: number): number =>
@@ -688,6 +714,7 @@ export function buildTerrainGeometryData(
           variant,
           [x00, ySW, z00], [x01, yNW, z01], [x11, yNE, z11], [x10, ySE, z10],
           nx, ny, nz, tr, tg, tb,
+          uvRotation,
         );
       }
     }
@@ -896,6 +923,7 @@ export function buildTerrainGeometryData(
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb,
             waterAdjacency(wg, col, row), cornerPulls,
+            _tileUvRotation(col, row),
           );
         } else {
           addFace(
@@ -930,6 +958,7 @@ export function buildTerrainGeometryData(
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb,
             NO_WATER_ADJACENCY, { nw: NO_CORNER_PULL, ne: NO_CORNER_PULL, se: NO_CORNER_PULL, sw: NO_CORNER_PULL },
+            _tileUvRotation(col, row),
           );
         } else {
           addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
@@ -952,8 +981,10 @@ export function buildTerrainGeometryData(
           geo.positions.push(...rampPos);
           geo.normals.push(...rampNrm);
           for (let i = 0; i < 6; i++) geo.colors.push(tr, tg, tb);
+          const rampUvRotation = _tileUvRotation(col, row);
           for (let i = 0; i < rampPos.length; i += 3) {
-            geo.uvs.push(rampPos[i]! / GROUND_UV_TILE_WU, rampPos[i + 2]! / GROUND_UV_TILE_WU);
+            const [ru, rv] = _rotateUv(rampPos[i]! / GROUND_UV_TILE_WU, rampPos[i + 2]! / GROUND_UV_TILE_WU, rampUvRotation);
+            geo.uvs.push(ru, rv);
           }
           geo.indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
         } else {
