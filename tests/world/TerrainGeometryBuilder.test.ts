@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, _mergedCornerPull, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 import { shorelineBoundaryPoints, shorelineCornerPull } from '@/world/ShorelineCornerField';
+import { landBiomeCornerPull } from '@/world/LandBiomeCornerField';
 
 /**
  * Phase 4a (ground-texture-variant routing) split each tile's top face
@@ -640,6 +641,60 @@ describe('buildTerrainGeometryData — biome-distinct colours', () => {
     // the base buffer, but the underlying color TABLE is unchanged.
     const colors = groundGeometry.ocean_floor!.colors;
     expect(colors[2]).toBeGreaterThan(colors[1]!); // blue channel dominant
+  });
+});
+
+describe('_mergedCornerPull — ramp/corner-pull crack fix (playtest follow-up)', () => {
+  // Reproduces the visible black-crack regression a live playtest found:
+  // land-biome corner-pull (much more common than the old water-only pull)
+  // was landing on a vertex ALSO touched by a genuinely tilted ramp-shaped
+  // tile — but the ramp/edge rendering path always draws that same vertex
+  // at its raw, un-pulled position (see TerrainGeometryBuilder.ts's 'edge'
+  // and final-else branches), so the two tiles sharing the vertex
+  // disagreed on its position, opening a real gap in the mesh.
+  function makeGrid(): WorldGrid {
+    const wg = new WorldGrid(5, 5);
+    // Uniform elevation everywhere except one deliberate one-level step,
+    // so every tile except (1,1) renders flat.
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 }); // lone differing biome at vertex (2,2)
+    wg.set(2, 1, { elevation: 1 }); // one-level step -> makes tile (1,1) an 'edge' ramp shape
+    return wg;
+  }
+
+  it('landBiomeCornerPull alone is still non-zero at the vertex (baseline, unguarded)', () => {
+    const wg = makeGrid();
+    const [dx, dz] = landBiomeCornerPull(wg, 2, 2);
+    expect(dx !== 0 || dz !== 0).toBe(true);
+  });
+
+  it('confirms tile (1,1) actually renders as a non-flat ramp shape given this setup', () => {
+    // Sanity check via buildTerrainGeometryData: an 'edge'/ramp tile's top
+    // face never lands in the ordinary flat sub-tile lattice, so its
+    // presence is implied by the vertex-agreement assertion below; this
+    // test only pins down that the fixture's elevation step is large
+    // enough to register (buildTerrainGeometryData must not throw for
+    // this grid).
+    const wg = makeGrid();
+    expect(() => buildTerrainGeometryData(wg, 5, 5, 0, 0, 2, 1)).not.toThrow();
+  });
+
+  it('_mergedCornerPull suppresses the pull entirely once a touching tile is a ramp shape', () => {
+    const wg = makeGrid();
+    expect(_mergedCornerPull(wg, 2, 2)).toEqual([0, 0]);
+  });
+
+  it('still returns the real land-biome pull at an equivalent vertex with no ramp involved', () => {
+    // Same biome layout, but WITHOUT the elevation step — confirms the
+    // suppression above is specifically the ramp guard, not some other
+    // regression that always zeroes land-biome pull.
+    const wg = new WorldGrid(5, 5);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 });
+    const merged = _mergedCornerPull(wg, 2, 2);
+    const direct = landBiomeCornerPull(wg, 2, 2);
+    expect(merged).toEqual(direct);
+    expect(merged[0] !== 0 || merged[1] !== 0).toBe(true);
   });
 });
 

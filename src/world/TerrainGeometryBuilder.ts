@@ -46,7 +46,12 @@ function _hasCornerPull(p: readonly [number, number]): boolean {
  *  landBiomeCornerPull's own dry-land-only scope guard already returns
  *  zero there. See
  *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md. */
-function _mergedCornerPull(wg: WorldGrid, gx: number, gz: number): readonly [number, number] {
+export function _mergedCornerPull(wg: WorldGrid, gx: number, gz: number): readonly [number, number] {
+  // A ramp-shaped tile always renders this vertex at its raw, un-pulled
+  // grid position (see `_cornerTouchesRampedTile()`), so any pull here
+  // would desync from that tile's own surface and open a visible crack —
+  // suppress the pull entirely rather than risk disagreement.
+  if (_cornerTouchesRampedTile(wg, gx, gz)) return NO_CORNER_PULL;
   const waterPull = shorelineCornerPull(wg, gx, gz);
   if (_hasCornerPull(waterPull)) return waterPull;
   return landBiomeCornerPull(wg, gx, gz);
@@ -466,6 +471,47 @@ function _lowCorners(
     levels[2] < selfElevation,
     levels[3] < selfElevation,
   ];
+}
+
+/** True if tile (col, row) currently renders as a genuinely non-planar/
+ *  tilted ramp shape ('edge', 'single-corner', 'outer-corner', 'saddle') —
+ *  i.e. one of the shapes whose top-surface geometry (see the 'edge' and
+ *  final-else branches in buildTerrainGeometryData()) ignores cornerPulls
+ *  entirely and instead always renders its 4 corners at their raw,
+ *  un-displaced (x, z) grid positions. Out-of-bounds coordinates are never
+ *  ramped (there is no tile there). Cheap re-derivation of the same
+ *  classification the main tile loop already computes for itself — called
+ *  here only for the up-to-4 tiles that share a given lattice corner, to
+ *  decide whether that corner is safe to displace at all (see
+ *  `_mergedCornerPull()`). */
+function _isCurrentlyRampedShape(wg: WorldGrid, col: number, row: number): boolean {
+  if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) return false;
+  const cell = wg.get(col, row);
+  if (!_isRampEligible(cell)) return false;
+  const levels = _tileCornerLevels(wg, col, row);
+  const low = _lowCorners(levels, cell.elevation);
+  const { shape } = classifyTileShape(low);
+  return shape !== 'flat' && shape !== 'all-four-down';
+}
+
+/** True if any of the (up to 4) tiles sharing lattice corner (gx, gz) —
+ *  i.e. tiles (gx-1,gz-1), (gx,gz-1), (gx-1,gz), (gx,gz), matching the same
+ *  corner convention `_rawCornerElevation()` uses — currently renders as a
+ *  non-planar ramp shape. Those shapes always render this corner at its
+ *  raw, un-pulled grid position (see the 'edge' and final-else branches),
+ *  so any OTHER tile sharing this exact vertex must agree and also skip
+ *  any corner-pull displacement here, or the two tiles' independently
+ *  rendered surfaces disagree on this vertex's position — a visible dark
+ *  crack in the ground mesh. Found via live playtest after land-biome
+ *  corner-pull (much more common than the old water-only pull) started
+ *  landing on land/ramp borders that water pull almost never touched. See
+ *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md
+ *  "Playtest follow-up: ramp/corner-pull crack". */
+function _cornerTouchesRampedTile(wg: WorldGrid, gx: number, gz: number): boolean {
+  return _isCurrentlyRampedShape(wg, gx - 1, gz - 1)
+    || _isCurrentlyRampedShape(wg, gx,     gz - 1)
+    || _isCurrentlyRampedShape(wg, gx - 1, gz)
+    || _isCurrentlyRampedShape(wg, gx,     gz);
 }
 
 /** One road-variant's own geometry buffers. `colors` carries a per-vertex
