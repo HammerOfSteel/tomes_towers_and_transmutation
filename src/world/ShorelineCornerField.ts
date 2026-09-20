@@ -20,7 +20,7 @@
 //  the design spec's "isolated pond" / "isolated peninsula" derivation).
 //  Every other case (empty/full/edge/diagonal) gets zero pull.
 
-import { buildDualGridCaseTable } from './DualGridCaseTable';
+import { cornerPull } from './DualGridCornerPull';
 import { shorelineEdgePoints, SHORELINE_WOBBLE_SUBDIVISIONS } from './ShorelineWobble';
 import type { WorldGrid } from './WorldGrid';
 
@@ -29,22 +29,6 @@ import type { WorldGrid } from './WorldGrid';
  *  noise amplitude, while leaving headroom under a tile's 1.0 WU
  *  half-width even combined with that noise layer). */
 export const SHORELINE_CORNER_PULL_WU = 0.5;
-
-/** Built once at module load — pure data, not per-world-seed content (see
- *  docs/superpowers/specs/2026-09-02-dual-grid-case-table-usage.md). */
-const _caseTable = buildDualGridCaseTable(2);
-
-/** [dx, dz] unit direction for each corner index, matching the [NW, NE,
- *  SE, SW] winding: NW is up-left (-x,-z), NE is up-right (+x,-z), SE is
- *  down-right (+x,+z), SW is down-left (-x,+z) — "up"/"down" meaning
- *  toward smaller/larger `row` (matching WorldGrid.gridToWorld's wz
- *  convention: wz increases with row). */
-const CORNER_DIRS: readonly (readonly [number, number])[] = [
-  [-1, -1], // NW
-  [1, -1],  // NE
-  [1, 1],   // SE
-  [-1, 1],  // SW
-];
 
 function _isLandTile(wg: WorldGrid, col: number, row: number): boolean {
   return wg.get(col, row).waterDepth === 0;
@@ -59,29 +43,13 @@ function _isLandTile(wg: WorldGrid, col: number, row: number): boolean {
  * default), matching ShorelineWobble.ts's waterAdjacency() convention.
  */
 export function shorelineCornerPull(wg: WorldGrid, gx: number, gz: number): readonly [number, number] {
-  const config = [
+  const config: [number, number, number, number] = [
     _isLandTile(wg, gx - 1, gz - 1) ? 1 : 0, // NW
     _isLandTile(wg, gx,     gz - 1) ? 1 : 0, // NE
     _isLandTile(wg, gx,     gz)     ? 1 : 0, // SE
     _isLandTile(wg, gx - 1, gz)     ? 1 : 0, // SW
   ];
-  const found = _caseTable.mapping[config.join(',')];
-  if (!found) return [0, 0];
-  const tile = _caseTable.tiles[found.tile]!;
-  if (tile.label !== 'outer_corner' && tile.label !== 'inner_corner') return [0, 0];
-
-  // Find the "odd one out" directly in the RAW (un-rotated) config: for
-  // outer_corner it's the lone land (1) corner; for inner_corner it's the
-  // lone water (0) corner. (Deliberately not derived from the case
-  // table's canonical mask + `steps` — the canonical mask's minority
-  // corner sits at a DIFFERENT index for outer_corner (index 3 / SW,
-  // since [0,0,0,1] is lexicographically smaller than [1,0,0,0]) than for
-  // inner_corner (index 0 / NW, since [0,1,1,1] is smallest) so a single
-  // "steps % 4" formula shared between both labels was wrong.)
-  const minorityValue = tile.label === 'outer_corner' ? 1 : 0;
-  const minorityIndex = config.indexOf(minorityValue);
-  const [dirX, dirZ] = CORNER_DIRS[minorityIndex]!;
-  return [dirX * SHORELINE_CORNER_PULL_WU, dirZ * SHORELINE_CORNER_PULL_WU];
+  return cornerPull(config, SHORELINE_CORNER_PULL_WU);
 }
 
 /** Same length/shape as shorelineEdgePoints()'s output, but with zero
