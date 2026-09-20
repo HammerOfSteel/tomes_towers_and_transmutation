@@ -416,6 +416,30 @@ describe('_subTileGroundVariant', () => {
     expect(patchCount).toBeGreaterThan(0);
     expect(patchCount).toBeLessThan(total * 0.25); // low rate, not dominant
   });
+
+  it('height-bias shifts the border-pull rate away from the flat 40% baseline (higher bias -> more pulls, lower bias -> fewer)', () => {
+    // subTileBumpJitter is deterministic per world position; find one high-bump
+    // and one low-bump sample position among a spread of candidates, then
+    // confirm the high-bump sample pulls toward a differing neighbor strictly
+    // more often across repeated distinct positions than the low-bump sample.
+    const neighbors = { ...noNeighbors, south: 'desert' };
+    const samples: Array<{ x: number; bump: number }> = [];
+    for (let i = 0; i < 200; i++) {
+      const x = i * 1.7 + 0.3;
+      samples.push({ x, bump: subTileBumpJitter(x, x) });
+    }
+    samples.sort((a, b) => a.bump - b.bump);
+    const lowBump = samples.slice(0, 20);
+    const highBump = samples.slice(-20);
+    const pullRate = (group: typeof samples): number => {
+      let pulls = 0;
+      for (const { x } of group) {
+        if (_subTileGroundVariant('mountain', neighbors, 3, 3, 4, 'mountain', x, x) === 'desert') pulls++;
+      }
+      return pulls / group.length;
+    };
+    expect(pullRate(highBump)).toBeGreaterThan(pullRate(lowBump));
+  });
 });
 
 describe('roadSubTileTint', () => {

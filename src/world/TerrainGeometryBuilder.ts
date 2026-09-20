@@ -73,6 +73,21 @@ const GROUND_SUBDIVISIONS = 4;
  *  own — see design spec §3.3. */
 const BORDER_PULL_PROBABILITY = 0.40;
 
+/** How strongly the per-sub-tile height-bump signal shifts border-pull
+ *  probability away from the flat BORDER_PULL_PROBABILITY baseline — see
+ *  the land-biome dual-grid borders design spec's "height-based texture
+ *  blending" section. Given today's render architecture picks exactly one
+ *  discrete texture variant per sub-tile (no literal shader alpha-blend
+ *  available), this is deliberately interpreted as a height-CORRELATED
+ *  discrete swap rather than a continuous cross-fade: the border-pull
+ *  probability is nudged up where this exact sub-tile's real height bump
+ *  (subTileBumpJitter, already baked into its visible geometry) is high,
+ *  and down where it's low, so swaps read as organic clustering along the
+ *  border instead of salt-and-pepper noise. A true continuous shader
+ *  blend remains a follow-up, flagged explicitly rather than silently
+ *  dropped. */
+export const HEIGHT_BLEND_WEIGHT = 0.35;
+
 /** Probability that a sub-tile swaps to a micro-patch variant, for
  *  biomes that have one mapped. */
 const MICRO_PATCH_PROBABILITY = 0.06;
@@ -103,6 +118,13 @@ function _subTileRoll(worldX: number, worldZ: number, salt: number): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** Reuses the exact seamless per-lattice-point bump already baked into a
+ *  sub-tile's visible geometry (subTileBumpJitter) as its "per-texel
+ *  height" signal, normalized to [-1, 1]. */
+function _borderHeightBias(subWorldX: number, subWorldZ: number): number {
+  return subTileBumpJitter(subWorldX, subWorldZ) / SUBTILE_BUMP_MAX;
+}
+
 /** Resolves which texture variant one ground sub-tile should render with
  *  — border dithering (pull toward a differing orthogonal neighbor's
  *  variant, only for the outermost sub-tile row/column touching that
@@ -123,17 +145,22 @@ export function _subTileGroundVariant(
   const isOutermostEast  = sx === subdivisions - 1;
   const isOutermostWest  = sx === 0;
 
+  const heightBias = _borderHeightBias(subWorldX, subWorldZ);
+  const effectiveProbability = Math.min(1, Math.max(0,
+    BORDER_PULL_PROBABILITY + heightBias * HEIGHT_BLEND_WEIGHT,
+  ));
+
   if (isOutermostSouth && neighborVariant.south !== null && neighborVariant.south !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 1) < BORDER_PULL_PROBABILITY) return neighborVariant.south;
+    if (_subTileRoll(subWorldX, subWorldZ, 1) < effectiveProbability) return neighborVariant.south;
   }
   if (isOutermostNorth && neighborVariant.north !== null && neighborVariant.north !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 2) < BORDER_PULL_PROBABILITY) return neighborVariant.north;
+    if (_subTileRoll(subWorldX, subWorldZ, 2) < effectiveProbability) return neighborVariant.north;
   }
   if (isOutermostEast && neighborVariant.east !== null && neighborVariant.east !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 3) < BORDER_PULL_PROBABILITY) return neighborVariant.east;
+    if (_subTileRoll(subWorldX, subWorldZ, 3) < effectiveProbability) return neighborVariant.east;
   }
   if (isOutermostWest && neighborVariant.west !== null && neighborVariant.west !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 4) < BORDER_PULL_PROBABILITY) return neighborVariant.west;
+    if (_subTileRoll(subWorldX, subWorldZ, 4) < effectiveProbability) return neighborVariant.west;
   }
 
   const microPatches = MICRO_PATCH_VARIANTS[ownBiome];
