@@ -47,11 +47,12 @@ function _hasCornerPull(p: readonly [number, number]): boolean {
  *  zero there. See
  *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md. */
 export function _mergedCornerPull(wg: WorldGrid, gx: number, gz: number): readonly [number, number] {
-  // A ramp-shaped tile always renders this vertex at its raw, un-pulled
-  // grid position (see `_cornerTouchesRampedTile()`), so any pull here
-  // would desync from that tile's own surface and open a visible crack —
-  // suppress the pull entirely rather than risk disagreement.
-  if (_cornerTouchesRampedTile(wg, gx, gz)) return NO_CORNER_PULL;
+  // A ramp-shaped or road/dirt-road/river-ford tile always renders this
+  // vertex at its raw, un-pulled grid position (see
+  // `_cornerTouchesUnpulledTile()`), so any pull here would desync from
+  // that tile's own surface and open a visible crack — suppress the pull
+  // entirely rather than risk disagreement.
+  if (_cornerTouchesUnpulledTile(wg, gx, gz)) return NO_CORNER_PULL;
   const waterPull = shorelineCornerPull(wg, gx, gz);
   if (_hasCornerPull(waterPull)) return waterPull;
   return landBiomeCornerPull(wg, gx, gz);
@@ -494,24 +495,48 @@ function _isCurrentlyRampedShape(wg: WorldGrid, col: number, row: number): boole
   return shape !== 'flat' && shape !== 'all-four-down';
 }
 
+/** True if tile (col, row) is tagged as a road/dirt-road/river-ford feature
+ *  — i.e. a tile whose top surface (when road path data actually covers
+ *  it, the overwhelmingly common case any time `roadPaths.length > 0`)
+ *  goes through the road sub-tile branch above, which — like the ramp
+ *  shapes — always renders at raw, un-pulled positions and never even
+ *  reads `cornerPulls`. A second, independent crack source from the same
+ *  playtest follow-up: a road/plaza tile bordering an ordinary flat tile
+ *  that DOES get a land-biome corner-pull disagreed on their shared
+ *  vertex exactly like the ramp case did. Treated as a conservative,
+ *  tile-level (not per-sub-tile-coverage) flag — the rare case where a
+ *  road-flagged tile ends up with zero actual coverage this call falls
+ *  back to the normal cornerPulls-respecting path anyway, so this can only
+ *  ever suppress a pull that was safe to suppress, never miss one. */
+function _hasRoadFeature(wg: WorldGrid, col: number, row: number): boolean {
+  if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) return false;
+  const { feature } = wg.get(col, row);
+  return feature === 'road' || feature === 'road_dirt' || feature === 'river_ford';
+}
+
 /** True if any of the (up to 4) tiles sharing lattice corner (gx, gz) —
  *  i.e. tiles (gx-1,gz-1), (gx,gz-1), (gx-1,gz), (gx,gz), matching the same
- *  corner convention `_rawCornerElevation()` uses — currently renders as a
- *  non-planar ramp shape. Those shapes always render this corner at its
- *  raw, un-pulled grid position (see the 'edge' and final-else branches),
- *  so any OTHER tile sharing this exact vertex must agree and also skip
- *  any corner-pull displacement here, or the two tiles' independently
- *  rendered surfaces disagree on this vertex's position — a visible dark
- *  crack in the ground mesh. Found via live playtest after land-biome
- *  corner-pull (much more common than the old water-only pull) started
- *  landing on land/ramp borders that water pull almost never touched. See
+ *  corner convention `_rawCornerElevation()` uses — currently renders via a
+ *  path that ignores cornerPulls and always uses this corner's raw,
+ *  un-pulled grid position: a non-planar ramp shape (see the 'edge' and
+ *  final-else branches) OR a road/dirt-road/river-ford tile (see the road
+ *  sub-tile branch, which never even reads cornerPulls). Any OTHER tile
+ *  sharing this exact vertex must agree and also skip any corner-pull
+ *  displacement here, or the two tiles' independently rendered surfaces
+ *  disagree on this vertex's position — a visible dark crack in the ground
+ *  mesh. Found via live playtest after land-biome corner-pull (much more
+ *  common than the old water-only pull) started landing on borders that
+ *  water pull almost never touched. See
  *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md
- *  "Playtest follow-up: ramp/corner-pull crack". */
-function _cornerTouchesRampedTile(wg: WorldGrid, gx: number, gz: number): boolean {
-  return _isCurrentlyRampedShape(wg, gx - 1, gz - 1)
-    || _isCurrentlyRampedShape(wg, gx,     gz - 1)
-    || _isCurrentlyRampedShape(wg, gx - 1, gz)
-    || _isCurrentlyRampedShape(wg, gx,     gz);
+ *  "Playtest follow-up: ramp/road corner-pull crack". */
+function _cornerTouchesUnpulledTile(wg: WorldGrid, gx: number, gz: number): boolean {
+  const coords: ReadonlyArray<readonly [number, number]> = [
+    [gx - 1, gz - 1], [gx, gz - 1], [gx - 1, gz], [gx, gz],
+  ];
+  for (const [c, r] of coords) {
+    if (_isCurrentlyRampedShape(wg, c, r) || _hasRoadFeature(wg, c, r)) return true;
+  }
+  return false;
 }
 
 /** One road-variant's own geometry buffers. `colors` carries a per-vertex

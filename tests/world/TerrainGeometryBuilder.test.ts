@@ -698,6 +698,62 @@ describe('_mergedCornerPull — ramp/corner-pull crack fix (playtest follow-up)'
   });
 });
 
+describe('_mergedCornerPull — road-tile corner-pull crack fix (second playtest follow-up)', () => {
+  // A second, independent crack source found on the SAME live playtest
+  // round: a road/dirt-road/river-ford-flagged tile's top surface (the
+  // `hasRoadCoverage` branch in buildTerrainGeometryData()) always renders
+  // at raw, un-pulled positions too — just like a ramp shape — but with no
+  // ramp geometry involved at all. A flat, ordinary neighbor tile getting a
+  // real land-biome corner-pull at their shared vertex disagreed with the
+  // road tile's un-pulled vertex, opening the same kind of visible crack
+  // reported at road/plaza edges (there is no separate 'plaza' TileFeature
+  // — settlement paths/plazas route through 'road').
+  function makeGrid(): WorldGrid {
+    const wg = new WorldGrid(5, 5);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 }); // lone differing biome at vertex (2,2)
+    wg.set(2, 1, { feature: 'road' }); // road-flagged neighbor touching that same vertex
+    return wg;
+  }
+
+  it('landBiomeCornerPull alone is still non-zero at the vertex (baseline, unguarded)', () => {
+    const wg = makeGrid();
+    const [dx, dz] = landBiomeCornerPull(wg, 2, 2);
+    expect(dx !== 0 || dz !== 0).toBe(true);
+  });
+
+  it('_mergedCornerPull suppresses the pull entirely once a touching tile is road-flagged', () => {
+    const wg = makeGrid();
+    expect(_mergedCornerPull(wg, 2, 2)).toEqual([0, 0]);
+  });
+
+  it('also suppresses for a dirt-road-flagged neighbor', () => {
+    const wg = new WorldGrid(5, 5);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 });
+    wg.set(2, 1, { feature: 'road_dirt' });
+    expect(_mergedCornerPull(wg, 2, 2)).toEqual([0, 0]);
+  });
+
+  it('also suppresses for a river-ford-flagged neighbor', () => {
+    const wg = new WorldGrid(5, 5);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 });
+    wg.set(2, 1, { feature: 'river_ford' });
+    expect(_mergedCornerPull(wg, 2, 2)).toEqual([0, 0]);
+  });
+
+  it('still returns the real land-biome pull at an equivalent vertex with no road feature involved', () => {
+    const wg = new WorldGrid(5, 5);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) wg.set(c, r, { elevation: 2 });
+    wg.set(1, 1, { biome: 'desert', elevation: 2 });
+    const merged = _mergedCornerPull(wg, 2, 2);
+    const direct = landBiomeCornerPull(wg, 2, 2);
+    expect(merged).toEqual(direct);
+    expect(merged[0] !== 0 || merged[1] !== 0).toBe(true);
+  });
+});
+
 describe('buildTerrainGeometryData — chunk sub-rectangle', () => {
   it('building a 2x2 sub-rectangle of a 4x4 grid emits only that sub-rectangle\'s top faces', () => {
     const wg = new WorldGrid(4, 4);
