@@ -206,6 +206,32 @@ export function _subTileGroundVariant(
   return ownVariant;
 }
 
+/** Micro-patch-only ground-variant swap for a single-corner/outer-corner/
+ *  saddle ramp face — the same occasional texture-patch swap flat ground
+ *  gets via `_subTileGroundVariant()`'s micro-patch branch above, but
+ *  without that function's border-pull-to-neighbor logic (which assumes a
+ *  genuine interior/edge sub-tile distinction that doesn't exist for a
+ *  ramp's single non-subdivided face — every "edge" would be true at
+ *  once). Playtest follow-up: these ramp tiles render as a single flat
+ *  quad of the tile's plain ground variant with no per-tile texture
+ *  variety, which (combined with their already-sharp single-step rise)
+ *  reads as an out-of-place, untextured-looking mound. Real slope/incline
+ *  geometry spanning multiple tiles is sub-task 1.3's scope (see
+ *  TODO/organic_world_tiles_todo.md); this is the smaller, safe texture-
+ *  only win available now within sub-task 1.1. */
+export function _rampGroundVariant(
+  baseVariant: string, biome: BiomeId, centerX: number, centerZ: number,
+): string {
+  const microPatches = MICRO_PATCH_VARIANTS[biome];
+  if (!microPatches || microPatches.length === 0) return baseVariant;
+  if (_subTileRoll(centerX, centerZ, 5) >= MICRO_PATCH_PROBABILITY) return baseVariant;
+  const idx = Math.min(
+    Math.floor(_subTileRoll(centerX, centerZ, 6) * microPatches.length),
+    microPatches.length - 1,
+  );
+  return microPatches[idx]!;
+}
+
 /** Multiplier range for per-road-sub-tile vertex-color tint variation — a
  *  subtle brightness swing (not a hue/color shift) simulating worn/dusty
  *  patches along an otherwise-uniform road texture. Slightly biased toward
@@ -1046,7 +1072,9 @@ export function buildTerrainGeometryData(
         const { positions: rampPos, normals: rampNrm } = buildQuadFace(corners, diagonal);
         const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
-          let geo = groundGeometry[groundVariant];
+          const rampCenterX = (wx + wx1) / 2, rampCenterZ = (wz + wz1) / 2;
+          const rampVariant = _rampGroundVariant(groundVariant, cell.biome, rampCenterX, rampCenterZ);
+          let geo = groundGeometry[rampVariant];
           if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[groundVariant] = geo; }
           const base = geo.positions.length / 3;
           geo.positions.push(...rampPos);

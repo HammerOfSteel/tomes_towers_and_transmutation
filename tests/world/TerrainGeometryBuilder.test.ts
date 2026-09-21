@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, _mergedCornerPull, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, _mergedCornerPull, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX, _rampGroundVariant } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
@@ -440,6 +440,39 @@ describe('_subTileGroundVariant', () => {
       return pulls / group.length;
     };
     expect(pullRate(highBump)).toBeGreaterThan(pullRate(lowBump));
+  });
+});
+
+describe('_rampGroundVariant — single-corner/outer-corner/saddle ramp texture richness', () => {
+  // Playtest follow-up: these ramp faces render as a single flat quad of
+  // the tile's plain ground variant with no per-tile texture variety at
+  // all (unlike flat ground and 'edge' ramps, both of which already go
+  // through emitGroundSubTiles()'s micro-patch selection). This gives
+  // ramp tiles in biomes with a MICRO_PATCH_VARIANTS entry an occasional
+  // texture-patch swap too, without touching their geometry/shape.
+  it('occasionally applies a micro-patch variant for a biome with one mapped, at a low rate', () => {
+    // 'grassland' maps to ['river_bank'].
+    let patchCount = 0;
+    const total = 400;
+    for (let i = 0; i < total; i++) {
+      const v = _rampGroundVariant('grassland', 'grassland', i * 3.7, i * -2.9);
+      if (v === 'river_bank') patchCount++;
+      else expect(v).toBe('grassland');
+    }
+    expect(patchCount).toBeGreaterThan(0);
+    expect(patchCount).toBeLessThan(total * 0.25); // low rate, not dominant
+  });
+
+  it('always returns the base variant for a biome with no MICRO_PATCH_VARIANTS entry (e.g. beach)', () => {
+    for (let i = 0; i < 100; i++) {
+      expect(_rampGroundVariant('beach', 'beach', i * 4.1, i * -1.3)).toBe('beach');
+    }
+  });
+
+  it('is deterministic for the same inputs', () => {
+    const a = _rampGroundVariant('grassland', 'grassland', 12.3, 45.6);
+    const b = _rampGroundVariant('grassland', 'grassland', 12.3, 45.6);
+    expect(a).toBe(b);
   });
 });
 
