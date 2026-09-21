@@ -69,6 +69,12 @@ const ROAD_UV_TILE_WU = 1.0;
  *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
 const GROUND_UV_TILE_WU = 2.5;
 
+/** World-space UV tiling period (WU) for cliff/wall-face textures — a
+ *  vertical wall varies in Y along its height, so this scales the
+ *  height-axis UV so the granite texture reads as real cross-strata
+ *  tiling rather than stretched across a whole multi-tile-tall wall. */
+const CLIFF_UV_TILE_WU = 2.0;
+
 /** Deterministic per-tile UV rotation index in [0, 4) — 0/90/180/270°.
  *  "Hex-bombing-lite": a cheap rotation-only approximation of full
  *  hex-bombing (which resamples from irregular cells) that still breaks
@@ -712,6 +718,36 @@ export function buildTerrainGeometryData(
     geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
 
+  /** Append a quad face into the 'cliff' ground-texture variant's own
+   *  buffers, with UV mapped from (horizontal tangent, Y) instead of
+   *  (X, Z) — a vertical wall face varies in Y along its height and in
+   *  one horizontal axis along its width, so projecting UV from (X, Z)
+   *  directly (as addGroundFace does for horizontal top faces) would
+   *  smear the texture across the wall's vertical extent instead of
+   *  tiling it sensibly. `tangent` extracts the vertex's horizontal
+   *  coordinate along the wall's own width — X for south/north walls,
+   *  Z for east/west walls (whichever axis actually varies across the
+   *  wall's 4 vertices). See
+   *  docs/superpowers/specs/2026-09-22-terrain-elevation-slopes-design.md §5. */
+  const addCliffFace = (
+    v0: [number, number, number], v1: [number, number, number],
+    v2: [number, number, number], v3: [number, number, number],
+    nx: number, ny: number, nz: number,
+    r: number, g: number, b: number,
+    tangent: (v: readonly [number, number, number]) => number,
+  ): void => {
+    let geo = groundGeometry['cliff'];
+    if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry['cliff'] = geo; }
+    const base = geo.positions.length / 3;
+    geo.positions.push(...v0, ...v1, ...v2, ...v3);
+    geo.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+    geo.colors.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
+    for (const v of [v0, v1, v2, v3]) {
+      geo.uvs.push(tangent(v) / CLIFF_UV_TILE_WU, v[1] / CLIFF_UV_TILE_WU);
+    }
+    geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+  };
+
   /** Emits one flat/edge-shaped tile's top face as a GROUND_SUBDIVISIONS×
    *  GROUND_SUBDIVISIONS sub-tile grid instead of a single quad — each
    *  sub-tile's height is bilinearly interpolated from the tile's own 4
@@ -1118,9 +1154,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
             0, 0, 1,  tr * d, tg * d, tb * d,
+            (v) => v[0],
           );
         }
       }
@@ -1141,9 +1178,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
             0, 0, -1,  tr * d, tg * d, tb * d,
+            (v) => v[0],
           );
         }
       }
@@ -1164,9 +1202,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
             1, 0, 0,  tr * d, tg * d, tb * d,
+            (v) => v[2],
           );
         }
       }
@@ -1187,9 +1226,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
             -1, 0, 0,  tr * d, tg * d, tb * d,
+            (v) => v[2],
           );
         }
       }

@@ -61,16 +61,21 @@ describe('buildTerrainGeometryData', () => {
 
     // Tile 0: top (16 sub-tiles). Tile 1 (raised): top (16 sub-tiles) + N + S
     // + E + W (4 unsubdivided wall faces — walls are never subdivided).
-    // Tile 2: top (16 sub-tiles). Walls land in the base buffer (4 faces ×
-    // 4 verts × 3 = 48); all 3 tiles' tops land in groundGeometry, split
-    // across grassland and its micro-patch variant (river_bank) since a
-    // handful of the 48 total sub-tiles may occasionally patch — sum
-    // across every covered variant rather than assuming all 48 stayed in
-    // grassland specifically. Total (walls + all covered tops) = 624.
+    // Tile 2: top (16 sub-tiles). Walls now land in groundGeometry.cliff
+    // (1.3 §5) instead of the base buffer; all 3 tiles' tops land in
+    // groundGeometry, split across grassland and its micro-patch variant
+    // (river_bank) since a handful of the 48 total sub-tiles may
+    // occasionally patch — sum across every covered variant rather than
+    // assuming all 48 stayed in grassland specifically. Total (walls +
+    // all covered tops) = 624.
     expect(totalPositionsLength(data)).toBe(624);
-    expect(data.positions).toHaveLength(4 * 4 * 3); // 4 wall faces
-    const totalGroundPositions = Object.values(data.groundGeometry).reduce((s, g) => s + g.positions.length, 0);
-    expect(totalGroundPositions).toBe(3 * 16 * 4 * 3); // 3 tiles' top faces, subdivided
+    expect(data.positions).toHaveLength(0);
+    expect(data.groundGeometry.cliff).toBeDefined();
+    expect(data.groundGeometry.cliff!.positions).toHaveLength(4 * 4 * 3); // 4 wall faces
+    const totalTopFacePositions = Object.entries(data.groundGeometry)
+      .filter(([variant]) => variant !== 'cliff')
+      .reduce((s, [, g]) => s + g.positions.length, 0);
+    expect(totalTopFacePositions).toBe(3 * 16 * 4 * 3); // 3 tiles' top faces, subdivided
     expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6); // 4 wall faces + 48 sub-tile top faces, × 6 indices each
 
     // Collect the set of distinct face normals present — should include
@@ -82,6 +87,21 @@ describe('buildTerrainGeometryData', () => {
       normalSet.add(`${normals[i]},${normals[i + 1]},${normals[i + 2]}`);
     }
     expect(normalSet).toEqual(new Set(['0,1,0', '0,0,1', '0,0,-1', '1,0,0', '-1,0,0']));
+  });
+
+  it('routes non-shoreline wall faces into groundGeometry.cliff instead of the base buffer', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { elevation: 1 }); // single-level step, no water adjacency
+
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Wall faces no longer land in the untextured base buffer...
+    expect(data.positions).toHaveLength(0);
+    // ...they land in groundGeometry.cliff instead: 4 wall faces (N/S/E/W)
+    // x 4 verts x 3 floats = 48.
+    expect(data.groundGeometry.cliff).toBeDefined();
+    expect(data.groundGeometry.cliff!.positions).toHaveLength(4 * 4 * 3);
+    expect(data.groundGeometry.cliff!.uvs).toHaveLength(4 * 4 * 2);
   });
 
   it('colors water-biome tiles using the water palette', () => {
@@ -577,10 +597,14 @@ describe('buildTerrainGeometryData — variant color and corner jitter', () => {
     }
     const data = buildTerrainGeometryData(wg, 6, 6, 3, 3, 1, 1);
 
-    // Each cell contributes exactly one top face (flat grid) = 4 verts = 12 color floats.
+    // Grassland (the default biome) is a covered variant, so every top face
+    // lands in groundGeometry (split across 'grassland' and its micro-patch
+    // variant 'river_bank') rather than the base buffer — collect colors
+    // from every groundGeometry variant bucket, not just the base buffer.
+    const allColors = Object.values(data.groundGeometry).flatMap(g => g.colors);
     const cellColors: Array<[number, number, number]> = [];
-    for (let i = 0; i < data.colors.length; i += 12) {
-      cellColors.push([data.colors[i]!, data.colors[i + 1]!, data.colors[i + 2]!]);
+    for (let i = 0; i < allColors.length; i += 3) {
+      cellColors.push([allColors[i]!, allColors[i + 1]!, allColors[i + 2]!]);
     }
     const distinct = new Set(cellColors.map(c => c.join(',')));
     expect(distinct.size).toBeGreaterThan(1);
@@ -1226,10 +1250,13 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     isolated.set(1, 0, { elevation: 1 }); // 2 levels lower — ramp only covers 1 level, residual wall for the rest
     const data = buildTerrainGeometryData(isolated, 2, 1, 1, 0, 2, 1, 0, 0, 1, 1); // isolate tile 0 only
     let eastWallTopY = -Infinity;
-    for (let i = 0; i < data.normals.length; i += 3) {
-      const nx = data.normals[i]!, ny = data.normals[i + 1]!, nz = data.normals[i + 2]!;
-      if (Math.abs(nx - 1) < 0.01 && Math.abs(ny) < 0.01 && Math.abs(nz) < 0.01) {
-        eastWallTopY = Math.max(eastWallTopY, data.positions[i + 1]!); // Y component of this same vertex
+    const cliff = data.groundGeometry.cliff;
+    if (cliff) {
+      for (let i = 0; i < cliff.normals.length; i += 3) {
+        const nx = cliff.normals[i]!, ny = cliff.normals[i + 1]!, nz = cliff.normals[i + 2]!;
+        if (Math.abs(nx - 1) < 0.01 && Math.abs(ny) < 0.01 && Math.abs(nz) < 0.01) {
+          eastWallTopY = Math.max(eastWallTopY, cliff.positions[i + 1]!); // Y component of this same vertex
+        }
       }
     }
     expect(eastWallTopY).toBeGreaterThan(-Infinity); // residual wall is present
@@ -1738,7 +1765,9 @@ describe('shoreline wobble — walls', () => {
     const wg = new WorldGrid(3, 1);
     wg.set(1, 0, { elevation: 2 });
     const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
-    expect(data.positions).toHaveLength(4 * 4 * 3); // 4 flat wall faces, unsubdivided
+    // Walls now route into groundGeometry.cliff (1.3 §5) instead of the
+    // base buffer.
+    expect(data.groundGeometry.cliff!.positions).toHaveLength(4 * 4 * 3); // 4 flat wall faces, unsubdivided
     expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6);
   });
 });

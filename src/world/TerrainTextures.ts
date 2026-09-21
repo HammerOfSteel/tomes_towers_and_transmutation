@@ -332,6 +332,7 @@ function _canvasFor(variant: string): HTMLCanvasElement {
  *  tiling period — callers only need to override for deliberate retuning. */
 export function terrainVariantTexture(variant: string, repX = 1, repY = 1): THREE.CanvasTexture {
   if (variant === 'mountain')   return _wrap(graniteTexture(1, 1), repX, repY);
+  if (variant === 'cliff')      return _wrap(graniteTexture(1, 1), repX, repY);
   if (variant === 'river_bank') return _wrap(earthTexture(1, 1), repX, repY);
   return _wrap(new THREE.CanvasTexture(_canvasFor(variant)), repX, repY);
 }

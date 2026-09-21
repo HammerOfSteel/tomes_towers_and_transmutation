@@ -84,3 +84,11 @@ describe('terrainVariantTexture with a suffixed region-variant key', () => {
     expect(a.image).toBe(b.image);
   });
 });
+
+describe('terrainVariantTexture — cliff variant', () => {
+  it('routes the cliff variant through the same texture as the mountain variant', () => {
+    const cliffTex = terrainVariantTexture('cliff');
+    const mountainTex = terrainVariantTexture('mountain');
+    expect(cliffTex.image).toBe(mountainTex.image);
+  });
+});
