@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGrid } from '@/world/WorldGrid';
 import type { BiomeId } from '@/world/WorldGrid';
-import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, _mergedCornerPull, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX, _rampGroundVariant } from '@/world/TerrainGeometryBuilder';
+import { buildTerrainGeometryData, BIOME_COLOR_VARIANTS, cellVariantIndex, cornerHeightJitter, BIOME_LAKE, subTileBumpJitter, SUBTILE_BUMP_MAX, _subTileGroundVariant, _mergedCornerPull, getTerrainHeightAt, roadSubTileTint, ROAD_TINT_MIN, ROAD_TINT_MAX, _rampGroundVariant, _tileCornerLevels } from '@/world/TerrainGeometryBuilder';
 import type { TerrainGeometryData } from '@/world/TerrainGeometryBuilder';
 import { RIVER_DEPTH_WU, OCEAN_SHALLOW_DEPTH_WU, OCEAN_DEEP_DEPTH_WU, LAKE_DEPTH_WU, LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { BRIDGE_ROAD_VARIANT } from '@/world/RoadPathSampler';
 import { GENERIC_ROAD_VARIANT } from '@/world/RoadTextures';
 import { shorelineBoundaryPoints, shorelineCornerPull } from '@/world/ShorelineCornerField';
 import { landBiomeCornerPull } from '@/world/LandBiomeCornerField';
+import { terraceElevation } from '@/world/TerrainTerracing';
 
 /**
  * Phase 4a (ground-texture-variant routing) split each tile's top face
@@ -1769,5 +1770,71 @@ describe('shoreline wobble — walls', () => {
     // base buffer.
     expect(data.groundGeometry.cliff!.positions).toHaveLength(4 * 4 * 3); // 4 flat wall faces, unsubdivided
     expect(totalIndicesLength(data)).toBe(4 * 6 + 3 * 16 * 6);
+  });
+});
+
+describe('_tileCornerLevels corner agreement (crack-fix regression)', () => {
+  it('every tile sharing a corner computes the identical clamped elevation for it, after terracing', () => {
+    // Same worked example as TerrainTerracing.test.ts's diagonal-jump
+    // case, but asserted at the geometry-corner layer this time — this is
+    // the actual crack-fix contract: not just "terracing raises D", but
+    // "every tile touching the shared corner now agrees on its height".
+    const wg = new WorldGrid(2, 2);
+    wg.set(0, 0, { elevation: 2 }); // A
+    wg.set(1, 0, { elevation: 1 }); // B
+    wg.set(0, 1, { elevation: 1 }); // C
+    wg.set(1, 1, { elevation: 0 }); // D
+
+    terraceElevation(wg);
+
+    // The corner shared by all 4 tiles: A's NE corner, B's NW corner,
+    // C's SE corner, D's SW corner (see TerrainGeometryBuilder.ts's
+    // _tileCornerLevels() doc comment for the [sw, nw, ne, se] index
+    // convention this relies on).
+    const aCorner = _tileCornerLevels(wg, 0, 0)[2]; // A's NE
+    const bCorner = _tileCornerLevels(wg, 1, 0)[1]; // B's NW
+    const cCorner = _tileCornerLevels(wg, 0, 1)[3]; // C's SE
+    const dCorner = _tileCornerLevels(wg, 1, 1)[0]; // D's SW
+
+    expect(aCorner).toBe(bCorner);
+    expect(aCorner).toBe(cCorner);
+    expect(aCorner).toBe(dCorner);
+  });
+
+  it('agrees on every interior corner of a radial hill grid (broader stress case)', () => {
+    // A rounded-distance "hill" — realistic terrain generation shape
+    // (elevation falls off with Euclidean, not Chebyshev, distance from a
+    // peak) — deliberately chosen because Euclidean rounding, unlike
+    // Chebyshev/orthogonal-only distance, routinely produces diagonal
+    // steps 2 levels apart even where every orthogonal step is safe,
+    // exactly the class of real-world shape that produced the reported
+    // in-game cracks near mountains/towers.
+    const SIZE = 9;
+    const CENTER = 4;
+    const wg = new WorldGrid(SIZE, SIZE);
+    for (let row = 0; row < SIZE; row++) {
+      for (let col = 0; col < SIZE; col++) {
+        const dist = Math.hypot(col - CENTER, row - CENTER);
+        const elevation = Math.max(0, 4 - Math.round(dist));
+        wg.set(col, row, { elevation });
+      }
+    }
+
+    terraceElevation(wg);
+
+    // Check every interior grid-corner lattice point (cc, cr) with all 4
+    // surrounding tiles in bounds: (cc-1,cr-1)'s NE, (cc,cr-1)'s NW,
+    // (cc-1,cr)'s SE, (cc,cr)'s SW must all agree.
+    for (let cr = 1; cr < SIZE; cr++) {
+      for (let cc = 1; cc < SIZE; cc++) {
+        const swTile = _tileCornerLevels(wg, cc, cr)[0];
+        const nwTile = _tileCornerLevels(wg, cc, cr - 1)[1];
+        const seTile = _tileCornerLevels(wg, cc - 1, cr)[3];
+        const neTile = _tileCornerLevels(wg, cc - 1, cr - 1)[2];
+        expect(swTile).toBe(nwTile);
+        expect(swTile).toBe(seTile);
+        expect(swTile).toBe(neTile);
+      }
+    }
   });
 });

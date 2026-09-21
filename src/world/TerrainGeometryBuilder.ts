@@ -483,7 +483,7 @@ function _rawCornerElevation(
  * A tile's 4 corner elevation levels — `[sw, nw, ne, se]` — each clamped
  * to at most 1 level below the tile's own elevation (see design spec §3).
  */
-function _tileCornerLevels(wg: WorldGrid, col: number, row: number): [number, number, number, number] {
+export function _tileCornerLevels(wg: WorldGrid, col: number, row: number): [number, number, number, number] {
   const selfElevation = wg.get(col, row).elevation;
   const clamp = (raw: number) => Math.max(selfElevation - 1, Math.min(selfElevation, raw));
   return [
