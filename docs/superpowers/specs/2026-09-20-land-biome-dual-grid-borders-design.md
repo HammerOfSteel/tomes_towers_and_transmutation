@@ -134,3 +134,25 @@ the existing sub-tile system's O(16 × tiles) work.
   first, sub-tile grid builds on the pulled corners** (user-confirmed in review).
 
 No open questions remain blocking the implementation plan.
+
+## 9. Known issue carried into sub-task 1.3 (playtest follow-up, sub-task 1.2 review)
+
+**Reported (not yet fixed):** black gaps/cracks between terrain tiles are still
+visible after this sub-task's corner-pull + sub-tile work shipped, on both
+small and mid-size generated realms. Initially assumed purely visual
+(z-fighting/texture-seam at a shallow camera angle), but the user reported
+during sub-task 1.2's playtest that the ground **feels** discontinuous at
+these points too — i.e. this may be a genuine collider (trimesh) gap at
+chunk or tile boundaries, not only a rendering artifact, which would make it
+a more serious physics bug than originally assumed.
+
+**Deliberately deferred to sub-task 1.3** (real elevation/slopes) rather than
+fixed in isolation now, per user decision — 1.3's slope/incline block work
+touches the same tile-boundary vertex-sharing machinery this corner-pull
+system owns, so the two should be diagnosed and fixed together rather than
+patching this spec's geometry twice. **1.3's research pass must start by
+reproducing this specific report** (small + mid-size realm, note exact
+tile/chunk coordinates where the gap appears) before designing slope
+geometry, since a boundary-vertex mismatch that causes visual cracks would
+very likely also break slope-block edge-matching if not fixed first.
+
