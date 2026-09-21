@@ -35,6 +35,50 @@ function quantizeElevation(elevation: number): number {
   return Math.max(0, Math.min(ELEVATION_LEVELS - 1, Math.floor(elevation * ELEVATION_LEVELS)));
 }
 
+const NEIGHBOR_OFFSETS_8: ReadonlyArray<readonly [number, number]> = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1,  0],           [1,  0],
+  [-1,  1], [0,  1], [1,  1],
+];
+
+/** One-pass 3x3 neighbor-average smoothing applied AFTER quantization, so
+ *  a single spiked cell doesn't read as an isolated "pixel" blob of
+ *  elevation — the cell's own (already-quantized) value counts double in
+ *  the average (weight 2 of 10 total, vs weight 1 for each of up to 8
+ *  neighbors) so real ridgelines/plateaus aren't smoothed flat, just
+ *  de-spiked. Reads from a snapshot of the pre-smoothing elevations (not
+ *  live `grid.get()` values being written mid-pass) so the result doesn't
+ *  depend on sweep order. Water tiles are excluded from both being
+ *  smoothed and from contributing to a neighbor's average — elevation
+ *  levels under water carve to depth via a separate mechanism (see
+ *  WaterDepthConfig.ts's physicalHeightWU), not through this level field.
+ *  See docs/superpowers/specs/2026-09-22-terrain-elevation-slopes-design.md
+ *  §3a. */
+function _smoothQuantizedElevation(grid: WorldGrid, worldSize: number): void {
+  const isWater = (biome: string) => biome === 'ocean' || biome === 'deep_ocean';
+  const snapshot: number[][] = [];
+  for (let row = 0; row < worldSize; row++) {
+    snapshot.push(Array.from({ length: worldSize }, (_, col) => grid.get(col, row).elevation));
+  }
+  for (let row = 0; row < worldSize; row++) {
+    for (let col = 0; col < worldSize; col++) {
+      const cell = grid.get(col, row);
+      if (isWater(cell.biome)) continue;
+      let sum = snapshot[row]![col]! * 2;
+      let count = 2;
+      for (const [dc, dr] of NEIGHBOR_OFFSETS_8) {
+        const nCol = col + dc, nRow = row + dr;
+        if (nCol < 0 || nCol >= worldSize || nRow < 0 || nRow >= worldSize) continue;
+        const nCell = grid.get(nCol, nRow);
+        if (isWater(nCell.biome)) continue;
+        sum += snapshot[nRow]![nCol]!;
+        count++;
+      }
+      grid.set(col, row, { elevation: Math.round(sum / count) });
+    }
+  }
+}
+
 /**
  * Sample a realm cell for a target WorldGrid position. Direct 1:1 index
  * when `realm` is already `worldSize x worldSize` (the normal case);
@@ -74,5 +118,6 @@ export function realmToWorldGrid(realm: RealmData, worldSize: number): WorldGrid
       });
     }
   }
+  _smoothQuantizedElevation(grid, worldSize);
   return grid;
 }

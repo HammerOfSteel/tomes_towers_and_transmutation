@@ -68,3 +68,15 @@ export function pickRockArchetype(wx: number, wz: number): RockArchetype {
   // correlate archetype choices.
   return ROCK_ARCHETYPES[hashIndex(wx + 91.7, wz - 41.3, ROCK_ARCHETYPES.length)]!;
 }
+
+export type CactusVariant = 'saguaro' | 'barrel' | 'pricklypear';
+const CACTUS_VARIANTS: readonly CactusVariant[] = ['saguaro', 'barrel', 'pricklypear'];
+
+/** Deterministic cactus sub-variant for the `'cactus'` tree archetype at
+ *  world position (wx, wz) — extracted from the original inline
+ *  `hashIndex(wx, wz, 3)` dispatch in `OverworldScene._buildCactusTree()` so
+ *  the nature-prop instancing path (`NaturePropField.ts`) can pick the same
+ *  `cactus-saguaro`/`cactus-barrel`/`cactus-pricklypear` recipe key. */
+export function pickCactusVariant(wx: number, wz: number): CactusVariant {
+  return CACTUS_VARIANTS[hashIndex(wx, wz, CACTUS_VARIANTS.length)]!;
+}

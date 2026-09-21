@@ -235,9 +235,61 @@ describe('tickAmbientBehavior', () => {
     const b = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
     expect(a).toEqual(b);
   });
+
+  it('avoids picking a wander target that lands on water when isWaterAt is provided', () => {
+    // rand() always returns 0.9 first (would normally land far out toward the water-only
+    // half-plane below), then falls back to smaller values on retry — deterministic proof
+    // the retry loop actually re-rolls instead of accepting the first (wet) candidate.
+    const calls: number[] = [0.9, 0.9, 0.1, 0.1]; // angle, dist, angle(retry), dist(retry)
+    let i = 0;
+    const rand = () => calls[Math.min(i++, calls.length - 1)];
+    const prev: AmbientBehaviorState = { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 0 };
+    // First candidate (rand=0.9,0.9) lands at roughly (5.8, -4.2) — z < 0 — which this
+    // predicate treats as "water"; the retry candidate (rand=0.1,0.1) lands at roughly
+    // (0.6, 0.5) — z >= 0 — which is dry, proving the retry loop actually re-rolled.
+    const isWaterAt = (_x: number, z: number) => z < 0;
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand, isWaterAt);
+    expect(next.state).toBe('wander');
+    expect(isWaterAt(next.targetX, next.targetZ)).toBe(false);
+  });
+
+  it('falls back to the spawn point (no movement) if every wander-target retry lands on water', () => {
+    const rand = () => 0.9; // same "wet" candidate every attempt
+    const prev: AmbientBehaviorState = { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 0 };
+    const isWaterAt = () => true; // everything is water — no valid target exists
+    const next = tickAmbientBehavior(prev, 0, 0, 5, 7, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand, isWaterAt);
+    expect(next.state).toBe('wander');
+    expect(next.targetX).toBe(5); // spawnX
+    expect(next.targetZ).toBe(7); // spawnZ
+  });
+
+  it('is unaffected by isWaterAt when omitted (backward compatible)', () => {
+    const rand = () => 0.5;
+    const prev: AmbientBehaviorState = { state: 'idle', targetX: 0, targetZ: 0, dwellTimer: 0.5 };
+    const next = tickAmbientBehavior(prev, 0, 0, 0, 0, FAR_PLAYER.x, FAR_PLAYER.z, 1, rand);
+    expect(next.state).toBe('wander');
+  });
 });
 
 describe('AmbientCreature', () => {
+  it('stands at the water surface (not the carved lake floor) if it ends up on a wet tile', () => {
+    // A dedicated grid where the single tile the creature occupies is a carved lake
+    // (elevation 0, waterDepth 2) — physicalHeightWU would put the floor well below 0.
+    const wetWg = new WorldGrid(9, 9);
+    const { col, row } = wetWg.worldToGrid(0, 0);
+    wetWg.set(col, row, { elevation: 0, waterDepth: 2, biome: 'grassland' as BiomeId });
+    const spawn = new THREE.Vector3(0, 0, 0);
+    const creature = new AmbientCreature('rabbit', spawn, 1);
+    // Within LOD_FAR_DISTANCE_WU (45) so the creature actually simulates/re-queries height,
+    // but outside FLEE_TRIGGER_RADIUS (6) so it stays idle/wander, not fleeing.
+    const nearbyPlayer = new THREE.Vector3(20, 0, 20);
+    creature.update(wetWg, nearbyPlayer, 1 / 30);
+    // Surface Y (per WaterDetection's WATER_SURFACE_OFFSET_WU) is elevation*LEVEL_HEIGHT + 0.05
+    // = 0.05 here — nowhere near the negative carved-floor height a depth-2 lake would give.
+    expect(creature.root.position.y).toBeCloseTo(0.05, 5);
+    creature.dispose();
+  });
+
   it('constructs a rabbit at the given spawn position, feet grounded at spawn Y', () => {
     const spawn = new THREE.Vector3(5, 2, 5);
     const creature = new AmbientCreature('rabbit', spawn, 42);

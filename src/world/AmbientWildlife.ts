@@ -16,6 +16,7 @@ import { poissonDisk } from '@/core/poissonDisk';
 import { isScatterAllowed } from '@/world/ScatterRules';
 import type { WorldGrid, BiomeId } from '@/world/WorldGrid';
 import { getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
+import { getWaterInfoAt } from '@/world/WaterDetection';
 
 // ── Species ───────────────────────────────────────────────────────────────
 
@@ -164,6 +165,11 @@ export function tickAmbientBehavior(
   playerX: number, playerZ: number,
   dt: number,
   rand: () => number,
+  /** Optional water-tile test (world x/z) — when provided, wander-target
+   *  selection avoids landing on water (these are land-only species; see
+   *  `AmbientCreature.update()`'s water-clipping fix). Omitted by existing
+   *  callers/tests keeps the original (water-agnostic) behavior. */
+  isWaterAt?: (x: number, z: number) => boolean,
 ): AmbientBehaviorState {
   const dxPlayer = ownX - playerX;
   const dzPlayer = ownZ - playerZ;
@@ -196,12 +202,26 @@ export function tickAmbientBehavior(
     const dwellTimer = prev.dwellTimer - dt;
     if (dwellTimer > 0) return { ...prev, dwellTimer };
     // Dwell expired — pick a new wander target within WANDER_RADIUS of the spawn point.
-    const angle = rand() * Math.PI * 2;
-    const dist = rand() * WANDER_RADIUS;
+    // Retry a bounded number of times to avoid landing on a water tile (lake/river edge
+    // within wander range of a forest/grassland/etc. spawn); fall back to the spawn point
+    // itself (guaranteed dry — see AMBIENT_BIOME_RULES) if every attempt lands on water.
+    const WANDER_TARGET_ATTEMPTS = 8;
+    let targetX = spawnX;
+    let targetZ = spawnZ;
+    for (let attempt = 0; attempt < WANDER_TARGET_ATTEMPTS; attempt++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = rand() * WANDER_RADIUS;
+      const candX = spawnX + Math.cos(angle) * dist;
+      const candZ = spawnZ + Math.sin(angle) * dist;
+      if (!isWaterAt || !isWaterAt(candX, candZ)) {
+        targetX = candX;
+        targetZ = candZ;
+        break;
+      }
+    }
     return {
       state: 'wander',
-      targetX: spawnX + Math.cos(angle) * dist,
-      targetZ: spawnZ + Math.sin(angle) * dist,
+      targetX, targetZ,
       dwellTimer: 0,
     };
   }
@@ -278,6 +298,7 @@ export class AmbientCreature {
       this._spawnX, this._spawnZ,
       playerPos.x, playerPos.z,
       dt, this._rand,
+      (x, z) => getWaterInfoAt(wg, x, z) !== null,
     );
 
     const speed = this._behavior.state === 'flee' ? FLEE_SPEED
@@ -301,7 +322,17 @@ export class AmbientCreature {
     // raised terrain or floating above lowered terrain as they wander across a tile
     // boundary with an elevation change, matching how the player's own physics-based
     // height following works.
-    this.root.position.y = getTerrainHeightAt(wg, this.root.position.x, this.root.position.z);
+    //
+    // Water-tile safety net: getTerrainHeightAt() reports the carved *floor* height
+    // under water (correct for the mesh/collider), which would otherwise stand these
+    // land-only species at the bottom of a lake. The wander-target water-avoidance
+    // above (tickAmbientBehavior's isWaterAt check) is the primary fix — this is a
+    // fallback for any tile a creature is already standing on (e.g. spawned near a
+    // shoreline) so it reads as "at the water's edge/surface", not submerged.
+    const water = getWaterInfoAt(wg, this.root.position.x, this.root.position.z);
+    this.root.position.y = water
+      ? water.surfaceY
+      : getTerrainHeightAt(wg, this.root.position.x, this.root.position.z);
 
     this._animTime += dt;
     animateCreature(this._rig, {

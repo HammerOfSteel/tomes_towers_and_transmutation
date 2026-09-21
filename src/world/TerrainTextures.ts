@@ -20,6 +20,51 @@ export const GROUND_TERRAIN_VARIANTS = [
   'river_floor', 'lake_floor', 'ocean_floor',
 ] as const;
 
+/** Biomes that get more than one large-scale texture variant, and how many
+ *  (index 0 is always the existing base canvas — no behavior change for
+ *  biomes not listed here or callers passing region-agnostic keys).
+ *  Chosen for biomes where "patchier vs. lusher" reads as a genuine,
+ *  plausible large-scale sub-region difference; omitted biomes (desert,
+ *  snow, mountain, beach, etc.) already read as fairly visually uniform at
+ *  region scale, matching the same reasoning MICRO_PATCH_VARIANTS in
+ *  TerrainGeometryBuilder.ts already uses for the micro-patch list. */
+export const REGION_TEXTURE_VARIANT_COUNT: Partial<Record<string, number>> = {
+  grassland: 3,
+  forest: 2,
+  savanna: 2,
+  tundra: 2,
+};
+
+/** World-space size (WU) of one region cell for region-scale texture-variant
+ *  selection — coarser than a tile (T=2 WU) so a variant change reads as a
+ *  genuine multi-tile sub-region rather than tile-by-tile noise. 8 tiles'
+ *  worth per axis. */
+export const REGION_CELL_WU = 16;
+
+function _regionHash(regionX: number, regionZ: number): number {
+  let h = (regionX * 2654435761 + regionZ * 40503) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967296;
+}
+
+/**
+ * Deterministic region-scale texture-variant KEY for a biome at a given
+ * absolute world position. Returns the plain `biome` string (no behavior
+ * change) if that biome has no REGION_TEXTURE_VARIANT_COUNT entry, or
+ * `${biome}~${idx}` for idx in [1, count) — idx 0 always collapses back to
+ * the plain biome string so the existing single-variant rendering path is
+ * untouched for the common case.
+ */
+export function regionTextureVariantKey(biome: string, worldX: number, worldZ: number): string {
+  const count = REGION_TEXTURE_VARIANT_COUNT[biome];
+  if (!count || count <= 1) return biome;
+  const regionX = Math.floor(worldX / REGION_CELL_WU);
+  const regionZ = Math.floor(worldZ / REGION_CELL_WU);
+  const idx = Math.floor(_regionHash(regionX, regionZ) * count);
+  return idx === 0 ? biome : `${biome}~${idx}`;
+}
+
 const _canvases = new Map<string, HTMLCanvasElement>();
 
 function _newCanvas(): { c: HTMLCanvasElement; g: CanvasRenderingContext2D } {
@@ -237,11 +282,32 @@ function _buildOceanFloorCanvas(): HTMLCanvasElement {
   return c;
 }
 
+/** Generic brightness recolor applied on top of any base canvas for region
+ *  variant index >= 1 — reusable across every biome without bespoke
+ *  per-biome authoring. idx 1 reads darker/lusher, idx 2 (if a biome ever
+ *  configures 4 variants) reads lighter/drier; deliberately a simple,
+ *  cheap post-process rather than new canvas content. */
+function _applyRegionVariantTint(c: HTMLCanvasElement, idx: number): HTMLCanvasElement {
+  const g = c.getContext('2d')!;
+  const img = g.getImageData(0, 0, c.width, c.height);
+  const mul = idx % 2 === 1 ? 0.85 : 1.15;
+  for (let i = 0; i < img.data.length; i += 4) {
+    img.data[i]     = Math.min(255, img.data[i]!     * mul);
+    img.data[i + 1] = Math.min(255, img.data[i + 1]! * mul);
+    img.data[i + 2] = Math.min(255, img.data[i + 2]! * mul);
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
 function _canvasFor(variant: string): HTMLCanvasElement {
   const cached = _canvases.get(variant);
   if (cached) return cached;
+  const tildeIdx = variant.indexOf('~');
+  const base = tildeIdx === -1 ? variant : variant.slice(0, tildeIdx);
+  const regionIdx = tildeIdx === -1 ? 0 : parseInt(variant.slice(tildeIdx + 1), 10);
   let c: HTMLCanvasElement;
-  switch (variant) {
+  switch (base) {
     case 'beach':     c = _buildBeachCanvas(); break;
     case 'desert':    c = _buildDesertCanvas(); break;
     case 'savanna':   c = _buildSavannaCanvas(); break;
@@ -255,6 +321,7 @@ function _canvasFor(variant: string): HTMLCanvasElement {
     case 'ocean_floor': c = _buildOceanFloorCanvas(); break;
     default:          c = _buildGrasslandCanvas(); break; // unreachable via terrainVariantTexture's own switch, kept for type safety
   }
+  if (regionIdx > 0) c = _applyRegionVariantTint(c, regionIdx);
   _canvases.set(variant, c);
   return c;
 }
@@ -265,6 +332,7 @@ function _canvasFor(variant: string): HTMLCanvasElement {
  *  tiling period — callers only need to override for deliberate retuning. */
 export function terrainVariantTexture(variant: string, repX = 1, repY = 1): THREE.CanvasTexture {
   if (variant === 'mountain')   return _wrap(graniteTexture(1, 1), repX, repY);
+  if (variant === 'cliff')      return _wrap(graniteTexture(1, 1), repX, repY);
   if (variant === 'river_bank') return _wrap(earthTexture(1, 1), repX, repY);
   return _wrap(new THREE.CanvasTexture(_canvasFor(variant)), repX, repY);
 }

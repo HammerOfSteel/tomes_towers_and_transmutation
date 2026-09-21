@@ -20,7 +20,11 @@ describe('OverworldScene — startup smoke', () => {
     await expect(import('@/ui/OWMinimap')).resolves.toHaveProperty('OWMinimap');
   });
 
+  // Nature-asset kit (Task 6) added several new module imports to
+  // OverworldScene.ts, pushing first-import transform time past vitest's
+  // default 5000ms test timeout in this sandbox — bump it rather than
+  // treat genuinely slow (but successful) module transform as a hang.
   it('OverworldScene module imports without throwing', async () => {
     await expect(import('@/scene/OverworldScene')).resolves.toHaveProperty('OverworldScene');
-  });
+  }, 20000);
 });

@@ -53,6 +53,43 @@ describe('buildWorldGrid — realm-sourced terrain (P0)', () => {
     expect(grid.height).toBe(256);
   });
 
+  it('lets a uniformly-elevated ring outside the tower flat zone retain its full elevation', () => {
+    const config = { ...DEFAULT_WORLD_GEN_CONFIG, worldSize: 128 as const };
+    const GHW = (config.worldSize - 1) / 2; // 63.5
+
+    // Mock generateRealmData to return a fully uniform, maximally
+    // elevated realm (every cell at raw elevation 0.99, which quantizes
+    // to level 7) — isolates the flat-zone override's own effect from
+    // realm-noise placement, so this test doesn't depend on where the
+    // realm generator happens to place 'mountain' biome cells for a
+    // given seed.
+    const uniformCells = Array.from({ length: config.worldSize }, () =>
+      Array.from({ length: config.worldSize }, () => ({
+        elevation: 0.99, moisture: 0.5, biome: 'mountain' as const,
+      })),
+    );
+    const fakeRealm = {
+      cells: uniformCells, W: config.worldSize, H: config.worldSize,
+      rivers: [], lakes: [], settlements: [], dungeons: [], towerX: 0, towerY: 0, seed: 1,
+    };
+    const spy = vi.spyOn(RealmGen, 'generateRealmData').mockReturnValue(fakeRealm as ReturnType<typeof RealmGen.generateRealmData>);
+    try {
+      const grid = buildWorldGrid(1, config);
+
+      // Sample a specific cell at radius ~13.5 tiles from center (~0.21
+      // of GHW=63.5) — inside the OLD flat-zone radius (FR = round(63.5
+      // * 0.28) = 18, so flatness there is ~0.25 and would round the
+      // uniform level-7 input down to 5) but outside the NEW, shrunk one
+      // (FR = round(63.5 * 0.12) = 8, so flatness there is exactly 0 and
+      // the cell keeps its full level-7 elevation unchanged).
+      const col = Math.round(GHW) + 13; // dc = 13.5
+      const row = Math.round(GHW);      // dr = 0.5
+      expect(grid.get(col, row).elevation).toBe(7);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('produces at least some water tiles for a large-enough world (realm always has ocean)', () => {
     const cfg = { ...DEFAULT_WORLD_GEN_CONFIG, seed: 2 };
     const grid = buildWorldGrid(2, cfg);

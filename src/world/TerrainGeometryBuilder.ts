@@ -13,9 +13,10 @@ import type { WorldGrid, BiomeId, WorldCell } from './WorldGrid';
 import { physicalHeightWU } from './WaterDepthConfig';
 import { computeTileRoadCoverage, BRIDGE_ROAD_VARIANT, type RoadPathSegment } from './RoadPathSampler';
 import { classifyTileShape, orderCornersForDiagonal, triangleNormal, buildQuadFace } from './TerrainKit';
-import { GROUND_TERRAIN_VARIANTS } from './TerrainTextures';
+import { GROUND_TERRAIN_VARIANTS, regionTextureVariantKey } from './TerrainTextures';
 import { waterAdjacency, type WaterAdjacency } from './ShorelineWobble';
 import { shorelineCornerPull, shorelineBoundaryPoints } from './ShorelineCornerField';
+import { landBiomeCornerPull } from './LandBiomeCornerField';
 
 /** Shared "no water neighbor" constant — passed at call sites deliberately
  *  excluded from shoreline wobble (e.g. the genuinely-tilted 'edge' shape
@@ -39,6 +40,24 @@ function _hasCornerPull(p: readonly [number, number]): boolean {
   return p[0] !== 0 || p[1] !== 0;
 }
 
+/** Water/land pull takes priority (a coarser, more dramatic boundary); if
+ *  zero, falls back to a land-biome pull. Never both at once -- a mixed
+ *  water+differing-biome vertex keeps today's water-only behavior, since
+ *  landBiomeCornerPull's own dry-land-only scope guard already returns
+ *  zero there. See
+ *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md. */
+export function _mergedCornerPull(wg: WorldGrid, gx: number, gz: number): readonly [number, number] {
+  // A ramp-shaped or road/dirt-road/river-ford tile always renders this
+  // vertex at its raw, un-pulled grid position (see
+  // `_cornerTouchesUnpulledTile()`), so any pull here would desync from
+  // that tile's own surface and open a visible crack — suppress the pull
+  // entirely rather than risk disagreement.
+  if (_cornerTouchesUnpulledTile(wg, gx, gz)) return NO_CORNER_PULL;
+  const waterPull = shorelineCornerPull(wg, gx, gz);
+  if (_hasCornerPull(waterPull)) return waterPull;
+  return landBiomeCornerPull(wg, gx, gz);
+}
+
 /** World units per texture tile for road sub-tile UV — smaller than
  *  BlockKit's UV_TILE_WU since roads are a narrower feature that reads
  *  better with finer texture tiling. */
@@ -50,6 +69,35 @@ const ROAD_UV_TILE_WU = 1.0;
  *  distance. See docs/superpowers/specs/2026-08-30-ground-tile-texture-variety-design.md §3.1. */
 const GROUND_UV_TILE_WU = 2.5;
 
+/** World-space UV tiling period (WU) for cliff/wall-face textures — a
+ *  vertical wall varies in Y along its height, so this scales the
+ *  height-axis UV so the granite texture reads as real cross-strata
+ *  tiling rather than stretched across a whole multi-tile-tall wall. */
+const CLIFF_UV_TILE_WU = 2.0;
+
+/** Deterministic per-tile UV rotation index in [0, 4) — 0/90/180/270°.
+ *  "Hex-bombing-lite": a cheap rotation-only approximation of full
+ *  hex-bombing (which resamples from irregular cells) that still breaks
+ *  large-scale periodic-tiling visibility, since GROUND_UV_TILE_WU (2.5 WU)
+ *  already doesn't align with the 2 WU tile grid — a per-tile rotation
+ *  introduces no NEW seam beyond what that non-aligned tiling already has. */
+function _tileUvRotation(col: number, row: number): number {
+  let h = (col * 668265263 + row * 374761393) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177 | 0;
+  h = h ^ (h >>> 16);
+  return (h >>> 0) % 4;
+}
+
+/** Rotates a (u, v) pair 90°*rotation clockwise in UV space. */
+function _rotateUv(u: number, v: number, rotation: number): [number, number] {
+  switch (rotation) {
+    case 1: return [-v, u];
+    case 2: return [-u, -v];
+    case 3: return [v, -u];
+    default: return [u, v];
+  }
+}
+
 /** Sub-tile grid resolution for ground tiles — same N=4 convention roads
  *  already established (RoadPathSampler.ts's roadSubdivisions default),
  *  for consistency rather than a new magic number. */
@@ -59,6 +107,21 @@ const GROUND_SUBDIVISIONS = 4;
  *  sub-tile pulls toward a differing neighbor's variant instead of its
  *  own — see design spec §3.3. */
 const BORDER_PULL_PROBABILITY = 0.40;
+
+/** How strongly the per-sub-tile height-bump signal shifts border-pull
+ *  probability away from the flat BORDER_PULL_PROBABILITY baseline — see
+ *  the land-biome dual-grid borders design spec's "height-based texture
+ *  blending" section. Given today's render architecture picks exactly one
+ *  discrete texture variant per sub-tile (no literal shader alpha-blend
+ *  available), this is deliberately interpreted as a height-CORRELATED
+ *  discrete swap rather than a continuous cross-fade: the border-pull
+ *  probability is nudged up where this exact sub-tile's real height bump
+ *  (subTileBumpJitter, already baked into its visible geometry) is high,
+ *  and down where it's low, so swaps read as organic clustering along the
+ *  border instead of salt-and-pepper noise. A true continuous shader
+ *  blend remains a follow-up, flagged explicitly rather than silently
+ *  dropped. */
+export const HEIGHT_BLEND_WEIGHT = 0.35;
 
 /** Probability that a sub-tile swaps to a micro-patch variant, for
  *  biomes that have one mapped. */
@@ -90,6 +153,13 @@ function _subTileRoll(worldX: number, worldZ: number, salt: number): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** Reuses the exact seamless per-lattice-point bump already baked into a
+ *  sub-tile's visible geometry (subTileBumpJitter) as its "per-texel
+ *  height" signal, normalized to [-1, 1]. */
+function _borderHeightBias(subWorldX: number, subWorldZ: number): number {
+  return subTileBumpJitter(subWorldX, subWorldZ) / SUBTILE_BUMP_MAX;
+}
+
 /** Resolves which texture variant one ground sub-tile should render with
  *  — border dithering (pull toward a differing orthogonal neighbor's
  *  variant, only for the outermost sub-tile row/column touching that
@@ -110,17 +180,22 @@ export function _subTileGroundVariant(
   const isOutermostEast  = sx === subdivisions - 1;
   const isOutermostWest  = sx === 0;
 
+  const heightBias = _borderHeightBias(subWorldX, subWorldZ);
+  const effectiveProbability = Math.min(1, Math.max(0,
+    BORDER_PULL_PROBABILITY + heightBias * HEIGHT_BLEND_WEIGHT,
+  ));
+
   if (isOutermostSouth && neighborVariant.south !== null && neighborVariant.south !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 1) < BORDER_PULL_PROBABILITY) return neighborVariant.south;
+    if (_subTileRoll(subWorldX, subWorldZ, 1) < effectiveProbability) return neighborVariant.south;
   }
   if (isOutermostNorth && neighborVariant.north !== null && neighborVariant.north !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 2) < BORDER_PULL_PROBABILITY) return neighborVariant.north;
+    if (_subTileRoll(subWorldX, subWorldZ, 2) < effectiveProbability) return neighborVariant.north;
   }
   if (isOutermostEast && neighborVariant.east !== null && neighborVariant.east !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 3) < BORDER_PULL_PROBABILITY) return neighborVariant.east;
+    if (_subTileRoll(subWorldX, subWorldZ, 3) < effectiveProbability) return neighborVariant.east;
   }
   if (isOutermostWest && neighborVariant.west !== null && neighborVariant.west !== ownVariant) {
-    if (_subTileRoll(subWorldX, subWorldZ, 4) < BORDER_PULL_PROBABILITY) return neighborVariant.west;
+    if (_subTileRoll(subWorldX, subWorldZ, 4) < effectiveProbability) return neighborVariant.west;
   }
 
   const microPatches = MICRO_PATCH_VARIANTS[ownBiome];
@@ -135,6 +210,32 @@ export function _subTileGroundVariant(
   }
 
   return ownVariant;
+}
+
+/** Micro-patch-only ground-variant swap for a single-corner/outer-corner/
+ *  saddle ramp face — the same occasional texture-patch swap flat ground
+ *  gets via `_subTileGroundVariant()`'s micro-patch branch above, but
+ *  without that function's border-pull-to-neighbor logic (which assumes a
+ *  genuine interior/edge sub-tile distinction that doesn't exist for a
+ *  ramp's single non-subdivided face — every "edge" would be true at
+ *  once). Playtest follow-up: these ramp tiles render as a single flat
+ *  quad of the tile's plain ground variant with no per-tile texture
+ *  variety, which (combined with their already-sharp single-step rise)
+ *  reads as an out-of-place, untextured-looking mound. Real slope/incline
+ *  geometry spanning multiple tiles is sub-task 1.3's scope (see
+ *  TODO/organic_world_tiles_todo.md); this is the smaller, safe texture-
+ *  only win available now within sub-task 1.1. */
+export function _rampGroundVariant(
+  baseVariant: string, biome: BiomeId, centerX: number, centerZ: number,
+): string {
+  const microPatches = MICRO_PATCH_VARIANTS[biome];
+  if (!microPatches || microPatches.length === 0) return baseVariant;
+  if (_subTileRoll(centerX, centerZ, 5) >= MICRO_PATCH_PROBABILITY) return baseVariant;
+  const idx = Math.min(
+    Math.floor(_subTileRoll(centerX, centerZ, 6) * microPatches.length),
+    microPatches.length - 1,
+  );
+  return microPatches[idx]!;
 }
 
 /** Multiplier range for per-road-sub-tile vertex-color tint variation — a
@@ -405,6 +506,71 @@ function _lowCorners(
   ];
 }
 
+/** True if tile (col, row) currently renders as a genuinely non-planar/
+ *  tilted ramp shape ('edge', 'single-corner', 'outer-corner', 'saddle') —
+ *  i.e. one of the shapes whose top-surface geometry (see the 'edge' and
+ *  final-else branches in buildTerrainGeometryData()) ignores cornerPulls
+ *  entirely and instead always renders its 4 corners at their raw,
+ *  un-displaced (x, z) grid positions. Out-of-bounds coordinates are never
+ *  ramped (there is no tile there). Cheap re-derivation of the same
+ *  classification the main tile loop already computes for itself — called
+ *  here only for the up-to-4 tiles that share a given lattice corner, to
+ *  decide whether that corner is safe to displace at all (see
+ *  `_mergedCornerPull()`). */
+function _isCurrentlyRampedShape(wg: WorldGrid, col: number, row: number): boolean {
+  if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) return false;
+  const cell = wg.get(col, row);
+  if (!_isRampEligible(cell)) return false;
+  const levels = _tileCornerLevels(wg, col, row);
+  const low = _lowCorners(levels, cell.elevation);
+  const { shape } = classifyTileShape(low);
+  return shape !== 'flat' && shape !== 'all-four-down';
+}
+
+/** True if tile (col, row) is tagged as a road/dirt-road/river-ford feature
+ *  — i.e. a tile whose top surface (when road path data actually covers
+ *  it, the overwhelmingly common case any time `roadPaths.length > 0`)
+ *  goes through the road sub-tile branch above, which — like the ramp
+ *  shapes — always renders at raw, un-pulled positions and never even
+ *  reads `cornerPulls`. A second, independent crack source from the same
+ *  playtest follow-up: a road/plaza tile bordering an ordinary flat tile
+ *  that DOES get a land-biome corner-pull disagreed on their shared
+ *  vertex exactly like the ramp case did. Treated as a conservative,
+ *  tile-level (not per-sub-tile-coverage) flag — the rare case where a
+ *  road-flagged tile ends up with zero actual coverage this call falls
+ *  back to the normal cornerPulls-respecting path anyway, so this can only
+ *  ever suppress a pull that was safe to suppress, never miss one. */
+function _hasRoadFeature(wg: WorldGrid, col: number, row: number): boolean {
+  if (col < 0 || col >= wg.width || row < 0 || row >= wg.height) return false;
+  const { feature } = wg.get(col, row);
+  return feature === 'road' || feature === 'road_dirt' || feature === 'river_ford';
+}
+
+/** True if any of the (up to 4) tiles sharing lattice corner (gx, gz) —
+ *  i.e. tiles (gx-1,gz-1), (gx,gz-1), (gx-1,gz), (gx,gz), matching the same
+ *  corner convention `_rawCornerElevation()` uses — currently renders via a
+ *  path that ignores cornerPulls and always uses this corner's raw,
+ *  un-pulled grid position: a non-planar ramp shape (see the 'edge' and
+ *  final-else branches) OR a road/dirt-road/river-ford tile (see the road
+ *  sub-tile branch, which never even reads cornerPulls). Any OTHER tile
+ *  sharing this exact vertex must agree and also skip any corner-pull
+ *  displacement here, or the two tiles' independently rendered surfaces
+ *  disagree on this vertex's position — a visible dark crack in the ground
+ *  mesh. Found via live playtest after land-biome corner-pull (much more
+ *  common than the old water-only pull) started landing on borders that
+ *  water pull almost never touched. See
+ *  docs/superpowers/specs/2026-09-20-land-biome-dual-grid-borders-design.md
+ *  "Playtest follow-up: ramp/road corner-pull crack". */
+function _cornerTouchesUnpulledTile(wg: WorldGrid, gx: number, gz: number): boolean {
+  const coords: ReadonlyArray<readonly [number, number]> = [
+    [gx - 1, gz - 1], [gx, gz - 1], [gx - 1, gz], [gx, gz],
+  ];
+  for (const [c, r] of coords) {
+    if (_isCurrentlyRampedShape(wg, c, r) || _hasRoadFeature(wg, c, r)) return true;
+  }
+  return false;
+}
+
 /** One road-variant's own geometry buffers. `colors` carries a per-vertex
  *  brightness tint (see `roadSubTileTint()`) multiplied against the road's
  *  single tiled texture — the same "vertex color × map" technique ground
@@ -515,14 +681,16 @@ export function buildTerrainGeometryData(
    *  spec docs/superpowers/specs/2026-09-01-water-floor-texture-variety-design.md
    *  §2a) — `river_ford` is intentionally excluded (a dry, walkable road crossing,
    *  not a submerged floor) and keeps its existing null/flat-quad behavior. */
-  const _groundTextureVariant = (cell: WorldCell): string | null => {
+  const _groundTextureVariant = (cell: WorldCell, col: number, row: number): string | null => {
     if (cell.biome === 'deep_ocean' || cell.biome === 'ocean') return 'ocean_floor';
     if (cell.feature === 'river')       return 'river_floor';
     if (cell.feature === 'lake')        return 'lake_floor';
     if (cell.feature === 'river_ford')  return null;
     if (cell.feature === 'river_bank')  return 'river_bank';
     if (cell.biome === 'beach')         return 'beach';
-    return (GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome) ? cell.biome : null;
+    if (!(GROUND_TERRAIN_VARIANTS as readonly string[]).includes(cell.biome)) return null;
+    const wx = (col - GHW) * T, wz = (row - GHH) * T;
+    return regionTextureVariantKey(cell.biome, wx, wz);
   };
 
   /** Append a quad face into a ground-variant's own buffers (created lazily
@@ -535,6 +703,7 @@ export function buildTerrainGeometryData(
     v2: [number, number, number], v3: [number, number, number],
     nx: number, ny: number, nz: number,
     r: number, g: number, b: number,
+    uvRotation: number,
   ): void => {
     let geo = groundGeometry[variant];
     if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[variant] = geo; }
@@ -543,7 +712,38 @@ export function buildTerrainGeometryData(
     geo.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
     geo.colors.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
     for (const [vx, , vz] of [v0, v1, v2, v3]) {
-      geo.uvs.push(vx / GROUND_UV_TILE_WU, vz / GROUND_UV_TILE_WU);
+      const [ru, rv] = _rotateUv(vx / GROUND_UV_TILE_WU, vz / GROUND_UV_TILE_WU, uvRotation);
+      geo.uvs.push(ru, rv);
+    }
+    geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+  };
+
+  /** Append a quad face into the 'cliff' ground-texture variant's own
+   *  buffers, with UV mapped from (horizontal tangent, Y) instead of
+   *  (X, Z) — a vertical wall face varies in Y along its height and in
+   *  one horizontal axis along its width, so projecting UV from (X, Z)
+   *  directly (as addGroundFace does for horizontal top faces) would
+   *  smear the texture across the wall's vertical extent instead of
+   *  tiling it sensibly. `tangent` extracts the vertex's horizontal
+   *  coordinate along the wall's own width — X for south/north walls,
+   *  Z for east/west walls (whichever axis actually varies across the
+   *  wall's 4 vertices). See
+   *  docs/superpowers/specs/2026-09-22-terrain-elevation-slopes-design.md §5. */
+  const addCliffFace = (
+    v0: [number, number, number], v1: [number, number, number],
+    v2: [number, number, number], v3: [number, number, number],
+    nx: number, ny: number, nz: number,
+    r: number, g: number, b: number,
+    tangent: (v: readonly [number, number, number]) => number,
+  ): void => {
+    let geo = groundGeometry['cliff'];
+    if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry['cliff'] = geo; }
+    const base = geo.positions.length / 3;
+    geo.positions.push(...v0, ...v1, ...v2, ...v3);
+    geo.normals.push(nx, ny, nz,  nx, ny, nz,  nx, ny, nz,  nx, ny, nz);
+    geo.colors.push(r, g, b,  r, g, b,  r, g, b,  r, g, b);
+    for (const v of [v0, v1, v2, v3]) {
+      geo.uvs.push(tangent(v) / CLIFF_UV_TILE_WU, v[1] / CLIFF_UV_TILE_WU);
     }
     geo.indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
   };
@@ -567,16 +767,17 @@ export function buildTerrainGeometryData(
     tr: number, tg: number, tb: number,
     adjacency: WaterAdjacency,
     cornerPulls: { nw: readonly [number, number]; ne: readonly [number, number]; se: readonly [number, number]; sw: readonly [number, number] },
+    uvRotation: number,
   ): void => {
     const N = GROUND_SUBDIVISIONS;
     const heightAt = (u: number, w: number): number =>
       swY * (1 - u) * (1 - w) + seY * u * (1 - w) + nwY * (1 - u) * w + neY * u * w;
 
     const neighborVariant = {
-      south: _groundTextureVariant(wg.get(col, row + 1)),
-      north: _groundTextureVariant(wg.get(col, row - 1)),
-      east:  _groundTextureVariant(wg.get(col + 1, row)),
-      west:  _groundTextureVariant(wg.get(col - 1, row)),
+      south: _groundTextureVariant(wg.get(col, row + 1), col, row + 1),
+      north: _groundTextureVariant(wg.get(col, row - 1), col, row - 1),
+      east:  _groundTextureVariant(wg.get(col + 1, row), col + 1, row),
+      west:  _groundTextureVariant(wg.get(col - 1, row), col - 1, row),
     };
 
     // Shoreline boundary points for each edge that either (a) directly
@@ -590,13 +791,13 @@ export function buildTerrainGeometryData(
     // west-first, vertical edges north-first — lattice index i (0..N) is
     // the i-th sub-tile boundary point along that edge.
     const southPts = (adjacency.south || _hasCornerPull(cornerPulls.sw) || _hasCornerPull(cornerPulls.se))
-      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, adjacency.south) : null;
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, adjacency.south, _mergedCornerPull) : null;
     const northPts = (adjacency.north || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.ne))
-      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col + 1, row,     adjacency.north) : null;
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col + 1, row,     adjacency.north, _mergedCornerPull) : null;
     const eastPts  = (adjacency.east  || _hasCornerPull(cornerPulls.ne) || _hasCornerPull(cornerPulls.se))
-      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, adjacency.east)  : null;
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, adjacency.east, _mergedCornerPull)  : null;
     const westPts  = (adjacency.west  || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.sw))
-      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col,     row + 1, adjacency.west)  : null;
+      ? shorelineBoundaryPoints(wg, T, GHW, GHH, col, row,     col,     row + 1, adjacency.west, _mergedCornerPull)  : null;
 
     for (let sz = 0; sz < N; sz++) {
       for (let sx = 0; sx < N; sx++) {
@@ -646,6 +847,7 @@ export function buildTerrainGeometryData(
           variant,
           [x00, ySW, z00], [x01, yNW, z01], [x11, yNE, z11], [x10, ySE, z10],
           nx, ny, nz, tr, tg, tb,
+          uvRotation,
         );
       }
     }
@@ -744,10 +946,10 @@ export function buildTerrainGeometryData(
       // design spec's "diagonal-adjacency" finding for why this must not
       // be gated by this tile's own direct water adjacency.
       const cornerPulls = {
-        nw: shorelineCornerPull(wg, col,     row),
-        ne: shorelineCornerPull(wg, col + 1, row),
-        se: shorelineCornerPull(wg, col + 1, row + 1),
-        sw: shorelineCornerPull(wg, col,     row + 1),
+        nw: _mergedCornerPull(wg, col,     row),
+        ne: _mergedCornerPull(wg, col + 1, row),
+        se: _mergedCornerPull(wg, col + 1, row + 1),
+        sw: _mergedCornerPull(wg, col,     row + 1),
       };
 
       // Ramp classification (see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md):
@@ -849,11 +1051,12 @@ export function buildTerrainGeometryData(
         }
       } else if (shape === 'flat' || shape === 'all-four-down' || !rampEligible) {
         // Identical to pre-ramp behavior: jitter-only positions, fixed up-normal.
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, 0, 1, 0, wx, wz, tr, tg, tb,
             waterAdjacency(wg, col, row), cornerPulls,
+            _tileUvRotation(col, row),
           );
         } else {
           addFace(
@@ -872,7 +1075,7 @@ export function buildTerrainGeometryData(
         };
         const [v0, v1, v2, v3] = orderCornersForDiagonal(corners, diagonal);
         const n = triangleNormal(v0, v1, v2);
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
           // NOTE: emitGroundSubTiles interpolates from the tile's raw
           // (pre-jitter) swY/nwY/neY/seY, not the jittered v0..v3 corners
@@ -888,6 +1091,7 @@ export function buildTerrainGeometryData(
           emitGroundSubTiles(
             col, row, cell, groundVariant, swY, nwY, neY, seY, n[0], n[1], n[2], wx, wz, tr, tg, tb,
             NO_WATER_ADJACENCY, { nw: NO_CORNER_PULL, ne: NO_CORNER_PULL, se: NO_CORNER_PULL, sw: NO_CORNER_PULL },
+            _tileUvRotation(col, row),
           );
         } else {
           addFace(v0, v1, v2, v3, n[0], n[1], n[2], tr, tg, tb);
@@ -902,16 +1106,20 @@ export function buildTerrainGeometryData(
           se: [wx1, seY + jSE, wz]  as [number, number, number],
         };
         const { positions: rampPos, normals: rampNrm } = buildQuadFace(corners, diagonal);
-        const groundVariant = _groundTextureVariant(cell);
+        const groundVariant = _groundTextureVariant(cell, col, row);
         if (groundVariant !== null) {
-          let geo = groundGeometry[groundVariant];
+          const rampCenterX = (wx + wx1) / 2, rampCenterZ = (wz + wz1) / 2;
+          const rampVariant = _rampGroundVariant(groundVariant, cell.biome, rampCenterX, rampCenterZ);
+          let geo = groundGeometry[rampVariant];
           if (!geo) { geo = { positions: [], normals: [], colors: [], uvs: [], indices: [] }; groundGeometry[groundVariant] = geo; }
           const base = geo.positions.length / 3;
           geo.positions.push(...rampPos);
           geo.normals.push(...rampNrm);
           for (let i = 0; i < 6; i++) geo.colors.push(tr, tg, tb);
+          const rampUvRotation = _tileUvRotation(col, row);
           for (let i = 0; i < rampPos.length; i += 3) {
-            geo.uvs.push(rampPos[i]! / GROUND_UV_TILE_WU, rampPos[i + 2]! / GROUND_UV_TILE_WU);
+            const [ru, rv] = _rotateUv(rampPos[i]! / GROUND_UV_TILE_WU, rampPos[i + 2]! / GROUND_UV_TILE_WU, rampUvRotation);
+            geo.uvs.push(ru, rv);
           }
           geo.indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
         } else {
@@ -937,7 +1145,7 @@ export function buildTerrainGeometryData(
         const d = 0.76;
         const southWaterAdjacent = wg.get(col, row + 1).waterDepth > 0;
         if (southWaterAdjacent || _hasCornerPull(cornerPulls.sw) || _hasCornerPull(cornerPulls.se)) {
-          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, southWaterAdjacent);
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, southWaterAdjacent, _mergedCornerPull);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -946,9 +1154,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
             0, 0, 1,  tr * d, tg * d, tb * d,
+            (v) => v[0],
           );
         }
       }
@@ -960,7 +1169,7 @@ export function buildTerrainGeometryData(
         const d = 0.50;
         const northWaterAdjacent = wg.get(col, row - 1).waterDepth > 0;
         if (northWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.ne)) {
-          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col + 1, row, northWaterAdjacent);
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col + 1, row, northWaterAdjacent, _mergedCornerPull);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -969,9 +1178,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
             0, 0, -1,  tr * d, tg * d, tb * d,
+            (v) => v[0],
           );
         }
       }
@@ -983,7 +1193,7 @@ export function buildTerrainGeometryData(
         const d = 0.63;
         const eastWaterAdjacent = wg.get(col + 1, row).waterDepth > 0;
         if (eastWaterAdjacent || _hasCornerPull(cornerPulls.ne) || _hasCornerPull(cornerPulls.se)) {
-          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, eastWaterAdjacent);
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, eastWaterAdjacent, _mergedCornerPull);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -992,9 +1202,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
             1, 0, 0,  tr * d, tg * d, tb * d,
+            (v) => v[2],
           );
         }
       }
@@ -1006,7 +1217,7 @@ export function buildTerrainGeometryData(
         const d = 0.55;
         const westWaterAdjacent = wg.get(col - 1, row).waterDepth > 0;
         if (westWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.sw)) {
-          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col, row + 1, westWaterAdjacent);
+          const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col, row + 1, westWaterAdjacent, _mergedCornerPull);
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
             addFace(
@@ -1015,9 +1226,10 @@ export function buildTerrainGeometryData(
             );
           }
         } else {
-          addFace(
+          addCliffFace(
             [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
             -1, 0, 0,  tr * d, tg * d, tb * d,
+            (v) => v[2],
           );
         }
       }
