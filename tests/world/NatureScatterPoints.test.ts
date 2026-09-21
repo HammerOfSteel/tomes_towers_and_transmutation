@@ -11,21 +11,23 @@ const GHW = 50;
 const GHH = 50;
 const GRID: ChunkGridInfo = { GHW, GHH, T, chunkSize: CHUNK_SIZE };
 
-/** Replicates _buildChunkScatter()'s EXACT pre-refactor inline formula (tree loop,
- *  then rock loop, sharing one `rand` stream) — this is the golden-fixture
- *  reference the extracted function must reproduce exactly. See this plan's
- *  "Physics/visual position parity" section. */
+/** Golden fixture for the current (Task 6) independent-per-kind stream
+ *  design: tree and rock each get their OWN freshly-seeded rand stream
+ *  (rock's stream was decoupled from tree's — see NatureScatterPoints.ts's
+ *  SCATTER_PARAMS doc comment for why). This is the reference the extracted
+ *  function must reproduce exactly. */
 function goldenTreeAndRockPoints(coord: ChunkCoord, worldSeed: number) {
   const chunkWorldSize = T * CHUNK_SIZE;
   const colStart = coord.cx * CHUNK_SIZE + Math.floor(GHW);
   const rowStart = coord.cz * CHUNK_SIZE + Math.floor(GHH);
   const originX = (colStart - GHW) * T;
   const originZ = (rowStart - GHH) * T;
-  const rand = mulberry32((worldSeed ^ 0x5C47_7E12) ^ (coord.cx * 92821) ^ (coord.cz * 68917));
+  const treeRand = mulberry32((worldSeed ^ 0x5C47_7E12) ^ (coord.cx * 92821) ^ (coord.cz * 68917));
+  const rockRand = mulberry32((worldSeed ^ 0xD1F3_2C6B) ^ (coord.cx * 83621) ^ (coord.cz * 59083));
 
-  const treePts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, rand)
+  const treePts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, treeRand)
     .map(([px, pz]) => ({ wx: originX + px, wz: originZ + pz }));
-  const rockPts = poissonDisk(chunkWorldSize, chunkWorldSize, 8, rand)
+  const rockPts = poissonDisk(chunkWorldSize, chunkWorldSize, 8, rockRand)
     .map(([px, pz]) => ({ wx: originX + px, wz: originZ + pz }));
   return { treePts, rockPts };
 }
@@ -42,13 +44,13 @@ function goldenBushPoints(coord: ChunkCoord, worldSeed: number) {
 }
 
 describe('generateChunkScatterCandidates', () => {
-  it('reproduces the golden tree+rock fixture for chunk (0,0), sharing one rand stream', () => {
+  it('reproduces the golden tree+rock fixture for chunk (0,0), each with its own independent stream', () => {
     const coord: ChunkCoord = { cx: 0, cz: 0 };
     const worldSeed = 123;
     const golden = goldenTreeAndRockPoints(coord, worldSeed);
 
     const trees = generateChunkScatterCandidates(coord, worldSeed, 'tree', GRID);
-    const rocks = generateChunkScatterCandidates(coord, worldSeed, 'rock', GRID, trees.at(-1)?.rand);
+    const rocks = generateChunkScatterCandidates(coord, worldSeed, 'rock', GRID);
 
     expect(trees.map(t => [t.wx, t.wz])).toEqual(golden.treePts.map(p => [p.wx, p.wz]));
     expect(rocks.map(r => [r.wx, r.wz])).toEqual(golden.rockPts.map(p => [p.wx, p.wz]));
@@ -60,7 +62,7 @@ describe('generateChunkScatterCandidates', () => {
     const golden = goldenTreeAndRockPoints(coord, worldSeed);
 
     const trees = generateChunkScatterCandidates(coord, worldSeed, 'tree', GRID);
-    const rocks = generateChunkScatterCandidates(coord, worldSeed, 'rock', GRID, trees.at(-1)?.rand);
+    const rocks = generateChunkScatterCandidates(coord, worldSeed, 'rock', GRID);
 
     expect(trees.map(t => [t.wx, t.wz])).toEqual(golden.treePts.map(p => [p.wx, p.wz]));
     expect(rocks.map(r => [r.wx, r.wz])).toEqual(golden.rockPts.map(p => [p.wx, p.wz]));

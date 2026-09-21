@@ -84,6 +84,9 @@ import { LEVEL_HEIGHT, OCEAN_DEEP_DEPTH_WU, physicalHeightWU } from '@/world/Wat
 import { SWIM_ENTER_DEPTH_THRESHOLD, SWIM_EXIT_DEPTH_THRESHOLD } from '@/player/PlayerController';
 import { isScatterAllowed, isWaterDecorAllowed, isNearWaterTile } from '@/world/ScatterRules';
 import { GrassField, GRASS_PRESETS } from '@/world/GrassField';
+import { generateChunkScatterCandidates } from '@/world/NatureScatterPoints';
+import { NaturePropManager, type NatureMaterialLookup } from '@/world/NaturePropField';
+import { makeBarkCanvasTexture, makeRockFacetCanvasTexture } from '@/world/NatureAssetBuilder';
 import { AmbientCreature, selectAmbientSpawnPoints, MAX_ACTIVE_AMBIENT_CREATURES } from '@/world/AmbientWildlife';
 import { TrampleMap } from '@/world/GrassTrample';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
@@ -264,6 +267,16 @@ export class OverworldScene {
    *  `this._seed` are set (needs both, so it can't be a field initializer default like
    *  `_slimeIM` above, which has no such dependency). */
   private _grassFields!: GrassField[];
+  /** Nature-asset kit Task 6 — player-radius InstancedMesh manager for trees/
+   *  rocks/bushes (visual only; colliders remain chunk-based, built by
+   *  `_buildChunkScatter()`'s invisible anchors). Mirrors `_grassFields`'
+   *  constructor-time-only initialization: needs `this._wg`/`this._seed` set
+   *  first, so it's built in the constructor body, not a field initializer. */
+  private _natureProps!: NaturePropManager;
+  /** Meshes already added to `scene` for `_natureProps` — tracked so
+   *  per-frame updates can add newly lazily-created field meshes without
+   *  re-adding (and re-triggering) ones already present. */
+  private readonly _natureMeshesInScene = new Set<THREE.InstancedMesh>();
   /** Default OFF per live playtest feedback: the always-on grass field was both a
    *  significant contributor to low FPS (up to `maxBlades` per biome, always
    *  submitted — `mesh.frustumCulled = false`) and, separately, an art-direction fit
@@ -417,6 +430,15 @@ export class OverworldScene {
     this._grassFields = Object.values(GRASS_PRESETS).map(
       preset => new GrassField(this._wg, this._seed, preset, this._trampleMap),
     );
+    this._natureProps = new NaturePropManager(
+      this._wg, this._seed,
+      { GHW: this._GHW, GHH: this._GHH, T, FR: this._FR },
+      this._natureMaterialFor,
+    );
+    // Populate immediately so the first frame (before any `update()` call)
+    // already has trees/rocks/bushes near spawn, mirroring the constructor's
+    // forced initial chunk load above.
+    this._natureProps.update(this.player.group.position.x, this.player.group.position.z);
     console.log('[OverworldScene] _spawnSettlementNPCs...');
     this._spawnSettlementNPCs(worldData);
     console.log('[OverworldScene] _buildResourceNodes...');
@@ -480,6 +502,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.add(en.group);
     this.scene.add(this._slimeIM);  // Phase 7h.2: single draw call for all bodies
     if (this._grassEnabled) for (const gf of this._grassFields) this.scene.add(gf.mesh);
+    for (const m of this._natureProps.meshes) { this.scene.add(m); this._natureMeshesInScene.add(m); }
+
     for (const c of this._activeAmbientCreatures) this.scene.add(c.root);
     for (const dg of this._dungeonGroups) this.scene.add(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.add(cb.root);
@@ -536,6 +560,8 @@ export class OverworldScene {
     for (const en of this._enemies)      this.scene.remove(en.group);
     this.scene.remove(this._slimeIM);   // Phase 7h.2
     for (const gf of this._grassFields) this.scene.remove(gf.mesh);
+    for (const m of this._natureMeshesInScene) this.scene.remove(m);
+    this._natureMeshesInScene.clear();
     for (const c of this._activeAmbientCreatures) this.scene.remove(c.root);
     for (const dg of this._dungeonGroups) this.scene.remove(dg);
     for (const cb of this._caveEntranceBuilts)  this.scene.remove(cb.root);
@@ -643,6 +669,20 @@ export class OverworldScene {
 
     for (const creature of this._activeAmbientCreatures) creature.update(this._wg, pos, dt);
 
+    // Nature-asset kit (Task 6): trees/rocks/bushes rebuild lazily as new
+    // fields appear (data-driven per-materialKey, unlike GrassField's fixed
+    // preset count) — sync any newly-created meshes into the scene here.
+    this._natureProps.update(pos.x, pos.z);
+    if (this._isInScene) {
+      for (const m of this._natureProps.meshes) {
+        if (!this._natureMeshesInScene.has(m)) {
+          this.scene.add(m);
+          this._natureMeshesInScene.add(m);
+        }
+      }
+    }
+
+
     // Tick resource node respawn timers
     for (let i = 0; i < this._respawnTimers.length; i++) {
       if (this._respawnTimers[i]! > 0) {
@@ -678,6 +718,8 @@ export class OverworldScene {
     (this._slimeIM.geometry as THREE.BufferGeometry).dispose();
     (this._slimeIM.material as THREE.Material).dispose();
     for (const gf of this._grassFields) gf.dispose();
+    this._natureProps.dispose();
+
     this._trampleMap.dispose();
     for (const c of this._activeAmbientCreatures) c.dispose();
     this._activeAmbientCreatures.length = 0;
@@ -1509,24 +1551,30 @@ export class OverworldScene {
     return body;
   }
 
-  /** Builds one chunk's tree + rock scatter, deterministically seeded by
-   *  world seed + chunk coordinate so results are stable across reloads.
-   *  Runs its own small Poisson-disk pass over just this chunk's world-unit
-   *  extent (CHUNK_SIZE * T on a side) rather than the whole world — the
-   *  dominant fix for scatter's unbounded-with-world-size cost. Known
-   *  tradeoff: chunk-seam density can be slightly uneven since neighbouring
-   *  chunks' points aren't visible to each other's sampling pass.
+  /** Builds one chunk's tree + rock COLLIDER anchors, deterministically
+   *  seeded by world seed + chunk coordinate so results are stable across
+   *  reloads. Runs its own small Poisson-disk pass over just this chunk's
+   *  world-unit extent (CHUNK_SIZE * T on a side) rather than the whole
+   *  world — the dominant fix for scatter's unbounded-with-world-size cost.
+   *  Known tradeoff: chunk-seam density can be slightly uneven since
+   *  neighbouring chunks' points aren't visible to each other's sampling
+   *  pass.
    *
-   *  Each placed tree/rock is tagged with `userData.scatterKind` (and,
-   *  for rocks, `userData.scatterRadius`) so `_loadTerrainChunk()` can walk
-   *  this chunk's scatter group to create their individual trunk/boulder
+   *  Nature-asset kit Task 6: trees/rocks/bushes are no longer VISUALLY
+   *  built here — their instanced visuals are now owned by
+   *  `NaturePropManager` (a player-radius system, see `NaturePropField.ts`),
+   *  which derives its own positions from the SAME
+   *  `generateChunkScatterCandidates()` formula this method uses, so a
+   *  visible tree/rock always has a matching collider and vice versa. This
+   *  method now only places invisible `THREE.Object3D` collider ANCHORS,
+   *  tagged with `userData.scatterKind` (and, for rocks,
+   *  `userData.scatterRadius`) so `_loadTerrainChunk()` can walk this
+   *  chunk's scatter group to create their individual trunk/boulder
    *  colliders without needing a separate whole-world `_trees`/`_rocks`
-   *  array. Task 13 final review (Important issue #3) folded the former
-   *  whole-world `_plantBushes()`/`_scatterBeachDecor()` passes into this
-   *  same per-chunk group too (via `_buildChunkBushes()`/
-   *  `_buildChunkBeachDecor()`) — they don't need colliders, so they're
-   *  just extra visual children tagged with their own `scatterKind`,
-   *  ignored by the tree/rock collider loop above. */
+   *  array. Bushes have no collider at all, so they're no longer placed
+   *  here in any form — `NaturePropManager` is their sole source now. Beach
+   *  decor and water decor (a different, non-nature-kit system) are
+   *  unaffected and still built as real visual meshes below. */
   /** Phase 6 batch 1: if (wx, wz) falls within a settlement's territory
    *  (a faction with a prop pool in this batch — vulperia/undead/fae),
    *  roll the distance-based gradient probability and, on a hit, return a
@@ -1554,22 +1602,13 @@ export class OverworldScene {
   private _buildChunkScatter(coord: ChunkCoord): THREE.Group {
     const group = new THREE.Group();
     const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
-    const chunkWorldSize = T * CHUNK_SIZE;
-    // Origin must land on the exact same world-space corner as this chunk's
-    // terrain mesh (built by `_loadTerrainChunk()` from `_chunkGridOrigin()`'s
-    // colStart/rowStart via `gridToWorld()`'s (col - GHW) * T convention) —
-    // using a bare `- GHW * T` here (the pre-fix formula) desyncs scatter
-    // from terrain by `Math.floor(GHW/GHH) * T` world units whenever GHW/GHH
-    // aren't already integers.
-    const { colStart, rowStart } = this._chunkGridOrigin(coord);
-    const originX = (colStart - GHW) * T;
-    const originZ = (rowStart - GHH) * T;
-    const rand = mulberry32((this._seed ^ 0x5C47_7E12) ^ (coord.cx * 92821) ^ (coord.cz * 68917));
+    const gridInfo = { GHW, GHH, T, chunkSize: CHUNK_SIZE };
 
-    const treePts = poissonDisk(chunkWorldSize, chunkWorldSize, 5.5, rand);
-    for (const [px, pz] of treePts) {
-      const wx = originX + px;
-      const wz = originZ + pz;
+    // Tree collider anchors — same formula/seed NaturePropManager's visual
+    // path uses for 'tree' (see NatureScatterPoints.ts), so a rendered tree
+    // and its capsule collider always land on the same point.
+    const treeCandidates = generateChunkScatterCandidates(coord, this._seed, 'tree', gridInfo);
+    for (const { wx, wz, rand } of treeCandidates) {
       const d = Math.sqrt(wx * wx + wz * wz);
       if (d < FR * T + 5) continue; // tower clear-zone
       const c = Math.floor(wx / T + GHW);
@@ -1578,17 +1617,19 @@ export class OverworldScene {
       if (!isScatterAllowed(cell, 'tree')) continue;
       const territoryProp = this._tryPlaceTerritoryProp(wx, wz, cell.elevation * SH, rand);
       if (territoryProp) { group.add(territoryProp); continue; }
-      const tree = this._makeTree(rand, cell.biome, wx, wz);
-      tree.position.set(wx, cell.elevation * SH, wz);
-      tree.rotation.y = rand() * Math.PI * 2;
-      tree.userData.scatterKind = 'tree';
-      group.add(tree);
+      // Invisible anchor only — NaturePropManager owns the visible tree.
+      const anchor = new THREE.Object3D();
+      anchor.position.set(wx, cell.elevation * SH, wz);
+      anchor.userData.scatterKind = 'tree';
+      group.add(anchor);
     }
 
-    const rockPts = poissonDisk(chunkWorldSize, chunkWorldSize, 8, rand);
-    for (const [px, pz] of rockPts) {
-      const wx = originX + px;
-      const wz = originZ + pz;
+    // Rock collider anchors — 'rock' uses its OWN independent stream (see
+    // NatureScatterPoints.ts's SCATTER_PARAMS doc comment), so this is a
+    // fresh generateChunkScatterCandidates() call, not a continuation of
+    // the tree loop's rand above.
+    const rockCandidates = generateChunkScatterCandidates(coord, this._seed, 'rock', gridInfo);
+    for (const { wx, wz, rand } of rockCandidates) {
       const d = Math.sqrt(wx * wx + wz * wz);
       if (d < FR * T + 6) continue;
       const c = Math.floor(wx / T + GHW);
@@ -1597,21 +1638,23 @@ export class OverworldScene {
       if (!isScatterAllowed(cell, 'rock')) continue;
       const territoryProp = this._tryPlaceTerritoryProp(wx, wz, cell.elevation * SH, rand);
       if (territoryProp) { group.add(territoryProp); continue; }
-      const rock = this._makeRock(rand, wx, wz);
-      rock.position.set(wx, cell.elevation * SH, wz);
-      rock.userData.scatterKind = 'rock';
-      group.add(rock);
+      // Same radius roll _makeRock() used to start with — only the roll
+      // itself is needed now, not the mesh it used to size.
+      const radius = 0.48 + rand() * 0.84;
+      const anchor = new THREE.Object3D();
+      anchor.position.set(wx, cell.elevation * SH, wz);
+      anchor.userData.scatterKind = 'rock';
+      anchor.userData.scatterRadius = radius;
+      group.add(anchor);
     }
 
-    this._buildChunkBushes(coord, group);
     this._buildChunkBeachDecor(coord, group);
     this._buildChunkWaterDecor(coord, group);
 
-    // Collapse every individual tree/rock/bush/decor Mesh in this chunk into
-    // a handful of merged per-material meshes — see `mergeGroupMeshesByMaterial()`.
-    // Was the dominant cause of sub-7fps in loaded areas: with 7x7 loaded
-    // chunks at default settings, un-merged scatter alone produced 3000+
-    // individual draw calls (measured), before any buildings/terrain/NPCs.
+    // Collapse every individual decor Mesh in this chunk into a handful of
+    // merged per-material meshes — see `mergeGroupMeshesByMaterial()`. Tree/
+    // rock anchors are plain Object3D (no Mesh), so they pass through
+    // untouched and remain walkable by `_loadTerrainChunk()`'s collider loop.
     mergeGroupMeshesByMaterial(group);
 
     // Chunks can load before the scene is ever entered (the constructor's
@@ -1859,12 +1902,15 @@ export class OverworldScene {
    * them); now each archetype/kind shares `variantColors.length` (a
    * handful) of them for its entire lifetime. `variance` omitted (e.g. bare
    * trunk colors) skips the texture/map entirely, matching the original
-   * flat-color materials. */
+   * flat-color materials. `textureFactory` (Task 4 nature-asset-kit texture
+   * families) picks which canvas-texture generator to use when `variance`
+   * is given — defaults to the original mottled/foliage look. */
   private _pooledMaterial(
     kind: string,
     variantColors: number[],
     rand: () => number,
     variance?: number,
+    textureFactory: (color: number, variance: number, seed: number) => THREE.CanvasTexture = makeMottledCanvasTexture,
   ): THREE.MeshLambertMaterial {
     let pool = this._materialPools.get(kind);
     if (!pool) {
@@ -1873,13 +1919,50 @@ export class OverworldScene {
       for (let i = 0; i < kind.length; i++) hash = (hash * 31 + kind.charCodeAt(i)) | 0;
       pool = variantColors.map((color, i) => new THREE.MeshLambertMaterial(
         variance != null
-          ? { color, map: makeMottledCanvasTexture(color, variance, (hash ^ (i * 104729)) >>> 0) }
+          ? { color, map: textureFactory(color, variance, (hash ^ (i * 104729)) >>> 0) }
           : { color },
       ));
       this._materialPools.set(kind, pool);
     }
     return pool[Math.floor(rand() * pool.length)]!;
   }
+
+  /**
+   * Nature-asset kit Task 6 — `NatureMaterialLookup` implementation wired
+   * into `_natureProps`. Reuses `_pooledMaterial()`'s existing cache/pool
+   * mechanism (so nature-prop materials share the SAME dispose-once-at-
+   * scene-teardown lifetime as the bespoke builders' materials did) but
+   * routes each `materialKey` to the right Task 4 texture family: bark for
+   * trunk/branch-arm-shaped parts, rock-facet for rock-chunk parts, and the
+   * original mottled/foliage look for canopy-blob parts (including the
+   * cactus body materials, which use `canopy-blob`/`trunk` parts but keep
+   * their original mottled-foliage look). Colors are the exact ones the
+   * bespoke per-archetype builders used, for visual continuity.
+   */
+  private _natureMaterialFor: NatureMaterialLookup = (materialKey, rand) => {
+    const table: Record<string, { colors: number[]; variance: number; bark?: boolean }> = {
+      'tree-trunk':        { colors: [0x4a2810], variance: 0.16, bark: true },
+      'conifer-lower':     { colors: [0x1a4610, 0x1a4610 + 0x010100, 0x1a4610 + 0x020200, 0x1a4610 + 0x030300, 0x1a4610 + 0x040400, 0x1a4610 + 0x050500], variance: 0.18 },
+      'conifer-upper':     { colors: (() => { const b = 0x1a4610 + 0x040800; return [b, b + 0x010100, b + 0x020200, b + 0x030300, b + 0x040400, b + 0x050500]; })(), variance: 0.18 },
+      deciduous:           { colors: [0x2c5a18, 0x2c5a18 + 0x010200, 0x2c5a18 + 0x020400, 0x2c5a18 + 0x030600, 0x2c5a18 + 0x040800], variance: 0.22 },
+      'sparse-trunk':      { colors: [0x3a2818, 0x3a2818 + 0x010101, 0x3a2818 + 0x020202, 0x3a2818 + 0x030303], variance: 0.14, bark: true },
+      'sparse-foliage':    { colors: [0x3a4a20, 0x3a4a20 + 0x010100, 0x3a4a20 + 0x020200, 0x3a4a20 + 0x030300], variance: 0.2 },
+      'acacia-trunk':      { colors: [0x4a3820, 0x4a3820 + 0x010100], variance: 0.16, bark: true },
+      'acacia-canopy':     { colors: [0x5c7a2e, 0x5c7a2e + 0x010100, 0x5c7a2e + 0x020200, 0x5c7a2e + 0x030300], variance: 0.2 },
+      'joshuatree-trunk':  { colors: [0x6b5a3a, 0x6b5a3a + 0x010100, 0x6b5a3a + 0x020200, 0x6b5a3a + 0x030300], variance: 0.16, bark: true },
+      'joshuatree-spike':  { colors: [0x4a6b3a, 0x4a6b3a + 0x010100, 0x4a6b3a + 0x020200], variance: 0.18 },
+      'cactus-saguaro':    { colors: [0x3f7d32, 0x3f7d32 + 0x010100, 0x3f7d32 + 0x020200, 0x3f7d32 + 0x030300], variance: 0.16 },
+      'cactus-barrel':     { colors: [0x4a8a3a, 0x4a8a3a + 0x010100, 0x4a8a3a + 0x020200, 0x4a8a3a + 0x030300], variance: 0.16 },
+      'cactus-pad':        { colors: [0x3f8a3a, 0x3f8a3a + 0x010100, 0x3f8a3a + 0x020200, 0x3f8a3a + 0x030300], variance: 0.16 },
+      rock:                { colors: (() => { const greys = [0x58, 0x60, 0x68, 0x6c, 0x6f]; return greys.map(g => (g << 16) | (Math.floor(g * 0.96) << 8) | Math.floor(g * 0.88)); })(), variance: 0.14 },
+      bush:                { colors: [0x2e4a1a, 0x2e4a1a + 0x010200, 0x2e4a1a + 0x020400, 0x2e4a1a + 0x030600, 0x2e4a1a + 0x040800], variance: 0.2 },
+    };
+    const entry = table[materialKey] ?? { colors: [0x808080], variance: 0.15 };
+    const textureFactory = entry.bark ? makeBarkCanvasTexture
+      : materialKey === 'rock' ? makeRockFacetCanvasTexture
+      : makeMottledCanvasTexture;
+    return this._pooledMaterial(`nature-${materialKey}`, entry.colors, rand, entry.variance, textureFactory);
+  };
 
   private _makeTree(rand: () => number, biome: BiomeId, wx: number, wz: number): THREE.Group {
     const archetype = pickTreeArchetype(biome, wx, wz);
@@ -2290,80 +2373,6 @@ export class OverworldScene {
     wrapper.add(mesh);
     wrapper.userData.scatterRadius = radius;
     return wrapper;
-  }
-
-  // ── Bush placement (ground clutter — no physics collider) ─────────────────
-
-  /** Chunk-scoped bush placement (Task 13 final review, Important issue #3)
-   *  — was a whole-world `_plantBushes()` Poisson-disk pass over the FULL
-   *  grid extent at construction time; now built per-chunk (own Poisson-disk
-   *  pass over just this chunk's extent, own deterministic seed) exactly
-   *  like `_buildChunkScatter()`'s tree/rock placement, so bush count scales
-   *  with loaded-chunk count instead of total world size. Bushes are purely
-   *  visual (no collider) so they're just added straight into the shared
-   *  per-chunk `scatter` group, tagged `userData.scatterKind = 'bush'` so
-   *  `_loadTerrainChunk()`'s tree/rock collider loop correctly ignores
-   *  them. */
-  private _buildChunkBushes(coord: ChunkCoord, group: THREE.Group): void {
-    const { _GHW: GHW, _GHH: GHH, _FR: FR } = this;
-    const chunkWorldSize = T * CHUNK_SIZE;
-    const { colStart, rowStart } = this._chunkGridOrigin(coord);
-    const originX = (colStart - GHW) * T;
-    const originZ = (rowStart - GHH) * T;
-    const bushInner = FR * T + 4;
-    const bushOuter = GHW * T * 0.90;
-    const rand = mulberry32((this._seed ^ 0x8B21_44F7) ^ (coord.cx * 51749) ^ (coord.cz * 40361));
-
-    // Tighter spacing than trees (5.5) — bushes are denser undergrowth.
-    const pts = poissonDisk(chunkWorldSize, chunkWorldSize, 3.2, rand);
-
-    for (const [px, pz] of pts) {
-      const wx = originX + px;
-      const wz = originZ + pz;
-      const d  = Math.sqrt(wx * wx + wz * wz);
-      if (d < bushInner || d > bushOuter) continue;
-
-      const c = Math.floor(wx / T + GHW);
-      const r = Math.floor(wz / T + GHH);
-
-      const cell = this._wg.get(c, r);
-      if (!isScatterAllowed(cell, 'bush')) continue;
-      // Only plant a bush on roughly 1 in 3 valid candidates — trees already use a
-      // similar Poisson pass at a different spacing; without this thinning, bushes
-      // would be too dense given the tighter 3.2 spacing above.
-      if (rand() > 0.35) continue;
-
-      const level = cell.elevation;
-      const bush = this._makeBush(rand);
-      bush.position.set(wx, level * SH, wz);
-      bush.rotation.y = rand() * Math.PI * 2;
-      bush.userData.scatterKind = 'bush';
-      group.add(bush);
-    }
-  }
-
-  private _makeBush(rand: () => number): THREE.Group {
-    const g = new THREE.Group();
-    // 5 variants spanning the original 0x2e4a1a..+4*0x010200 range.
-    const mat = this._pooledMaterial(
-      'bush',
-      [0x2e4a1a, 0x2e4a1a + 0x010200, 0x2e4a1a + 0x020400, 0x2e4a1a + 0x030600, 0x2e4a1a + 0x040800],
-      rand,
-      0.20,
-    );
-
-    const blobCount = 2 + Math.floor(rand() * 3); // 2..4 blobs
-    for (let i = 0; i < blobCount; i++) {
-      const radius = 0.22 + rand() * 0.2;
-      const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 0), mat);
-      const angle = rand() * Math.PI * 2;
-      const spread = rand() * 0.22;
-      blob.position.set(Math.cos(angle) * spread, radius * 0.7, Math.sin(angle) * spread);
-      blob.scale.y = 0.7 + rand() * 0.3; // flatten slightly — low mound, not a sphere
-      g.add(blob);
-    }
-
-    return g;
   }
 
   // ── Beach decor (sand-only ground clutter — no physics collider) ──────────

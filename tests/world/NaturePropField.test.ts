@@ -7,7 +7,7 @@ import {
 } from '@/world/NaturePropField';
 import { getPartVariantPool } from '@/world/NaturePartPools';
 import { generateChunkScatterCandidates } from '@/world/NatureScatterPoints';
-import { CHUNK_SIZE } from '@/world/ChunkManager';
+import { CHUNK_SIZE, chunksWithinRadius, worldToChunkCoord } from '@/world/ChunkManager';
 
 function makeAllBiomeGrid(size: number, biome: BiomeId, elevation = 1): WorldGrid {
   const g = new WorldGrid(size, size);
@@ -17,12 +17,17 @@ function makeAllBiomeGrid(size: number, biome: BiomeId, elevation = 1): WorldGri
   return g;
 }
 
-const GRID_INFO = { GHW: 50, GHH: 50, T: 2 };
+const GRID_INFO = { GHW: 50, GHH: 50, T: 2, FR: Math.round(50 * 0.28) };
+// Well outside the tower clear-zone (FR*T+5 = 33 WU from world origin) so
+// these windows aren't emptied by that filter — see selectNaturePropPlacements'
+// tower-clear-zone bound.
+const PX = 150;
+const PZ = 150;
 
 describe('selectNaturePropPlacements', () => {
   it('returns a non-empty map with trunk and canopy-blob keys for an all-forest window', () => {
-    const wg = makeAllBiomeGrid(120, 'forest');
-    const groups = selectNaturePropPlacements(wg, 0, 0, 24, 1, 'tree', GRID_INFO);
+    const wg = makeAllBiomeGrid(220, 'forest');
+    const groups = selectNaturePropPlacements(wg, PX, PZ, 24, 1, 'tree', GRID_INFO);
     expect(groups.size).toBeGreaterThan(0);
     const keys = [...groups.keys()];
     expect(keys.some(k => k.startsWith('trunk|'))).toBe(true);
@@ -30,33 +35,43 @@ describe('selectNaturePropPlacements', () => {
   });
 
   it('returns nothing for an all-ocean window (never scatter-allowed)', () => {
-    const wg = makeAllBiomeGrid(120, 'ocean');
-    const groups = selectNaturePropPlacements(wg, 0, 0, 24, 1, 'tree', GRID_INFO);
+    const wg = makeAllBiomeGrid(220, 'ocean');
+    const groups = selectNaturePropPlacements(wg, PX, PZ, 24, 1, 'tree', GRID_INFO);
     expect(groups.size).toBe(0);
   });
 
   it('is deterministic for a fixed seed/position', () => {
-    const wg = makeAllBiomeGrid(120, 'forest');
-    const a = selectNaturePropPlacements(wg, 0, 0, 24, 5, 'tree', GRID_INFO);
-    const b = selectNaturePropPlacements(wg, 0, 0, 24, 5, 'tree', GRID_INFO);
+    const wg = makeAllBiomeGrid(220, 'forest');
+    const a = selectNaturePropPlacements(wg, PX, PZ, 24, 5, 'tree', GRID_INFO);
+    const b = selectNaturePropPlacements(wg, PX, PZ, 24, 5, 'tree', GRID_INFO);
     expect([...a.keys()].sort()).toEqual([...b.keys()].sort());
     const key = [...a.keys()][0]!;
     expect(a.get(key)!.length).toBe(b.get(key)!.length);
   });
 
   it('every returned (wx,wz) tree candidate matches generateChunkScatterCandidates for its chunk', () => {
-    const wg = makeAllBiomeGrid(120, 'forest');
-    const groups = selectNaturePropPlacements(wg, 0, 0, 24, 1, 'tree', GRID_INFO);
+    const wg = makeAllBiomeGrid(220, 'forest');
+    const groups = selectNaturePropPlacements(wg, PX, PZ, 24, 1, 'tree', GRID_INFO);
     const allXZ = new Set<string>();
     for (const list of groups.values()) {
       for (const inst of list) allXZ.add(`${inst.worldPosition.x},${inst.worldPosition.z}`);
     }
-    const golden = generateChunkScatterCandidates({ cx: 0, cz: 0 }, 1, 'tree', { ...GRID_INFO, chunkSize: CHUNK_SIZE });
-    // Every golden candidate within radius 24 of the origin must appear as a
-    // placed instance's worldPosition (position parity with the collider path).
-    for (const c of golden) {
-      if (Math.sqrt(c.wx * c.wx + c.wz * c.wz) > 24) continue;
-      expect(allXZ.has(`${c.wx},${c.wz}`)).toBe(true);
+    // Mirror the exact chunk-window selection selectNaturePropPlacements()
+    // uses internally, so this check covers the same chunk set regardless
+    // of NATURE_PROP_RADIUS/CHUNK_SIZE tuning.
+    const towerClearZone = GRID_INFO.FR * GRID_INFO.T + 5;
+    const chunkWorldSize = GRID_INFO.T * CHUNK_SIZE;
+    const centerCoord = worldToChunkCoord(PX, PZ, GRID_INFO.T, CHUNK_SIZE);
+    const chunkRadius = Math.ceil(24 / chunkWorldSize) + 1;
+    for (const coord of chunksWithinRadius(centerCoord, chunkRadius)) {
+      const golden = generateChunkScatterCandidates(coord, 1, 'tree', { ...GRID_INFO, chunkSize: CHUNK_SIZE });
+      for (const c of golden) {
+        const distFromOrigin = Math.sqrt(c.wx * c.wx + c.wz * c.wz);
+        if (distFromOrigin < towerClearZone) continue;
+        const distFromPlayer = Math.sqrt((c.wx - PX) ** 2 + (c.wz - PZ) ** 2);
+        if (distFromPlayer > 24) continue;
+        expect(allXZ.has(`${c.wx},${c.wz}`)).toBe(true);
+      }
     }
   });
 });

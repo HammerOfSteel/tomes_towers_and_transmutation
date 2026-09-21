@@ -26,15 +26,30 @@ interface ScatterParams {
   czMul: number;
 }
 
-/** Per-kind poisson-disk minDist + chunk-seed formula — copied verbatim from
- *  `_buildChunkScatter()`'s tree (5.5)/rock (8) calls (both sharing ONE
- *  `0x5C47_7E12`-xor'd, `cx*92821 ^ cz*68917`-seeded `rand` stream — the tree
- *  loop runs to completion, THEN the rock loop continues consuming the same
- *  advancing stream) and `_buildChunkBushes()`'s bush (3.2) call (its own,
- *  independently-seeded `0x8B21_44F7`-xor'd stream). */
+/** Per-kind poisson-disk minDist + chunk-seed formula. Originally tree/rock
+ *  shared ONE advancing rand stream in `_buildChunkScatter()` (tree loop
+ *  runs to completion including its per-point territory-prop-override rolls
+ *  and tree-building rand draws, THEN the rock loop's `poissonDisk()` call
+ *  continues on that same, now-unpredictable-length-consumed stream). Task 6
+ *  (nature-prop instancing wiring) deliberately DROPPED that shared-stream
+ *  design: the new player-radius visual path (`NaturePropField.ts`) has no
+ *  way to replicate the collider path's exact per-point rand consumption
+ *  (territory-prop rolls, bespoke-builder-specific draws), so continuing to
+ *  share a stream would silently desync rock POSITIONS (not just cosmetic
+ *  details) between the visual and collider paths — reintroducing exactly
+ *  the physics/visual mismatch this whole extraction exists to prevent.
+ *  Rock now gets its own independent, freshly-seeded stream
+ *  (`0xD1F3_2C6B`-xor'd), exactly like bush already had — this guarantees
+ *  the collider path (`_buildChunkScatter()`) and the visual path
+ *  (`selectNaturePropPlacements()`) produce byte-identical rock positions
+ *  for the same (coord, worldSeed) simply by both calling this function
+ *  with no `existingRand`, regardless of what either path's own per-point
+ *  loop body does afterward. This is a deliberate, one-time world-layout
+ *  change (rock placement shifts from pre-Task-6 saves/seeds) — flagged in
+ *  Task 6's playtest-gate summary. */
 const SCATTER_PARAMS: Record<NatureScatterKind, ScatterParams> = {
   tree: { minDist: 5.5, seedXor: 0x5C47_7E12, cxMul: 92821, czMul: 68917 },
-  rock: { minDist: 8,   seedXor: 0x5C47_7E12, cxMul: 92821, czMul: 68917 },
+  rock: { minDist: 8,   seedXor: 0xD1F3_2C6B, cxMul: 83621, czMul: 59083 },
   bush: { minDist: 3.2, seedXor: 0x8B21_44F7, cxMul: 51749, czMul: 40361 },
 };
 
@@ -64,15 +79,15 @@ export interface ChunkScatterCandidate {
  * callable for a chunk regardless of whether it's actually loaded in
  * `ChunkManager`.
  *
- * `'tree'` and `'rock'` share ONE `rand()` stream per chunk in the original
- * code (the tree loop's `poissonDisk()` call consumes `rand()` internally,
- * then the rock loop's call continues on the SAME stream) — so calling this
- * for `'rock'` after `'tree'` for the same chunk MUST pass the `rand`
- * instance returned by the last `'tree'` candidate (via `existingRand`) to
- * reproduce the original interleaving exactly. Passing no `existingRand`
- * constructs a fresh stream from `worldSeed`/`coord`/`kind` (used for the
- * first `'tree'` call of a chunk, and always for `'bush'`, which has its own
- * independent seed).
+ * Every kind (`'tree'`, `'rock'`, `'bush'`) now uses its OWN independent,
+ * freshly-seeded rand stream (see `SCATTER_PARAMS`'s doc comment for why
+ * rock's stream was decoupled from tree's in Task 6) — calling this with the
+ * same `(coord, worldSeed, kind)` from two different call sites (the
+ * collider path and the visual instancing path) always reproduces the exact
+ * same candidate list, with no cross-call-site rand-consumption bookkeeping
+ * required. `existingRand` remains available for callers that want to
+ * deliberately continue an existing stream (none of this project's current
+ * callers do), primarily so tests can exercise stream-chaining behavior.
  */
 export function generateChunkScatterCandidates(
   coord: ChunkCoord,

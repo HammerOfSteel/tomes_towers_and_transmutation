@@ -16,9 +16,10 @@ import type { WorldGrid } from '@/world/WorldGrid';
 import { CHUNK_SIZE, chunksWithinRadius, worldToChunkCoord, type ChunkCoord } from '@/world/ChunkManager';
 import { generateChunkScatterCandidates, type NatureScatterKind } from '@/world/NatureScatterPoints';
 import { isScatterAllowed } from '@/world/ScatterRules';
-import { pickTreeArchetype, pickRockArchetype } from '@/world/NatureAssetDNA';
+import { pickTreeArchetype, pickRockArchetype, pickCactusVariant } from '@/world/NatureAssetDNA';
 import { ARCHETYPE_RECIPES, assembleFromRecipe } from '@/world/NatureAssetRecipes';
 import { getPartVariantPool, type PartType } from '@/world/NaturePartPools';
+import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 
 /** Wider than GrassField's GRASS_RADIUS (24) — trees/rocks/bushes are sparse
  *  enough (5.5-8 WU minDist vs. grass's sub-1WU spacing) that a larger visible
@@ -30,6 +31,11 @@ export interface NaturePropGridInfo {
   GHW: number;
   GHH: number;
   T: number;
+  /** Tower flat-zone radius, in tiles — same `_FR` OverworldScene derives as
+   *  `Math.round(GHW * 0.28)`. Used to reproduce the exact tower clear-zone
+   *  and bush inner/outer bounds `_buildChunkScatter()`/`_buildChunkBushes()`
+   *  applied around scatter candidates. */
+  FR: number;
 }
 
 export interface NaturePropInstance {
@@ -54,8 +60,10 @@ function partGroupKey(partType: PartType, variantIndex: number, materialKey: str
 /**
  * Scans chunk coordinates overlapping a player-centered `radius` square,
  * regenerates each one's deterministic scatter candidates via
- * `generateChunkScatterCandidates()`, filters through `isScatterAllowed()`,
- * picks an archetype via `NatureAssetDNA`, and assembles it via
+ * `generateChunkScatterCandidates()`, filters through the same
+ * tower-clear-zone / bush-bounds / `isScatterAllowed()` rules
+ * `_buildChunkScatter()`/`_buildChunkBushes()` used to apply inline, picks
+ * an archetype via `NatureAssetDNA`, and assembles it via
  * `assembleFromRecipe()`. Returns one `NaturePropInstance` per assembled
  * PART (not per tree), grouped by `partGroupKey()` so the caller can hand
  * each group straight to one `NaturePropField`'s instance buffer.
@@ -70,35 +78,28 @@ export function selectNaturePropPlacements(
   gridInfo: NaturePropGridInfo,
 ): Map<string, NaturePropInstance[]> {
   const groups = new Map<string, NaturePropInstance[]>();
-  const { GHW, GHH, T } = gridInfo;
+  const { GHW, GHH, T, FR } = gridInfo;
   const chunkWorldSize = T * CHUNK_SIZE;
   const centerCoord = worldToChunkCoord(playerX, playerZ, T, CHUNK_SIZE);
   const chunkRadius = Math.ceil(radius / chunkWorldSize) + 1; // +1 guards against a candidate near a chunk edge falling just outside a too-tight radius
   const coords: ChunkCoord[] = chunksWithinRadius(centerCoord, chunkRadius);
 
+  // Same per-kind distance bounds `_buildChunkScatter()`/`_buildChunkBushes()`
+  // applied inline (tower clear-zone for tree/rock, inner+outer band for bush).
+  const innerBound = kind === 'tree' ? FR * T + 5 : kind === 'rock' ? FR * T + 6 : FR * T + 4;
+  const outerBound = kind === 'bush' ? GHW * T * 0.90 : Infinity;
+
   for (const coord of coords) {
-    const treeOrBushCandidates = generateChunkScatterCandidates(coord, seed, kind, { GHW, GHH, T, chunkSize: CHUNK_SIZE });
-    // 'rock' shares its rand() stream with 'tree' in the original per-chunk
-    // formula (see NatureScatterPoints.ts's doc comment) — but this function
-    // is called once per `kind` by NaturePropManager (mirroring how
-    // `_buildChunkScatter()` runs its tree loop, then its rock loop, on ONE
-    // rand instance), so a 'rock' call here always starts a FRESH stream via
-    // `generateChunkScatterCandidates(coord, seed, 'rock', grid)` with no
-    // `existingRand` — this reproduces the SAME rock points as the collider
-    // path only when the collider path's own rand-sharing is preserved
-    // end-to-end; see Task 6's wiring, which threads one rand through both
-    // calls for the collider path. The visual path recomputing its own
-    // 'rock' stream from scratch is intentional: it only needs positions to
-    // match (which a fresh, correctly-seeded stream still gives — poissonDisk's
-    // OUTPUT points depend only on its own seed/rand draws, and generating
-    // 'rock' points independently from its own dedicated stream produces the
-    // same point set as the shared-stream version would AT THE SAME poisson-
-    // disk call site, since poissonDisk's algorithm doesn't depend on prior
-    // unrelated rand() calls beyond seeding its own internal draws) — the
-    // shared-stream requirement in NatureScatterPoints.ts's doc comment
-    // matters for exact byte-for-byte parity with `_buildChunkScatter()`'s
-    // literal code path (Task 6), not for this function's own correctness.
-    for (const { wx, wz, rand } of treeOrBushCandidates) {
+    const candidates = generateChunkScatterCandidates(coord, seed, kind, { GHW, GHH, T, chunkSize: CHUNK_SIZE });
+    for (const { wx, wz, rand } of candidates) {
+      const dFromOrigin = Math.sqrt(wx * wx + wz * wz);
+      if (dFromOrigin < innerBound || dFromOrigin > outerBound) continue;
+      if (kind === 'bush') {
+        // Same 1-in-~3 acceptance thinning `_buildChunkBushes()` applied —
+        // bushes' tighter 3.2 minDist would otherwise be too dense.
+        if (rand() > 0.35) continue;
+      }
+
       const d2 = (wx - playerX) ** 2 + (wz - playerZ) ** 2;
       if (d2 > radius * radius) continue;
       const col = Math.floor(wx / T + GHW);
@@ -107,7 +108,11 @@ export function selectNaturePropPlacements(
       const cell = wg.get(col, row);
       if (!isScatterAllowed(cell, kind)) continue;
 
-      const archetypeKey = kind === 'tree' ? pickTreeArchetype(cell.biome, wx, wz)
+      const archetypeKey = kind === 'tree' ? (
+          pickTreeArchetype(cell.biome, wx, wz) === 'cactus'
+            ? `cactus-${pickCactusVariant(wx, wz)}`
+            : pickTreeArchetype(cell.biome, wx, wz)
+        )
         : kind === 'rock' ? `rock-${pickRockArchetype(wx, wz)}`
         : 'bush';
       const recipe = ARCHETYPE_RECIPES[archetypeKey];
@@ -119,7 +124,7 @@ export function selectNaturePropPlacements(
         const key = partGroupKey(part.partType, part.variantIndex, part.materialKey);
         const arr = groups.get(key) ?? [];
         arr.push({
-          worldPosition: new THREE.Vector3(wx, cell.elevation, wz),
+          worldPosition: new THREE.Vector3(wx, cell.elevation * LEVEL_HEIGHT, wz),
           localOffset: part.position,
           rotationY: wholeYaw,
           localRotation: part.rotation,
