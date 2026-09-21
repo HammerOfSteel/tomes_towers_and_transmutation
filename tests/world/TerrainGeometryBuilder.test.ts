@@ -103,6 +103,56 @@ describe('buildTerrainGeometryData', () => {
   });
 });
 
+describe('buildTerrainGeometryData — cross-chunk boundary agreement', () => {
+  it('produces identical shared-edge vertices whether two adjacent chunks are built separately or as one', () => {
+    // A 4x4 grid with genuine elevation variety (not flat) so the ramp/
+    // corner-pull machinery actually has something to disagree about if
+    // chunk splitting were to break it.
+    const wg = new WorldGrid(4, 4);
+    wg.set(1, 1, { elevation: 2 });
+    wg.set(2, 1, { elevation: 2 });
+    wg.set(1, 2, { elevation: 1 });
+    wg.set(2, 2, { elevation: 1 });
+
+    // Whole-grid build (one call, no chunk splitting).
+    const whole = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 1, 1);
+
+    // Same grid, split into two 2-column-wide chunks at the col=2 boundary.
+    const chunkA = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 1, 1, 0, 0, 2, 4);
+    const chunkB = buildTerrainGeometryData(wg, 4, 4, 1.5, 1.5, 1, 1, 2, 0, 2, 4);
+
+    // Collect every (x, y, z) vertex position that lies exactly on the
+    // shared boundary plane between tile columns 1 and 2. With GHW=1.5,
+    // T=1, a tile's left edge is at world-x = (col - GHW) * T, so column
+    // 1's right edge / column 2's left edge — the seam this 2/2 chunk
+    // split falls on — is at world-x = (2 - 1.5) * 1 = 0.5.
+    const SEAM_X = 0.5;
+    function boundaryVerts(data: TerrainGeometryData): Set<string> {
+      const out = new Set<string>();
+      const collect = (positions: readonly number[]) => {
+        for (let i = 0; i < positions.length; i += 3) {
+          const x = positions[i]!, y = positions[i + 1]!, z = positions[i + 2]!;
+          if (Math.abs(x - SEAM_X) < 1e-6) out.add(`${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`);
+        }
+      };
+      collect(data.positions);
+      for (const g of Object.values(data.groundGeometry)) collect(g.positions);
+      return out;
+    }
+
+    const wholeBoundary = boundaryVerts(whole);
+    const splitBoundary = new Set([...boundaryVerts(chunkA), ...boundaryVerts(chunkB)]);
+
+    // The seam must exist (sanity check the test itself isn't vacuous)
+    // and every vertex the whole-grid build placed on the seam must also
+    // appear when built as two separate chunks — no missing/shifted verts.
+    expect(wholeBoundary.size).toBeGreaterThan(0);
+    for (const v of wholeBoundary) {
+      expect(splitBoundary.has(v)).toBe(true);
+    }
+  });
+});
+
 describe('buildTerrainGeometryData — water depth carving (RI-3)', () => {
   /** Collects the Y values of every vertex (across the base buffer and every
    *  groundGeometry variant buffer) whose X falls within [xMin, xMax) — used to
