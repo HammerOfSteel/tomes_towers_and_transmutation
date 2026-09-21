@@ -43,17 +43,45 @@ function buildCanopyBlobVariant(index: number): THREE.BufferGeometry {
   return new THREE.IcosahedronGeometry(1, detail);
 }
 
+/** Cheap deterministic hash → [0, 1) for a quantized 3D position. Used so every
+ *  vertex-copy sharing the same original corner position gets the SAME
+ *  pseudo-random displacement scale below (see `displaceRockVertices()`). */
+function hashPosition(qx: number, qy: number, qz: number, seed: number): number {
+  let h = (seed ^ 0x9E37_79B9) >>> 0;
+  h = Math.imul(h ^ qx, 0x85EB_CA6B);
+  h = Math.imul(h ^ qy, 0xC2B2_AE35);
+  h = Math.imul(h ^ qz, 0x27D4_EB2F);
+  h = (h ^ (h >>> 15)) >>> 0;
+  return h / 0xFFFF_FFFF;
+}
+
 /** Applies a one-time, deterministic per-vertex outward displacement so this
  *  rock-chunk variant reads as distinctly faceted/irregular rather than a
  *  perfect dodecahedron/icosahedron — see research doc's "Kitbashing +
- *  vertex-displacement faceting" section. Mutates and returns `geo`. */
+ *  vertex-displacement faceting" section. Mutates and returns `geo`.
+ *
+ *  IMPORTANT: `PolyhedronGeometry` (Dodecahedron/Icosahedron's base class)
+ *  is NON-indexed — each face stores its own 3 vertex copies, so a shared
+ *  corner between adjacent faces exists as multiple separate entries in
+ *  `position` at the same coordinates. Displacing each entry by an
+ *  independently-drawn random scale (as an earlier version of this function
+ *  did, keying purely off array index) moves those "same" corners apart by
+ *  different amounts, tearing the mesh open at every edge/corner — visible
+ *  as black seam gaps and cracked-looking rock silhouettes. Keying the scale
+ *  off the vertex's own (quantized) position instead, rather than its index
+ *  in the array, guarantees every copy of the same corner gets an identical
+ *  displacement, so faces stay watertight while the silhouette is still
+ *  irregular/faceted. */
 function displaceRockVertices(geo: THREE.BufferGeometry, seed: number): THREE.BufferGeometry {
-  const rand = mulberry32(seed);
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const v = new THREE.Vector3();
+  const QUANT = 1000; // quantize to 3 decimal places before hashing
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const scale = 1 + (rand() - 0.5) * 0.32;
+    const qx = Math.round(v.x * QUANT);
+    const qy = Math.round(v.y * QUANT);
+    const qz = Math.round(v.z * QUANT);
+    const scale = 1 + (hashPosition(qx, qy, qz, seed) - 0.5) * 0.32;
     v.multiplyScalar(scale);
     pos.setXYZ(i, v.x, v.y, v.z);
   }
