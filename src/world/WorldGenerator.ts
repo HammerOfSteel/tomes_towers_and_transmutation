@@ -22,6 +22,7 @@ import { simulateWorldHistory }      from './WorldHistory';
 import { placeResourceNodes }         from './ResourceNodePlacer';
 import { generateRealmData }   from './RealmGenerator';
 import { realmToWorldGrid, ELEVATION_LEVELS }    from './RealmToWorldGrid';
+import { terraceElevation } from './TerrainTerracing';
 
 const MLV = ELEVATION_LEVELS - 1;
 
@@ -90,6 +91,11 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   // Phase 3: carve lakes — runs after rivers so lake source-selection's
   // isBlocked() check correctly excludes tiles rivers already claimed.
   generateLakes(grid, config, seed);
+
+  // 1.3: terrace any remaining multi-level elevation drops into
+  // single-level steps TerrainKit.ts's existing ramp renderer already
+  // handles — see docs/superpowers/specs/2026-09-22-terrain-elevation-slopes-design.md §4.
+  terraceElevation(grid);
 
   return grid;
 }
