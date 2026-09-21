@@ -16,6 +16,29 @@ describe('terraceElevation', () => {
     expect(wg.get(0, 0).elevation).toBe(3); // raised to within 1 of its (now-4) neighbor
   });
 
+  it('terraces a diagonal 2-level jump, not just orthogonal ones', () => {
+    // A 2x2 block where every orthogonal pair already differs by at most
+    // 1 level (satisfies the pre-existing 4-neighbor invariant), but the
+    // diagonal pair (0,0)/(1,1) differs by 2 — the exact scenario that
+    // produces a black-crack hole at their shared corner in
+    // TerrainGeometryBuilder.ts, since that corner is shared by all 4 of
+    // these tiles. See docs/superpowers/specs/2026-09-23-terrain-seam-and-organic-polish-research.md §1.2.
+    const wg = new WorldGrid(2, 2);
+    wg.set(0, 0, { elevation: 2 }); // A
+    wg.set(1, 0, { elevation: 1 }); // B
+    wg.set(0, 1, { elevation: 1 }); // C
+    wg.set(1, 1, { elevation: 0 }); // D
+
+    terraceElevation(wg);
+
+    // Orthogonal pairs were already fine and stay put.
+    expect(wg.get(0, 0).elevation).toBe(2); // A never lowered
+    expect(wg.get(1, 0).elevation).toBe(1); // B unchanged (within 1 of A and D)
+    expect(wg.get(0, 1).elevation).toBe(1); // C unchanged (within 1 of A and D)
+    // D must be raised so the A/D diagonal pair is within 1 level too.
+    expect(wg.get(1, 1).elevation).toBe(1);
+  });
+
   it('never lowers a tile, only raises its lower neighbor toward it', () => {
     const wg = new WorldGrid(2, 1);
     wg.set(0, 0, { elevation: 5 });

@@ -19,8 +19,18 @@
 
 import { WorldGrid, type WorldCell } from './WorldGrid';
 
-const NEIGHBOR_OFFSETS_4: ReadonlyArray<readonly [number, number]> = [
+/** All 8 neighbors (orthogonal + diagonal). Diagonal neighbors must be
+ *  included, not just orthogonal, because a tile corner is shared by up
+ *  to 4 tiles arranged in a 2x2 block, including one diagonal pair — if
+ *  terracing only bounded orthogonal pairs, a diagonal pair could still
+ *  differ by 2+ levels even at full convergence, which desyncs
+ *  TerrainGeometryBuilder.ts's per-tile corner-elevation clamp between
+ *  the two diagonal tiles and opens a real hole in the mesh/collider at
+ *  their shared corner. See
+ *  docs/superpowers/specs/2026-09-23-terrain-corner-crack-fix-design.md. */
+const NEIGHBOR_OFFSETS_8: ReadonlyArray<readonly [number, number]> = [
   [1, 0], [-1, 0], [0, 1], [0, -1],
+  [1, 1], [1, -1], [-1, 1], [-1, -1],
 ];
 
 function _isTerracingEligible(cell: Pick<WorldCell, 'biome' | 'waterDepth'>): boolean {
@@ -48,7 +58,7 @@ export function terraceElevation(grid: WorldGrid): void {
         const cell = grid.get(col, row);
         if (!_isTerracingEligible(cell)) continue;
         let target = cell.elevation;
-        for (const [dc, dr] of NEIGHBOR_OFFSETS_4) {
+        for (const [dc, dr] of NEIGHBOR_OFFSETS_8) {
           const nCol = col + dc, nRow = row + dr;
           if (nCol < 0 || nCol >= width || nRow < 0 || nRow >= height) continue;
           const nCell = grid.get(nCol, nRow);
