@@ -33,7 +33,11 @@ const MLV = ELEVATION_LEVELS - 1;
  * this grid's shape via `realmToWorldGrid()`. The tower flat-zone/rim-bias
  * post-processing below matches the original OverworldScene._buildGrid
  * with distances parameterised to the grid size:
- *   – Flat zone  ≈ 28 % of half-width  (FR = 7 at GW = 51)
+ *   – Flat zone  ≈ 12 % of half-width  (FR = 3 at GW = 51) — shrunk from
+ *     28% (2026-09-22 terrain elevation unlock, see
+ *     docs/superpowers/specs/2026-09-22-terrain-elevation-slopes-design.md §3b)
+ *     so the mid-ring's real elevation signal isn't flattened away; still
+ *     guarantees a small buildable flat area at the tower.
  *   – Rim bias starts at 80 % of half-width and spans 36 %
  */
 export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid {
@@ -41,7 +45,8 @@ export function buildWorldGrid(seed: number, config: WorldGenConfig): WorldGrid 
   const GH  = config.worldSize;
   const GHW = (GW - 1) / 2;
   const GHH = (GH - 1) / 2;
-  const FR  = Math.round(GHW * 0.28);    // flat zone radius in tiles
+  const FLAT_ZONE_RADIUS_FRACTION = 0.12; // was 0.28 — see header comment above
+  const FR  = Math.round(GHW * FLAT_ZONE_RADIUS_FRACTION);    // flat zone radius in tiles
 
   // Rim bias: terrain rises steeply near the world edge (bowl effect).
   const rimStart = GHW * 0.80;
