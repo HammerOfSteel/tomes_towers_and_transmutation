@@ -351,3 +351,61 @@ every prior sub-task's research doc):
   strength/radius, whether to touch nature-asset textures at all — user
   said explicitly not the focus) should go through `brainstorming` next,
   per the process skill, before any plan is written.
+
+---
+
+## 6. Addendum (2026-09-24): second, distinct crack cause found on playtest
+
+The 8-neighbor terracing fix (§1/§2) shipped and the playtest gate for
+sub-task 2.1 was re-run. Result: the originally-reported large wedge-shaped
+holes at dramatic slopes were gone on a fresh seed, confirming that fix
+worked — but the user found a **second, previously-unreported, more
+widespread defect**: thin diagonal black hairline cracks at the edges of
+most tiles, including on largely flat/gently-rolling terrain with no
+dramatic elevation jump (screenshots showed this on open desert/hill
+ground and beside a forest road). This pattern is structurally different
+from the diagonal-corner bug (which requires a genuine ≥2-level jump) and
+required fresh root-cause investigation, per this skill's "playtest
+feedback contradicts an assumption → revise design/research, not just the
+code" guidance.
+
+### Root cause: wall-top edge vs. top-face corner jitter mismatch
+
+`TerrainGeometryBuilder.ts`'s top face (both the plain quad and the
+subdivided `emitGroundSubTiles()` path) adds a small per-corner bump —
+`subTileBumpJitter(worldX, worldZ)`, keyed by absolute world position,
+range `±SUBTILE_BUMP_MAX` (0.06 WU) — to every rendered corner, to break up
+the flat/pixel-art look (this is itself part of the organic-look work).
+The 4 vertical wall blocks (N/S/E/W), however, anchored their top edge to
+the tile's **raw, un-jittered** ramp-corner height (`Math.min(nwY, neY)`
+etc.) while the top face right next to them rendered the jittered value —
+a real, if small, vertical gap between the wall and the ground at every
+wall in the world (independent of ramps: this affected the pre-existing
+flat "raised tile between two flat tiles" case too, just usually too small
+to notice before elevation/ramp geometry made walls far more common).
+Magnitude (up to ~0.06 WU, versus the earlier bug's full elevation-level
+gap) matches the "small hairline" (vs. the earlier "wedge") visual
+distinction the user drew between the two reports.
+
+**Fix**: give the wall's own top edge the exact same jittered per-corner
+height as the top face's corresponding corner (`nwY + jNW`, `neY + jNE`,
+etc.), and the wall's bottom edge the same jitter value applied to the
+neighbor's flat physical height (matching the neighbor's own rendered
+corner, under the existing assumption that walls are only drawn where the
+far side is reached at its own flat height — already documented in the
+surrounding code comments). This closes the gap to the last bit of
+floating-point precision rather than merely shrinking it. The
+wall-emission threshold check was updated in lockstep to compare
+jittered-vs-jittered (not raw-vs-jittered), since comparing a jittered
+wall-top against a raw neighbor height would spuriously fire a
+zero-height wall between two tiles at the exact same elevation whenever
+that shared jitter happened to be positive.
+
+No new design-spec/plan cycle was run for this fix — it is a strict
+continuation of sub-task 2.1's original scope ("eliminate ALL crack/hole
+geometry... so it doesn't appear anywhere at all"), not a new class of
+work, and the fix is a small, mechanically-verified correction (regression
+tests assert every wall vertex exactly matches the top face's
+corresponding jittered corner, plus a guard against the new
+zero-height-wall pitfall). Sub-task 2.1 remains open pending this second
+playtest.
