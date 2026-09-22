@@ -226,6 +226,40 @@ const SUBGROUP_RULES = {
     [starts('MarketStand_'), 'Market'],
     // fallthrough → 'Misc / Other': Bell, Cauldron, Sawmill_saw.
   ],
+  'modern_type_buildings/interior_pack': [
+    [starts('1Story', '2Story', '3Story', '4Story', '6Story'), 'Building Modules'],
+    [starts('Door'), 'Doors & Windows'],
+    [starts('Window'), 'Doors & Windows'],
+    [starts('Sign_'), 'Signage'],
+    [exact('CasinoSign'), 'Signage'],
+    [starts('Bricks_'), 'Wall Details'],
+    [starts('Pipe'), 'Rooftop & Pipes'],
+    [starts('AC_Unit'), 'Rooftop & Pipes'],
+    [starts('Balcony'), 'Facade Details'],
+    [starts('Staircase'), 'Facade Details'],
+    [starts('Stairs_'), 'Facade Details'],
+    // fallthrough → 'Misc / Other'.
+  ],
+  'modular_dungeons/ultimate_modular_scifi': [
+    [starts('Wall_'), 'Walls'],
+    [starts('Door'), 'Doors'],
+    [starts('Window'), 'Windows'],
+    [starts('FloorTile'), 'Floors'],
+    [starts('RoofTile'), 'Roofs'],
+    [starts('Column'), 'Columns'],
+    [starts('Details_'), 'Wall Details & Vents'],
+    [starts('Pipes'), 'Wall Details & Vents'],
+    [starts('Props_'), 'Sci-Fi Props'],
+    [exact('Staircase'), 'Traversal'],
+    // fallthrough → 'Misc / Other'.
+  ],
+  'nature_props/nature_props': [
+    [starts('BirchTree', 'MapleTree', 'NormalTree', 'PineTree', 'PalmTree', 'DeadTree'), 'Trees'],
+    [starts('Bush'), 'Bushes'],
+    [starts('Flower', 'Petals', 'Plant'), 'Flowers & Plants'],
+    [starts('Grass'), 'Grass'],
+    [starts('Rock'), 'Rocks'],
+  ],
 };
 
 /** Classify a model's sub-group within its pack. Returns undefined for packs
@@ -256,7 +290,7 @@ const PACK_META = {
   'monsters/animated_monster_pack': {
     name:     'Animated Monster Pack',
     icon:     '👹',
-    desc:     'Bat, Dragon, Skeleton, Slime — rigged & animated (FBX only, no glTF export)',
+    desc:     'Bat, Dragon, Skeleton, Slime — rigged & animated (GLB, Blender material-fix export)',
     category: 'monsters',
     tags:     ['creature', 'monster', 'animated'],
     modular:  false,
@@ -288,7 +322,7 @@ const PACK_META = {
   'fantasy_props/ultimate_food_pack': {
     name:     'Ultimate Food Pack',
     icon:     '🍞',
-    desc:     '103 static food props (FBX only, no separate textures — vertex-colour materials)',
+    desc:     '103 static food props (GLB, Blender material-fix export)',
     category: 'fantasy_props',
     tags:     ['prop', 'food', 'static'],
     modular:  false,
@@ -296,7 +330,7 @@ const PACK_META = {
   'medieval_village_pack/buildings': {
     name:     'Medieval Village — Buildings',
     icon:     '🏠',
-    desc:     '10 monolithic building meshes (FBX, one mesh per building — not kit-of-parts)',
+    desc:     '10 monolithic building meshes (GLB, Blender material-fix export — one mesh per building, not kit-of-parts)',
     category: 'medieval_village_pack',
     tags:     ['building', 'medieval', 'monolithic'],
     modular:  false,
@@ -304,7 +338,7 @@ const PACK_META = {
   'medieval_village_pack/props': {
     name:     'Medieval Village — Props',
     icon:     '🛖',
-    desc:     '34 settlement-dressing props — carts, barrels, fences, wells (FBX)',
+    desc:     '34 settlement-dressing props — carts, barrels, fences, wells (GLB, Blender material-fix export)',
     category: 'medieval_village_pack',
     tags:     ['prop', 'medieval', 'static'],
     modular:  false,
@@ -324,6 +358,38 @@ const PACK_META = {
     category: 'modular_fantasy_village',
     tags:     ['building', 'medieval', 'modular', 'kit-of-parts'],
     modular:  true,
+  },
+  'modern_type_buildings/city_pack': {
+    name:     'City Pack',
+    icon:     '🏙️',
+    desc:     '9 monolithic modern/city building meshes (GLB, Blender material-fix export)',
+    category: 'modern_type_buildings',
+    tags:     ['building', 'modern', 'monolithic'],
+    modular:  false,
+  },
+  'modern_type_buildings/interior_pack': {
+    name:     'Interior Pack',
+    icon:     '🏢',
+    desc:     '102 kit-of-parts modern building modules + interior dressing (doors, windows, signage, pipes) — GLB, Blender material-fix export, some materials keep real image textures',
+    category: 'modern_type_buildings',
+    tags:     ['building', 'modern', 'interior', 'modular', 'kit-of-parts'],
+    modular:  true,
+  },
+  'modular_dungeons/ultimate_modular_scifi': {
+    name:     'Ultimate Modular Sci-Fi',
+    icon:     '🛸',
+    desc:     '91 kit-of-parts sci-fi dungeon/station pieces (walls, floors, doors, props) — GLB, Blender material-fix export',
+    category: 'modular_dungeons',
+    tags:     ['dungeon', 'sci-fi', 'modular', 'kit-of-parts'],
+    modular:  true,
+  },
+  'nature_props/nature_props': {
+    name:     'Nature Props',
+    icon:     '🌳',
+    desc:     '63 trees, bushes, flowers, rocks & grass (GLB, Blender material-fix export). Source .blend files reference texture PNGs that do not exist anywhere in the provided data — materials use a documented name-based colour fallback, not recovered textures.',
+    category: 'nature_props',
+    tags:     ['nature', 'prop', 'static'],
+    modular:  false,
   },
 };
 
@@ -451,7 +517,9 @@ export type QuatCategory =
   | 'fantasy_props'
   | 'medieval_village_pack'
   | 'modular_dungeons'
-  | 'modular_fantasy_village';
+  | 'modular_fantasy_village'
+  | 'modern_type_buildings'
+  | 'nature_props';
 
 export type QuatFormat = 'gltf' | 'glb' | 'fbx' | 'obj';
 

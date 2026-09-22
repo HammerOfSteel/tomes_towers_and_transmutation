@@ -6,6 +6,19 @@ inventoried in [`2026-09-22-quaternius-asset-inventory.md`](./2026-09-22-quatern
 and (b) a dev-only "Asset Lab" to browse every imported asset in 3D before any
 procedural-system wiring happens (step 3).*
 
+> **Correction (post-playtest).** Section 3 below ("Import scope for this
+> step") originally deferred `modern_type_buildings/`, `modular_dungeons/
+> Ultimate Modular Sci-Fi`, and `nature_props/` as "tonal mismatch" /
+> "deprioritized." **That was wrong and has been reversed at the user's
+> explicit, direct instruction: every asset in every pack under the source
+> folder is imported, with no taste/style filtering, period.** All three
+> have since been imported (the `nature_props/` `.blend` files via a new
+> Blender-based export pipeline, `scripts/blender/export_glb.py`, which also
+> fixed a shadow/no-texture rendering bug found in the same packs). See the
+> inventory doc's own correction banner and "Import scope" table for the
+> current, accurate state. The text below is left as-is as a historical
+> record of the (superseded, incorrect) original design decision.
+
 ## Research: what already exists to reuse
 
 This codebase already has a **complete, working precedent** for exactly this

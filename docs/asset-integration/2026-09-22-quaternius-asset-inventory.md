@@ -6,6 +6,23 @@ filesystem, outside this repo — not committed, not LFS-tracked). Surveyed via
 `animations`/`skins` keys) without extracting the full packs. 8 subfolders,
 15 zip archives, ~570 MB total.*
 
+> **Correction (post-playtest, later step-2 session).** An earlier revision
+> of this document and the step-2 import pass framed 4 packs
+> (`modern_type_buildings/` both sub-packs, `modular_dungeons/Ultimate Modular
+> Sci-Fi`, `nature_props/`) as excluded for "tonal mismatch" or "pending a
+> style decision." **That was wrong and has been reversed at the user's
+> explicit, direct instruction: every asset in every pack under the source
+> folder is imported, with no taste/style filtering, period.** All 14
+> non-orphaned zips (see the Import scope table below) are now imported.
+> This document has been corrected throughout to remove that framing. It
+> also documents two real, unavoidable data gaps found while fixing this
+> (not exclusions — everything that exists in the source data is imported):
+> `nature_props/` ships no texture files at all (not even in the source
+> Downloads folder), and `monsters/Bestiary - Dungeon Monsters` ships zero
+> animation keyframe data in either of its export formats. Both are
+> disclosed in detail in their sections below and in
+> `scripts/extract-quaternius-assets.mjs`'s header comment.
+
 This is the first deliverable of the 3D Asset Integration initiative (see
 [`README.md`](./README.md)). It does **not** decide implementation — it
 records what exists, in what form, and where it could plug into the existing
@@ -18,51 +35,51 @@ from ground truth instead of assumptions.
 |---|---|---|---|---|---|---|
 | `animals/` Ultimate Animated Animals | 12 | GLTF+bin, FBX, OBJ, .blend | Monolithic (one mesh per animal) | ✅ 13 anim clips, 1 skin (Cow sample) | Embedded materials, no external texture files found in listing | Animal spawn placement |
 | `monsters/` Animated Monster Pack | 4 | FBX, .blend | Monolithic | Likely rigged (pack name says "Animated"; not sniffed — no gltf to sample) | 1 jpg preview only | Monster spawn placement |
-| `monsters/` Bestiary Dungeon Monsters | 2 | FBX, GLB | Monolithic | **Unconfirmed — likely static**, no gltf sniffable; 16 PNGs suggest baked/unwrapped textures, not rig data | 16 PNG textures | Monster spawn placement (static use, e.g. dungeon set-dressing) |
+| `monsters/` Bestiary Dungeon Monsters | 2 | FBX, GLB | Monolithic | **Confirmed static — no animation data** (zero `AnimCurveNode` occurrences in either FBX or GLB source, verified via raw byte inspection) | 16 PNG textures | Monster spawn placement (static use, e.g. dungeon set-dressing) |
 | `monsters/` Cute Animated Monsters | 21 | GLTF+bin, FBX, OBJ, .blend | Monolithic | ✅ 10 anim clips, 1 skin (Yeti sample) | 21 PNG (per-model) | Monster spawn placement |
 | `fantasy_props/` Fantasy Props MegaKit | 94 | GLTF+bin, FBX, OBJ, .blend | Monolithic per prop (kit-of-many, not modular geometry) | ❌ static | Full PBR set (BaseColor/Normal/ORM) per material, 43 PNG | Building interiors, settlement dressing, dungeon set-dressing |
 | `fantasy_props/` Ultimate Food Pack | 103 | FBX, OBJ, .blend | Monolithic per item | ❌ static | 1 PNG only (likely a shared atlas — needs confirming) | Food/kitchen dressing (interiors, markets) |
 | `medieval_village_pack/` Buildings | 10 | FBX, OBJ, .blend | **Monolithic** — one mesh per whole building | ❌ static | none listed separately (baked into FBX likely) | Human settlement buildings (direct building swap, not kit-of-parts) |
 | `medieval_village_pack/` Props | 34 | FBX, OBJ, .blend | Monolithic per prop | ❌ static | none listed separately | Settlement/street dressing |
-| `modern_type_buildings/` Buildings Pack (2019) | 9 | FBX, OBJ, .blend | Monolithic | ❌ static | 1 PNG | ⚠️ tonal mismatch — see Open Questions |
-| `modern_type_buildings/` Ultimate Textured Building Pack | 102 | FBX, OBJ, .blend | Monolithic (with `_Base`/`_Mat` split variants) | ❌ static | 13 PNG | ⚠️ tonal mismatch — see Open Questions |
-| `modular_dungeons/` OBJ (Bestiary-style dungeon kit) | 92 | OBJ+MTL | ✅ **true kit-of-parts** (walls, arches, floors, columns, props) | ❌ static (one `Character_Animated.obj` outlier — likely a rig demo, not a placeable) | separate `Textures/` zip, only 2 files — looks incomplete, see Open Questions | **Best fit for `DungeonGenerator.ts`/`BlueprintRenderer.ts` wall/floor dressing** |
-| `modular_dungeons/` Ultimate Modular Sci-Fi | 91 | FBX, OBJ, .blend | ✅ true kit-of-parts | ❌ static | 1 jpg | ⚠️ tonal mismatch — see Open Questions |
+| `modern_type_buildings/` City Pack | 9 | GLB (Blender material-fix export), FBX, OBJ, .blend | Monolithic | ❌ static | Real image textures preserved via material-fix pipeline | Imported (see per-pack section) — building swap for modern-styled territory, or dressing |
+| `modern_type_buildings/` Interior Pack | 102 | GLB (Blender material-fix export), FBX, OBJ, .blend | ✅ kit-of-parts (with `_Base`/`_Mat` split variants) | ❌ static | Real image textures preserved via material-fix pipeline | Imported — building interiors, tower/indoor dressing |
+| `modular_dungeons/` OBJ (Bestiary-style dungeon kit) | 92 | OBJ+MTL | ✅ **true kit-of-parts** (walls, arches, floors, columns, props) | ❌ static (one `Character_Animated.obj` outlier — likely a rig demo, not a placeable) | Flat vertex-colour materials, no texture maps at all (confirmed: zero `map_*` directives across all 92 `.mtl` files) — genuinely dark stone/dungeon palette, not a rendering bug | **Best fit for `DungeonGenerator.ts`/`BlueprintRenderer.ts` wall/floor dressing** |
+| `modular_dungeons/` Ultimate Modular Sci-Fi | 91 | GLB (Blender material-fix export), FBX, OBJ, .blend | ✅ true kit-of-parts | ❌ static | Real image textures preserved via material-fix pipeline | Imported — sci-fi/tech dungeon or tower variant |
 | `modular_fantasy_village/` Medieval Village MegaKit | 176 | GLTF+bin, FBX, OBJ, .blend | ✅ **true kit-of-parts** (walls/corners/doors/floors/roofs/stairs by material variant) | ❌ static | 54 PNG (full PBR set) | **Best fit for `BuildingGenerator.ts` + per-faction `*Kit.ts` wall/roof/corner module patterns** |
-| `nature_props/` Blends | 63 | **`.blend` only** — no exported FBX/OBJ/GLTF/textures | Unknown (not inspectable without opening in Blender) | Unknown | none exported | ⚠️ **Gap — needs conversion pass**, see Open Questions |
+| `nature_props/` Blends | 63 | GLB (Blender material-fix export), `.blend` only in source | Monolithic per prop | ❌ static | **Genuine data gap**: `.blend` files reference external texture PNGs that don't exist anywhere in the provided source data; materials use a documented name-based colour fallback instead (not real recovered textures) | Imported — trees/rocks/flowers/bushes for `NatureAssetBuilder.ts` placement |
 
 ## Import scope — every one of the 15 zips, explicitly
 
-**Revision note (2026-09-22, post-step-2 review):** the table above and the
-per-pack sections below have always covered all 15 zips across all 8 source
-subfolders — nothing was silently dropped from *this document*. What was
-missing was a single explicit "is this actually in the game's import
-pipeline yet?" answer per pack, which is why the step-2 Asset Lab dev view
-(only showing the 10 imported packs) read as if the inventory itself had
-holes. This table is that missing answer, once, in one place:
+**Revision note (2026-09-22, post-step-2 review, corrected again in the
+Blender material-fix pass):** the table above and the per-pack sections
+below have always covered all 15 zips across all 8 source subfolders —
+nothing was silently dropped from *this document*. An earlier pass of the
+actual game import pipeline DID silently drop 4 packs under a "tonal
+mismatch" rationale; that was reversed at the user's explicit instruction.
+This table is the corrected, current answer:
 
-| # | Source folder | Zip | Imported in step 2? | Manifest pack id | Reason if excluded |
+| # | Source folder | Zip | Imported? | Manifest pack id | Notes |
 |---|---|---|---|---|---|
 | 1 | `animals/` | Ultimate Animated Animals | ✅ Yes | `animals/ultimate_animated_animals` | — |
 | 2 | `fantasy_props/` | Fantasy Props MegaKit | ✅ Yes | `fantasy_props/fantasy_props_megakit` | — |
-| 3 | `fantasy_props/` | Ultimate Food Pack | ✅ Yes | `fantasy_props/ultimate_food_pack` | — |
-| 4 | `medieval_village_pack/` | Buildings | ✅ Yes | `medieval_village_pack/buildings` | — |
-| 5 | `medieval_village_pack/` | Props | ✅ Yes | `medieval_village_pack/props` | — |
-| 6 | `modern_type_buildings/` | Buildings Pack (Jan 2019) | ❌ No | — | Modern/contemporary architecture, no fantasy-faction fit (flagged open question #4) |
-| 7 | `modern_type_buildings/` | Ultimate Textured Building Pack (Dec 2019) | ❌ No | — | Same as #6 |
-| 8 | `modular_dungeons/` | OBJ (fantasy dungeon kit-of-parts) | ✅ Yes | `modular_dungeons/obj_kit` | — |
-| 9 | `modular_dungeons/` | Textures.zip | ❌ No | — | Orphaned — only 2 loose texture files, confirmed unrelated to the 92-piece OBJ kit's flat-vertex-colour `.mtl` files (zero `map_*` directives across all 92) |
-| 10 | `modular_dungeons/` | Ultimate Modular Sci-Fi | ❌ No (pending a user decision — see Open Questions #4) | — | Sci-fi/tech themed, tonal mismatch with the fantasy dungeon kit already imported; **not deleted, just not yet imported** |
+| 3 | `fantasy_props/` | Ultimate Food Pack | ✅ Yes | `fantasy_props/ultimate_food_pack` | Re-exported as GLB via the Blender material-fix pipeline (was rendering as flat black/gray "shadows") |
+| 4 | `medieval_village_pack/` | Buildings | ✅ Yes | `medieval_village_pack/buildings` | Re-exported as GLB via the Blender material-fix pipeline |
+| 5 | `medieval_village_pack/` | Props | ✅ Yes | `medieval_village_pack/props` | Re-exported as GLB via the Blender material-fix pipeline |
+| 6 | `modern_type_buildings/` | City Pack (Buildings Pack, Jan 2019) | ✅ Yes | `modern_type_buildings/city_pack` | Re-exported as GLB via the Blender material-fix pipeline |
+| 7 | `modern_type_buildings/` | Interior Pack (Ultimate Textured Building Pack, Dec 2019) | ✅ Yes | `modern_type_buildings/interior_pack` | Re-exported as GLB via the Blender material-fix pipeline; some materials keep real linked image textures (not just flat colour) |
+| 8 | `modular_dungeons/` | OBJ (fantasy dungeon kit-of-parts) | ✅ Yes | `modular_dungeons/obj_kit` | Flat vertex-colour materials confirmed genuinely authored (no texture maps referenced at all) — dark stone palette is real, not a bug |
+| 9 | `modular_dungeons/` | Textures.zip | ❌ No | — | Genuinely orphaned: confirmed the 2 loose PNGs (`Bark_Texture.jpg`, `Leaf_Texture.png`) are not referenced by any of the 92 `.mtl` files in the OBJ kit (zero `map_*` directives anywhere in that kit) — there is no mesh in this repo's source data for these 2 files to attach to |
+| 10 | `modular_dungeons/` | Ultimate Modular Sci-Fi | ✅ Yes | `modular_dungeons/ultimate_modular_scifi` | Re-exported as GLB via the Blender material-fix pipeline |
 | 11 | `modular_fantasy_village/` | Medieval Village MegaKit | ✅ Yes | `modular_fantasy_village/medieval_village_megakit` | — |
-| 12 | `monsters/` | Animated Monster Pack | ✅ Yes | `monsters/animated_monster_pack` | — |
-| 13 | `monsters/` | Bestiary - Dungeon Monsters Kit | ✅ Yes | `monsters/bestiary_dungeon_monsters` | — |
+| 12 | `monsters/` | Animated Monster Pack | ✅ Yes | `monsters/animated_monster_pack` | Re-exported as GLB via the Blender material-fix pipeline |
+| 13 | `monsters/` | Bestiary - Dungeon Monsters Kit | ✅ Yes | `monsters/bestiary_dungeon_monsters` | Only 2 monsters (Imp, Puglin) — confirmed this is the actual, full content of the Standard tier of this pack, not a partial extraction. Ships zero animation keyframe data in either FBX or GLB source (confirmed via raw FBX byte inspection) — static poses only, a genuine content limitation |
 | 14 | `monsters/` | Cute Animated Monsters | ✅ Yes | `monsters/cute_animated_monsters` | — |
-| 15 | `nature_props/` | Blends.zip | ❌ No | — | `.blend`-only, no exported mesh/texture format — blocked on a Blender export pass (see Open Questions #2, Blender MCP note) |
+| 15 | `nature_props/` | Blends.zip | ✅ Yes | `nature_props/nature_props` | Re-exported as GLB via the Blender material-fix pipeline. Genuine texture gap: the `.blend` files reference external PNGs that do not exist anywhere in the provided source data — materials use a documented name-based colour fallback, not recovered textures |
 
-**10 of 15 zips are imported today (548 models).** The other 5 are not
-missing from this survey — they're documented above and in the per-pack
-detail below — they're just not yet in the game's asset pipeline, each for
-an explicit, named reason, not an oversight.
+**14 of 15 zips are imported (813 models total).** The 1 exception
+(`modular_dungeons/Textures.zip`) is not an exclusion — it's 2 loose texture
+files with no mesh anywhere in the source data to attach them to, confirmed
+by inspecting every `.mtl` in the sibling OBJ kit.
 
 ## Asset Lab categorization hierarchy (Category → Pack → Sub-group)
 
@@ -252,20 +269,31 @@ does not obviously suit elven/dwarven/orcish/vampire/undead/slime/fae style
 territories without re-texturing or re-dressing, which is out of scope for
 "drop-in real assets" and should be flagged to the user rather than assumed.
 
-### `modern_type_buildings/` — 2 packs, ⚠️ tonal mismatch
-- **Buildings Pack (Jan 2019)**: 9 buildings (`Building1-4` variants,
-  `House1/2`) — contemporary/modern architecture.
-- **Ultimate Textured Building Pack (Dec 2019)**: 102 pieces — `1Story`
-  through `4Story` variants with `_Base`/`_Mat`/roof-style suffixes
-  (`GableRoof`, `RoundRoof`, `Balcony`, `Columns`, `Sidehouse`, `Stairs`,
-  etc.) — modern/suburban style, not fantasy.
+### `modern_type_buildings/` — 2 packs, imported
+- **City Pack (Jan 2019)**: 9 buildings (`Building1-4` variants,
+  `House1/2`) — contemporary/modern architecture. Re-exported as GLB via
+  the Blender material-fix pipeline (source `.blend` files used a legacy
+  Diffuse BSDF material graph that rendered as flat black/gray "shadows"
+  until fixed).
+- **Interior Pack (Dec 2019)**: 102 pieces — `1Story` through `6Story`
+  building modules with `_Base`/`_Mat`/roof-style suffixes (`GableRoof`,
+  `RoundRoof`, `Balcony`, `Columns`, `Sidehouse`, `Stairs`, etc.), plus
+  standalone interior/facade dressing (`Door*`, `Window*`, `Sign_*`,
+  `Bricks_*`, `Pipe*`, `AC_Unit*`, `Staircase`). Some materials in this
+  pack use real linked image textures (not just flat colour) — the
+  material-fix pipeline preserves the texture link when rewiring to a
+  Principled BSDF rather than discarding it.
 
-Both packs are **monolithic modern-architecture buildings** with no obvious
-faction fit in this game's fantasy setting (human/elven/dwarven/vampire/
-undead/draconic/celestial/vulperia/slime/fae/orcish). Flagged as likely
-**out of scope** — see Open Questions.
+Both packs are monolithic/modular modern-architecture buildings with no
+obvious 1:1 faction fit in this game's fantasy setting (human/elven/
+dwarven/vampire/undead/draconic/celestial/vulperia/slime/fae/orcish). Per
+explicit user instruction, this is **not a reason to exclude them** — they
+are imported like every other pack; the wiring spec (step 3) can decide
+which territories/uses actually draw on them (e.g. a modern-styled human
+outpost, or as generic "non-magical" interior dressing) without blocking
+import on a perfect style match.
 
-### `modular_dungeons/` — 2 kits + 1 orphaned texture zip
+### `modular_dungeons/` — 2 kits (both imported) + 1 genuinely orphaned texture zip
 - **OBJ kit** (92 pieces, OBJ+MTL): genuinely modular dungeon kit-of-parts —
   `Arch_Gothic(_RoundColumn)`, `Arch_Round(_RoundColumn)`, `Wall`,
   `Wall_ArchGothic/ArchRound(_Broken/_Overgrown)`, `Wall_Broken`,
@@ -279,25 +307,41 @@ undead/draconic/celestial/vulperia/slime/fae/orcish). Flagged as likely
   Statue_Fox/Stag, DeadTree_1-3, Tree_1-3, Bush_*, Grass, Flag_*,
   Window_Bars(_Double)(_Overgrown), Window_Open(_Double), Support_*`) — this
   is a genuinely dressable ruined/overgrown-dungeon aesthetic (has both
-  intact and "Overgrown"/"Broken" variants of the same pieces).
-- **Textures.zip**: only 2 files (1 jpg, 1 png) — this looks incomplete or an
-  orphaned/partial export relative to 92 OBJ pieces each needing an MTL
-  material; needs checking whether the MTL files reference these 2 textures
-  as a shared atlas or whether more textures are simply missing from this
-  particular export. Flagged in Open Questions.
+  intact and "Overgrown"/"Broken" variants of the same pieces). Re-checked
+  after root-causing the shadow-rendering bug elsewhere in this initiative:
+  confirmed none of the 92 `.mtl` files reference any `map_*` texture
+  directive at all — every material is a flat authored `Kd` colour, and
+  the dark stone/wood tones sampled (e.g. `Kd 0.13 0.13 0.10` for "Main"
+  stone, browns for wood/statues) are genuinely authored, not the Diffuse-
+  BSDF/glTF-exporter bug found elsewhere. No Blender fix needed for this
+  kit.
+- **Textures.zip**: only 2 files (`Bark_Texture.jpg`, `Leaf_Texture.png`).
+  Confirmed genuinely orphaned, not incomplete: cross-checked every one of
+  the 92 OBJ kit's `.mtl` files and none reference `map_Kd` or any other
+  texture directive — these 2 files have no mesh anywhere in the provided
+  source data to attach to. Not imported because there's nothing to attach
+  them to, not a style decision.
 - **Ultimate Modular Sci-Fi (Feb 2021)**: 91 pieces, sci-fi/space-station
   themed (`Details_Pipes_*`, `Props_Computer`, `Door*_Wall_Side*`,
-  `FloorTile_*`) — **tonal mismatch**, flagged as likely out of scope.
+  `FloorTile_*`). **Imported** — re-exported as GLB via the Blender
+  material-fix pipeline (source `.blend` files used the same legacy
+  Diffuse BSDF graph as the other affected packs). Its sci-fi styling is
+  not a fantasy-setting fit today, but per explicit user instruction that
+  is not a reason to exclude it; the wiring spec can decide where (if
+  anywhere) it gets used.
 
 **Plug-in point**: `src/levels/DungeonGenerator.ts` / `src/levels/blueprint.ts`
 (grid-cell Blueprint JSON, no meshes) + `src/levels/BlueprintRenderer.ts`
 (the file that turns Blueprint room data into actual geometry today,
 procedurally) + `src/levels/TowerGenerator.ts` (same Blueprint-consuming
-pattern for the 11-floor tower). The 92-piece OBJ kit is the clear fit: the
-existing grid/door/staircase logic in `DungeonGenerator.ts` would keep
-deciding room layout, while `BlueprintRenderer.ts` would gain a real-asset
-code path that places these wall/floor/arch/column pieces instead of (or
-blended with) procedural geometry per cell.
+pattern for the 11-floor tower). The 92-piece OBJ kit is the clear
+fantasy-dungeon fit; the 91-piece Ultimate Modular Sci-Fi kit is a second,
+tonally distinct option the wiring spec can gate behind a different
+style/territory. The existing grid/door/staircase logic in
+`DungeonGenerator.ts` would keep deciding room layout either way, while
+`BlueprintRenderer.ts` would gain a real-asset code path that places these
+wall/floor/arch/column pieces instead of (or blended with) procedural
+geometry per cell.
 
 ### `modular_fantasy_village/` — Medieval Village MegaKit
 176 pieces, GLTF+bin+FBX+OBJ+.blend, 54 PNG (full PBR), **confirmed static**
@@ -338,17 +382,29 @@ suggest **human_rural**/**human_town** most directly (matches
 **fae** territory dressing. Does not obviously fit elven, dwarven, vampire,
 undead, draconic, celestial, vulperia, slime, or orcish without re-texturing.
 
-### `nature_props/` — ⚠️ Blends only, conversion gap
-**Only** a `Blends.zip` with 63 raw `.blend` files — **no exported FBX, OBJ,
-GLTF, or texture files at all** in this pack (confirmed via zip listing:
-100% `.blend` extension). This is the one pack that cannot go through any
-import pipeline as-is; someone (or an automated Blender step) needs to open
-each `.blend` and export it to a usable format first. See Open Questions
-below — a Blender MCP connection just became available mid-session and is
-noted there as a possible way to do this programmatically in step 2/3,
-without deciding on it now.
+### `nature_props/` — imported via the Blender material-fix pipeline, with a disclosed texture gap
+Source was a `Blends.zip` with 63 raw `.blend` files — **no exported FBX,
+OBJ, GLTF, or texture files at all** shipped in the source data. This is
+now imported: `scripts/blender/batch-export-blends.mjs` +
+`scripts/blender/export_glb.py` opens each `.blend` headlessly, rewires its
+legacy Diffuse-BSDF material graph to a Principled BSDF (the same root
+cause found across the other affected packs — including a more complex
+"Add Shader" translucent-leaf graph on some tree materials, handled via a
+recursive shader-graph traversal), and exports GLB.
 
-**Plug-in point** (once converted): `src/world/NaturePropField.ts` +
+**Genuine, disclosed texture gap**: the `.blend` files reference external
+texture PNGs via relative paths (`//../Textures/*.png`) that do not exist
+anywhere in the provided source data — not in `Blends.zip`, not elsewhere
+in the Downloads folder. This is unrecoverable from current data (confirmed
+via `img.size == (0, 0)` — Blender itself can't load the reference).
+Rather than exporting these materials blank, `export_glb.py` falls back to
+a name-based flat-colour heuristic (leaf/bark/rock keyword → a plausible
+green/brown/gray) — a clearly-documented placeholder, **not** a claim of
+recovered authored colour. A Blender MCP connection became available
+mid-session (see the Open Questions history below) and could be used later
+to hunt for the missing textures folder, but this has not been attempted.
+
+**Plug-in point**: `src/world/NaturePropField.ts` +
 `src/world/NatureAssetBuilder.ts`/`NatureAssetDNA.ts`/`NatureAssetRecipes.ts`
 (current fully-procedural tree/rock/flower/bush generation) and
 `src/world/NatureScatterPoints.ts` (placement point generation, which would
@@ -359,53 +415,72 @@ real-asset path).
 
 | Category | Existing system (decides *where*/*how many*, unchanged) | What a real asset would replace |
 |---|---|---|
-| Nature props (trees/rocks/flowers/bushes) | `NatureScatterPoints.ts` (placement) + `NatureAssetBuilder.ts`/`NatureAssetRecipes.ts` (procedural mesh) | The procedural mesh build, per scattered point — blocked on `nature_props/` conversion gap |
-| Dungeons (walls/floors/arches/columns) | `DungeonGenerator.ts`/`blueprint.ts` (grid+door/staircase logic) + `BlueprintRenderer.ts` (mesh build) | The mesh build per Blueprint cell — `modular_dungeons/OBJ` kit is the fit |
-| Tower/indoor generation | `TowerGenerator.ts` (same Blueprint pattern) + `InteriorGenerator.ts` (interior props) | Interior prop meshes — `fantasy_props/` MegaKit fit; wall/floor pieces same as dungeons |
-| Settlement/village buildings | `BuildingGenerator.ts` + per-faction `*Kit.ts` files (wall/corner/roof module assembly) | The per-module mesh, keyed by faction/style — `modular_fantasy_village/` fits human factions best; `medieval_village_pack/Buildings` as whole-building swaps |
-| Monster spawn placement | No dedicated spawn table yet; `enemy-creator/builder.ts` builds procedural `EnemyDNA` rigs on demand | A new asset-monster selection path parallel to `buildEnemy()` — `Cute Animated Monsters` most reliably rigged |
+| Nature props (trees/rocks/flowers/bushes) | `NatureScatterPoints.ts` (placement) + `NatureAssetBuilder.ts`/`NatureAssetRecipes.ts` (procedural mesh) | The procedural mesh build, per scattered point — `nature_props/` now imported (GLB, Blender material-fix pipeline); note the disclosed texture-fallback gap above |
+| Dungeons (walls/floors/arches/columns) | `DungeonGenerator.ts`/`blueprint.ts` (grid+door/staircase logic) + `BlueprintRenderer.ts` (mesh build) | The mesh build per Blueprint cell — `modular_dungeons/OBJ` kit is the fantasy fit; `modular_dungeons/Ultimate Modular Sci-Fi` is a second, tonally distinct kit also imported |
+| Tower/indoor generation | `TowerGenerator.ts` (same Blueprint pattern) + `InteriorGenerator.ts` (interior props) | Interior prop meshes — `fantasy_props/` MegaKit fit; `modern_type_buildings/Interior Pack` (102 pieces) also imported for wall/floor/facade modules; wall/floor pieces same as dungeons |
+| Settlement/village buildings | `BuildingGenerator.ts` + per-faction `*Kit.ts` files (wall/corner/roof module assembly) | The per-module mesh, keyed by faction/style — `modular_fantasy_village/` fits human factions best; `medieval_village_pack/Buildings` as whole-building swaps; `modern_type_buildings/City Pack` also imported as a modern-styled option |
+| Monster spawn placement | No dedicated spawn table yet; `enemy-creator/builder.ts` builds procedural `EnemyDNA` rigs on demand | A new asset-monster selection path parallel to `buildEnemy()` — `Cute Animated Monsters` most reliably rigged; `Bestiary — Dungeon Monsters` (2 monsters, static poses only) for dungeon set-dressing |
 | Animal spawn placement | `AmbientWildlife.ts` (2 procedural species today) | A new asset-animal selection path — `animals/Ultimate Animated Animals` (12 species, confirmed rigged) |
 
 ## Open questions (flagging, not deciding)
 
-1. **Where do imported/converted assets live in-repo?** The existing
-   character pipeline's convention is `public/assets/characters/<packId>/`
-   with a codegen'd manifest (`scripts/gen-char-manifest.mjs` →
-   `charManifest.ts`). Proposal to consider in step 2: mirror this as
-   `public/assets/quaternius/<category>/<packId>/` — but this needs a
-   real conversion step first, since only 4 of the 15 zips ship ready-to-use
-   GLTF (`animals`, `monsters/Cute Animated Monsters`,
-   `fantasy_props/Fantasy Props MegaKit`, `modular_fantasy_village`); the
-   rest are FBX/OBJ-only or (for `nature_props`) `.blend`-only. Not decided
-   here — needs a user call in step 2's spec.
-2. **`nature_props/` conversion gap.** All 63 assets are raw `.blend` files
-   with no exported mesh/texture data. **Mid-session update: a Blender MCP
-   server is now available** (the user started Blender and activated its MCP
-   server during this session) — this could let step 2/3 inspect and export
-   these `.blend` files programmatically instead of requiring manual
-   Blender work per file. Recording this as an available capability for
-   later use; **not acted on this turn**, which stays scoped to inventory
-   only.
-3. **`modular_dungeons/Textures.zip` looks incomplete** — only 2 texture
-   files for 92 OBJ pieces each with their own MTL. Needs checking in step 2
-   whether the MTLs reference just these 2 as a shared atlas, or whether
-   this export is missing textures.
-4. **Tonal mismatch packs**: `modern_type_buildings/` (both sub-packs) and
-   `modular_dungeons/Ultimate Modular Sci-Fi` don't fit this game's fantasy
-   setting on their face. Recommend deprioritizing for the wiring spec
-   (step 3) rather than deleting — flagging for explicit user confirmation
-   rather than silently dropping them.
+1. **RESOLVED — where do imported/converted assets live in-repo?** All 14
+   imported zips now live under `public/assets/quaternius/<category>/
+   <packId>/` with a codegen'd manifest (`scripts/gen-quaternius-
+   manifest.mjs` → `src/assets/quaterniusManifest.ts`), mirroring the
+   character pipeline's convention as originally proposed. 6 packs
+   (`animals`, `monsters/bestiary_dungeon_monsters`,
+   `monsters/cute_animated_monsters`, `fantasy_props/fantasy_props_megakit`,
+   `modular_dungeons/obj_kit`, `modular_fantasy_village/
+   medieval_village_megakit`) use their as-shipped format directly. The
+   other 8 packs' source material graphs (legacy Diffuse BSDF) rendered as
+   flat black/gray "shadows" in both FBX/OBJ export and Blender's own glTF
+   exporter — fixed via a Blender headless material-rewrite + GLB export
+   pipeline (`scripts/blender/export_glb.py` +
+   `scripts/blender/batch-export-blends.mjs`); GLB is now the format of
+   record for those 8.
+2. **RESOLVED — `nature_props/` conversion.** Converted via the Blender
+   material-fix pipeline above. A genuine, disclosed data gap remains: the
+   `.blend` files reference external texture PNGs that don't exist
+   anywhere in the provided source data, so materials use a documented
+   name-based colour-fallback heuristic instead of real textures. The
+   Blender MCP server flagged here mid-session was not used for this pass
+   (headless CLI scripting was used instead and worked end-to-end); it
+   remains available for a future attempt to locate the missing textures.
+3. **RESOLVED — `modular_dungeons/Textures.zip`.** Confirmed genuinely
+   orphaned: none of the 92 `.mtl` files in the sibling OBJ kit reference
+   `map_Kd` or any other texture directive at all — the kit is 100% flat
+   vertex-colour materials. These 2 texture files have no mesh anywhere in
+   the source data to attach to. Not imported because there is nothing to
+   attach them to; this is not a taste/style decision.
+4. **RESOLVED — no packs are excluded for tonal mismatch.** An earlier pass
+   of this initiative excluded `modern_type_buildings/` (both sub-packs)
+   and `modular_dungeons/Ultimate Modular Sci-Fi` on a "doesn't fit the
+   fantasy setting" rationale. **This was wrong and has been reversed at
+   the user's explicit, direct instruction: every asset available in the
+   source folder is imported, full stop, with no taste-based filtering.**
+   All 3 are now imported (`modern_type_buildings/city_pack`,
+   `modern_type_buildings/interior_pack`,
+   `modular_dungeons/ultimate_modular_scifi`). Which territories/uses
+   actually draw on tonally-distinct packs like these is a step-3 wiring
+   decision, not an import-time exclusion.
 5. **Faction/style fit for buildings is approximate, not verified.** The
    faction-fit notes above (`medieval_village_pack` and
    `modular_fantasy_village` → mostly human factions) are first-pass reading
    of material/style names, not a rendered-side-by-side comparison against
    `FACTION_PRESETS` colors/styles in `BuildingDNA.ts`. Elven, dwarven,
    vampire, undead, draconic, celestial, vulperia, slime, fae, and orcish
-   territories have no obvious asset match yet in this survey — worth
-   flagging to the user as a likely gap for those factions specifically.
-6. **Rig/animation claims for FBX-only packs are unconfirmed.** Only packs
-   with a `.gltf` file could be sniffed for `animations`/`skins` via plain
-   JSON parsing in this pass (`animals`, `monsters/Cute Animated Monsters`).
-   `monsters/Animated Monster Pack` and `monsters/Bestiary - Dungeon
-   Monsters` claim or imply animation via naming/format but need an actual
-   FBX/GLB load (step 2, real import tooling) to confirm.
+   territories have no obvious asset match yet in this survey. Per user
+   direction (given when approving step 2), this is **not a blocker**:
+   the existing pool (`medieval_village_pack`/`modular_fantasy_village`)
+   can be used as the initial asset pool even for factions without an
+   obvious style match — better some variation now than none, expandable
+   later with more asset packs.
+6. **RESOLVED — rig/animation claims confirmed via real import tooling.**
+   `monsters/animated_monster_pack` (Bat, Dragon, Skeleton, Slime): all 4
+   confirmed animated after the Blender re-export. `monsters/
+   bestiary_dungeon_monsters` (Imp, Puglin): confirmed via raw FBX byte
+   inspection (zero `AnimCurveNode` occurrences) to genuinely ship **no**
+   animation keyframe data in either FBX or GLB source — a real content
+   limitation of this pack, not an import bug; both models are static
+   poses only.

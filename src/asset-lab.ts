@@ -31,6 +31,7 @@ import { loadQuatAsset, type LoadedQuatAsset } from '@/assets/QuaterniusAssetLoa
 const CATEGORY_ORDER: readonly QuatCategory[] = [
   'animals', 'monsters', 'fantasy_props',
   'medieval_village_pack', 'modular_fantasy_village', 'modular_dungeons',
+  'modern_type_buildings', 'nature_props',
 ];
 
 const CATEGORY_LABEL: Record<QuatCategory, string> = {
@@ -40,17 +41,9 @@ const CATEGORY_LABEL: Record<QuatCategory, string> = {
   medieval_village_pack:   '🏠 Medieval Village',
   modular_dungeons:        '🗝️ Modular Dungeon Kit',
   modular_fantasy_village: '🏘️ Modular Fantasy Village Kit',
+  modern_type_buildings:   '🏙️ Modern Buildings & Interiors',
+  nature_props:            '🌳 Nature Props',
 };
-
-/** Packs deliberately not imported yet — see the inventory doc's "Import
- *  scope" table. Purely informational here: shows the user the full picture
- *  of what exists on disk even though it's not browsable in 3D yet. */
-const NOT_YET_IMPORTED: ReadonlyArray<{ label: string; reason: string }> = [
-  { label: 'modern_type_buildings/ — City Pack + Interior Pack',   reason: 'tonal mismatch (modern, not fantasy/medieval) — excluded by design' },
-  { label: 'modular_dungeons/Textures.zip',                       reason: 'orphaned — only 2 loose texture files, no meshes' },
-  { label: 'modular_dungeons/Ultimate Modular Sci-Fi (91 pieces)', reason: 'tonal mismatch (sci-fi) — pending user decision on whether to import' },
-  { label: 'nature_props/ — Blends.zip (trees, rocks, flowers, bushes)', reason: '.blend-only, no exported FBX/GLTF/OBJ — blocked on a Blender export pass (Blender MCP now available for this, per the inventory doc)' },
-];
 
 // ── Grouped data model ────────────────────────────────────────────────────────
 
@@ -143,15 +136,6 @@ root.innerHTML = `
   .al-item:hover { background: #262638; color: #fff; }
   .al-item.al-item--active { background: #6c3fb8; color: #fff; }
   .al-item .al-anim-dot { color: #40e0a0; margin-left: 4px; }
-  #al-notimported {
-    margin-top: 10px; padding-top: 8px; border-top: 1px solid #2e2e40;
-  }
-  #al-notimported summary {
-    cursor: pointer; font-size: .74rem; color: #8a8298; padding: 6px 8px; list-style: none;
-  }
-  #al-notimported summary::-webkit-details-marker { display: none; }
-  #al-notimported li { font-size: .68rem; color: #78728e; padding: 4px 8px 4px 20px; line-height: 1.4; }
-  #al-notimported b { color: #a89ac0; }
   #al-viewport { flex: 1; position: relative; background: #d8d8e0; }
   #al-viewport-empty {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -243,21 +227,6 @@ function renderSidebar(filter: string): void {
     sidebarEl.appendChild(details);
   }
 
-  // "Not yet imported" informational section — always visible, unaffected by search.
-  const niDetails = document.createElement('details');
-  niDetails.id = 'al-notimported';
-  const niSummary = document.createElement('summary');
-  niSummary.textContent = `📋 Not yet imported (${NOT_YET_IMPORTED.length}) — see inventory doc`;
-  niDetails.appendChild(niSummary);
-  const ul = document.createElement('ul');
-  ul.style.cssText = 'list-style:none;';
-  for (const entry of NOT_YET_IMPORTED) {
-    const li = document.createElement('li');
-    li.innerHTML = `<b>${entry.label}</b><br/>${entry.reason}`;
-    ul.appendChild(li);
-  }
-  niDetails.appendChild(ul);
-  sidebarEl.appendChild(niDetails);
 }
 
 /** Returns a filtered copy of packNode (only matching subgroups/models), or

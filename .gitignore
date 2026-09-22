@@ -11,7 +11,10 @@ screenshots/
 
 # macOS backup files created by some editors
 **/*~
-assets/
+# Local-only Quaternius source zips (see assets/quaternius/); anchored to
+# repo root so it does NOT also match public/assets/ (imported/processed
+# assets, which ARE committed).
+/assets/
 .agents
 .claude/*
 skills/
