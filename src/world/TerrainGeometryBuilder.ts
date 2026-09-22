@@ -1139,23 +1139,47 @@ export function buildTerrainGeometryData(
       // (Task 4) rather than the flat `wy`, so a ramp that already
       // reaches down to a lower neighbor doesn't leave a redundant wall —
       // see docs/superpowers/specs/2026-08-30-terrainkit-ramp-slopes-design.md §5.
-      const wallTopS = Math.min(nwY, neY);
+      //
+      // Each of the wall's two top corners uses the SAME jittered height
+      // as this tile's own top face at that exact (x, z) point (nwY+jNW,
+      // neY+jNE — not the raw un-jittered nwY/neY) so the wall's top edge
+      // and the top face's edge share literally the same vertex height —
+      // otherwise the tiny (±SUBTILE_BUMP_MAX) per-corner bump jitter
+      // applied to every top face (see jSW/jNW/jNE/jSE above) opens a
+      // hairline gap between the wall and the ground wherever a wall
+      // exists, independent of ramps — see
+      // docs/superpowers/specs/2026-09-23-terrain-seam-and-organic-polish-research.md
+      // "wall/top-face jitter mismatch" addendum. The bottom corners use
+      // the neighbor's own jitter at that same shared point for the same
+      // reason (a wall always assumes the far neighbor is reached at its
+      // flat physH, per the comment above).
+      const wallTopSw = nwY + jNW, wallTopSe = neY + jNE;
       const wyS = physH(col, row + 1);
-      if (wyS < wallTopS) {
+      // Compare jittered-vs-jittered (wyS_w/wyS_e, not the raw wyS) — a
+      // flat neighbor at the exact same elevation shares this tile's own
+      // jitter at the shared corner (same absolute-position hash), so
+      // comparing against the un-jittered wyS would spuriously fire a
+      // zero-height wall whenever that shared jitter happens to be
+      // positive (wallTop = wyS + jitter > wyS raw).
+      const wyS_w = wyS + jNW, wyS_e = wyS + jNE;
+      if (wyS_w < wallTopSw || wyS_e < wallTopSe) {
         const d = 0.76;
         const southWaterAdjacent = wg.get(col, row + 1).waterDepth > 0;
         if (southWaterAdjacent || _hasCornerPull(cornerPulls.sw) || _hasCornerPull(cornerPulls.se)) {
           const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row + 1, col + 1, row + 1, southWaterAdjacent, _mergedCornerPull);
+          const topAt = (t: number) => wallTopSw + (wallTopSe - wallTopSw) * t;
+          const botAt = (t: number) => wyS_w + (wyS_e - wyS_w) * t;
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            const ta = i / (pts.length - 1), tb2 = (i + 1) / (pts.length - 1);
             addFace(
-              [bx, wallTopS, bz], [ax, wallTopS, az], [ax, wyS, az], [bx, wyS, bz],
+              [bx, topAt(tb2), bz], [ax, topAt(ta), az], [ax, botAt(ta), az], [bx, botAt(tb2), bz],
               0, 0, 1,  tr * d, tg * d, tb * d,
             );
           }
         } else {
           addCliffFace(
-            [wx1, wallTopS, wz1], [wx, wallTopS, wz1], [wx, wyS, wz1], [wx1, wyS, wz1],
+            [wx1, wallTopSe, wz1], [wx, wallTopSw, wz1], [wx, wyS_w, wz1], [wx1, wyS_e, wz1],
             0, 0, 1,  tr * d, tg * d, tb * d,
             (v) => v[0],
           );
@@ -1163,23 +1187,27 @@ export function buildTerrainGeometryData(
       }
 
       // ── NORTH wall (−Z face, at wz) ──────────────────────────────────
-      const wallTopN = Math.min(swY, seY);
+      const wallTopNw = swY + jSW, wallTopNe = seY + jSE;
       const wyN = physH(col, row - 1);
-      if (wyN < wallTopN) {
+      const wyN_w = wyN + jSW, wyN_e = wyN + jSE;
+      if (wyN_w < wallTopNw || wyN_e < wallTopNe) {
         const d = 0.50;
         const northWaterAdjacent = wg.get(col, row - 1).waterDepth > 0;
         if (northWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.ne)) {
           const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col + 1, row, northWaterAdjacent, _mergedCornerPull);
+          const topAt = (t: number) => wallTopNw + (wallTopNe - wallTopNw) * t;
+          const botAt = (t: number) => wyN_w + (wyN_e - wyN_w) * t;
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            const ta = i / (pts.length - 1), tb2 = (i + 1) / (pts.length - 1);
             addFace(
-              [ax, wallTopN, az], [bx, wallTopN, bz], [bx, wyN, bz], [ax, wyN, az],
+              [ax, topAt(ta), az], [bx, topAt(tb2), bz], [bx, botAt(tb2), bz], [ax, botAt(ta), az],
               0, 0, -1,  tr * d, tg * d, tb * d,
             );
           }
         } else {
           addCliffFace(
-            [wx, wallTopN, wz], [wx1, wallTopN, wz], [wx1, wyN, wz], [wx, wyN, wz],
+            [wx, wallTopNw, wz], [wx1, wallTopNe, wz], [wx1, wyN_e, wz], [wx, wyN_w, wz],
             0, 0, -1,  tr * d, tg * d, tb * d,
             (v) => v[0],
           );
@@ -1187,23 +1215,28 @@ export function buildTerrainGeometryData(
       }
 
       // ── EAST wall (+X face, at wx1) ──────────────────────────────────
-      const wallTopE = Math.min(neY, seY);
+      const wallTopEn = neY + jNE, wallTopEs = seY + jSE;
       const wyE = physH(col + 1, row);
-      if (wyE < wallTopE) {
+      const wyE_n = wyE + jNE, wyE_s = wyE + jSE;
+      if (wyE_n < wallTopEn || wyE_s < wallTopEs) {
         const d = 0.63;
         const eastWaterAdjacent = wg.get(col + 1, row).waterDepth > 0;
         if (eastWaterAdjacent || _hasCornerPull(cornerPulls.ne) || _hasCornerPull(cornerPulls.se)) {
           const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col + 1, row, col + 1, row + 1, eastWaterAdjacent, _mergedCornerPull);
+          // pts run from (col+1,row) [SE, t=0] to (col+1,row+1) [NE, t=1].
+          const topAt = (t: number) => wallTopEs + (wallTopEn - wallTopEs) * t;
+          const botAt = (t: number) => wyE_s + (wyE_n - wyE_s) * t;
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            const ta = i / (pts.length - 1), tb2 = (i + 1) / (pts.length - 1);
             addFace(
-              [ax, wallTopE, az], [bx, wallTopE, bz], [bx, wyE, bz], [ax, wyE, az],
+              [ax, topAt(ta), az], [bx, topAt(tb2), bz], [bx, botAt(tb2), bz], [ax, botAt(ta), az],
               1, 0, 0,  tr * d, tg * d, tb * d,
             );
           }
         } else {
           addCliffFace(
-            [wx1, wallTopE, wz], [wx1, wallTopE, wz1], [wx1, wyE, wz1], [wx1, wyE, wz],
+            [wx1, wallTopEs, wz], [wx1, wallTopEn, wz1], [wx1, wyE_n, wz1], [wx1, wyE_s, wz],
             1, 0, 0,  tr * d, tg * d, tb * d,
             (v) => v[2],
           );
@@ -1211,23 +1244,27 @@ export function buildTerrainGeometryData(
       }
 
       // ── WEST wall (−X face, at wx) ───────────────────────────────────
-      const wallTopW = Math.min(swY, nwY);
+      const wallTopWs = swY + jSW, wallTopWn = nwY + jNW;
       const wyW = physH(col - 1, row);
-      if (wyW < wallTopW) {
+      const wyW_s = wyW + jSW, wyW_n = wyW + jNW;
+      if (wyW_s < wallTopWs || wyW_n < wallTopWn) {
         const d = 0.55;
         const westWaterAdjacent = wg.get(col - 1, row).waterDepth > 0;
         if (westWaterAdjacent || _hasCornerPull(cornerPulls.nw) || _hasCornerPull(cornerPulls.sw)) {
           const pts = shorelineBoundaryPoints(wg, T, GHW, GHH, col, row, col, row + 1, westWaterAdjacent, _mergedCornerPull);
+          const topAt = (t: number) => wallTopWs + (wallTopWn - wallTopWs) * t;
+          const botAt = (t: number) => wyW_s + (wyW_n - wyW_s) * t;
           for (let i = 0; i < pts.length - 1; i++) {
             const [ax, az] = pts[i]!, [bx, bz] = pts[i + 1]!;
+            const ta = i / (pts.length - 1), tb2 = (i + 1) / (pts.length - 1);
             addFace(
-              [bx, wallTopW, bz], [ax, wallTopW, az], [ax, wyW, az], [bx, wyW, bz],
+              [bx, topAt(tb2), bz], [ax, topAt(ta), az], [ax, botAt(ta), az], [bx, botAt(tb2), bz],
               -1, 0, 0,  tr * d, tg * d, tb * d,
             );
           }
         } else {
           addCliffFace(
-            [wx, wallTopW, wz1], [wx, wallTopW, wz], [wx, wyW, wz], [wx, wyW, wz1],
+            [wx, wallTopWn, wz1], [wx, wallTopWs, wz], [wx, wyW_s, wz], [wx, wyW_n, wz1],
             -1, 0, 0,  tr * d, tg * d, tb * d,
             (v) => v[2],
           );

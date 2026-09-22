@@ -1264,9 +1264,14 @@ describe('buildTerrainGeometryData — ramp/slope top-face shapes', () => {
     // SH=1 here (buildTerrainGeometryData's SH parameter) — elevation 3 tile ramped
     // down 1 level = physical height 2, strictly less than the old flat height of 3
     // (the wall's top now starts where the ramp's own corner already reached, not
-    // at the tile's original flat elevation).
+    // at the tile's original flat elevation). The wall's top edge now carries the
+    // same ±SUBTILE_BUMP_MAX per-corner jitter as the adjacent top face's corner
+    // (wall/top-face jitter-mismatch fix — see
+    // docs/superpowers/specs/2026-09-23-terrain-seam-and-organic-polish-research.md),
+    // so the exact value is no longer byte-identical to 2, only within jitter range.
     expect(eastWallTopY).toBeLessThan(3);
-    expect(eastWallTopY).toBeCloseTo(2, 5);
+    expect(eastWallTopY).toBeGreaterThan(2 - SUBTILE_BUMP_MAX - 1e-6);
+    expect(eastWallTopY).toBeLessThan(2 + SUBTILE_BUMP_MAX + 1e-6);
   });
 
   it('the pre-existing all-four-down wall test still produces exactly 4 full walls (unaffected by the anchor change)', () => {
@@ -1836,5 +1841,71 @@ describe('_tileCornerLevels corner agreement (crack-fix regression)', () => {
         expect(swTile).toBe(neTile);
       }
     }
+  });
+});
+
+describe('wall/top-face jitter agreement (hairline-crack regression, 2026-09-24)', () => {
+  // A raised tile's wall shares its top edge with the top face's own
+  // jittered corners (jSW/jNW/jNE/jSE, subTileBumpJitter keyed by absolute
+  // world position). Before this fix, the wall's top edge used the RAW
+  // (un-jittered) corner height while the top face used the jittered one —
+  // a real, if tiny (up to ±SUBTILE_BUMP_MAX), vertical gap at every wall
+  // in the world, seen by the user as thin diagonal hairline cracks at
+  // tile edges even on flat/gently-sloped terrain far from any dramatic
+  // elevation drop. See
+  // docs/superpowers/specs/2026-09-23-terrain-seam-and-organic-polish-research.md
+  // "wall/top-face jitter mismatch" addendum.
+  it('the raised tile\'s east/west wall top corners exactly match its own top face\'s NE/NW/SE/SW corner Y', () => {
+    const wg = new WorldGrid(3, 1);
+    wg.set(1, 0, { elevation: 2 });
+    const data = buildTerrainGeometryData(wg, 3, 1, 1, 0, 1, 1);
+
+    // Tile 1's top face corners (world X=0..1, Z=-0.5..0.5 for T=1, GHW=1,
+    // GHH=0.5) are jittered by subTileBumpJitter at each absolute corner
+    // position. Collect every distinct wall-face vertex Y and every
+    // distinct top-face (sub-tile) vertex Y found at the exact same (X,
+    // Z) as tile 1's 4 corners — they must agree exactly (no gap).
+    const wx = 0, wx1 = 1, wz = 0, wz1 = 1;
+    const cornerXZ: Array<[number, number]> = [[wx, wz], [wx, wz1], [wx1, wz1], [wx1, wz]];
+
+    const yAtCorner = (positions: number[], x: number, z: number): number[] => {
+      const ys: number[] = [];
+      for (let i = 0; i < positions.length; i += 3) {
+        if (Math.abs(positions[i]! - x) < 1e-9 && Math.abs(positions[i + 2]! - z) < 1e-9) {
+          ys.push(positions[i + 1]!);
+        }
+      }
+      return ys;
+    };
+
+    for (const [x, z] of cornerXZ) {
+      const wallYs = yAtCorner(data.groundGeometry.cliff!.positions, x, z);
+      const topFaceYs = Object.entries(data.groundGeometry)
+        .filter(([variant]) => variant !== 'cliff')
+        .flatMap(([, g]) => yAtCorner(g.positions, x, z));
+      expect(wallYs.length).toBeGreaterThan(0);
+      expect(topFaceYs.length).toBeGreaterThan(0);
+      // Every wall vertex at this corner must match AT LEAST ONE top-face
+      // vertex at this same (X, Z) — specifically tile 1's own corner.
+      // (Other Y values may also appear here from tile 0/2's own top
+      // faces at their shared boundary with tile 1, which legitimately
+      // differ since that's the real elevation step the wall renders —
+      // this only asserts tile 1's own wall and its own top face agree.)
+      for (const wy of wallYs) {
+        const hasMatch = topFaceYs.some(ty => Math.abs(wy - ty) < 1e-9);
+        expect(hasMatch).toBe(true);
+      }
+    }
+  });
+
+  it('two flat tiles at the exact same elevation never emit a spurious zero-height wall (jitter must not create a false elevation difference)', () => {
+    // Regression guard for the fix's own pitfall: comparing a jittered
+    // wall-top against the raw (un-jittered) neighbor height would make a
+    // positive jitter value spuriously satisfy "neighbor is lower", firing
+    // a degenerate wall between two tiles that are actually flush.
+    const wg = new WorldGrid(3, 3);
+    // All tiles default to elevation 0 — perfectly flat, no real walls.
+    const data = buildTerrainGeometryData(wg, 3, 3, 1, 1, 1, 1);
+    expect(data.groundGeometry.cliff).toBeUndefined();
   });
 });
