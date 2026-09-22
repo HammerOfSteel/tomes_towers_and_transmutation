@@ -1098,18 +1098,6 @@ async function main() {
     _sandboxUi?.setLocation('lab');
   }
 
-  /** Enters the Dev Sandbox's default arena and jumps straight to the
-   *  "🗿 Asset Lab" tab (Quaternius asset browser) — used both as the Dev
-   *  Sandbox's own Asset Lab tab (reachable via the tab bar once inside)
-   *  and by the Overworld Studio "🗿 Asset Lab" dev-room quick-launch
-   *  button. Unlike enterWaterLab()/enterSettlementLab(), this needs no
-   *  bespoke scene or gameMode — it's pure QA browsing UI (see
-   *  docs/asset-integration/2026-09-22-import-system-and-asset-lab-design.md),
-   *  so the plain sandbox arena from _startDevPanelInGame() is enough. */
-  function enterAssetLab(): void {
-    _sandboxUi?.switchTab('quaternius');
-  }
-
   /** Jump straight into the live exterior overworld using a Studio-Realm-
    *  tab-carried-over WorldGenConfig override (Overworld Lab "Play in 3D"),
    *  instead of the player's own saved world settings. Never persists the
@@ -1377,43 +1365,6 @@ async function main() {
       },
       onPlayPreviewAnim: (clipName) => {
         const loaded = (window as unknown as Record<string, unknown>)['__previewLoaded'] as import('@/characters/CharacterLoader').LoadedChar | undefined;
-        if (!loaded?.mixer) return;
-        loaded.mixer.stopAllAction();
-        if (!clipName) return;
-        const clip = loaded.clips.find(c => c.name === clipName);
-        if (clip) loaded.mixer.clipAction(clip).play();
-      },
-      onPreviewQuatAsset: async (def) => {
-        // Load the Quaternius asset via QuaterniusAssetLoader and place it at
-        // a fixed inspection position distinct from the character preview
-        // slot (-4, 0, 0) so both can be compared side by side.
-        const { loadQuatAsset } = await import('@/assets/QuaterniusAssetLoader');
-        try {
-          const loaded = await loadQuatAsset(def);
-          const prevObj = scene.getObjectByName('__quat_preview_model');
-          if (prevObj) scene.remove(prevObj);
-          (window as unknown as Record<string, unknown>)['__quatPreviewLoaded'] = loaded;
-
-          loaded.scene.name = '__quat_preview_model';
-          const box    = new THREE.Box3().setFromObject(loaded.scene);
-          const height = Math.max(box.max.y - box.min.y, 0.01);
-          const scale  = 2.0 / height;
-          loaded.scene.scale.setScalar(scale);
-          loaded.scene.position.set(-4, 0, 0);
-          scene.add(loaded.scene);
-          const clips = loaded.clips.map(c => c.name);
-          if (loaded.mixer && loaded.clips.length > 0) {
-            const idleClip = loaded.clips.find(c => /idle/i.test(c.name)) ?? loaded.clips[0];
-            loaded.mixer.clipAction(idleClip).play();
-          }
-          return clips;
-        } catch (e) {
-          console.warn('[sandbox] quaternius preview load failed:', e);
-          return [];
-        }
-      },
-      onPlayQuatPreviewAnim: (clipName) => {
-        const loaded = (window as unknown as Record<string, unknown>)['__quatPreviewLoaded'] as import('@/assets/QuaterniusAssetLoader').LoadedQuatAsset | undefined;
         if (!loaded?.mixer) return;
         loaded.mixer.stopAllAction();
         if (!clipName) return;
@@ -3599,22 +3550,6 @@ async function main() {
         roughness: olParams.roughness,
         settlementCount: olParams.settlementCount,
       } : { seed: Math.floor(Math.random() * 0xFFFF_FFFF) });
-      (window as any).__tttDevRoomStage = 'booted';
-      (window as any).__tttDevRoomBooted = true;
-      clearPendingDevRoom();
-    } catch (e) {
-      (window as any).__tttDevRoomStage = 'error';
-      (window as any).__tttDevRoomError = String(e);
-      console.error('[dev-room] boot failed:', e);
-    }
-  } else if (_pendingDevRoom === 'asset-lab') {
-    try {
-      (window as any).__tttDevRoomStage = 'detected';
-      mainMenu.hide();
-      (window as any).__tttDevRoomStage = 'starting-game';
-      _startDevPanelInGame();
-      (window as any).__tttDevRoomStage = 'entering-asset-lab';
-      enterAssetLab();
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();

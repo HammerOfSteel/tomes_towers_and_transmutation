@@ -75,6 +75,172 @@ function fbxHasAnimations(absPath) {
 
 // OBJ is a static-mesh-only format — never animated.
 
+// ── sub-group classification (Category → Pack → Sub-group hierarchy) ─────────
+// See docs/asset-integration/2026-09-22-quaternius-asset-inventory.md's
+// "Asset Lab categorization hierarchy" section — this is that taxonomy,
+// implemented and verified against every model name (100% coverage, no
+// orphans; see the classify() self-check below). Only the 5 large/flat
+// packs get sub-groups; small coherent packs (animals, medieval buildings,
+// all 3 monster packs) are left without a `subgroup` (undefined) since the
+// Asset Lab UI treats "no subgroup" as "show flat".
+
+const starts = (...prefixes) => (s) => prefixes.some((p) => s.startsWith(p));
+const exact  = (...names) => (s) => names.includes(s);
+
+const SUBGROUP_RULES = {
+  'modular_dungeons/obj_kit': [
+    [starts('Window_Bars'), 'Walls & Windows'],
+    [starts('Wall'), 'Walls & Windows'],
+    [starts('Arch_'), 'Arches, Doors & Columns'],
+    [starts('Column_'), 'Arches, Doors & Columns'],
+    [starts('Doors_'), 'Arches, Doors & Columns'],
+    [starts('Support_'), 'Arches, Doors & Columns'],
+    [starts('Floor_'), 'Floors'],
+    [starts('BridgeSection'), 'Stairs, Bridges & Traversal'],
+    [starts('Curve_'), 'Stairs, Bridges & Traversal'],
+    [starts('Rail_'), 'Stairs, Bridges & Traversal'],
+    [starts('Stairs'), 'Stairs, Bridges & Traversal'],
+    [starts('Trapdoor'), 'Stairs, Bridges & Traversal'],
+    [exact('Barrel'), 'Furniture & Containers'],
+    [starts('Bookcase_'), 'Furniture & Containers'],
+    [starts('Chest'), 'Furniture & Containers'],
+    [exact('Crate'), 'Furniture & Containers'],
+    [starts('Pot1', 'Pot2', 'Pot3'), 'Furniture & Containers'],
+    [starts('Bush_'), 'Nature & Overgrowth Dressing'],
+    [starts('DeadTree_'), 'Nature & Overgrowth Dressing'],
+    [starts('Tree_'), 'Nature & Overgrowth Dressing'],
+    [exact('Grass'), 'Nature & Overgrowth Dressing'],
+    [starts('Candles_'), 'Lighting & Decor'],
+    [starts('Flag_'), 'Lighting & Decor'],
+    [exact('Skull'), 'Lighting & Decor'],
+    [starts('Statue_'), 'Lighting & Decor'],
+    [exact('Torch'), 'Lighting & Decor'],
+    [starts('BearTrap_'), 'Traps & Interactive'],
+    // fallthrough → 'Misc / Other': Brick, Bricks, Cart, Character_Animated,
+    // Window_Open(_Double) — matches the inventory doc's Misc bucket.
+  ],
+  'modular_fantasy_village/medieval_village_megakit': [
+    [starts('WindowShutters_'), 'Windows & Shutters'],
+    [starts('Window_'), 'Windows & Shutters'],
+    [starts('DoorFrame_'), 'Doors & Door Frames'],
+    [starts('Door_'), 'Doors & Door Frames'],
+    [starts('HoleCover_'), 'Stairs & Hole Covers'],
+    [starts('Stair_Interior_'), 'Stairs & Hole Covers'],
+    [starts('Stairs_Exterior_'), 'Stairs & Hole Covers'],
+    [starts('Overhang_'), 'Overhangs & Balconies'],
+    [starts('Balcony_'), 'Overhangs & Balconies'],
+    [starts('Roof_'), 'Roofs'],
+    [starts('Prop_'), 'Props & Dressing'],
+    [starts('Wall_'), 'Walls'],
+    [starts('Floor_'), 'Floors'],
+    [starts('Corner_'), 'Corners & Edges'],
+  ],
+  'fantasy_props/fantasy_props_megakit': [
+    [exact('Table_Large'), 'Furniture'],
+    [starts('Table_'), 'Tableware & Alchemy'],
+    [starts('Barrel'), 'Storage & Containers'],
+    [starts('Bucket_'), 'Storage & Containers'],
+    [starts('Cage_'), 'Storage & Containers'],
+    [starts('Chest_'), 'Storage & Containers'],
+    [starts('Crate_'), 'Storage & Containers'],
+    [starts('FarmCrate_'), 'Storage & Containers'],
+    [starts('Pot_'), 'Storage & Containers'],
+    [starts('Pouch_'), 'Storage & Containers'],
+    [starts('Vase_'), 'Storage & Containers'],
+    [starts('Bed_'), 'Furniture'],
+    [exact('Bench'), 'Furniture'],
+    [starts('Bookcase_'), 'Furniture'],
+    [exact('Cabinet'), 'Furniture'],
+    [starts('Chair_'), 'Furniture'],
+    [starts('Nightstand_'), 'Furniture'],
+    [starts('Shelf_'), 'Furniture'],
+    [exact('Stool'), 'Furniture'],
+    [starts('Workbench'), 'Furniture'],
+    [starts('BookGroup_'), 'Books & Scrolls'],
+    [starts('BookStand'), 'Books & Scrolls'],
+    [starts('Book_'), 'Books & Scrolls'],
+    [starts('Scroll_'), 'Books & Scrolls'],
+    [starts('Bottle_'), 'Tableware & Alchemy'],
+    [exact('Chalice'), 'Tableware & Alchemy'],
+    [exact('Mug'), 'Tableware & Alchemy'],
+    [starts('Potion_'), 'Tableware & Alchemy'],
+    [starts('SmallBottle'), 'Tableware & Alchemy'],
+    [exact('Anvil'), 'Tools & Weapons'],
+    [starts('Anvil_'), 'Tools & Weapons'],
+    [starts('Axe_'), 'Tools & Weapons'],
+    [starts('Pickaxe_'), 'Tools & Weapons'],
+    [starts('Shield_'), 'Tools & Weapons'],
+    [starts('Sword_'), 'Tools & Weapons'],
+    [starts('WeaponStand'), 'Tools & Weapons'],
+    [exact('Whetstone'), 'Tools & Weapons'],
+    [starts('CandleStick'), 'Lighting'],
+    [starts('Candle_'), 'Lighting'],
+    [exact('Chandelier'), 'Lighting'],
+    [starts('Lantern_'), 'Lighting'],
+    [starts('Torch_'), 'Lighting'],
+    [exact('Bag'), 'Misc Dressing'],
+    [exact('Carrot'), 'Misc Dressing'],
+    [exact('Cauldron'), 'Misc Dressing'],
+    [starts('Chain_'), 'Misc Dressing'],
+    [exact('Dummy'), 'Misc Dressing'],
+    [starts('Rope_'), 'Misc Dressing'],
+    [starts('Coin'), 'Currency & Valuables'],
+    [starts('Key_'), 'Currency & Valuables'],
+    [starts('Banner_'), 'Banners & Cloth'],
+    [starts('Peg_Rack'), 'Market Stalls'],
+    [starts('Stall_'), 'Market Stalls'],
+  ],
+  'fantasy_props/ultimate_food_pack': [
+    [starts('Burger', 'Cheeseburger', 'DoubleCheeseburger', 'Hotdog', 'Pizza',
+      'Sushi_', 'Sashimi_', 'Pancake', 'Waffle', 'Donut', 'Fries',
+      'Croissant', 'Bread', 'Steak', 'Bacon_', 'Corndog', 'ChickenLeg',
+      'Fish', 'Egg_', 'Cupcake', 'IceCream_', 'Popsicle_'), 'Prepared Food'],
+    [starts('Apple', 'Avocado', 'Banana', 'Broccoli', 'Carrot', 'Coconut',
+      'Eggplant', 'Lettuce', 'Mushroom', 'Orange', 'Pepper_', 'Pumpkin',
+      'Tomato', 'Turnip'), 'Raw Produce'],
+    [starts('Bottle', 'Cheese_Singles', 'ChocolateBar', 'KetchupBottle',
+      'KetchupMustard', 'MayoBottle', 'MustardBottle', 'PeanutButter',
+      'Soda', 'SoySauce'), 'Condiments & Drinks'],
+    [starts('Chopsticks', 'CookingPot', 'Fork', 'FryingPan', 'Jar_Large',
+      'Knife', 'Plate', 'Spoon'), 'Kitchenware'],
+    // fallthrough → 'Misc / Other': Sausage_Cooked/Raw, Tentacle.
+  ],
+  'medieval_village_pack/props': [
+    [starts('Bench_'), 'Street Furniture'],
+    [exact('Fence'), 'Street Furniture'],
+    [exact('Gazebo'), 'Street Furniture'],
+    [starts('Path_'), 'Street Furniture'],
+    [exact('Stairs'), 'Street Furniture'],
+    [exact('Well'), 'Street Furniture'],
+    [starts('Bag'), 'Storage & Carts'],
+    [exact('Barrel'), 'Storage & Carts'],
+    [exact('Cart'), 'Storage & Carts'],
+    [exact('Crate'), 'Storage & Carts'],
+    [starts('Package_'), 'Storage & Carts'],
+    [starts('Door_'), 'Building Facade Parts'],
+    [starts('Window_'), 'Building Facade Parts'],
+    [exact('Hay'), 'Natural Dressing'],
+    [starts('Rock_'), 'Natural Dressing'],
+    [starts('Bonfire'), 'Fire & Smoke'],
+    [exact('Smoke'), 'Fire & Smoke'],
+    [starts('MarketStand_'), 'Market'],
+    // fallthrough → 'Misc / Other': Bell, Cauldron, Sawmill_saw.
+  ],
+};
+
+/** Classify a model's sub-group within its pack. Returns undefined for packs
+ *  with no rule table (left flat), 'Misc / Other' for an unmatched stem in a
+ *  pack that does have rules (should be rare/expected — see the fallthrough
+ *  notes above). */
+function classifySubgroup(packId, stem) {
+  const rules = SUBGROUP_RULES[packId];
+  if (!rules) return undefined;
+  for (const [test, group] of rules) {
+    if (test(stem)) return group;
+  }
+  return 'Misc / Other';
+}
+
 // ── per-pack static metadata ──────────────────────────────────────────────────
 // Keyed by "<category>/<packId>" matching the extraction script's output dirs.
 
@@ -210,6 +376,7 @@ function buildModelDef(absPath, packId, meta) {
     path:     relPath,
     format,
     animated,
+    subgroup: classifySubgroup(packId, stem),
   };
 }
 
@@ -321,6 +488,16 @@ export interface QuatModelDef {
    * specific sniffing functions in scripts/gen-quaternius-manifest.mjs.
    */
   animated: boolean;
+  /**
+   * Sub-group within the pack (e.g. "Walls & Windows", "Roofs"), per the
+   * Category → Pack → Sub-group hierarchy in
+   * docs/asset-integration/2026-09-22-quaternius-asset-inventory.md.
+   * Undefined for packs left intentionally flat (small/coherent packs —
+   * animals, medieval buildings, monster packs). Classified from the
+   * filename stem at manifest-generation time; see SUBGROUP_RULES in
+   * scripts/gen-quaternius-manifest.mjs.
+   */
+  subgroup?: string;
 }
 `;
 

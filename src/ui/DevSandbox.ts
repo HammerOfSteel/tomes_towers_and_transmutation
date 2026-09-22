@@ -44,7 +44,6 @@ import {
   setSpecies as setNpcSpecies,
 } from '@/npc-creator/creatorState';
 import { CHAR_MODELS, CHAR_PACKS } from '@/characters/charManifest';
-import { QUAT_MODELS, QUAT_PACKS } from '@/assets/quaterniusManifest';
 
 export interface DevSandboxOptions {
   onGrantSpell: (spellId: string) => void;
@@ -119,17 +118,6 @@ export interface DevSandboxOptions {
   onPreviewModel?: (model: import('@/characters/charManifest').CharModelDef) => Promise<string[]>;
   /** Play a named animation clip on the currently previewed model. Empty string = stop. */
   onPlayPreviewAnim?: (clipName: string) => void;
-
-  // ── Asset Lab tab (Quaternius real-asset import QA) ──────────────────────
-  /**
-   * Load a Quaternius asset for inspection in the dev viewport. Resolves with
-   * the list of animation clip names found on the model (empty for static
-   * props/OBJ pieces). Placed at a fixed inspection position distinct from
-   * the character preview slot so both can be compared side by side.
-   */
-  onPreviewQuatAsset?: (model: import('@/assets/quaterniusManifest').QuatModelDef) => Promise<string[]>;
-  /** Play a named animation clip on the currently previewed Quaternius asset. Empty string = stop. */
-  onPlayQuatPreviewAnim?: (clipName: string) => void;
 }
 
 /** A saved NPC preset (stored in DevSandbox instance memory). */
@@ -294,7 +282,7 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-export type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'npcgen' | 'wave' | 'assets' | 'quaternius' | 'cheats';
+export type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'npcgen' | 'wave' | 'assets' | 'cheats';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
@@ -334,13 +322,6 @@ export class DevSandbox {
   private _previewStatusEl: HTMLElement | null = null;
   private _previewClipListEl: HTMLElement | null = null;
 
-  // ── Asset Lab tab state (Quaternius real-asset browser) ──────────────────
-  private _quatFilter  = '';
-  private _quatCategoryTab: 'all' | import('@/assets/quaterniusManifest').QuatCategory = 'all';
-  private _quatPreviewModelId: string | null = null;
-  private _quatPreviewAnimBtns: HTMLElement[] = [];
-  private _quatPreviewStatusEl: HTMLElement | null = null;
-  private _quatPreviewClipListEl: HTMLElement | null = null;
   private _selectedSpell = 'magic_bolt';
   private _spawnCount = 3;
   private _procType: 'tower' | 'overworld' | 'dungeon' = 'tower';
@@ -387,13 +368,6 @@ export class DevSandbox {
     this._npcLabScene = null;
     this._npcLabCamera = null;
     this._panel.remove();
-  }
-
-  /** Programmatically jump straight to a tab (e.g. the Overworld Studio
-   *  "🗿 Asset Lab" dev-room handoff switching to 'quaternius' right after
-   *  boot), bypassing the tab-bar click that normally drives this. */
-  switchTab(id: TabId): void {
-    this._switchTab(id);
   }
 
   /** Update the location strip in the header. Pass 'arena', a room ID, or 'lab'. */
@@ -464,7 +438,6 @@ export class DevSandbox {
       { id: 'npcgen',   label: '👾 NPC Gen' },
       { id: 'wave',     label: '🌊 Waves'   },
       { id: 'assets',   label: '📦 Assets'  },
-      { id: 'quaternius', label: '🗿 Asset Lab' },
       { id: 'cheats',   label: '⚙ Cheats'  },
     ];
     for (const t of tabs) {
@@ -510,7 +483,6 @@ export class DevSandbox {
     if (this._activeTab === 'npcgen')   body.appendChild(this._buildNPCGenTab());
     if (this._activeTab === 'wave')     body.appendChild(this._buildWaveTab());
     if (this._activeTab === 'assets')   body.appendChild(this._buildAssetsTab());
-    if (this._activeTab === 'quaternius') body.appendChild(this._buildQuaterniusAssetsTab());
     if (this._activeTab === 'cheats')   body.appendChild(this._buildCheatsTab());
   }
 
@@ -1809,217 +1781,6 @@ export class DevSandbox {
     }
   }
 
-  // ── Asset Lab tab (Quaternius real-asset browser, QA-only — no wiring) ────
-
-  private _buildQuaterniusAssetsTab(): HTMLElement {
-    const wrap = document.createElement('div');
-
-    // ── Category filter tabs ────────────────────────────────────────────────
-    const catSec = document.createElement('div');
-    catSec.className = 'ds-section';
-    const catRow = document.createElement('div');
-    catRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
-    const cats: Array<{ id: 'all' | import('@/assets/quaterniusManifest').QuatCategory; label: string }> = [
-      { id: 'all',                      label: 'All' },
-      { id: 'animals',                  label: '🐾 Animals' },
-      { id: 'monsters',                 label: '👹 Monsters' },
-      { id: 'fantasy_props',            label: '🏺 Props' },
-      { id: 'medieval_village_pack',    label: '🏠 Village' },
-      { id: 'modular_dungeons',         label: '🗝️ Dungeon Kit' },
-      { id: 'modular_fantasy_village',  label: '🏘️ Village Kit' },
-    ];
-    const catBtns: HTMLButtonElement[] = [];
-    cats.forEach(c => {
-      const btn = document.createElement('button');
-      btn.className = 'ds-btn';
-      btn.textContent = c.label;
-      btn.style.cssText = 'font-size:.7rem;padding:2px 8px;';
-      btn.onclick = () => {
-        this._quatCategoryTab = c.id;
-        catBtns.forEach((b, i) => {
-          b.style.background = i === cats.findIndex(x => x.id === c.id) ? '#7040cc' : '';
-        });
-        renderList();
-      };
-      if (c.id === this._quatCategoryTab) btn.style.background = '#7040cc';
-      catBtns.push(btn);
-      catRow.appendChild(btn);
-    });
-    catSec.appendChild(catRow);
-    wrap.appendChild(catSec);
-
-    // ── Filter bar ─────────────────────────────────────────────────────────
-    const filterSec = document.createElement('div');
-    filterSec.className = 'ds-section';
-    const filterRow = document.createElement('div');
-    filterRow.className = 'ds-row';
-    const filterLbl = document.createElement('span');
-    filterLbl.className = 'ds-label';
-    filterLbl.textContent = 'Filter:';
-    const filterInp = document.createElement('input');
-    filterInp.type = 'text';
-    filterInp.className = 'ds-input ds-input--wide';
-    filterInp.placeholder = 'e.g. fox, wall, banner…';
-    filterInp.value = this._quatFilter;
-    filterInp.oninput = () => { this._quatFilter = filterInp.value.toLowerCase(); renderList(); };
-    filterRow.append(filterLbl, filterInp);
-    filterSec.appendChild(filterRow);
-    wrap.appendChild(filterSec);
-
-    // ── Model list ─────────────────────────────────────────────────────────
-    const listSec = document.createElement('div');
-    listSec.className = 'ds-section';
-    const listTitle = document.createElement('div');
-    listTitle.className = 'ds-section-title';
-    listTitle.textContent = `${QUAT_MODELS.length} models in manifest`;
-    const listEl = document.createElement('div');
-    listEl.style.cssText = 'display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto;';
-    listSec.append(listTitle, listEl);
-    wrap.appendChild(listSec);
-
-    const renderList = () => {
-      listEl.innerHTML = '';
-      const filter = this._quatFilter;
-      const catTab = this._quatCategoryTab;
-
-      let shown = QUAT_MODELS as import('@/assets/quaterniusManifest').QuatModelDef[];
-      if (catTab !== 'all') shown = shown.filter(m => m.category === catTab);
-      if (filter) shown = shown.filter(m =>
-        m.name.toLowerCase().includes(filter) ||
-        m.packId.toLowerCase().includes(filter),
-      );
-
-      listTitle.textContent = `${shown.length} / ${QUAT_MODELS.length} models`;
-
-      for (const model of shown) {
-        const pack = QUAT_PACKS.find(p => p.id === model.packId);
-        const isPreviewed = model.id === this._quatPreviewModelId;
-
-        const row = document.createElement('div');
-        row.style.cssText = `display:flex;align-items:center;gap:4px;padding:2px 3px;border-radius:3px;${isPreviewed ? 'background:rgba(112,64,204,.25);outline:1px solid #7040cc55;' : ''}`;
-
-        const icon = document.createElement('span');
-        icon.textContent = pack?.icon ?? '📦';
-        icon.style.cssText = 'font-size:.85rem;min-width:16px;';
-
-        const nameWrap = document.createElement('div');
-        nameWrap.style.cssText = 'flex:1;min-width:0;';
-        const nameEl = document.createElement('div');
-        nameEl.style.cssText = 'font-size:.74rem;color:#c0a0f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-        nameEl.textContent = model.name;
-        nameEl.title = model.path;
-        const packLabel = document.createElement('div');
-        packLabel.style.cssText = 'font-size:.62rem;color:#4a3860;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-        packLabel.textContent = `${pack?.name ?? model.packId}${pack?.modular ? ' (modular)' : ''} — ${model.format}`;
-        nameWrap.append(nameEl, packLabel);
-
-        // Badge for animation availability
-        const animBadge = document.createElement('span');
-        animBadge.style.cssText = 'font-size:.6rem;padding:1px 4px;border-radius:2px;flex-shrink:0;';
-        if (model.animated) {
-          animBadge.textContent = '🎬';
-          animBadge.title = 'Has embedded animation clips';
-          animBadge.style.background = 'rgba(0,160,80,.2)';
-          animBadge.style.color = '#40e080';
-        } else {
-          animBadge.textContent = 'static';
-          animBadge.title = 'No animation clips';
-          animBadge.style.background = 'rgba(80,80,80,.2)';
-          animBadge.style.color = '#606060';
-        }
-
-        // Preview button
-        const prevBtn = document.createElement('button');
-        prevBtn.className = 'ds-btn';
-        prevBtn.style.cssText = 'font-size:.65rem;padding:1px 5px;flex-shrink:0;';
-        prevBtn.textContent = isPreviewed ? '▶ On' : '▶ View';
-        prevBtn.title = `Spawn ${model.name} as inspection model`;
-        prevBtn.onclick = async () => {
-          prevBtn.textContent = '…';
-          prevBtn.disabled = true;
-          this._quatPreviewModelId = model.id;
-          this._updateQuatPreviewInspector(model, []);
-          if (this._quatPreviewStatusEl) this._quatPreviewStatusEl.textContent = `Loading ${model.name}…`;
-
-          const clips = await this._opts.onPreviewQuatAsset?.(model) ?? [];
-          this._updateQuatPreviewInspector(model, clips);
-          renderList(); // refresh highlight
-        };
-
-        row.append(icon, nameWrap, animBadge, prevBtn);
-        listEl.appendChild(row);
-      }
-    };
-
-    renderList();
-
-    // ── Animation Inspector ────────────────────────────────────────────────
-    const animSec = document.createElement('div');
-    animSec.className = 'ds-section';
-    const animTitle = document.createElement('div');
-    animTitle.className = 'ds-section-title';
-    animTitle.textContent = 'Animation Inspector';
-
-    const statusEl = document.createElement('div');
-    statusEl.style.cssText = 'font-size:.72rem;color:#786090;padding:4px 0;font-style:italic;';
-    statusEl.textContent = '← Click ▶ View on any model to inspect it';
-    this._quatPreviewStatusEl = statusEl;
-
-    const clipListEl = document.createElement('div');
-    clipListEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;';
-    this._quatPreviewClipListEl = clipListEl;
-
-    const stopBtn = document.createElement('button');
-    stopBtn.className = 'ds-btn';
-    stopBtn.style.cssText = 'font-size:.68rem;margin-top:5px;';
-    stopBtn.textContent = '■ Stop';
-    stopBtn.onclick = () => {
-      this._opts.onPlayQuatPreviewAnim?.('');
-      this._quatPreviewAnimBtns.forEach(b => { (b as HTMLButtonElement).style.background = ''; });
-    };
-
-    animSec.append(animTitle, statusEl, clipListEl, stopBtn);
-    wrap.appendChild(animSec);
-
-    // ── Hint ───────────────────────────────────────────────────────────────
-    const hint = document.createElement('div');
-    hint.className = 'ds-hint';
-    hint.textContent = '▶ View spawns an isolated preview at a fixed inspection slot. 🎬 = has embedded animation clips. QA-only — these assets are not wired into any procedural placement system yet.';
-    wrap.appendChild(hint);
-
-    return wrap;
-  }
-
-  /** Update the animation inspector section after a Quaternius asset is previewed. */
-  private _updateQuatPreviewInspector(model: import('@/assets/quaterniusManifest').QuatModelDef, clips: string[]): void {
-    if (!this._quatPreviewStatusEl || !this._quatPreviewClipListEl) return;
-
-    if (clips.length === 0) {
-      this._quatPreviewStatusEl.textContent = `${model.name} — no animation clips found`;
-      this._quatPreviewStatusEl.style.color = '#9070a0';
-    } else {
-      this._quatPreviewStatusEl.textContent = `${model.name} — ${clips.length} clip${clips.length > 1 ? 's' : ''} available`;
-      this._quatPreviewStatusEl.style.color = '#40e080';
-    }
-
-    this._quatPreviewClipListEl.innerHTML = '';
-    this._quatPreviewAnimBtns = [];
-
-    for (const clipName of clips) {
-      const btn = document.createElement('button');
-      btn.className = 'ds-btn';
-      btn.style.cssText = 'font-size:.65rem;padding:2px 7px;';
-      btn.textContent = clipName;
-      btn.title = `Play animation: ${clipName}`;
-      btn.onclick = () => {
-        this._opts.onPlayQuatPreviewAnim?.(clipName);
-        this._quatPreviewAnimBtns.forEach(b => { (b as HTMLButtonElement).style.background = ''; });
-        btn.style.background = '#7040cc';
-      };
-      this._quatPreviewClipListEl.appendChild(btn);
-      this._quatPreviewAnimBtns.push(btn);
-    }
-  }
 
   // ── Cheats tab ────────────────────────────────────────────────────────────
 

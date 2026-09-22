@@ -47,6 +47,16 @@ export interface QuatModelDef {
    * specific sniffing functions in scripts/gen-quaternius-manifest.mjs.
    */
   animated: boolean;
+  /**
+   * Sub-group within the pack (e.g. "Walls & Windows", "Roofs"), per the
+   * Category → Pack → Sub-group hierarchy in
+   * docs/asset-integration/2026-09-22-quaternius-asset-inventory.md.
+   * Undefined for packs left intentionally flat (small/coherent packs —
+   * animals, medieval buildings, monster packs). Classified from the
+   * filename stem at manifest-generation time; see SUBGROUP_RULES in
+   * scripts/gen-quaternius-manifest.mjs.
+   */
+  subgroup?: string;
 }
 export const QUAT_PACKS: readonly QuatPackDef[] = [
   {
@@ -309,7 +319,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Anvil",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Anvil.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Anvil_Log",
@@ -318,7 +329,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Anvil Log",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Anvil_Log.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Axe_Bronze",
@@ -327,7 +339,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Axe Bronze",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Axe_Bronze.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bag",
@@ -336,7 +349,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bag",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bag.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Banner_1",
@@ -345,7 +359,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Banner 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Banner_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Banners & Cloth"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Banner_1_Cloth",
@@ -354,7 +369,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Banner 1 Cloth",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Banner_1_Cloth.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Banners & Cloth"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Banner_2",
@@ -363,7 +379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Banner 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Banner_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Banners & Cloth"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Banner_2_Cloth",
@@ -372,7 +389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Banner 2 Cloth",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Banner_2_Cloth.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Banners & Cloth"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Barrel",
@@ -381,7 +399,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Barrel",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Barrel.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Barrel_Apples",
@@ -390,7 +409,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Barrel Apples",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Barrel_Apples.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Barrel_Holder",
@@ -399,7 +419,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Barrel Holder",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Barrel_Holder.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bed_Twin1",
@@ -408,7 +429,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bed Twin1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bed_Twin1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bed_Twin2",
@@ -417,7 +439,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bed Twin2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bed_Twin2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bench",
@@ -426,7 +449,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bench",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bench.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Medium_1",
@@ -435,7 +459,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Medium 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Medium_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Medium_2",
@@ -444,7 +469,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Medium 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Medium_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Medium_3",
@@ -453,7 +479,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Medium 3",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Medium_3.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Small_1",
@@ -462,7 +489,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Small 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Small_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Small_2",
@@ -471,7 +499,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Small 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Small_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookGroup_Small_3",
@@ -480,7 +509,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Group Small 3",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookGroup_Small_3.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/BookStand",
@@ -489,7 +519,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Stand",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/BookStand.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Book_5",
@@ -498,7 +529,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book 5",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Book_5.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Book_7",
@@ -507,7 +539,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book 7",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Book_7.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Book_Simplified_Single",
@@ -516,7 +549,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Simplified Single",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Book_Simplified_Single.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Book_Stack_1",
@@ -525,7 +559,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Stack 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Book_Stack_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Book_Stack_2",
@@ -534,7 +569,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Book Stack 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Book_Stack_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bookcase_2",
@@ -543,7 +579,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bookcase 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bookcase_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bottle_1",
@@ -552,7 +589,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bottle 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bottle_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bucket_Metal",
@@ -561,7 +599,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bucket Metal",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bucket_Metal.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Bucket_Wooden_1",
@@ -570,7 +609,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bucket Wooden 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Bucket_Wooden_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Cabinet",
@@ -579,7 +619,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cabinet",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Cabinet.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Cage_Small",
@@ -588,7 +629,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cage Small",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Cage_Small.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/CandleStick",
@@ -597,7 +639,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candle Stick",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/CandleStick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/CandleStick_Stand",
@@ -606,7 +649,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candle Stick Stand",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/CandleStick_Stand.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/CandleStick_Triple",
@@ -615,7 +659,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candle Stick Triple",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/CandleStick_Triple.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Candle_1",
@@ -624,7 +669,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candle 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Candle_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Candle_2",
@@ -633,7 +679,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candle 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Candle_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Carrot",
@@ -642,7 +689,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Carrot",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Carrot.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Cauldron",
@@ -651,7 +699,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cauldron",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Cauldron.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Chain_Coil",
@@ -660,7 +709,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chain Coil",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Chain_Coil.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Chair_1",
@@ -669,7 +719,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chair 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Chair_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Chalice",
@@ -678,7 +729,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chalice",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Chalice.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Chandelier",
@@ -687,7 +739,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chandelier",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Chandelier.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Chest_Wood",
@@ -696,7 +749,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chest Wood",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Chest_Wood.gltf",
     "format": "gltf",
-    "animated": true
+    "animated": true,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Coin",
@@ -705,7 +759,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Coin",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Coin.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Currency & Valuables"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Coin_Pile",
@@ -714,7 +769,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Coin Pile",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Coin_Pile.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Currency & Valuables"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Coin_Pile_2",
@@ -723,7 +779,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Coin Pile 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Coin_Pile_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Currency & Valuables"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Crate_Metal",
@@ -732,7 +789,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Crate Metal",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Crate_Metal.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Crate_Wooden",
@@ -741,7 +799,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Crate Wooden",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Crate_Wooden.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Dummy",
@@ -750,7 +809,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Dummy",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Dummy.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/FarmCrate_Apple",
@@ -759,7 +819,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Farm Crate Apple",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/FarmCrate_Apple.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/FarmCrate_Carrot",
@@ -768,7 +829,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Farm Crate Carrot",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/FarmCrate_Carrot.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/FarmCrate_Empty",
@@ -777,7 +839,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Farm Crate Empty",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/FarmCrate_Empty.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Key_Gold",
@@ -786,7 +849,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Key Gold",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Key_Gold.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Currency & Valuables"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Key_Metal",
@@ -795,7 +859,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Key Metal",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Key_Metal.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Currency & Valuables"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Lantern_Wall",
@@ -804,7 +869,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Lantern Wall",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Lantern_Wall.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Mug",
@@ -813,7 +879,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Mug",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Mug.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Nightstand_Shelf",
@@ -822,7 +889,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Nightstand Shelf",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Nightstand_Shelf.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Peg_Rack",
@@ -831,7 +899,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Peg Rack",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Peg_Rack.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Market Stalls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Pickaxe_Bronze",
@@ -840,7 +909,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pickaxe Bronze",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Pickaxe_Bronze.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Pot_1",
@@ -849,7 +919,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Pot_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Pot_1_Lid",
@@ -858,7 +929,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot 1 Lid",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Pot_1_Lid.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Potion_1",
@@ -867,7 +939,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Potion 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Potion_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Potion_2",
@@ -876,7 +949,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Potion 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Potion_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Potion_4",
@@ -885,7 +959,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Potion 4",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Potion_4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Pouch_Large",
@@ -894,7 +969,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pouch Large",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Pouch_Large.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Rope_1",
@@ -903,7 +979,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rope 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Rope_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Rope_2",
@@ -912,7 +989,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rope 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Rope_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Rope_3",
@@ -921,7 +999,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rope 3",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Rope_3.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc Dressing"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Scroll_1",
@@ -930,7 +1009,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Scroll 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Scroll_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Scroll_2",
@@ -939,7 +1019,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Scroll 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Scroll_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Books & Scrolls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Shelf_Arch",
@@ -948,7 +1029,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Shelf Arch",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Shelf_Arch.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Shelf_Simple",
@@ -957,7 +1039,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Shelf Simple",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Shelf_Simple.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Shelf_Small_Bottles",
@@ -966,7 +1049,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Shelf Small Bottles",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Shelf_Small_Bottles.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Shield_Wooden",
@@ -975,7 +1059,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Shield Wooden",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Shield_Wooden.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/SmallBottle",
@@ -984,7 +1069,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Small Bottle",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/SmallBottle.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/SmallBottles_1",
@@ -993,7 +1079,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Small Bottles 1",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/SmallBottles_1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Stall_Cart_Empty",
@@ -1002,7 +1089,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stall Cart Empty",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Stall_Cart_Empty.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Market Stalls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Stall_Empty",
@@ -1011,7 +1099,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stall Empty",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Stall_Empty.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Market Stalls"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Stool",
@@ -1020,7 +1109,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stool",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Stool.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Sword_Bronze",
@@ -1029,7 +1119,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sword Bronze",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Sword_Bronze.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Table_Fork",
@@ -1038,7 +1129,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Table Fork",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Table_Fork.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Table_Knife",
@@ -1047,7 +1139,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Table Knife",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Table_Knife.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Table_Large",
@@ -1056,7 +1149,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Table Large",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Table_Large.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Table_Plate",
@@ -1065,7 +1159,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Table Plate",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Table_Plate.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Table_Spoon",
@@ -1074,7 +1169,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Table Spoon",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Table_Spoon.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tableware & Alchemy"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Torch_Metal",
@@ -1083,7 +1179,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Torch Metal",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Torch_Metal.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Vase_2",
@@ -1092,7 +1189,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Vase 2",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Vase_2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Vase_4",
@@ -1101,7 +1199,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Vase 4",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Vase_4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Vase_Rubble_Medium",
@@ -1110,7 +1209,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Vase Rubble Medium",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Vase_Rubble_Medium.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Containers"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/WeaponStand",
@@ -1119,7 +1219,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Weapon Stand",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/WeaponStand.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Whetstone",
@@ -1128,7 +1229,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Whetstone",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Whetstone.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Tools & Weapons"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Workbench",
@@ -1137,7 +1239,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Workbench",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Workbench.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/fantasy_props_megakit/Workbench_Drawers",
@@ -1146,7 +1249,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Workbench Drawers",
     "path": "/assets/quaternius/fantasy_props/fantasy_props_megakit/Workbench_Drawers.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Apple",
@@ -1155,7 +1259,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Apple",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Apple.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Apple_Green",
@@ -1164,7 +1269,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Apple Green",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Apple_Green.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Avocado",
@@ -1173,7 +1279,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Avocado",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Avocado.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Avocado_Empty",
@@ -1182,7 +1289,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Avocado Empty",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Avocado_Empty.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bacon_Burned",
@@ -1191,7 +1299,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bacon Burned",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bacon_Burned.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bacon_Cooked",
@@ -1200,7 +1309,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bacon Cooked",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bacon_Cooked.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bacon_Uncooked",
@@ -1209,7 +1319,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bacon Uncooked",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bacon_Uncooked.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Banana",
@@ -1218,7 +1329,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Banana",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Banana.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bottle1",
@@ -1227,7 +1339,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bottle1",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bottle1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bottle2",
@@ -1236,7 +1349,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bottle2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bottle2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bread",
@@ -1245,7 +1359,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bread",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bread.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Bread_Slice",
@@ -1254,7 +1369,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bread Slice",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Bread_Slice.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Broccoli",
@@ -1263,7 +1379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Broccoli",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Broccoli.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Burger",
@@ -1272,7 +1389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Burger.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/BurgerLarge",
@@ -1281,7 +1399,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger Large",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/BurgerLarge.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/BurgerPatty_Burned",
@@ -1290,7 +1409,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger Patty Burned",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/BurgerPatty_Burned.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/BurgerPatty_Cooked",
@@ -1299,7 +1419,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger Patty Cooked",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/BurgerPatty_Cooked.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/BurgerPatty_Raw",
@@ -1308,7 +1429,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger Patty Raw",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/BurgerPatty_Raw.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Burger_Bread",
@@ -1317,7 +1439,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Burger Bread",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Burger_Bread.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Carrot",
@@ -1326,7 +1449,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Carrot",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Carrot.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Cheese_Singles",
@@ -1335,7 +1459,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cheese Singles",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Cheese_Singles.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Cheeseburger",
@@ -1344,7 +1469,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cheeseburger",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Cheeseburger.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/ChickenLeg",
@@ -1353,7 +1479,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chicken Leg",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/ChickenLeg.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/ChocolateBar",
@@ -1362,7 +1489,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chocolate Bar",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/ChocolateBar.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Chopsticks",
@@ -1371,7 +1499,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chopsticks",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Chopsticks.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Coconut",
@@ -1380,7 +1509,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Coconut",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Coconut.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Coconut_Half",
@@ -1389,7 +1519,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Coconut Half",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Coconut_Half.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/CookingPot",
@@ -1398,7 +1529,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cooking Pot",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/CookingPot.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/CookingPot2",
@@ -1407,7 +1539,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cooking Pot2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/CookingPot2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/CookingPot2_Soup",
@@ -1416,7 +1549,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cooking Pot2 Soup",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/CookingPot2_Soup.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/CookingPot_Soup",
@@ -1425,7 +1559,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cooking Pot Soup",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/CookingPot_Soup.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Corndog",
@@ -1434,7 +1569,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corndog",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Corndog.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Croissant",
@@ -1443,7 +1579,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Croissant",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Croissant.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Cupcake",
@@ -1452,7 +1589,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cupcake",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Cupcake.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Donut1",
@@ -1461,7 +1599,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Donut1",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Donut1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Donut2",
@@ -1470,7 +1609,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Donut2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Donut2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Donut3",
@@ -1479,7 +1619,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Donut3",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Donut3.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Donut4",
@@ -1488,7 +1629,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Donut4",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Donut4.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/DoubleCheeseburger",
@@ -1497,7 +1639,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Double Cheeseburger",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/DoubleCheeseburger.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Egg_Burned",
@@ -1506,7 +1649,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Egg Burned",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Egg_Burned.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Egg_Fried",
@@ -1515,7 +1659,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Egg Fried",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Egg_Fried.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Egg_Whole",
@@ -1524,7 +1669,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Egg Whole",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Egg_Whole.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Egg_Whole_White",
@@ -1533,7 +1679,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Egg Whole White",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Egg_Whole_White.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Eggplant",
@@ -1542,7 +1689,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Eggplant",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Eggplant.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Fish",
@@ -1551,7 +1699,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Fish",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Fish.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/FishBone",
@@ -1560,7 +1709,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Fish Bone",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/FishBone.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Fork",
@@ -1569,7 +1719,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Fork",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Fork.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Fries",
@@ -1578,7 +1729,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Fries",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Fries.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/FryingPan",
@@ -1587,7 +1739,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Frying Pan",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/FryingPan.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Hotdog",
@@ -1596,7 +1749,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hotdog",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Hotdog.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Hotdog_Bun",
@@ -1605,7 +1759,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hotdog Bun",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Hotdog_Bun.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_1",
@@ -1614,7 +1769,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream 1",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_2",
@@ -1623,7 +1779,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream 2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_3",
@@ -1632,7 +1789,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream 3",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_3.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_4",
@@ -1641,7 +1799,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream 4",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_4.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_Cone",
@@ -1650,7 +1809,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream Cone",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_Cone.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/IceCream_Cone2",
@@ -1659,7 +1819,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ice Cream Cone2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/IceCream_Cone2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Jar_Large",
@@ -1668,7 +1829,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Jar Large",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Jar_Large.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/KetchupBottle",
@@ -1677,7 +1839,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ketchup Bottle",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/KetchupBottle.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/KetchupMustard",
@@ -1686,7 +1849,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Ketchup Mustard",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/KetchupMustard.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Knife",
@@ -1695,7 +1859,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Knife",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Knife.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Lettuce",
@@ -1704,7 +1869,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Lettuce",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Lettuce.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Lettuce_Whole",
@@ -1713,7 +1879,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Lettuce Whole",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Lettuce_Whole.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/MayoBottle",
@@ -1722,7 +1889,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Mayo Bottle",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/MayoBottle.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Mushroom",
@@ -1731,7 +1899,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Mushroom",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Mushroom.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Mushroom_Sliced",
@@ -1740,7 +1909,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Mushroom Sliced",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Mushroom_Sliced.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/MustardBottle",
@@ -1749,7 +1919,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Mustard Bottle",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/MustardBottle.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Orange",
@@ -1758,7 +1929,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Orange",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Orange.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pancake",
@@ -1767,7 +1939,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pancake",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pancake.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pancakes_Stack",
@@ -1776,7 +1949,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pancakes Stack",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pancakes_Stack.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/PeanutButter",
@@ -1785,7 +1959,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Peanut Butter",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/PeanutButter.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/PeanutButter_2",
@@ -1794,7 +1969,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Peanut Butter 2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/PeanutButter_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pepper_Green",
@@ -1803,7 +1979,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pepper Green",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pepper_Green.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pepper_Red",
@@ -1812,7 +1989,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pepper Red",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pepper_Red.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pizza",
@@ -1821,7 +1999,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pizza",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pizza.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pizza_Burned",
@@ -1830,7 +2009,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pizza Burned",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pizza_Burned.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pizza_Slice",
@@ -1839,7 +2019,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pizza Slice",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pizza_Slice.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Plate",
@@ -1848,7 +2029,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Plate",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Plate.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Plate2",
@@ -1857,7 +2039,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Plate2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Plate2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Plate_Square",
@@ -1866,7 +2049,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Plate Square",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Plate_Square.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Popsicle_Chocolate",
@@ -1875,7 +2059,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Popsicle Chocolate",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Popsicle_Chocolate.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Popsicle_Multiple",
@@ -1884,7 +2069,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Popsicle Multiple",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Popsicle_Multiple.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Popsicle_Strawberry",
@@ -1893,7 +2079,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Popsicle Strawberry",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Popsicle_Strawberry.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Pumpkin",
@@ -1902,7 +2089,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pumpkin",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Pumpkin.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sashimi_Salmon",
@@ -1911,7 +2099,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sashimi Salmon",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sashimi_Salmon.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sashimi_Salmon2",
@@ -1920,7 +2109,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sashimi Salmon2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sashimi_Salmon2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sausage_Cooked",
@@ -1929,7 +2119,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sausage Cooked",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sausage_Cooked.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sausage_Raw",
@@ -1938,7 +2129,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sausage Raw",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sausage_Raw.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Soda",
@@ -1947,7 +2139,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Soda",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Soda.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/SoySauce",
@@ -1956,7 +2149,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Soy Sauce",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/SoySauce.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Condiments & Drinks"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Spoon",
@@ -1965,7 +2159,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Spoon",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Spoon.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Kitchenware"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Steak",
@@ -1974,7 +2169,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Steak",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Steak.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Steak_burned",
@@ -1983,7 +2179,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Steak Burned",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Steak_burned.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sushi_Nigiri1",
@@ -1992,7 +2189,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sushi Nigiri1",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sushi_Nigiri1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sushi_Nigiri2",
@@ -2001,7 +2199,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sushi Nigiri2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sushi_Nigiri2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sushi_NigiriOctopus",
@@ -2010,7 +2209,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sushi Nigiri Octopus",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sushi_NigiriOctopus.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sushi_Roll1",
@@ -2019,7 +2219,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sushi Roll1",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sushi_Roll1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Sushi_Roll2",
@@ -2028,7 +2229,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sushi Roll2",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Sushi_Roll2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Tentacle",
@@ -2037,7 +2239,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tentacle",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Tentacle.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Tomato",
@@ -2046,7 +2249,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tomato",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Tomato.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Tomato_Slice",
@@ -2055,7 +2259,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tomato Slice",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Tomato_Slice.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Turnip",
@@ -2064,7 +2269,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Turnip",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Turnip.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Raw Produce"
   },
   {
     "id": "fantasy_props/ultimate_food_pack/Waffle",
@@ -2073,7 +2279,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Waffle",
     "path": "/assets/quaternius/fantasy_props/ultimate_food_pack/Waffle.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Prepared Food"
   },
   {
     "id": "medieval_village_pack/buildings/Bell_Tower",
@@ -2172,7 +2379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bag",
     "path": "/assets/quaternius/medieval_village_pack/props/Bag.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Bag_Open",
@@ -2181,7 +2389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bag Open",
     "path": "/assets/quaternius/medieval_village_pack/props/Bag_Open.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Bags",
@@ -2190,7 +2399,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bags",
     "path": "/assets/quaternius/medieval_village_pack/props/Bags.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Barrel",
@@ -2199,7 +2409,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Barrel",
     "path": "/assets/quaternius/medieval_village_pack/props/Barrel.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Bell",
@@ -2208,7 +2419,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bell",
     "path": "/assets/quaternius/medieval_village_pack/props/Bell.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "medieval_village_pack/props/Bench_1",
@@ -2217,7 +2429,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bench 1",
     "path": "/assets/quaternius/medieval_village_pack/props/Bench_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Bench_2",
@@ -2226,7 +2439,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bench 2",
     "path": "/assets/quaternius/medieval_village_pack/props/Bench_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Bonfire",
@@ -2235,7 +2449,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bonfire",
     "path": "/assets/quaternius/medieval_village_pack/props/Bonfire.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Fire & Smoke"
   },
   {
     "id": "medieval_village_pack/props/Bonfire_Lit",
@@ -2244,7 +2459,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bonfire Lit",
     "path": "/assets/quaternius/medieval_village_pack/props/Bonfire_Lit.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Fire & Smoke"
   },
   {
     "id": "medieval_village_pack/props/Cart",
@@ -2253,7 +2469,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cart",
     "path": "/assets/quaternius/medieval_village_pack/props/Cart.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Cauldron",
@@ -2262,7 +2479,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cauldron",
     "path": "/assets/quaternius/medieval_village_pack/props/Cauldron.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "medieval_village_pack/props/Crate",
@@ -2271,7 +2489,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Crate",
     "path": "/assets/quaternius/medieval_village_pack/props/Crate.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Door_Round",
@@ -2280,7 +2499,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Round",
     "path": "/assets/quaternius/medieval_village_pack/props/Door_Round.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "medieval_village_pack/props/Door_Straight",
@@ -2289,7 +2509,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Straight",
     "path": "/assets/quaternius/medieval_village_pack/props/Door_Straight.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "medieval_village_pack/props/Fence",
@@ -2298,7 +2519,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Fence",
     "path": "/assets/quaternius/medieval_village_pack/props/Fence.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Gazebo",
@@ -2307,7 +2529,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Gazebo",
     "path": "/assets/quaternius/medieval_village_pack/props/Gazebo.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Hay",
@@ -2316,7 +2539,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hay",
     "path": "/assets/quaternius/medieval_village_pack/props/Hay.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Natural Dressing"
   },
   {
     "id": "medieval_village_pack/props/MarketStand_1",
@@ -2325,7 +2549,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Market Stand 1",
     "path": "/assets/quaternius/medieval_village_pack/props/MarketStand_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Market"
   },
   {
     "id": "medieval_village_pack/props/MarketStand_2",
@@ -2334,7 +2559,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Market Stand 2",
     "path": "/assets/quaternius/medieval_village_pack/props/MarketStand_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Market"
   },
   {
     "id": "medieval_village_pack/props/Package_1",
@@ -2343,7 +2569,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Package 1",
     "path": "/assets/quaternius/medieval_village_pack/props/Package_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Package_2",
@@ -2352,7 +2579,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Package 2",
     "path": "/assets/quaternius/medieval_village_pack/props/Package_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Storage & Carts"
   },
   {
     "id": "medieval_village_pack/props/Path_Square",
@@ -2361,7 +2589,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Path Square",
     "path": "/assets/quaternius/medieval_village_pack/props/Path_Square.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Path_Straight",
@@ -2370,7 +2599,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Path Straight",
     "path": "/assets/quaternius/medieval_village_pack/props/Path_Straight.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Rock_1",
@@ -2379,7 +2609,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rock 1",
     "path": "/assets/quaternius/medieval_village_pack/props/Rock_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Natural Dressing"
   },
   {
     "id": "medieval_village_pack/props/Rock_2",
@@ -2388,7 +2619,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rock 2",
     "path": "/assets/quaternius/medieval_village_pack/props/Rock_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Natural Dressing"
   },
   {
     "id": "medieval_village_pack/props/Rock_3",
@@ -2397,7 +2629,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rock 3",
     "path": "/assets/quaternius/medieval_village_pack/props/Rock_3.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Natural Dressing"
   },
   {
     "id": "medieval_village_pack/props/Sawmill_saw",
@@ -2406,7 +2639,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Sawmill Saw",
     "path": "/assets/quaternius/medieval_village_pack/props/Sawmill_saw.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "medieval_village_pack/props/Smoke",
@@ -2415,7 +2649,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Smoke",
     "path": "/assets/quaternius/medieval_village_pack/props/Smoke.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Fire & Smoke"
   },
   {
     "id": "medieval_village_pack/props/Stairs",
@@ -2424,7 +2659,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs",
     "path": "/assets/quaternius/medieval_village_pack/props/Stairs.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Well",
@@ -2433,7 +2669,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Well",
     "path": "/assets/quaternius/medieval_village_pack/props/Well.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Street Furniture"
   },
   {
     "id": "medieval_village_pack/props/Window_1",
@@ -2442,7 +2679,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window 1",
     "path": "/assets/quaternius/medieval_village_pack/props/Window_1.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "medieval_village_pack/props/Window_2",
@@ -2451,7 +2689,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window 2",
     "path": "/assets/quaternius/medieval_village_pack/props/Window_2.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "medieval_village_pack/props/Window_3",
@@ -2460,7 +2699,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window 3",
     "path": "/assets/quaternius/medieval_village_pack/props/Window_3.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "medieval_village_pack/props/Window_4",
@@ -2469,7 +2709,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window 4",
     "path": "/assets/quaternius/medieval_village_pack/props/Window_4.fbx",
     "format": "fbx",
-    "animated": false
+    "animated": false,
+    "subgroup": "Building Facade Parts"
   },
   {
     "id": "modular_dungeons/obj_kit/Arch_Gothic",
@@ -2478,7 +2719,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Arch Gothic",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Arch_Gothic.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Arch_Gothic_RoundColumn",
@@ -2487,7 +2729,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Arch Gothic Round Column",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Arch_Gothic_RoundColumn.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Arch_Round",
@@ -2496,7 +2739,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Arch Round",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Arch_Round.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Arch_Round_RoundColumn",
@@ -2505,7 +2749,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Arch Round Round Column",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Arch_Round_RoundColumn.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Barrel",
@@ -2514,7 +2759,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Barrel",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Barrel.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/BearTrap_Closed",
@@ -2523,7 +2769,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bear Trap Closed",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/BearTrap_Closed.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Traps & Interactive"
   },
   {
     "id": "modular_dungeons/obj_kit/BearTrap_Open",
@@ -2532,7 +2779,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bear Trap Open",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/BearTrap_Open.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Traps & Interactive"
   },
   {
     "id": "modular_dungeons/obj_kit/Bookcase_Empty",
@@ -2541,7 +2789,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bookcase Empty",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bookcase_Empty.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Bookcase_Full",
@@ -2550,7 +2799,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bookcase Full",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bookcase_Full.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Brick",
@@ -2559,7 +2809,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Brick",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Brick.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_dungeons/obj_kit/Bricks",
@@ -2568,7 +2819,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bricks",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bricks.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_dungeons/obj_kit/BridgeSection",
@@ -2577,7 +2829,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bridge Section",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/BridgeSection.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Bush_1x1",
@@ -2586,7 +2839,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bush 1x1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bush_1x1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Bush_2x1",
@@ -2595,7 +2849,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bush 2x1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bush_2x1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Bush_2x2",
@@ -2604,7 +2859,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bush 2x2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bush_2x2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Bush_Large",
@@ -2613,7 +2869,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bush Large",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bush_Large.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Bush_Round",
@@ -2622,7 +2879,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Bush Round",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Bush_Round.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Candles_1",
@@ -2631,7 +2889,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candles 1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Candles_1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Candles_2",
@@ -2640,7 +2899,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Candles 2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Candles_2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Cart",
@@ -2649,7 +2909,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Cart",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Cart.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_dungeons/obj_kit/Character_Animated",
@@ -2658,7 +2919,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Character Animated",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Character_Animated.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_dungeons/obj_kit/Chest",
@@ -2667,7 +2929,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chest",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Chest.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Chest_Gold",
@@ -2676,7 +2939,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Chest Gold",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Chest_Gold.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Column_BridgeSupport",
@@ -2685,7 +2949,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Column Bridge Support",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Column_BridgeSupport.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Column_Round",
@@ -2694,7 +2959,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Column Round",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Column_Round.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Column_Round_Short",
@@ -2703,7 +2969,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Column Round Short",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Column_Round_Short.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Column_Square",
@@ -2712,7 +2979,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Column Square",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Column_Square.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Crate",
@@ -2721,7 +2989,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Crate",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Crate.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Curve_1",
@@ -2730,7 +2999,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Curve 1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Curve_1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Curve_1_Overgrown",
@@ -2739,7 +3009,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Curve 1 Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Curve_1_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Curve_2",
@@ -2748,7 +3019,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Curve 2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Curve_2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Curve_2_Overgrown",
@@ -2757,7 +3029,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Curve 2 Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Curve_2_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/DeadTree_1",
@@ -2766,7 +3039,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Dead Tree 1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/DeadTree_1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/DeadTree_2",
@@ -2775,7 +3049,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Dead Tree 2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/DeadTree_2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/DeadTree_3",
@@ -2784,7 +3059,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Dead Tree 3",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/DeadTree_3.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Doors_GothicArch",
@@ -2793,7 +3069,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Doors Gothic Arch",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Doors_GothicArch.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Doors_GothicArch_Covered",
@@ -2802,7 +3079,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Doors Gothic Arch Covered",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Doors_GothicArch_Covered.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Doors_RoundArch",
@@ -2811,7 +3089,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Doors Round Arch",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Doors_RoundArch.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Doors_RoundArch_Covered",
@@ -2820,7 +3099,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Doors Round Arch Covered",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Doors_RoundArch_Covered.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Flag_GothicArch",
@@ -2829,7 +3109,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Flag Gothic Arch",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Flag_GothicArch.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Flag_RoundArch",
@@ -2838,7 +3119,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Flag Round Arch",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Flag_RoundArch.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Flag_Wall",
@@ -2847,7 +3129,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Flag Wall",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Flag_Wall.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Flag_Wall2",
@@ -2856,7 +3139,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Flag Wall2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Flag_Wall2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Diamond",
@@ -2865,7 +3149,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Diamond",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Diamond.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Hole_Corner",
@@ -2874,7 +3159,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Hole Corner",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Hole_Corner.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Hole_Straight",
@@ -2883,7 +3169,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Hole Straight",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Hole_Straight.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_SquareLarge",
@@ -2892,7 +3179,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Square Large",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_SquareLarge.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Squares",
@@ -2901,7 +3189,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Squares",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Squares.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Standard",
@@ -2910,7 +3199,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Standard",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Standard.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Standard_Half",
@@ -2919,7 +3209,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Standard Half",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Standard_Half.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Floor_Tree",
@@ -2928,7 +3219,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Tree",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Floor_Tree.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_dungeons/obj_kit/Grass",
@@ -2937,7 +3229,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Grass",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Grass.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot1",
@@ -2946,7 +3239,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot1_Broken",
@@ -2955,7 +3249,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot1 Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot1_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot2",
@@ -2964,7 +3259,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot2_Broken",
@@ -2973,7 +3269,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot2 Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot2_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot3",
@@ -2982,7 +3279,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot3",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot3.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Pot3_Broken",
@@ -2991,7 +3289,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Pot3 Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Pot3_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Furniture & Containers"
   },
   {
     "id": "modular_dungeons/obj_kit/Rail_Corner",
@@ -3000,7 +3299,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rail Corner",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Rail_Corner.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Rail_Divider",
@@ -3009,7 +3309,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rail Divider",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Rail_Divider.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Rail_Straight",
@@ -3018,7 +3319,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Rail Straight",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Rail_Straight.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Skull",
@@ -3027,7 +3329,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Skull",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Skull.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Stairs",
@@ -3036,7 +3339,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Stairs.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Stairs_2",
@@ -3045,7 +3349,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs 2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Stairs_2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Statue_Fox",
@@ -3054,7 +3359,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Statue Fox",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Statue_Fox.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Statue_Stag",
@@ -3063,7 +3369,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Statue Stag",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Statue_Stag.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Support_Center",
@@ -3072,7 +3379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Support Center",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Support_Center.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Support_Left",
@@ -3081,7 +3389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Support Left",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Support_Left.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Support_Right",
@@ -3090,7 +3399,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Support Right",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Support_Right.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Support_Tall",
@@ -3099,7 +3409,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Support Tall",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Support_Tall.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Arches, Doors & Columns"
   },
   {
     "id": "modular_dungeons/obj_kit/Torch",
@@ -3108,7 +3419,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Torch",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Torch.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Lighting & Decor"
   },
   {
     "id": "modular_dungeons/obj_kit/Trapdoor",
@@ -3117,7 +3429,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Trapdoor",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Trapdoor.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs, Bridges & Traversal"
   },
   {
     "id": "modular_dungeons/obj_kit/Tree_1",
@@ -3126,7 +3439,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tree 1",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Tree_1.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Tree_2",
@@ -3135,7 +3449,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tree 2",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Tree_2.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Tree_3",
@@ -3144,7 +3459,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Tree 3",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Tree_3.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Nature & Overgrowth Dressing"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall",
@@ -3153,7 +3469,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_ArchGothic",
@@ -3162,7 +3479,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch Gothic",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_ArchGothic.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_ArchRound",
@@ -3171,7 +3489,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch Round",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_ArchRound.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_ArchRound_Broken",
@@ -3180,7 +3499,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch Round Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_ArchRound_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_ArchRound_Overgrown",
@@ -3189,7 +3509,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch Round Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_ArchRound_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_ArchRound_Overgrown_Broken",
@@ -3198,7 +3519,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch Round Overgrown Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_ArchRound_Overgrown_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Broken",
@@ -3207,7 +3529,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Double_Broken",
@@ -3216,7 +3539,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Double Broken",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Double_Broken.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Double_Hole",
@@ -3225,7 +3549,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Double Hole",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Double_Hole.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Half",
@@ -3234,7 +3559,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Half",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Half.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Hole",
@@ -3243,7 +3569,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Hole",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Hole.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Wall_Overgrown",
@@ -3252,7 +3579,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Wall_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Window_Bars",
@@ -3261,7 +3589,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Bars",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Window_Bars.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Window_Bars_Double_Overgrown",
@@ -3270,7 +3599,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Bars Double Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Window_Bars_Double_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Window_Bars_Overgrown",
@@ -3279,7 +3609,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Bars Overgrown",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Window_Bars_Overgrown.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls & Windows"
   },
   {
     "id": "modular_dungeons/obj_kit/Window_Open",
@@ -3288,7 +3619,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Open",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Window_Open.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_dungeons/obj_kit/Window_Open_Double",
@@ -3297,7 +3629,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Open Double",
     "path": "/assets/quaternius/modular_dungeons/obj_kit/Window_Open_Double.obj",
     "format": "obj",
-    "animated": false
+    "animated": false,
+    "subgroup": "Misc / Other"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Balcony_Cross_Corner",
@@ -3306,7 +3639,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Balcony Cross Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Balcony_Cross_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Balcony_Cross_Straight",
@@ -3315,7 +3649,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Balcony Cross Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Balcony_Cross_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Balcony_Simple_Corner",
@@ -3324,7 +3659,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Balcony Simple Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Balcony_Simple_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Balcony_Simple_Straight",
@@ -3333,7 +3669,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Balcony Simple Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Balcony_Simple_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_ExteriorWide_Brick",
@@ -3342,7 +3679,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Wide Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_ExteriorWide_Brick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_ExteriorWide_Wood",
@@ -3351,7 +3689,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Wide Wood",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_ExteriorWide_Wood.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Exterior_Brick",
@@ -3360,7 +3699,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Exterior_Brick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Exterior_TopDown",
@@ -3369,7 +3709,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Top Down",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Exterior_TopDown.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Exterior_TopOnly",
@@ -3378,7 +3719,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Top Only",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Exterior_TopOnly.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Exterior_Wood",
@@ -3387,7 +3729,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Exterior Wood",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Exterior_Wood.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Interior_Big",
@@ -3396,7 +3739,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Interior Big",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Interior_Big.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Corner_Interior_Small",
@@ -3405,7 +3749,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Corner Interior Small",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Corner_Interior_Small.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Corners & Edges"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/DoorFrame_Flat_Brick",
@@ -3414,7 +3759,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Frame Flat Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/DoorFrame_Flat_Brick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/DoorFrame_Flat_WoodDark",
@@ -3423,7 +3769,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Frame Flat Wood Dark",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/DoorFrame_Flat_WoodDark.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/DoorFrame_Round_Brick",
@@ -3432,7 +3779,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Frame Round Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/DoorFrame_Round_Brick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/DoorFrame_Round_WoodDark",
@@ -3441,7 +3789,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door Frame Round Wood Dark",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/DoorFrame_Round_WoodDark.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_1_Flat",
@@ -3450,7 +3799,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 1 Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_1_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_1_Round",
@@ -3459,7 +3809,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 1 Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_1_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_2_Flat",
@@ -3468,7 +3819,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 2 Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_2_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_2_Round",
@@ -3477,7 +3829,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 2 Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_2_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_4_Flat",
@@ -3486,7 +3839,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 4 Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_4_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_4_Round",
@@ -3495,7 +3849,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 4 Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_4_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_8_Flat",
@@ -3504,7 +3859,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 8 Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_8_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Door_8_Round",
@@ -3513,7 +3869,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Door 8 Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Door_8_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Doors & Door Frames"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_Brick",
@@ -3522,7 +3879,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_Brick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_RedBrick",
@@ -3531,7 +3889,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Red Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_RedBrick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_UnevenBrick",
@@ -3540,7 +3899,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Uneven Brick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_UnevenBrick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark",
@@ -3549,7 +3909,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half1",
@@ -3558,7 +3919,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark Half1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half2",
@@ -3567,7 +3929,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark Half2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half3",
@@ -3576,7 +3939,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark Half3",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_Half3.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_OverhangCorner",
@@ -3585,7 +3949,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark Overhang Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_OverhangCorner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_OverhangCorner2",
@@ -3594,7 +3959,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Dark Overhang Corner2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodDark_OverhangCorner2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodLight",
@@ -3603,7 +3969,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Light",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodLight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodLight_OverhangCorner",
@@ -3612,7 +3979,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Light Overhang Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodLight_OverhangCorner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Floor_WoodLight_OverhangCorner2",
@@ -3621,7 +3989,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Floor Wood Light Overhang Corner2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Floor_WoodLight_OverhangCorner2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Floors"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/HoleCover_90Angle",
@@ -3630,7 +3999,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hole Cover 90Angle",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/HoleCover_90Angle.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/HoleCover_90Half",
@@ -3639,7 +4009,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hole Cover 90Half",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/HoleCover_90Half.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/HoleCover_90Stairs",
@@ -3648,7 +4019,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hole Cover 90Stairs",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/HoleCover_90Stairs.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/HoleCover_Straight",
@@ -3657,7 +4029,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hole Cover Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/HoleCover_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/HoleCover_StraightHalf",
@@ -3666,7 +4039,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Hole Cover Straight Half",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/HoleCover_StraightHalf.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Corner",
@@ -3675,7 +4049,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Plaster Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Corner_Front",
@@ -3684,7 +4059,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Plaster Corner Front",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Corner_Front.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Long",
@@ -3693,7 +4069,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Plaster Long",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Long.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Short",
@@ -3702,7 +4079,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Plaster Short",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Plaster_Short.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_RoofIncline_Plaster",
@@ -3711,7 +4089,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Roof Incline Plaster",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_RoofIncline_Plaster.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_RoofIncline_UnevenBricks",
@@ -3720,7 +4099,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Roof Incline Uneven Bricks",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_RoofIncline_UnevenBricks.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Roof_Plaster",
@@ -3729,7 +4109,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Roof Plaster",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Roof_Plaster.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Roof_UnevenBricks",
@@ -3738,7 +4119,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Roof Uneven Bricks",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Roof_UnevenBricks.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Long_L",
@@ -3747,7 +4129,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Plaster Long L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Long_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Long_R",
@@ -3756,7 +4139,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Plaster Long R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Long_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Short_L",
@@ -3765,7 +4149,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Plaster Short L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Short_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Short_R",
@@ -3774,7 +4159,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Plaster Short R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_Plaster_Short_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Long_L",
@@ -3783,7 +4169,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Uneven Brick Long L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Long_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Long_R",
@@ -3792,7 +4179,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Uneven Brick Long R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Long_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Short_L",
@@ -3801,7 +4189,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Uneven Brick Short L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Short_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Short_R",
@@ -3810,7 +4199,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Side Uneven Brick Short R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_Side_UnevenBrick_Short_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Corner",
@@ -3819,7 +4209,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Uneven Brick Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Corner_Front",
@@ -3828,7 +4219,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Uneven Brick Corner Front",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Corner_Front.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Long",
@@ -3837,7 +4229,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Uneven Brick Long",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Long.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Short",
@@ -3846,7 +4239,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Overhang Uneven Brick Short",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Overhang_UnevenBrick_Short.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Overhangs & Balconies"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Brick1",
@@ -3855,7 +4249,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Brick1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Brick1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Brick2",
@@ -3864,7 +4259,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Brick2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Brick2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Brick3",
@@ -3873,7 +4269,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Brick3",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Brick3.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Brick4",
@@ -3882,7 +4279,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Brick4",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Brick4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Chimney",
@@ -3891,7 +4289,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Chimney",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Chimney.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Chimney2",
@@ -3900,7 +4299,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Chimney2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Chimney2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Crate",
@@ -3909,7 +4309,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Crate",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Crate.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Corner",
@@ -3918,7 +4319,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Exterior Border Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Straight1",
@@ -3927,7 +4329,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Exterior Border Straight1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Straight1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Straight2",
@@ -3936,7 +4339,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Exterior Border Straight2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_ExteriorBorder_Straight2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_MetalFence_Ornament",
@@ -3945,7 +4349,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Metal Fence Ornament",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_MetalFence_Ornament.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_MetalFence_Simple",
@@ -3954,7 +4359,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Metal Fence Simple",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_MetalFence_Simple.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Support",
@@ -3963,7 +4369,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Support",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Support.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine1",
@@ -3972,7 +4379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine2",
@@ -3981,7 +4389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine4",
@@ -3990,7 +4399,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine4",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine5",
@@ -3999,7 +4409,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine5",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine5.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine6",
@@ -4008,7 +4419,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine6",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine6.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Vine9",
@@ -4017,7 +4429,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Vine9",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Vine9.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_Wagon",
@@ -4026,7 +4439,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Wagon",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_Wagon.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Extension1",
@@ -4035,7 +4449,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Wooden Fence Extension1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Extension1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Extension2",
@@ -4044,7 +4459,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Wooden Fence Extension2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Extension2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Single",
@@ -4053,7 +4469,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Prop Wooden Fence Single",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Prop_WoodenFence_Single.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Props & Dressing"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_2x4_RoundTile",
@@ -4062,7 +4479,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof 2x4 Round Tile",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_2x4_RoundTile.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Dormer_RoundTile",
@@ -4071,7 +4489,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Dormer Round Tile",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Dormer_RoundTile.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_FrontSupports",
@@ -4080,7 +4499,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Supports",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_FrontSupports.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick2",
@@ -4089,7 +4509,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4",
@@ -4098,7 +4519,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick4",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4_Half_L",
@@ -4107,7 +4529,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick4 Half L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4_Half_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4_Half_R",
@@ -4116,7 +4539,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick4 Half R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick4_Half_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6",
@@ -4125,7 +4549,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick6",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6_Half_L",
@@ -4134,7 +4559,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick6 Half L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6_Half_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6_Half_R",
@@ -4143,7 +4569,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick6 Half R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick6_Half_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8",
@@ -4152,7 +4579,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick8",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8_Half_L",
@@ -4161,7 +4589,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick8 Half L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8_Half_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8_Half_R",
@@ -4170,7 +4599,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Front Brick8 Half R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Front_Brick8_Half_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Log",
@@ -4179,7 +4609,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Log",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Log.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Modular_RoundTiles",
@@ -4188,7 +4619,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Modular Round Tiles",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Modular_RoundTiles.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTile_2x1",
@@ -4197,7 +4629,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tile 2x1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTile_2x1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTile_2x1_Long",
@@ -4206,7 +4639,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tile 2x1 Long",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTile_2x1_Long.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x4",
@@ -4215,7 +4649,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 4x4",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x6",
@@ -4224,7 +4659,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 4x6",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x6.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x8",
@@ -4233,7 +4669,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 4x8",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_4x8.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x10",
@@ -4242,7 +4679,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x10",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x10.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x12",
@@ -4251,7 +4689,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x12",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x12.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x14",
@@ -4260,7 +4699,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x14",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x14.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x4",
@@ -4269,7 +4709,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x4",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x4.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x6",
@@ -4278,7 +4719,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x6",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x6.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x8",
@@ -4287,7 +4729,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 6x8",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_6x8.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x10",
@@ -4296,7 +4739,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 8x10",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x10.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x12",
@@ -4305,7 +4749,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 8x12",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x12.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x14",
@@ -4314,7 +4759,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 8x14",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x14.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x8",
@@ -4323,7 +4769,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Round Tiles 8x8",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_RoundTiles_8x8.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Support2",
@@ -4332,7 +4779,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Support2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Support2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Tower_RoundTiles",
@@ -4341,7 +4789,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Tower Round Tiles",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Tower_RoundTiles.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1",
@@ -4350,7 +4799,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Center",
@@ -4359,7 +4809,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 Center",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Center.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Center_Mirror",
@@ -4368,7 +4819,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 Center Mirror",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Center_Mirror.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Corner",
@@ -4377,7 +4829,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 Corner",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Corner.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_L",
@@ -4386,7 +4839,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Middle",
@@ -4395,7 +4849,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 Middle",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_Middle.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_R",
@@ -4404,7 +4859,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Roof Wooden 2x1 R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Roof_Wooden_2x1_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Roofs"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stair_Interior_Rails",
@@ -4413,7 +4869,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stair Interior Rails",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stair_Interior_Rails.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stair_Interior_Simple",
@@ -4422,7 +4879,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stair Interior Simple",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stair_Interior_Simple.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stair_Interior_Solid",
@@ -4431,7 +4889,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stair Interior Solid",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stair_Interior_Solid.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stair_Interior_SolidExtended",
@@ -4440,7 +4899,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stair Interior Solid Extended",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stair_Interior_SolidExtended.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_NoFirstStep",
@@ -4449,7 +4909,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior No First Step",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_NoFirstStep.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform",
@@ -4458,7 +4919,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Platform",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform45",
@@ -4467,7 +4929,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Platform45",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform45.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform45Clean",
@@ -4476,7 +4939,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Platform45Clean",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Platform45Clean.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_PlatformU",
@@ -4485,7 +4949,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Platform U",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_PlatformU.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SidePlatform",
@@ -4494,7 +4959,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Side Platform",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SidePlatform.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Sides",
@@ -4503,7 +4969,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Sides",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Sides.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Sides45",
@@ -4512,7 +4979,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Sides45",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Sides45.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SidesU",
@@ -4521,7 +4989,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Sides U",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SidesU.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SingleSide",
@@ -4530,7 +4999,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Single Side",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SingleSide.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SingleSideThick",
@@ -4539,7 +5009,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Single Side Thick",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_SingleSideThick.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight",
@@ -4548,7 +5019,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_Center",
@@ -4557,7 +5029,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Straight Center",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_Center.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_L",
@@ -4566,7 +5039,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Straight L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_R",
@@ -4575,7 +5049,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Stairs Exterior Straight R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Stairs_Exterior_Straight_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Stairs & Hole Covers"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Arch",
@@ -4584,7 +5059,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Arch",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Arch.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_BottomCover",
@@ -4593,7 +5069,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Bottom Cover",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_BottomCover.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_Flat",
@@ -4602,7 +5079,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Door Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_Round",
@@ -4611,7 +5089,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Door Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_RoundInset",
@@ -4620,7 +5099,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Door Round Inset",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Door_RoundInset.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight",
@@ -4629,7 +5109,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_Base",
@@ -4638,7 +5119,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Straight Base",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_Base.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_L",
@@ -4647,7 +5129,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Straight L",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_L.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_R",
@@ -4656,7 +5139,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Straight R",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Straight_R.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Thin_Round",
@@ -4665,7 +5149,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Window Thin Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Thin_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Flat",
@@ -4674,7 +5159,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Window Wide Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Flat2",
@@ -4683,7 +5169,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Window Wide Flat2",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Flat2.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Round",
@@ -4692,7 +5179,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Window Wide Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_Window_Wide_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_Plaster_WoodGrid",
@@ -4701,7 +5189,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Plaster Wood Grid",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_Plaster_WoodGrid.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Door_Flat",
@@ -4710,7 +5199,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Door Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Door_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Door_Round",
@@ -4719,7 +5209,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Door Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Door_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Straight",
@@ -4728,7 +5219,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Straight",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Straight.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Thin_Round",
@@ -4737,7 +5229,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Window Thin Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Thin_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Wide_Flat",
@@ -4746,7 +5239,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Window Wide Flat",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Wide_Flat.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Wide_Round",
@@ -4755,7 +5249,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Wall Uneven Brick Window Wide Round",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Wall_UnevenBrick_Window_Wide_Round.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Walls"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Flat_Closed",
@@ -4764,7 +5259,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Thin Flat Closed",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Flat_Closed.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Flat_Open",
@@ -4773,7 +5269,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Thin Flat Open",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Flat_Open.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Round_Closed",
@@ -4782,7 +5279,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Thin Round Closed",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Round_Closed.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Round_Open",
@@ -4791,7 +5289,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Thin Round Open",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Thin_Round_Open.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Flat_Closed",
@@ -4800,7 +5299,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Wide Flat Closed",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Flat_Closed.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Flat_Open",
@@ -4809,7 +5309,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Wide Flat Open",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Flat_Open.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Round_Closed",
@@ -4818,7 +5319,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Wide Round Closed",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Round_Closed.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Round_Open",
@@ -4827,7 +5329,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Shutters Wide Round Open",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/WindowShutters_Wide_Round_Open.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Roof_Thin",
@@ -4836,7 +5339,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Roof Thin",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Roof_Thin.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Roof_Wide",
@@ -4845,7 +5349,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Roof Wide",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Roof_Wide.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Thin_Flat1",
@@ -4854,7 +5359,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Thin Flat1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Thin_Flat1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Thin_Round1",
@@ -4863,7 +5369,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Thin Round1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Thin_Round1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Wide_Flat1",
@@ -4872,7 +5379,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Wide Flat1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Wide_Flat1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "modular_fantasy_village/medieval_village_megakit/Window_Wide_Round1",
@@ -4881,7 +5389,8 @@ export const QUAT_MODELS: readonly QuatModelDef[] = [
     "name": "Window Wide Round1",
     "path": "/assets/quaternius/modular_fantasy_village/medieval_village_megakit/Window_Wide_Round1.gltf",
     "format": "gltf",
-    "animated": false
+    "animated": false,
+    "subgroup": "Windows & Shutters"
   },
   {
     "id": "monsters/animated_monster_pack/Bat",

@@ -104,6 +104,7 @@ export default defineConfig(({ mode }) => ({
         enemyCreator:     path.resolve(__dirname, 'enemy-creator.html'),
         propCreator:      path.resolve(__dirname, 'prop-creator.html'),
         tileCreator:      path.resolve(__dirname, 'tile-creator.html'),
+        assetLab:         path.resolve(__dirname, 'asset-lab.html'),
       },
     },
   },
