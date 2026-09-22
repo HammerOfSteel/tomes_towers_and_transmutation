@@ -1371,6 +1371,43 @@ async function main() {
         const clip = loaded.clips.find(c => c.name === clipName);
         if (clip) loaded.mixer.clipAction(clip).play();
       },
+      onPreviewQuatAsset: async (def) => {
+        // Load the Quaternius asset via QuaterniusAssetLoader and place it at
+        // a fixed inspection position distinct from the character preview
+        // slot (-4, 0, 0) so both can be compared side by side.
+        const { loadQuatAsset } = await import('@/assets/QuaterniusAssetLoader');
+        try {
+          const loaded = await loadQuatAsset(def);
+          const prevObj = scene.getObjectByName('__quat_preview_model');
+          if (prevObj) scene.remove(prevObj);
+          (window as unknown as Record<string, unknown>)['__quatPreviewLoaded'] = loaded;
+
+          loaded.scene.name = '__quat_preview_model';
+          const box    = new THREE.Box3().setFromObject(loaded.scene);
+          const height = Math.max(box.max.y - box.min.y, 0.01);
+          const scale  = 2.0 / height;
+          loaded.scene.scale.setScalar(scale);
+          loaded.scene.position.set(-4, 0, 0);
+          scene.add(loaded.scene);
+          const clips = loaded.clips.map(c => c.name);
+          if (loaded.mixer && loaded.clips.length > 0) {
+            const idleClip = loaded.clips.find(c => /idle/i.test(c.name)) ?? loaded.clips[0];
+            loaded.mixer.clipAction(idleClip).play();
+          }
+          return clips;
+        } catch (e) {
+          console.warn('[sandbox] quaternius preview load failed:', e);
+          return [];
+        }
+      },
+      onPlayQuatPreviewAnim: (clipName) => {
+        const loaded = (window as unknown as Record<string, unknown>)['__quatPreviewLoaded'] as import('@/assets/QuaterniusAssetLoader').LoadedQuatAsset | undefined;
+        if (!loaded?.mixer) return;
+        loaded.mixer.stopAllAction();
+        if (!clipName) return;
+        const clip = loaded.clips.find(c => c.name === clipName);
+        if (clip) loaded.mixer.clipAction(clip).play();
+      },
       onSpawnNPC: (dna, hp, damage, count) => {
         if (gameMode !== 'interior' || _sandboxLocation !== 'arena') {
           console.warn('[sandbox] NPC stand-ins can only be spawned in the interior arena');
