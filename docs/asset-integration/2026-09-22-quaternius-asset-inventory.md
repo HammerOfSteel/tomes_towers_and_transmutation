@@ -31,6 +31,128 @@ from ground truth instead of assumptions.
 | `modular_fantasy_village/` Medieval Village MegaKit | 176 | GLTF+bin, FBX, OBJ, .blend | ✅ **true kit-of-parts** (walls/corners/doors/floors/roofs/stairs by material variant) | ❌ static | 54 PNG (full PBR set) | **Best fit for `BuildingGenerator.ts` + per-faction `*Kit.ts` wall/roof/corner module patterns** |
 | `nature_props/` Blends | 63 | **`.blend` only** — no exported FBX/OBJ/GLTF/textures | Unknown (not inspectable without opening in Blender) | Unknown | none exported | ⚠️ **Gap — needs conversion pass**, see Open Questions |
 
+## Import scope — every one of the 15 zips, explicitly
+
+**Revision note (2026-09-22, post-step-2 review):** the table above and the
+per-pack sections below have always covered all 15 zips across all 8 source
+subfolders — nothing was silently dropped from *this document*. What was
+missing was a single explicit "is this actually in the game's import
+pipeline yet?" answer per pack, which is why the step-2 Asset Lab dev view
+(only showing the 10 imported packs) read as if the inventory itself had
+holes. This table is that missing answer, once, in one place:
+
+| # | Source folder | Zip | Imported in step 2? | Manifest pack id | Reason if excluded |
+|---|---|---|---|---|---|
+| 1 | `animals/` | Ultimate Animated Animals | ✅ Yes | `animals/ultimate_animated_animals` | — |
+| 2 | `fantasy_props/` | Fantasy Props MegaKit | ✅ Yes | `fantasy_props/fantasy_props_megakit` | — |
+| 3 | `fantasy_props/` | Ultimate Food Pack | ✅ Yes | `fantasy_props/ultimate_food_pack` | — |
+| 4 | `medieval_village_pack/` | Buildings | ✅ Yes | `medieval_village_pack/buildings` | — |
+| 5 | `medieval_village_pack/` | Props | ✅ Yes | `medieval_village_pack/props` | — |
+| 6 | `modern_type_buildings/` | Buildings Pack (Jan 2019) | ❌ No | — | Modern/contemporary architecture, no fantasy-faction fit (flagged open question #4) |
+| 7 | `modern_type_buildings/` | Ultimate Textured Building Pack (Dec 2019) | ❌ No | — | Same as #6 |
+| 8 | `modular_dungeons/` | OBJ (fantasy dungeon kit-of-parts) | ✅ Yes | `modular_dungeons/obj_kit` | — |
+| 9 | `modular_dungeons/` | Textures.zip | ❌ No | — | Orphaned — only 2 loose texture files, confirmed unrelated to the 92-piece OBJ kit's flat-vertex-colour `.mtl` files (zero `map_*` directives across all 92) |
+| 10 | `modular_dungeons/` | Ultimate Modular Sci-Fi | ❌ No (pending a user decision — see Open Questions #4) | — | Sci-fi/tech themed, tonal mismatch with the fantasy dungeon kit already imported; **not deleted, just not yet imported** |
+| 11 | `modular_fantasy_village/` | Medieval Village MegaKit | ✅ Yes | `modular_fantasy_village/medieval_village_megakit` | — |
+| 12 | `monsters/` | Animated Monster Pack | ✅ Yes | `monsters/animated_monster_pack` | — |
+| 13 | `monsters/` | Bestiary - Dungeon Monsters Kit | ✅ Yes | `monsters/bestiary_dungeon_monsters` | — |
+| 14 | `monsters/` | Cute Animated Monsters | ✅ Yes | `monsters/cute_animated_monsters` | — |
+| 15 | `nature_props/` | Blends.zip | ❌ No | — | `.blend`-only, no exported mesh/texture format — blocked on a Blender export pass (see Open Questions #2, Blender MCP note) |
+
+**10 of 15 zips are imported today (548 models).** The other 5 are not
+missing from this survey — they're documented above and in the per-pack
+detail below — they're just not yet in the game's asset pipeline, each for
+an explicit, named reason, not an oversight.
+
+## Asset Lab categorization hierarchy (Category → Pack → Sub-group)
+
+The step-2 Asset Lab dev view initially presented every model as one flat
+list per top-level category button (e.g. "DUNGEON KIT" → 92 undifferentiated
+items), which made it impossible to tell what kit a piece came from or how
+the kit's pieces relate to each other. This section defines the
+**Category → Pack → Sub-group** hierarchy the dev view should actually use,
+derived from the real per-pack model lists (verified against the generated
+manifest — every model in every pack below is accounted for, no leftovers).
+Small/flat packs (animals, both non-village building packs, all 3 monster
+packs) don't need a sub-group level — they're already a single coherent set.
+
+### `dungeon_kit` category → `modular_dungeons/obj_kit` (92 pieces)
+
+| Sub-group | Count | Pieces |
+|---|---|---|
+| Walls & Windows | 15 | `Wall`, `Wall_Arch_Gothic`, `Wall_Arch_Round(_Broken/_Overgrown/_Overgrown_Broken)`, `Wall_Broken`, `Wall_Double_Broken/Hole`, `Wall_Half/Hole/Overgrown`, `Window_Bars(_Double)(_Overgrown)` |
+| Arches, Doors & Columns | 16 | `Arch_Gothic(_RoundColumn)`, `Arch_Round(_RoundColumn)`, `Column_Round/Round_Short/Square/BridgeSupport`, `Doors_GothicArch/RoundArch(_Covered)`, `Support_Center/Left/Right/Tall` |
+| Floors | 8 | `Floor_Diamond`, `Floor_Hole_Corner/Straight`, `Floor_SquareLarge`, `Floor_Squares`, `Floor_Standard(_Half)`, `Floor_Tree` |
+| Stairs, Bridges & Traversal | 11 | `Bridge_Section`, `Curve_1/2(_Overgrown)`, `Rail_Corner/Divider/Straight`, `Stairs`, `Stairs_2`, `Trapdoor` |
+| Furniture & Containers | 12 | `Barrel`, `Bookcase_Empty/Full`, `Chest(_Gold)`, `Crate`, `Pot1-3(_Broken)` |
+| Nature & Overgrowth Dressing | 12 | `Bush_1x1/2x1/2x2/Large/Round`, `DeadTree_1-3`, `Tree_1-3`, `Grass` |
+| Lighting & Decor | 10 | `Candles_1/2`, `Flag_GothicArch/RoundArch/Wall/Wall2`, `Skull`, `Statue_Fox/Stag`, `Torch` |
+| Traps & Interactive | 2 | `BearTrap_Closed/Open` |
+| Misc / Other | 6 | `Brick`, `Bricks`, `Cart`, `Window_Open(_Double)`, `Character_Animated` (outlier — a rigged demo mesh, not a placeable dungeon piece) |
+
+### `village_kit` category → `modular_fantasy_village/medieval_village_megakit` (176 pieces)
+
+| Sub-group | Count | Pieces (representative) |
+|---|---|---|
+| Roofs | 39 | `Roof_RoundTiles_*` (many size variants), `Roof_Wooden_2x1_*`, `Roof_Front_Brick*`, `Roof_Dormer_RoundTile`, `Roof_Tower_RoundTiles`, `Roof_Log`, `Roof_Support2` |
+| Overhangs & Balconies | 24 | `Overhang_Plaster_*`, `Overhang_UnevenBrick_*`, `Overhang_Side_*`, `Balcony_Cross/Simple_Corner/Straight` |
+| Stairs & Hole Covers | 24 | `Stair_Interior_*`, `Stairs_Exterior_*` (many variants), `HoleCover_*` |
+| Props & Dressing | 23 | `Prop_Brick1-4`, `Prop_Chimney(2)`, `Prop_Vine1/2/4/5/6/9`, `Prop_WoodenFence_*`, `Prop_MetalFence_*`, `Prop_Wagon`, `Prop_Crate`, `Prop_Support`, `Prop_ExteriorBorder_*` |
+| Walls | 20 | `Wall_Plaster_*`, `Wall_UnevenBrick_*`, `Wall_Arch`, `Wall_BottomCover` |
+| Windows & Shutters | 14 | `Window_Shutters_Thin/Wide_Flat/Round_Open/Closed`, `Window_Thin/Wide_Flat/Round1`, `Window_Roof_Thin/Wide` |
+| Doors & Door Frames | 12 | `Door_1/2/4/8_Flat/Round`, `DoorFrame_Flat/Round_Brick/WoodDark` |
+| Floors | 12 | `Floor_Brick`, `Floor_RedBrick`, `Floor_UnevenBrick`, `Floor_WoodDark(_Half1/2/3)(_OverhangCorner)(2)`, `Floor_WoodLight(_OverhangCorner)(2)` |
+| Corners & Edges | 8 | `Corner_Exterior(Wide)_Brick/Wood/TopDown/TopOnly`, `Corner_Interior_Big/Small` |
+
+### `props` category → `fantasy_props/fantasy_props_megakit` (94 pieces)
+
+| Sub-group | Count | Pieces (representative) |
+|---|---|---|
+| Storage & Containers | 18 | `Barrel(_Apples/_Holder)`, `Bucket_Metal/Wooden1`, `Cage_Small`, `Chest_Wood`, `Crate_Metal/Wooden`, `FarmCrate_Apple/Carrot/Empty`, `Pot1(_Lid)`, `PouchLarge`, `Vase2/4`, `VaseRubbleMedium` |
+| Furniture | 14 | `BedTwin1/2`, `Bench`, `Bookcase2`, `Cabinet`, `Chair1`, `NightstandShelf`, `Shelf*`, `Stool`, `TableLarge`, `Workbench(Drawers)` |
+| Books & Scrolls | 14 | `Book5/7`, `BookGroupMedium1-3`, `BookGroupSmall1-3`, `BookSimplifiedSingle`, `BookStack1/2`, `BookStand`, `Scroll1/2` |
+| Tableware & Alchemy | 12 | `Bottle1`, `Chalice`, `Mug`, `Potion1/2/4`, `SmallBottle(s1)`, `TableFork/Knife/Plate/Spoon` |
+| Tools & Weapons | 8 | `Anvil(Log)`, `AxeBronze`, `PickaxeBronze`, `ShieldWooden`, `SwordBronze`, `WeaponStand`, `Whetstone` |
+| Lighting | 8 | `Candle1/2`, `CandleStick(Stand/Triple)`, `Chandelier`, `LanternWall`, `TorchMetal` |
+| Misc Dressing | 8 | `Bag`, `Carrot`, `Cauldron`, `ChainCoil`, `Dummy`, `Rope1-3` |
+| Currency & Valuables | 5 | `Coin`, `CoinPile(2)`, `KeyGold/Metal` |
+| Banners & Cloth | 4 | `Banner1/2(Cloth)` |
+| Market Stalls | 3 | `PegRack`, `StallCartEmpty`, `StallEmpty` |
+
+### `props` category → `fantasy_props/ultimate_food_pack` (103 pieces)
+
+| Sub-group | Count | Pieces (representative) |
+|---|---|---|
+| Prepared Food | 53 | `Burger*`, `Cheeseburger`, `Hotdog(Bun)`, `Pizza*`, `Sushi*`, `Sashimi*`, `Pancake(sStack)`, `Waffle`, `Donut1-4`, `Fries`, `Croissant`, `Bread(Slice)`, `Steak(Burned)`, `Bacon*`, `Corndog`, `ChickenLeg`, `Fish(Bone)`, `Egg*`, `Cupcake`, `IceCream*`, `Popsicle*` |
+| Raw Produce | 21 | `Apple(Green)`, `Avocado(Empty)`, `Banana`, `Broccoli`, `Carrot`, `Coconut(Half)`, `Eggplant`, `Lettuce(Whole)`, `Mushroom(Sliced)`, `Orange`, `PepperGreen/Red`, `Pumpkin`, `Tomato(Slice)`, `Turnip` |
+| Condiments & Drinks | 12 | `Bottle1/2`, `CheeseSingles`, `ChocolateBar`, `KetchupBottle`, `KetchupMustard`, `MayoBottle`, `MustardBottle`, `PeanutButter(2)`, `Soda`, `SoySauce` |
+| Kitchenware | 13 | `Chopsticks`, `CookingPot(Soup)`, `CookingPot2(Soup)`, `Fork`, `FryingPan`, `JarLarge`, `Knife`, `Plate(Square/2)`, `Spoon` |
+| Misc / Other | 4 | `DoubleCheeseburger`, `SausageCooked/Raw`, `Tentacle` |
+
+### `village` category → `medieval_village_pack/props` (34 pieces)
+
+| Sub-group | Count | Pieces |
+|---|---|---|
+| Street Furniture | 8 | `Bench1/2`, `Fence`, `Gazebo`, `PathSquare/Straight`, `Stairs`, `Well` |
+| Storage & Carts | 8 | `Bag(Open)`, `Bags`, `Barrel`, `Cart`, `Crate`, `Package1/2` |
+| Building Facade Parts | 6 | `DoorRound/Straight`, `Window1-4` |
+| Natural Dressing | 4 | `Hay`, `Rock1-3` |
+| Fire & Smoke | 3 | `Bonfire(Lit)`, `Smoke` |
+| Market | 2 | `MarketStand1/2` |
+| Misc / Other | 3 | `Bell`, `Cauldron`, `SawmillSaw` |
+
+### Packs left flat (no sub-group level needed)
+
+- `animals/ultimate_animated_animals` (12) — one coherent set of animals.
+- `medieval_village_pack/buildings` (10) — one whole building per item, already atomic.
+- `monsters/animated_monster_pack` (4), `monsters/bestiary_dungeon_monsters` (2),
+  `monsters/cute_animated_monsters` (21) — each pack is small enough to browse flat.
+
+This taxonomy (Category button → Pack section → Sub-group heading → items)
+is the structure step 2's revised Asset Lab UI must use; it is not
+implemented in code yet as of this doc revision — see the design doc's
+"Implementation notes" for the follow-up work.
+
 ## Per-pack detail
 
 ### `animals/` — Ultimate Animated Animals (July 2021)
