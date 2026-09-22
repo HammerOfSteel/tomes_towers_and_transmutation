@@ -17,7 +17,7 @@
 export const DEV_ROOM_LAUNCH_KEY = 'ttt_dev_room_launch';
 export const DEV_ROOM_LAUNCH_PARAM = 'devroom';
 
-export type DevRoomId = 'water-lab' | 'settlement-lab' | 'overworld-lab';
+export type DevRoomId = 'water-lab' | 'settlement-lab' | 'overworld-lab' | 'asset-lab';
 
 /** Carried-over settlement parameters for a "Play in 3D" settlement-lab
  * launch from Overworld Studio's Settlement tab, so the lab opens showing
@@ -102,7 +102,7 @@ export function buildOverworldLabLaunchUrl(page: string, params: OverworldLabLau
 /** Reads a pending dev-room id from the URL's query param (primary) or
  * localStorage (legacy fallback), returning null if neither is set. */
 export function readPendingDevRoom(): DevRoomId | null {
-  const validIds: DevRoomId[] = ['water-lab', 'settlement-lab', 'overworld-lab'];
+  const validIds: DevRoomId[] = ['water-lab', 'settlement-lab', 'overworld-lab', 'asset-lab'];
   const fromQuery = new URLSearchParams(window.location.search).get(DEV_ROOM_LAUNCH_PARAM);
   if (validIds.includes(fromQuery as DevRoomId)) return fromQuery as DevRoomId;
   const fromStorage = localStorage.getItem(DEV_ROOM_LAUNCH_KEY);

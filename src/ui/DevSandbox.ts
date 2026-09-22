@@ -294,7 +294,7 @@ const DS_CSS = `
 
 // ── DevSandbox class ──────────────────────────────────────────────────────────
 
-type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'npcgen' | 'wave' | 'assets' | 'quaternius' | 'cheats';
+export type TabId = 'spells' | 'enemies' | 'procgen' | 'creature' | 'npcgen' | 'wave' | 'assets' | 'quaternius' | 'cheats';
 
 export class DevSandbox {
   private readonly _panel: HTMLElement;
@@ -387,6 +387,13 @@ export class DevSandbox {
     this._npcLabScene = null;
     this._npcLabCamera = null;
     this._panel.remove();
+  }
+
+  /** Programmatically jump straight to a tab (e.g. the Overworld Studio
+   *  "🗿 Asset Lab" dev-room handoff switching to 'quaternius' right after
+   *  boot), bypassing the tab-bar click that normally drives this. */
+  switchTab(id: TabId): void {
+    this._switchTab(id);
   }
 
   /** Update the location strip in the header. Pass 'arena', a room ID, or 'lab'. */

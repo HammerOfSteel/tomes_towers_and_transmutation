@@ -1098,6 +1098,18 @@ async function main() {
     _sandboxUi?.setLocation('lab');
   }
 
+  /** Enters the Dev Sandbox's default arena and jumps straight to the
+   *  "🗿 Asset Lab" tab (Quaternius asset browser) — used both as the Dev
+   *  Sandbox's own Asset Lab tab (reachable via the tab bar once inside)
+   *  and by the Overworld Studio "🗿 Asset Lab" dev-room quick-launch
+   *  button. Unlike enterWaterLab()/enterSettlementLab(), this needs no
+   *  bespoke scene or gameMode — it's pure QA browsing UI (see
+   *  docs/asset-integration/2026-09-22-import-system-and-asset-lab-design.md),
+   *  so the plain sandbox arena from _startDevPanelInGame() is enough. */
+  function enterAssetLab(): void {
+    _sandboxUi?.switchTab('quaternius');
+  }
+
   /** Jump straight into the live exterior overworld using a Studio-Realm-
    *  tab-carried-over WorldGenConfig override (Overworld Lab "Play in 3D"),
    *  instead of the player's own saved world settings. Never persists the
@@ -3587,6 +3599,22 @@ async function main() {
         roughness: olParams.roughness,
         settlementCount: olParams.settlementCount,
       } : { seed: Math.floor(Math.random() * 0xFFFF_FFFF) });
+      (window as any).__tttDevRoomStage = 'booted';
+      (window as any).__tttDevRoomBooted = true;
+      clearPendingDevRoom();
+    } catch (e) {
+      (window as any).__tttDevRoomStage = 'error';
+      (window as any).__tttDevRoomError = String(e);
+      console.error('[dev-room] boot failed:', e);
+    }
+  } else if (_pendingDevRoom === 'asset-lab') {
+    try {
+      (window as any).__tttDevRoomStage = 'detected';
+      mainMenu.hide();
+      (window as any).__tttDevRoomStage = 'starting-game';
+      _startDevPanelInGame();
+      (window as any).__tttDevRoomStage = 'entering-asset-lab';
+      enterAssetLab();
       (window as any).__tttDevRoomStage = 'booted';
       (window as any).__tttDevRoomBooted = true;
       clearPendingDevRoom();

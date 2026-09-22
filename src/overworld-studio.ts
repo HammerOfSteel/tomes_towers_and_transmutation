@@ -4475,6 +4475,13 @@ document.getElementById('btn-devroom-water-lab')?.addEventListener('click', () =
   window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
 });
 
+document.getElementById('btn-devroom-asset-lab')?.addEventListener('click', () => {
+  const room: DevRoomId = 'asset-lab';
+  localStorage.setItem(DEV_ROOM_LAUNCH_KEY, room);
+  _showToast('✓ Opening Asset Lab');
+  window.open(buildDevRoomLaunchUrl('/index.html', room), '_blank');
+});
+
 // "Play in 3D" — launches the Settlement Lab pre-loaded with whatever
 // settlement is currently configured/generated in this Settlement tab
 // (seed/type/faction/layout), rather than the Lab's own hardcoded default.
