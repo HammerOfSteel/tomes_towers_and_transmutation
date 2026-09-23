@@ -18,8 +18,22 @@ import {
 } from '@/world/WorldGenConfig';
 import { CHAR_PACKS } from '@/characters/charManifest';
 import type { SpeciesId } from '@/world/StoryQuestLine';
+import {
+  type AssetCategory,
+  loadExternalAssetConfig,
+  saveExternalAssetConfig,
+} from '@/world/ExternalAssetConfig';
 
 const LS_CHARACTER_SPECIES = 'ttt_character_species';
+
+const EXTERNAL_ASSET_CATEGORIES: readonly { id: AssetCategory; label: string }[] = [
+  { id: 'monsters',             label: 'Monsters' },
+  { id: 'animals',              label: 'Animals' },
+  { id: 'nature-props',         label: 'Nature Props' },
+  { id: 'settlement-buildings', label: 'Settlement Buildings' },
+  { id: 'building-interiors',   label: 'Building Interiors' },
+  { id: 'dungeons-towers',      label: 'Dungeons / Towers' },
+];
 
 // ── Image pool ────────────────────────────────────────────────────────────
 
@@ -671,6 +685,7 @@ export class MainMenu {
     const musicVis = localStorage.getItem(LS_MUSIC_VISIBLE) !== 'false';
     const devOn    = localStorage.getItem('ttt_dev_mode') === 'true';
     const wg       = loadWorldGenConfig();
+    const extCfg   = loadExternalAssetConfig();
 
     card.insertAdjacentHTML('beforeend', `
       <div class="mm-setting-row">
@@ -806,6 +821,30 @@ export class MainMenu {
             </label>`).join('')}
         </div>
       </div>
+      ${devOn ? `
+      <div class="mm-setting-divider"></div>
+      <div class="mm-setting-row mm-setting-row--section-hdr">
+        <span class="mm-setting-section-title">🧩 External Assets (Dev)</span>
+      </div>
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">
+          All Categories
+          <span class="mm-setting-dev-hint">Master toggle — sets every category below at once</span>
+        </label>
+        <label class="mm-toggle">
+          <input type="checkbox" id="mm-ext-assets-all" ${Object.values(extCfg.enabled).every(v => v) ? 'checked' : ''}>
+          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>
+      ${EXTERNAL_ASSET_CATEGORIES.map(c => `
+      <div class="mm-setting-row">
+        <label class="mm-setting-label">${c.label}</label>
+        <label class="mm-toggle">
+          <input type="checkbox" class="mm-ext-assets-cb" data-cat="${c.id}" ${extCfg.enabled[c.id] ? 'checked' : ''}>
+          <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
+        </label>
+      </div>`).join('')}
+      ` : ''}
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
@@ -922,6 +961,27 @@ export class MainMenu {
           .filter(c => c.checked).map(c => c.value);
         saveWg();
       });
+    });
+
+    // ── External Assets (Dev-Mode-gated category toggles) ────────────────────
+    const extAllCb = card.querySelector<HTMLInputElement>('#mm-ext-assets-all');
+    const extCatCbs = card.querySelectorAll<HTMLInputElement>('.mm-ext-assets-cb');
+
+    const saveExtCfg = (): void => {
+      const enabled = { ...extCfg.enabled };
+      extCatCbs.forEach(cb => {
+        enabled[cb.dataset.cat as AssetCategory] = cb.checked;
+      });
+      extCfg.enabled = enabled;
+      saveExternalAssetConfig(extCfg);
+      if (extAllCb) extAllCb.checked = Object.values(enabled).every(v => v);
+    };
+
+    extCatCbs.forEach(cb => cb.addEventListener('change', saveExtCfg));
+
+    extAllCb?.addEventListener('change', () => {
+      extCatCbs.forEach(cb => { cb.checked = extAllCb.checked; });
+      saveExtCfg();
     });
 
     const shareBtn = card.querySelector<HTMLButtonElement>('#mm-wg-share')!;
