@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
 import { QUAT_MODELS } from '@/assets/quaterniusManifest';
+import { saveExternalAssetConfig, DEFAULT_EXTERNAL_ASSET_CONFIG } from '@/world/ExternalAssetConfig';
 import {
   AMBIENT_SPECIES, AMBIENT_BIOME_RULES,
   WANDER_RADIUS, FLEE_TRIGGER_RADIUS, FLEE_EXIT_RADIUS,
@@ -10,6 +11,16 @@ import {
   selectAmbientSpawnPoints, tickAmbientBehavior, type AmbientBehaviorState,
   AmbientCreature, computeAmbientLOD, LOD_FAR_DISTANCE_WU,
 } from '@/world/AmbientWildlife';
+
+vi.mock('@/assets/QuaterniusAssetLoader', () => ({
+  loadQuatAsset: vi.fn(async () => {
+    const scene = new THREE.Group();
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+    return { scene, mixer: null, clips: [], format: 'gltf' };
+  }),
+}));
+
+import { loadQuatAsset } from '@/assets/QuaterniusAssetLoader';
 
 // Default WorldGrid (all elevation 0, biome grassland, waterDepth 0) used by every
 // AmbientCreature.update() call below — getTerrainHeightAt() needs a grid to query.
@@ -443,6 +454,41 @@ describe('AmbientCreature — distance LOD', () => {
     // Same assertion style as the existing "moves toward the wander
     // target" test — some movement should occur over 10 simulated seconds.
     expect(creature.root.position.distanceTo(startPos)).toBeGreaterThanOrEqual(0);
+    creature.dispose();
+  });
+});
+
+describe('AmbientCreature — real-asset swap-in', () => {
+  const spawnPos = new THREE.Vector3(0, 0, 0);
+  const realAsset = { quatModelId: 'animals/ultimate_animated_animals/Fox', targetHeight: 0.6 };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('does not attempt a real-asset load when the animals category is OFF', async () => {
+    saveExternalAssetConfig({ enabled: { ...DEFAULT_EXTERNAL_ASSET_CONFIG.enabled, animals: false } });
+    const creature = new AmbientCreature('rabbit', spawnPos, 1, realAsset);
+    await Promise.resolve(); // flush any accidental microtask
+    expect(loadQuatAsset).not.toHaveBeenCalled();
+    creature.dispose();
+  });
+
+  it('does not attempt a real-asset load when no realAsset ref is provided', async () => {
+    saveExternalAssetConfig({ enabled: { ...DEFAULT_EXTERNAL_ASSET_CONFIG.enabled, animals: true } });
+    const creature = new AmbientCreature('rabbit', spawnPos, 1);
+    await Promise.resolve();
+    expect(loadQuatAsset).not.toHaveBeenCalled();
+    creature.dispose();
+  });
+
+  it('loads the real asset and swaps it in when the category is ON and a ref is provided', async () => {
+    saveExternalAssetConfig({ enabled: { ...DEFAULT_EXTERNAL_ASSET_CONFIG.enabled, animals: true } });
+    const creature = new AmbientCreature('rabbit', spawnPos, 1, realAsset);
+    // Real-asset load is async — wait for the microtask queue to drain.
+    await new Promise(r => setTimeout(r, 0));
+    expect(loadQuatAsset).toHaveBeenCalledTimes(1);
     creature.dispose();
   });
 });

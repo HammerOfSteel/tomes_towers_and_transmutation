@@ -17,6 +17,9 @@ import { isScatterAllowed } from '@/world/ScatterRules';
 import type { WorldGrid, BiomeId } from '@/world/WorldGrid';
 import { getTerrainHeightAt } from '@/world/TerrainGeometryBuilder';
 import { getWaterInfoAt } from '@/world/WaterDetection';
+import { isCategoryEnabled } from '@/world/ExternalAssetConfig';
+import { loadQuatAsset } from '@/assets/QuaterniusAssetLoader';
+import { QUAT_MODELS } from '@/assets/quaterniusManifest';
 
 // ── Species ───────────────────────────────────────────────────────────────
 
@@ -279,8 +282,11 @@ export class AmbientCreature {
   private readonly _spawnZ: number;
   private _behavior: AmbientBehaviorState;
   private _animTime = 0;
+  private _realMixer: THREE.AnimationMixer | null = null;
+  private _usingRealAsset = false;
+  private _disposed = false;
 
-  constructor(species: AmbientSpecies, spawnPosition: THREE.Vector3, seed: number) {
+  constructor(species: AmbientSpecies, spawnPosition: THREE.Vector3, seed: number, realAsset?: AmbientRealAssetRef) {
     const def = AMBIENT_SPECIES[species];
     this._rig = buildCreature(def.dna);
     this._rig.root.scale.setScalar(def.dna.proportions.global);
@@ -303,6 +309,50 @@ export class AmbientCreature {
       state: 'idle', targetX: spawnPosition.x, targetZ: spawnPosition.z,
       dwellTimer: IDLE_MIN_DWELL + this._rand() * (IDLE_MAX_DWELL - IDLE_MIN_DWELL),
     };
+
+    if (realAsset && isCategoryEnabled('animals')) {
+      void this._loadRealAsset(realAsset);
+    }
+  }
+
+  /**
+   * Loads and swaps in a real Quaternius asset in place of the procedural rig, once the
+   * async load resolves. Runs fire-and-forget from the constructor — until it resolves the
+   * creature renders/animates as the procedural rig exactly as before (no visual gap). If
+   * `dispose()` is called before the load resolves, the loaded scene is discarded unused.
+   */
+  private async _loadRealAsset(ref: AmbientRealAssetRef): Promise<void> {
+    const quatDef = QUAT_MODELS.find(m => m.id === ref.quatModelId);
+    if (!quatDef) return;
+
+    let loaded;
+    try {
+      loaded = await loadQuatAsset(quatDef);
+    } catch {
+      return; // Load failure — keep the procedural rig, fail silently (cosmetic-only feature).
+    }
+    if (this._disposed) return;
+
+    const group = loaded.scene;
+    const box = new THREE.Box3().setFromObject(group);
+    const sz = new THREE.Vector3();
+    box.getSize(sz);
+    const rawH = sz.y;
+    const scale = rawH > 0.01 ? ref.targetHeight / rawH : 1;
+    group.scale.setScalar(scale);
+
+    const centredBox = new THREE.Box3().setFromObject(group);
+    group.position.y = -centredBox.min.y;
+
+    if (loaded.mixer && loaded.clips.length > 0) {
+      this._realMixer = loaded.mixer;
+      const idleClip = loaded.clips.find(c => /idle/i.test(c.name)) ?? loaded.clips[0];
+      this._realMixer.clipAction(idleClip).setLoop(THREE.LoopRepeat, Infinity).play();
+    }
+
+    this._rig.root.visible = false;
+    this.root.add(group);
+    this._usingRealAsset = true;
   }
 
   update(wg: WorldGrid, playerPos: THREE.Vector3, dt: number): void {
@@ -360,14 +410,19 @@ export class AmbientCreature {
       : getTerrainHeightAt(wg, this.root.position.x, this.root.position.z);
 
     this._animTime += dt;
-    animateCreature(this._rig, {
-      state: this._behavior.state === 'idle' ? 'idle' : 'walk',
-      time: this._animTime,
-      velocity: speed,
-    });
+    if (this._usingRealAsset && this._realMixer) {
+      this._realMixer.update(dt);
+    } else {
+      animateCreature(this._rig, {
+        state: this._behavior.state === 'idle' ? 'idle' : 'walk',
+        time: this._animTime,
+        velocity: speed,
+      });
+    }
   }
 
   dispose(): void {
+    this._disposed = true;
     this._rig.dispose();
   }
 }
