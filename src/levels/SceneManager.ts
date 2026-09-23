@@ -3,9 +3,10 @@ import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerController } from '@/player/PlayerController';
 import { SlimeEnemy } from '@/enemy/SlimeEnemy';
 import {
-  loadEnemyById, getEnemyModelDef, disposeEnemyRig,
+  getEnemyModelDef, disposeEnemyRig,
   type EnemyRig,
 } from '@/enemy/EnemyLoader';
+import { resolveEnemyRig, getQuatEnemyManifestEntry } from '@/enemy/QuatEnemyAdapter';
 import { renderBlueprint, type RenderedRoom } from './BlueprintRenderer';
 import { validateBlueprint, doorSpawnPosition, isInsideTrigger, type Blueprint } from './blueprint';
 import type { WorldInteractable } from '@/interactables/InteractableSystem';
@@ -832,11 +833,15 @@ export class SceneManager {
         this.scene.add(enemy.group);
         this.activeEnemies.push(enemy);
 
-        // Asynchronously swap the visual to the real enemy model (EnemyLoader).
-        // Falls back gracefully to the SlimeEnemy sphere if the model isn't found.
-        const modelDef = getEnemyModelDef(group.enemyId);
-        if (modelDef) {
-          loadEnemyById(group.enemyId, spawnPos).then(rig => {
+        // Asynchronously swap the visual to the real enemy model (EnemyLoader,
+        // or a real Quaternius asset via resolveEnemyRig when the "monsters"
+        // External Assets category is enabled — see QuatEnemyAdapter.ts).
+        // Falls back gracefully to the SlimeEnemy sphere if no model is found
+        // in either manifest.
+        const modelDef  = getEnemyModelDef(group.enemyId);
+        const quatEntry = getQuatEnemyManifestEntry(group.enemyId);
+        if (modelDef || quatEntry) {
+          resolveEnemyRig(group.enemyId, spawnPos).then(rig => {
             // Hide the SlimeEnemy's procedural sphere children.
             enemy.group.traverse(child => {
               if (child !== enemy.group && (child as THREE.Mesh).isMesh) {
