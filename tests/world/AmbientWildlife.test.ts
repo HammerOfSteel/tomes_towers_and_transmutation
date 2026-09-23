@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { WorldGrid, type BiomeId } from '@/world/WorldGrid';
+import { QUAT_MODELS } from '@/assets/quaterniusManifest';
 import {
   AMBIENT_SPECIES, AMBIENT_BIOME_RULES,
   WANDER_RADIUS, FLEE_TRIGGER_RADIUS, FLEE_EXIT_RADIUS,
@@ -52,11 +53,7 @@ describe('AMBIENT_BIOME_RULES', () => {
   });
 
   it('has no rule for biomes with no assigned wildlife this batch', () => {
-    expect(AMBIENT_BIOME_RULES.savanna).toBeUndefined();
-    expect(AMBIENT_BIOME_RULES.tundra).toBeUndefined();
-    expect(AMBIENT_BIOME_RULES.desert).toBeUndefined();
     expect(AMBIENT_BIOME_RULES.beach).toBeUndefined();
-    expect(AMBIENT_BIOME_RULES.snow).toBeUndefined();
     expect(AMBIENT_BIOME_RULES.ocean).toBeUndefined();
     expect(AMBIENT_BIOME_RULES.deep_ocean).toBeUndefined();
   });
@@ -66,6 +63,44 @@ describe('AMBIENT_BIOME_RULES', () => {
     expect(AMBIENT_BIOME_RULES.grassland?.keepProbability).toBe(1.0);
     expect(AMBIENT_BIOME_RULES.taiga?.keepProbability).toBeCloseTo(0.327, 2);
     expect(AMBIENT_BIOME_RULES.mountain?.keepProbability).toBeCloseTo(0.529, 2);
+  });
+});
+
+describe('AMBIENT_BIOME_RULES — real-asset overrides', () => {
+  it('every realAsset.quatModelId resolves to a real QUAT_MODELS entry', () => {
+    const missing: string[] = [];
+    for (const [biome, rule] of Object.entries(AMBIENT_BIOME_RULES)) {
+      if (rule?.realAsset && !QUAT_MODELS.some(m => m.id === rule.realAsset!.quatModelId)) {
+        missing.push(`${biome}: ${rule.realAsset.quatModelId}`);
+      }
+    }
+    expect(missing, `Missing QUAT_MODELS refs:\n${missing.join('\n')}`).toHaveLength(0);
+  });
+
+  it('adds new tundra/snow/savanna/desert biome rules', () => {
+    expect(AMBIENT_BIOME_RULES.tundra).toBeDefined();
+    expect(AMBIENT_BIOME_RULES.snow).toBeDefined();
+    expect(AMBIENT_BIOME_RULES.savanna).toBeDefined();
+    expect(AMBIENT_BIOME_RULES.desert).toBeDefined();
+  });
+
+  it('every biome rule still has a procedural species fallback (species is mandatory)', () => {
+    for (const rule of Object.values(AMBIENT_BIOME_RULES)) {
+      expect(['rabbit', 'goat']).toContain(rule!.species);
+    }
+  });
+});
+
+describe('selectAmbientSpawnPoints — carries realAsset through', () => {
+  it('spawn points for a biome with a realAsset rule include it', () => {
+    const wg = makeAllBiomeGrid(100, 'forest');
+    const points = selectAmbientSpawnPoints(wg, -50, -50, 100, 1);
+    const withReal = points.filter(p => p.realAsset);
+    expect(withReal.length).toBeGreaterThan(0);
+    for (const p of withReal) {
+      expect(p.realAsset!.quatModelId).toMatch(/^animals\//);
+      expect(p.realAsset!.targetHeight).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -110,8 +145,8 @@ describe('selectAmbientSpawnPoints', () => {
     for (const p of points) expect(p.species).toBe('goat');
   });
 
-  it('returns 0 spawn points on a biome with no ambient-wildlife rule (desert)', () => {
-    const wg = makeAllBiomeGrid(100, 'desert');
+  it('returns 0 spawn points on a biome with no ambient-wildlife rule (ocean)', () => {
+    const wg = makeAllBiomeGrid(100, 'ocean');
     const points = selectAmbientSpawnPoints(wg, -50, -50, 100, 1);
     expect(points.length).toBe(0);
   });

@@ -62,18 +62,42 @@ export const AMBIENT_SPECIES: Record<AmbientSpecies, AmbientSpeciesDef> = {
 
 // ── Per-biome density rules ─────────────────────────────────────────────────
 
+export interface AmbientRealAssetRef {
+  /** QuatModelDef.id in quaterniusManifest.ts. */
+  quatModelId:  string;
+  /** World-unit height the loaded GLB is normalised to (mirrors EnemyLoader's TARGET_HEIGHT pattern). */
+  targetHeight: number;
+}
+
 export interface AmbientBiomeRule {
+  /** Procedural fallback — always required, used when the 'animals' External
+   *  Assets category is off, or when realAsset is undefined for this biome. */
   species: AmbientSpecies;
   /** Relative spawn density vs. AMBIENT_BASE_SPACING's single Poisson-disk pass — see this
    *  plan's Global Constraints for the (spacing_base/spacing_desired)² derivation. */
   keepProbability: number;
+  /** Real-asset override checked when the 'animals' category is enabled
+   *  (see docs/asset-integration/2026-09-23-wiring-design-spec.md §4.1). */
+  realAsset?: AmbientRealAssetRef;
 }
 
 export const AMBIENT_BIOME_RULES: Partial<Record<BiomeId, AmbientBiomeRule>> = {
-  forest:    { species: 'rabbit', keepProbability: 1.0 },
-  grassland: { species: 'rabbit', keepProbability: 1.0 },
-  taiga:     { species: 'rabbit', keepProbability: 0.327 },
-  mountain:  { species: 'goat',   keepProbability: 0.529 },
+  forest:    { species: 'rabbit', keepProbability: 1.0,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Fox',        targetHeight: 0.6 } },
+  grassland: { species: 'rabbit', keepProbability: 1.0,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Deer',       targetHeight: 1.1 } },
+  taiga:     { species: 'rabbit', keepProbability: 0.327,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Wolf',       targetHeight: 0.9 } },
+  mountain:  { species: 'goat',   keepProbability: 0.529,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Stag',       targetHeight: 1.3 } },
+  tundra:    { species: 'rabbit', keepProbability: 0.35,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Husky',      targetHeight: 0.7 } },
+  snow:      { species: 'rabbit', keepProbability: 0.30,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Horse_White',targetHeight: 1.5 } },
+  savanna:   { species: 'rabbit', keepProbability: 0.40,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Bull',       targetHeight: 1.4 } },
+  desert:    { species: 'rabbit', keepProbability: 0.25,
+               realAsset: { quatModelId: 'animals/ultimate_animated_animals/Donkey',     targetHeight: 1.2 } },
 };
 
 // ── Tunables (see design spec §3/§4) ────────────────────────────────────────
@@ -94,6 +118,7 @@ export interface AmbientSpawnPoint {
   x: number;
   z: number;
   species: AmbientSpecies;
+  realAsset?: AmbientRealAssetRef;
 }
 
 /**
@@ -131,7 +156,7 @@ export function selectAmbientSpawnPoints(
     if (!isScatterAllowed(cell, 'ambient')) continue;
     if (rand() > rule.keepProbability) continue;
 
-    points.push({ x, z, species: rule.species });
+    points.push({ x, z, species: rule.species, realAsset: rule.realAsset });
   }
   return points;
 }
