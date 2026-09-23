@@ -88,36 +88,17 @@ def _find_base_color_source(node, _visited=None):
     return None, None
 
 
-# Last-resort fallback for materials whose actual colour/texture can't be
-# recovered at all — confirmed case: nature_props' .blend files reference
-# external texture PNGs (`//../Textures/*.png`) that are missing from the
-# source zip and the Downloads folder entirely (not merely un-packed —
-# genuinely absent from every asset the user has provided). Rather than
-# leave these as an untouched/colourless "shadow" render, infer a plausible
-# flat colour from the material's own name. This is a documented, visible
-# placeholder — NOT a claim of importing the real authored colour — see
-# the "nature_props textures missing" open question in the inventory doc.
-_NAME_COLOUR_FALLBACKS = [
-    # 'flower'/'petal' MUST be checked before the foliage group below — they
-    # used to be lumped into the same green bucket as leaves, which made
-    # every flower/petal render as plain leaf-green (a real bug, found via
-    # user playtest, not a texture-data limitation). Flowers are obviously
-    # not green in reality; a warm dusty-pink placeholder reads as "a
-    # flower" at a glance instead of "another leaf", even though the true
-    # per-species colour is unrecoverable without source textures.
-    (('flower', 'petal'), (0.80, 0.45, 0.55, 1.0)),
-    (('leaf', 'leaves', 'grass', 'plant', 'bush'), (0.25, 0.45, 0.15, 1.0)),
-    (('bark', 'trunk', 'branch', 'wood', 'stick'), (0.30, 0.20, 0.12, 1.0)),
-    (('rock', 'stone', 'boulder'), (0.45, 0.45, 0.45, 1.0)),
-]
-
-
-def _name_based_fallback_colour(name):
-    lowered = name.lower()
-    for keywords, rgba in _NAME_COLOUR_FALLBACKS:
-        if any(k in lowered for k in keywords):
-            return rgba
-    return None
+# Policy (per explicit user directive): NEVER invent a replacement colour
+# for a material whose real texture/colour data can't be recovered from
+# supplied source files. An earlier version of this script guessed a flat
+# colour from the material's *name* (e.g. "flower" -> pink) when the real
+# texture was missing — that was rejected by the user as fabrication, not a
+# fix (first pink was wrong, guessing green before that was also wrong).
+# When nothing real is recoverable, `_fix_material` now leaves the material
+# untouched rather than synthesising an appearance for it. If a pack is
+# missing real texture data, the correct next step is to locate/obtain the
+# actual supplied texture (e.g. via a sibling Textures.zip/folder, or the
+# live Blender MCP connection to inspect packed data), not to guess a colour.
 
 
 def _fix_material(mat):
@@ -155,8 +136,9 @@ def _fix_material(mat):
 
         texture_src_socket, colour = _find_base_color_source(src_node)
         if texture_src_socket is None and colour is None:
-            colour = _name_based_fallback_colour(mat.name)
-        if texture_src_socket is None and colour is None:
+            # No real texture or authored flat colour recoverable from the
+            # supplied source file — leave this material's Surface wiring
+            # untouched rather than invent an appearance for it.
             continue
 
         if principled is None:
