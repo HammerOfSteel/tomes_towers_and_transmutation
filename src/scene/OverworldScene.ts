@@ -1459,6 +1459,7 @@ export class OverworldScene {
       const creature = new AmbientCreature(
         sp.species, spawnPos,
         (this._seed ^ 0x1B7A_9E33) ^ Math.round(sp.x * 131) ^ Math.round(sp.z * 977),
+        sp.realAsset,
       );
       if (this._isInScene) this.scene.add(creature.root);
       ambientCreatures.push(creature);
