@@ -17,11 +17,27 @@ filesystem, outside this repo — not committed, not LFS-tracked). Surveyed via
 > This document has been corrected throughout to remove that framing. It
 > also documents two real, unavoidable data gaps found while fixing this
 > (not exclusions — everything that exists in the source data is imported):
-> `nature_props/` ships no texture files at all (not even in the source
-> Downloads folder), and `monsters/Bestiary - Dungeon Monsters` ships zero
-> animation keyframe data in either of its export formats. Both are
-> disclosed in detail in their sections below and in
-> `scripts/extract-quaternius-assets.mjs`'s header comment.
+> `nature_props/` genuinely has no diffuse texture data locally (confirmed
+> via live Blender MCP inspection of all 62 source `.blend` files, not just
+> assumption — see the per-pack section below; **no colour is invented for
+> this gap**, per explicit user directive), and
+> `monsters/Bestiary - Dungeon Monsters` ships zero animation keyframe data
+> in either of its export formats. Both are disclosed in detail in their
+> sections below and in `scripts/extract-quaternius-assets.mjs`'s header
+> comment.
+>
+> **Second correction (post-Sub-task-1 playtest, 2026-09-23).** The original
+> version of this document also wrongly concluded that
+> `modular_dungeons/Textures.zip` was orphaned with nothing to attach it to.
+> It was not — 13 of the 92 dungeon-kit pieces (the "Overgrown" family) use
+> materials that were always meant to carry these exact textures; an OBJ
+> exporter bug had silently dropped the texture reference. This has been
+> found and fixed (real textures wired in, not a guess) — see the
+> `modular_dungeons/` section and open question #3 below for the full
+> account. Separately, an earlier fix attempt for `nature_props/` used a
+> name-based colour-guessing heuristic when real textures were missing;
+> this was rejected by the user as fabrication and has been removed
+> entirely — see open question #2.
 
 This is the first deliverable of the 3D Asset Integration initiative (see
 [`README.md`](./README.md)). It does **not** decide implementation — it
@@ -43,10 +59,10 @@ from ground truth instead of assumptions.
 | `medieval_village_pack/` Props | 34 | FBX, OBJ, .blend | Monolithic per prop | ❌ static | none listed separately | Settlement/street dressing |
 | `modern_type_buildings/` City Pack | 9 | GLB (Blender material-fix export), FBX, OBJ, .blend | Monolithic | ❌ static | Real image textures preserved via material-fix pipeline | Imported (see per-pack section) — building swap for modern-styled territory, or dressing |
 | `modern_type_buildings/` Interior Pack | 102 | GLB (Blender material-fix export), FBX, OBJ, .blend | ✅ kit-of-parts (with `_Base`/`_Mat` split variants) | ❌ static | Real image textures preserved via material-fix pipeline | Imported — building interiors, tower/indoor dressing |
-| `modular_dungeons/` OBJ (Bestiary-style dungeon kit) | 92 | OBJ+MTL | ✅ **true kit-of-parts** (walls, arches, floors, columns, props) | ❌ static (one `Character_Animated.obj` outlier — likely a rig demo, not a placeable) | Flat vertex-colour materials, no texture maps at all (confirmed: zero `map_*` directives across all 92 `.mtl` files) — genuinely dark stone/dungeon palette, not a rendering bug | **Best fit for `DungeonGenerator.ts`/`BlueprintRenderer.ts` wall/floor dressing** |
+| `modular_dungeons/` OBJ (Bestiary-style dungeon kit) | 92 | OBJ+MTL | ✅ **true kit-of-parts** (walls, arches, floors, columns, props) | ❌ static (one `Character_Animated.obj` outlier — likely a rig demo, not a placeable) | Most materials are genuinely flat vertex-colour (no map, real authored dark stone/dungeon palette). **Correction (post-Sub-task-1 playtest)**: a 13-piece "Overgrown" sub-family (walls/curves/windows with vine dressing, plus bushes/trees) uses 4 materials (`Green`/`Leaf_Texture`/`Texture_Leaves`/`Bark`) that the Blender OBJ exporter silently dropped the `map_Kd` directive for, leaving a flat mid-grey placeholder (`Kd 0.64 0.64 0.64`) instead of the real texture. The real texture files (`Leaf_Texture.png`, `Bark_Texture.jpg`) were found unextracted in the sibling `modular_dungeons/Textures.zip` and are now wired in — see the per-pack section below. | **Best fit for `DungeonGenerator.ts`/`BlueprintRenderer.ts` wall/floor dressing** |
 | `modular_dungeons/` Ultimate Modular Sci-Fi | 91 | GLB (Blender material-fix export), FBX, OBJ, .blend | ✅ true kit-of-parts | ❌ static | Real image textures preserved via material-fix pipeline | Imported — sci-fi/tech dungeon or tower variant |
 | `modular_fantasy_village/` Medieval Village MegaKit | 176 | GLTF+bin, FBX, OBJ, .blend | ✅ **true kit-of-parts** (walls/corners/doors/floors/roofs/stairs by material variant) | ❌ static | 54 PNG (full PBR set) | **Best fit for `BuildingGenerator.ts` + per-faction `*Kit.ts` wall/roof/corner module patterns** |
-| `nature_props/` Blends | 63 | GLB (Blender material-fix export), `.blend` only in source | Monolithic per prop | ❌ static | **Genuine data gap**: `.blend` files reference external texture PNGs that don't exist anywhere in the provided source data; materials use a documented name-based colour fallback instead (not real recovered textures) | Imported — trees/rocks/flowers/bushes for `NatureAssetBuilder.ts` placement |
+| `nature_props/` Blends | 63 | GLB (Blender material-fix export), `.blend` only in source | Monolithic per prop | ❌ static | **Genuine, confirmed-unrecoverable data gap** (see per-pack section below): the actual diffuse texture files (`Flowers.png`, `Bush_Leaves.png`, `NormalTree_Bark.png`, etc. — 20 distinct filenames) do not exist anywhere in the locally supplied data — verified via live Blender MCP inspection of all 62 `.blend` files' internal packed-image data, not just file-listing assumptions. **Per explicit user directive, no invented/guessed colour is used** — an earlier name-based colour-fallback heuristic (leaf→green, flower→pink) was removed; materials with unrecoverable data are left untouched (no `baseColorFactor`/`baseColorTexture`), which renders as a plain flat/dark shape rather than a fabricated colour. | Imported — trees/rocks/flowers/bushes for `NatureAssetBuilder.ts` placement, with the disclosed texture gap |
 
 ## Import scope — every one of the 15 zips, explicitly
 
@@ -309,10 +325,21 @@ import on a perfect style match.
   is a genuinely dressable ruined/overgrown-dungeon aesthetic (has both
   intact and "Overgrown"/"Broken" variants of the same pieces). Re-checked
   after root-causing the shadow-rendering bug elsewhere in this initiative:
-  confirmed none of the 92 `.mtl` files reference any `map_*` texture
-  directive at all — every material is a flat authored `Kd` colour. **A
-  second, separate rendering bug (found during a later playtest) made
-  these flat colours render near-black/shiny in the Asset Lab**: three.js's
+  the overwhelming majority of the 92 `.mtl` files are genuinely flat
+  authored `Kd` colour with no texture directive at all — that part holds.
+  **Correction (post-Sub-task-1 playtest): 13 of the 92 pieces are NOT
+  flat-colour** — the "Overgrown" wall/curve/window sub-family plus the
+  bushes/trees use 4 materials (`Green`, `Leaf_Texture`, `Texture_Leaves`,
+  `Bark`) that share a distinctive placeholder `Kd 0.64 0.64 0.64` across
+  every occurrence — the exact signature of Blender's OBJ exporter
+  silently dropping an Image-Texture-driven material's `map_Kd` line
+  instead of erroring. Real texture files bearing the *same names*
+  (`Leaf_Texture.png`, `Bark_Texture.jpg`) were sitting right there in the
+  sibling `Textures.zip` (see below) — this is a real, previously-uncaught
+  import gap, not a taste decision or genuine data absence; it has now been
+  fixed (see the `Textures.zip` bullet below).
+  **A second, separate rendering bug (found during a later playtest)
+  made these flat colours render near-black/shiny in the Asset Lab**: three.js's
   `MTLLoader` decodes `Kd` as sRGB-encoded display colour by default, but
   these particular `.mtl` files were exported by Blender with `Kd` already
   holding the scene-*linear* diffuse colour — decoding it a second time
@@ -326,11 +353,22 @@ import on a perfect style match.
   colours) to a matte `MeshStandardMaterial`. No Blender re-export needed
   for this kit — the fix is entirely in the runtime OBJ/MTL loader.
 - **Textures.zip**: only 2 files (`Bark_Texture.jpg`, `Leaf_Texture.png`).
-  Confirmed genuinely orphaned, not incomplete: cross-checked every one of
-  the 92 OBJ kit's `.mtl` files and none reference `map_Kd` or any other
-  texture directive — these 2 files have no mesh anywhere in the provided
-  source data to attach to. Not imported because there's nothing to attach
-  them to, not a style decision.
+  **Correction (post-Sub-task-1 playtest): this was NOT orphaned — the
+  earlier "no mesh to attach to" conclusion was wrong and was the actual
+  root cause of the "Overgrown" pieces' white/grey blotch rendering.**
+  Both filenames match the 4 texture-named materials above exactly; the
+  OBJ exporter dropped the `map_Kd` reference to them (see above), it
+  wasn't that no material wanted them. Extracted `Textures.zip`, copied
+  both files into
+  `public/assets/quaternius/modular_dungeons/obj_kit/textures/`, and
+  patched all 18 affected `.mtl` files (13 pieces × their affected
+  materials) to add the correct `map_Kd` line, resetting each material's
+  placeholder `Kd` to white (`1 1 1`) so the diffuse map isn't tinted by
+  the old grey/dark placeholder value. Verified via Asset Lab screenshot:
+  "Wall Overgrown" and "Curve 1 Overgrown" now show real green vine
+  texture instead of white/grey blotches. This is a real, root-cause fix
+  using the actual Quaternius-supplied texture files — not a guessed
+  colour.
 - **Ultimate Modular Sci-Fi (Feb 2021)**: 91 pieces, sci-fi/space-station
   themed (`Details_Pipes_*`, `Props_Computer`, `Door*_Wall_Side*`,
   `FloorTile_*`). **Imported** — re-exported as GLB via the Blender
@@ -402,21 +440,41 @@ cause found across the other affected packs — including a more complex
 "Add Shader" translucent-leaf graph on some tree materials, handled via a
 recursive shader-graph traversal), and exports GLB.
 
-**Genuine, disclosed texture gap**: the `.blend` files reference external
-texture PNGs via relative paths (`//../Textures/*.png`) that do not exist
-anywhere in the provided source data — not in `Blends.zip`, not elsewhere
-in the Downloads folder. This is unrecoverable from current data (confirmed
-via `img.size == (0, 0)` — Blender itself can't load the reference).
-Rather than exporting these materials blank, `export_glb.py` falls back to
-a name-based flat-colour heuristic (leaf/bark/rock keyword → a plausible
-green/brown/gray) — a clearly-documented placeholder, **not** a claim of
-recovered authored colour. Playtest caught a real bug in this heuristic:
-`flower`/`petal` keywords were originally lumped into the same bucket as
-`leaf`/`bush`, so every flower rendered plain leaf-green instead of reading
-as a flower. Fixed by giving `flower`/`petal` their own dusty-pink fallback,
-checked before the foliage group. A Blender MCP connection became available
-mid-session (see the Open Questions history below) and could be used later
-to hunt for the missing textures folder, but this has not been attempted.
+**Genuine, disclosed texture gap — re-verified via live Blender MCP,
+confirmed unrecoverable.** The `.blend` files reference external texture
+PNGs via relative paths (`//../Textures/*.png`) that do not exist anywhere
+in the provided source data. This was originally checked only via
+`img.size == (0, 0)` on a single sample file; a later session (following
+playtest feedback that the first fix attempt — a name-based colour guess —
+was still wrong) used the now-available Blender MCP connection to script a
+full open-and-inspect pass across **all 62** `.blend` files' internal
+`bpy.data.images`, checking `packed_file`/`filepath`/`size` for every image
+reference (276 references total across the pack). Result: only 2 files
+(`NormalTree_4.blend`, `DeadTree_4.blend`) have any packed image data at
+all (`Leaves3.png`, `NormalTree_Base.png`, `NormalTree_Normal.png`), and
+tracing the actual shader-node wiring for those materials showed none of
+the 3 packed images are what's driving the visible Base Color — they're
+unused/orphaned leftovers. The 20 distinct filenames actually driving
+every visible flower/leaf/bark material (`Flowers.png`, `Bush_Leaves.png`,
+`NormalTree_Bark.png`, `NormalTree_Leaves.png`, etc.) are confirmed absent
+from every one of the 62 files and from the rest of the Downloads folder.
+
+**No colour is invented for this gap** (explicit user directive, 2026-09-23:
+"no inventing new textures — always use supplied textures"). An earlier fix
+attempt used a name-based flat-colour heuristic in `export_glb.py`
+(leaf/bark/rock keyword → a guessed green/brown/gray, with a separate
+dusty-pink guess added for flower/petal after the first version rendered
+every flower plain leaf-green) — this was explicitly rejected by the user
+("you managed to go from wrong green to wrong pink") as fabrication, not a
+real fix. The heuristic has been **removed entirely**; `export_glb.py` now
+leaves a material's Surface wiring untouched when no real texture/colour
+is recoverable, and all 63 nature_props GLBs have been re-exported without
+it. These materials now carry no `baseColorFactor`/`baseColorTexture` at
+all in the GLB — visibly a flat/dark shape, not a wrong colour. **This gap
+is flagged and left open by explicit user decision (2026-09-23: "flag the
+known gap and move on")** — not being chased further for now. If a real
+`Textures` folder for this pack is ever sourced, re-run
+`node scripts/blender/batch-export-blends.mjs nature_props` to pick it up.
 
 **Plug-in point**: `src/world/NaturePropField.ts` +
 `src/world/NatureAssetBuilder.ts`/`NatureAssetDNA.ts`/`NatureAssetRecipes.ts`
@@ -457,16 +515,56 @@ real-asset path).
    material-fix pipeline above. A genuine, disclosed data gap remains: the
    `.blend` files reference external texture PNGs that don't exist
    anywhere in the provided source data, so materials use a documented
-   name-based colour-fallback heuristic instead of real textures. The
-   Blender MCP server flagged here mid-session was not used for this pass
-   (headless CLI scripting was used instead and worked end-to-end); it
-   remains available for a future attempt to locate the missing textures.
-3. **RESOLVED — `modular_dungeons/Textures.zip`.** Confirmed genuinely
-   orphaned: none of the 92 `.mtl` files in the sibling OBJ kit reference
-   `map_Kd` or any other texture directive at all — the kit is 100% flat
-   vertex-colour materials. These 2 texture files have no mesh anywhere in
-   the source data to attach to. Not imported because there is nothing to
-   attach them to; this is not a taste/style decision.
+   name-based colour-fallback heuristic instead of real textures.
+
+   **Correction (post-Sub-task-1 playtest, later session).** The Blender
+   MCP server flagged here was in fact used in that later session — live,
+   scripted inspection of all 62 `.blend` files' internal `bpy.data.images`
+   (packed vs. unresolved) confirmed the earlier CLI-only conclusion still
+   holds: the real diffuse maps (`Flowers.png`, `Bush_Leaves.png`,
+   `NormalTree_Bark.png`, etc.) are not packed in any `.blend` and don't
+   exist anywhere in the source data. (Two `.blend` files, `NormalTree_4`
+   and `DeadTree_4`, do have *some* packed image data — `Leaves3.png`,
+   `NormalTree_Base.png`, `NormalTree_Normal.png` — but tracing the actual
+   shader-node wiring showed none of these are the image driving the
+   visible material; they're orphaned/unused leftovers, not a usable find.)
+
+   Separately, and more importantly: the earlier name-based colour-fallback
+   heuristic itself was rejected by the user as fabrication ("we don't
+   invent textures/colours, ever — only use supplied data") after the first
+   attempted fix (green → pink) was still visibly wrong. `export_glb.py`'s
+   `_NAME_COLOUR_FALLBACKS` heuristic has been **removed entirely**; all 63
+   nature_props GLBs were re-exported without it. Materials with
+   unrecoverable data now carry no `baseColorFactor`/`baseColorTexture` at
+   all — an honest gap, not a guess. **This gap remains open and unresolved
+   by user decision (2026-09-23): flagged, not being chased further for
+   now.** If real textures are ever sourced (e.g. the Quaternius nature
+   pack's separate `Textures` folder that `.blend`s reference via
+   `//../Textures/*.png` but which isn't present anywhere in the local
+   Downloads folder), `scripts/blender/batch-export-blends.mjs nature_props`
+   can be re-run to pick them up.
+3. **CORRECTED (post-Sub-task-1 playtest) — `modular_dungeons/Textures.zip`
+   was NOT orphaned; this was the actual root cause of a real rendering
+   bug.** The original claim here ("none of the 92 `.mtl` files reference
+   `map_Kd`... these 2 texture files have no mesh anywhere in the source
+   data to attach to") was **wrong** and is exactly the kind of inventory
+   gap this initiative exists to prevent. Re-audit found: 13 of the 92
+   pieces (the "Overgrown" wall/curve/window sub-family, plus bushes/trees)
+   use 4 materials (`Green`/`Leaf_Texture`/`Texture_Leaves`/`Bark`) that
+   *are* meant to carry these exact textures (their names match the
+   texture filenames exactly) — Blender's OBJ exporter simply never wrote
+   the `map_Kd` line for them, leaving a flat placeholder grey
+   (`Kd 0.64 0.64 0.64`, a signature value distinct from every genuinely
+   flat-shaded material's real authored colour). `Textures.zip` was
+   extracted, its 2 files (`Leaf_Texture.png`, `Bark_Texture.jpg`) copied
+   into `public/assets/quaternius/modular_dungeons/obj_kit/textures/`, and
+   all 18 affected `.mtl` files patched with the correct `map_Kd`
+   reference (Kd reset to white so the map isn't tinted). Verified via
+   Asset Lab screenshot — "Wall Overgrown"/"Curve 1 Overgrown" now show
+   real green vine texture instead of white/grey blotches. The remaining
+   ~79 non-Overgrown pieces are confirmed genuinely flat vertex-colour
+   (no texture reference of any kind, real authored dark stone/dungeon
+   palette) — that part of the original claim was correct.
 4. **RESOLVED — no packs are excluded for tonal mismatch.** An earlier pass
    of this initiative excluded `modern_type_buildings/` (both sub-packs)
    and `modular_dungeons/Ultimate Modular Sci-Fi` on a "doesn't fit the
