@@ -98,7 +98,15 @@ def _find_base_color_source(node, _visited=None):
 # placeholder — NOT a claim of importing the real authored colour — see
 # the "nature_props textures missing" open question in the inventory doc.
 _NAME_COLOUR_FALLBACKS = [
-    (('leaf', 'leaves', 'petal', 'flower', 'grass', 'plant', 'bush'), (0.25, 0.45, 0.15, 1.0)),
+    # 'flower'/'petal' MUST be checked before the foliage group below — they
+    # used to be lumped into the same green bucket as leaves, which made
+    # every flower/petal render as plain leaf-green (a real bug, found via
+    # user playtest, not a texture-data limitation). Flowers are obviously
+    # not green in reality; a warm dusty-pink placeholder reads as "a
+    # flower" at a glance instead of "another leaf", even though the true
+    # per-species colour is unrecoverable without source textures.
+    (('flower', 'petal'), (0.80, 0.45, 0.55, 1.0)),
+    (('leaf', 'leaves', 'grass', 'plant', 'bush'), (0.25, 0.45, 0.15, 1.0)),
     (('bark', 'trunk', 'branch', 'wood', 'stick'), (0.30, 0.20, 0.12, 1.0)),
     (('rock', 'stone', 'boulder'), (0.45, 0.45, 0.45, 1.0)),
 ]

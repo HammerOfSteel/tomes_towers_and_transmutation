@@ -122,6 +122,57 @@ function _loadFBX(path: string): Promise<_CacheEntry> {
 }
 
 /**
+ * The Quaternius modular_dungeons OBJ kit ships flat, authored `Kd` stone/
+ * wood colours with a specular highlight (`Ns`/`Ks`/`illum 2`) baked into
+ * its .mtl files, and rendered far too dark (near-black, reported during
+ * playtest as "black shiny textures"). Two separate bugs, both fixed here:
+ *
+ * 1. **Colour-space double-decode.** three.js's MTLLoader treats `Kd` as
+ *    sRGB-encoded display colour and decodes it to linear on load (see
+ *    MTLLoader.js's `ColorManagement.toWorkingColorSpace(color,
+ *    SRGBColorSpace)` call on the parsed Kd). But these particular `.mtl`
+ *    files were exported by Blender with `Kd` already holding the
+ *    scene-*linear* diffuse colour (confirmed by sampling many materials
+ *    across the pack: e.g. brick/stone Kd ≈ (0.23, 0.24, 0.18) and wood
+ *    Kd ≈ (0.07, 0.05, 0.02) match a plausible medium-grey stone / warm
+ *    brown wood *only* when read as linear values directly — reading them
+ *    as sRGB and decoding a second time crushes everything down toward
+ *    black, which is exactly the reported bug). `.convertLinearToSRGB()`
+ *    exactly undoes MTLLoader's incorrect decode (the two are inverse
+ *    transforms), recovering the intended linear albedo.
+ * 2. **Specular highlight.** Combined with the (pre-fix) near-black colour,
+ *    MeshPhongMaterial's `Ns`/`Ks`-derived specular highlight read as
+ *    glossy black plastic rather than matte stone. Re-mapped to
+ *    MeshStandardMaterial with a fixed matte roughness and no metalness.
+ */
+function _phongToMatteStandard(mat: THREE.Material): THREE.Material {
+  if (!(mat instanceof THREE.MeshPhongMaterial)) return mat;
+  const color = mat.color.clone().convertLinearToSRGB();
+  const std = new THREE.MeshStandardMaterial({
+    color,
+    map: mat.map,
+    transparent: mat.transparent,
+    opacity: mat.opacity,
+    side: mat.side,
+    alphaTest: mat.alphaTest,
+    roughness: 0.92,
+    metalness: 0,
+  });
+  std.name = mat.name;
+  return std;
+}
+
+function _normalizeObjMaterials(group: THREE.Group): void {
+  group.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    obj.material = Array.isArray(obj.material)
+      ? obj.material.map(_phongToMatteStandard)
+      : _phongToMatteStandard(obj.material);
+  });
+}
+
+
+/**
  * OBJ + sibling MTL (same stem, same directory — the standard OBJ/MTL
  * convention). Falls back to loading the OBJ with default materials if no
  * .mtl is found (some props may end up textureless if a pack omits one).
@@ -145,6 +196,7 @@ function _loadOBJ(path: string): Promise<_CacheEntry> {
       loader.load(
         path,
         (group) => {
+          _normalizeObjMaterials(group);
           const entry: _CacheEntry = { scene: group, clips: [] }; // OBJ never carries animation
           _cache.set(path, entry);
           _pending.delete(path);

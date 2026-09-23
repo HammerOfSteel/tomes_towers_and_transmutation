@@ -108,7 +108,12 @@ function runOne(zipRel, packRel) {
 }
 
 console.log('\n🧊  Batch Blender material-fix + GLB export\n');
-for (const [zipRel, packRel] of JOBS) {
+const filter = process.argv[2]; // optional: substring match on packRel, e.g. "nature_props"
+const jobs = filter ? JOBS.filter(([, packRel]) => packRel.includes(filter)) : JOBS;
+if (filter && jobs.length === 0) {
+  console.warn(`No jobs matched filter "${filter}"`);
+}
+for (const [zipRel, packRel] of jobs) {
   runOne(zipRel, packRel);
 }
 console.log('\n✅  Batch export complete.\n');

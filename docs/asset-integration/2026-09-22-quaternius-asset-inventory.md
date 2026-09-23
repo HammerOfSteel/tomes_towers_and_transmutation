@@ -67,7 +67,7 @@ This table is the corrected, current answer:
 | 5 | `medieval_village_pack/` | Props | ✅ Yes | `medieval_village_pack/props` | Re-exported as GLB via the Blender material-fix pipeline |
 | 6 | `modern_type_buildings/` | City Pack (Buildings Pack, Jan 2019) | ✅ Yes | `modern_type_buildings/city_pack` | Re-exported as GLB via the Blender material-fix pipeline |
 | 7 | `modern_type_buildings/` | Interior Pack (Ultimate Textured Building Pack, Dec 2019) | ✅ Yes | `modern_type_buildings/interior_pack` | Re-exported as GLB via the Blender material-fix pipeline; some materials keep real linked image textures (not just flat colour) |
-| 8 | `modular_dungeons/` | OBJ (fantasy dungeon kit-of-parts) | ✅ Yes | `modular_dungeons/obj_kit` | Flat vertex-colour materials confirmed genuinely authored (no texture maps referenced at all) — dark stone palette is real, not a bug |
+| 8 | `modular_dungeons/` | OBJ (fantasy dungeon kit-of-parts) | ✅ Yes | `modular_dungeons/obj_kit` | Flat, authored `Kd` colours (no texture maps) were rendering near-black/shiny due to a colour-space double-decode in the OBJ/MTL loader — fixed at runtime in `QuaterniusAssetLoader.ts` (see per-pack section below); no re-export needed |
 | 9 | `modular_dungeons/` | Textures.zip | ❌ No | — | Genuinely orphaned: confirmed the 2 loose PNGs (`Bark_Texture.jpg`, `Leaf_Texture.png`) are not referenced by any of the 92 `.mtl` files in the OBJ kit (zero `map_*` directives anywhere in that kit) — there is no mesh in this repo's source data for these 2 files to attach to |
 | 10 | `modular_dungeons/` | Ultimate Modular Sci-Fi | ✅ Yes | `modular_dungeons/ultimate_modular_scifi` | Re-exported as GLB via the Blender material-fix pipeline |
 | 11 | `modular_fantasy_village/` | Medieval Village MegaKit | ✅ Yes | `modular_fantasy_village/medieval_village_megakit` | — |
@@ -310,11 +310,21 @@ import on a perfect style match.
   intact and "Overgrown"/"Broken" variants of the same pieces). Re-checked
   after root-causing the shadow-rendering bug elsewhere in this initiative:
   confirmed none of the 92 `.mtl` files reference any `map_*` texture
-  directive at all — every material is a flat authored `Kd` colour, and
-  the dark stone/wood tones sampled (e.g. `Kd 0.13 0.13 0.10` for "Main"
-  stone, browns for wood/statues) are genuinely authored, not the Diffuse-
-  BSDF/glTF-exporter bug found elsewhere. No Blender fix needed for this
-  kit.
+  directive at all — every material is a flat authored `Kd` colour. **A
+  second, separate rendering bug (found during a later playtest) made
+  these flat colours render near-black/shiny in the Asset Lab**: three.js's
+  `MTLLoader` decodes `Kd` as sRGB-encoded display colour by default, but
+  these particular `.mtl` files were exported by Blender with `Kd` already
+  holding the scene-*linear* diffuse colour — decoding it a second time
+  crushed every colour toward black (e.g. `Kd 0.23 0.24 0.18`, a perfectly
+  normal medium-grey stone read as linear, was being decoded into an
+  additional, wrong sRGB→linear pass and rendered at ~8% brightness).
+  Fixed in `QuaterniusAssetLoader.ts`'s OBJ path by re-encoding the parsed
+  colour with `.convertLinearToSRGB()` (the exact inverse of MTLLoader's
+  incorrect decode) and re-mapping the resulting `MeshPhongMaterial` (whose
+  `Ns`/`Ks` specular highlight read as glossy plastic on the wrongly-dark
+  colours) to a matte `MeshStandardMaterial`. No Blender re-export needed
+  for this kit — the fix is entirely in the runtime OBJ/MTL loader.
 - **Textures.zip**: only 2 files (`Bark_Texture.jpg`, `Leaf_Texture.png`).
   Confirmed genuinely orphaned, not incomplete: cross-checked every one of
   the 92 OBJ kit's `.mtl` files and none reference `map_Kd` or any other
@@ -400,7 +410,11 @@ via `img.size == (0, 0)` — Blender itself can't load the reference).
 Rather than exporting these materials blank, `export_glb.py` falls back to
 a name-based flat-colour heuristic (leaf/bark/rock keyword → a plausible
 green/brown/gray) — a clearly-documented placeholder, **not** a claim of
-recovered authored colour. A Blender MCP connection became available
+recovered authored colour. Playtest caught a real bug in this heuristic:
+`flower`/`petal` keywords were originally lumped into the same bucket as
+`leaf`/`bush`, so every flower rendered plain leaf-green instead of reading
+as a flower. Fixed by giving `flower`/`petal` their own dusty-pink fallback,
+checked before the foliage group. A Blender MCP connection became available
 mid-session (see the Open Questions history below) and could be used later
 to hunt for the missing textures folder, but this has not been attempted.
 
