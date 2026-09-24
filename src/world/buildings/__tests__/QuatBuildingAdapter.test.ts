@@ -4,16 +4,14 @@ import { pickQuatBuildingModelId } from '../QuatBuildingAdapter';
 const RESIDENTIAL_VARIANTS = [
   'medieval_village_pack/buildings/House_1',
   'medieval_village_pack/buildings/House_2',
-  'medieval_village_pack/buildings/House_3',
-  'medieval_village_pack/buildings/House_4',
   'modern_type_buildings/city_pack/House1',
   'modern_type_buildings/city_pack/House2',
-  'modern_type_buildings/city_pack/Building1_Small',
-  'modern_type_buildings/city_pack/Building2_Small',
 ] as const;
 
 const CIVIC_LARGE_VARIANTS = [
   'medieval_village_pack/buildings/Inn',
+  'modern_type_buildings/city_pack/Building1_Small',
+  'modern_type_buildings/city_pack/Building2_Small',
   'modern_type_buildings/city_pack/Building1_Large',
   'modern_type_buildings/city_pack/Building2_Large',
   'modern_type_buildings/city_pack/Building3_Big',
@@ -31,10 +29,16 @@ const TOWER_VARIANTS = [
   'modern_type_buildings/city_pack/Building3_Small',
 ] as const;
 
+const OUTBUILDING_VARIANTS = [
+  'medieval_village_pack/buildings/Stable',
+  'medieval_village_pack/buildings/House_3',
+  'medieval_village_pack/buildings/House_4',
+] as const;
+
 describe('pickQuatBuildingModelId', () => {
   it.each([
     'house', 'terraced', 'cottage', 'shop', 'apothecary', 'ruin',
-  ] as const)('cycles %s deterministically through all 8 residential variants by seed', (kind) => {
+  ] as const)('cycles %s deterministically through all 4 residential variants by seed', (kind) => {
     const ids = RESIDENTIAL_VARIANTS.map((_, seed) => pickQuatBuildingModelId(kind, seed));
     expect(ids).toEqual(RESIDENTIAL_VARIANTS);
   });
@@ -49,7 +53,7 @@ describe('pickQuatBuildingModelId', () => {
   });
 
   it.each(['villa', 'tavern', 'inn'] as const)(
-    'cycles %s deterministically through the 5 civic-large variants by seed',
+    'cycles %s deterministically through the 7 civic-large variants by seed',
     (kind) => {
       const ids = CIVIC_LARGE_VARIANTS.map((_, seed) => pickQuatBuildingModelId(kind, seed));
       expect(ids).toEqual(CIVIC_LARGE_VARIANTS);
@@ -69,10 +73,16 @@ describe('pickQuatBuildingModelId', () => {
     },
   );
 
+  it.each(['barn', 'gate'] as const)(
+    'cycles %s deterministically through the 3 outbuilding variants by seed',
+    (kind) => {
+      const ids = OUTBUILDING_VARIANTS.map((_, seed) => pickQuatBuildingModelId(kind, seed));
+      expect(ids).toEqual(OUTBUILDING_VARIANTS);
+    },
+  );
+
   it.each([
     ['blacksmith', 'medieval_village_pack/buildings/Blacksmith'],
-    ['barn', 'medieval_village_pack/buildings/Stable'],
-    ['gate', 'medieval_village_pack/buildings/Stable'],
     ['well', 'medieval_village_pack/props/Well'],
     ['tent', 'medieval_village_pack/props/Gazebo'],
   ] as const)('maps %s → %s regardless of seed', (kind, expected) => {

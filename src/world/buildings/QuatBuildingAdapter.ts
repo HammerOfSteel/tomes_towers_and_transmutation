@@ -23,17 +23,21 @@
  * actually exists in the imported Quaternius packs.
  *
  * Scaling: real buildings are placed at their NATIVE scale (×1), not
- * stretched to fill the procedural footprint. Measured via Scale Lab
- * (see scale-lab.ts) against the game's canonical TARGET_HEIGHT = 2.0
- * reference character, every medieval_village_pack and city_pack building
- * already sits at a believable 1.0x-3.0x character height at scale=1 —
- * Quaternius modelled them consistently against an implied human scale, so
- * stretching them to match the (independently-tuned, denser-than-real
- * "Animal-Crossing-scale") procedural footprints was both unnecessary and
- * the direct cause of reported "not scaled well/coherently" and
- * "transparent-looking walls" (up-scaled cube-built meshes overlapping
- * neighbouring plots -> z-fighting) symptoms. See
- * docs/asset-integration/2026-*-scale-lab-measurements.md.
+ * stretched to fill the procedural footprint — stretching to the
+ * (independently-tuned, denser-than-real "Animal-Crossing-scale")
+ * procedural footprints was the original cause of bad scaling and has been
+ * removed entirely. This alone is NOT sufficient, though: not every model
+ * in a raw pack pool is actually house-scale just because it's placed at
+ * native scale. Every model's true native height was measured individually
+ * via Scale Lab (see scale-lab.ts) against the game's canonical
+ * TARGET_HEIGHT = 2.0 reference character, and pools are grouped by that
+ * measured height, not by the pack's own folder/file naming (which can be
+ * misleading — e.g. city_pack's "Building1_Small"/"Building2_Small" are
+ * genuinely 4-5 story buildings at 2.3x-2.5x character height despite the
+ * "Small" name, and medieval_village_pack's "House_3"/"House_4" measured at
+ * only 1.04x/0.54x character height — shed-scale, not house-scale). See
+ * docs/asset-integration/2026-*-scale-lab-measurements.md for the full
+ * measured-height table and per-pool grouping rationale.
  *
  * `modular_fantasy_village/medieval_village_megakit` (176 kit-of-parts
  * pieces) is NOT used here — assembling it needs a wall/roof/floor layout
@@ -52,28 +56,39 @@ import { loadQuatAsset } from '@/assets/QuaterniusAssetLoader';
 
 /**
  * House/shop-scale single dwellings — medieval + modern mixed for variety.
- * Native heights (Scale Lab, scale=1) range ~1.07m-3.39m (0.5x-1.7x
- * character height): House_1-3, city_pack House1/House2 and the two
- * "_Small" monolithic city buildings.
+ * Native heights (Scale Lab, scale=1) are 2.93m-3.39m (1.46x-1.70x character
+ * height) — a tight, coherent "single dwelling" band. `House_3`/`House_4`
+ * and city_pack's `Building1_Small`/`Building2_Small` were REMOVED from
+ * this pool after precise measurement showed they don't belong here:
+ * `House_3` (2.09m/1.04x) and `House_4` (1.07m/0.54x) are shed-scale, not
+ * house-scale, and `Building1_Small`/`Building2_Small` (4.66m-4.97m/
+ * 2.33x-2.48x) are genuine 4-5 story buildings — despite being named
+ * "Small" within city_pack's own (much larger) building set, they read as
+ * multi-story apartment blocks next to a 2m-tall character, not cottages.
+ * Mixing all of these into one pool produced the "giant building next to a
+ * tiny shed, character disproportionate either way" defect. See
+ * docs/asset-integration/2026-*-scale-lab-measurements.md.
  */
 const RESIDENTIAL_VARIANTS = [
   'medieval_village_pack/buildings/House_1',
   'medieval_village_pack/buildings/House_2',
-  'medieval_village_pack/buildings/House_3',
-  'medieval_village_pack/buildings/House_4',
   'modern_type_buildings/city_pack/House1',
   'modern_type_buildings/city_pack/House2',
-  'modern_type_buildings/city_pack/Building1_Small',
-  'modern_type_buildings/city_pack/Building2_Small',
 ] as const;
 
 /**
- * Grand/civic-scale buildings (villa, tavern, inn) — medieval Inn plus the
- * larger monolithic city_pack buildings. Native heights ~3.49m-5.92m
- * (1.75x-2.96x character height).
+ * Grand/civic-scale buildings (villa, tavern, inn, guild-hall stand-ins) —
+ * medieval Inn plus ALL of city_pack's multi-story monolithic buildings,
+ * including the two mislabeled "_Small" ones (see RESIDENTIAL_VARIANTS
+ * comment — they're civic/apartment-scale, not house-scale). Native
+ * heights 3.49m-5.92m (1.75x-2.96x character height) — a wider but
+ * plausible range for "big impressive building," not a bug: this category
+ * is expected to include everything from a large inn up to a grand hall.
  */
 const CIVIC_LARGE_VARIANTS = [
   'medieval_village_pack/buildings/Inn',
+  'modern_type_buildings/city_pack/Building1_Small',
+  'modern_type_buildings/city_pack/Building2_Small',
   'modern_type_buildings/city_pack/Building1_Large',
   'modern_type_buildings/city_pack/Building2_Large',
   'modern_type_buildings/city_pack/Building3_Big',
@@ -102,6 +117,20 @@ const MARKET_STALL_VARIANTS = [
 ] as const;
 
 /**
+ * Small utility/outbuilding stand-ins (barn/gate) — Stable plus `House_3`
+ * and `House_4`, which measured shed-scale (2.09m/1.04x and 1.07m/0.54x
+ * character height respectively) and were removed from
+ * `RESIDENTIAL_VARIANTS` for being too small to read as houses. Kept in
+ * inventory rotation here instead of discarded outright, since a barn/gate
+ * is legitimately expected to be smaller than a dwelling.
+ */
+const OUTBUILDING_VARIANTS = [
+  'medieval_village_pack/buildings/Stable',
+  'medieval_village_pack/buildings/House_3',
+  'medieval_village_pack/buildings/House_4',
+] as const;
+
+/**
  * BuildingKind → real model id(s). A single string is used as-is; an array
  * is deterministically rotated by `seed` (see `pickQuatBuildingModelId`) so
  * repeated buildings of the same kind in one settlement aren't all
@@ -116,7 +145,8 @@ const MARKET_STALL_VARIANTS = [
  *   - chapel/tower/watchtower   -> TOWER_VARIANTS
  *   - blacksmith                -> Blacksmith (functional forge shape, no
  *                                  meaningfully-different alt in inventory)
- *   - barn/gate                 -> Stable (widest open-archway structure)
+ *   - barn/gate                 -> OUTBUILDING_VARIANTS (Stable + the two
+ *                                  shed-scale ex-"House" models)
  *   - well                      -> Well (dedicated prop-scale model)
  *   - tent                      -> Gazebo (only open-air roofed structure)
  *   - market_stall               -> MARKET_STALL_VARIANTS
@@ -136,8 +166,8 @@ const BUILDING_KIND_TO_QUAT_MODEL: Record<BuildingKind, string | readonly string
   tower:         TOWER_VARIANTS,
   watchtower:    TOWER_VARIANTS,
   blacksmith:    'medieval_village_pack/buildings/Blacksmith',
-  barn:          'medieval_village_pack/buildings/Stable',
-  gate:          'medieval_village_pack/buildings/Stable',
+  barn:          OUTBUILDING_VARIANTS,
+  gate:          OUTBUILDING_VARIANTS,
   well:          'medieval_village_pack/props/Well',
   tent:          'medieval_village_pack/props/Gazebo',
   market_stall:  MARKET_STALL_VARIANTS,
