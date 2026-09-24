@@ -7,7 +7,11 @@
  *
  * Per the user's explicit prior clarification, the same 10-model
  * `medieval_village_pack/buildings` pool is used for EVERY faction — no
- * blocking on a "perfect" style match.
+ * blocking on a "perfect" style match. Per a later, equally explicit
+ * clarification, `modern_type_buildings/city_pack`'s 9 monolithic buildings
+ * are mixed into the same rotation pools for variety — an asset is never
+ * excluded for "not fitting the fantasy theme"; more unique silhouettes in
+ * a settlement is more valuable than tonal consistency right now.
  *
  * Every `BuildingKind` is mapped below. Per the user's hard "never mix
  * procedural and real assets" rule, the settlement-buildings toggle must
@@ -18,6 +22,19 @@
  * never an invented texture/mesh — every model used is a real asset that
  * actually exists in the imported Quaternius packs.
  *
+ * Scaling: real buildings are placed at their NATIVE scale (×1), not
+ * stretched to fill the procedural footprint. Measured via Scale Lab
+ * (see scale-lab.ts) against the game's canonical TARGET_HEIGHT = 2.0
+ * reference character, every medieval_village_pack and city_pack building
+ * already sits at a believable 1.0x-3.0x character height at scale=1 —
+ * Quaternius modelled them consistently against an implied human scale, so
+ * stretching them to match the (independently-tuned, denser-than-real
+ * "Animal-Crossing-scale") procedural footprints was both unnecessary and
+ * the direct cause of reported "not scaled well/coherently" and
+ * "transparent-looking walls" (up-scaled cube-built meshes overlapping
+ * neighbouring plots -> z-fighting) symptoms. See
+ * docs/asset-integration/2026-*-scale-lab-measurements.md.
+ *
  * `modular_fantasy_village/medieval_village_megakit` (176 kit-of-parts
  * pieces) is NOT used here — assembling it needs a wall/roof/floor layout
  * engine comparable to the dungeon blueprint renderer, which is out of
@@ -27,18 +44,56 @@
 
 import * as THREE from 'three';
 import type { BuildingKind } from './BuildingDNA';
-import { getFootprint } from './BuildingDNA';
 import type { BuildingSize } from './BuildingDNA';
 import { QUAT_MODELS } from '@/assets/quaterniusManifest';
 import { loadQuatAsset } from '@/assets/QuaterniusAssetLoader';
 
 // ── Kind → model lookup ───────────────────────────────────────────────────────
 
-const HOUSE_VARIANTS = [
+/**
+ * House/shop-scale single dwellings — medieval + modern mixed for variety.
+ * Native heights (Scale Lab, scale=1) range ~1.07m-3.39m (0.5x-1.7x
+ * character height): House_1-3, city_pack House1/House2 and the two
+ * "_Small" monolithic city buildings.
+ */
+const RESIDENTIAL_VARIANTS = [
   'medieval_village_pack/buildings/House_1',
   'medieval_village_pack/buildings/House_2',
   'medieval_village_pack/buildings/House_3',
   'medieval_village_pack/buildings/House_4',
+  'modern_type_buildings/city_pack/House1',
+  'modern_type_buildings/city_pack/House2',
+  'modern_type_buildings/city_pack/Building1_Small',
+  'modern_type_buildings/city_pack/Building2_Small',
+] as const;
+
+/**
+ * Grand/civic-scale buildings (villa, tavern, inn) — medieval Inn plus the
+ * larger monolithic city_pack buildings. Native heights ~3.49m-5.92m
+ * (1.75x-2.96x character height).
+ */
+const CIVIC_LARGE_VARIANTS = [
+  'medieval_village_pack/buildings/Inn',
+  'modern_type_buildings/city_pack/Building1_Large',
+  'modern_type_buildings/city_pack/Building2_Large',
+  'modern_type_buildings/city_pack/Building3_Big',
+  'modern_type_buildings/city_pack/Building4',
+] as const;
+
+/** Guild hall stand-ins — the pack's mill plus the tallest city buildings. */
+const GUILD_VARIANTS = [
+  'medieval_village_pack/buildings/Mill',
+  'modern_type_buildings/city_pack/Building1_Large',
+  'modern_type_buildings/city_pack/Building4',
+] as const;
+
+/**
+ * Tower-shaped stand-ins (chapel/tower/watchtower) — the pack's Bell_Tower
+ * plus city_pack's narrowest tall building for a second silhouette.
+ */
+const TOWER_VARIANTS = [
+  'medieval_village_pack/buildings/Bell_Tower',
+  'modern_type_buildings/city_pack/Building3_Small',
 ] as const;
 
 const MARKET_STALL_VARIANTS = [
@@ -53,33 +108,33 @@ const MARKET_STALL_VARIANTS = [
  * identical.
  *
  * ALL 19 kinds are mapped — none fall through to procedural while the
- * settlement-buildings toggle is ON. Direct/obvious matches are the 10
- * whole `medieval_village_pack/buildings` models; a few infrastructure
- * kinds get a dedicated prop-scale real model instead (Well, MarketStand);
- * kinds with no dedicated model at all reuse the closest available whole
- * building as a cosmetic stand-in (documented inline):
- *   - terraced/cottage/shop/apothecary/ruin -> reuse HOUSE_VARIANTS
+ * settlement-buildings toggle is ON:
+ *   - house/terraced/cottage/shop/apothecary/ruin -> RESIDENTIAL_VARIANTS
  *     (all are house-scale residential/commercial single structures)
- *   - villa/tavern              -> Inn (the pack's largest/grandest building)
- *   - guild                     -> Mill (largest civic-scale structure available)
- *   - chapel/tower/watchtower   -> Bell_Tower (only tower-shaped model)
- *   - gate                      -> Stable (widest open-archway structure)
+ *   - villa/tavern/inn          -> CIVIC_LARGE_VARIANTS
+ *   - guild                     -> GUILD_VARIANTS
+ *   - chapel/tower/watchtower   -> TOWER_VARIANTS
+ *   - blacksmith                -> Blacksmith (functional forge shape, no
+ *                                  meaningfully-different alt in inventory)
+ *   - barn/gate                 -> Stable (widest open-archway structure)
+ *   - well                      -> Well (dedicated prop-scale model)
  *   - tent                      -> Gazebo (only open-air roofed structure)
+ *   - market_stall               -> MARKET_STALL_VARIANTS
  */
 const BUILDING_KIND_TO_QUAT_MODEL: Record<BuildingKind, string | readonly string[]> = {
-  house:         HOUSE_VARIANTS,
-  terraced:      HOUSE_VARIANTS,
-  cottage:       HOUSE_VARIANTS,
-  shop:          HOUSE_VARIANTS,
-  apothecary:    HOUSE_VARIANTS,
-  ruin:          HOUSE_VARIANTS,
-  villa:         'medieval_village_pack/buildings/Inn',
-  tavern:        'medieval_village_pack/buildings/Inn',
-  inn:           'medieval_village_pack/buildings/Inn',
-  guild:         'medieval_village_pack/buildings/Mill',
-  chapel:        'medieval_village_pack/buildings/Bell_Tower',
-  tower:         'medieval_village_pack/buildings/Bell_Tower',
-  watchtower:    'medieval_village_pack/buildings/Bell_Tower',
+  house:         RESIDENTIAL_VARIANTS,
+  terraced:      RESIDENTIAL_VARIANTS,
+  cottage:       RESIDENTIAL_VARIANTS,
+  shop:          RESIDENTIAL_VARIANTS,
+  apothecary:    RESIDENTIAL_VARIANTS,
+  ruin:          RESIDENTIAL_VARIANTS,
+  villa:         CIVIC_LARGE_VARIANTS,
+  tavern:        CIVIC_LARGE_VARIANTS,
+  inn:           CIVIC_LARGE_VARIANTS,
+  guild:         GUILD_VARIANTS,
+  chapel:        TOWER_VARIANTS,
+  tower:         TOWER_VARIANTS,
+  watchtower:    TOWER_VARIANTS,
   blacksmith:    'medieval_village_pack/buildings/Blacksmith',
   barn:          'medieval_village_pack/buildings/Stable',
   gate:          'medieval_village_pack/buildings/Stable',
@@ -105,20 +160,16 @@ export function pickQuatBuildingModelId(kind: BuildingKind, seed: number): strin
 // ── Async load + fit ──────────────────────────────────────────────────────────
 
 /**
- * Load the real building model for `buildingKind` (if mapped) and scale it
- * to roughly fit the procedural footprint for `buildingKind`/`size`, then
- * re-pivot it to sit on the ground plane (y=0). Returns null when there's
- * no mapping for this kind or the load fails — callers must keep their
- * existing procedural building in either case (hard fallback rule).
- *
- * Scaling is uniform (fit to the footprint's larger horizontal dimension)
- * to avoid distorting the model — some footprint depth/width mismatch vs.
- * the procedural building is an accepted cosmetic limitation, not a
- * texture/color invention (that hard rule only concerns material data).
+ * Load the real building model for `buildingKind` (if mapped), pivot it to
+ * sit on the ground plane (y=0), and return it at its NATIVE scale — see
+ * the module doc comment for why no footprint-fit rescaling is applied.
+ * Returns null when there's no mapping for this kind or the load fails —
+ * callers must keep their existing procedural building in either case
+ * (hard fallback rule).
  */
 export async function loadRealBuildingExterior(
   buildingKind: BuildingKind,
-  size: BuildingSize,
+  _size: BuildingSize,
   seed: number,
 ): Promise<THREE.Object3D | null> {
   const modelId = pickQuatBuildingModelId(buildingKind, seed);
@@ -136,17 +187,7 @@ export async function loadRealBuildingExterior(
 
   const group = loaded.scene;
   const box = new THREE.Box3().setFromObject(group);
-  const sz = new THREE.Vector3();
-  box.getSize(sz);
-
-  const fp = getFootprint(buildingKind, size);
-  const targetSpan = Math.max(fp.w, fp.d);
-  const modelSpan = Math.max(sz.x, sz.z);
-  const scale = modelSpan > 0.01 ? targetSpan / modelSpan : 1;
-  group.scale.setScalar(scale);
-
-  const centredBox = new THREE.Box3().setFromObject(group);
-  group.position.y = -centredBox.min.y;
+  group.position.y = -box.min.y;
 
   return group;
 }
