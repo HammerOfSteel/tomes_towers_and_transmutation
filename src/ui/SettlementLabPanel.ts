@@ -35,6 +35,14 @@ const SL_CSS = `
 .settlement-lab-panel [data-role="readout"] {
   flex-basis: 100%; opacity: .85; font-size: .74rem;
 }
+.settlement-lab-panel label[data-role="real-assets-label"] {
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+  padding: 4px 6px; border: 1px solid #3a2c5a; border-radius: 4px;
+  background: rgba(255,255,255,.06);
+}
+.settlement-lab-panel [data-role="real-assets-toggle"] {
+  width: auto; padding: 0; border: none; background: none;
+}
 `;
 
 export interface SettlementLabPanelOptions {
@@ -50,7 +58,17 @@ export interface SettlementLabPanelOptions {
   initialType?: string;
   initialFaction?: string;
   initialLayout?: string;
+  /** Current "settlement-buildings" ExternalAssetConfig category state —
+   * this checkbox is the dev-facing knob for that same toggle (see
+   * ExternalAssetConfig.ts), letting a developer flip between the
+   * guaranteed-procedural baseline and real-asset buildings without going
+   * through the Settings menu. */
+  initialRealAssetsEnabled: boolean;
   onRegenerate: (params: { seed: number; type: string; faction: string; layout: string }) => void;
+  /** Called when the "Real buildings" checkbox is toggled. The caller is
+   * responsible for persisting via saveExternalAssetConfig() and
+   * triggering a regenerate so the change is visible immediately. */
+  onRealAssetsToggle: (enabled: boolean) => void;
 }
 
 export class SettlementLabPanel {
@@ -63,8 +81,10 @@ export class SettlementLabPanel {
   private readonly readoutEl: HTMLElement;
   private readonly randomizeButton: HTMLButtonElement;
   private readonly regenerateButton: HTMLButtonElement;
+  private readonly realAssetsCheckbox: HTMLInputElement;
   private readonly randomizeClickHandler: () => void;
   private readonly regenerateClickHandler: () => void;
+  private readonly realAssetsChangeHandler: () => void;
   private readonly initialSeed: number;
 
   constructor(options: SettlementLabPanelOptions) {
@@ -103,6 +123,14 @@ export class SettlementLabPanel {
     this.regenerateButton.textContent = 'Regenerate';
     this.regenerateButton.setAttribute('data-action', 'regenerate');
 
+    this.realAssetsCheckbox = document.createElement('input');
+    this.realAssetsCheckbox.type = 'checkbox';
+    this.realAssetsCheckbox.checked = options.initialRealAssetsEnabled;
+    this.realAssetsCheckbox.setAttribute('data-role', 'real-assets-toggle');
+    const realAssetsLabel = document.createElement('label');
+    realAssetsLabel.setAttribute('data-role', 'real-assets-label');
+    realAssetsLabel.append(this.realAssetsCheckbox, document.createTextNode('Real buildings'));
+
     this.readoutEl = document.createElement('div');
     this.readoutEl.setAttribute('data-role', 'readout');
 
@@ -123,8 +151,13 @@ export class SettlementLabPanel {
       });
     };
 
+    this.realAssetsChangeHandler = () => {
+      options.onRealAssetsToggle(this.realAssetsCheckbox.checked);
+    };
+
     this.randomizeButton.addEventListener('click', this.randomizeClickHandler);
     this.regenerateButton.addEventListener('click', this.regenerateClickHandler);
+    this.realAssetsCheckbox.addEventListener('change', this.realAssetsChangeHandler);
 
     this.rootEl.append(
       this.seedInput,
@@ -133,6 +166,7 @@ export class SettlementLabPanel {
       this.factionSelect,
       this.layoutSelect,
       this.regenerateButton,
+      realAssetsLabel,
       this.readoutEl,
     );
   }
@@ -144,6 +178,7 @@ export class SettlementLabPanel {
   dispose(): void {
     this.randomizeButton.removeEventListener('click', this.randomizeClickHandler);
     this.regenerateButton.removeEventListener('click', this.regenerateClickHandler);
+    this.realAssetsCheckbox.removeEventListener('change', this.realAssetsChangeHandler);
     this.rootEl.remove();
   }
 

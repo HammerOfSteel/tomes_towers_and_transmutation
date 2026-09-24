@@ -13,6 +13,8 @@ describe('SettlementLabPanel', () => {
     const onRegenerate = vi.fn();
     const panel = new SettlementLabPanel({
       initialSeed: 123,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village', 'town'],
       factions: [REAL_FACTIONS[0], REAL_FACTIONS[1]],
       layouts: ['auto', 'grid'],
@@ -33,6 +35,8 @@ describe('SettlementLabPanel', () => {
   it('setReadout updates the visible readout text', () => {
     const panel = new SettlementLabPanel({
       initialSeed: 1,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -50,6 +54,8 @@ describe('SettlementLabPanel', () => {
   it('dispose removes rootEl from the DOM', () => {
     const panel = new SettlementLabPanel({
       initialSeed: 1,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -68,6 +74,8 @@ describe('SettlementLabPanel', () => {
     const layouts = ['radial', 'organic', 'grid'];
     const panel = new SettlementLabPanel({
       initialSeed: 42,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes,
       factions,
       layouts,
@@ -87,6 +95,8 @@ describe('SettlementLabPanel', () => {
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.123456);
     const panel = new SettlementLabPanel({
       initialSeed: 999,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -106,6 +116,8 @@ describe('SettlementLabPanel', () => {
     const onRegenerate = vi.fn();
     const panel = new SettlementLabPanel({
       initialSeed: 42,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -124,6 +136,8 @@ describe('SettlementLabPanel', () => {
   it('dispose does not throw when root element was never attached to the DOM', () => {
     const panel = new SettlementLabPanel({
       initialSeed: 7,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -137,6 +151,8 @@ describe('SettlementLabPanel', () => {
     const onRegenerate = vi.fn();
     const panel = new SettlementLabPanel({
       initialSeed: 5,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village', 'town', 'city'],
       factions: [REAL_FACTIONS[0], REAL_FACTIONS[1], REAL_FACTIONS[2]],
       layouts: ['auto', 'grid', 'radial'],
@@ -169,6 +185,8 @@ describe('SettlementLabPanel', () => {
   it('falls back to the first option when initialType/initialFaction/initialLayout is not in the provided list', () => {
     const panel = new SettlementLabPanel({
       initialSeed: 1,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village', 'town'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -191,6 +209,8 @@ describe('SettlementLabPanel', () => {
     // doc comment.
     const panel = new SettlementLabPanel({
       initialSeed: 1,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -208,6 +228,8 @@ describe('SettlementLabPanel', () => {
   it('only injects the stylesheet once across multiple panel instances', () => {
     const panel1 = new SettlementLabPanel({
       initialSeed: 1,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],
@@ -215,6 +237,8 @@ describe('SettlementLabPanel', () => {
     });
     const panel2 = new SettlementLabPanel({
       initialSeed: 2,
+      initialRealAssetsEnabled: false,
+      onRealAssetsToggle: vi.fn(),
       settlementTypes: ['village'],
       factions: [REAL_FACTIONS[0]],
       layouts: ['auto'],

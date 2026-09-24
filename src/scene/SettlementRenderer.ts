@@ -23,6 +23,8 @@ import { CORNER_JITTER_MAX } from '@/world/TerrainGeometryBuilder';
 import { mergeGroupMeshesByMaterial } from './MeshMergeUtils';
 import { makeLampPost } from './LampPostFactory';
 import { buildParkFeature } from '@/world/props/WardFeatureClusters';
+import { isCategoryEnabled } from '@/world/ExternalAssetConfig';
+import { loadRealBuildingExterior } from '@/world/buildings/QuatBuildingAdapter';
 
 // Matches OverworldScene's local constants.
 const T  = 2;            // tile side length in world units
@@ -147,11 +149,42 @@ export function renderSettlementPlan(
     const dna = createSettlementBuildingDna(b, plan.type, runtimeFaction, kindOverride);
     if (!dna) continue;
 
-    const inst = buildBuilding(dna);
-    const grp  = inst.exteriorGroup;
-    grp.position.set(wx, wy, wz);
-    grp.rotation.y = b.rotation;
-    mergeGroupMeshesByMaterial(grp);
+    // ── Exterior mesh: procedural and real-asset paths are mutually
+    // exclusive — never build the procedural mesh only to discard it a
+    // moment later. When the "settlement-buildings" category is OFF, this
+    // is the existing, unchanged procedural path (100% baseline). When ON,
+    // `grp` starts empty (no procedural geometry ever added) and is filled
+    // in exactly once, either by the real asset once it loads, or — only if
+    // there's no mapping or the load fails — by the procedural builder as a
+    // lazy fallback. At no point are both a procedural and a real mesh
+    // present in `grp` at once. See QuatBuildingAdapter.ts and design-spec
+    // §2's hard fallback rule.
+    let grp: THREE.Group;
+    if (isCategoryEnabled('settlement-buildings')) {
+      grp = new THREE.Group();
+      grp.position.set(wx, wy, wz);
+      grp.rotation.y = b.rotation;
+      grp.userData['buildingDna']  = dna;
+      grp.userData['buildingKind'] = dna.buildingKind;
+
+      void loadRealBuildingExterior(dna.buildingKind, dna.size, dna.seed).then(realGroup => {
+        if (grp.parent === null) return; // settlement torn down before load resolved
+        if (realGroup) {
+          grp.add(realGroup);
+          grp.userData['usingRealAsset'] = true;
+          return;
+        }
+        // No mapping for this kind, or the load failed — lazy procedural
+        // fallback, built now for the first (and only) time.
+        const fallback = buildBuilding(dna).exteriorGroup;
+        while (fallback.children.length) grp.add(fallback.children[0]!);
+      });
+    } else {
+      grp = buildBuilding(dna).exteriorGroup;
+      grp.position.set(wx, wy, wz);
+      grp.rotation.y = b.rotation;
+      mergeGroupMeshesByMaterial(grp);
+    }
 
     const pos = new THREE.Vector3(wx, wy, wz);
     buildingGroups.push(grp);

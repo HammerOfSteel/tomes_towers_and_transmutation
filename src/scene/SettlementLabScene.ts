@@ -27,6 +27,7 @@ import { mapStudioFactionToRuntimeFaction } from '@/world/buildings/BuildingType
 import { getFootprint, FLOOR_HEIGHT, type BuildingKind } from '@/world/buildings/BuildingDNA';
 import { LEVEL_HEIGHT } from '@/world/WaterDepthConfig';
 import { SettlementLabPanel } from '@/ui/SettlementLabPanel';
+import { isCategoryEnabled, loadExternalAssetConfig, saveExternalAssetConfig } from '@/world/ExternalAssetConfig';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,10 @@ export class SettlementLabScene {
 
   // Panel
   private _panel!: SettlementLabPanel;
+  /** Params from the most recent regenerate — reused when the "Real
+   *  buildings" checkbox toggles the ExternalAssetConfig category and needs
+   *  to trigger a regenerate with the same seed/type/faction/layout. */
+  private _lastParams!: RegenParams;
 
   constructor(
     scene:   THREE.Scene,
@@ -269,12 +274,20 @@ export class SettlementLabScene {
       initialType:     type,
       initialFaction:  faction,
       initialLayout:   layout,
+      initialRealAssetsEnabled: isCategoryEnabled('settlement-buildings'),
       onRegenerate:    (params) => this._regenerate(params),
+      onRealAssetsToggle: (enabled) => {
+        const cfg = loadExternalAssetConfig();
+        cfg.enabled['settlement-buildings'] = enabled;
+        saveExternalAssetConfig(cfg);
+        this._regenerate(this._lastParams);
+      },
     });
     document.body.appendChild(this._panel.rootEl);
 
     // ── Initial settlement ────────────────────────────────────────────────
-    this._regenerate({ seed, type, faction, layout });
+    this._lastParams = { seed, type, faction, layout };
+    this._regenerate(this._lastParams);
   }
 
   exit(): void {
@@ -307,6 +320,7 @@ export class SettlementLabScene {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   private _regenerate(params: RegenParams): void {
+    this._lastParams = params;
     this._clearSettlement();
 
     // Build a fresh grid (set elevation=1 so _valid() passes for all tiles)
