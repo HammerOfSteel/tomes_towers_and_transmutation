@@ -4480,6 +4480,11 @@ document.getElementById('btn-devroom-asset-lab')?.addEventListener('click', () =
   window.open('/asset-lab.html', '_blank');
 });
 
+document.getElementById('btn-devroom-scale-lab')?.addEventListener('click', () => {
+  _showToast('✓ Opening Scale Lab');
+  window.open('/scale-lab.html', '_blank');
+});
+
 // "Play in 3D" — launches the Settlement Lab pre-loaded with whatever
 // settlement is currently configured/generated in this Settlement tab
 // (seed/type/faction/layout), rather than the Lab's own hardcoded default.
