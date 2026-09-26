@@ -125,6 +125,14 @@ packs) don't need a sub-group level — they're already a single coherent set.
 
 ### `village_kit` category → `modular_fantasy_village/medieval_village_megakit` (176 pieces)
 
+**⏸ DEFERRED (Sub-task 2)**: not used for Sub-task 2's building swap-in.
+Assembling these 176 kit-of-parts pieces (walls, roofs, floors, doors,
+overhangs, balconies) requires a wall/roof/floor layout engine comparable
+to `TerrainGeometryBuilder.ts`/dungeon blueprint assembly — a materially
+bigger lift than the whole-building swap done this sub-task
+(`medieval_village_pack/buildings`, 10 monolithic models). Flagged as a
+candidate for a future sub-task, per the plan's explicit scope note.
+
 | Sub-group | Count | Pieces (representative) |
 |---|---|---|
 | Roofs | 39 | `Roof_RoundTiles_*` (many size variants), `Roof_Wooden_2x1_*`, `Roof_Front_Brick*`, `Roof_Dormer_RoundTile`, `Roof_Tower_RoundTiles`, `Roof_Log`, `Roof_Support2` |
@@ -249,6 +257,12 @@ rooms); `Crab` → `beach`; `Bee`, `Mushroom`, `Tree`, `Chicken`, `Pig`, `Panda`
   too). Confirmed **static, full PBR** (`BaseColor`/`Normal`/`ORM` textures
   per material — sampled `Anvil.gltf`). This is the highest-fidelity, most
   game-ready static prop set of the whole survey.
+  - **✅ WIRED (Sub-task 2, Task 3)**: `Bookcase_2, Table_Large, Chair_1,
+    Cauldron, Lantern_Wall, Chest_Wood, Barrel, Barrel_Apples,
+    Crate_Wooden, Crate_Metal` are all mapped in `InteriorPropAdapter.ts`
+    to `PropKind`s `bookshelf, table, chair, cauldron, lantern, chest,
+    barrel, crate`. `Table_Fork/Knife/Plate/Spoon` were measured (6mm-20mm
+    tall) and explicitly excluded — flat cutlery, not tables.
 - **Ultimate Food Pack (Oct 2019)**: 103 food/kitchen items — answers the
   "hidden food props" question from the kickoff: food lives inside
   `fantasy_props/`, not a separate top-level category. Covers raw ingredients
@@ -264,6 +278,12 @@ interior dressing) and settlement market-stall dressing
 (`src/world/buildings/*` faction kits, `SettlementPopulator.ts`).
 
 ### `medieval_village_pack/`
+- **✅ WIRED (Sub-task 2, Task 1-2)**: `QuatBuildingAdapter.ts` resolves
+  `(faction, buildingKind)` to a real model from this pack (plus
+  `modern_type_buildings/city_pack`) whenever `isCategoryEnabled
+  ('settlement-buildings')` is true; `SettlementRenderer.renderSettlementPlan()`
+  fires the async swap-in per building. Verified live in the Settlement Lab
+  (real/procedural toggle) across multiple factions/seeds.
 - **Buildings** (10): `Bell_Tower, Blacksmith, House_1, House_2, House_3,
   House_4, Inn, Mill, Sawmill, Stable`. **Monolithic** — each is a single
   building mesh, not modular pieces, unlike `modular_fantasy_village/` below.
@@ -276,6 +296,12 @@ interior dressing) and settlement market-stall dressing
   Window_1-4, Door_Round/Straight` (the last four are swappable
   building-facade pieces, closer to kit-of-parts than the buildings
   themselves).
+  - **✅ WIRED (Sub-task 2, Task 3)**: `Door_Round`/`Door_Straight` and
+    `Cauldron` are mapped in `InteriorPropAdapter.ts`'s `door`/`cauldron`
+    `PropKind` pools (measured, height-normalised against the procedural
+    builder's own reference height, not trusted at native scale — see
+    that file's doc comment). Other street/settlement props in this list
+    are not yet wired to any PropKind.
 
 **Faction fit** (first pass, using `Faction` from `BuildingDNA.ts`: human_rural,
 human_town, human_noble, elven, dwarven, vampire, undead_common, draconic,
@@ -323,7 +349,20 @@ import on a perfect style match.
   Statue_Fox/Stag, DeadTree_1-3, Tree_1-3, Bush_*, Grass, Flag_*,
   Window_Bars(_Double)(_Overgrown), Window_Open(_Double), Support_*`) — this
   is a genuinely dressable ruined/overgrown-dungeon aesthetic (has both
-  intact and "Overgrown"/"Broken" variants of the same pieces). Re-checked
+  intact and "Overgrown"/"Broken" variants of the same pieces).
+  - **✅ WIRED (Sub-task 2, Task 3)**: `Chest`, `Chest_Gold`,
+    `Bookcase_Full`/`Bookcase_Empty`, `Column_Round`/`Column_Square`/
+    `Column_Round_Short` are mapped to `PropKind`s `chest`, `bookshelf`,
+    `pillar` in `InteriorPropAdapter.ts`. `Statue_Fox`/`Statue_Stag`
+    measured 3.75m/4.63m — 2.8x-3.45x taller than the procedural
+    `buildStatue()`'s own ~1.34m reference height — and are mapped to
+    `statue` with height-normalisation applied at load time rather than
+    at native scale, to avoid repeating the exact "trust the pack's own
+    scale" bug already found and fixed for buildings. The wall/floor/
+    arch/column *modular kit* pieces themselves remain unwired — this
+    sub-task only swaps standalone `PropPlacer` decoration items, not the
+    dungeon's own wall/floor mesh generation (out of scope; see Sub-task 3).
+  Re-checked
   after root-causing the shadow-rendering bug elsewhere in this initiative:
   the overwhelming majority of the 92 `.mtl` files are genuinely flat
   authored `Kd` colour with no texture directive at all — that part holds.
@@ -489,8 +528,8 @@ real-asset path).
 |---|---|---|
 | Nature props (trees/rocks/flowers/bushes) | `NatureScatterPoints.ts` (placement) + `NatureAssetBuilder.ts`/`NatureAssetRecipes.ts` (procedural mesh) | The procedural mesh build, per scattered point — `nature_props/` now imported (GLB, Blender material-fix pipeline); note the disclosed texture-fallback gap above |
 | Dungeons (walls/floors/arches/columns) | `DungeonGenerator.ts`/`blueprint.ts` (grid+door/staircase logic) + `BlueprintRenderer.ts` (mesh build) | The mesh build per Blueprint cell — `modular_dungeons/OBJ` kit is the fantasy fit; `modular_dungeons/Ultimate Modular Sci-Fi` is a second, tonally distinct kit also imported |
-| Tower/indoor generation | `TowerGenerator.ts` (same Blueprint pattern) + `InteriorGenerator.ts` (interior props) | Interior prop meshes — `fantasy_props/` MegaKit fit; `modern_type_buildings/Interior Pack` (102 pieces) also imported for wall/floor/facade modules; wall/floor pieces same as dungeons |
-| Settlement/village buildings | `BuildingGenerator.ts` + per-faction `*Kit.ts` files (wall/corner/roof module assembly) | The per-module mesh, keyed by faction/style — `modular_fantasy_village/` fits human factions best; `medieval_village_pack/Buildings` as whole-building swaps; `modern_type_buildings/City Pack` also imported as a modern-styled option |
+| Tower/indoor generation | `TowerGenerator.ts` (same Blueprint pattern) + `InteriorGenerator.ts` (interior props) | Interior prop meshes — `fantasy_props/` MegaKit fit; `modern_type_buildings/Interior Pack` (102 pieces) also imported for wall/floor/facade modules; wall/floor pieces same as dungeons. **✅ WIRED (Sub-task 2, Task 3)**: `InteriorPropAdapter.ts` + `PropPlacer.decorateRoom()` swap 11 of 12 `PropKind`s to real meshes (chest, bookshelf, table, chair, cauldron, lantern, pillar, door, statue, barrel, crate); only `rug` has no verified real-asset match and stays procedural |
+| Settlement/village buildings | `BuildingGenerator.ts` + per-faction `*Kit.ts` files (wall/corner/roof module assembly) | The per-module mesh, keyed by faction/style — `modular_fantasy_village/` fits human factions best; `medieval_village_pack/Buildings` as whole-building swaps; `modern_type_buildings/City Pack` also imported as a modern-styled option. **✅ WIRED (Sub-task 2, Task 1-2)**: `QuatBuildingAdapter.ts` + `SettlementRenderer.renderSettlementPlan()` swap real medieval_village_pack/city_pack models in per `(faction, buildingKind)`; pools grouped by measured height, not pack naming (see that file's doc comment for the bug this fixed) |
 | Monster spawn placement | No dedicated spawn table yet; `enemy-creator/builder.ts` builds procedural `EnemyDNA` rigs on demand | A new asset-monster selection path parallel to `buildEnemy()` — `Cute Animated Monsters` most reliably rigged; `Bestiary — Dungeon Monsters` (2 monsters, static poses only) for dungeon set-dressing |
 | Animal spawn placement | `AmbientWildlife.ts` (2 procedural species today) | A new asset-animal selection path — `animals/Ultimate Animated Animals` (12 species, confirmed rigged) |
 
