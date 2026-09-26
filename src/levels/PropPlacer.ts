@@ -23,6 +23,8 @@ import type { BuiltProp }    from '@/prop-creator/builder';
 import type { PropDNA, PropKind, PropTheme, PropMaterial } from '@/prop-creator/types';
 import { MATERIAL_COLORS, KIND_DEFAULT_MATERIAL } from '@/prop-creator/types';
 import { mulberry32 }        from '@/core/prng';
+import { isCategoryEnabled } from '@/world/ExternalAssetConfig';
+import { loadRealProp }      from '@/levels/InteriorPropAdapter';
 
 // ── Floor → theme ─────────────────────────────────────────────────────────────
 
@@ -130,6 +132,19 @@ export function decorateRoom(input: RoomDecorInput): PlacedProp[] {
       const built   = buildProp(dna);
       const rotation = (Math.floor(r() * 4) * Math.PI) / 2;
       placed.push({ built, x, z, rotation });
+
+      // Fire-and-forget real-asset swap-in — see InteriorPropAdapter.ts.
+      // buildProp() stays fully synchronous; this mutates built.root's
+      // children in-place once (if) a real model finishes loading.
+      if (isCategoryEnabled('building-interiors')) {
+        void loadRealProp(dna.propKind, dna.seed).then(realGroup => {
+          if (!realGroup) return;
+          if (built.root.parent === null) return; // room already unloaded
+          while (built.root.children.length) built.root.remove(built.root.children[0]!);
+          realGroup.scale.multiplyScalar(dna.size);
+          built.root.add(realGroup);
+        }).catch(e => console.warn('[PropPlacer] real-asset swap failed:', e));
+      }
     } catch (e) {
       console.warn('[PropPlacer] failed to build prop:', e);
     }
