@@ -231,6 +231,12 @@ export class GameMenu {
   open(tab?: TabId): void {
     this._open = true;
     this._el.classList.add('gm--open');
+    // Rebuild the sidebar every open — Dev Mode can be toggled mid-session
+    // (Settings modal, reachable from the in-game System menu without a
+    // page reload), and the Dev tab's visibility must reflect that live,
+    // not just whatever `isDevMode()` returned when GameMenu was first
+    // constructed at boot.
+    this._buildSidebar();
     this._selectTab(tab ?? this._activeTab);
   }
 

@@ -220,6 +220,19 @@ export class SceneManager {
     return this.currentRoom?.group ?? null;
   }
 
+  /** Debug/test snapshot of every currently-decorated prop root's mesh-child
+   *  state — used to verify PropPlacer.ts's hard rule that a prop root
+   *  never holds both a procedural and a real-asset representation at
+   *  once (see docs/asset-integration/2026-09-23-wiring-design-spec.md).
+   *  `meshChildCount` excludes lights (functional, not representational). */
+  getDecoratedPropDebugInfo(): Array<{ propKind: unknown; meshChildCount: number; usingRealAsset: boolean }> {
+    return this._decoratedPropRoots.map(root => ({
+      propKind:       root.userData['propKind'],
+      meshChildCount: root.children.filter(c => !(c as unknown as { isLight?: boolean }).isLight).length,
+      usingRealAsset: root.userData['usingRealAsset'] === true,
+    }));
+  }
+
   /** Instance ID of the dungeon's starting room, or `null` if no dungeon has
    *  been loaded yet.  Used by death-screen restart to return to the beginning. */
   get startRoomId(): string | null {

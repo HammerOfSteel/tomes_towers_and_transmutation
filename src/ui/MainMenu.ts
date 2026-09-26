@@ -821,7 +821,7 @@ export class MainMenu {
             </label>`).join('')}
         </div>
       </div>
-      ${devOn ? `
+      <div id="mm-ext-assets-section" style="${devOn ? '' : 'display:none'}">
       <div class="mm-setting-divider"></div>
       <div class="mm-setting-row mm-setting-row--section-hdr">
         <span class="mm-setting-section-title">🧩 External Assets (Dev)</span>
@@ -844,7 +844,7 @@ export class MainMenu {
           <span class="mm-toggle-track"><span class="mm-toggle-thumb"></span></span>
         </label>
       </div>`).join('')}
-      ` : ''}
+      </div>
     `);
 
     const footer = mkEl('div', 'mm-modal-footer');
@@ -875,11 +875,20 @@ export class MainMenu {
     });
 
     const devToggle = card.querySelector<HTMLInputElement>('#mm-dev-toggle')!;
+    const extAssetsSection = card.querySelector<HTMLElement>('#mm-ext-assets-section');
     devToggle.addEventListener('change', () => {
       localStorage.setItem('ttt_dev_mode', String(devToggle.checked));
-      // Show / hide the Dev Lab nav button in real-time
+      // Show / hide the Dev Lab nav button and the dev-only External Assets
+      // section in real-time — this section was previously only stamped
+      // into the HTML template if Dev Mode was already on when the modal's
+      // markup was first built, so toggling it on later (without a full
+      // page reload) silently left the section missing. It's now always
+      // present in the DOM and just hidden/shown here.
       if (this._devLabBtn) {
         this._devLabBtn.style.display = devToggle.checked ? '' : 'none';
+      }
+      if (extAssetsSection) {
+        extAssetsSection.style.display = devToggle.checked ? '' : 'none';
       }
     });
 

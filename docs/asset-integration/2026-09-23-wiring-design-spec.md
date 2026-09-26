@@ -1,5 +1,17 @@
 # Wiring Real Assets Into Procedural Systems — Design Spec
 
+> ## ⛔ HARD RULE — READ BEFORE TOUCHING ANY RESOLVER OR CALLER CODE
+> **Procedural and real-asset representations of the same object must NEVER
+> be visible at the same time — not even for one frame, not even for a
+> subset of instances while others resolve.** This is absolute, was stated
+> repeatedly by the user, and was violated once already (2026-09-25
+> incident, see §4 below) by a resolver that built the procedural mesh
+> eagerly and only swapped it out later. Every resolver/caller MUST follow
+> the empty-placeholder pattern in §2/§4: start empty, populate exactly
+> once, only inside the single resolution path (sync toggle-off branch, or
+> the async `.then()`/`.catch()`). Before writing or reviewing ANY code
+> that places a real or procedural asset, re-read §2 and §4 of this doc.
+
 *Step 3 of the 3D Asset Integration initiative (per the
 `research-driven-world-polish` skill). Research for this spec is at
 `docs/asset-integration/2026-09-23-wiring-research.md` — read that first for
@@ -58,6 +70,22 @@ toggle is on but no real asset is mapped for this specific archetype/kind
 This was explicitly confirmed by the user and keeps today's behavior as a
 guaranteed safety net in every system, permanently — not just during
 development.
+
+**Hard rule #3, added after the 2026-09-25 incident (see §4): a resolver's
+placeholder container must start completely empty and be populated with
+exactly one representation, exactly once, only inside the single
+resolution path.** Concretely: never call the procedural builder eagerly
+"just to have something visible while we wait" and swap it out later —
+that produces a visible flash, and if only some of several same-kind
+instances resolve before others (or one instance's load fails while a
+sibling's succeeds), it produces the exact simultaneous-mixing bug this
+rule exists to prevent. If synchronous metadata from the procedural
+builder is needed immediately by the caller (e.g. collision bounds, a
+functional point light), detach only the non-representational parts
+before they'd render, and keep the actual visual mesh output snapshotted/
+unattached until the single resolution point. See `SettlementRenderer.ts`
+(`renderSettlementPlan()`) and `PropPlacer.ts` (`decorateRoom()`) for the
+two reference-correct implementations of this pattern.
 
 ### Per-system resolver placement
 
@@ -275,3 +303,50 @@ spec does not itself contain per-sub-task task breakdowns.
   that's a new decision, not part of this spec).
 - Blender-based nature_props export completion is a separate, already
   tracked open item in the inventory doc — not blocking this spec.
+
+## 4. Incident log — 2026-09-25: procedural/real mixing regression
+
+**What happened:** `PropPlacer.ts`'s `decorateRoom()` called the
+procedural `buildProp(dna)` builder eagerly and added its visual mesh
+children to the scene immediately, then fired an async real-asset load
+that swapped those children out later if/when it resolved. Live playtest
+in the tower showed procedural and real-asset props rendered
+simultaneously in the same room — a direct violation of Hard rule #3
+above (which did not yet exist in this explicit, numbered form at the
+time; §2's general "mutually exclusive" framing existed but was not
+followed rigorously in this one caller).
+
+**Root cause:** `built.root` was never empty — the procedural mesh was
+attached synchronously, so for the whole async load window (and forever,
+for any instance whose load failed or was slow), both a procedural mesh
+*and*, once resolved, a real mesh could be present at once, and different
+instances of the same prop kind in the same room could be in different
+states at the same rendered frame.
+
+**Fix:** restructured to match `SettlementRenderer.ts`'s exterior-mesh
+pattern exactly — `buildProp(dna)` is still called synchronously (its
+`collision`/`light`/`dna` metadata is needed immediately), but its visual
+mesh children are detached into a local array before ever being added to
+the scene graph, and only re-attached (or replaced by the real asset)
+inside the single resolution path: the synchronous toggle-off branch, or
+the async `.then()`/`.catch()`. `built.root.userData['usingRealAsset']` is
+now set when a real asset is used, mirroring `SettlementRenderer.ts`, so
+this state is inspectable for tests/debug
+(`SceneManager.getDecoratedPropDebugInfo()` /
+`window.__game.getDecoratedPropDebug()`).
+
+**Verified via Playwright** (both immediately after room-load and after a
+multi-second settle window, with the `building-interiors` toggle both ON
+and OFF): no prop root ever held more than one mesh-representation's worth
+of children when `usingRealAsset` was true, and the toggle-off path
+remained purely procedural with no async race.
+
+**Process fix per explicit user instruction:** this rule is not to be
+merely "kept in mind" — any future resolver/caller touching real-asset
+swap-in must open and re-read this doc's Hard rule #3 and this incident
+log *before* writing the caller code, not just before merging it. If you
+are an agent working on this codebase and you are about to write a
+resolver or a caller that adds a procedural OR a real-asset mesh to a
+scene, stop and confirm your code matches the empty-placeholder-until-
+resolved pattern before proceeding.
+

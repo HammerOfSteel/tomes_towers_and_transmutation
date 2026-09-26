@@ -2096,6 +2096,12 @@ async function main() {
           console.log(`[decorateCurrentRoom] placed ${placed.length} props on floor ${floor} (theme: ${themeForFloor(floor)})`);
         });
       },
+      /** Debug/test snapshot of every prop root placed by SceneManager's
+       *  own automatic room decoration (not decorateCurrentRoom() above,
+       *  which bypasses SceneManager's tracking) — used to verify
+       *  PropPlacer.ts's hard rule against simultaneous procedural + real
+       *  asset representations. See SceneManager.getDecoratedPropDebugInfo(). */
+      getDecoratedPropDebug: () => sceneManager.getDecoratedPropDebugInfo(),
       /** PROC dev: spawn a test building in the current scene. */
       spawnTestBuilding: (kind = 'house', style = 'thatched', size = 'small') => {
         import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {

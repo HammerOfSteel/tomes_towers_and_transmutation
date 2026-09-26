@@ -1,5 +1,11 @@
 # Quaternius Asset Inventory
 
+> ⛔ **Before wiring any real asset into a placement/construction caller,
+> read the Hard Rule and 2026-09-25 incident log in
+> `docs/asset-integration/2026-09-23-wiring-design-spec.md` §2/§4:
+> procedural and real-asset representations must NEVER be visible at the
+> same time, not even transiently. This was violated once already.**
+
 *Source: `/Users/terrygoleman/Downloads/game_assets/buildings/quaternius/` (local
 filesystem, outside this repo — not committed, not LFS-tracked). Surveyed via
 `unzip -l` listings and JSON-sniffing sampled `.gltf` files (checked for

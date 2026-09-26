@@ -18,6 +18,7 @@
  *   }
  */
 
+import * as THREE            from 'three';
 import { buildProp }         from '@/prop-creator/builder';
 import type { BuiltProp }    from '@/prop-creator/builder';
 import type { PropDNA, PropKind, PropTheme, PropMaterial } from '@/prop-creator/types';
@@ -129,21 +130,50 @@ export function decorateRoom(input: RoomDecorInput): PlacedProp[] {
     };
 
     try {
-      const built   = buildProp(dna);
+      const built    = buildProp(dna);
       const rotation = (Math.floor(r() * 4) * Math.PI) / 2;
+
+      // ── HARD RULE (see docs/asset-integration/2026-09-23-wiring-design-spec.md
+      // "Hard rule" / "Hard rule #2", and the incident note at the top of that
+      // doc): procedural and real-asset representations of the SAME prop must
+      // NEVER be visible at once — not even transiently/per-instance during
+      // async load. This mirrors SettlementRenderer.ts's building pattern
+      // exactly: `built.root` keeps only non-representational children (e.g.
+      // the functional point light for lanterns/cauldrons) synchronously; the
+      // procedural *visual* mesh children are detached here and held in
+      // `proceduralChildren`, re-attached only inside the single resolution
+      // path below (toggle-off branch, or the async `.then()`/`.catch()`) —
+      // never both a procedural and a real mesh in `built.root` at once.
+      const proceduralChildren: THREE.Object3D[] = [];
+      for (const child of [...built.root.children]) {
+        if (built.light && child === built.light) continue;
+        built.root.remove(child);
+        proceduralChildren.push(child);
+      }
+      const attachProcedural = () => { for (const child of proceduralChildren) built.root.add(child); };
+
       placed.push({ built, x, z, rotation });
 
-      // Fire-and-forget real-asset swap-in — see InteriorPropAdapter.ts.
-      // buildProp() stays fully synchronous; this mutates built.root's
-      // children in-place once (if) a real model finishes loading.
       if (isCategoryEnabled('building-interiors')) {
         void loadRealProp(dna.propKind, dna.seed).then(realGroup => {
-          if (!realGroup) return;
           if (built.root.parent === null) return; // room already unloaded
-          while (built.root.children.length) built.root.remove(built.root.children[0]!);
-          realGroup.scale.multiplyScalar(dna.size);
-          built.root.add(realGroup);
-        }).catch(e => console.warn('[PropPlacer] real-asset swap failed:', e));
+          if (realGroup) {
+            realGroup.scale.multiplyScalar(dna.size);
+            built.root.add(realGroup);
+            built.root.userData['usingRealAsset'] = true; // for tests/debug — mirrors SettlementRenderer.ts
+            return;
+          }
+          // No mapping for this kind, or the load failed — lazy procedural
+          // fallback, attached now for the first (and only) time.
+          attachProcedural();
+        }).catch(e => {
+          console.warn('[PropPlacer] real-asset swap failed:', e);
+          if (built.root.parent !== null) attachProcedural();
+        });
+      } else {
+        // Category off — existing, unchanged procedural path (attached
+        // synchronously; no async race possible in this branch).
+        attachProcedural();
       }
     } catch (e) {
       console.warn('[PropPlacer] failed to build prop:', e);
