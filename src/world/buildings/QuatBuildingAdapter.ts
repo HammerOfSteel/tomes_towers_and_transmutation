@@ -187,6 +187,33 @@ export function pickQuatBuildingModelId(kind: BuildingKind, seed: number): strin
   return entry[idx]!;
 }
 
+/**
+ * Uniform corrective scale applied on TOP of native scale (×1) for every
+ * placed real building.
+ *
+ * Native scale alone (validated via Scale Lab against the 2.0m reference
+ * character, see module doc comment) makes each building's overall
+ * silhouette height a plausible 1.46x-2.96x character height. But that
+ * whole-building check never measured the DOOR APERTURE specifically —
+ * and empirical inspection of a live playtest screenshot (character
+ * standing directly beside a real building's door) showed the door
+ * opening itself reads as roughly the same height as the character, not
+ * taller — Quaternius's low-poly buildings are stylised with thick
+ * walls/chunky roofs and comparatively small doors, which isn't something
+ * placing at native scale alone fixes. Doors ~1.0x character height read
+ * as "character is too big for this house"; real doors are ~1.05x-1.2x
+ * an adult's height for headroom.
+ *
+ * Since we never edit/invent geometry, the only lever available is
+ * bumping the WHOLE building (and therefore its door, proportionally)
+ * larger. +28% brings a ~1.0x-character door to a believable ~1.25x-
+ * 1.3x, at the cost of pushing whole-building heights to a still-
+ * plausible ~1.9x-3.8x character height (bigger, grander buildings —
+ * acceptable; the user has repeatedly prioritised buildings/doors not
+ * reading too small over strict real-world proportion accuracy).
+ */
+const DOOR_SCALE_CORRECTION = 1.28;
+
 // ── Async load + fit ──────────────────────────────────────────────────────────
 
 /**
@@ -216,6 +243,8 @@ export async function loadRealBuildingExterior(
   }
 
   const group = loaded.scene;
+  group.scale.setScalar(DOOR_SCALE_CORRECTION);
+  group.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(group);
   group.position.y = -box.min.y;
 

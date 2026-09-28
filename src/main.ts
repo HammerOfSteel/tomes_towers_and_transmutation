@@ -2102,6 +2102,11 @@ async function main() {
        *  PropPlacer.ts's hard rule against simultaneous procedural + real
        *  asset representations. See SceneManager.getDecoratedPropDebugInfo(). */
       getDecoratedPropDebug: () => sceneManager.getDecoratedPropDebugInfo(),
+      /** Debug/test snapshot of overworld building bounding-box heights
+       *  (real-asset vs. procedural) — used to empirically verify
+       *  building-vs-character/door scale complaints instead of guessing.
+       *  See OverworldScene.getBuildingScaleDebugInfo(). */
+      getBuildingScaleDebug: () => overworld?.getBuildingScaleDebugInfo() ?? [],
       /** PROC dev: spawn a test building in the current scene. */
       spawnTestBuilding: (kind = 'house', style = 'thatched', size = 'small') => {
         import('@/world/buildings/BuildingBuilder').then(({ buildBuilding }) => {

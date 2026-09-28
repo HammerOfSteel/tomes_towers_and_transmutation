@@ -791,6 +791,28 @@ export class OverworldScene {
     return this._buildingColliderSpecs.length;
   }
 
+  /** Debug/test snapshot of real building bounding-box world-space heights
+   *  currently in the scene, plus which building used a real asset vs.
+   *  procedural fallback — for empirically verifying building-vs-character
+   *  scale complaints instead of guessing. Only meaningful once each
+   *  building's async real-asset resolution (see SettlementRenderer.ts) has
+   *  settled; `resolved: false` means still using the empty placeholder.
+   *  Note: these Quaternius models use generic auto-generated node names
+   *  (e.g. "Cylinder021"), not semantic ones like "Door" — per-door-aperture
+   *  measurement isn't possible this way; only whole-building height is. */
+  getBuildingScaleDebugInfo(): Array<{ buildingKind: unknown; usingRealAsset: boolean; resolved: boolean; heightWU: number }> {
+    return this._buildingGroups.map(grp => {
+      const resolved = grp.children.length > 0;
+      const box = resolved ? new THREE.Box3().setFromObject(grp) : null;
+      return {
+        buildingKind:   grp.userData['buildingKind'],
+        usingRealAsset: grp.userData['usingRealAsset'] === true,
+        resolved,
+        heightWU: box ? box.max.y - box.min.y : 0,
+      };
+    });
+  }
+
   /** Returns the nearest building entrance if the player is within range. */
   nearBuilding(pos: THREE.Vector3): BuildingEntrance | null {
     for (const b of this.buildingEntrances) {
