@@ -32,11 +32,23 @@ export const DUNGEON_KIT = {
   wallHalf:    'modular_dungeons/obj_kit/Wall_Half',
   floor:       'modular_dungeons/obj_kit/Floor_Standard',
   door:        'modular_dungeons/obj_kit/Doors_GothicArch',
-  stairs:      'modular_dungeons/obj_kit/Stairs_2',
+  // `Stairs` (not `Stairs_2`) chosen for consistent axis semantics with
+  // `Wall`/`Floor_Standard` (x = cell-width axis, z = run/approach axis) —
+  // `Stairs_2` measured with those two axes swapped (research doc §2),
+  // which would make automatic orientation-by-facing unreliable. `Stairs`
+  // has a shorter native rise (~0.92m vs ~1.78m), so more pieces stack per
+  // room, but the placement math stays simple and correct.
+  stairs:      'modular_dungeons/obj_kit/Stairs',
   column:      'modular_dungeons/obj_kit/Column_Round',
 } as const;
 
 export type DungeonKitPiece = keyof typeof DUNGEON_KIT;
+
+/** Resolved templates for every piece in `DUNGEON_KIT`, keyed the same way.
+ *  A null value means that specific piece failed to load — callers fall
+ *  back to procedural geometry for just that piece type (hard fallback
+ *  rule; see `loadDungeonKit()`'s doc comment). */
+export type DungeonKit = Record<DungeonKitPiece, THREE.Object3D | null>;
 
 // ── Measured constants (docs/asset-integration/2026-09-26-dungeons-research.md) ─
 
@@ -55,10 +67,10 @@ export const NATIVE_WALL_HEIGHT = 2.0;
  *  ratio instead of silently drifting. */
 export const NATIVE_CELL = 2.0;
 
-/** Native rise of one `Stairs_2` piece, measured ≈1.78m (research doc §2).
+/** Native rise of one `Stairs` piece, measured ≈0.92m (research doc §2).
  *  Used by `computeStairStepCount()` to determine how many pieces must be
- *  stacked to span a given room's `wallHeight`. */
-export const NATIVE_STAIR_RISE = 1.78;
+ *  stacked to span a given staircase's total rise. */
+export const NATIVE_STAIR_RISE = 0.922;
 
 /** Per-room scale factor for wall/column/pillar pieces, derived
  *  arithmetically from the room's own declared `cellSize`/`wallHeight`
@@ -73,11 +85,16 @@ export function computeWallScale(bp: Pick<Blueprint, 'cellSize' | 'wallHeight'>)
   return { x: xz, y, z: xz };
 }
 
-/** How many `Stairs_2` pieces must be stacked to span `wallHeight`
- *  (minimum 2, so even a short room gets at least a visually complete
- *  staircase rather than one truncated piece). */
-export function computeStairStepCount(wallHeight: number): number {
-  return Math.max(2, Math.ceil(wallHeight / NATIVE_STAIR_RISE));
+/** How many `Stairs` pieces must be stacked to span a given total rise
+ *  (minimum 2, so even a short staircase gets at least a visually
+ *  complete look rather than one truncated piece). Pass the staircase's
+ *  actual computed total rise (`STEPS * stepH` in `buildStaircase()`),
+ *  not `wallHeight` directly — the existing procedural staircase's rise
+ *  is capped independently of `wallHeight` (see `buildStaircase()`'s
+ *  `stepH` calc), so real-asset stacking must match that same value to
+ *  stay physics-collider-accurate. */
+export function computeStairStepCount(totalRise: number): number {
+  return Math.max(2, Math.ceil(totalRise / NATIVE_STAIR_RISE));
 }
 
 // ── Async load ──────────────────────────────────────────────────────────────
@@ -123,13 +140,13 @@ export async function loadDungeonPiece(id: string): Promise<THREE.Object3D | nul
  *  violation — mixing real+procedural for the SAME tile/cell is; mixing
  *  piece TYPES within a room because one type failed to load is an
  *  acceptable, expected degradation). */
-export async function loadDungeonKit(): Promise<Record<DungeonKitPiece, THREE.Object3D | null>> {
+export async function loadDungeonKit(): Promise<DungeonKit> {
   const entries = await Promise.all(
     (Object.keys(DUNGEON_KIT) as DungeonKitPiece[]).map(
       async (key) => [key, await loadDungeonPiece(DUNGEON_KIT[key])] as const,
     ),
   );
-  return Object.fromEntries(entries) as Record<DungeonKitPiece, THREE.Object3D | null>;
+  return Object.fromEntries(entries) as DungeonKit;
 }
 
 /** Clones a loaded template piece for one placement. Templates are shared

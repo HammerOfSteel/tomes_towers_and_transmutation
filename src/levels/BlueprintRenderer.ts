@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
-import type { Blueprint, FloorType, StaircaseEntry } from './blueprint';
+import type { Blueprint, FloorType, StaircaseEntry, TileEntry } from './blueprint';
 import { cellToWorld } from './blueprint';
 import { findWallCornerPilasterPoints } from './WallCornerPilasters';
 import { PALETTE } from '@/shaders/palette';
 import { MaterialLibrary } from '@/rendering/MaterialLibrary';
+import { isCategoryEnabled } from '@/world/ExternalAssetConfig';
+import {
+  computeWallScale, computeStairStepCount, loadDungeonKit, cloneDungeonPiece,
+  type DungeonKit,
+} from './QuatDungeonAdapter';
 import {
   buildCauldron,
   buildPotionRack, buildDistillationCoil, buildFermentingVat, buildHerbBundle,
@@ -69,9 +74,138 @@ export interface RenderedRoom {
   dispose(): void;
 }
 
+// ── Real dungeon-kit helpers ────────────────────────────────────────────
+// Shared by the wall/pillar/floor/door/staircase real-asset resolvers
+// below. See QuatDungeonAdapter.ts and
+// docs/asset-integration/2026-09-26-dungeons-research.md for the scale/
+// piece-selection rationale, and docs/superpowers/plans/
+// 2026-09-26-external-assets-dungeons.md for the implementation plan.
+
+/** Tags every Mesh descendant of a real-asset clone with the flags the
+ *  rest of the renderer/game expects. `isWall` in particular is read by
+ *  `WallOcclusionManager`, which traverses individual meshes (not
+ *  container groups) — a real-asset piece often loads as a Group of
+ *  several sub-meshes, so this must be applied recursively, not just to
+ *  the top-level Object3D. */
+function tagRealAssetMesh(
+  obj: THREE.Object3D,
+  opts: { isWall?: boolean; castShadow?: boolean; receiveShadow?: boolean },
+): void {
+  obj.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) return;
+    const mesh = child as THREE.Mesh;
+    if (opts.isWall) mesh.userData.isWall = true;
+    if (opts.castShadow !== undefined) mesh.castShadow = opts.castShadow;
+    if (opts.receiveShadow !== undefined) mesh.receiveShadow = opts.receiveShadow;
+  });
+}
+
+/** Procedural fallback for one wall or pillar tile — identical geometry to
+ *  the pre-Sub-task-3 code, just parented to `parent` at local-origin
+ *  instead of being positioned in world space directly (the caller
+ *  positions `parent` at the tile's world location). Used both as the
+ *  "real assets off" path and as the lazy per-tile fallback when a
+ *  specific kit piece fails to load (hard fallback rule — never build
+ *  both for the same tile). */
+function buildProceduralWallOrPillar(
+  parent: THREE.Group,
+  tileType: TileEntry['type'],
+  cellSize: number,
+  tH: number,
+  rotationDeg: number,
+  wallMat: THREE.Material,
+  geometries: THREE.BufferGeometry[],
+): void {
+  if (tileType === 'wall') {
+    const geo = new THREE.BoxGeometry(cellSize, tH, cellSize);
+    geometries.push(geo);
+    const mesh = new THREE.Mesh(geo, wallMat);
+    mesh.position.set(0, tH / 2, 0);
+    mesh.rotation.y = THREE.MathUtils.degToRad(rotationDeg);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.isWall = true;   // used by WallOcclusionManager
+    parent.add(mesh);
+  } else {
+    const geo = new THREE.CylinderGeometry(0.25, 0.3, tH, 8);
+    geometries.push(geo);
+    const mesh = new THREE.Mesh(geo, wallMat);
+    mesh.position.set(0, tH / 2, 0);
+    mesh.castShadow = true;
+    mesh.userData.isWall = true;   // used by WallOcclusionManager
+    parent.add(mesh);
+  }
+}
+
+/** Procedural fallback for the whole-room floor plane — identical to the
+ *  pre-Sub-task-3 code, parented to `parent` (the caller positions
+ *  `parent` at the room's local origin). */
+function buildProceduralFloorPlane(
+  parent: THREE.Group,
+  floorW: number,
+  floorD: number,
+  floorMat: THREE.Material,
+  geometries: THREE.BufferGeometry[],
+): void {
+  const floorGeo = new THREE.PlaneGeometry(floorW, floorD);
+  floorGeo.rotateX(-Math.PI / 2);
+  geometries.push(floorGeo);
+  const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+  floorMesh.receiveShadow = true;
+  parent.add(floorMesh);
+}
+
+/** Procedural fallback for one door's post-and-lintel frame — identical
+ *  geometry to the pre-Sub-task-3 code, parented to `parent` at
+ *  local-origin (the caller positions `parent` at the door cell's world
+ *  location). */
+function buildProceduralDoorFrame(
+  parent: THREE.Group,
+  isNS: boolean,
+  cellSize: number,
+  wallHeight: number,
+  frameMat: THREE.Material,
+  geometries: THREE.BufferGeometry[],
+): void {
+  const postH = wallHeight * 0.82;
+  const postHalf = postH / 2;
+  const lintelH = wallHeight - postH;
+  const postOffset = cellSize / 2 - 0.15;
+
+  const postGeo = new THREE.BoxGeometry(0.22, postH, 0.22);
+  const lintelGeo = new THREE.BoxGeometry(
+    isNS ? cellSize : 0.22,
+    lintelH,
+    isNS ? 0.22 : cellSize,
+  );
+  geometries.push(postGeo, lintelGeo);
+
+  const postA = new THREE.Mesh(postGeo, frameMat);
+  const postB = new THREE.Mesh(postGeo, frameMat);
+  const lintelMesh = new THREE.Mesh(lintelGeo, frameMat);
+
+  if (isNS) {
+    postA.position.set(-postOffset, postHalf, 0);
+    postB.position.set(postOffset, postHalf, 0);
+  } else {
+    postA.position.set(0, postHalf, -postOffset);
+    postB.position.set(0, postHalf, postOffset);
+  }
+  lintelMesh.position.set(0, postH + lintelH / 2, 0);
+
+  postA.userData.isDoorFrame = true;
+  postB.userData.isDoorFrame = true;
+  lintelMesh.userData.isDoorFrame = true;
+  parent.add(postA, postB, lintelMesh);
+}
+
 // ── Staircase builder ─────────────────────────────────────────────────────
 
-/** Builds a 7-step procedural staircase with per-step Rapier colliders and a trigger AABB.
+/** Builds a 7-step staircase with per-step Rapier colliders and a trigger
+ *  AABB. Colliders are ALWAYS the same 7 procedural boxes regardless of
+ *  visual-asset choice (physics fidelity must not depend on async asset
+ *  load timing) — only the VISIBLE step meshes swap between the
+ *  procedural boxes and stacked real `Stairs` kit pieces.
  *
  *  'up'  stairs: steps rise from floor level; warm amber glow at the landing.
  *  'down' stairs: steps descend below the floor; cool blue glow at floor level
@@ -85,6 +219,7 @@ function buildStaircase(
   doorTriggers: DoorTrigger[],
   physics: PhysicsWorld,
   bodies: ReturnType<PhysicsWorld['createStaticBox']>[],
+  dungeonKitPromise: Promise<DungeonKit> | null,
 ): void {
   const { cellSize, wallHeight } = bp;
   const { x: wx, z: wz } = cellToWorld(stair.x, stair.z, bp);
@@ -108,21 +243,71 @@ function buildStaircase(
   const stepHalfW = stepW / 2;
   const stepHalfD = stepD / 2;
 
+  // ── Visible step meshes — procedural (real assets off) or deferred to a
+  // real-asset resolver below. Physics colliders (next loop) are always
+  // the same 7 procedural boxes regardless of this choice.
+  const visualContainer = new THREE.Group();
+  group.add(visualContainer);
+  if (!dungeonKitPromise) {
+    for (let i = 0; i < STEPS; i++) {
+      const along = (STEPS / 2 - i - 0.5) * stepD;
+      const sx = wx - ax * along;
+      const sz = wz - az * along;
+      const sy = stair.direction === 'up' ? (i + 0.5) * stepH : -(i + 0.5) * stepH;
+      const geoW = ax !== 0 ? stepD : stepW;
+      const geoD = az !== 0 ? stepD : stepW;
+      const geo = new THREE.BoxGeometry(geoW, stepH, geoD);
+      geometries.push(geo);
+      const mesh = new THREE.Mesh(geo, stepMat);
+      mesh.position.set(sx, sy, sz);
+      mesh.castShadow = true;
+      visualContainer.add(mesh);
+    }
+  } else {
+    const totalRise = STEPS * stepH;
+    void dungeonKitPromise.then((kit) => {
+      if (visualContainer.parent === null) return; // room torn down before load resolved
+      if (kit.stairs) {
+        const pieceCount = computeStairStepCount(totalRise);
+        const pieceRise = totalRise / pieceCount;
+        const pieceRun = STAIR_SPAN / pieceCount;
+        const rotY = az !== 0 ? 0 : THREE.MathUtils.degToRad(90);
+        for (let i = 0; i < pieceCount; i++) {
+          const along = (pieceCount / 2 - i - 0.5) * pieceRun;
+          const sx = wx - ax * along;
+          const sz = wz - az * along;
+          const sy = stair.direction === 'up' ? i * pieceRise : -(i + 1) * pieceRise;
+          const piece = cloneDungeonPiece(kit.stairs);
+          piece.position.set(sx, sy, sz);
+          piece.rotation.y = rotY;
+          tagRealAssetMesh(piece, { castShadow: true, receiveShadow: true });
+          visualContainer.add(piece);
+        }
+      } else {
+        for (let i = 0; i < STEPS; i++) {
+          const along = (STEPS / 2 - i - 0.5) * stepD;
+          const sx = wx - ax * along;
+          const sz = wz - az * along;
+          const sy = stair.direction === 'up' ? (i + 0.5) * stepH : -(i + 0.5) * stepH;
+          const geoW = ax !== 0 ? stepD : stepW;
+          const geoD = az !== 0 ? stepD : stepW;
+          const geo = new THREE.BoxGeometry(geoW, stepH, geoD);
+          geometries.push(geo);
+          const mesh = new THREE.Mesh(geo, stepMat);
+          mesh.position.set(sx, sy, sz);
+          mesh.castShadow = true;
+          visualContainer.add(mesh);
+        }
+      }
+    });
+  }
+
   for (let i = 0; i < STEPS; i++) {
     // Step i=0 is at the player approach side; i=STEPS-1 is at the wall.
     const along = (STEPS / 2 - i - 0.5) * stepD; // + = approach side, - = wall side
     const sx = wx - ax * along;
     const sz = wz - az * along;
     const sy = stair.direction === 'up' ? (i + 0.5) * stepH : -(i + 0.5) * stepH;
-
-    const geoW = ax !== 0 ? stepD : stepW;
-    const geoD = az !== 0 ? stepD : stepW;
-    const geo = new THREE.BoxGeometry(geoW, stepH, geoD);
-    geometries.push(geo);
-    const mesh = new THREE.Mesh(geo, stepMat);
-    mesh.position.set(sx, sy, sz);
-    mesh.castShadow = true;
-    group.add(mesh);
 
     // Physics collider matching each step exactly
     bodies.push(
@@ -232,22 +417,66 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   const itemMat  = MaterialLibrary.get('wood_dark');
   materials.push(frameMat);
 
+  // ── Real dungeon-kit resolver (Sub-task 3) ───────────────────────────
+  // Kicked off once, shared by the floor/wall/pillar/door/staircase
+  // sections below and passed down to buildStaircase(). `null` means
+  // real assets are off for this room — every section below keeps its
+  // exact pre-Sub-task-3 procedural behaviour in that case (hard
+  // fallback rule). `computeWallScale()` is a pure function of the
+  // room's own cellSize/wallHeight — see QuatDungeonAdapter.ts.
+  const useRealDungeonKit = isCategoryEnabled('dungeons-towers');
+  const dungeonKitPromise: Promise<DungeonKit> | null = useRealDungeonKit ? loadDungeonKit() : null;
+  const wallScale = computeWallScale(bp);
+
   // ── Floor ─────────────────────────────────────────────────────────────
   const floorW = width * cellSize;
   const floorD = depth * cellSize;
-  const floorGeo = new THREE.PlaneGeometry(floorW, floorD);
-  floorGeo.rotateX(-Math.PI / 2);
-  geometries.push(floorGeo);
-  const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-  floorMesh.receiveShadow = true;
-  group.add(floorMesh);
 
+  // Physics floor collider is one big box regardless of visual choice —
+  // the room must be walkable immediately, independent of async asset
+  // load timing.
   bodies.push(
     physics.createStaticBox(
       new THREE.Vector3(0, -0.025, 0),
       new THREE.Vector3(floorW / 2, 0.025, floorD / 2),
     ),
   );
+
+  const floorContainer = new THREE.Group();
+  group.add(floorContainer);
+
+  if (!dungeonKitPromise) {
+    buildProceduralFloorPlane(floorContainer, floorW, floorD, floorMat, geometries);
+  } else {
+    void dungeonKitPromise.then((kit) => {
+      if (floorContainer.parent === null) return; // room torn down before load resolved
+      if (!kit.floor) {
+        // No real floor piece available — lazy whole-room procedural
+        // fallback (hard fallback rule), built now for the first (and
+        // only) time.
+        buildProceduralFloorPlane(floorContainer, floorW, floorD, floorMat, geometries);
+        return;
+      }
+      // Real per-cell floor tiles — one Floor_Standard clone per
+      // non-wall/non-pillar cell (floor is implicit for all unlisted
+      // cells per blueprint.ts's doc comment; there's no separate
+      // FloorTileEntry array to iterate).
+      const structuralKeys = new Set(
+        bp.tiles.filter(t => t.type === 'wall' || t.type === 'pillar').map(t => `${t.x},${t.z}`),
+      );
+      for (let gz = 0; gz < depth; gz++) {
+        for (let gx = 0; gx < width; gx++) {
+          if (structuralKeys.has(`${gx},${gz}`)) continue;
+          const { x: fx, z: fz } = cellToWorld(gx, gz, bp);
+          const tileMesh = cloneDungeonPiece(kit.floor);
+          tileMesh.position.set(fx, 0, fz);
+          tileMesh.scale.set(wallScale.x, 1, wallScale.z);
+          tagRealAssetMesh(tileMesh, { receiveShadow: true });
+          floorContainer.add(tileMesh);
+        }
+      }
+    });
+  }
 
   // ── Walls & pillars ───────────────────────────────────────────────────
   // Door cells skip wall placement (opening left empty).
@@ -271,17 +500,10 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
     const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
     const tH = tile.h ?? wallHeight;
+    const rotationDeg = tile.rotation ?? 0;
 
+    // Physics collider — always the same box regardless of visual choice.
     if (tile.type === 'wall') {
-      const geo = new THREE.BoxGeometry(cellSize, tH, cellSize);
-      geometries.push(geo);
-      const mesh = new THREE.Mesh(geo, wallMat);
-      mesh.position.set(wx, tH / 2, wz);
-      mesh.rotation.y = THREE.MathUtils.degToRad(tile.rotation ?? 0);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData.isWall = true;   // used by WallOcclusionManager
-      group.add(mesh);
       bodies.push(
         physics.createStaticBox(
           new THREE.Vector3(wx, tH / 2, wz),
@@ -289,14 +511,6 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
         ),
       );
     } else {
-      // pillar
-      const geo = new THREE.CylinderGeometry(0.25, 0.3, tH, 8);
-      geometries.push(geo);
-      const mesh = new THREE.Mesh(geo, wallMat);
-      mesh.position.set(wx, tH / 2, wz);
-      mesh.castShadow = true;
-      mesh.userData.isWall = true;   // used by WallOcclusionManager
-      group.add(mesh);
       bodies.push(
         physics.createStaticBox(
           new THREE.Vector3(wx, tH / 2, wz),
@@ -304,6 +518,36 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
         ),
       );
     }
+
+    const tileContainer = new THREE.Group();
+    tileContainer.position.set(wx, 0, wz);
+    group.add(tileContainer);
+
+    if (!dungeonKitPromise) {
+      buildProceduralWallOrPillar(tileContainer, tile.type, cellSize, tH, rotationDeg, wallMat, geometries);
+      continue;
+    }
+    void dungeonKitPromise.then((kit) => {
+      if (tileContainer.parent === null) return; // room torn down before load resolved
+      const template = tile.type === 'wall' ? kit.wall : kit.column;
+      if (!template) {
+        buildProceduralWallOrPillar(tileContainer, tile.type, cellSize, tH, rotationDeg, wallMat, geometries);
+        return;
+      }
+      const piece = cloneDungeonPiece(template);
+      if (tile.type === 'wall') {
+        piece.scale.set(wallScale.x, wallScale.y, wallScale.z);
+        piece.rotation.y = THREE.MathUtils.degToRad(rotationDeg);
+        tagRealAssetMesh(piece, { isWall: true, castShadow: true, receiveShadow: true });
+      } else {
+        // Column diameter stays native (research doc §3 — no evidence the
+        // kit's column radius is calibrated to cellSize); only height
+        // scales with the room.
+        piece.scale.set(1, wallScale.y, 1);
+        tagRealAssetMesh(piece, { isWall: true, castShadow: true });
+      }
+      tileContainer.add(piece);
+    });
   }
 
   // ── Corner pilasters — softens the inner silhouette of circular walls ─
@@ -594,38 +838,31 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   // ── Door frames & triggers ────────────────────────────────────────────
   for (const door of bp.doors) {
     const { x: dx, z: dz } = cellToWorld(door.x, door.z, bp);
-    const postH = wallHeight * 0.82;
-    const postHalf = postH / 2;
-    const lintelH = wallHeight - postH;
-    const postOffset = cellSize / 2 - 0.15;
     const isNS = door.facing === 'north' || door.facing === 'south';
 
-    // Two door posts + lintel
-    const postGeo = new THREE.BoxGeometry(0.22, postH, 0.22);
-    const lintelGeo = new THREE.BoxGeometry(
-      isNS ? cellSize : 0.22,
-      lintelH,
-      isNS ? 0.22 : cellSize,
-    );
-    geometries.push(postGeo, lintelGeo);
+    const doorContainer = new THREE.Group();
+    doorContainer.position.set(dx, 0, dz);
+    group.add(doorContainer);
 
-    const postA = new THREE.Mesh(postGeo, frameMat);
-    const postB = new THREE.Mesh(postGeo, frameMat);
-    const lintelMesh = new THREE.Mesh(lintelGeo, frameMat);
-
-    if (isNS) {
-      postA.position.set(dx - postOffset, postHalf, dz);
-      postB.position.set(dx + postOffset, postHalf, dz);
+    if (!dungeonKitPromise) {
+      buildProceduralDoorFrame(doorContainer, isNS, cellSize, wallHeight, frameMat, geometries);
     } else {
-      postA.position.set(dx, postHalf, dz - postOffset);
-      postB.position.set(dx, postHalf, dz + postOffset);
+      void dungeonKitPromise.then((kit) => {
+        if (doorContainer.parent === null) return; // room torn down before load resolved
+        if (!kit.door) {
+          buildProceduralDoorFrame(doorContainer, isNS, cellSize, wallHeight, frameMat, geometries);
+          return;
+        }
+        // Doors are freestanding archway inserts at NATIVE scale (research
+        // doc §3 — measured wider than a 1-cell wall footprint, meant to
+        // straddle the opening rather than replace a wall's box shape),
+        // not scaled by wallScale like walls/columns.
+        const piece = cloneDungeonPiece(kit.door);
+        piece.rotation.y = isNS ? 0 : THREE.MathUtils.degToRad(90);
+        tagRealAssetMesh(piece, { castShadow: true });
+        doorContainer.add(piece);
+      });
     }
-    lintelMesh.position.set(dx, postH + lintelH / 2, dz);
-
-    postA.userData.isDoorFrame = true;
-    postB.userData.isDoorFrame = true;
-    lintelMesh.userData.isDoorFrame = true;
-    group.add(postA, postB, lintelMesh);
 
     // Trigger AABB — centred on the door cell, shallow along the door normal
     const tHalf = TRIGGER_DEPTH / 2;
@@ -1301,7 +1538,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
   // ── Staircases ────────────────────────────────────────────────────────
   for (const stair of bp.staircases) {
-    buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies);
+    buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies, dungeonKitPromise);
   }
 
   // ── Editor markers (spawn indicators, etc.) ───────────────────────────

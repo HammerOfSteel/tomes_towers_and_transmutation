@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import {
   validateBlueprint,
@@ -11,6 +11,22 @@ import {
   type Blueprint,
 } from '@/levels/blueprint';
 import { renderBlueprint } from '@/levels/BlueprintRenderer';
+
+// This file tests renderBlueprint()'s pure-procedural output (geometry,
+// positions, physics colliders). Real-asset (Quaternius dungeon-kit)
+// rendering is async and network/file-load dependent — out of scope here
+// (see docs/superpowers/plans/2026-09-26-external-assets-dungeons.md Task 5
+// for real-asset-specific tests) — so force the 'dungeons-towers' category
+// off for every test in this file to keep assertions synchronous.
+beforeEach(() => {
+  localStorage.setItem(
+    'ttt_external_assets_v1',
+    JSON.stringify({ enabled: { 'dungeons-towers': false } }),
+  );
+});
+afterEach(() => {
+  localStorage.removeItem('ttt_external_assets_v1');
+});
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -217,11 +233,21 @@ describe('renderBlueprint', () => {
     //                          z = (0+0.5)*2 - (3*2)/2 = 1 - 3 = -2
     const physics = makeMockPhysics();
     const room = renderBlueprint(VALID_BP, physics as never);
+    room.group.updateMatrixWorld(true);
 
-    const wallMeshes = room.group.children.filter(
-      (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.BoxGeometry,
-    );
-    const positions = wallMeshes.map((m) => ({ x: m.position.x, z: m.position.z }));
+    // Wall meshes are parented one level deep, inside a per-tile container
+    // positioned at the tile's world location (Sub-task 3's real-asset
+    // container pattern), so use traverse()/world position instead of
+    // direct children/local position.
+    const wallMeshes: THREE.Mesh[] = [];
+    room.group.traverse((c) => {
+      if (c instanceof THREE.Mesh && c.geometry instanceof THREE.BoxGeometry) wallMeshes.push(c);
+    });
+    const positions = wallMeshes.map((m) => {
+      const p = new THREE.Vector3();
+      m.getWorldPosition(p);
+      return { x: p.x, z: p.z };
+    });
     expect(positions).toContainEqual({ x: -2, z: -2 });
   });
 
@@ -310,9 +336,12 @@ describe('wall/door-frame visibility (BlueprintRenderer)', () => {
   it('keeps every wall tile visible, near and far, with no dollhouseCut tag', () => {
     const physics = makeMockPhysics();
     const room = renderBlueprint(VALID_BP, physics as never);
-    const wallMeshes = room.group.children.filter(
-      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isWall === true,
-    );
+    // Wall meshes are nested inside per-tile containers (Sub-task 3's
+    // real-asset container pattern) — traverse() instead of direct children.
+    const wallMeshes: THREE.Mesh[] = [];
+    room.group.traverse((c) => {
+      if (c instanceof THREE.Mesh && c.userData.isWall === true) wallMeshes.push(c);
+    });
     expect(wallMeshes.length).toBeGreaterThan(0);
     for (const m of wallMeshes) {
       expect(m.visible).toBe(true);
@@ -330,9 +359,12 @@ describe('wall/door-frame visibility (BlueprintRenderer)', () => {
   it('keeps door frame posts/lintel visible regardless of camera-facing side', () => {
     const physics = makeMockPhysics();
     const room = renderBlueprint(VALID_BP, physics as never);
-    const doorFrameMeshes = room.group.children.filter(
-      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isDoorFrame === true,
-    );
+    // Door frame meshes are nested inside a per-door container (Sub-task 3's
+    // real-asset container pattern) — traverse() instead of direct children.
+    const doorFrameMeshes: THREE.Mesh[] = [];
+    room.group.traverse((c) => {
+      if (c instanceof THREE.Mesh && c.userData.isDoorFrame === true) doorFrameMeshes.push(c);
+    });
     expect(doorFrameMeshes.length).toBeGreaterThan(0);
     for (const m of doorFrameMeshes) {
       expect(m.visible).toBe(true);
