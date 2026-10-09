@@ -7,8 +7,9 @@ import { PALETTE } from '@/shaders/palette';
 import { MaterialLibrary } from '@/rendering/MaterialLibrary';
 import { isCategoryEnabled } from '@/world/ExternalAssetConfig';
 import {
-  computeWallScale, computeStairStepCount, loadDungeonKit, cloneDungeonPiece,
-  type DungeonKit,
+  computeWallScale, computeFloorScale, computeStairStepCount, loadDungeonKit, cloneDungeonPiece,
+  getStairMode, getNativeStairRise, DEFAULT_DUNGEON_KIT_ID,
+  type DungeonKit, type DungeonKitId,
 } from './QuatDungeonAdapter';
 import {
   buildCauldron,
@@ -137,6 +138,61 @@ function buildProceduralWallOrPillar(
   }
 }
 
+/** Infers which way (or ways) one wall tile's 2m-long, ~0.29m-thick real
+ *  kit panel(s) should face, given its neighbours in `structuralKeys`.
+ *
+ *  The old procedural wall was a symmetric `BoxGeometry(cellSize, tH,
+ *  cellSize)` cube, so rotation never mattered visually — `tile.rotation`
+ *  is essentially never authored on 'wall' tiles by any generator (only
+ *  on decorative pillar-adjacent props). The real `Wall` kit piece is a
+ *  thin rectangular panel, so an unrotated panel on a wall segment that
+ *  actually runs north-south shows its narrow edge to the room, which is
+ *  exactly the "walls face the wrong way" defect.
+ *
+ *  A *straight* wall segment runs parallel to whichever axis has a
+ *  structural (wall/pillar) neighbour on both sides, and its flat face
+ *  must point along the perpendicular (open) axis:
+ *   - open to the west/east (x-1/x+1 not structural) ⇒ segment runs
+ *     north-south ⇒ rotate 90° so the panel's long axis lies along Z.
+ *   - open to the north/south (z-1/z+1 not structural) ⇒ segment runs
+ *     east-west ⇒ rotation 0 (panel's long axis already lies along X).
+ *
+ *  A *true corner* tile — exactly one open neighbour on the X axis AND
+ *  exactly one open neighbour on the Z axis (e.g. a rectangular room's
+ *  four corners) — needs TWO panels, not one: a single rotated panel can
+ *  only present its flat face to one perpendicular neighbour, leaving a
+ *  ~1m gap where the other wall arm of the corner expects to butt up
+ *  against it (confirmed empirically via `checkWallAdjacency()` in
+ *  `verify_dungeon_kits.mjs` — every corner tile of every rectangular
+ *  room template showed a 0.75–0.97m z-axis gap at the join with its
+ *  neighbour). The standard modular-kit technique for this (used by
+ *  most off-the-shelf dungeon/building kits, including this one, which
+ *  has no dedicated corner-wall piece — see
+ *  `docs/asset-integration/2026-09-26-dungeons-research.md`) is simply
+ *  two straight wall panels at the same cell, one per orientation, each
+ *  meeting its own respective neighbour exactly as a plain straight-run
+ *  tile would.
+ *
+ *  Any other tie (solid interior mass with no open side, or a
+ *  freestanding single-cell wall open on both sides of one axis) still
+ *  defaults to a single panel at 0° — an explicit `tile.rotation` always
+ *  wins over inference and always yields exactly one panel. */
+function computeWallRunRotations(
+  tile: TileEntry,
+  structuralKeys: Set<string>,
+): number[] {
+  if (tile.rotation !== undefined) return [tile.rotation];
+  const isStructural = (x: number, z: number): boolean => structuralKeys.has(`${x},${z}`);
+  const openW = !isStructural(tile.x - 1, tile.z);
+  const openE = !isStructural(tile.x + 1, tile.z);
+  const openN = !isStructural(tile.x, tile.z - 1);
+  const openS = !isStructural(tile.x, tile.z + 1);
+  const openXCount = (openW ? 1 : 0) + (openE ? 1 : 0);
+  const openZCount = (openN ? 1 : 0) + (openS ? 1 : 0);
+  if (openXCount === 1 && openZCount === 1) return [0, 90];
+  return [openXCount > openZCount ? 90 : 0];
+}
+
 /** Procedural fallback for the whole-room floor plane — identical to the
  *  pre-Sub-task-3 code, parented to `parent` (the caller positions
  *  `parent` at the room's local origin). */
@@ -220,6 +276,7 @@ function buildStaircase(
   physics: PhysicsWorld,
   bodies: ReturnType<PhysicsWorld['createStaticBox']>[],
   dungeonKitPromise: Promise<DungeonKit> | null,
+  kitId: DungeonKitId,
 ): void {
   const { cellSize, wallHeight } = bp;
   const { x: wx, z: wz } = cellToWorld(stair.x, stair.z, bp);
@@ -268,20 +325,36 @@ function buildStaircase(
     void dungeonKitPromise.then((kit) => {
       if (visualContainer.parent === null) return; // room torn down before load resolved
       if (kit.stairs) {
-        const pieceCount = computeStairStepCount(totalRise);
-        const pieceRise = totalRise / pieceCount;
-        const pieceRun = STAIR_SPAN / pieceCount;
         const rotY = az !== 0 ? 0 : THREE.MathUtils.degToRad(90);
-        for (let i = 0; i < pieceCount; i++) {
-          const along = (pieceCount / 2 - i - 0.5) * pieceRun;
-          const sx = wx - ax * along;
-          const sz = wz - az * along;
-          const sy = stair.direction === 'up' ? i * pieceRise : -(i + 1) * pieceRise;
+        if (getStairMode(kitId) === 'single-scaled') {
+          // One complete-flight piece (e.g. scifi's `Staircase`), uniformly
+          // Y-scaled so its native rise matches this room's actual total
+          // rise. Placed once at the opening, spanning the same run the
+          // procedural steps would have used.
+          const yScale = totalRise / getNativeStairRise(kitId);
           const piece = cloneDungeonPiece(kit.stairs);
-          piece.position.set(sx, sy, sz);
+          piece.position.set(wx, stair.direction === 'up' ? 0 : -totalRise, wz);
+          piece.scale.set(1, stair.direction === 'up' ? yScale : -yScale, 1);
           piece.rotation.y = rotY;
           tagRealAssetMesh(piece, { castShadow: true, receiveShadow: true });
           visualContainer.add(piece);
+        } else {
+          // 'stack' mode (e.g. medieval's `Stairs`) — repeat a short
+          // single-step piece enough times to span the same total rise.
+          const pieceCount = computeStairStepCount(totalRise, kitId);
+          const pieceRise = totalRise / pieceCount;
+          const pieceRun = STAIR_SPAN / pieceCount;
+          for (let i = 0; i < pieceCount; i++) {
+            const along = (pieceCount / 2 - i - 0.5) * pieceRun;
+            const sx = wx - ax * along;
+            const sz = wz - az * along;
+            const sy = stair.direction === 'up' ? i * pieceRise : -(i + 1) * pieceRise;
+            const piece = cloneDungeonPiece(kit.stairs);
+            piece.position.set(sx, sy, sz);
+            piece.rotation.y = rotY;
+            tagRealAssetMesh(piece, { castShadow: true, receiveShadow: true });
+            visualContainer.add(piece);
+          }
         }
       } else {
         for (let i = 0; i < STEPS; i++) {
@@ -423,10 +496,31 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   // real assets are off for this room — every section below keeps its
   // exact pre-Sub-task-3 procedural behaviour in that case (hard
   // fallback rule). `computeWallScale()` is a pure function of the
-  // room's own cellSize/wallHeight — see QuatDungeonAdapter.ts.
+  // room's own cellSize/wallHeight plus the room's chosen kit — see
+  // QuatDungeonAdapter.ts. `kitId` is per-room (`Blueprint.dungeonKit`),
+  // which is how mixed-kit dungeons work — each room in a DungeonPlan can
+  // pick a different kit while staying internally single-kit.
+  const kitId: DungeonKitId = bp.dungeonKit ?? DEFAULT_DUNGEON_KIT_ID;
   const useRealDungeonKit = isCategoryEnabled('dungeons-towers');
-  const dungeonKitPromise: Promise<DungeonKit> | null = useRealDungeonKit ? loadDungeonKit() : null;
-  const wallScale = computeWallScale(bp);
+  const dungeonKitPromise: Promise<DungeonKit> | null = useRealDungeonKit ? loadDungeonKit(kitId) : null;
+  const wallScale = computeWallScale(bp, kitId);
+
+  // Every wall/pillar cell — used by the wall loop to infer each wall
+  // segment's run direction (see computeWallRunRotation() below). A pillar
+  // counts as "structural" here because it still blocks a wall tile's
+  // neighbour from being "open" for run-direction purposes.
+  const structuralKeys = new Set(
+    bp.tiles.filter(t => t.type === 'wall' || t.type === 'pillar').map(t => `${t.x},${t.z}`),
+  );
+  // Wall-only cells — used by the floor loop. A pillar is a freestanding
+  // column the player walks around, NOT a wall segment, so the floor must
+  // still render under/around it (a real kit's Column piece is a thin
+  // cylinder, not a full-cell occluder — leaving its cell floor-less
+  // produced a visible diamond-shaped hole under every pillar, caught via
+  // screenshot review of a circular tower chamber).
+  const wallOnlyKeys = new Set(
+    bp.tiles.filter(t => t.type === 'wall').map(t => `${t.x},${t.z}`),
+  );
 
   // ── Floor ─────────────────────────────────────────────────────────────
   const floorW = width * cellSize;
@@ -460,18 +554,25 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
       // Real per-cell floor tiles — one Floor_Standard clone per
       // non-wall/non-pillar cell (floor is implicit for all unlisted
       // cells per blueprint.ts's doc comment; there's no separate
-      // FloorTileEntry array to iterate).
-      const structuralKeys = new Set(
-        bp.tiles.filter(t => t.type === 'wall' || t.type === 'pillar').map(t => `${t.x},${t.z}`),
-      );
+      // FloorTileEntry array to iterate). Uses computeFloorScale(), NOT
+      // wallScale — the two pieces don't necessarily share a native
+      // module size (see computeFloorScale()'s doc comment).
+      const floorScale = computeFloorScale(bp, kitId);
       for (let gz = 0; gz < depth; gz++) {
         for (let gx = 0; gx < width; gx++) {
-          if (structuralKeys.has(`${gx},${gz}`)) continue;
+          if (wallOnlyKeys.has(`${gx},${gz}`)) continue;
           const { x: fx, z: fz } = cellToWorld(gx, gz, bp);
           const tileMesh = cloneDungeonPiece(kit.floor);
           tileMesh.position.set(fx, 0, fz);
-          tileMesh.scale.set(wallScale.x, 1, wallScale.z);
+          tileMesh.scale.set(floorScale.x, 1, floorScale.z);
           tagRealAssetMesh(tileMesh, { receiveShadow: true });
+          // Tagged for debug/test tooling only (building-viewer.ts's
+          // window.__bvGetFloorMeshes()) — lets geometric-fit tests verify
+          // every non-wall cell actually has a floor mesh, not just visual
+          // inspection. Not read by any gameplay code.
+          tileMesh.userData.tileX = gx;
+          tileMesh.userData.tileZ = gz;
+          tileMesh.userData.isFloor = true;
           floorContainer.add(tileMesh);
         }
       }
@@ -500,7 +601,18 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
     const { x: wx, z: wz } = cellToWorld(tile.x, tile.z, bp);
     const tH = tile.h ?? wallHeight;
-    const rotationDeg = tile.rotation ?? 0;
+    // Wall segments infer their run direction(s) from neighbouring
+    // structural cells (see computeWallRunRotations()) — the old symmetric
+    // procedural box never needed this, but the real kit's thin panel
+    // does, and a true corner cell needs TWO panels (one per arm of the
+    // corner — see that function's doc comment). Pillars keep the old
+    // explicit-or-zero single-rotation behaviour (their real column piece
+    // is radially near-symmetric, and no generator authors pillar
+    // rotation).
+    const rotationsDeg = tile.type === 'wall'
+      ? computeWallRunRotations(tile, structuralKeys)
+      : [tile.rotation ?? 0];
+    const rotationDeg = rotationsDeg[0];
 
     // Physics collider — always the same box regardless of visual choice.
     if (tile.type === 'wall') {
@@ -521,6 +633,13 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
     const tileContainer = new THREE.Group();
     tileContainer.position.set(wx, 0, wz);
+    // Tagged for debug/test tooling only (e.g. building-viewer.ts's
+    // window.__bvGetWallMeshes()) — lets an external script re-derive
+    // "which tile is this mesh?" without threading extra state through
+    // the renderer itself. Not read by any gameplay code.
+    tileContainer.userData.tileX = tile.x;
+    tileContainer.userData.tileZ = tile.z;
+    tileContainer.userData.tileType = tile.type;
     group.add(tileContainer);
 
     if (!dungeonKitPromise) {
@@ -534,19 +653,29 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
         buildProceduralWallOrPillar(tileContainer, tile.type, cellSize, tH, rotationDeg, wallMat, geometries);
         return;
       }
-      const piece = cloneDungeonPiece(template);
       if (tile.type === 'wall') {
-        piece.scale.set(wallScale.x, wallScale.y, wallScale.z);
-        piece.rotation.y = THREE.MathUtils.degToRad(rotationDeg);
-        tagRealAssetMesh(piece, { isWall: true, castShadow: true, receiveShadow: true });
-      } else {
+        // Usually one panel; exactly two at a true corner tile (see
+        // computeWallRunRotations() — each panel independently meets its
+        // own perpendicular neighbour, exactly as a plain straight-run
+        // tile would).
+        for (const rotDeg of rotationsDeg) {
+          const piece = cloneDungeonPiece(template);
+          piece.scale.set(wallScale.x, wallScale.y, wallScale.z);
+          piece.rotation.y = THREE.MathUtils.degToRad(rotDeg);
+          tagRealAssetMesh(piece, { isWall: true, castShadow: true, receiveShadow: true });
+          tileContainer.add(piece);
+        }
+        return;
+      }
+      {
+        const piece = cloneDungeonPiece(template);
         // Column diameter stays native (research doc §3 — no evidence the
         // kit's column radius is calibrated to cellSize); only height
         // scales with the room.
         piece.scale.set(1, wallScale.y, 1);
         tagRealAssetMesh(piece, { isWall: true, castShadow: true });
+        tileContainer.add(piece);
       }
-      tileContainer.add(piece);
     });
   }
 
@@ -842,6 +971,10 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
     const doorContainer = new THREE.Group();
     doorContainer.position.set(dx, 0, dz);
+    // Tagged for debug/test tooling only (window.__bvGetDoorMeshes()).
+    doorContainer.userData.tileX = door.x;
+    doorContainer.userData.tileZ = door.z;
+    doorContainer.userData.isDoor = true;
     group.add(doorContainer);
 
     if (!dungeonKitPromise) {
@@ -1538,7 +1671,7 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
 
   // ── Staircases ────────────────────────────────────────────────────────
   for (const stair of bp.staircases) {
-    buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies, dungeonKitPromise);
+    buildStaircase(stair, bp, group, geometries, materials, doorTriggers, physics, bodies, dungeonKitPromise, kitId);
   }
 
   // ── Editor markers (spawn indicators, etc.) ───────────────────────────

@@ -29,6 +29,9 @@ import { SceneManager }     from '@/levels/SceneManager';
 import { LightingSystem }   from '@/rendering/LightingSystem';
 import type { DungeonPlan } from '@/levels/DungeonGenerator';
 import type { Blueprint }   from '@/levels/blueprint';
+import {
+  isCategoryEnabled, loadExternalAssetConfig, saveExternalAssetConfig,
+} from '@/world/ExternalAssetConfig';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -166,9 +169,116 @@ async function main(): Promise<void> {
     setTimeout(() => { roomEl.textContent = (sceneManager.currentBlueprint?.id ?? '').replace(/_/g, ' '); }, 1500);
   };
 
+  // ── 10b. Real-vs-procedural dungeon-kit toggle ───────────────────────────────
+  // Dev-only knob (Task 4 of
+  // docs/superpowers/plans/2026-09-26-external-assets-dungeons.md), mirroring
+  // SettlementLabPanel.ts's "Real buildings" checkbox: flips the same
+  // 'dungeons-towers' ExternalAssetConfig category this whole viewer is meant
+  // to QA, then reloads the current plan so the change is visible immediately.
+  const toggleWrap = document.createElement('label');
+  toggleWrap.style.cssText =
+    'position:fixed;top:16px;left:16px;z-index:20;display:flex;align-items:center;gap:6px;' +
+    'padding:6px 10px;background:rgba(10,8,8,.85);border:1px solid #4a3828;border-radius:4px;' +
+    'color:#c8a96e;font-family:"IM Fell English",Georgia,serif;font-size:.85rem;cursor:pointer;';
+  const toggleCheckbox = document.createElement('input');
+  toggleCheckbox.type = 'checkbox';
+  toggleCheckbox.checked = isCategoryEnabled('dungeons-towers');
+  toggleWrap.append(toggleCheckbox, document.createTextNode('Real dungeon-kit assets'));
+  document.body.appendChild(toggleWrap);
+  toggleCheckbox.addEventListener('change', () => {
+    const cfg = loadExternalAssetConfig();
+    cfg.enabled['dungeons-towers'] = toggleCheckbox.checked;
+    saveExternalAssetConfig(cfg);
+    console.log('[BuildingViewer] dungeons-towers real assets:', toggleCheckbox.checked, '— reloading plan');
+    sceneManager.loadDungeon(plan);
+  });
+
   // ── 11. Load rooms ────────────────────────────────────────────────────────────
   sceneManager.loadDungeon(plan);
   console.log('[BuildingViewer] dungeon loaded, starting room:', plan.startRoomId);
+
+  // ── 11b. Geometric-fit debug hook (test-only) ────────────────────────────────
+  // Exposes every currently-rendered wall/floor/door mesh's world-space
+  // AABB (min/max, not just size) so an external Playwright script can
+  // independently verify REAL geometric fit — adjacent wall pieces
+  // actually touch with no gap, every non-wall cell has exactly one floor
+  // tile with no holes, door openings are correctly sized/positioned —
+  // not just that a mesh's longest axis points the "expected" way (which
+  // caught orientation bugs but NOT gaps/holes/misalignment). Reads
+  // BlueprintRenderer.ts's per-tile userData (tileX/tileZ/tileType for
+  // walls, tileX/tileZ/isFloor for floor tiles, tileX/tileZ/isDoor for
+  // doors — all set purely for this purpose, not read by gameplay code).
+  (window as any).__bvGetRoomGeometry = () => {
+    function aabb(obj: THREE.Object3D) {
+      const box = new THREE.Box3().setFromObject(obj);
+      return {
+        min: { x: +box.min.x.toFixed(4), y: +box.min.y.toFixed(4), z: +box.min.z.toFixed(4) },
+        max: { x: +box.max.x.toFixed(4), y: +box.max.y.toFixed(4), z: +box.max.z.toFixed(4) },
+      };
+    }
+    const walls: Array<{ tileX: number; tileZ: number; longAxis: 'x' | 'z'; isBoxGeometry: boolean } & ReturnType<typeof aabb>> = [];
+    const floors: Array<{ tileX: number; tileZ: number } & ReturnType<typeof aabb>> = [];
+    const doors: Array<{ tileX: number; tileZ: number; isBoxGeometry: boolean } & ReturnType<typeof aabb>> = [];
+    const seenFloor = new Set<string>();
+    const seenDoor = new Set<string>();
+    const seenWall = new Set<string>();
+    scene.traverse((obj) => {
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      // Floor tiles: userData is set on the top-level clone (`tileMesh` in
+      // BlueprintRenderer.ts), which may itself be a multi-mesh Group (OBJ/
+      // GLB clones), so walk up like walls/doors rather than reading
+      // `mesh.userData` directly.
+      let fp: THREE.Object3D | null = mesh;
+      while (fp && fp.userData.tileX === undefined) fp = fp.parent;
+      if (fp && fp.userData.isFloor) {
+        const key = `${fp.userData.tileX},${fp.userData.tileZ}`;
+        if (seenFloor.has(key)) return; // real floor pieces can be multi-mesh; count once
+        seenFloor.add(key);
+        floors.push({ tileX: fp.userData.tileX, tileZ: fp.userData.tileZ, ...aabb(fp) });
+        return;
+      }
+      if (mesh.userData.isWall) {
+        // A true corner tile renders TWO wall pieces sharing the same
+        // tileContainer (see BlueprintRenderer.ts's
+        // computeWallRunRotations()), so dedupe must happen per PIECE
+        // instance (the direct child of the tagged container), not per
+        // tile — otherwise the second corner panel is silently dropped
+        // and geometric-fit checks only ever see one of the two faces.
+        let piece: THREE.Object3D = mesh;
+        while (piece.parent && piece.parent.userData.tileX === undefined) piece = piece.parent;
+        const container = piece.parent;
+        if (!container || container.userData.tileType !== 'wall') return; // pillars have no run direction
+        if (seenWall.has(piece.uuid)) return;
+        seenWall.add(piece.uuid);
+        const box = new THREE.Box3().setFromObject(piece);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        walls.push({
+          tileX: container.userData.tileX, tileZ: container.userData.tileZ,
+          longAxis: size.x >= size.z ? 'x' : 'z',
+          isBoxGeometry: mesh.geometry.type === 'BoxGeometry',
+          ...aabb(piece),
+        });
+        return;
+      }
+      let dp: THREE.Object3D | null = mesh;
+      while (dp && dp.userData.tileX === undefined) dp = dp.parent;
+      if (dp && dp.userData.isDoor) {
+        const key = `${dp.userData.tileX},${dp.userData.tileZ}`;
+        if (seenDoor.has(key)) return;
+        seenDoor.add(key);
+        doors.push({
+          tileX: dp.userData.tileX, tileZ: dp.userData.tileZ,
+          isBoxGeometry: mesh.geometry.type === 'BoxGeometry',
+          ...aabb(dp),
+        });
+      }
+    });
+    return { walls, floors, doors };
+  };
+  // Back-compat alias for the earlier orientation-only harness.
+  (window as any).__bvGetWallMeshes = () => (window as any).__bvGetRoomGeometry().walls;
 
   // ── 12. Game loop ─────────────────────────────────────────────────────────────
   const gameLoop = new GameLoop();

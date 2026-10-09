@@ -20,6 +20,7 @@
     "coverage": "vitest run --coverage",
     "manifest": "node scripts/gen-manifest.mjs",
     "doctor": "node scripts/repo-doctor.mjs",
+    "verify:dungeon-kits": "node scripts/verify-dungeon-kits.mjs",
     "extract:chars": "node scripts/extract-char-assets.mjs",
     "gen:char-manifest": "node scripts/gen-char-manifest.mjs",
     "setup:chars": "npm run extract:chars && npm run gen:char-manifest",

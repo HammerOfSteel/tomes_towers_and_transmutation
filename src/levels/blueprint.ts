@@ -119,6 +119,15 @@ export interface Blueprint {
   floor: number;
   /** Floor material type. Defaults to 'stone'. Affects floor colour in the renderer. */
   floorType?: FloorType;
+  /** Which real Quaternius modular dungeon kit to render this room's walls/
+   *  floor/doors/stairs/pillars with, when the 'dungeons-towers' external-
+   *  asset category is enabled. Defaults to 'medieval'. Rooms in the same
+   *  DungeonPlan may declare different kits — that's how "mixed-kit"
+   *  dungeons work: kit selection is per-room, not per-dungeon, so a
+   *  generated multi-room layout can alternate styles room-by-room while
+   *  every room individually stays internally consistent (never mixing
+   *  two kits' pieces within one room). See QuatDungeonAdapter.ts. */
+  dungeonKit?: 'medieval' | 'scifi';
 }
 
 // ── Validation ────────────────────────────────────────────────────────────
