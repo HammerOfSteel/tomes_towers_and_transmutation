@@ -201,3 +201,30 @@ being called done, not assumed correct on paper.
    the base swap is verified correct, consistent with "get the base
    pattern right before adding variety" (the same order used for
    buildings).
+
+## Resolution (2026-10-09 geometric-fit verification pass)
+
+The corner-piece recommendation above is now **confirmed and locked in**,
+not just a provisional guess:
+
+- Direct OBJ vertex measurement of every wall/column piece in both the
+  medieval and scifi kits confirmed neither ships a diagonal/non-90°
+  wall piece — this is a permanent kit-vocabulary limit, not something
+  fixable by better code.
+- `Curve_1`/`Curve_2` (+ Overgrown variants), previously excluded above
+  as "ambiguous-purpose," were directly measured this pass: bounding box
+  ~2.27×2.0×2.07m with a ~2m vertical rise — confirmed sloped ramp/bridge
+  pieces, not flat corner-wall panels. They remain excluded from corner
+  use; the exclusion above was correct.
+- All 5 of `generateDungeon()`'s room templates are plain rectangles
+  (confirmed via wall-tile-count arithmetic), so every *required*
+  dungeon room is fully covered by real wall panels — see
+  `computeWallRunRotations()` in `BlueprintRenderer.ts`, which now
+  renders two straight panels at a true 90° corner instead of one
+  (closing a real ~0.75–0.97m gap caught by
+  `scripts/verify-dungeon-kits.mjs`'s geometric-fit checks).
+- The procedural pilaster-cylinder is the **deliberate, user-approved,
+  permanent** handling for non-90° concave corners (e.g.
+  `TowerGenerator`'s circular chamber) — it only fires where real-asset
+  geometry structurally cannot serve, never on a required rectangular
+  room. No further action needed here.

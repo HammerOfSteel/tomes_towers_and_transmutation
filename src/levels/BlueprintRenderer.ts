@@ -687,6 +687,19 @@ export function renderBlueprint(bp: Blueprint, physics: PhysicsWorld, opts: Rend
   // roadmap — see its own doc comment for why this replaced an ad-hoc
   // "diagonal must be wall + exactly one bridge differs" rule that missed
   // a mirror-image inner_corner configuration).
+  //
+  // This runs unconditionally — independent of the real-asset dungeon-kit
+  // toggle — and is a DELIBERATE, user-approved permanent exception, not a
+  // stopgap: neither the medieval nor the scifi Quaternius kit ships a
+  // diagonal/non-90° wall piece (confirmed via direct OBJ vertex
+  // measurement of every wall/column piece in both kits — see
+  // docs/asset-integration/2026-09-26-dungeons-research.md), so a circular
+  // room (e.g. TowerGenerator's chamber, which fills a square grid by
+  // radius) has no real-asset equivalent for its non-90° concave corners.
+  // Every 90°-corner rectangular room (all 5 generateDungeon() templates)
+  // is fully covered by real wall panels via computeWallRunRotations()
+  // instead — this procedural pilaster only ever fires at genuine non-90°
+  // corner cells, which real-asset geometry structurally cannot serve.
   {
     const wallTileSet = new Set(
       bp.tiles
