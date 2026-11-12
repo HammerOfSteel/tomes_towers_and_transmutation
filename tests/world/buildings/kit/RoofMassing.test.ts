@@ -4,6 +4,7 @@ import {
   buildCrossGableRoof,
   buildGableRoof,
   buildHipRoof,
+  buildMansardRoof,
 } from '@/world/buildings/kit/RoofMassing';
 
 function makeRoofMaterial(): THREE.Material {
@@ -266,5 +267,62 @@ describe('RoofMassing', () => {
     expect(hasPlaneGeometry(crossA)).toBe(false);
     expect(hasNonFiniteGeometry(crossA)).toBe(false);
     expect(geometrySignature(crossA)).toBe(geometrySignature(crossB));
+  });
+
+  it('buildMansardRoof creates a steep lower band and shallower upper band meeting at a break cornice, with closed gable ends', () => {
+    const material = makeRoofMaterial();
+    const roof = buildMansardRoof(4, 8, 3.4, 0xCAFE_BABE, material);
+
+    const lowerEast = roof.getObjectByName('mansard-lower-east');
+    const lowerWest = roof.getObjectByName('mansard-lower-west');
+    const upperEast = roof.getObjectByName('mansard-upper-east');
+    const upperWest = roof.getObjectByName('mansard-upper-west');
+    expect(lowerEast).toBeTruthy();
+    expect(lowerWest).toBeTruthy();
+    expect(upperEast).toBeTruthy();
+    expect(upperWest).toBeTruthy();
+    [lowerEast, lowerWest, upperEast, upperWest].forEach((slope) => {
+      expect(countTriangles(slope!)).toBeGreaterThan(10);
+    });
+
+    // The lower band must be steeper (shorter horizontal run per unit rise)
+    // than the upper band -- the defining mansard silhouette trait.
+    const lowerBox = new THREE.Box3().setFromObject(lowerEast!);
+    const upperBox = new THREE.Box3().setFromObject(upperEast!);
+    const lowerRise = lowerBox.max.y - lowerBox.min.y;
+    const upperRise = upperBox.max.y - upperBox.min.y;
+    const lowerRun = lowerBox.max.x - lowerBox.min.x;
+    const upperRun = upperBox.max.x - upperBox.min.x;
+    expect(lowerRise / Math.max(lowerRun, 1e-6)).toBeGreaterThan(upperRise / Math.max(upperRun, 1e-6));
+
+    expect(roof.getObjectByName('mansard-cornice-east')).toBeTruthy();
+    expect(roof.getObjectByName('mansard-cornice-west')).toBeTruthy();
+    expect(roof.getObjectByName('mansard-deck')).toBeTruthy();
+    expect(roof.getObjectByName('mansard-end-front')).toBeTruthy();
+    expect(roof.getObjectByName('mansard-end-back')).toBeTruthy();
+
+    expect(hasPlaneGeometry(roof)).toBe(false);
+    expect(hasNonFiniteGeometry(roof)).toBe(false);
+
+    const materials = allMeshMaterials(roof);
+    materials.forEach((meshMaterial) => expect(meshMaterial).toBe(material));
+
+    expect(Array.isArray(roof.userData.dormerAnchors)).toBe(true);
+    expect(roof.userData.dormerAnchors).toHaveLength(4);
+  });
+
+  it('buildMansardRoof collapses to a sharp gambrel ridge when upperHalfWidthFrac is 0', () => {
+    const material = makeRoofMaterial();
+    const roof = buildMansardRoof(4, 8, 3.4, 0xCAFE_BABE, material, { upperHalfWidthFrac: 0 });
+    expect(roof.getObjectByName('mansard-deck')).toBeFalsy();
+    expect(roof.getObjectByName('ridge-cap')).toBeTruthy();
+    expect(hasNonFiniteGeometry(roof)).toBe(false);
+  });
+
+  it('buildMansardRoof is deterministic for a given seed', () => {
+    const material = makeRoofMaterial();
+    const a = buildMansardRoof(4, 8, 3.4, 42, material);
+    const b = buildMansardRoof(4, 8, 3.4, 42, material);
+    expect(geometrySignature(a)).toBe(geometrySignature(b));
   });
 });

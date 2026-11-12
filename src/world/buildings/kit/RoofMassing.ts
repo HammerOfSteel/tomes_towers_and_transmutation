@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildShingleSurface, type ShingleSurfaceOptions } from './ShingleSurface';
+import { finishArchitecturalGeometry } from './Bevels';
 
 const DEFAULT_EAVE_OVERHANG_FRAC = 0.15;
 const DEFAULT_COURSE_HEIGHT = 0.35;
@@ -14,6 +15,15 @@ export interface CrossGableRoofOptions extends RoofMassingOptions {
   wingHalfWidth?: number;
   wingHalfDepth?: number;
   wingRidgeHeight?: number;
+}
+
+export interface MansardRoofOptions extends RoofMassingOptions {
+  /** Fraction of total height where the steep lower slope breaks into the shallower upper slope. Default 0.62. */
+  breakHeightFrac?: number;
+  /** Half-width of the roof at the break line, as a fraction of the outer (eave) half-width. Default 0.55. */
+  breakHalfWidthFrac?: number;
+  /** Half-width of the flat ridge deck, as a fraction of the inner half-width. Default 0.22; 0 collapses to a sharp gambrel ridge. */
+  upperHalfWidthFrac?: number;
 }
 
 function clampPositive(value: number, fallback: number): number {
@@ -187,6 +197,28 @@ function placeDepthRidgeSlope(
   const xAxis = new THREE.Vector3(0, 0, side === 1 ? -1 : 1);
   const yAxis = new THREE.Vector3(-side * halfRun / slopeLength, ridgeHeight / slopeLength, 0);
   setBasis(slope, new THREE.Vector3(side * halfRun, 0, 0), xAxis, yAxis);
+}
+
+/**
+ * Generalized version of `placeDepthRidgeSlope()` for a slope BAND whose top
+ * edge is not necessarily at the ridge apex (x=0) -- used to stack a steep
+ * lower mansard band under a shallower upper band. `placeDepthRidgeSlope()`
+ * is the special case `topHalfWidth=0, bottomY=0`.
+ */
+function placeDepthBandSlope(
+  slope: THREE.Group,
+  bottomHalfWidth: number,
+  bottomY: number,
+  topHalfWidth: number,
+  topY: number,
+  side: -1 | 1,
+): void {
+  const dx = side * (topHalfWidth - bottomHalfWidth);
+  const dy = topY - bottomY;
+  const slopeLength = Math.hypot(dx, dy) || 1e-6;
+  const xAxis = new THREE.Vector3(0, 0, side === 1 ? -1 : 1);
+  const yAxis = new THREE.Vector3(dx / slopeLength, dy / slopeLength, 0);
+  setBasis(slope, new THREE.Vector3(side * bottomHalfWidth, bottomY, 0), xAxis, yAxis);
 }
 
 function placeWidthRidgeSlope(
@@ -461,5 +493,143 @@ export function buildCrossGableRoof(
   wing.rotation.y = Math.PI / 2;
 
   roof.add(main, wing);
+  return roof;
+}
+
+/**
+ * Steep-then-shallow "mansard" roof, implemented as a gambrel-style two
+ * slopes-per-side profile (a deliberate scope simplification of a true
+ * 4-sided mansard frustum): a steep lower band from the eave up to a break
+ * line, a shallower upper band from the break line to a flat ridge deck (or
+ * a sharp gambrel ridge if `upperHalfWidthFrac` is 0), a cornice band at the
+ * break line, and closed gable-end caps tracing the full roof profile so the
+ * building reads as a real volume from every angle. Satisfies doctrine's
+ * "two slopes per side" mansard requirement while staying buildable from
+ * this module's existing rectangular-band slope-placement primitives.
+ *
+ * `roof.userData.dormerAnchors` exposes four world-space points (one per
+ * front/back corner) on the steep lower band where a race kit can mount its
+ * own dormer window geometry.
+ */
+export function buildMansardRoof(
+  halfWidth: number,
+  halfDepth: number,
+  totalHeight: number,
+  seed: number,
+  material: THREE.Material,
+  options: MansardRoofOptions = {},
+): THREE.Group {
+  const roof = new THREE.Group();
+  roof.name = 'mansard-roof';
+
+  const innerHalfWidth = clampPositive(halfWidth, 1);
+  const innerHalfDepth = clampPositive(halfDepth, 1);
+  const height = clampPositive(totalHeight, innerHalfWidth * 0.9);
+  const overhangFrac = clampPositive(options.eaveOverhangFrac ?? DEFAULT_EAVE_OVERHANG_FRAC, DEFAULT_EAVE_OVERHANG_FRAC);
+  const outerHalfWidth = innerHalfWidth * (1 + overhangFrac);
+  const depth = innerHalfDepth * 2;
+
+  const breakHeightFrac = clampPositive(options.breakHeightFrac ?? 0.62, 0.62);
+  const breakHalfWidthFrac = clampPositive(options.breakHalfWidthFrac ?? 0.55, 0.55);
+  const upperHalfWidthFrac = options.upperHalfWidthFrac ?? 0.22;
+
+  const breakY = height * breakHeightFrac;
+  const breakHalfWidth = outerHalfWidth * breakHalfWidthFrac;
+  const topHalfWidth = Math.max(0, innerHalfWidth * upperHalfWidthFrac);
+
+  // Lower band: steep slope from the eave up to the break line.
+  const lowerLength = Math.hypot(outerHalfWidth - breakHalfWidth, breakY);
+  const lowerEast = buildRectangularSlope(
+    depth, lowerLength, (seed ^ 0x4d41_4e31) >>> 0, material, options.shingle,
+    'mansard-lower-east', { eave: true, ridge: false, verge: true },
+  );
+  placeDepthBandSlope(lowerEast, outerHalfWidth, 0, breakHalfWidth, breakY, 1);
+  const lowerWest = buildRectangularSlope(
+    depth, lowerLength, (seed ^ 0x4d41_4e32) >>> 0, material, options.shingle,
+    'mansard-lower-west', { eave: true, ridge: false, verge: true },
+  );
+  placeDepthBandSlope(lowerWest, outerHalfWidth, 0, breakHalfWidth, breakY, -1);
+  roof.add(lowerEast, lowerWest);
+
+  // Upper band: shallow slope from the break line to the ridge deck.
+  const upperLength = Math.hypot(breakHalfWidth - topHalfWidth, height - breakY);
+  const upperEast = buildRectangularSlope(
+    depth, upperLength, (seed ^ 0x4d41_4e33) >>> 0, material, options.shingle,
+    'mansard-upper-east', { eave: false, ridge: topHalfWidth <= 1e-4, verge: true },
+  );
+  placeDepthBandSlope(upperEast, breakHalfWidth, breakY, topHalfWidth, height, 1);
+  const upperWest = buildRectangularSlope(
+    depth, upperLength, (seed ^ 0x4d41_4e34) >>> 0, material, options.shingle,
+    'mansard-upper-west', { eave: false, ridge: topHalfWidth <= 1e-4, verge: true },
+  );
+  placeDepthBandSlope(upperWest, breakHalfWidth, breakY, topHalfWidth, height, -1);
+  roof.add(upperEast, upperWest);
+
+  // Break-line cornice: the "kick" where the steep lower slope meets the
+  // shallow upper slope, a hallmark mansard silhouette detail.
+  roof.add(
+    makeLinearCap(
+      new THREE.Vector3(breakHalfWidth, breakY, innerHalfDepth),
+      new THREE.Vector3(breakHalfWidth, breakY, -innerHalfDepth),
+      material, 0.12, 0.1, 'mansard-cornice-east',
+    ),
+    makeLinearCap(
+      new THREE.Vector3(-breakHalfWidth, breakY, innerHalfDepth),
+      new THREE.Vector3(-breakHalfWidth, breakY, -innerHalfDepth),
+      material, 0.12, 0.1, 'mansard-cornice-west',
+    ),
+  );
+
+  if (topHalfWidth > 1e-4) {
+    const deck = markRoofMesh(
+      new THREE.Mesh(new THREE.BoxGeometry(topHalfWidth * 2, Math.max(height * 0.02, 0.05), depth), material),
+      'mansard-deck',
+    );
+    deck.position.set(0, height, 0);
+    roof.add(deck);
+  } else {
+    const ridgeCap = markRoofMesh(
+      new THREE.Mesh(new THREE.BoxGeometry(Math.max(outerHalfWidth * 0.14, 0.12), Math.max(height * 0.05, 0.08), depth * 1.02), material),
+      'ridge-cap',
+    );
+    ridgeCap.position.set(0, height, 0);
+    roof.add(ridgeCap);
+  }
+
+  // Gable-end caps tracing the full mansard profile (eave -> break -> ridge
+  // -> break -> eave) so the roof ends read as closed volumes, never open
+  // backfaces.
+  const profile: Array<[number, number]> = [
+    [-outerHalfWidth, 0],
+    [-breakHalfWidth, breakY],
+    [-topHalfWidth, height],
+    [topHalfWidth, height],
+    [breakHalfWidth, breakY],
+    [outerHalfWidth, 0],
+  ];
+  const endShape = new THREE.Shape();
+  endShape.moveTo(profile[0]![0], profile[0]![1]);
+  for (let i = 1; i < profile.length; i++) endShape.lineTo(profile[i]![0], profile[i]![1]);
+  endShape.closePath();
+  const endThickness = 0.05;
+  const frontEnd = markRoofMesh(
+    new THREE.Mesh(finishArchitecturalGeometry(new THREE.ExtrudeGeometry(endShape, { depth: endThickness, bevelEnabled: false, steps: 1 })), material),
+    'mansard-end-front',
+  );
+  frontEnd.position.z = innerHalfDepth - endThickness;
+  const backEnd = markRoofMesh(
+    new THREE.Mesh(finishArchitecturalGeometry(new THREE.ExtrudeGeometry(endShape, { depth: endThickness, bevelEnabled: false, steps: 1 })), material),
+    'mansard-end-back',
+  );
+  backEnd.position.z = -innerHalfDepth;
+  roof.add(frontEnd, backEnd);
+
+  roof.userData.dormerAnchors = [
+    { x: -outerHalfWidth * 0.5, y: breakY * 0.55, z: innerHalfDepth, side: 1 },
+    { x: outerHalfWidth * 0.5, y: breakY * 0.55, z: innerHalfDepth, side: 1 },
+    { x: -outerHalfWidth * 0.5, y: breakY * 0.55, z: -innerHalfDepth, side: -1 },
+    { x: outerHalfWidth * 0.5, y: breakY * 0.55, z: -innerHalfDepth, side: -1 },
+  ];
+
   return roof;
 }
